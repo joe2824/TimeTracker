@@ -191,7 +191,7 @@
 				<Label for="subj">Betreff-Vorlage</Label>
 				<Input id="subj" bind:value={subjectTpl} />
 				<p class="text-muted-foreground text-xs">
-					{"{month}"} = Monat, {"{name}"} = dein Name (Chef bekommt mehrere Mails).
+					{"{month}"} = Monat, {"{name}"} = dein Name
 				</p>
 			</div>
 			<div class="grid grid-cols-2 gap-2">
