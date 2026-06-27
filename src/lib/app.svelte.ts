@@ -1,0 +1,508 @@
+// Zentraler, reaktiver App-Zustand (Svelte 5 Runes).
+import { toast } from "svelte-sonner";
+import type { Activity, Entry, EntrySource, Settings } from "./types";
+import { BUILTIN_ABSENCE, BUILTIN_OTHERS, defaultSettings } from "./types";
+import { fmtDate } from "./time";
+import { dayConflict } from "./conflicts";
+import {
+	cleanupOldMonths,
+	loadActivities,
+	loadEntries,
+	loadSettings,
+	monthKey,
+	saveActivities,
+	saveEntries,
+	saveSettings
+} from "./store";
+
+function uid(): string {
+	return crypto.randomUUID();
+}
+
+function prevMonthKey(): string {
+	const d = new Date();
+	d.setMonth(d.getMonth() - 1);
+	return monthKey(d.getTime());
+}
+
+class AppState {
+	activities = $state<Activity[]>([]);
+	settings = $state<Settings>({ ...defaultSettings });
+	/** laufender Eintrag (endTs === null) oder null */
+	running = $state<Entry | null>(null);
+	/** tickt jede Sekunde fuer Live-Dauer */
+	now = $state(Date.now());
+	loaded = $state(false);
+	/** Cache: Monat "YYYY-MM" -> Eintraege */
+	entriesByMonth = $state<Record<string, Entry[]>>({});
+
+	#tick: ReturnType<typeof setInterval> | null = null;
+
+	async init(): Promise<void> {
+		if (this.loaded) return;
+		this.activities = await loadActivities();
+		this.settings = await loadSettings();
+		if (this.settings.autoCleanup) {
+			try {
+				await cleanupOldMonths(12);
+			} catch (e) {
+				console.error("Cleanup fehlgeschlagen", e);
+			}
+		}
+		await this.#seedBuiltins();
+		await this.ensureMonth(this.currentMonth);
+		await this.ensureMonth(prevMonthKey());
+		this.#findRunning();
+		this.loaded = true;
+		this.#tick = setInterval(() => {
+			this.now = Date.now();
+		}, 1000);
+	}
+
+	get currentMonth(): string {
+		return monthKey(this.now);
+	}
+
+	// ---------- Aktivitaeten ----------
+	get visibleActivities(): Activity[] {
+		return this.activities
+			.filter((a) => !a.archived)
+			.sort((a, b) => a.sortOrder - b.sortOrder);
+	}
+
+	get absenceActivity(): Activity | undefined {
+		return this.activities.find((a) => a.isAbsence);
+	}
+
+	activityName(id: string): string {
+		return this.activities.find((a) => a.id === id)?.name ?? "(gelöscht)";
+	}
+
+	async #seedBuiltins(): Promise<void> {
+		let changed = false;
+		const ensure = (name: string, isAbsence: boolean) => {
+			if (!this.activities.some((a) => a.name === name)) {
+				this.activities.push({
+					id: uid(),
+					name,
+					sortOrder: this.activities.length,
+					archived: false,
+					isAbsence
+				});
+				changed = true;
+			}
+		};
+		ensure(BUILTIN_OTHERS, false);
+		ensure(BUILTIN_ABSENCE, true);
+		if (changed) await this.persistActivities();
+	}
+
+	async persistActivities(): Promise<void> {
+		await saveActivities($state.snapshot(this.activities) as Activity[]);
+	}
+
+	/** Mehrere Aktivitaetsnamen importieren (jede Zeile = eine). Bestehende bleiben. */
+	async importActivities(names: string[]): Promise<number> {
+		const existing = new Set(this.activities.map((a) => a.name.toLowerCase()));
+		let added = 0;
+		let order = this.activities.length;
+		for (const raw of names) {
+			const name = raw.trim();
+			if (!name || existing.has(name.toLowerCase())) continue;
+			existing.add(name.toLowerCase());
+			this.activities.push({
+				id: uid(),
+				name,
+				sortOrder: order++,
+				archived: false,
+				isAbsence: false
+			});
+			added++;
+		}
+		// "Others"/"Abwesenheiten" immer ans Ende
+		this.#reindexBuiltinsLast();
+		if (added) await this.persistActivities();
+		return added;
+	}
+
+	#reindexBuiltinsLast(): void {
+		const builtins = this.activities.filter((a) => a.isAbsence || a.name === BUILTIN_OTHERS);
+		const rest = this.activities.filter((a) => !(a.isAbsence || a.name === BUILTIN_OTHERS));
+		[...rest, ...builtins].forEach((a, i) => (a.sortOrder = i));
+	}
+
+	async addActivity(name: string): Promise<void> {
+		const trimmed = name.trim();
+		if (!trimmed) return;
+		this.activities.push({
+			id: uid(),
+			name: trimmed,
+			sortOrder: this.activities.length,
+			archived: false,
+			isAbsence: false
+		});
+		this.#reindexBuiltinsLast();
+		await this.persistActivities();
+	}
+
+	async renameActivity(id: string, name: string): Promise<void> {
+		const a = this.activities.find((x) => x.id === id);
+		if (a) {
+			a.name = name.trim() || a.name;
+			await this.persistActivities();
+		}
+	}
+
+	async toggleFavorite(id: string): Promise<void> {
+		const a = this.activities.find((x) => x.id === id);
+		if (a) {
+			a.favorite = !a.favorite;
+			await this.persistActivities();
+		}
+	}
+
+	async setColor(id: string, color: string | null): Promise<void> {
+		const a = this.activities.find((x) => x.id === id);
+		if (!a) return;
+		if (color) a.color = color;
+		else delete a.color;
+		await this.persistActivities();
+	}
+
+	activityColor(id: string): string | undefined {
+		return this.activities.find((a) => a.id === id)?.color;
+	}
+
+	async setShortcut(id: string, accelerator: string | null): Promise<void> {
+		const a = this.activities.find((x) => x.id === id);
+		if (!a) return;
+		if (accelerator) a.shortcut = accelerator;
+		else delete a.shortcut;
+		await this.persistActivities();
+	}
+
+	get hasFavorites(): boolean {
+		return this.activities.some((a) => a.favorite && !a.archived && !a.isAbsence);
+	}
+
+	/** Aus der Auswahl ausblenden – erscheint aber weiterhin im Bericht/E-Mail. */
+	async toggleHidden(id: string): Promise<void> {
+		const a = this.activities.find((x) => x.id === id);
+		if (a && !a.isAbsence && a.name !== BUILTIN_OTHERS) {
+			a.hidden = !a.hidden;
+			await this.persistActivities();
+		}
+	}
+
+	async setArchived(id: string, archived: boolean): Promise<void> {
+		const a = this.activities.find((x) => x.id === id);
+		if (a && !a.isAbsence && a.name !== BUILTIN_OTHERS) {
+			a.archived = archived;
+			await this.persistActivities();
+		}
+	}
+
+	/** Verschiebt `draggedId` vor/hinter `targetId` (Drag & Drop). */
+	async reorderActivity(draggedId: string, targetId: string, placeAfter = false): Promise<void> {
+		if (draggedId === targetId) return;
+		const ordered = [...this.activities].sort((a, b) => a.sortOrder - b.sortOrder);
+		const from = ordered.findIndex((a) => a.id === draggedId);
+		if (from < 0) return;
+		const [moved] = ordered.splice(from, 1);
+		let to = ordered.findIndex((a) => a.id === targetId);
+		if (to < 0) return;
+		if (placeAfter) to += 1;
+		ordered.splice(to, 0, moved);
+		ordered.forEach((a, i) => (a.sortOrder = i));
+		await this.persistActivities();
+	}
+
+	async moveActivity(id: string, dir: -1 | 1): Promise<void> {
+		const list = this.visibleActivities;
+		const idx = list.findIndex((a) => a.id === id);
+		const swap = idx + dir;
+		if (idx < 0 || swap < 0 || swap >= list.length) return;
+		const a = list[idx];
+		const b = list[swap];
+		const tmp = a.sortOrder;
+		a.sortOrder = b.sortOrder;
+		b.sortOrder = tmp;
+		await this.persistActivities();
+	}
+
+	// ---------- Eintraege ----------
+	async ensureMonth(month: string): Promise<void> {
+		if (!this.entriesByMonth[month]) {
+			this.entriesByMonth[month] = await loadEntries(month);
+		}
+	}
+
+	monthEntries(month: string): Entry[] {
+		return this.entriesByMonth[month] ?? [];
+	}
+
+	async #saveMonth(month: string): Promise<void> {
+		await saveEntries(month, $state.snapshot(this.entriesByMonth[month] ?? []) as Entry[]);
+	}
+
+	/** Ganztags-Abwesenheit an diesem Tag vorhanden? (Tagesanteil >= 1) */
+	hasFullDayAbsence(ts: number): boolean {
+		const absId = this.absenceActivity?.id;
+		if (!absId) return false;
+		const key = fmtDate(ts);
+		return this.monthEntries(monthKey(ts)).some(
+			(e) => e.activityId === absId && (e.dayFraction ?? 1) >= 1 && fmtDate(e.startTs) === key
+		);
+	}
+
+	/** Projekt-(Nicht-Abwesenheits-)Eintrag an diesem Tag vorhanden? */
+	hasProjectEntry(ts: number): boolean {
+		const key = fmtDate(ts);
+		return this.monthEntries(monthKey(ts)).some(
+			(e) => !this.isAbsenceId(e.activityId) && fmtDate(e.startTs) === key
+		);
+	}
+
+	async addEntry(
+		activityId: string,
+		startTs: number,
+		endTs: number | null,
+		note = "",
+		source: EntrySource = "manual",
+		dayFraction?: number
+	): Promise<Entry | null> {
+		const month = monthKey(startTs);
+		await this.ensureMonth(month);
+
+		// Regel: Ganztags-Abwesenheit und Projektzeit am selben Tag schließen sich aus.
+		if (this.#reportConflict({ activityId, startTs, dayFraction })) return null;
+
+		const entry: Entry = { id: uid(), activityId, startTs, endTs, note, source };
+		if (dayFraction != null) entry.dayFraction = dayFraction;
+		this.entriesByMonth[month].push(entry);
+		await this.#saveMonth(month);
+		return entry;
+	}
+
+	isAbsenceId(activityId: string): boolean {
+		return !!this.activities.find((a) => a.id === activityId)?.isAbsence;
+	}
+
+	/**
+	 * Aktivitaeten fuer die Timer-Auswahl: ohne Abwesenheiten und ohne ausgeblendete,
+	 * Favoriten zuerst, dann nach Reihenfolge.
+	 */
+	get trackableActivities(): Activity[] {
+		return this.visibleActivities
+			.filter((a) => !a.isAbsence && !a.hidden)
+			.sort((a, b) => Number(!!b.favorite) - Number(!!a.favorite) || a.sortOrder - b.sortOrder);
+	}
+
+	/** Die zuletzt genutzten trackbaren Aktivitaeten (fuer Tray-Schnellstart). */
+	recentActivities(limit = 3): Activity[] {
+		const all: Entry[] = [];
+		for (const list of Object.values(this.entriesByMonth)) all.push(...list);
+		all.sort((a, b) => b.startTs - a.startTs);
+		const seen = new Set<string>();
+		const result: Activity[] = [];
+		for (const e of all) {
+			if (seen.has(e.activityId) || this.isAbsenceId(e.activityId)) continue;
+			const act = this.activities.find((a) => a.id === e.activityId && !a.archived && !a.hidden);
+			if (act) {
+				seen.add(e.activityId);
+				result.push(act);
+			}
+			if (result.length >= limit) break;
+		}
+		for (const act of this.trackableActivities) {
+			if (result.length >= limit) break;
+			if (!seen.has(act.id)) {
+				seen.add(act.id);
+				result.push(act);
+			}
+		}
+		return result.slice(0, limit);
+	}
+
+	/**
+	 * Prüft die Tagesregel (Ganztags-Abwesenheit ⊥ Projektzeit) für einen Eintrag,
+	 * ohne den Eintrag selbst (`excludeId`) mitzuzählen. true = Konflikt.
+	 */
+	#reportConflict(candidate: {
+		activityId: string;
+		startTs: number;
+		dayFraction?: number;
+		id?: string;
+	}): boolean {
+		const conflict = dayConflict(
+			this.monthEntries(monthKey(candidate.startTs)),
+			candidate,
+			this.absenceActivity?.id,
+			{ excludeId: candidate.id }
+		);
+		if (conflict === "full-day-absence") {
+			toast.error("An diesem Tag ist eine Ganztags-Abwesenheit eingetragen.");
+			return true;
+		}
+		if (conflict === "project-time") {
+			toast.error("An diesem Tag gibt es Projektzeiten – nur halber Urlaubstag möglich.");
+			return true;
+		}
+		return false;
+	}
+
+	/** false = wegen Tageskonflikt nicht gespeichert. */
+	async updateEntry(originalStartTs: number, updated: Entry): Promise<boolean> {
+		const oldMonth = monthKey(originalStartTs);
+		const newMonth = monthKey(updated.startTs);
+		await this.ensureMonth(oldMonth);
+		await this.ensureMonth(newMonth);
+		if (this.#reportConflict({ ...updated })) return false;
+		if (oldMonth === newMonth) {
+			const list = this.entriesByMonth[oldMonth];
+			const i = list.findIndex((e) => e.id === updated.id);
+			if (i >= 0) list[i] = updated;
+			await this.#saveMonth(oldMonth);
+		} else {
+			const oldList = this.entriesByMonth[oldMonth];
+			const i = oldList.findIndex((e) => e.id === updated.id);
+			if (i >= 0) oldList.splice(i, 1);
+			this.entriesByMonth[newMonth].push(updated);
+			await this.#saveMonth(oldMonth);
+			await this.#saveMonth(newMonth);
+		}
+		return true;
+	}
+
+	async deleteEntry(entry: Entry): Promise<void> {
+		const month = monthKey(entry.startTs);
+		await this.ensureMonth(month);
+		const list = this.entriesByMonth[month];
+		const i = list.findIndex((e) => e.id === entry.id);
+		if (i >= 0) {
+			list.splice(i, 1);
+			await this.#saveMonth(month);
+		}
+		if (this.running?.id === entry.id) this.running = null;
+	}
+
+	// ---------- Timer ----------
+	#findRunning(): void {
+		for (const month of [this.currentMonth, prevMonthKey()]) {
+			const r = this.entriesByMonth[month]?.find((e) => e.endTs === null);
+			if (r) {
+				this.running = r;
+				return;
+			}
+		}
+	}
+
+	/**
+	 * Serialisiert Timer-Mutationen (Start/Stop/Toggle), damit zwei schnelle
+	 * Klicks/Hotkeys nicht zwei laufende Einträge erzeugen.
+	 */
+	#timerOp: Promise<unknown> = Promise.resolve();
+	#exclusive<T>(fn: () => Promise<T>): Promise<T> {
+		const next = this.#timerOp.then(fn, fn);
+		this.#timerOp = next.then(
+			() => undefined,
+			() => undefined
+		);
+		return next;
+	}
+
+	async #startInternal(activityId: string): Promise<void> {
+		// Abwesenheiten werden nicht per Timer erfasst, sondern als Tage im Einträge-Tab.
+		if (this.isAbsenceId(activityId)) return;
+		if (this.running?.activityId === activityId) return;
+		if (this.hasFullDayAbsence(Date.now())) {
+			toast.error("Heute ist eine Ganztags-Abwesenheit eingetragen – kein Timer möglich.");
+			return;
+		}
+		await this.#stopInternal();
+		const now = Date.now();
+		const entry = await this.addEntry(activityId, now, null, "", "timer");
+		if (entry) this.running = entry;
+	}
+
+	startActivity(activityId: string): Promise<void> {
+		return this.#exclusive(() => this.#startInternal(activityId));
+	}
+
+	/** Startet/stoppt den zuletzt benutzten Timer (fuer globalen Hotkey). */
+	toggleLast(): Promise<void> {
+		return this.#exclusive(async () => {
+			if (this.running) {
+				await this.#stopInternal();
+				return;
+			}
+			const last = this.recentActivities(1)[0];
+			if (last) await this.#startInternal(last.id);
+		});
+	}
+
+	/**
+	 * Legt Abwesenheits-Eintraege fuer einen Datumsbereich an (inkl. beider Tage),
+	 * optional ohne Wochenenden. Gibt die Anzahl angelegter Tage zurueck.
+	 */
+	async addAbsenceRange(
+		startDate: string,
+		endDate: string,
+		fraction = 1,
+		skipWeekends = true
+	): Promise<{ added: number; skipped: number }> {
+		const abs = this.absenceActivity;
+		if (!abs) return { added: 0, skipped: 0 };
+		const start = new Date(startDate + "T12:00:00");
+		const end = new Date(endDate + "T12:00:00");
+		if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) {
+			return { added: 0, skipped: 0 };
+		}
+		let added = 0;
+		let skipped = 0;
+		for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+			const dow = d.getDay();
+			if (skipWeekends && (dow === 0 || dow === 6)) continue;
+			// Ganztags-Konflikt mit Projektzeit -> Tag still überspringen (kein Doppel-Toast).
+			if (fraction >= 1 && this.hasProjectEntry(d.getTime())) {
+				skipped++;
+				continue;
+			}
+			const e = await this.addEntry(abs.id, d.getTime(), d.getTime(), "", "manual", fraction);
+			if (e) added++;
+			else skipped++;
+		}
+		return { added, skipped };
+	}
+
+	async #stopInternal(endTs = Date.now()): Promise<void> {
+		if (!this.running) return;
+		const r = this.running;
+		const month = monthKey(r.startTs);
+		await this.ensureMonth(month);
+		const list = this.entriesByMonth[month];
+		const found = list.find((e) => e.id === r.id);
+		// Ende nie vor dem Start.
+		if (found) found.endTs = Math.max(r.startTs, endTs);
+		this.running = null;
+		await this.#saveMonth(month);
+	}
+
+	stop(endTs = Date.now()): Promise<void> {
+		return this.#exclusive(() => this.#stopInternal(endTs));
+	}
+
+	/** Sekunden des laufenden Timers (oder 0). */
+	get runningSeconds(): number {
+		if (!this.running) return 0;
+		return Math.max(0, Math.floor((this.now - this.running.startTs) / 1000));
+	}
+
+	// ---------- Einstellungen ----------
+	async updateSettings(patch: Partial<Settings>): Promise<void> {
+		this.settings = { ...this.settings, ...patch };
+		await saveSettings($state.snapshot(this.settings) as Settings);
+	}
+}
+
+export const app = new AppState();
