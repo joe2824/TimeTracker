@@ -79,19 +79,63 @@ fn handle_menu_event(app: &tauri::AppHandle, event: tauri::menu::MenuEvent) {
     }
 }
 
+/// Positioniert das Flyout nahe der Klickposition (über dem Cursor) und zeigt es.
+#[cfg(desktop)]
+fn toggle_flyout(app: &tauri::AppHandle, click: tauri::PhysicalPosition<f64>) {
+    let Some(win) = app.get_webview_window("tray") else {
+        return;
+    };
+    if win.is_visible().unwrap_or(false) {
+        let _ = win.hide();
+        return;
+    }
+    if let Ok(size) = win.outer_size() {
+        let mut x = click.x - size.width as f64 / 2.0;
+        let mut y = click.y - size.height as f64 - 8.0; // über dem Cursor (Taskleiste unten)
+        // grob auf den sichtbaren Bereich des Monitors klemmen
+        if let Ok(Some(monitor)) = win.current_monitor() {
+            let mp = monitor.position();
+            let ms = monitor.size();
+            let min_x = mp.x as f64;
+            let max_x = mp.x as f64 + ms.width as f64 - size.width as f64;
+            let min_y = mp.y as f64;
+            let max_y = mp.y as f64 + ms.height as f64 - size.height as f64;
+            x = x.clamp(min_x, max_x.max(min_x));
+            y = y.clamp(min_y, max_y.max(min_y));
+        } else {
+            x = x.max(0.0);
+            y = y.max(0.0);
+        }
+        let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
+    }
+    let _ = win.show();
+    let _ = win.set_focus();
+}
+
 #[cfg(desktop)]
 fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
-    use tauri::tray::TrayIconBuilder;
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 
     let menu = build_tray_menu(app.handle(), &TrayState::default())?;
 
-    // Links-Klick zeigt das Schnellstart-Menue direkt (wie OneDrive).
+    // Links-Klick öffnet das Flyout-Fenster, Rechts-Klick das native Menü (Fallback).
     TrayIconBuilder::with_id("main")
         .icon(app.default_window_icon().unwrap().clone())
         .tooltip("TimeTracker")
         .menu(&menu)
-        .show_menu_on_left_click(true)
+        .show_menu_on_left_click(false)
         .on_menu_event(handle_menu_event)
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                position,
+                ..
+            } = event
+            {
+                toggle_flyout(tray.app_handle(), position);
+            }
+        })
         .build(app)?;
     Ok(())
 }
@@ -194,10 +238,17 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Fenster schliessen = in den Tray legen, App laeuft weiter (Timer/Erinnerungen).
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                let _ = window.hide();
-                api.prevent_close();
+            match event {
+                // Fenster schliessen = in den Tray legen, App laeuft weiter (Timer/Erinnerungen).
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    let _ = window.hide();
+                    api.prevent_close();
+                }
+                // Flyout verschwindet, sobald es den Fokus verliert (wie OneDrive).
+                tauri::WindowEvent::Focused(false) if window.label() == "tray" => {
+                    let _ = window.hide();
+                }
+                _ => {}
             }
         })
         .invoke_handler(tauri::generate_handler![

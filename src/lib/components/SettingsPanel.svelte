@@ -12,6 +12,7 @@
 	import { check, type Update } from "@tauri-apps/plugin-updater";
 	import { relaunch } from "@tauri-apps/plugin-process";
 	import { getVersion } from "@tauri-apps/api/app";
+	import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 	import { openUrl } from "@tauri-apps/plugin-opener";
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { acceleratorFromEvent, applyShortcuts } from "$lib/shortcuts";
@@ -19,11 +20,40 @@
 	import PlusIcon from "@lucide/svelte/icons/plus";
 	import XIcon from "@lucide/svelte/icons/x";
 	import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
-	import DownloadIcon from "@lucide/svelte/icons/download";
+	import WrenchIcon from "@lucide/svelte/icons/wrench";
 
 	const REPO_URL = "https://github.com/joe2824/TimeTracker";
-	const RELEASES_URL = "https://github.com/joe2824/TimeTracker/releases/latest";
 	let appVersion = $state("");
+
+	// Versteckter Dev-Modus: 10× schnell (≤3 s) aufs Logo tippen.
+	let devMode = $state(false);
+	let logoTaps: number[] = [];
+	function tapLogo() {
+		const now = Date.now();
+		logoTaps = logoTaps.filter((t) => now - t < 3000);
+		logoTaps.push(now);
+		if (!devMode && logoTaps.length >= 10) {
+			devMode = true;
+			logoTaps = [];
+			toast.success("Dev-Modus aktiviert");
+		}
+	}
+
+	async function showFlyout() {
+		try {
+			const w = await WebviewWindow.getByLabel("tray");
+			if (!w) {
+				toast.error("Flyout-Fenster nicht gefunden.");
+				return;
+			}
+			await w.show();
+			await w.center();
+			await w.setAlwaysOnTop(true);
+			await w.setFocus();
+		} catch (e) {
+			toast.error(`Flyout-Fehler: ${e}`, { duration: 60000 });
+		}
+	}
 
 	let bossEmail = $state(app.settings.bossEmail);
 	let senderName = $state(app.settings.senderName);
@@ -241,29 +271,6 @@
 	</Card.Root>
 
 	<Card.Root>
-		<Card.Header><Card.Title>System</Card.Title></Card.Header>
-		<Card.Content class="space-y-4">
-			<div class="flex items-center justify-between space-x-2">
-				<Label for="autostart" class="flex flex-col items-start gap-1">
-					<span class="text-sm font-medium">Mit Windows starten</span>
-					<span class="text-muted-foreground text-xs font-normal">App läuft im Hintergrund (Tray).</span>
-				</Label>
-				<Switch id="autostart" bind:checked={autostart} onCheckedChange={toggleAutostart} />
-			</div>
-			<div class="flex items-center justify-between space-x-2">
-				<Label for="autocleanup" class="flex flex-col items-start gap-1">
-					<span class="text-sm font-medium">Alte Monate automatisch löschen</span>
-					<span class="text-muted-foreground text-xs font-normal">Monatsdateien älter als 12 Monate.</span>
-				</Label>
-				<Switch id="autocleanup" bind:checked={autoCleanup} onCheckedChange={toggleCleanup} />
-			</div>
-			<Button variant="outline" onclick={checkUpdate} disabled={checking}>
-				{checking ? "Suche…" : "Nach Updates suchen"}
-			</Button>
-		</Card.Content>
-	</Card.Root>
-
-	<Card.Root>
 		<Card.Header>
 			<Card.Title>Zeiterfassung</Card.Title>
 			<Card.Description>Verhalten von Timer, Hinweisen und Hotkey.</Card.Description>
@@ -328,19 +335,51 @@
 	</Card.Root>
 
 	<Card.Root>
+		<Card.Header><Card.Title>System</Card.Title></Card.Header>
+		<Card.Content class="space-y-4">
+			<div class="flex items-center justify-between space-x-2">
+				<Label for="autostart" class="flex flex-col items-start gap-1">
+					<span class="text-sm font-medium">Mit Windows starten</span>
+					<span class="text-muted-foreground text-xs font-normal">App läuft im Hintergrund (Tray).</span>
+				</Label>
+				<Switch id="autostart" bind:checked={autostart} onCheckedChange={toggleAutostart} />
+			</div>
+			<div class="flex items-center justify-between space-x-2">
+				<Label for="autocleanup" class="flex flex-col items-start gap-1">
+					<span class="text-sm font-medium">Alte Monate automatisch löschen</span>
+					<span class="text-muted-foreground text-xs font-normal">Monatsdateien älter als 12 Monate.</span>
+				</Label>
+				<Switch id="autocleanup" bind:checked={autoCleanup} onCheckedChange={toggleCleanup} />
+			</div>
+			<Button variant="outline" onclick={checkUpdate} disabled={checking}>
+				{checking ? "Suche…" : "Nach Updates suchen"}
+			</Button>
+		</Card.Content>
+	</Card.Root>
+
+	<Card.Root>
 		<Card.Header><Card.Title>Über</Card.Title></Card.Header>
 		<Card.Content class="space-y-3">
 			<div class="flex items-center gap-3">
-				<img src="/logo.svg" alt="TimeTracker" class="h-10 w-auto" />
+				<button type="button" class="cursor-pointer" onclick={tapLogo} aria-label="TimeTracker">
+					<img src="/logo.svg" alt="TimeTracker" class="h-10 w-auto" />
+				</button>
 				<div>
-					<div class="text-sm font-medium">TimeTracker</div>
+					<div class="flex items-center gap-1.5">
+						<span class="text-sm font-medium">TimeTracker</span>
+						{#if devMode}
+							<span
+								class="bg-primary/10 text-primary inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium"
+								title="Dev-Modus aktiv"
+							>
+								<WrenchIcon class="size-3" /> Dev
+							</span>
+						{/if}
+					</div>
 					<div class="text-muted-foreground text-xs">Version {appVersion || "—"}</div>
 				</div>
 			</div>
 			<div class="flex flex-wrap gap-2">
-				<Button variant="outline" size="sm" onclick={() => openUrl(RELEASES_URL)}>
-					<DownloadIcon class="size-4" /> Neueste Version
-				</Button>
 				<Button variant="outline" size="sm" onclick={() => openUrl(REPO_URL)}>
 					<ExternalLinkIcon class="size-4" /> GitHub
 				</Button>
@@ -348,6 +387,15 @@
 			<p class="text-muted-foreground text-xs">
 				Zeiterfassung für Projektzeiten mit Monatsbericht.
 			</p>
+
+			{#if devMode}
+				<div class="border-t pt-3">
+					<div class="text-muted-foreground mb-2 text-xs font-medium">Dev</div>
+					<Button variant="secondary" size="sm" onclick={showFlyout}>
+						Tray-Flyout anzeigen
+					</Button>
+				</div>
+			{/if}
 		</Card.Content>
 	</Card.Root>
 </div>

@@ -59,6 +59,23 @@ class AppState {
 		}, 1000);
 	}
 
+	/**
+	 * Liest Aktivitäten/Einstellungen/aktuelle Monate neu von Platte.
+	 * Für das zweite Fenster (Tray-Flyout) und fensterübergreifende Updates,
+	 * da jede Webview ihren eigenen Zustand hat.
+	 */
+	async reload(): Promise<void> {
+		this.activities = await loadActivities();
+		this.settings = await loadSettings();
+		for (const m of [this.currentMonth, prevMonthKey()]) {
+			this.entriesByMonth[m] = await loadEntries(m);
+		}
+		this.running = null;
+		this.#findRunning();
+		this.now = Date.now();
+		this.loaded = true;
+	}
+
 	get currentMonth(): string {
 		return monthKey(this.now);
 	}
@@ -387,13 +404,41 @@ class AppState {
 	}
 
 	// ---------- Timer ----------
-	#findRunning(): void {
-		for (const month of [this.currentMonth, prevMonthKey()]) {
-			const r = this.entriesByMonth[month]?.find((e) => e.endTs === null);
-			if (r) {
-				this.running = r;
-				return;
+	/** Alle aktuell offenen Einträge (endTs === null) über die geladenen Monate. */
+	#openEntries(): Entry[] {
+		const out: Entry[] = [];
+		for (const list of Object.values(this.entriesByMonth)) {
+			for (const e of list) if (e.endTs === null) out.push(e);
+		}
+		return out;
+	}
+
+	/** Schließt ALLE offenen Einträge (egal welches Fenster sie öffnete). running = null. */
+	async #closeAllOpen(endTs = Date.now()): Promise<void> {
+		const months = new Set<string>();
+		for (const [m, list] of Object.entries(this.entriesByMonth)) {
+			for (const e of list) {
+				if (e.endTs === null) {
+					e.endTs = Math.max(e.startTs, endTs);
+					months.add(m);
+				}
 			}
+		}
+		this.running = null;
+		for (const m of months) await this.#saveMonth(m);
+	}
+
+	#findRunning(): void {
+		// Neueste offene Aktivität ist die laufende; etwaige ältere Duplikate schließen.
+		const open = this.#openEntries().sort((a, b) => b.startTs - a.startTs);
+		this.running = open[0] ?? null;
+		if (open.length > 1) {
+			const months = new Set<string>();
+			for (const e of open.slice(1)) {
+				e.endTs = e.startTs; // Duplikat ohne Dauer schließen
+				months.add(monthKey(e.startTs));
+			}
+			void Promise.all([...months].map((m) => this.#saveMonth(m)));
 		}
 	}
 
@@ -414,15 +459,34 @@ class AppState {
 	async #startInternal(activityId: string): Promise<void> {
 		// Abwesenheiten werden nicht per Timer erfasst, sondern als Tage im Einträge-Tab.
 		if (this.isAbsenceId(activityId)) return;
+		// Läuft genau diese Aktivität schon? -> nichts tun (kein zweiter Eintrag).
 		if (this.running?.activityId === activityId) return;
-		if (this.hasFullDayAbsence(Date.now())) {
+		const now = Date.now();
+		if (this.hasFullDayAbsence(now)) {
 			toast.error("Heute ist eine Ganztags-Abwesenheit eingetragen – kein Timer möglich.");
 			return;
 		}
-		await this.#stopInternal();
-		const now = Date.now();
-		const entry = await this.addEntry(activityId, now, null, "", "timer");
-		if (entry) this.running = entry;
+		const month = monthKey(now);
+		await this.ensureMonth(month);
+
+		// Wechsel ohne Flackern: alten Timer schließen UND neuen setzen in EINEM
+		// synchronen Schritt (kein await dazwischen -> running wird nie kurz null).
+		const months = new Set<string>();
+		for (const [m, list] of Object.entries(this.entriesByMonth)) {
+			for (const e of list) {
+				if (e.endTs === null) {
+					e.endTs = Math.max(e.startTs, now);
+					months.add(m);
+				}
+			}
+		}
+		const entry: Entry = { id: uid(), activityId, startTs: now, endTs: null, note: "", source: "timer" };
+		this.entriesByMonth[month].push(entry);
+		this.running = entry;
+		months.add(month);
+
+		// Persistieren erst danach (beeinflusst die UI nicht mehr).
+		for (const m of months) await this.#saveMonth(m);
 	}
 
 	startActivity(activityId: string): Promise<void> {
@@ -476,16 +540,8 @@ class AppState {
 	}
 
 	async #stopInternal(endTs = Date.now()): Promise<void> {
-		if (!this.running) return;
-		const r = this.running;
-		const month = monthKey(r.startTs);
-		await this.ensureMonth(month);
-		const list = this.entriesByMonth[month];
-		const found = list.find((e) => e.id === r.id);
-		// Ende nie vor dem Start.
-		if (found) found.endTs = Math.max(r.startTs, endTs);
-		this.running = null;
-		await this.#saveMonth(month);
+		// Jeden offenen Eintrag schließen (nicht nur this.running).
+		await this.#closeAllOpen(endTs);
 	}
 
 	stop(endTs = Date.now()): Promise<void> {

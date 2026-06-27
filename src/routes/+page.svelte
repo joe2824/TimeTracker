@@ -52,7 +52,9 @@
 
 			unlisteners.push(
 				await listen("tray-stop-timer", () => void app.stop()),
-				await listen<string>("tray-start-activity", (e) => void app.startActivity(e.payload))
+				await listen<string>("tray-start-activity", (e) => void app.startActivity(e.payload)),
+				// Flyout-Fenster hat Daten geändert -> neu laden.
+				await listen("data-reload", () => void app.reload())
 			);
 
 			// Beim Start still nach Updates suchen und ggf. Hinweis zeigen.

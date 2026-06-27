@@ -19,6 +19,20 @@
         "minWidth": 720,
         "minHeight": 560,
         "dragDropEnabled": false
+      },
+      {
+        "label": "tray",
+        "url": "/tray",
+        "title": "TimeTracker Schnellzugriff",
+        "width": 300,
+        "height": 420,
+        "decorations": false,
+        "resizable": false,
+        "skipTaskbar": true,
+        "alwaysOnTop": true,
+        "visible": false,
+        "focus": false,
+        "dragDropEnabled": false
       }
     ],
     "security": {

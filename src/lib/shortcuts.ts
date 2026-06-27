@@ -32,8 +32,8 @@ export async function applyShortcuts(): Promise<void> {
 				void app.toggleLast().then(() => {
 					notifyShortcut(
 						app.running
-							? `▶ ${app.activityName(app.running.activityId)} gestartet`
-							: "■ Timer gestoppt"
+							? `Timer gestartet: ${app.activityName(app.running.activityId)}`
+							: "Timer gestoppt"
 					);
 				});
 			});
