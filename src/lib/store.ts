@@ -38,16 +38,21 @@ async function readJson<T>(file: string, fallback: T): Promise<T> {
 
 async function writeJson(file: string, data: unknown): Promise<void> {
 	await ensureDir();
-	// Atomar schreiben: erst in eine temp-Datei, dann per rename ersetzen.
-	// So bleibt bei einem Absturz mitten im Schreiben die alte Datei intakt
-	// (std::fs::rename überschreibt das Ziel auf Windows wie Unix atomar).
 	const target = `${DIR}/${file}`;
+	const json = JSON.stringify(data, null, 2);
+	// Bevorzugt atomar: temp-Datei + rename (überschreibt das Ziel atomar).
+	// Falls rename nicht erlaubt/möglich ist, direkt schreiben – Speichern darf
+	// nie fehlschlagen, sonst bliebe z.B. ein gestarteter Timer ungespeichert.
 	const tmp = `${DIR}/.${file}.tmp`;
-	await writeTextFile(tmp, JSON.stringify(data, null, 2), baseOpts);
-	await rename(tmp, target, {
-		oldPathBaseDir: BaseDirectory.AppData,
-		newPathBaseDir: BaseDirectory.AppData
-	});
+	try {
+		await writeTextFile(tmp, json, baseOpts);
+		await rename(tmp, target, {
+			oldPathBaseDir: BaseDirectory.AppData,
+			newPathBaseDir: BaseDirectory.AppData
+		});
+	} catch {
+		await writeTextFile(target, json, baseOpts);
+	}
 }
 
 /** "YYYY-MM" fuer einen Zeitstempel (Lokalzeit). */
