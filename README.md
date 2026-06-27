@@ -11,8 +11,6 @@ und **Tailwind CSS v4** / shadcn-svelte.
 
 Neueste Version (Windows-Installer): **<https://github.com/joe2824/TimeTracker/releases/latest>**
 
-Direkter Setup-Download der aktuellen Version (v0.1.0):
-<https://github.com/joe2824/TimeTracker/releases/download/v0.1.0/TimeTracker_0.1.0_x64-setup.exe>
 
 Die App aktualisiert sich anschließend selbst (Einstellungen → „Nach Updates suchen").
 
