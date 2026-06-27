@@ -72,7 +72,7 @@ async function tick() {
 	// --- Pomodoro/Pausen-Erinnerung ---
 	if (s.pomodoroEnabled && s.pomodoroMin > 0 && elapsedSec >= s.pomodoroMin * 60 && !pomodoroNotified) {
 		pomodoroNotified = true;
-		void notify("TimeTracker – Zeit für eine Pause", `${s.pomodoroMin} min fokussiert gearbeitet. 🧘`);
+		void notify("TimeTracker – Zeit für eine Pause", `${s.pomodoroMin} min fokussiert gearbeitet.`);
 	}
 
 	// --- Leerlauf-Erkennung ---
