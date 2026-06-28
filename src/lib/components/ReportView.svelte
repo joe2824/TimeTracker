@@ -50,6 +50,7 @@
 		sending = true;
 		try {
 			await createOutlookDraft(app.settings.bossEmail, subject, html);
+			await app.markReportSent(month);
 			toast.success("Outlook-Entwurf geöffnet. Bitte prüfen und senden.");
 		} catch (e) {
 			toast.error(`Outlook-Entwurf fehlgeschlagen: ${e}. Tipp: „HTML kopieren“ und manuell einfügen.`);

@@ -6,7 +6,7 @@
 	import { check } from "@tauri-apps/plugin-updater";
 	import { toast } from "svelte-sonner";
 	import { app } from "$lib/app.svelte";
-	import { scheduleReminders } from "$lib/reminders";
+	import { scheduleReminders, scheduleReportReminder } from "$lib/reminders";
 	import { applyShortcuts } from "$lib/shortcuts";
 	import { startWatchers, stopWatchers } from "$lib/watchers.svelte";
 	import * as Tabs from "$lib/components/ui/tabs";
@@ -22,6 +22,7 @@
 	import SettingsPanel from "$lib/components/SettingsPanel.svelte";
 	import IdleDialog from "$lib/components/IdleDialog.svelte";
 	import CommandPalette from "$lib/components/CommandPalette.svelte";
+	import ReportReminderDialog from "$lib/components/ReportReminderDialog.svelte";
 
 	let tab = $state("tracking");
 	let paletteOpen = $state(false);
@@ -38,6 +39,7 @@
 		(async () => {
 			await app.init();
 			scheduleReminders();
+			scheduleReportReminder();
 			void applyShortcuts();
 			startWatchers();
 
@@ -106,17 +108,17 @@
 		<header
 			class="bg-background/80 supports-backdrop-filter:bg-background/60 sticky top-0 z-30 border-b backdrop-blur"
 		>
-			<div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-6 py-2.5">
+			<div class="mx-auto grid max-w-6xl grid-cols-[1fr_auto_1fr] items-center gap-x-6 px-6 py-2.5">
 				<button
 					type="button"
 					onclick={() => (tab = "tracking")}
-					class="shrink-0 cursor-pointer rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+					class="cursor-pointer justify-self-start rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 					aria-label="Startseite"
 				>
 					<img src="/logo.svg" alt="TimeTracker" class="h-12 w-auto transition-transform hover:scale-105" />
 				</button>
 
-				<Tabs.List variant="line" class="gap-2">
+				<Tabs.List variant="line" class="justify-self-center gap-2">
 					<Tabs.Trigger value="tracking"><TimerIcon />Tracking</Tabs.Trigger>
 					<Tabs.Trigger value="entries"><PencilLineIcon />Einträge</Tabs.Trigger>
 					<Tabs.Trigger value="report"><ChartColumnIcon />Bericht</Tabs.Trigger>
@@ -124,19 +126,22 @@
 					<Tabs.Trigger value="settings"><SettingsIcon />Einstellungen</Tabs.Trigger>
 				</Tabs.List>
 
-				{#if app.running}
-					<span
-						class="border-primary/20 bg-primary/10 text-primary ml-auto inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium"
-					>
-						<span class="relative flex size-2">
-							<span
-								class="bg-primary absolute inline-flex size-full animate-ping rounded-full opacity-75"
-							></span>
-							<span class="bg-primary relative inline-flex size-2 rounded-full"></span>
+				<!-- reservierte rechte Spalte: Pill verschiebt die Tabs nicht mehr -->
+				<div class="justify-self-end">
+					{#if app.running}
+						<span
+							class="border-primary/20 bg-primary/10 text-primary inline-flex max-w-45 items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium"
+						>
+							<span class="relative flex size-2 shrink-0">
+								<span
+									class="bg-primary absolute inline-flex size-full animate-ping rounded-full opacity-75"
+								></span>
+								<span class="bg-primary relative inline-flex size-2 rounded-full"></span>
+							</span>
+							<span class="truncate">{app.activityName(app.running.activityId)}</span>
 						</span>
-						{app.activityName(app.running.activityId)}
-					</span>
-				{/if}
+					{/if}
+				</div>
 			</div>
 		</header>
 
@@ -160,6 +165,7 @@
 	</Tabs.Root>
 
 	<IdleDialog />
+	<ReportReminderDialog />
 	<CommandPalette bind:open={paletteOpen} onNavigate={(t) => (tab = t)} />
 {/if}
 

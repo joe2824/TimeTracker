@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from "svelte";
 	import { app } from "$lib/app.svelte";
-	import { scheduleReminders, ensureNotificationPermission } from "$lib/reminders";
+	import { scheduleReminders, scheduleReportReminder, ensureNotificationPermission } from "$lib/reminders";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
@@ -61,6 +61,9 @@
 	let hoursPerDay = $state(String(app.settings.hoursPerDay));
 	let subjectTpl = $state(app.settings.reportSubjectTemplate);
 	let times = $state<string[]>([...app.settings.reminderTimes]);
+	let reportReminder = $state(app.settings.reportReminderEnabled);
+	let reportTime = $state(app.settings.reportReminderTime);
+	let reportLead = $state(String(app.settings.reportReminderLeadDays));
 	let autostart = $state(app.settings.autostart);
 	let autoCleanup = $state(app.settings.autoCleanup);
 
@@ -68,6 +71,7 @@
 	let maxHours = $state(String(app.settings.maxTimerHours));
 	let pomodoroEnabled = $state(app.settings.pomodoroEnabled);
 	let pomodoroMin = $state(String(app.settings.pomodoroMin));
+	let pomodoroBreakMin = $state(String(app.settings.pomodoroBreakMin));
 	let shortcutNotify = $state(app.settings.shortcutNotify);
 	let recordingToggle = $state(false);
 
@@ -77,6 +81,7 @@
 			maxTimerHours: Math.max(0, Number(maxHours) || 0),
 			pomodoroEnabled,
 			pomodoroMin: Math.max(1, Number(pomodoroMin) || 50),
+			pomodoroBreakMin: Math.max(0, Number(pomodoroBreakMin) || 0),
 			shortcutNotify
 		});
 		toast.success("Zeiterfassungs-Einstellungen gespeichert.");
@@ -133,8 +138,14 @@
 
 	async function saveTimes() {
 		const clean = times.map((t) => t.trim()).filter(Boolean);
-		await app.updateSettings({ reminderTimes: clean });
+		await app.updateSettings({
+			reminderTimes: clean,
+			reportReminderEnabled: reportReminder,
+			reportReminderTime: reportTime || "16:00",
+			reportReminderLeadDays: Math.max(0, Number(reportLead) || 0)
+		});
 		scheduleReminders();
+		scheduleReportReminder();
 		await ensureNotificationPermission();
 		toast.success("Erinnerungen aktualisiert.");
 	}
@@ -265,8 +276,34 @@
 				<Button variant="outline" size="sm" onclick={() => (times = [...times, "14:00"])}>
 					<PlusIcon class="size-4" /> Uhrzeit
 				</Button>
-				<Button size="sm" onclick={saveTimes}>Erinnerungen speichern</Button>
 			</div>
+
+			<div class="space-y-2 border-t pt-3">
+				<div class="flex items-center justify-between space-x-2">
+					<Label for="reprem" class="flex flex-col items-start gap-1">
+						<span class="text-sm font-medium">Monatlicher Bericht-Hinweis</span>
+						<span class="text-muted-foreground text-xs font-normal">
+							Am letzten Werktag erinnern, den Bericht zu senden.
+						</span>
+					</Label>
+					<Switch id="reprem" bind:checked={reportReminder} />
+				</div>
+				{#if reportReminder}
+					<div class="grid grid-cols-2 gap-2">
+						<div class="space-y-1">
+							<Label for="replead">Werktage vorher</Label>
+							<Input id="replead" type="number" min="0" max="10" bind:value={reportLead} />
+							<p class="text-muted-foreground text-xs">0 = letzter Werktag.</p>
+						</div>
+						<div class="space-y-1">
+							<Label for="reptime">Uhrzeit</Label>
+							<Input id="reptime" type="time" bind:value={reportTime} />
+						</div>
+					</div>
+				{/if}
+			</div>
+
+			<Button size="sm" onclick={saveTimes}>Erinnerungen speichern</Button>
 		</Card.Content>
 	</Card.Root>
 
@@ -297,15 +334,23 @@
 
 			<div class="flex items-center justify-between space-x-2">
 				<Label for="pomo" class="flex flex-col items-start gap-1">
-					<span class="text-sm font-medium">Pausen-Erinnerung (Pomodoro)</span>
-					<span class="text-muted-foreground text-xs font-normal">Hinweis nach langer Fokuszeit.</span>
+					<span class="text-sm font-medium">Pomodoro</span>
+					<span class="text-muted-foreground text-xs font-normal">
+						Fokus-/Pausen-Zyklus mit Hinweisen (optional).
+					</span>
 				</Label>
 				<Switch id="pomo" bind:checked={pomodoroEnabled} />
 			</div>
 			{#if pomodoroEnabled}
-				<div class="space-y-1">
-					<Label for="pomomin">Fokus-Dauer (Min)</Label>
-					<Input id="pomomin" type="number" min="1" bind:value={pomodoroMin} class="w-32" />
+				<div class="grid grid-cols-2 gap-2">
+					<div class="space-y-1">
+						<Label for="pomomin">Fokus (Min)</Label>
+						<Input id="pomomin" type="number" min="1" bind:value={pomodoroMin} />
+					</div>
+					<div class="space-y-1">
+						<Label for="pomobreak">Pause (Min, 0 = aus)</Label>
+						<Input id="pomobreak" type="number" min="0" bind:value={pomodoroBreakMin} />
+					</div>
 				</div>
 			{/if}
 
