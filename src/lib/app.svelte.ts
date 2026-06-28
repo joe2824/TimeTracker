@@ -554,6 +554,49 @@ class AppState {
 		return Math.max(0, Math.floor((this.now - this.running.startTs) / 1000));
 	}
 
+	/**
+	 * Aktuelle Pomodoro-Phase des laufenden Timers (oder null).
+	 * Zyklus = Fokus + Pause; bei Pause = 0 gibt es nur die Fokus-Phase.
+	 */
+	get pomodoro(): { phase: "focus" | "break"; remaining: number; cycleIndex: number } | null {
+		const s = this.settings;
+		if (!s.pomodoroEnabled || !this.running || s.pomodoroMin <= 0) return null;
+		const focus = s.pomodoroMin * 60;
+		const brk = Math.max(0, s.pomodoroBreakMin) * 60;
+		const cycle = focus + brk;
+		const pos = this.runningSeconds % cycle;
+		const cycleIndex = Math.floor(this.runningSeconds / cycle);
+		if (brk > 0 && pos >= focus) {
+			return { phase: "break", remaining: cycle - pos, cycleIndex };
+		}
+		return { phase: "focus", remaining: focus - pos, cycleIndex };
+	}
+
+	// ---------- Berichts-Status ----------
+	isReportSent(month: string): boolean {
+		return this.settings.reportSentMonths.includes(month);
+	}
+
+	/** Markiert einen Monat als erledigt (gesendet oder „nicht mehr erinnern"). */
+	async markReportSent(month: string): Promise<void> {
+		if (this.isReportSent(month)) return;
+		await this.updateSettings({
+			reportSentMonths: [...this.settings.reportSentMonths, month]
+		});
+	}
+
+	/**
+	 * Vormonat, falls wir bereits im Folgemonat sind, er Einträge hat und der
+	 * Bericht noch nicht erledigt wurde – sonst null.
+	 */
+	get pendingReportMonth(): string | null {
+		const prev = prevMonthKey();
+		if (prev === this.currentMonth) return null;
+		if (this.isReportSent(prev)) return null;
+		if ((this.entriesByMonth[prev] ?? []).length === 0) return null;
+		return prev;
+	}
+
 	// ---------- Einstellungen ----------
 	async updateSettings(patch: Partial<Settings>): Promise<void> {
 		this.settings = { ...this.settings, ...patch };
