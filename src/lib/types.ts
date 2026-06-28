@@ -72,8 +72,18 @@ export interface Settings {
 	pomodoroEnabled: boolean;
 	/** Fokus-Dauer in Minuten bis zur Pausen-Erinnerung */
 	pomodoroMin: number;
+	/** Pausendauer in Minuten (0 = nur Fokus-Hinweis ohne Pausenzyklus) */
+	pomodoroBreakMin: number;
 	/** Kurze (auto-schließende) Benachrichtigung beim Start/Stop per Shortcut/Hotkey */
 	shortcutNotify: boolean;
+	/** Monatliche Erinnerung, den Bericht an den Chef zu senden */
+	reportReminderEnabled: boolean;
+	/** Uhrzeit der Berichts-Erinnerung am letzten Werktag des Monats ("HH:MM") */
+	reportReminderTime: string;
+	/** Wie viele Werktage VOR dem letzten Werktag erinnert wird (0 = letzter Werktag) */
+	reportReminderLeadDays: number;
+	/** Monate (YYYY-MM), deren Bericht gesendet oder bewusst ignoriert wurde */
+	reportSentMonths: string[];
 }
 
 export const defaultSettings: Settings = {
@@ -91,7 +101,12 @@ export const defaultSettings: Settings = {
 	toggleShortcut: "",
 	pomodoroEnabled: false,
 	pomodoroMin: 50,
-	shortcutNotify: true
+	pomodoroBreakMin: 10,
+	shortcutNotify: true,
+	reportReminderEnabled: true,
+	reportReminderTime: "16:00",
+	reportReminderLeadDays: 0,
+	reportSentMonths: []
 };
 
 /** Namen der eingebauten Zeilen, die immer im Bericht erscheinen. */

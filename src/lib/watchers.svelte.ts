@@ -15,7 +15,10 @@ export const watchers = new WatcherState();
 
 let interval: ReturnType<typeof setInterval> | null = null;
 let autoStopNotified = false;
-let pomodoroNotified = false;
+/** Schlüssel der zuletzt benachrichtigten Pomodoro-Phase ("idx:f"|"idx:b"). */
+let lastPomoKey: string | null = null;
+/** Signatur der Pomodoro-Dauern; ändert sich -> Phasen-Key zurücksetzen. */
+let lastPomoSig = "";
 /** Prompt bereits gezeigt; bleibt true bis der Nutzer wieder aktiv ist (idle < Schwelle). */
 let idlePromptShown = false;
 /** Eintrags-id des zuletzt gesehenen laufenden Timers (für Flag-Reset bei Wechsel). */
@@ -29,7 +32,7 @@ async function notify(title: string, body: string) {
 
 function resetFlags() {
 	autoStopNotified = false;
-	pomodoroNotified = false;
+	lastPomoKey = null;
 	idlePromptShown = false;
 }
 
@@ -69,10 +72,38 @@ async function tick() {
 		);
 	}
 
-	// --- Pomodoro/Pausen-Erinnerung ---
-	if (s.pomodoroEnabled && s.pomodoroMin > 0 && elapsedSec >= s.pomodoroMin * 60 && !pomodoroNotified) {
-		pomodoroNotified = true;
-		void notify("TimeTracker – Zeit für eine Pause", `${s.pomodoroMin} min fokussiert gearbeitet.`);
+	// --- Pomodoro: Fokus->Pause->Fokus-Zyklus (optionales Feature) ---
+	// Geänderte Dauer-Einstellungen verschieben den Zyklus -> Key zurücksetzen,
+	// damit kein versehentlicher Hinweis durch den Sprung ausgelöst wird.
+	const pomoSig = `${s.pomodoroMin}:${s.pomodoroBreakMin}`;
+	if (pomoSig !== lastPomoSig) {
+		lastPomoSig = pomoSig;
+		lastPomoKey = null;
+	}
+	const pomo = app.pomodoro;
+	if (pomo) {
+		const key = `${pomo.cycleIndex}:${pomo.phase}`;
+		if (key !== lastPomoKey) {
+			// Erste Beobachtung nur merken (kein Hinweis beim Start des Timers).
+			if (lastPomoKey !== null) {
+				if (pomo.phase === "break") {
+					void notify(
+						"TimeTracker – Zeit für eine Pause",
+						`${s.pomodoroMin} min fokussiert. ${s.pomodoroBreakMin} min Pause.`
+					);
+				} else if (s.pomodoroBreakMin > 0) {
+					void notify("TimeTracker – Weiter geht's", "Pause vorbei – zurück zum Fokus.");
+				} else {
+					void notify(
+						"TimeTracker – Zeit für eine Pause",
+						`${s.pomodoroMin} min fokussiert gearbeitet.`
+					);
+				}
+			}
+			lastPomoKey = key;
+		}
+	} else {
+		lastPomoKey = null;
 	}
 
 	// --- Leerlauf-Erkennung ---
