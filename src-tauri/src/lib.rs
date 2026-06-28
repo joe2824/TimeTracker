@@ -202,11 +202,21 @@ fn show_main(app: &tauri::AppHandle) {
 pub fn run() {
     let mut builder = tauri::Builder::default();
 
+    // Desktop-Plugins direkt in der Builder-Kette registrieren (kanonisch),
+    // damit ihre Commands garantiert verfügbar sind, bevor ein Fenster lädt.
     #[cfg(desktop)]
     {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            show_main(app);
-        }));
+        builder = builder
+            .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+                show_main(app);
+            }))
+            .plugin(tauri_plugin_autostart::init(
+                tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+                Some(vec!["--autostart-hidden"]),
+            ))
+            .plugin(tauri_plugin_updater::Builder::new().build())
+            .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+            .plugin(tauri_plugin_process::init());
     }
 
     builder
@@ -217,15 +227,6 @@ pub fn run() {
         .setup(|app| {
             #[cfg(desktop)]
             {
-                app.handle().plugin(tauri_plugin_autostart::init(
-                    tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-                    Some(vec!["--autostart-hidden"]),
-                ))?;
-                app.handle()
-                    .plugin(tauri_plugin_updater::Builder::new().build())?;
-                app.handle()
-                    .plugin(tauri_plugin_global_shortcut::Builder::new().build())?;
-                app.handle().plugin(tauri_plugin_process::init())?;
                 setup_tray(app)?;
 
                 // Beim Autostart (Login) versteckt im Tray bleiben.
