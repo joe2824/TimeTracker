@@ -35,6 +35,17 @@
 							{fmtHMS(app.runningSeconds)}
 						</div>
 						<div class="text-muted-foreground text-xs">seit {fmtClock(app.running.startTs)}</div>
+						{#if app.pomodoro}
+							{@const p = app.pomodoro}
+							<div
+								class="mt-2 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium {p.phase ===
+								'break'
+									? 'bg-green-500/15 text-green-600 dark:text-green-400'
+									: 'bg-primary/10 text-primary'}"
+							>
+								{p.phase === "break" ? "Pause" : "Fokus"} · noch {fmtHMS(p.remaining)}
+							</div>
+						{/if}
 					</div>
 					<Button variant="destructive" onclick={() => app.stop()}>
 						<SquareIcon class="size-4" /> Stopp

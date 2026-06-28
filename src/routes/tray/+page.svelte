@@ -3,15 +3,14 @@
 	import { app } from "$lib/app.svelte";
 	import { fmtHMS } from "$lib/time";
 	import { Button } from "$lib/components/ui/button";
-	import { getCurrentWindow } from "@tauri-apps/api/window";
-	import { Window } from "@tauri-apps/api/window";
+	import { WebviewWindow, getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 	import { emit } from "@tauri-apps/api/event";
 	import SquareIcon from "@lucide/svelte/icons/square";
 	import PlayIcon from "@lucide/svelte/icons/play";
 	import StarIcon from "@lucide/svelte/icons/star";
 	import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
 
-	const win = getCurrentWindow();
+	const win = getCurrentWebviewWindow();
 
 	// Schnellstart: Favoriten zuerst, dann zuletzt benutzte.
 	const quick = $derived.by(() => {
@@ -55,7 +54,7 @@
 		await emit("data-reload");
 	}
 	async function openMain() {
-		const main = await Window.getByLabel("main");
+		const main = await WebviewWindow.getByLabel("main");
 		await main?.show();
 		await main?.unminimize();
 		await main?.setFocus();
