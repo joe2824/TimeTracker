@@ -8,6 +8,8 @@ import {
 	fmtHours,
 	minToClock,
 	monthLabel,
+	parseClock,
+	parseHours,
 	roundHours
 } from "./time";
 import type { Entry } from "./types";
@@ -126,6 +128,60 @@ describe("minToClock", () => {
 		expect(minToClock(1500)).toBe("01:00");
 		expect(minToClock(-60)).toBe("23:00");
 		expect(minToClock(90.6)).toBe("01:31");
+	});
+});
+
+describe("parseClock", () => {
+	it("parst Ziffern ohne Trenner", () => {
+		expect(parseClock("1800")).toBe("18:00");
+		expect(parseClock("830")).toBe("08:30");
+		expect(parseClock("8")).toBe("08:00");
+		expect(parseClock("18")).toBe("18:00");
+		expect(parseClock("0")).toBe("00:00");
+	});
+
+	it("parst mit Trenner", () => {
+		expect(parseClock("18:00")).toBe("18:00");
+		expect(parseClock("8:05")).toBe("08:05");
+		expect(parseClock("18.30")).toBe("18:30");
+		expect(parseClock("18,30")).toBe("18:30");
+		expect(parseClock("18h30")).toBe("18:30");
+	});
+
+	it("gibt null bei ungültiger Eingabe", () => {
+		expect(parseClock("")).toBeNull();
+		expect(parseClock("2500")).toBeNull();
+		expect(parseClock("18:60")).toBeNull();
+		expect(parseClock("12345")).toBeNull();
+		expect(parseClock("abc")).toBeNull();
+	});
+});
+
+describe("parseHours", () => {
+	it("parst Dezimaleingabe mit Komma und Punkt", () => {
+		expect(parseHours("7,5")).toBe(7.5);
+		expect(parseHours("7.5")).toBe(7.5);
+		expect(parseHours("0")).toBe(0);
+		expect(parseHours(" 1,25 ")).toBe(1.25);
+	});
+
+	it("parst Uhrzeit-Format", () => {
+		expect(parseHours("7:30")).toBe(7.5);
+		expect(parseHours("0:15")).toBe(0.25);
+		expect(parseHours("8:00")).toBe(8);
+	});
+
+	it("gibt null bei ungültiger Eingabe", () => {
+		expect(parseHours("")).toBeNull();
+		expect(parseHours("abc")).toBeNull();
+		expect(parseHours("7:60")).toBeNull();
+		expect(parseHours("30:00")).toBeNull(); // Uhrzeit-Format: Stunden 0–23
+		expect(parseHours("-1")).toBeNull();
+	});
+
+	it("lässt große Dezimalsummen zu (Monatspauschale)", () => {
+		expect(parseHours("80")).toBe(80);
+		expect(parseHours("37,5")).toBe(37.5);
 	});
 });
 

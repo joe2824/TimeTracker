@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
-	import { fmtDate, fmtHours } from "$lib/time";
+	import { fmtDate, fmtHours, parseClock, parseHours } from "$lib/time";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
@@ -24,11 +24,25 @@
 	let onlyWeekdays = $state(true);
 	let start = $state("08:00");
 	let end = $state("16:00");
+	let startText = $state("08:00"); // Roh-Eingabe, erst beim Verlassen normalisiert
+	let endText = $state("16:00");
 	let fraction = $state(1);
 
 	// Pauschal (Summe auf einen Tag)
 	let lumpDate = $state("");
 	let lumpHours = $state("8");
+
+	/** Uhrzeit-Eingabe beim Verlassen normalisieren (z.B. "1800" -> "18:00"). */
+	function commitStart() {
+		const p = parseClock(startText);
+		if (p) start = p;
+		startText = start;
+	}
+	function commitEnd() {
+		const p = parseClock(endText);
+		if (p) end = p;
+		endText = end;
+	}
 
 	$effect(() => {
 		// Wenn der Monat wechselt, Default-Daten anpassen.
@@ -42,6 +56,8 @@
 	}
 
 	async function saveDays() {
+		commitStart();
+		commitEnd();
 		const a = new Date(`${von}T12:00:00`);
 		const b = new Date(`${bis}T12:00:00`);
 		if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime()) || a > b) {
@@ -70,8 +86,8 @@
 	}
 
 	async function saveLump() {
-		const hours = Number(lumpHours);
-		if (!hours || hours <= 0) {
+		const hours = parseHours(lumpHours);
+		if (hours == null || hours <= 0) {
 			toast.error("Bitte gültige Stundenzahl angeben.");
 			return;
 		}
@@ -151,11 +167,27 @@
 					<div class="grid grid-cols-2 gap-2">
 						<div class="space-y-1">
 							<Label for="bstart">Von (Uhrzeit)</Label>
-							<Input id="bstart" type="time" bind:value={start} />
+							<Input
+								id="bstart"
+								type="text"
+								inputmode="numeric"
+								placeholder="z. B. 0800"
+								value={startText}
+								oninput={(e) => (startText = e.currentTarget.value)}
+								onchange={commitStart}
+							/>
 						</div>
 						<div class="space-y-1">
 							<Label for="bend">Bis (Uhrzeit)</Label>
-							<Input id="bend" type="time" bind:value={end} />
+							<Input
+								id="bend"
+								type="text"
+								inputmode="numeric"
+								placeholder="z. B. 1600"
+								value={endText}
+								oninput={(e) => (endText = e.currentTarget.value)}
+								onchange={commitEnd}
+							/>
 						</div>
 					</div>
 				{/if}
@@ -171,7 +203,13 @@
 					</div>
 					<div class="space-y-1">
 						<Label for="lhours">Stunden gesamt</Label>
-						<Input id="lhours" type="number" step="0.5" min="0" bind:value={lumpHours} />
+						<Input
+							id="lhours"
+							type="text"
+							inputmode="decimal"
+							placeholder="z. B. 8 oder 7,5"
+							bind:value={lumpHours}
+						/>
 					</div>
 				</div>
 				<p class="text-muted-foreground text-xs">
