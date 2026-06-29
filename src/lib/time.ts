@@ -52,6 +52,14 @@ export function fmtHours(h: number): string {
 	return h.toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 2 });
 }
 
+/** Stundenzahl als Zeitformat "H:MM", z.B. 7.5 -> "7:30", 40 -> "40:00". */
+export function fmtHoursClock(hours: number): string {
+	const totalMin = Math.round(hours * 60);
+	const sign = totalMin < 0 ? "-" : "";
+	const abs = Math.abs(totalMin);
+	return `${sign}${Math.floor(abs / 60)}:${String(abs % 60).padStart(2, "0")}`;
+}
+
 /** "HH:MM" -> Minuten seit Mitternacht, oder null bei ungültiger Eingabe. */
 export function clockToMin(t: string): number | null {
 	const m = /^(\d{1,2}):(\d{2})$/.exec(t.trim());
@@ -103,8 +111,9 @@ export function parseClock(input: string): string | null {
 
 /**
  * Stunden-Eingabe parsen. Akzeptiert Dezimal ("7,5" / "7.5", unbegrenzt – z.B. 80
- * für Monatspauschalen) und Uhrzeit-Format ("7:30", Stunden 0–23). Im Uhrzeit-Format
- * wird einstellige Minutenangabe als 0–9 Minuten gelesen ("7:5" = 7:05).
+ * für Monatspauschalen), Uhrzeit-Format mit Doppelpunkt ("7:30", Stunden 0–23) und
+ * vierstellige HHMM-Eingabe ohne Trenner ("0741" = 7:41, "1230" = 12:30). Im
+ * Uhrzeit-Format wird einstellige Minutenangabe als 0–9 Minuten gelesen ("7:5" = 7:05).
  * Liefert Dezimalstunden oder null bei ungültiger Eingabe.
  */
 export function parseHours(input: string): number | null {
@@ -116,6 +125,14 @@ export function parseHours(input: string): number | null {
 		const min = Number(colon[2]);
 		if (h > 23 || min > 59) return null;
 		return h + min / 60;
+	}
+	// Vierstellige HHMM-Eingabe ("0741" -> 7:41). Vierstellige Stundenzahlen wären
+	// als Tagesdauer ohnehin unsinnig, daher als Uhrzeit interpretieren.
+	const hhmm = /^(\d{2})(\d{2})$/.exec(t);
+	if (hhmm) {
+		const h = Number(hhmm[1]);
+		const min = Number(hhmm[2]);
+		if (h <= 23 && min <= 59) return h + min / 60;
 	}
 	const n = Number(t.replace(",", "."));
 	return Number.isFinite(n) && n >= 0 ? n : null;

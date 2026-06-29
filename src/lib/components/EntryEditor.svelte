@@ -8,7 +8,7 @@
 		entryHours,
 		fmtClock,
 		fmtDate,
-		fmtHours,
+		fmtHoursClock,
 		minToClock,
 		monthLabel,
 		parseClock,
@@ -238,7 +238,7 @@
 			return `${name} · ${(e.dayFraction ?? 1) === 0.5 ? "½ Tag" : "ganzer Tag"}`;
 		}
 		const h = entryHours(e, false, app.settings.hoursPerDay, app.now);
-		return `${name} · ${fmtClock(e.startTs)}–${e.endTs ? fmtClock(e.endTs) : "…"} (${fmtHours(h)} h)`;
+		return `${name} · ${fmtClock(e.startTs)}–${e.endTs ? fmtClock(e.endTs) : "…"} (${fmtHoursClock(h)} h)`;
 	}
 </script>
 
@@ -257,7 +257,7 @@
 			</select>
 		</div>
 		<div class="flex flex-wrap items-center gap-3">
-			<span class="text-muted-foreground text-sm">Σ {fmtHours(totalHours)} h</span>
+			<span class="text-muted-foreground text-sm">Σ {fmtHoursClock(totalHours)} h</span>
 			<Button variant="outline" onclick={() => (vacOpen = true)}>
 				<PalmtreeIcon class="size-4" /> Abwesenheit
 			</Button>
@@ -304,7 +304,7 @@
 						<div class="flex items-center gap-2 pt-0.5">
 							{#if day.hours > 0}
 								<span class="text-muted-foreground w-14 text-right font-mono text-xs tabular-nums">
-									{fmtHours(day.hours)} h
+									{fmtHoursClock(day.hours)} h
 								</span>
 							{:else}
 								<span class="w-14"></span>
@@ -364,8 +364,8 @@
 							bind:value={draft.fraction}
 							class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
 						>
-							<option value={1}>Ganzer Tag ({fmtHours(app.settings.hoursPerDay)} h)</option>
-							<option value={0.5}>Halber Tag ({fmtHours(app.settings.hoursPerDay / 2)} h)</option>
+							<option value={1}>Ganzer Tag ({fmtHoursClock(app.settings.hoursPerDay)} h)</option>
+							<option value={0.5}>Halber Tag ({fmtHoursClock(app.settings.hoursPerDay / 2)} h)</option>
 						</select>
 					</div>
 				</div>
@@ -405,7 +405,7 @@
 							id="dur"
 							type="text"
 							inputmode="decimal"
-							placeholder="z. B. 7,5 oder 7:30"
+							placeholder="z. B. 7,5 · 7:30 · 0741"
 							value={dur}
 							oninput={(e) => {
 								dur = e.currentTarget.value;
