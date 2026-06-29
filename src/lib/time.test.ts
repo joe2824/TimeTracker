@@ -6,6 +6,7 @@ import {
 	entryHours,
 	fmtHMS,
 	fmtHours,
+	fmtHoursClock,
 	minToClock,
 	monthLabel,
 	parseClock,
@@ -51,6 +52,21 @@ describe("fmtHours", () => {
 		expect(fmtHours(2.5)).toBe("2,5");
 		expect(fmtHours(0)).toBe("0,0");
 		expect(fmtHours(4)).toBe("4,0");
+	});
+});
+
+describe("fmtHoursClock", () => {
+	it("formatiert Stunden als Zeitformat H:MM", () => {
+		expect(fmtHoursClock(7.5)).toBe("7:30");
+		expect(fmtHoursClock(8)).toBe("8:00");
+		expect(fmtHoursClock(40)).toBe("40:00");
+		expect(fmtHoursClock(0)).toBe("0:00");
+		expect(fmtHoursClock(3.75)).toBe("3:45");
+		expect(fmtHoursClock(0.25)).toBe("0:15");
+	});
+
+	it("rundet auf ganze Minuten", () => {
+		expect(fmtHoursClock(1.008)).toBe("1:00");
 	});
 });
 
@@ -182,6 +198,15 @@ describe("parseHours", () => {
 	it("lässt große Dezimalsummen zu (Monatspauschale)", () => {
 		expect(parseHours("80")).toBe(80);
 		expect(parseHours("37,5")).toBe(37.5);
+	});
+
+	it("parst vierstellige HHMM-Eingabe als Uhrzeit, nicht als Stundenzahl", () => {
+		expect(parseHours("0741")).toBeCloseTo(7 + 41 / 60, 10); // war fälschlich 741
+		expect(parseHours("1230")).toBe(12.5);
+		expect(parseHours("0800")).toBe(8);
+		expect(parseHours("0015")).toBe(0.25);
+		// ungültige HHMM (Minuten > 59) fällt auf Dezimal zurück
+		expect(parseHours("2575")).toBe(2575);
 	});
 });
 

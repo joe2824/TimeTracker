@@ -207,7 +207,7 @@
 							id="lhours"
 							type="text"
 							inputmode="decimal"
-							placeholder="z. B. 8 oder 7,5"
+							placeholder="z. B. 8 · 7,5 · 7:30"
 							bind:value={lumpHours}
 						/>
 					</div>
