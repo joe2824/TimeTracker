@@ -10,7 +10,9 @@
 		fmtDate,
 		fmtHours,
 		minToClock,
-		monthLabel
+		monthLabel,
+		parseClock,
+		parseHours
 	} from "$lib/time";
 	import type { Entry, EntrySource } from "$lib/types";
 	import { Button } from "$lib/components/ui/button";
@@ -48,19 +50,55 @@
 	let dialogOpen = $state(false);
 	let draft = $state<Draft>(emptyDraft());
 	let dur = $state(""); // Stunden-Eingabe, bidirektional mit Von/Bis
+	let startText = $state(""); // Roh-Eingabe Von, erst beim Verlassen normalisiert
+	let endText = $state(""); // Roh-Eingabe Bis
 	const draftIsAbsence = $derived(app.isAbsenceId(draft.activityId));
+
+	// Abwesenheiten werden über den "Abwesenheit"-Button erfasst und tauchen daher
+	// nicht in der Aktivitäts-Auswahl auf – außer beim Bearbeiten eines bestehenden
+	// Abwesenheits-Eintrags, damit dessen Aktivität sichtbar bleibt.
+	const activityOptions = $derived(
+		app.visibleActivities.filter((a) => !a.isAbsence || a.id === draft.activityId)
+	);
 
 	/** Stunden aus Von/Bis neu berechnen (z.B. 1.5). */
 	function recalcDur() {
 		const h = durationHours(draft.start, draft.end);
-		dur = h ? String(Math.round(h * 100) / 100) : "";
+		dur = h ? String(Math.round(h * 100) / 100).replace(".", ",") : "";
 	}
-	/** Bis aus Von + Stunden-Eingabe ableiten. */
+	/** Bis aus Von + Stunden-Eingabe ableiten. Akzeptiert "7,5" und "7:30". */
 	function applyDur() {
-		const h = Number(dur.replace(",", "."));
+		const h = parseHours(dur);
 		const a = clockToMin(draft.start);
-		if (!Number.isFinite(h) || h < 0 || a == null) return;
+		if (h == null || a == null) return;
 		draft.end = minToClock(a + h * 60);
+		endText = draft.end;
+	}
+
+	/** Roh-Eingaben aus dem aktuellen Draft übernehmen. */
+	function syncTimeText() {
+		startText = draft.start;
+		endText = draft.end;
+	}
+
+	/** Von-Eingabe beim Verlassen normalisieren (z.B. "1800" -> "18:00"). */
+	function commitStart() {
+		const p = parseClock(startText);
+		if (p) {
+			draft.start = p;
+			recalcDur();
+		}
+		startText = draft.start;
+	}
+
+	/** Bis-Eingabe beim Verlassen normalisieren. */
+	function commitEnd() {
+		const p = parseClock(endText);
+		if (p) {
+			draft.end = p;
+			recalcDur();
+		}
+		endText = draft.end;
 	}
 
 	function emptyDraft(): Draft {
@@ -69,7 +107,10 @@
 		return {
 			id: null,
 			originalStartTs: 0,
-			activityId: app.visibleActivities[0]?.id ?? "",
+			activityId:
+				app.visibleActivities.find((a) => !a.isAbsence)?.id ??
+				app.visibleActivities[0]?.id ??
+				"",
 			date: fmtDate(now.getTime()),
 			start: `${hh}:00`,
 			end: `${hh}:00`,
@@ -118,6 +159,7 @@
 		draft = emptyDraft();
 		draft.date = date ?? `${month}-01`;
 		recalcDur();
+		syncTimeText();
 		dialogOpen = true;
 	}
 
@@ -135,6 +177,7 @@
 			source: e.source
 		};
 		recalcDur();
+		syncTimeText();
 		dialogOpen = true;
 	}
 
@@ -145,6 +188,10 @@
 	async function save() {
 		if (!draft.activityId) return;
 		const absence = app.isAbsenceId(draft.activityId);
+		if (!absence) {
+			commitStart();
+			commitEnd();
+		}
 		let startTs: number;
 		let endTs: number;
 		if (absence) {
@@ -212,7 +259,7 @@
 		<div class="flex flex-wrap items-center gap-3">
 			<span class="text-muted-foreground text-sm">Σ {fmtHours(totalHours)} h</span>
 			<Button variant="outline" onclick={() => (vacOpen = true)}>
-				<PalmtreeIcon class="size-4" /> Urlaub
+				<PalmtreeIcon class="size-4" /> Abwesenheit
 			</Button>
 			<Button variant="outline" onclick={() => (bulkOpen = true)}>
 				<LayersIcon class="size-4" /> Schnelleingabe
@@ -298,7 +345,7 @@
 					bind:value={draft.activityId}
 					class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
 				>
-					{#each app.visibleActivities as a (a.id)}
+					{#each activityOptions as a (a.id)}
 						<option value={a.id}>{a.name}</option>
 					{/each}
 				</select>
@@ -332,34 +379,33 @@
 						<Label for="start">Von</Label>
 						<Input
 							id="start"
-							type="time"
-							value={draft.start}
-							oninput={(e) => {
-								draft.start = e.currentTarget.value;
-								recalcDur();
-							}}
+							type="text"
+							inputmode="numeric"
+							placeholder="z. B. 1800"
+							value={startText}
+							oninput={(e) => (startText = e.currentTarget.value)}
+							onchange={commitStart}
 						/>
 					</div>
 					<div class="space-y-1">
 						<Label for="end">Bis</Label>
 						<Input
 							id="end"
-							type="time"
-							value={draft.end}
-							oninput={(e) => {
-								draft.end = e.currentTarget.value;
-								recalcDur();
-							}}
+							type="text"
+							inputmode="numeric"
+							placeholder="z. B. 1830"
+							value={endText}
+							oninput={(e) => (endText = e.currentTarget.value)}
+							onchange={commitEnd}
 						/>
 					</div>
 					<div class="space-y-1">
 						<Label for="dur">Stunden</Label>
 						<Input
 							id="dur"
-							type="number"
-							step="0.25"
-							min="0"
-							placeholder="z. B. 1,5"
+							type="text"
+							inputmode="decimal"
+							placeholder="z. B. 7,5 oder 7:30"
 							value={dur}
 							oninput={(e) => {
 								dur = e.currentTarget.value;

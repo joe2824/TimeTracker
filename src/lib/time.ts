@@ -68,6 +68,59 @@ export function minToClock(min: number): string {
 	return `${String(Math.floor(x / 60)).padStart(2, "0")}:${String(x % 60).padStart(2, "0")}`;
 }
 
+/**
+ * Uhrzeit-Eingabe flexibel parsen und auf "HH:MM" normalisieren. Akzeptiert
+ * "18:00", "1800", "830", "8", "18.30", "18,30", "18h30". Null bei ungültiger Eingabe.
+ */
+export function parseClock(input: string): string | null {
+	const t = input.trim();
+	if (!t) return null;
+	let h: number;
+	let min: number;
+	const sep = /^(\d{1,2})[:.,h](\d{1,2})$/i.exec(t);
+	if (sep) {
+		h = Number(sep[1]);
+		min = Number(sep[2]);
+	} else if (/^\d+$/.test(t)) {
+		if (t.length <= 2) {
+			h = Number(t);
+			min = 0;
+		} else if (t.length === 3) {
+			h = Number(t.slice(0, 1));
+			min = Number(t.slice(1));
+		} else if (t.length === 4) {
+			h = Number(t.slice(0, 2));
+			min = Number(t.slice(2));
+		} else {
+			return null;
+		}
+	} else {
+		return null;
+	}
+	if (h > 23 || min > 59) return null;
+	return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+}
+
+/**
+ * Stunden-Eingabe parsen. Akzeptiert Dezimal ("7,5" / "7.5", unbegrenzt – z.B. 80
+ * für Monatspauschalen) und Uhrzeit-Format ("7:30", Stunden 0–23). Im Uhrzeit-Format
+ * wird einstellige Minutenangabe als 0–9 Minuten gelesen ("7:5" = 7:05).
+ * Liefert Dezimalstunden oder null bei ungültiger Eingabe.
+ */
+export function parseHours(input: string): number | null {
+	const t = input.trim();
+	if (!t) return null;
+	const colon = /^(\d{1,2}):(\d{1,2})$/.exec(t);
+	if (colon) {
+		const h = Number(colon[1]);
+		const min = Number(colon[2]);
+		if (h > 23 || min > 59) return null;
+		return h + min / 60;
+	}
+	const n = Number(t.replace(",", "."));
+	return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
 /** Dauer in Stunden zwischen zwei "HH:MM"-Zeiten (über Mitternacht zählt +24h). */
 export function durationHours(start: string, end: string): number {
 	const a = clockToMin(start);
