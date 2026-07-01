@@ -32,31 +32,33 @@
 
 <Dialog.Root bind:open>
 	<Dialog.Content class="sm:max-w-md">
-		<Dialog.Header>
-			<Dialog.Title>Urlaub / Abwesenheit (Zeitraum)</Dialog.Title>
-			<Dialog.Description>Trägt für jeden Tag im Bereich einen Abwesenheitseintrag an.</Dialog.Description>
-		</Dialog.Header>
-		<div class="space-y-4">
-			<div class="flex flex-wrap items-end gap-4">
-				<div class="space-y-1">
-					<Label for="vacfrom">Von</Label>
-					<Input id="vacfrom" type="date" bind:value={from} class="w-40" />
+		<form class="grid gap-4" onsubmit={(e) => { e.preventDefault(); add(); }}>
+			<Dialog.Header>
+				<Dialog.Title>Urlaub / Abwesenheit (Zeitraum)</Dialog.Title>
+				<Dialog.Description>Trägt für jeden Tag im Bereich einen Abwesenheitseintrag an.</Dialog.Description>
+			</Dialog.Header>
+			<div class="space-y-4">
+				<div class="flex flex-wrap items-end gap-4">
+					<div class="space-y-1">
+						<Label for="vacfrom">Von</Label>
+						<Input id="vacfrom" type="date" bind:value={from} class="w-40" />
+					</div>
+					<div class="space-y-1">
+						<Label for="vacto">Bis</Label>
+						<Input id="vacto" type="date" bind:value={to} class="w-40" />
+					</div>
 				</div>
-				<div class="space-y-1">
-					<Label for="vacto">Bis</Label>
-					<Input id="vacto" type="date" bind:value={to} class="w-40" />
-				</div>
+				<label class="flex items-center justify-between gap-2 text-sm">
+					Halbe Tage <Switch bind:checked={halfDay} />
+				</label>
+				<label class="flex items-center justify-between gap-2 text-sm">
+					Wochenenden überspringen <Switch bind:checked={skipWeekends} />
+				</label>
 			</div>
-			<label class="flex items-center justify-between gap-2 text-sm">
-				Halbe Tage <Switch bind:checked={halfDay} />
-			</label>
-			<label class="flex items-center justify-between gap-2 text-sm">
-				Wochenenden überspringen <Switch bind:checked={skipWeekends} />
-			</label>
-		</div>
-		<Dialog.Footer>
-			<Button variant="ghost" onclick={() => (open = false)}>Abbrechen</Button>
-			<Button onclick={add}>Eintragen</Button>
-		</Dialog.Footer>
+			<Dialog.Footer>
+				<Button type="button" variant="ghost" onclick={() => (open = false)}>Abbrechen</Button>
+				<Button type="submit">Eintragen</Button>
+			</Dialog.Footer>
+		</form>
 	</Dialog.Content>
 </Dialog.Root>

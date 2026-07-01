@@ -148,11 +148,21 @@ class AppState {
 		[...rest, ...builtins].forEach((a, i) => (a.sortOrder = i));
 	}
 
-	async addActivity(name: string): Promise<void> {
+	/**
+	 * Legt eine Aktivitaet an und liefert deren id. Existiert bereits eine (nicht
+	 * archivierte) Aktivitaet mit gleichem Namen, wird deren id zurückgegeben statt
+	 * ein Duplikat anzulegen. Liefert null bei leerem Namen.
+	 */
+	async addActivity(name: string): Promise<string | null> {
 		const trimmed = name.trim();
-		if (!trimmed) return;
+		if (!trimmed) return null;
+		const existing = this.activities.find(
+			(a) => !a.archived && a.name.toLowerCase() === trimmed.toLowerCase()
+		);
+		if (existing) return existing.id;
+		const id = uid();
 		this.activities.push({
-			id: uid(),
+			id,
 			name: trimmed,
 			sortOrder: this.activities.length,
 			archived: false,
@@ -160,6 +170,7 @@ class AppState {
 		});
 		this.#reindexBuiltinsLast();
 		await this.persistActivities();
+		return id;
 	}
 
 	async renameActivity(id: string, name: string): Promise<void> {

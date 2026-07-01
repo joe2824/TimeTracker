@@ -52,6 +52,7 @@
 	let dur = $state(""); // Stunden-Eingabe, bidirektional mit Von/Bis
 	let startText = $state(""); // Roh-Eingabe Von, erst beim Verlassen normalisiert
 	let endText = $state(""); // Roh-Eingabe Bis
+	let activityText = $state(""); // freie Aktivitäts-Eingabe (Combobox)
 	const draftIsAbsence = $derived(app.isAbsenceId(draft.activityId));
 
 	// Abwesenheiten werden über den "Abwesenheit"-Button erfasst und tauchen daher
@@ -79,6 +80,17 @@
 	function syncTimeText() {
 		startText = draft.start;
 		endText = draft.end;
+		activityText = app.activityName(draft.activityId);
+	}
+
+	/** Tippt der Nutzer eine Aktivität, halten wir draft.activityId synchron (für die
+	 *  Abwesenheits-Erkennung); ohne exakte Übereinstimmung = neue Aktivität (id leer). */
+	function onActivityInput(value: string) {
+		activityText = value;
+		const match = app.activities.find(
+			(a) => !a.archived && a.name.toLowerCase() === value.trim().toLowerCase()
+		);
+		draft.activityId = match?.id ?? "";
 	}
 
 	/** Von-Eingabe beim Verlassen normalisieren (z.B. "1800" -> "18:00"). */
@@ -186,8 +198,11 @@
 	}
 
 	async function save() {
-		if (!draft.activityId) return;
-		const absence = app.isAbsenceId(draft.activityId);
+		// Getippte Aktivität auflösen bzw. neu anlegen (Combobox).
+		const activityId = await app.addActivity(activityText);
+		if (!activityId) return;
+		draft.activityId = activityId;
+		const absence = app.isAbsenceId(activityId);
 		if (!absence) {
 			commitStart();
 			commitEnd();
@@ -334,21 +349,26 @@
 
 <Dialog.Root bind:open={dialogOpen}>
 	<Dialog.Content class="sm:max-w-md">
-		<Dialog.Header>
-			<Dialog.Title>{draft.id ? "Eintrag bearbeiten" : "Neuer Eintrag"}</Dialog.Title>
-		</Dialog.Header>
-		<div class="space-y-3">
+		<form class="grid gap-4" onsubmit={(e) => { e.preventDefault(); save(); }}>
+			<Dialog.Header>
+				<Dialog.Title>{draft.id ? "Eintrag bearbeiten" : "Neuer Eintrag"}</Dialog.Title>
+			</Dialog.Header>
+			<div class="space-y-3">
 			<div class="space-y-1">
 				<Label for="act">Aktivität</Label>
-				<select
+				<Input
 					id="act"
-					bind:value={draft.activityId}
-					class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
-				>
+					list="activity-options"
+					autocomplete="off"
+					placeholder="Aktivität wählen oder eingeben"
+					value={activityText}
+					oninput={(e) => onActivityInput(e.currentTarget.value)}
+				/>
+				<datalist id="activity-options">
 					{#each activityOptions as a (a.id)}
-						<option value={a.id}>{a.name}</option>
+						<option value={a.name}></option>
 					{/each}
-				</select>
+				</datalist>
 			</div>
 
 			{#if draftIsAbsence}
@@ -416,10 +436,11 @@
 				</div>
 			{/if}
 
-		</div>
-		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (dialogOpen = false)}>Abbrechen</Button>
-			<Button onclick={save}>Speichern</Button>
-		</Dialog.Footer>
+			</div>
+			<Dialog.Footer>
+				<Button type="button" variant="outline" onclick={() => (dialogOpen = false)}>Abbrechen</Button>
+				<Button type="submit">Speichern</Button>
+			</Dialog.Footer>
+		</form>
 	</Dialog.Content>
 </Dialog.Root>
