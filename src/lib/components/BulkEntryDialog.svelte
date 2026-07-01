@@ -98,30 +98,40 @@
 		open = false;
 		onsaved();
 	}
+
+	/** Enter bestätigt den jeweils aktiven Modus (Pauschal bei Abwesenheit gesperrt). */
+	function onSubmit(e: SubmitEvent) {
+		e.preventDefault();
+		if (mode === "days") saveDays();
+		else if (!isAbsence) saveLump();
+	}
 </script>
 
 <Dialog.Root bind:open>
 	<Dialog.Content class="sm:max-w-lg">
-		<Dialog.Header>
-			<Dialog.Title>Schnelleingabe</Dialog.Title>
-			<Dialog.Description>Mehrere Tage auf einmal oder eine Pauschalsumme erfassen.</Dialog.Description>
-		</Dialog.Header>
+		<form class="grid gap-4" onsubmit={onSubmit}>
+			<Dialog.Header>
+				<Dialog.Title>Schnelleingabe</Dialog.Title>
+				<Dialog.Description>Mehrere Tage auf einmal oder eine Pauschalsumme erfassen.</Dialog.Description>
+			</Dialog.Header>
 
-		<div class="space-y-3">
-			<div class="bg-muted flex gap-1 rounded-md p-1 text-sm">
-				<button
-					class="flex-1 rounded px-2 py-1 {mode === 'days' ? 'bg-background shadow-sm' : ''}"
-					onclick={() => (mode = "days")}
-				>
-					Mehrere Tage
-				</button>
-				<button
-					class="flex-1 rounded px-2 py-1 {mode === 'lump' ? 'bg-background shadow-sm' : ''}"
-					onclick={() => (mode = "lump")}
-				>
-					Pauschal (Summe)
-				</button>
-			</div>
+			<div class="space-y-3">
+				<div class="bg-muted flex gap-1 rounded-md p-1 text-sm">
+					<button
+						type="button"
+						class="flex-1 rounded px-2 py-1 {mode === 'days' ? 'bg-background shadow-sm' : ''}"
+						onclick={() => (mode = "days")}
+					>
+						Mehrere Tage
+					</button>
+					<button
+						type="button"
+						class="flex-1 rounded px-2 py-1 {mode === 'lump' ? 'bg-background shadow-sm' : ''}"
+						onclick={() => (mode = "lump")}
+					>
+						Pauschal (Summe)
+					</button>
+				</div>
 
 			<div class="space-y-1">
 				<Label for="bact">Aktivität</Label>
@@ -192,8 +202,8 @@
 					</div>
 				{/if}
 				<Dialog.Footer>
-					<Button variant="outline" onclick={() => (open = false)}>Abbrechen</Button>
-					<Button onclick={saveDays}>Anlegen</Button>
+					<Button type="button" variant="outline" onclick={() => (open = false)}>Abbrechen</Button>
+					<Button type="submit">Anlegen</Button>
 				</Dialog.Footer>
 			{:else}
 				<div class="grid grid-cols-2 gap-2">
@@ -217,10 +227,11 @@
 					Monat). Für Urlaub bitte „Mehrere Tage“ verwenden.
 				</p>
 				<Dialog.Footer>
-					<Button variant="outline" onclick={() => (open = false)}>Abbrechen</Button>
-					<Button onclick={saveLump} disabled={isAbsence}>Anlegen</Button>
+					<Button type="button" variant="outline" onclick={() => (open = false)}>Abbrechen</Button>
+					<Button type="submit" disabled={isAbsence}>Anlegen</Button>
 				</Dialog.Footer>
 			{/if}
-		</div>
+			</div>
+		</form>
 	</Dialog.Content>
 </Dialog.Root>
