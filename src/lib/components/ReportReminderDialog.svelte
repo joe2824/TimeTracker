@@ -4,6 +4,7 @@
 	import { app } from "$lib/app.svelte";
 	import { monthLabel } from "$lib/time";
 	import { sendReport } from "$lib/reportSend";
+	import { watchers } from "$lib/watchers.svelte";
 	import { toast } from "svelte-sonner";
 	import MailIcon from "@lucide/svelte/icons/mail";
 
@@ -11,7 +12,11 @@
 	let dismissed = $state(false);
 	let sending = $state(false);
 	const month = $derived(app.pendingReportMonth);
-	const open = $derived(!!month && app.settings.reportReminderEnabled && !dismissed);
+	// Dev-Override: erzwungen anzeigen; Anzeige-Monat dann auf aktuellen Monat zurückfallen.
+	const shownMonth = $derived(month ?? app.currentMonth);
+	const open = $derived(
+		watchers.forceReportReminder || (!!month && app.settings.reportReminderEnabled && !dismissed)
+	);
 
 	async function send() {
 		if (!month) return;
@@ -36,15 +41,18 @@
 <Dialog.Root
 	{open}
 	onOpenChange={(v) => {
-		if (!v) dismissed = true;
+		if (!v) {
+			dismissed = true;
+			watchers.forceReportReminder = false;
+		}
 	}}
 >
 	<Dialog.Content class="sm:max-w-md">
 		<Dialog.Header>
 			<Dialog.Title>Bericht noch nicht gesendet</Dialog.Title>
 			<Dialog.Description>
-				Der Stundenbericht für <strong>{month ? monthLabel(month) : ""}</strong> wurde noch nicht an
-				den Chef geschickt.
+				Der Stundenbericht für <strong>{monthLabel(shownMonth)}</strong> wurde noch nicht an den Chef
+				geschickt.
 			</Dialog.Description>
 		</Dialog.Header>
 		<Dialog.Footer>

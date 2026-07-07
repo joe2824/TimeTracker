@@ -12,7 +12,8 @@ import {
 	monthKey,
 	saveActivities,
 	saveEntries,
-	saveSettings
+	saveSettings,
+	settingsFileExists
 } from "./store";
 
 function uid(): string {
@@ -33,6 +34,8 @@ class AppState {
 	/** tickt jede Sekunde fuer Live-Dauer */
 	now = $state(Date.now());
 	loaded = $state(false);
+	/** true = Willkommensbildschirm anzeigen (erster Start oder Dev-Re-Trigger) */
+	showOnboarding = $state(false);
 	/** Cache: Monat "YYYY-MM" -> Eintraege */
 	entriesByMonth = $state<Record<string, Entry[]>>({});
 
@@ -40,6 +43,8 @@ class AppState {
 
 	async init(): Promise<void> {
 		if (this.loaded) return;
+		// Erster Start? (settings.json noch nicht vorhanden – vor dem ersten Speichern pruefen)
+		const firstRun = !(await settingsFileExists());
 		this.activities = await loadActivities();
 		this.settings = await loadSettings();
 		if (this.settings.autoCleanup) {
@@ -53,6 +58,7 @@ class AppState {
 		await this.ensureMonth(this.currentMonth);
 		await this.ensureMonth(prevMonthKey());
 		this.#findRunning();
+		this.showOnboarding = firstRun;
 		this.loaded = true;
 		this.#tick = setInterval(() => {
 			this.now = Date.now();
@@ -612,6 +618,22 @@ class AppState {
 	async updateSettings(patch: Partial<Settings>): Promise<void> {
 		this.settings = { ...this.settings, ...patch };
 		await saveSettings($state.snapshot(this.settings) as Settings);
+	}
+
+	// ---------- Onboarding ----------
+	/**
+	 * Willkommensbildschirm abschliessen: uebernimmt die eingegebenen Werte und
+	 * schreibt settings.json (dadurch gilt der naechste Start nicht mehr als erster).
+	 * Auch beim "Ueberspringen" (ggf. mit leerem patch) aufrufen.
+	 */
+	async finishOnboarding(patch: Partial<Settings>): Promise<void> {
+		await this.updateSettings(patch);
+		this.showOnboarding = false;
+	}
+
+	/** Willkommensbildschirm erneut oeffnen (Dev-Re-Trigger). */
+	openOnboarding(): void {
+		this.showOnboarding = true;
 	}
 }
 
