@@ -3,7 +3,7 @@
 	import { app } from "$lib/app.svelte";
 	import { listEntryMonths } from "$lib/store";
 	import { buildReport, reportToHtml } from "$lib/report";
-	import { fmtHours, monthLabel } from "$lib/time";
+	import { fmtHoursClock, monthLabel } from "$lib/time";
 	import { createOutlookDraft } from "$lib/outlook";
 	import { Button } from "$lib/components/ui/button";
 	import { Label } from "$lib/components/ui/label";
@@ -99,9 +99,9 @@
 		</Card.Header>
 		<Card.Content>
 			<div class="flex flex-wrap gap-6 text-sm">
-				<div>Arbeitszeit: <strong>{fmtHours(report.workHours)} h</strong></div>
-				<div>Abwesenheiten: <strong>{fmtHours(report.absenceHours)} h</strong></div>
-				<div>Gesamt: <strong>{fmtHours(report.total)} h</strong></div>
+				<div>Arbeitszeit: <strong>{fmtHoursClock(report.workHours)} h</strong></div>
+				<div>Abwesenheiten: <strong>{fmtHoursClock(report.absenceHours)} h</strong></div>
+				<div>Gesamt: <strong>{fmtHoursClock(report.total)} h</strong></div>
 			</div>
 			{#if !app.settings.bossEmail}
 				<p class="text-muted-foreground mt-2 text-xs">

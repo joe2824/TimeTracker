@@ -84,7 +84,7 @@ describe("reportToHtml", () => {
 		expect(html).toContain("Projekt 1");
 		expect(html).toContain("Abwesenheiten");
 		expect(html).toContain("Summe");
-		expect(html).toContain("14,75");
+		expect(html).toContain("14:45"); // 14,75 h als Zeit
 	});
 
 	it("escaped HTML-Sonderzeichen in Aktivitätsnamen", () => {
