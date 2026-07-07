@@ -2,6 +2,11 @@
 	import { onMount } from "svelte";
 	import { app } from "$lib/app.svelte";
 	import { scheduleReminders, scheduleReportReminder, ensureNotificationPermission } from "$lib/reminders";
+	import {
+		devTriggerIdle,
+		devTriggerLongTimer,
+		devTriggerReportReminder
+	} from "$lib/watchers.svelte";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
@@ -436,9 +441,22 @@
 			{#if devMode}
 				<div class="border-t pt-3">
 					<div class="text-muted-foreground mb-2 text-xs font-medium">Dev</div>
-					<Button variant="secondary" size="sm" onclick={showFlyout}>
-						Tray-Flyout anzeigen
-					</Button>
+					<div class="flex flex-wrap gap-2">
+						<Button variant="secondary" size="sm" onclick={showFlyout}>Tray-Flyout anzeigen</Button>
+					</div>
+					<div class="text-muted-foreground mt-3 mb-1.5 text-xs">Modals öffnen</div>
+					<div class="flex flex-wrap gap-2">
+						<Button variant="secondary" size="sm" onclick={() => app.openOnboarding()}>
+							Willkommensbildschirm
+						</Button>
+						<Button variant="secondary" size="sm" onclick={devTriggerLongTimer}>
+							Langzeit-Timer
+						</Button>
+						<Button variant="secondary" size="sm" onclick={devTriggerIdle}>Leerlauf</Button>
+						<Button variant="secondary" size="sm" onclick={devTriggerReportReminder}>
+							Berichts-Erinnerung
+						</Button>
+					</div>
 				</div>
 			{/if}
 		</Card.Content>

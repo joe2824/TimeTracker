@@ -15,6 +15,8 @@ class WatcherState {
 	longTimerPrompt = $state<{ activityId: string; startTs: number; elapsedSec: number } | null>(
 		null
 	);
+	/** Dev-Override: Berichts-Erinnerung erzwingen (nur zum Debuggen). */
+	forceReportReminder = $state(false);
 }
 export const watchers = new WatcherState();
 
@@ -167,4 +169,19 @@ export async function resolveLongTimer(action: "keep" | "stop", endTs?: number):
 	if (action !== "stop" || !p || !app.running) return;
 	const ts = Math.min(Math.max(endTs ?? Date.now(), p.startTs), Date.now());
 	await app.stop(ts);
+}
+
+// ---------- Dev-Trigger (zum Debuggen der Dialoge) ----------
+export function devTriggerIdle(): void {
+	watchers.idlePrompt = { idleStart: Date.now() - 15 * 60 * 1000, idleSeconds: 900 };
+}
+export function devTriggerLongTimer(): void {
+	watchers.longTimerPrompt = {
+		activityId: app.running?.activityId ?? app.visibleActivities[0]?.id ?? "",
+		startTs: Date.now() - 11 * 3600 * 1000,
+		elapsedSec: 11 * 3600
+	};
+}
+export function devTriggerReportReminder(): void {
+	watchers.forceReportReminder = true;
 }

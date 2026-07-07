@@ -76,6 +76,10 @@ export async function saveActivities(activities: Activity[]): Promise<void> {
 }
 
 // ---- Einstellungen ----
+/** Ob bereits eine settings.json existiert (false = erster Programmstart). */
+export async function settingsFileExists(): Promise<boolean> {
+	return exists(`${DIR}/settings.json`, baseOpts);
+}
 export async function loadSettings(): Promise<Settings> {
 	const stored = await readJson<Partial<Settings>>("settings.json", {});
 	return { ...defaultSettings, ...stored };

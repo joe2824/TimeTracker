@@ -22,6 +22,7 @@
 	import SettingsPanel from "$lib/components/SettingsPanel.svelte";
 	import IdleDialog from "$lib/components/IdleDialog.svelte";
 	import LongTimerDialog from "$lib/components/LongTimerDialog.svelte";
+	import OnboardingWizard from "$lib/components/OnboardingWizard.svelte";
 	import CommandPalette from "$lib/components/CommandPalette.svelte";
 	import ReportReminderDialog from "$lib/components/ReportReminderDialog.svelte";
 
@@ -168,6 +169,10 @@
 	<IdleDialog />
 	<LongTimerDialog />
 	<ReportReminderDialog />
+
+	{#if app.showOnboarding}
+		<OnboardingWizard />
+	{/if}
 	<CommandPalette bind:open={paletteOpen} onNavigate={(t) => (tab = t)} />
 {/if}
 
