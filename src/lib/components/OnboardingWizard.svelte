@@ -6,6 +6,7 @@
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
 	import { Switch } from "$lib/components/ui/switch";
+	import { Textarea } from "$lib/components/ui/textarea";
 	import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 	import TimerIcon from "@lucide/svelte/icons/timer";
 	import MailIcon from "@lucide/svelte/icons/mail";
@@ -14,8 +15,9 @@
 	import Trash2Icon from "@lucide/svelte/icons/trash-2";
 	import PlusIcon from "@lucide/svelte/icons/plus";
 
-	const STEPS = 3;
+	const STEPS = 4;
 	let step = $state(0);
+	let fileInput = $state<HTMLInputElement>();
 
 	/** Dezimalstunden -> "HH:MM" (für das Zeit-Eingabefeld). */
 	function hoursToTime(h: number): string {
@@ -30,8 +32,19 @@
 	let times = $state<string[]>(
 		app.settings.reminderTimes.length ? [...app.settings.reminderTimes] : ["14:00"]
 	);
+	let activitiesText = $state(""); // Aktivitäten-Import, eine je Zeile
 	let autostart = $state(app.settings.autostart);
 	let saving = $state(false);
+
+	/** Aktivitäten aus einer Textdatei ins Eingabefeld übernehmen. */
+	async function onActivityFile(ev: Event) {
+		const input = ev.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		const text = await file.text();
+		activitiesText = activitiesText ? `${activitiesText}\n${text}` : text;
+		input.value = "";
+	}
 
 	// Weicher Hinweis (nicht blockierend).
 	const emailInvalid = $derived(
@@ -54,6 +67,10 @@
 	}
 
 	async function persist() {
+		// Aktivitäten importieren (jede Zeile eine; Duplikate ignoriert importActivities).
+		const actLines = activitiesText.split(/\r?\n/);
+		if (actLines.some((l) => l.trim())) await app.importActivities(actLines);
+
 		const min = clockToMin(workTime);
 		const hpd = min != null && min > 0 ? min / 60 : app.settings.hoursPerDay;
 		const cleanTimes = times.filter((t) => t);
@@ -146,6 +163,35 @@
 						Als Zeit (z. B. 07:30). Basis für die Umrechnung von Abwesenheiten.
 					</p>
 				</div>
+			</div>
+		{:else if step === 2}
+			<div class="space-y-1 text-center">
+				<h1 class="text-xl font-semibold">Aktivitäten</h1>
+				<p class="text-muted-foreground text-sm">
+					Deine Projekte/Tätigkeiten – eine je Zeile. Später jederzeit änderbar.
+				</p>
+			</div>
+			<div class="space-y-2">
+				<Textarea
+					bind:value={activitiesText}
+					placeholder={"Projekt 1\nProjekt 2\nProjekt 3\n…"}
+					rows={7}
+				/>
+				<div class="flex flex-wrap gap-2">
+					<Button variant="outline" size="sm" onclick={() => fileInput?.click()}>
+						Aus Datei (.txt)…
+					</Button>
+					<input
+						bind:this={fileInput}
+						type="file"
+						accept=".txt,.csv,.text"
+						class="hidden"
+						onchange={onActivityFile}
+					/>
+				</div>
+				<p class="text-muted-foreground text-xs">
+					Vorhandene bleiben erhalten, Duplikate werden übersprungen. Kannst du auch leer lassen.
+				</p>
 			</div>
 		{:else}
 			<div class="space-y-1 text-center">
