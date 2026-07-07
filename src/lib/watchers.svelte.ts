@@ -10,6 +10,11 @@ import { sendNotification } from "@tauri-apps/plugin-notification";
 class WatcherState {
 	/** Gesetzt, wenn ein Leerlauf erkannt wurde und der Nutzer entscheiden soll. */
 	idlePrompt = $state<{ idleStart: number; idleSeconds: number } | null>(null);
+	/** Gesetzt, wenn ein Timer sehr lange (z.B. über Nacht) läuft und der Nutzer die
+	 *  tatsächliche Endzeit direkt eingeben soll. */
+	longTimerPrompt = $state<{ activityId: string; startTs: number; elapsedSec: number } | null>(
+		null
+	);
 }
 export const watchers = new WatcherState();
 
@@ -34,6 +39,7 @@ function resetFlags() {
 	autoStopNotified = false;
 	lastPomoKey = null;
 	idlePromptShown = false;
+	watchers.longTimerPrompt = null;
 }
 
 async function tick() {
@@ -66,6 +72,13 @@ async function tick() {
 	// --- Auto-Stop-Warnung (Timer vergessen) ---
 	if (s.maxTimerHours > 0 && elapsedSec >= s.maxTimerHours * 3600 && !autoStopNotified) {
 		autoStopNotified = true;
+		// In-App-Dialog mit Endzeit-Eingabe (falls App offen) …
+		watchers.longTimerPrompt = {
+			activityId: running.activityId,
+			startTs: running.startTs,
+			elapsedSec
+		};
+		// … und OS-Benachrichtigung (falls App nur im Tray läuft).
 		void notify(
 			"TimeTracker – Timer läuft sehr lange",
 			`„${app.activityName(running.activityId)}" läuft seit über ${s.maxTimerHours} h. Noch aktiv?`
@@ -142,4 +155,16 @@ export async function resolveIdle(action: "keep" | "subtract" | "discard"): Prom
 	} else if (action === "discard") {
 		await app.deleteEntry(app.running);
 	}
+}
+
+/**
+ * Nutzer hat den "Timer läuft lange"-Dialog entschieden.
+ * "keep": weiterlaufen lassen. "stop": bei `endTs` beenden (auf [Start, jetzt] begrenzt).
+ */
+export async function resolveLongTimer(action: "keep" | "stop", endTs?: number): Promise<void> {
+	const p = watchers.longTimerPrompt;
+	watchers.longTimerPrompt = null;
+	if (action !== "stop" || !p || !app.running) return;
+	const ts = Math.min(Math.max(endTs ?? Date.now(), p.startTs), Date.now());
+	await app.stop(ts);
 }

@@ -21,6 +21,7 @@
 	import ActivitiesPanel from "$lib/components/ActivitiesPanel.svelte";
 	import SettingsPanel from "$lib/components/SettingsPanel.svelte";
 	import IdleDialog from "$lib/components/IdleDialog.svelte";
+	import LongTimerDialog from "$lib/components/LongTimerDialog.svelte";
 	import CommandPalette from "$lib/components/CommandPalette.svelte";
 	import ReportReminderDialog from "$lib/components/ReportReminderDialog.svelte";
 
@@ -165,6 +166,7 @@
 	</Tabs.Root>
 
 	<IdleDialog />
+	<LongTimerDialog />
 	<ReportReminderDialog />
 	<CommandPalette bind:open={paletteOpen} onNavigate={(t) => (tab = t)} />
 {/if}
