@@ -102,11 +102,13 @@
 	function onActivityInput(value: string) {
 		activityText = value;
 		comboOpen = true;
-		comboIndex = 0;
 		const match = app.activities.find(
 			(a) => !a.archived && a.name.toLowerCase() === value.trim().toLowerCase()
 		);
 		draft.activityId = match?.id ?? "";
+		// Bei exaktem Treffer diesen hervorheben (die Liste zeigt dann alle Einträge),
+		// sonst den ersten Vorschlag – damit Enter nie die falsche Aktivität wählt.
+		comboIndex = match ? Math.max(0, filteredActivities.findIndex((a) => a.id === match.id)) : 0;
 	}
 
 	/** Dropdown öffnen und auf die aktuelle Auswahl scrollen. */

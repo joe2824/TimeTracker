@@ -25,6 +25,7 @@
 			await sendReport(month);
 			toast.success("Outlook-Entwurf geöffnet. Bitte prüfen und senden.");
 			dismissed = true;
+			watchers.forceReportReminder = false;
 		} catch (e) {
 			toast.error(`Outlook-Entwurf fehlgeschlagen: ${e}. Tipp: Tab „Bericht“ → „HTML kopieren“.`);
 		} finally {
@@ -35,6 +36,7 @@
 	async function neverAgain() {
 		if (month) await app.markReportSent(month);
 		dismissed = true;
+		watchers.forceReportReminder = false;
 	}
 </script>
 
