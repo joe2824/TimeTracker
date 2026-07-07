@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from "svelte";
+	import { toast } from "svelte-sonner";
 	import { app } from "$lib/app.svelte";
 	import { listEntryMonths } from "$lib/store";
 	import {
@@ -52,7 +53,9 @@
 	let dur = $state(""); // Stunden-Eingabe, bidirektional mit Von/Bis
 	let startText = $state(""); // Roh-Eingabe Von, erst beim Verlassen normalisiert
 	let endText = $state(""); // Roh-Eingabe Bis
-	let activityText = $state(""); // freie Aktivitäts-Eingabe (Combobox)
+	let activityText = $state(""); // Aktivitäts-Eingabe (Combobox, nur Filter)
+	let comboOpen = $state(false); // Dropdown sichtbar
+	let comboIndex = $state(0); // hervorgehobene Zeile (Tastatur)
 	const draftIsAbsence = $derived(app.isAbsenceId(draft.activityId));
 
 	// Abwesenheiten werden über den "Abwesenheit"-Button erfasst und tauchen daher
@@ -61,6 +64,16 @@
 	const activityOptions = $derived(
 		app.visibleActivities.filter((a) => !a.isAbsence || a.id === draft.activityId)
 	);
+
+	// Gefilterte Vorschläge: Solange der Text der gewählten Aktivität entspricht (also
+	// nur "geöffnet, nichts getippt"), alle zeigen – so kann man per Klick wechseln,
+	// ohne erst löschen zu müssen. Sobald abweichend getippt wird, filtern wir.
+	const filteredActivities = $derived.by(() => {
+		const q = activityText.trim().toLowerCase();
+		const selName = app.activityName(draft.activityId).toLowerCase();
+		if (!q || q === selName) return activityOptions;
+		return activityOptions.filter((a) => a.name.toLowerCase().includes(q));
+	});
 
 	/** Stunden aus Von/Bis neu berechnen (z.B. 1.5). */
 	function recalcDur() {
@@ -81,16 +94,71 @@
 		startText = draft.start;
 		endText = draft.end;
 		activityText = app.activityName(draft.activityId);
+		comboOpen = false;
 	}
 
-	/** Tippt der Nutzer eine Aktivität, halten wir draft.activityId synchron (für die
-	 *  Abwesenheits-Erkennung); ohne exakte Übereinstimmung = neue Aktivität (id leer). */
+	/** Tippt der Nutzer, filtern wir die Liste und halten draft.activityId synchron
+	 *  (nur bei exakter Übereinstimmung; kein Anlegen neuer Aktivitäten). */
 	function onActivityInput(value: string) {
 		activityText = value;
+		comboOpen = true;
+		comboIndex = 0;
 		const match = app.activities.find(
 			(a) => !a.archived && a.name.toLowerCase() === value.trim().toLowerCase()
 		);
 		draft.activityId = match?.id ?? "";
+	}
+
+	/** Dropdown öffnen und auf die aktuelle Auswahl scrollen. */
+	function openCombo() {
+		comboOpen = true;
+		comboIndex = Math.max(
+			0,
+			filteredActivities.findIndex((a) => a.id === draft.activityId)
+		);
+	}
+
+	/** Vorschlag übernehmen – ohne den alten Text vorher löschen zu müssen. */
+	function selectActivity(a: { id: string; name: string }) {
+		draft.activityId = a.id;
+		activityText = a.name;
+		comboOpen = false;
+	}
+
+	/** Beim Schließen nur bestehende Aktivitäten zulassen: passt der Text nicht exakt
+	 *  zu einer Aktivität, auf die zuletzt gültige Auswahl zurücksetzen. */
+	function commitActivity() {
+		const match = app.activities.find(
+			(a) => !a.archived && a.name.toLowerCase() === activityText.trim().toLowerCase()
+		);
+		if (match) {
+			draft.activityId = match.id;
+			activityText = match.name;
+		} else {
+			activityText = draft.activityId ? app.activityName(draft.activityId) : "";
+		}
+		comboOpen = false;
+	}
+
+	function onActivityKeydown(e: KeyboardEvent) {
+		if (e.key === "ArrowDown") {
+			e.preventDefault();
+			if (!comboOpen) return openCombo();
+			comboIndex = Math.min(comboIndex + 1, filteredActivities.length - 1);
+		} else if (e.key === "ArrowUp") {
+			e.preventDefault();
+			comboIndex = Math.max(comboIndex - 1, 0);
+		} else if (e.key === "Enter") {
+			if (comboOpen && filteredActivities[comboIndex]) {
+				e.preventDefault();
+				selectActivity(filteredActivities[comboIndex]);
+			}
+		} else if (e.key === "Escape") {
+			if (comboOpen) {
+				e.stopPropagation();
+				commitActivity();
+			}
+		}
 	}
 
 	/** Von-Eingabe beim Verlassen normalisieren (z.B. "1800" -> "18:00"). */
@@ -198,10 +266,13 @@
 	}
 
 	async function save() {
-		// Getippte Aktivität auflösen bzw. neu anlegen (Combobox).
-		const activityId = await app.addActivity(activityText);
-		if (!activityId) return;
-		draft.activityId = activityId;
+		// Nur bestehende Aktivitäten – die Combobox legt keine neuen an.
+		commitActivity();
+		const activityId = draft.activityId;
+		if (!activityId) {
+			toast.error("Bitte eine bestehende Aktivität auswählen.");
+			return;
+		}
 		const absence = app.isAbsenceId(activityId);
 		if (!absence) {
 			commitStart();
@@ -356,19 +427,52 @@
 			<div class="space-y-3">
 			<div class="space-y-1">
 				<Label for="act">Aktivität</Label>
-				<Input
-					id="act"
-					list="activity-options"
-					autocomplete="off"
-					placeholder="Aktivität wählen oder eingeben"
-					value={activityText}
-					oninput={(e) => onActivityInput(e.currentTarget.value)}
-				/>
-				<datalist id="activity-options">
-					{#each activityOptions as a (a.id)}
-						<option value={a.name}></option>
-					{/each}
-				</datalist>
+				<div class="relative">
+					<Input
+						id="act"
+						role="combobox"
+						aria-expanded={comboOpen}
+						aria-controls="activity-listbox"
+						autocomplete="off"
+						placeholder="Aktivität wählen oder suchen"
+						value={activityText}
+						oninput={(e) => onActivityInput(e.currentTarget.value)}
+						onfocus={openCombo}
+						onclick={openCombo}
+						onblur={commitActivity}
+						onkeydown={onActivityKeydown}
+					/>
+					{#if comboOpen}
+						<ul
+							id="activity-listbox"
+							role="listbox"
+							class="bg-popover text-popover-foreground absolute z-50 mt-1 max-h-52 w-full overflow-y-auto rounded-md border p-1 shadow-md"
+						>
+							{#if filteredActivities.length === 0}
+								<li class="text-muted-foreground px-2 py-1.5 text-sm">Keine Aktivität gefunden</li>
+							{:else}
+								{#each filteredActivities as a, i (a.id)}
+									<li>
+										<button
+											type="button"
+											class="flex w-full items-center rounded-sm px-2 py-1.5 text-left text-sm {i ===
+											comboIndex
+												? 'bg-accent text-accent-foreground'
+												: ''}"
+											onmousedown={(e) => {
+												e.preventDefault();
+												selectActivity(a);
+											}}
+											onmouseenter={() => (comboIndex = i)}
+										>
+											{a.name}
+										</button>
+									</li>
+								{/each}
+							{/if}
+						</ul>
+					{/if}
+				</div>
 			</div>
 
 			{#if draftIsAbsence}
