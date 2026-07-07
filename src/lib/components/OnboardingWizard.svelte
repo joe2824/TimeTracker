@@ -45,11 +45,14 @@
 
 	async function persist() {
 		const parsed = parseHours(hoursPerDay);
+		// Nur die erste Erinnerungszeit setzen/ersetzen, evtl. weitere (Dev-Re-Trigger
+		// bei Bestandsnutzern) erhalten.
+		const rest = app.settings.reminderTimes.slice(1);
 		await app.finishOnboarding({
 			senderName: senderName.trim(),
 			bossEmail: bossEmail.trim(),
 			hoursPerDay: parsed && parsed > 0 ? parsed : app.settings.hoursPerDay,
-			reminderTimes: [reminderTime],
+			reminderTimes: [reminderTime, ...rest],
 			autostart
 		});
 		// Erinnerungen mit der neuen Zeit neu planen.
