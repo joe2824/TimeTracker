@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
-	import { parseHours } from "$lib/time";
+	import { clockToMin } from "$lib/time";
 	import { scheduleReminders } from "$lib/reminders";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
@@ -11,15 +11,25 @@
 	import MailIcon from "@lucide/svelte/icons/mail";
 	import PalmtreeIcon from "@lucide/svelte/icons/palmtree";
 	import BellIcon from "@lucide/svelte/icons/bell";
+	import Trash2Icon from "@lucide/svelte/icons/trash-2";
+	import PlusIcon from "@lucide/svelte/icons/plus";
 
 	const STEPS = 3;
 	let step = $state(0);
 
+	/** Dezimalstunden -> "HH:MM" (für das Zeit-Eingabefeld). */
+	function hoursToTime(h: number): string {
+		const total = Math.max(0, Math.round(h * 60));
+		return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+	}
+
 	// Felder mit den aktuellen Werten vorbelegen.
 	let senderName = $state(app.settings.senderName);
 	let bossEmail = $state(app.settings.bossEmail);
-	let hoursPerDay = $state(String(app.settings.hoursPerDay).replace(".", ","));
-	let reminderTime = $state(app.settings.reminderTimes[0] ?? "14:00");
+	let workTime = $state(hoursToTime(app.settings.hoursPerDay)); // Arbeitszeit/Tag als "HH:MM"
+	let times = $state<string[]>(
+		app.settings.reminderTimes.length ? [...app.settings.reminderTimes] : ["14:00"]
+	);
 	let autostart = $state(app.settings.autostart);
 	let saving = $state(false);
 
@@ -30,7 +40,7 @@
 
 	const features = [
 		{ icon: TimerIcon, title: "Timer & Tracking", text: "Zeit pro Aktivität starten/stoppen – auch per globalem Hotkey." },
-		{ icon: MailIcon, title: "Monatsbericht", text: "Erfasste Stunden als E-Mail-Entwurf an den Vorgesetzten." },
+		{ icon: MailIcon, title: "Monatsbericht", text: "Erfasste Stunden und sende diese, am Monatsende, einfach an den Vorgesetzten." },
 		{ icon: PalmtreeIcon, title: "Abwesenheiten", text: "Urlaub, Krankheit & Co. als ganze oder halbe Tage erfassen." },
 		{ icon: BellIcon, title: "Erinnerungen", text: "Tägliche Erinnerung ans Erfassen und monatlich an den Bericht." }
 	];
@@ -44,18 +54,17 @@
 	}
 
 	async function persist() {
-		const parsed = parseHours(hoursPerDay);
-		// Nur die erste Erinnerungszeit setzen/ersetzen, evtl. weitere (Dev-Re-Trigger
-		// bei Bestandsnutzern) erhalten.
-		const rest = app.settings.reminderTimes.slice(1);
+		const min = clockToMin(workTime);
+		const hpd = min != null && min > 0 ? min / 60 : app.settings.hoursPerDay;
+		const cleanTimes = times.filter((t) => t);
 		await app.finishOnboarding({
 			senderName: senderName.trim(),
 			bossEmail: bossEmail.trim(),
-			hoursPerDay: parsed && parsed > 0 ? parsed : app.settings.hoursPerDay,
-			reminderTimes: [reminderTime, ...rest],
+			hoursPerDay: hpd,
+			reminderTimes: cleanTimes,
 			autostart
 		});
-		// Erinnerungen mit der neuen Zeit neu planen.
+		// Erinnerungen mit den neuen Zeiten neu planen.
 		scheduleReminders();
 		// Autostart-Wahl direkt anwenden (der Aufruf beim App-Start lief bereits vorher).
 		try {
@@ -131,9 +140,11 @@
 					{/if}
 				</div>
 				<div class="space-y-1">
-					<Label for="ob-hpd">Arbeitsstunden pro Tag</Label>
-					<Input id="ob-hpd" inputmode="decimal" placeholder="z. B. 7,5" bind:value={hoursPerDay} />
-					<p class="text-muted-foreground text-xs">Basis für die Umrechnung von Abwesenheiten.</p>
+					<Label for="ob-hpd">Arbeitszeit pro Tag</Label>
+					<Input id="ob-hpd" type="time" bind:value={workTime} class="w-32" />
+					<p class="text-muted-foreground text-xs">
+						Als Zeit (z. B. 07:30). Basis für die Umrechnung von Abwesenheiten.
+					</p>
 				</div>
 			</div>
 		{:else}
@@ -142,9 +153,23 @@
 				<p class="text-muted-foreground text-sm">Damit du das Erfassen nicht vergisst.</p>
 			</div>
 			<div class="space-y-4">
-				<div class="space-y-1">
-					<Label for="ob-remind">Tägliche Erinnerung um</Label>
-					<Input id="ob-remind" type="time" bind:value={reminderTime} class="w-32" />
+				<div class="space-y-2">
+					<Label>Tägliche Erinnerung um</Label>
+					{#each times as _, i (i)}
+						<div class="flex gap-2">
+							<Input type="time" bind:value={times[i]} class="w-32" />
+							<Button
+								variant="ghost"
+								size="icon"
+								onclick={() => (times = times.filter((_, j) => j !== i))}
+							>
+								<Trash2Icon class="size-4" />
+							</Button>
+						</div>
+					{/each}
+					<Button variant="outline" size="sm" onclick={() => (times = [...times, "14:00"])}>
+						<PlusIcon class="size-4" /> Uhrzeit
+					</Button>
 				</div>
 				<div class="flex items-center justify-between gap-3 rounded-lg border p-3">
 					<div>

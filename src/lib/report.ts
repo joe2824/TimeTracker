@@ -1,5 +1,5 @@
 import type { Activity, Entry } from "./types";
-import { entryHours, fmtDate, fmtHours, monthLabel, roundHours } from "./time";
+import { entryHours, fmtDate, fmtHoursClock, monthLabel, roundHours } from "./time";
 
 export interface ReportRow {
 	activityId: string;
@@ -89,7 +89,7 @@ export function reportToHtml(report: MonthReport): string {
 	const rowsHtml = report.rows
 		.map((r, i) => {
 			const bg = i % 2 === 1 ? gray : "";
-			const val = r.hours > 0 ? fmtHours(r.hours) : "";
+			const val = r.hours > 0 ? fmtHoursClock(r.hours) : "";
 			return `<tr>
   <td style="${cell}${bg}">${escapeHtml(r.name)}</td>
   <td style="${cell}${bg}text-align:right;">${val}</td>
@@ -105,11 +105,11 @@ export function reportToHtml(report: MonthReport): string {
 ${rowsHtml}
 <tr>
   <td style="${cell}font-weight:bold;">Summe</td>
-  <td style="${cell}font-weight:bold;text-align:right;">${fmtHours(report.total)}</td>
+  <td style="${cell}font-weight:bold;text-align:right;">${fmtHoursClock(report.total)}</td>
 </tr>
 </table>
 <p style="font-family:Calibri,Arial,sans-serif;font-size:10pt;color:#555;">
-Arbeitszeit: ${fmtHours(report.workHours)} h&nbsp;&nbsp;|&nbsp;&nbsp;Abwesenheiten: ${fmtHours(report.absenceHours)} h&nbsp;&nbsp;|&nbsp;&nbsp;Gesamt: ${fmtHours(report.total)} h
+Arbeitszeit: ${fmtHoursClock(report.workHours)} h&nbsp;&nbsp;|&nbsp;&nbsp;Abwesenheiten: ${fmtHoursClock(report.absenceHours)} h&nbsp;&nbsp;|&nbsp;&nbsp;Gesamt: ${fmtHoursClock(report.total)} h
 </p>`;
 }
 

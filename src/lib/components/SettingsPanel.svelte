@@ -246,11 +246,11 @@
 					<select
 						id="round"
 						bind:value={rounding}
-						class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+						class="border-input bg-background h-8 w-full rounded-lg border px-3 text-sm"
 					>
-						<option value="0.25">Viertelstunde (0,25 h)</option>
-						<option value="0.5">Halbe Stunde (0,5 h)</option>
-						<option value="1">Volle Stunde (1 h)</option>
+						<option value="0.25">Viertelstunde (0:15)</option>
+						<option value="0.5">Halbe Stunde (0:30)</option>
+						<option value="1">Volle Stunde (1:00)</option>
 					</select>
 				</div>
 				<div class="space-y-1">
@@ -411,7 +411,7 @@
 		<Card.Header><Card.Title>Über</Card.Title></Card.Header>
 		<Card.Content class="space-y-3">
 			<div class="flex items-center gap-3">
-				<button type="button" class="cursor-pointer" onclick={tapLogo} aria-label="TimeTracker">
+				<button type="button" class="cursor-none" onclick={tapLogo} aria-label="TimeTracker">
 					<img src="/logo.svg" alt="TimeTracker" class="h-10 w-auto" />
 				</button>
 				<div>
