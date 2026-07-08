@@ -9,6 +9,9 @@
 	import SquareIcon from "@lucide/svelte/icons/square";
 	import PlayIcon from "@lucide/svelte/icons/play";
 	import StarIcon from "@lucide/svelte/icons/star";
+	import ListIcon from "@lucide/svelte/icons/list";
+
+	let { onShowEntries }: { onShowEntries?: () => void } = $props();
 
 	let onlyFavorites = $state(false);
 	const choices = $derived(
@@ -184,8 +187,11 @@
 	</div>
 
 	<Card.Root>
-		<Card.Header>
+		<Card.Header class="flex flex-row items-center justify-between gap-2 space-y-0">
 			<Card.Title>Heute ({today})</Card.Title>
+			<Button variant="outline" size="sm" onclick={() => onShowEntries?.()}>
+				<ListIcon class="size-4" /> Einträge anzeigen
+			</Button>
 		</Card.Header>
 		<Card.Content>
 			{#if todayEntries.length === 0}

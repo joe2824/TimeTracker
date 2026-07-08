@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { onMount } from "svelte";
+	import { onMount, tick } from "svelte";
 	import { toast } from "svelte-sonner";
 	import { app } from "$lib/app.svelte";
+	import { entriesFocus } from "$lib/entriesFocus.svelte";
 	import { listEntryMonths } from "$lib/store";
 	import {
 		clockToMin,
@@ -212,6 +213,29 @@
 		void app.ensureMonth(month);
 	});
 
+	/** Auf den aktuellen Monat wechseln und den heutigen Tag mittig in die Liste scrollen. */
+	async function jumpToToday() {
+		const today = fmtDate(Date.now());
+		const targetMonth = today.slice(0, 7);
+		if (month !== targetMonth) {
+			month = targetMonth;
+			await app.ensureMonth(targetMonth);
+			await refreshMonths();
+		}
+		await tick(); // Warten, bis die Tage neu gerendert sind.
+		document
+			.getElementById(`day-row-${today}`)
+			?.scrollIntoView({ block: "center", behavior: "smooth" });
+	}
+
+	// Wunsch aus der Tracking-Ansicht konsumieren.
+	$effect(() => {
+		if (entriesFocus.pendingToday) {
+			entriesFocus.pendingToday = false;
+			void jumpToToday();
+		}
+	});
+
 	// Alle Tage des Monats als Gitter.
 	const days = $derived.by(() => {
 		const [y, m] = month.split("-").map(Number);
@@ -236,6 +260,7 @@
 	});
 
 	const totalHours = $derived(days.reduce((s, day) => s + day.hours, 0));
+	const todayStr = $derived(fmtDate(app.now));
 
 	function openAdd(date?: string) {
 		draft = emptyDraft();
@@ -361,6 +386,7 @@
 			<ul class="divide-border max-h-[55vh] divide-y overflow-y-auto">
 				{#each days as day (day.date)}
 					<li
+						id={`day-row-${day.date}`}
 						class="flex items-start gap-3 px-3 py-1.5 text-sm {day.weekend
 							? 'bg-muted/60'
 							: ''}"

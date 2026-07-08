@@ -9,6 +9,7 @@
 	import { scheduleReminders, scheduleReportReminder } from "$lib/reminders";
 	import { applyShortcuts } from "$lib/shortcuts";
 	import { startWatchers, stopWatchers, watchers } from "$lib/watchers.svelte";
+	import { entriesFocus } from "$lib/entriesFocus.svelte";
 	import * as Tabs from "$lib/components/ui/tabs";
 	import TimerIcon from "@lucide/svelte/icons/timer";
 	import PencilLineIcon from "@lucide/svelte/icons/pencil-line";
@@ -39,6 +40,12 @@
 				app.settings.reportReminderEnabled &&
 				!watchers.reportReminderDismissed)
 	);
+
+	// Von der Tracking-Ansicht: zu den Einträgen wechseln und heute mittig zeigen.
+	function showEntriesToday() {
+		entriesFocus.requestToday();
+		tab = "entries";
+	}
 
 	function onGlobalKey(e: KeyboardEvent) {
 		if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -170,7 +177,7 @@
 
 		<div class="mx-auto w-full max-w-6xl px-6 py-4">
 			<Tabs.Content value="tracking" class="mt-0">
-				<TrackingPanel />
+				<TrackingPanel onShowEntries={showEntriesToday} />
 			</Tabs.Content>
 			<Tabs.Content value="entries" class="mt-4">
 				<EntryEditor />
