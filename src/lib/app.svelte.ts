@@ -473,17 +473,19 @@ class AppState {
 		return next;
 	}
 
-	async #startInternal(activityId: string): Promise<void> {
+	async #startInternal(activityId: string, startTs?: number): Promise<void> {
 		// Abwesenheiten werden nicht per Timer erfasst, sondern als Tage im Einträge-Tab.
 		if (this.isAbsenceId(activityId)) return;
 		// Läuft genau diese Aktivität schon? -> nichts tun (kein zweiter Eintrag).
 		if (this.running?.activityId === activityId) return;
 		const now = Date.now();
-		if (this.hasFullDayAbsence(now)) {
-			toast.error("Heute ist eine Ganztags-Abwesenheit eingetragen – kein Timer möglich.");
+		// Rückdatierter Start: nie in der Zukunft, nie länger als 24 h zurück.
+		const start = Math.min(startTs ?? now, now);
+		if (this.hasFullDayAbsence(start)) {
+			toast.error("An diesem Tag ist eine Ganztags-Abwesenheit eingetragen – kein Timer möglich.");
 			return;
 		}
-		const month = monthKey(now);
+		const month = monthKey(start);
 		await this.ensureMonth(month);
 
 		// Wechsel ohne Flackern: alten Timer schließen UND neuen setzen in EINEM
@@ -492,12 +494,12 @@ class AppState {
 		for (const [m, list] of Object.entries(this.entriesByMonth)) {
 			for (const e of list) {
 				if (e.endTs === null) {
-					e.endTs = Math.max(e.startTs, now);
+					e.endTs = Math.max(e.startTs, start);
 					months.add(m);
 				}
 			}
 		}
-		const entry: Entry = { id: uid(), activityId, startTs: now, endTs: null, note: "", source: "timer" };
+		const entry: Entry = { id: uid(), activityId, startTs: start, endTs: null, note: "", source: "timer" };
 		this.entriesByMonth[month].push(entry);
 		this.running = entry;
 		months.add(month);
@@ -506,8 +508,9 @@ class AppState {
 		for (const m of months) await this.#saveMonth(m);
 	}
 
-	startActivity(activityId: string): Promise<void> {
-		return this.#exclusive(() => this.#startInternal(activityId));
+	/** Startet einen Timer, optional rückdatiert (startTs in der Vergangenheit). */
+	startActivity(activityId: string, startTs?: number): Promise<void> {
+		return this.#exclusive(() => this.#startInternal(activityId, startTs));
 	}
 
 	/** Startet/stoppt den zuletzt benutzten Timer (fuer globalen Hotkey). */

@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
-	import { durationSeconds, fmtClock, fmtDate, fmtHMS } from "$lib/time";
+	import { clockToMin, durationSeconds, fmtClock, fmtDate, fmtHMS } from "$lib/time";
 	import { Button } from "$lib/components/ui/button";
+	import { Input } from "$lib/components/ui/input";
 	import * as Card from "$lib/components/ui/card";
+	import { toast } from "svelte-sonner";
 	import SquareIcon from "@lucide/svelte/icons/square";
 	import PlayIcon from "@lucide/svelte/icons/play";
 	import StarIcon from "@lucide/svelte/icons/star";
@@ -11,6 +13,46 @@
 	const choices = $derived(
 		onlyFavorites ? app.trackableActivities.filter((a) => a.favorite) : app.trackableActivities
 	);
+
+	// Startzeit-Auswahl: Preset "vor X min" (0 = jetzt) oder freie Uhrzeit (überschreibt Preset).
+	let presetMin = $state(0);
+	let customStart = $state("");
+
+	/** Effektiver Start-Zeitstempel aus der Auswahl, oder null bei ungültiger Uhrzeit. */
+	function resolveStart(): number | null {
+		const now = Date.now();
+		if (customStart) {
+			const min = clockToMin(customStart);
+			if (min == null) return null;
+			const d = new Date(now);
+			d.setHours(Math.floor(min / 60), min % 60, 0, 0);
+			const ts = d.getTime();
+			return ts > now ? null : ts; // in der Zukunft -> ungültig
+		}
+		return now - presetMin * 60_000;
+	}
+
+	// Hinweistext (tickt mit app.now); null wenn "jetzt" oder ungültig.
+	const startHint = $derived.by(() => {
+		void app.now;
+		if (!customStart && presetMin === 0) return null;
+		const ts = resolveStart();
+		if (ts == null) return "ungültige Uhrzeit";
+		return `Timer beginnt um ${fmtClock(ts)}`;
+	});
+
+	function startAt(activityId: string) {
+		const ts = resolveStart();
+		if (ts == null) {
+			toast.error("Ungültige Startzeit (liegt in der Zukunft?).");
+			return;
+		}
+		const now = Date.now();
+		void app.startActivity(activityId, now - ts < 1000 ? undefined : ts);
+		// Nach dem Start auf "jetzt" zurücksetzen.
+		presetMin = 0;
+		customStart = "";
+	}
 
 	const today = $derived(fmtDate(app.now));
 	const todayEntries = $derived(
@@ -57,6 +99,48 @@
 		</Card.Content>
 	</Card.Root>
 
+	{#if !app.running}
+		<div class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border p-3">
+			<span class="text-sm font-medium">Startzeit</span>
+			<div class="flex flex-wrap gap-1">
+				<Button
+					variant={presetMin === 0 && !customStart ? "default" : "outline"}
+					size="sm"
+					onclick={() => {
+						presetMin = 0;
+						customStart = "";
+					}}
+				>
+					Jetzt
+				</Button>
+				{#each [15, 30, 60] as m (m)}
+					<Button
+						variant={presetMin === m && !customStart ? "default" : "outline"}
+						size="sm"
+						onclick={() => {
+							presetMin = m;
+							customStart = "";
+						}}
+					>
+						−{m} min
+					</Button>
+				{/each}
+			</div>
+			<div class="flex items-center gap-1.5">
+				<span class="text-muted-foreground text-xs">oder ab</span>
+				<Input
+					type="time"
+					bind:value={customStart}
+					class="w-28"
+					oninput={() => (presetMin = 0)}
+				/>
+			</div>
+			{#if startHint}
+				<span class="text-muted-foreground text-xs">· {startHint}</span>
+			{/if}
+		</div>
+	{/if}
+
 	<div>
 		<div class="mb-2 flex items-center justify-between">
 			<h3 class="text-sm font-medium">Aktivität wählen</h3>
@@ -85,7 +169,7 @@
 					<Button
 						variant={active ? "default" : "outline"}
 						class="h-auto justify-start whitespace-normal py-2 text-left"
-						onclick={() => (active ? app.stop() : app.startActivity(a.id))}
+						onclick={() => (active ? app.stop() : startAt(a.id))}
 					>
 						{#if active}
 							<SquareIcon class="size-4 shrink-0" />
