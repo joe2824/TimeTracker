@@ -2,8 +2,9 @@
 # Wird von Rust (src-tauri/src/outlook.rs) aufgerufen.
 #   -Action draft    : erstellt einen E-Mail-Entwurf und zeigt ihn an (kein automatischer Versand)
 #   -Action calendar : liest Kalendereintraege im Zeitraum und gibt sie als JSON aus
+#   -Action detect   : meldet als JSON, welche Outlook-Variante verfuegbar/aktiv ist (kein COM-Aufruf)
 param(
-  [Parameter(Mandatory = $true)][ValidateSet('draft', 'calendar')][string]$Action,
+  [Parameter(Mandatory = $true)][ValidateSet('draft', 'calendar', 'detect')][string]$Action,
   [string]$To = '',
   [string]$Subject = '',
   [string]$BodyFile = '',
@@ -38,7 +39,54 @@ function Invoke-WithRetry {
 function Get-Outlook {
   # Bestehende Instanz wiederverwenden, sonst neue starten.
   try { return [Runtime.InteropServices.Marshal]::GetActiveObject('Outlook.Application') }
-  catch { return New-Object -ComObject Outlook.Application }
+  catch {
+    try { return New-Object -ComObject Outlook.Application }
+    catch {
+      # Klassisches Outlook (COM) ist nicht installiert/registriert - typischerweise
+      # nutzt der Anwender nur das neue Outlook (Store-App). Klartext statt HRESULT.
+      throw "Kein klassisches Outlook verfügbar. Die COM-Integration (Entwurf/Kalender) braucht das klassische Outlook mit eingerichtetem Profil. Mit dem neuen Outlook (Store-App) steht nur der Mail-Fallback zur Verfügung."
+    }
+  }
+}
+
+# Ermittelt ohne COM-Start, welche Outlook-Variante vorhanden/aktiv ist.
+function Get-OutlookInfo {
+  $classicCom = Test-Path 'Registry::HKEY_CLASSES_ROOT\Outlook.Application\CLSID'
+  $newOutlook = [bool](Get-AppxPackage -Name Microsoft.OutlookForWindows -ErrorAction SilentlyContinue)
+
+  # Installierte Office-Versionen (16.0, 15.0, ...) einmal ermitteln.
+  $officeVersions = @(Get-ChildItem 'Registry::HKEY_CURRENT_USER\Software\Microsoft\Office' -ErrorAction SilentlyContinue |
+    Where-Object { $_.PSChildName -match '^\d+\.\d+$' })
+
+  # Klassisches Profil unter irgendeiner Office-Version ODER dem versionsunabhaengigen WMS-Pfad.
+  $profileRoots = [System.Collections.Generic.List[string]]::new()
+  $profileRoots.Add('Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles')
+  foreach ($ver in $officeVersions) { $profileRoots.Add("$($ver.PSPath)\Outlook\Profiles") }
+  $hasProfile = $false
+  foreach ($root in $profileRoots) {
+    if (@(Get-ChildItem $root -ErrorAction SilentlyContinue).Count -gt 0) { $hasProfile = $true; break }
+  }
+
+  # "UseNewOutlook"=1 heisst: Anwender hat auf das neue Outlook umgeschaltet.
+  $prefersNew = $false
+  foreach ($ver in $officeVersions) {
+    $v = (Get-ItemProperty "$($ver.PSPath)\Outlook\Preferences" -Name UseNewOutlook -ErrorAction SilentlyContinue).UseNewOutlook
+    if ($v -eq 1) { $prefersNew = $true }
+  }
+
+  # comUsable: klassisches Outlook registriert UND ein Profil vorhanden -> COM sollte klappen.
+  [PSCustomObject]@{
+    classicComRegistered = [bool]$classicCom
+    classicProfile       = [bool]$hasProfile
+    newOutlookInstalled  = [bool]$newOutlook
+    prefersNewOutlook    = [bool]$prefersNew
+    comUsable            = [bool]($classicCom -and $hasProfile)
+  }
+}
+
+if ($Action -eq 'detect') {
+  Write-Output (ConvertTo-Json -InputObject (Get-OutlookInfo) -Depth 3 -Compress)
+  exit 0
 }
 
 if ($Action -eq 'draft') {

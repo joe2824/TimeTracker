@@ -61,6 +61,26 @@ pub fn create_outlook_draft(
     }
 }
 
+/// Meldet ohne COM-Aufruf, welche Outlook-Variante verfuegbar/aktiv ist.
+/// Wird vom Frontend genutzt, um bei fehlendem klassischem Outlook einen klaren
+/// Hinweis (statt eines kryptischen COM-Fehlers) und den mailto-Fallback anzubieten.
+#[tauri::command]
+pub fn detect_outlook(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let script = ensure_script(&app)?;
+    let output = powershell(&script)
+        .args(["-Action", "detect"])
+        .output()
+        .map_err(|e| format!("PowerShell konnte nicht gestartet werden: {e}"))?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        serde_json::from_str(stdout.trim())
+            .map_err(|e| format!("JSON konnte nicht gelesen werden: {e}; Ausgabe: {stdout}"))
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    }
+}
+
 /// Liest Kalendereintraege im Zeitraum [start, end] (ISO-Datum) und gibt sie als JSON-Array zurueck.
 #[tauri::command]
 pub fn read_outlook_calendar(

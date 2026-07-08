@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
-	import { clockToMin, durationSeconds, fmtClock, fmtDate, fmtHMS } from "$lib/time";
+	import { durationSeconds, fmtClock, fmtDate, fmtHMS } from "$lib/time";
+	import { START_PRESETS, resolveStartTs, toStartArg } from "$lib/startTime";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import * as Card from "$lib/components/ui/card";
@@ -18,37 +19,23 @@
 	let presetMin = $state(0);
 	let customStart = $state("");
 
-	/** Effektiver Start-Zeitstempel aus der Auswahl, oder null bei ungültiger Uhrzeit. */
-	function resolveStart(): number | null {
-		const now = Date.now();
-		if (customStart) {
-			const min = clockToMin(customStart);
-			if (min == null) return null;
-			const d = new Date(now);
-			d.setHours(Math.floor(min / 60), min % 60, 0, 0);
-			const ts = d.getTime();
-			return ts > now ? null : ts; // in der Zukunft -> ungültig
-		}
-		return now - presetMin * 60_000;
-	}
-
 	// Hinweistext (tickt mit app.now); null wenn "jetzt" oder ungültig.
 	const startHint = $derived.by(() => {
 		void app.now;
 		if (!customStart && presetMin === 0) return null;
-		const ts = resolveStart();
+		const ts = resolveStartTs(presetMin, customStart);
 		if (ts == null) return "ungültige Uhrzeit";
 		return `Timer beginnt um ${fmtClock(ts)}`;
 	});
 
 	function startAt(activityId: string) {
-		const ts = resolveStart();
+		const now = Date.now();
+		const ts = resolveStartTs(presetMin, customStart, now);
 		if (ts == null) {
 			toast.error("Ungültige Startzeit (liegt in der Zukunft?).");
 			return;
 		}
-		const now = Date.now();
-		void app.startActivity(activityId, now - ts < 1000 ? undefined : ts);
+		void app.startActivity(activityId, toStartArg(ts, now));
 		// Nach dem Start auf "jetzt" zurücksetzen.
 		presetMin = 0;
 		customStart = "";
@@ -100,30 +87,34 @@
 	</Card.Root>
 
 	{#if !app.running}
-		<div class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border p-3">
-			<span class="text-sm font-medium">Startzeit</span>
-			<div class="flex flex-wrap gap-1">
-				<Button
-					variant={presetMin === 0 && !customStart ? "default" : "outline"}
-					size="sm"
+		<div class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border p-2 text-sm">
+			<span class="text-muted-foreground font-medium">Startzeit</span>
+			<div class="flex flex-wrap items-center gap-1">
+				<button
+					type="button"
+					class="hover:bg-accent rounded px-2 py-1 {presetMin === 0 && !customStart
+						? 'bg-accent font-medium'
+						: ''}"
 					onclick={() => {
 						presetMin = 0;
 						customStart = "";
 					}}
 				>
 					Jetzt
-				</Button>
-				{#each [15, 30, 60] as m (m)}
-					<Button
-						variant={presetMin === m && !customStart ? "default" : "outline"}
-						size="sm"
+				</button>
+				{#each START_PRESETS as m (m)}
+					<button
+						type="button"
+						class="hover:bg-accent rounded px-2 py-1 {presetMin === m && !customStart
+							? 'bg-accent font-medium'
+							: ''}"
 						onclick={() => {
 							presetMin = m;
 							customStart = "";
 						}}
 					>
 						−{m} min
-					</Button>
+					</button>
 				{/each}
 			</div>
 			<div class="flex items-center gap-1.5">
@@ -131,7 +122,7 @@
 				<Input
 					type="time"
 					bind:value={customStart}
-					class="w-28"
+					class="h-8 w-24"
 					oninput={() => (presetMin = 0)}
 				/>
 			</div>

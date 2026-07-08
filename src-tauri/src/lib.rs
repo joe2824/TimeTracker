@@ -140,6 +140,23 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Erzeugt aus dem Standard-Icon eine „läuft"-Variante: der helle (fast weiße)
+/// Hintergrund wird rot, das Glyph bleibt. Gleiche Maße wie das Original.
+#[cfg(desktop)]
+fn with_red_background(icon: &tauri::image::Image<'_>) -> tauri::image::Image<'static> {
+    let (w, h) = (icon.width(), icon.height());
+    let mut rgba = icon.rgba().to_vec();
+    for px in rgba.chunks_exact_mut(4) {
+        // Nur sichtbare, nahezu weiße Flächen einfärben (Glyph/Transparenz bleiben).
+        if px[3] > 0 && px[0] >= 230 && px[1] >= 230 && px[2] >= 230 {
+            px[0] = 0xDC;
+            px[1] = 0x26;
+            px[2] = 0x26;
+        }
+    }
+    tauri::image::Image::new_owned(rgba, w, h)
+}
+
 /// Baut das Tray-Menue neu (laufender Timer + Schnellstart aus Favoriten/zuletzt benutzt).
 #[tauri::command]
 fn set_tray_state(app: tauri::AppHandle, state: TrayState) -> Result<(), String> {
@@ -148,13 +165,15 @@ fn set_tray_state(app: tauri::AppHandle, state: TrayState) -> Result<(), String>
         let menu = build_tray_menu(&app, &state).map_err(|e| e.to_string())?;
         tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
 
-        // Tray-Icon rot, solange ein Timer läuft.
-        if state.running.is_some() {
-            let red = tauri::image::Image::from_bytes(include_bytes!("../icons/tray-active.png"))
-                .map_err(|e| e.to_string())?;
-            let _ = tray.set_icon(Some(red));
-        } else if let Some(def) = app.default_window_icon() {
-            let _ = tray.set_icon(Some(def.clone()));
+        // Tray-Icon: bei laufendem Timer den (fast weißen) Hintergrund des
+        // Standard-Icons rot einfärben. So bleibt das Glyph und vor allem die
+        // volle Icon-Fläche/Größe erhalten (statt duenner Linienkunst, die kleiner wirkt).
+        if let Some(def) = app.default_window_icon() {
+            if state.running.is_some() {
+                let _ = tray.set_icon(Some(with_red_background(def)));
+            } else {
+                let _ = tray.set_icon(Some(def.clone()));
+            }
         }
     }
     #[cfg(not(desktop))]
@@ -257,7 +276,8 @@ pub fn run() {
             idle_seconds,
             set_tray_tooltip,
             outlook::create_outlook_draft,
-            outlook::read_outlook_calendar
+            outlook::read_outlook_calendar,
+            outlook::detect_outlook
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

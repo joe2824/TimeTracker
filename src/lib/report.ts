@@ -113,6 +113,23 @@ Arbeitszeit: ${fmtHoursClock(report.workHours)} h&nbsp;&nbsp;|&nbsp;&nbsp;Abwese
 </p>`;
 }
 
+/**
+ * Reine Textfassung des Berichts – als Body fuer den mailto-Fallback,
+ * wenn kein klassisches Outlook fuer die HTML-Tabelle verfuegbar ist.
+ */
+export function reportToText(report: MonthReport): string {
+	const lines = report.rows
+		.filter((r) => r.hours > 0)
+		.map((r) => `${r.name}: ${fmtHoursClock(r.hours)} h`);
+	lines.push(
+		"",
+		`Arbeitszeit: ${fmtHoursClock(report.workHours)} h`,
+		`Abwesenheiten: ${fmtHoursClock(report.absenceHours)} h`,
+		`Gesamt: ${fmtHoursClock(report.total)} h`
+	);
+	return lines.join("\n");
+}
+
 function escapeHtml(s: string): string {
 	return s
 		.replace(/&/g, "&amp;")

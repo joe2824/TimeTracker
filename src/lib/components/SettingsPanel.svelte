@@ -7,6 +7,7 @@
 		devTriggerLongTimer,
 		devTriggerReportReminder
 	} from "$lib/watchers.svelte";
+	import { clockToMin, minToClock } from "$lib/time";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
@@ -63,7 +64,8 @@
 	let bossEmail = $state(app.settings.bossEmail);
 	let senderName = $state(app.settings.senderName);
 	let rounding = $state(String(app.settings.rounding));
-	let hoursPerDay = $state(String(app.settings.hoursPerDay));
+	// Als Uhrzeit ("HH:MM") statt Dezimalstunden eingeben.
+	let hoursPerDay = $state(minToClock(app.settings.hoursPerDay * 60));
 	let subjectTpl = $state(app.settings.reportSubjectTemplate);
 	let times = $state<string[]>([...app.settings.reminderTimes]);
 	let reportReminder = $state(app.settings.reportReminderEnabled);
@@ -135,7 +137,7 @@
 			bossEmail: bossEmail.trim(),
 			senderName: senderName.trim(),
 			rounding: Number(rounding),
-			hoursPerDay: Number(hoursPerDay) || 7.5,
+			hoursPerDay: (clockToMin(hoursPerDay) ?? 450) / 60,
 			reportSubjectTemplate: subjectTpl.trim() || "Stundenerfassung {month} – {name}"
 		});
 		toast.success("Einstellungen gespeichert.");
@@ -255,8 +257,10 @@
 				</div>
 				<div class="space-y-1">
 					<Label for="hpd">Stunden / Arbeitstag</Label>
-					<Input id="hpd" type="number" step="0.25" min="1" max="24" bind:value={hoursPerDay} />
-					<p class="text-muted-foreground text-xs">Für Urlaub/Abwesenheit: ganzer Tag = dieser Wert.</p>
+					<Input id="hpd" type="time" bind:value={hoursPerDay} />
+					<p class="text-muted-foreground text-xs">
+						Als Uhrzeit, z.&nbsp;B. 07:30. Für Urlaub/Abwesenheit: ganzer Tag = dieser Wert.
+					</p>
 				</div>
 			</div>
 			<Button onclick={saveGeneral}>Speichern</Button>
