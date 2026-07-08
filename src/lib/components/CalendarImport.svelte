@@ -1,6 +1,11 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
-	import { readOutlookCalendar, type CalendarEvent } from "$lib/outlook";
+	import {
+		readOutlookCalendar,
+		detectOutlook,
+		explainOutlookError,
+		type CalendarEvent
+	} from "$lib/outlook";
 	import { fmtDate } from "$lib/time";
 	import { Button } from "$lib/components/ui/button";
 	import { Badge } from "$lib/components/ui/badge";
@@ -41,7 +46,8 @@
 			loaded = true;
 			if (events.length === 0) toast.info("Keine Kalendereinträge in diesem Monat gefunden.");
 		} catch (e) {
-			toast.error(`Outlook-Kalender konnte nicht gelesen werden: ${e}`);
+			const info = await detectOutlook().catch(() => null);
+			toast.error(`Outlook-Kalender konnte nicht gelesen werden: ${explainOutlookError(e, info)}`);
 		} finally {
 			loading = false;
 		}

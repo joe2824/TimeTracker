@@ -9,13 +9,15 @@
 	import MailIcon from "@lucide/svelte/icons/mail";
 
 	// Einmal pro App-Lauf zeigen (nicht erneut aufpoppen nach Schließen).
-	let dismissed = $state(false);
+	// Das "dismissed"-Flag liegt im watchers-Store, damit das Tray-Badge denselben
+	// Zustand kennt (Badge = offene Aufmerksamkeits-Dialoge).
 	let sending = $state(false);
 	const month = $derived(app.pendingReportMonth);
 	// Dev-Override: erzwungen anzeigen; Anzeige-Monat dann auf aktuellen Monat zurückfallen.
 	const shownMonth = $derived(month ?? app.currentMonth);
 	const open = $derived(
-		watchers.forceReportReminder || (!!month && app.settings.reportReminderEnabled && !dismissed)
+		watchers.forceReportReminder ||
+			(!!month && app.settings.reportReminderEnabled && !watchers.reportReminderDismissed)
 	);
 
 	async function send() {
@@ -24,7 +26,7 @@
 		try {
 			await sendReport(month);
 			toast.success("Outlook-Entwurf geöffnet. Bitte prüfen und senden.");
-			dismissed = true;
+			watchers.reportReminderDismissed = true;
 			watchers.forceReportReminder = false;
 		} catch (e) {
 			toast.error(`Outlook-Entwurf fehlgeschlagen: ${e}. Tipp: Tab „Bericht“ → „HTML kopieren“.`);
@@ -35,7 +37,7 @@
 
 	async function neverAgain() {
 		if (month) await app.markReportSent(month);
-		dismissed = true;
+		watchers.reportReminderDismissed = true;
 		watchers.forceReportReminder = false;
 	}
 </script>
@@ -44,7 +46,7 @@
 	{open}
 	onOpenChange={(v) => {
 		if (!v) {
-			dismissed = true;
+			watchers.reportReminderDismissed = true;
 			watchers.forceReportReminder = false;
 		}
 	}}

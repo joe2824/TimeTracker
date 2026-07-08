@@ -17,6 +17,8 @@ class WatcherState {
 	);
 	/** Dev-Override: Berichts-Erinnerung erzwingen (nur zum Debuggen). */
 	forceReportReminder = $state(false);
+	/** Der Berichts-Erinnerungs-Dialog wurde in diesem App-Lauf weggeklickt. */
+	reportReminderDismissed = $state(false);
 }
 export const watchers = new WatcherState();
 

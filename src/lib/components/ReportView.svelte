@@ -2,9 +2,10 @@
 	import { onMount } from "svelte";
 	import { app } from "$lib/app.svelte";
 	import { listEntryMonths } from "$lib/store";
-	import { buildReport, reportToHtml } from "$lib/report";
+	import { buildReport, reportToHtml, reportToText } from "$lib/report";
 	import { fmtHoursClock, monthLabel } from "$lib/time";
-	import { createOutlookDraft } from "$lib/outlook";
+	import { openUrl } from "@tauri-apps/plugin-opener";
+	import { createOutlookDraft, detectOutlook, explainOutlookError, mailtoFallback } from "$lib/outlook";
 	import { Button } from "$lib/components/ui/button";
 	import { Label } from "$lib/components/ui/label";
 	import * as Card from "$lib/components/ui/card";
@@ -53,7 +54,19 @@
 			await app.markReportSent(month);
 			toast.success("Outlook-Entwurf geöffnet. Bitte prüfen und senden.");
 		} catch (e) {
-			toast.error(`Outlook-Entwurf fehlgeschlagen: ${e}. Tipp: „HTML kopieren“ und manuell einfügen.`);
+			// Klar erklaeren (z.B. nur neues Outlook) und den mailto-Fallback anbieten.
+			const info = await detectOutlook().catch(() => null);
+			const msg = explainOutlookError(e, info);
+			toast.error(msg, {
+				description: "Fallback: E-Mail als Text öffnen (ohne HTML-Tabelle) oder „HTML kopieren“.",
+				action: {
+					label: "Mail öffnen",
+					onClick: () =>
+						openUrl(mailtoFallback(app.settings.bossEmail, subject, reportToText(report))).catch(
+							(err) => toast.error(`Mailprogramm konnte nicht geöffnet werden: ${err}`)
+						)
+				}
+			});
 		} finally {
 			sending = false;
 		}

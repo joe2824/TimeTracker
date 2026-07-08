@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from "svelte";
-	import { listen } from "@tauri-apps/api/event";
+	import { listen, emit } from "@tauri-apps/api/event";
 	import { invoke } from "@tauri-apps/api/core";
 	import { enable, isEnabled } from "@tauri-apps/plugin-autostart";
 	import { check } from "@tauri-apps/plugin-updater";
@@ -8,7 +8,7 @@
 	import { app } from "$lib/app.svelte";
 	import { scheduleReminders, scheduleReportReminder } from "$lib/reminders";
 	import { applyShortcuts } from "$lib/shortcuts";
-	import { startWatchers, stopWatchers } from "$lib/watchers.svelte";
+	import { startWatchers, stopWatchers, watchers } from "$lib/watchers.svelte";
 	import * as Tabs from "$lib/components/ui/tabs";
 	import TimerIcon from "@lucide/svelte/icons/timer";
 	import PencilLineIcon from "@lucide/svelte/icons/pencil-line";
@@ -28,6 +28,17 @@
 
 	let tab = $state("tracking");
 	let paletteOpen = $state(false);
+
+	// „Benachrichtigung" = einer der Aufmerksamkeits-Dialoge ist offen/fällig.
+	// Wird an das Tray-Flyout gemeldet, das dann ein Hinweis-Badge zeigt.
+	const attention = $derived(
+		!!watchers.idlePrompt ||
+			!!watchers.longTimerPrompt ||
+			watchers.forceReportReminder ||
+			(!!app.pendingReportMonth &&
+				app.settings.reportReminderEnabled &&
+				!watchers.reportReminderDismissed)
+	);
 
 	function onGlobalKey(e: KeyboardEvent) {
 		if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -58,7 +69,11 @@
 				await listen("tray-stop-timer", () => void app.stop()),
 				await listen<string>("tray-start-activity", (e) => void app.startActivity(e.payload)),
 				// Flyout-Fenster hat Daten geändert -> neu laden.
-				await listen("data-reload", () => void app.reload())
+				await listen("data-reload", () => void app.reload()),
+				// Tray-Flyout wurde geöffnet und fragt den aktuellen Hinweis-Status ab.
+				await listen("tray-request-attention", () => {
+					void emit("main-attention", { active: attention }).catch(() => {});
+				})
 			);
 
 			// Beim Start still nach Updates suchen und ggf. Hinweis zeigen.
@@ -100,6 +115,12 @@
 		void invoke("set_tray_state", { state: { running, activities: quick.slice(0, 6) } }).catch(
 			() => {}
 		);
+	});
+
+	// Hinweis-Status ans Tray-Flyout melden, sobald er sich ändert.
+	$effect(() => {
+		const active = attention;
+		void emit("main-attention", { active }).catch(() => {});
 	});
 </script>
 

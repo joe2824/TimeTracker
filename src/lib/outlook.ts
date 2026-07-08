@@ -33,3 +33,38 @@ export function mailtoFallback(to: string, subject: string, bodyText: string): s
 	const params = new URLSearchParams({ subject, body: bodyText });
 	return `mailto:${encodeURIComponent(to)}?${params.toString()}`;
 }
+
+export interface OutlookInfo {
+	/** Klassisches Outlook ist als COM-Server registriert (installiert). */
+	classicComRegistered: boolean;
+	/** Ein klassisches MAPI-Profil ist eingerichtet. */
+	classicProfile: boolean;
+	/** Das neue Outlook (Store-App) ist installiert. */
+	newOutlookInstalled: boolean;
+	/** Anwender hat auf das neue Outlook umgeschaltet (UseNewOutlook=1). */
+	prefersNewOutlook: boolean;
+	/** COM-Integration (Entwurf/Kalender) sollte funktionieren. */
+	comUsable: boolean;
+}
+
+/** Ermittelt (ohne COM-Start), welche Outlook-Variante verfuegbar/aktiv ist. */
+export async function detectOutlook(): Promise<OutlookInfo> {
+	return invoke<OutlookInfo>("detect_outlook");
+}
+
+/**
+ * Baut aus einem fehlgeschlagenen COM-Aufruf eine verstaendliche Meldung.
+ * Erklaert speziell den Fall "nur neues Outlook, kein klassisches Profil".
+ */
+export function explainOutlookError(err: unknown, info?: OutlookInfo | null): string {
+	const raw = String(err ?? "").trim();
+	if (info && !info.comUsable) {
+		if (info.newOutlookInstalled && !info.classicComRegistered) {
+			return "Du nutzt das neue Outlook (Store-App). Für den Outlook-Entwurf/Kalender wird das klassische Outlook benötigt – dafür steht nur der Mail-Fallback zur Verfügung.";
+		}
+		if (info.classicComRegistered && !info.classicProfile) {
+			return "Im klassischen Outlook ist kein E-Mail-Profil eingerichtet. Bitte einmal das klassische Outlook einrichten – bis dahin greift der Mail-Fallback.";
+		}
+	}
+	return raw || "Outlook konnte nicht angesprochen werden.";
+}
