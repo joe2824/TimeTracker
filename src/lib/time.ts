@@ -47,6 +47,29 @@ export function fmtDate(ts: number): string {
 	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+/**
+ * Tages-Mitten (12:00 lokal) aller Tage eines Ganztags-Termins.
+ * Outlook liefert das Ende exklusiv (nächster Tag 00:00), daher Iteration bis < Ende-Mitternacht.
+ * Fällt immer auf mindestens den Starttag zurück (z. B. wenn Ende <= Start).
+ */
+export function allDayNoons(startTs: number, endExclusiveTs: number): number[] {
+	const out: number[] = [];
+	const day = new Date(startTs);
+	day.setHours(12, 0, 0, 0);
+	const endMidnight = new Date(endExclusiveTs);
+	endMidnight.setHours(0, 0, 0, 0);
+	while (day.getTime() < endMidnight.getTime()) {
+		out.push(day.getTime());
+		day.setDate(day.getDate() + 1);
+	}
+	if (out.length === 0) {
+		const s = new Date(startTs);
+		s.setHours(12, 0, 0, 0);
+		out.push(s.getTime());
+	}
+	return out;
+}
+
 /** Stundenzahl deutsch formatiert, z.B. "4,5". */
 export function fmtHours(h: number): string {
 	return h.toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 2 });

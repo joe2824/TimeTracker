@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+	allDayNoons,
 	clockToMin,
 	durationHours,
 	durationSeconds,
 	entryHours,
+	fmtDate,
 	fmtHMS,
 	fmtHours,
 	fmtHoursClock,
@@ -13,6 +15,34 @@ import {
 	parseHours,
 	roundHours
 } from "./time";
+
+describe("allDayNoons", () => {
+	// Outlook: Ganztags-Ende ist exklusiv (nächster Tag 00:00).
+	it("einzelner Ganztags-Termin -> genau der Starttag", () => {
+		const start = new Date(2026, 6, 8, 0, 0, 0).getTime(); // Mi 08.07.
+		const end = new Date(2026, 6, 9, 0, 0, 0).getTime(); // Do 09.07. 00:00 (exklusiv)
+		const days = allDayNoons(start, end);
+		expect(days.map(fmtDate)).toEqual(["2026-07-08"]);
+	});
+
+	it("mehrtägiger Ganztags-Termin -> jeder Tag im Bereich", () => {
+		const start = new Date(2026, 6, 8, 0, 0, 0).getTime(); // Mi 08.07.
+		const end = new Date(2026, 6, 11, 0, 0, 0).getTime(); // Sa 11.07. 00:00 (exklusiv)
+		const days = allDayNoons(start, end);
+		expect(days.map(fmtDate)).toEqual(["2026-07-08", "2026-07-09", "2026-07-10"]);
+	});
+
+	it("Ende <= Start -> Fallback auf den Starttag", () => {
+		const start = new Date(2026, 6, 8, 0, 0, 0).getTime();
+		expect(allDayNoons(start, start).map(fmtDate)).toEqual(["2026-07-08"]);
+	});
+
+	it("alle Zeitstempel liegen auf 12:00 (DST-robust)", () => {
+		const start = new Date(2026, 6, 8, 0, 0, 0).getTime();
+		const end = new Date(2026, 6, 11, 0, 0, 0).getTime();
+		for (const ts of allDayNoons(start, end)) expect(new Date(ts).getHours()).toBe(12);
+	});
+});
 import type { Entry } from "./types";
 
 describe("roundHours", () => {

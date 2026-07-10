@@ -6,7 +6,7 @@
 		explainOutlookError,
 		type CalendarEvent
 	} from "$lib/outlook";
-	import { fmtDate } from "$lib/time";
+	import { allDayNoons, fmtDate } from "$lib/time";
 	import { Button } from "$lib/components/ui/button";
 	import { Badge } from "$lib/components/ui/badge";
 	import * as Card from "$lib/components/ui/card";
@@ -63,11 +63,28 @@
 			const startTs = new Date(ev.start).getTime();
 			const endTs = new Date(ev.end).getTime();
 			if (Number.isNaN(startTs) || Number.isNaN(endTs)) continue;
-			// Abwesenheiten als Tage: ganztägig -> ganzer Tag, sonst halber Tag.
-			const dayFraction = app.isAbsenceId(activityId) ? (ev.allDay ? 1 : 0.5) : undefined;
-			await app.addEntry(activityId, startTs, endTs, ev.subject, "calendar", dayFraction);
+			const isAbsence = app.isAbsenceId(activityId);
+
+			if (isAbsence && ev.allDay) {
+				// Ganztägig (evtl. mehrtägig): für JEDEN Tag im Bereich einen ganzen Abwesenheitstag.
+				for (const dayTs of allDayNoons(startTs, endTs)) {
+					const created = await app.addEntry(activityId, dayTs, dayTs, ev.subject, "calendar", 1);
+					if (created) count++;
+				}
+			} else {
+				// Abwesenheit mit Uhrzeit -> halber Tag; sonst normaler Zeiteintrag.
+				const dayFraction = isAbsence ? 0.5 : undefined;
+				const created = await app.addEntry(
+					activityId,
+					startTs,
+					endTs,
+					ev.subject,
+					"calendar",
+					dayFraction
+				);
+				if (created) count++;
+			}
 			newMap[ev.subject.toLowerCase()] = activityId; // fuer naechstes Mal merken
-			count++;
 		}
 		await app.updateSettings({ calendarKeywordMap: newMap });
 		toast.success(`${count} Kalendereintrag/-einträge übernommen.`);
@@ -104,7 +121,15 @@
 							{new Date(ev.start).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}
 						</span>
 						<span class="min-w-40 flex-1">{ev.subject || "(ohne Titel)"}</span>
-						{#if ev.allDay}<Badge variant="secondary">ganztägig</Badge>{/if}
+						{#if ev.allDay}
+							{@const nDays = allDayNoons(
+								new Date(ev.start).getTime(),
+								new Date(ev.end).getTime()
+							).length}
+							<Badge variant="secondary">
+								{nDays > 1 ? `ganztägig · ${nDays} Tage` : "ganztägig"}
+							</Badge>
+						{/if}
 						<Badge variant="outline">{busyLabel(ev.busyStatus)}</Badge>
 						<select
 							bind:value={mapping[i]}
