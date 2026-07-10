@@ -22,6 +22,48 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # volle History + Tags für das Changelog
+
+      - name: Generate changelog
+        id: changelog
+        shell: bash
+        run: |
+          TAG="${{ github.ref_name }}"
+          PREV=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || echo "")
+          if [ -n "$PREV" ]; then RANGE="${PREV}..${TAG}"; else RANGE="${TAG}"; fi
+          echo "Changelog-Bereich: ${RANGE:-<alle>}"
+
+          # Commits seit dem letzten Tag (ohne Merge- und Release-Commits).
+          commits=$(git log --no-merges --pretty=format:'%s|%h' "$RANGE" | grep -viE '^chore(\(.*\))?: release' || true)
+
+          feats=""; fixes=""; others=""
+          while IFS='|' read -r subject hash; do
+            [ -z "$subject" ] && continue
+            clean=$(printf '%s' "$subject" | sed -E 's/^[a-z]+(\([^)]*\))?!?: //')
+            line="- ${clean} (${hash})"
+            case "$subject" in
+              feat*) feats="${feats}${line}"$'\n' ;;
+              fix*)  fixes="${fixes}${line}"$'\n' ;;
+              *)     others="${others}${line}"$'\n' ;;
+            esac
+          done <<< "$commits"
+
+          body="## TimeTracker ${TAG}"$'\n'
+          [ -n "$feats" ]  && body="${body}"$'\n'"### ✨ Neue Funktionen"$'\n'"${feats}"
+          [ -n "$fixes" ]  && body="${body}"$'\n'"### 🐛 Fehlerbehebungen"$'\n'"${fixes}"
+          [ -n "$others" ] && body="${body}"$'\n'"### 🔧 Sonstiges"$'\n'"${others}"
+          [ -z "$feats$fixes$others" ] && body="${body}"$'\n'"_Keine nennenswerten Änderungen._"$'\n'
+          if [ -n "$PREV" ]; then
+            body="${body}"$'\n'"**Vollständiges Changelog**: ${{ github.server_url }}/${{ github.repository }}/compare/${PREV}...${TAG}"$'\n'
+          fi
+          body="${body}"$'\n'"Installer/Bundles siehe Assets unten."
+
+          {
+            echo "body<<CHANGELOG_EOF"
+            echo "$body"
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
@@ -49,11 +91,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'TimeTracker ${{ github.ref_name }}'
-          releaseBody: |
-            ## TimeTracker ${{ github.ref_name }}
-
-            Desktop-Zeiterfassung (Tauri) für Windows
-            Installer/Bundles siehe Assets unten.
+          releaseBody: ${{ steps.changelog.outputs.body }}
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}

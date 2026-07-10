@@ -1,5 +1,5 @@
 import type { Activity, Entry } from "./types";
-import { entryHours, fmtDate, fmtHoursClock, monthLabel, roundHours } from "./time";
+import { entryHours, fmtDate, fmtHoursClock, isWorkday, monthLabel, roundHours } from "./time";
 
 export interface ReportRow {
 	activityId: string;
@@ -27,14 +27,20 @@ export function buildReport(
 	activities: Activity[],
 	entries: Entry[],
 	step: number,
-	hoursPerDay: number
+	hoursPerDay: number,
+	workdays?: number[]
 ): MonthReport {
 	const absenceIds = new Set(activities.filter((a) => a.isAbsence).map((a) => a.id));
+
+	// Abwesenheiten an Nicht-Arbeitstagen (z. B. Wochenende) zaehlen nicht mit –
+	// weder als Abwesenheitsstunden noch als Ganztags-Sperre.
+	const isCountedAbsence = (e: Entry) =>
+		absenceIds.has(e.activityId) && (!workdays || isWorkday(e.startTs, workdays));
 
 	// Tage mit Ganztags-Abwesenheit: an diesen Tagen zaehlen Projektzeiten nicht.
 	const fullDayAbsenceDays = new Set<string>();
 	for (const e of entries) {
-		if (absenceIds.has(e.activityId) && (e.dayFraction ?? 1) >= 1) {
+		if (isCountedAbsence(e) && (e.dayFraction ?? 1) >= 1) {
 			fullDayAbsenceDays.add(fmtDate(e.startTs));
 		}
 	}
@@ -42,6 +48,8 @@ export function buildReport(
 	const hoursByActivity = new Map<string, number>();
 	for (const e of entries) {
 		const isAbs = absenceIds.has(e.activityId);
+		// Abwesenheit an einem Nicht-Arbeitstag komplett ignorieren.
+		if (isAbs && workdays && !isWorkday(e.startTs, workdays)) continue;
 		// Projekteintraege an Ganztags-Abwesenheitstagen ignorieren.
 		if (!isAbs && fullDayAbsenceDays.has(fmtDate(e.startTs))) continue;
 		const h = entryHours(e, isAbs, hoursPerDay);

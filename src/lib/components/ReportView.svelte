@@ -32,7 +32,8 @@
 			app.activities,
 			app.monthEntries(month),
 			app.settings.rounding,
-			app.settings.hoursPerDay
+			app.settings.hoursPerDay,
+			app.settings.workdays
 		)
 	);
 	const html = $derived(reportToHtml(report));

@@ -10,6 +10,7 @@
 	import { clockToMin, minToClock } from "$lib/time";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
+	import WorkdayPicker from "$lib/components/WorkdayPicker.svelte";
 	import { Label } from "$lib/components/ui/label";
 	import { Switch } from "$lib/components/ui/switch";
 	import * as Card from "$lib/components/ui/card";
@@ -66,6 +67,7 @@
 	let rounding = $state(String(app.settings.rounding));
 	// Als Uhrzeit ("HH:MM") statt Dezimalstunden eingeben.
 	let hoursPerDay = $state(minToClock(app.settings.hoursPerDay * 60));
+	let workdays = $state([...app.settings.workdays]);
 	let subjectTpl = $state(app.settings.reportSubjectTemplate);
 	let times = $state<string[]>([...app.settings.reminderTimes]);
 	let reportReminder = $state(app.settings.reportReminderEnabled);
@@ -138,6 +140,7 @@
 			senderName: senderName.trim(),
 			rounding: Number(rounding),
 			hoursPerDay: (clockToMin(hoursPerDay) ?? 450) / 60,
+			workdays: [...workdays].sort((a, b) => a - b),
 			reportSubjectTemplate: subjectTpl.trim() || "Stundenerfassung {month} – {name}"
 		});
 		toast.success("Einstellungen gespeichert.");
@@ -262,6 +265,14 @@
 						Als Uhrzeit, z.&nbsp;B. 07:30. Für Urlaub/Abwesenheit: ganzer Tag = dieser Wert.
 					</p>
 				</div>
+			</div>
+			<div class="space-y-1">
+				<Label>Arbeitstage</Label>
+				<WorkdayPicker bind:value={workdays} />
+				<p class="text-muted-foreground text-xs">
+					An diesen Tagen wird regulär gearbeitet. Andere Tage werden beim Kalender-Import und bei
+					Abwesenheits-Zeiträumen übersprungen und tauchen nicht im Bericht auf.
+				</p>
 			</div>
 			<Button onclick={saveGeneral}>Speichern</Button>
 		</Card.Content>

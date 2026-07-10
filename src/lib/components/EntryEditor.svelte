@@ -34,6 +34,8 @@
 	let months = $state<string[]>([]);
 	let bulkOpen = $state(false);
 	let vacOpen = $state(false);
+	// true, solange der Kalender-Import eine Termin-Vorschau zeigt -> Monatsliste ausblenden.
+	let importPreview = $state(false);
 
 	const WEEKDAYS = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 
@@ -254,7 +256,14 @@
 				(s, e) => s + entryHours(e, app.isAbsenceId(e.activityId), app.settings.hoursPerDay, app.now),
 				0
 			);
-			list.push({ d, date, weekday: WEEKDAYS[wd], weekend: wd === 0 || wd === 6, entries, hours });
+			list.push({
+				d,
+				date,
+				weekday: WEEKDAYS[wd],
+				nonWorkday: !app.settings.workdays.includes(wd),
+				entries,
+				hours
+			});
 		}
 		return list;
 	});
@@ -356,6 +365,7 @@
 </script>
 
 <div class="space-y-4">
+	{#if !importPreview}
 	<div class="flex flex-wrap items-end justify-between gap-3">
 		<div class="space-y-1">
 			<Label for="month">Monat</Label>
@@ -383,13 +393,13 @@
 
 	<Card.Root>
 		<Card.Content class="p-0">
-			<ul class="divide-border max-h-[55vh] divide-y overflow-y-auto">
+			<ul class="divide-border max-h-[calc(100vh-20rem)] divide-y overflow-y-auto">
 				{#each days as day (day.date)}
 					<li
 						id={`day-row-${day.date}`}
 						class="flex items-start gap-3 px-3 py-1.5 text-sm {day.date === todayStr
 							? 'bg-primary/5 ring-primary/30 ring-1 ring-inset'
-							: day.weekend
+							: day.nonWorkday
 								? 'bg-muted/60'
 								: ''}"
 					>
@@ -399,13 +409,17 @@
 						</div>
 						<div class="flex-1 space-y-1 py-0.5">
 							{#each day.entries as e (e.id)}
+								{@const isAbs = app.isAbsenceId(e.activityId)}
 								<div class="group flex items-center gap-1">
 									<button
-										class="hover:bg-accent flex-1 truncate rounded px-1.5 py-0.5 text-left"
+										class="flex flex-1 items-center gap-1.5 truncate rounded px-1.5 py-0.5 text-left {isAbs
+											? 'bg-amber-500/15 text-amber-700 hover:bg-amber-500/25 dark:text-amber-300'
+											: 'hover:bg-accent'}"
 										onclick={() => openEdit(e)}
 										title="Bearbeiten"
 									>
-										{entryLabel(e)}
+										{#if isAbs}<PalmtreeIcon class="size-3.5 shrink-0" />{/if}
+										<span class="truncate">{entryLabel(e)}</span>
 									</button>
 									<button
 										class="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100"
@@ -440,8 +454,9 @@
 			</ul>
 		</Card.Content>
 	</Card.Root>
+	{/if}
 
-	<CalendarImport {month} onimported={refreshMonths} />
+	<CalendarImport {month} onimported={refreshMonths} bind:previewActive={importPreview} />
 </div>
 
 <BulkEntryDialog bind:open={bulkOpen} {month} onsaved={refreshMonths} />

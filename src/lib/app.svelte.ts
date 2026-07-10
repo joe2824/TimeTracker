@@ -532,8 +532,7 @@ class AppState {
 	async addAbsenceRange(
 		startDate: string,
 		endDate: string,
-		fraction = 1,
-		skipWeekends = true
+		fraction = 1
 	): Promise<{ added: number; skipped: number }> {
 		const abs = this.absenceActivity;
 		if (!abs) return { added: 0, skipped: 0 };
@@ -545,8 +544,8 @@ class AppState {
 		let added = 0;
 		let skipped = 0;
 		for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-			const dow = d.getDay();
-			if (skipWeekends && (dow === 0 || dow === 6)) continue;
+			// Nur reguläre Arbeitstage; Wochenenden/freie Tage nicht als Abwesenheit buchen.
+			if (!this.settings.workdays.includes(d.getDay())) continue;
 			// Ganztags-Konflikt mit Projektzeit -> Tag still überspringen (kein Doppel-Toast).
 			if (fraction >= 1 && this.hasProjectEntry(d.getTime())) {
 				skipped++;
