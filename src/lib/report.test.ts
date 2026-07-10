@@ -62,6 +62,22 @@ describe("buildReport", () => {
 		expect(report.label).toBe("Juni 2026");
 	});
 
+	it("klammert Abwesenheiten an Nicht-Arbeitstagen aus (workdays Mo–Fr)", () => {
+		const fri = new Date(2026, 6, 10, 12, 0, 0).getTime(); // Freitag
+		const sat = new Date(2026, 6, 11, 12, 0, 0).getTime(); // Samstag
+		const es: Entry[] = [
+			{ id: "f", activityId: "abs", startTs: fri, endTs: fri, note: "", source: "manual", dayFraction: 1 },
+			{ id: "s", activityId: "abs", startTs: sat, endTs: sat, note: "", source: "manual", dayFraction: 1 }
+		];
+		const withFilter = buildReport("2026-07", activities, es, 0.5, HPD, [1, 2, 3, 4, 5]);
+		const h1 = Object.fromEntries(withFilter.rows.map((r) => [r.name, r.hours]));
+		expect(h1["Abwesenheiten"]).toBe(7.5); // nur Freitag zählt
+
+		const noFilter = buildReport("2026-07", activities, es, 0.5, HPD);
+		const h2 = Object.fromEntries(noFilter.rows.map((r) => [r.name, r.hours]));
+		expect(h2["Abwesenheiten"]).toBe(15); // ohne Filter beide Tage
+	});
+
 	it("ignoriert Projektzeiten an Ganztags-Abwesenheitstagen", () => {
 		const sameDay: Entry[] = [
 			work("w", "a", 7200), // 2 h am Starttag

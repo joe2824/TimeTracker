@@ -57,6 +57,8 @@ export interface Settings {
 	autostart: boolean;
 	/** Stunden eines vollen Arbeitstags (fuer Abwesenheits-Umrechnung) */
 	hoursPerDay: number;
+	/** Regulaere Arbeitstage als Wochentagsnummern (0=So .. 6=Sa), Standard Mo–Fr */
+	workdays: number[];
 	/** Monatsdateien aelter als 12 Monate beim Start loeschen */
 	autoCleanup: boolean;
 	/** Stichwort (lowercase) -> activityId fuer Kalender-Auto-Zuordnung */
@@ -93,6 +95,7 @@ export const defaultSettings: Settings = {
 	rounding: 0.5,
 	autostart: true,
 	hoursPerDay: 7.5,
+	workdays: [1, 2, 3, 4, 5],
 	autoCleanup: true,
 	calendarKeywordMap: {},
 	reportSubjectTemplate: "Stundenerfassung {month} – {name}",

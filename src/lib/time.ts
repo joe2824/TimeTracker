@@ -47,6 +47,11 @@ export function fmtDate(ts: number): string {
 	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+/** Ist der Tag von `ts` ein regulärer Arbeitstag? (workdays: Wochentagsnummern 0=So..6=Sa) */
+export function isWorkday(ts: number, workdays: number[]): boolean {
+	return workdays.includes(new Date(ts).getDay());
+}
+
 /**
  * Tages-Mitten (12:00 lokal) aller Tage eines Ganztags-Termins.
  * Outlook liefert das Ende exklusiv (nächster Tag 00:00), daher Iteration bis < Ende-Mitternacht.

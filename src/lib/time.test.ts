@@ -9,12 +9,29 @@ import {
 	fmtHMS,
 	fmtHours,
 	fmtHoursClock,
+	isWorkday,
 	minToClock,
 	monthLabel,
 	parseClock,
 	parseHours,
 	roundHours
 } from "./time";
+
+describe("isWorkday", () => {
+	const MON_FRI = [1, 2, 3, 4, 5];
+	it("Mo–Fr sind bei Standard-Arbeitstagen wahr, Sa/So falsch", () => {
+		const mon = new Date(2026, 6, 6).getTime(); // Montag
+		const sat = new Date(2026, 6, 11).getTime(); // Samstag
+		const sun = new Date(2026, 6, 12).getTime(); // Sonntag
+		expect(isWorkday(mon, MON_FRI)).toBe(true);
+		expect(isWorkday(sat, MON_FRI)).toBe(false);
+		expect(isWorkday(sun, MON_FRI)).toBe(false);
+	});
+	it("respektiert eine abweichende Arbeitswoche (z. B. inkl. Samstag)", () => {
+		const sat = new Date(2026, 6, 11).getTime();
+		expect(isWorkday(sat, [1, 2, 3, 4, 5, 6])).toBe(true);
+	});
+});
 
 describe("allDayNoons", () => {
 	// Outlook: Ganztags-Ende ist exklusiv (nächster Tag 00:00).

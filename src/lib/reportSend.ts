@@ -24,7 +24,8 @@ export async function sendReport(month: string): Promise<void> {
 		app.activities,
 		app.monthEntries(month),
 		app.settings.rounding,
-		app.settings.hoursPerDay
+		app.settings.hoursPerDay,
+		app.settings.workdays
 	);
 	const html = reportToHtml(report);
 	await createOutlookDraft(app.settings.bossEmail, reportSubject(report.label), html);

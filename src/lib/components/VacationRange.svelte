@@ -13,10 +13,9 @@
 	let from = $state(fmtDate(Date.now()));
 	let to = $state(fmtDate(Date.now()));
 	let halfDay = $state(false);
-	let skipWeekends = $state(true);
 
 	async function add() {
-		const { added, skipped } = await app.addAbsenceRange(from, to, halfDay ? 0.5 : 1, skipWeekends);
+		const { added, skipped } = await app.addAbsenceRange(from, to, halfDay ? 0.5 : 1);
 		if (added > 0) {
 			const extra = skipped > 0 ? ` (${skipped} mit Projektzeit übersprungen)` : "";
 			toast.success(`${added} Abwesenheitstag(e) eingetragen${extra}.`);
@@ -35,7 +34,10 @@
 		<form class="grid gap-4" onsubmit={(e) => { e.preventDefault(); add(); }}>
 			<Dialog.Header>
 				<Dialog.Title>Urlaub / Abwesenheit (Zeitraum)</Dialog.Title>
-				<Dialog.Description>Trägt für jeden Tag im Bereich einen Abwesenheitseintrag an.</Dialog.Description>
+				<Dialog.Description>
+					Trägt für jeden <strong>Arbeitstag</strong> im Bereich einen Abwesenheitseintrag an
+					(Wochenenden/freie Tage werden übersprungen).
+				</Dialog.Description>
 			</Dialog.Header>
 			<div class="space-y-4">
 				<div class="flex flex-wrap items-end gap-4">
@@ -50,9 +52,6 @@
 				</div>
 				<label class="flex items-center justify-between gap-2 text-sm">
 					Halbe Tage <Switch bind:checked={halfDay} />
-				</label>
-				<label class="flex items-center justify-between gap-2 text-sm">
-					Wochenenden überspringen <Switch bind:checked={skipWeekends} />
 				</label>
 			</div>
 			<Dialog.Footer>

@@ -7,6 +7,7 @@
 	import { Label } from "$lib/components/ui/label";
 	import { Switch } from "$lib/components/ui/switch";
 	import { Textarea } from "$lib/components/ui/textarea";
+	import WorkdayPicker from "$lib/components/WorkdayPicker.svelte";
 	import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 	import TimerIcon from "@lucide/svelte/icons/timer";
 	import MailIcon from "@lucide/svelte/icons/mail";
@@ -29,6 +30,7 @@
 	let senderName = $state(app.settings.senderName);
 	let bossEmail = $state(app.settings.bossEmail);
 	let workTime = $state(hoursToTime(app.settings.hoursPerDay)); // Arbeitszeit/Tag als "HH:MM"
+	let workdays = $state([...app.settings.workdays]);
 	let times = $state<string[]>(
 		app.settings.reminderTimes.length ? [...app.settings.reminderTimes] : ["14:00"]
 	);
@@ -78,6 +80,7 @@
 			senderName: senderName.trim(),
 			bossEmail: bossEmail.trim(),
 			hoursPerDay: hpd,
+			workdays: [...workdays].sort((a, b) => a - b),
 			reminderTimes: cleanTimes,
 			autostart
 		});
@@ -161,6 +164,14 @@
 					<Input id="ob-hpd" type="time" bind:value={workTime} class="w-32" />
 					<p class="text-muted-foreground text-xs">
 						Als Zeit (z. B. 07:30). Basis für die Umrechnung von Abwesenheiten.
+					</p>
+				</div>
+				<div class="space-y-1">
+					<Label>Arbeitstage</Label>
+					<WorkdayPicker bind:value={workdays} />
+					<p class="text-muted-foreground text-xs">
+						An diesen Tagen wird regulär gearbeitet. Andere Tage (z. B. Wochenende) werden nicht
+						importiert und tauchen nicht im Bericht auf.
 					</p>
 				</div>
 			</div>

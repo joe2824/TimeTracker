@@ -175,7 +175,7 @@
 			</div>
 		</header>
 
-		<div class="mx-auto w-full max-w-6xl px-6 py-4">
+		<div class="mx-auto w-full max-w-6xl px-6">
 			<Tabs.Content value="tracking" class="mt-0">
 				<TrackingPanel onShowEntries={showEntriesToday} />
 			</Tabs.Content>

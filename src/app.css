@@ -145,3 +145,13 @@
 		background: color-mix(in oklab, var(--foreground) 35%, transparent);
 	}
 }
+
+/* Indeterminater Ladebalken (z. B. beim Laden aus Outlook). */
+@keyframes indeterminate {
+	0% {
+		transform: translateX(-100%);
+	}
+	100% {
+		transform: translateX(320%);
+	}
+}
