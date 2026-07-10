@@ -245,35 +245,6 @@
 					{"{month}"} = Monat, {"{name}"} = dein Name
 				</p>
 			</div>
-			<div class="grid grid-cols-2 gap-2">
-				<div class="space-y-1">
-					<Label for="round">Rundung</Label>
-					<select
-						id="round"
-						bind:value={rounding}
-						class="border-input bg-background h-8 w-full rounded-lg border px-3 text-sm"
-					>
-						<option value="0.25">Viertelstunde (0:15)</option>
-						<option value="0.5">Halbe Stunde (0:30)</option>
-						<option value="1">Volle Stunde (1:00)</option>
-					</select>
-				</div>
-				<div class="space-y-1">
-					<Label for="hpd">Stunden / Arbeitstag</Label>
-					<Input id="hpd" type="time" bind:value={hoursPerDay} />
-					<p class="text-muted-foreground text-xs">
-						Als Uhrzeit, z.&nbsp;B. 07:30. Für Urlaub/Abwesenheit: ganzer Tag = dieser Wert.
-					</p>
-				</div>
-			</div>
-			<div class="space-y-1">
-				<Label>Arbeitstage</Label>
-				<WorkdayPicker bind:value={workdays} />
-				<p class="text-muted-foreground text-xs">
-					An diesen Tagen wird regulär gearbeitet. Andere Tage werden beim Kalender-Import und bei
-					Abwesenheits-Zeiträumen übersprungen und tauchen nicht im Bericht auf.
-				</p>
-			</div>
 			<Button onclick={saveGeneral}>Speichern</Button>
 		</Card.Content>
 	</Card.Root>
@@ -324,6 +295,45 @@
 			</div>
 
 			<Button size="sm" onclick={saveTimes}>Erinnerungen speichern</Button>
+		</Card.Content>
+	</Card.Root>
+
+	<Card.Root>
+		<Card.Header>
+			<Card.Title>Arbeitszeit</Card.Title>
+			<Card.Description>Arbeitstage & -zeit – Basis für Abwesenheiten und Bericht.</Card.Description>
+		</Card.Header>
+		<Card.Content class="space-y-3">
+			<div class="space-y-1">
+				<Label>An welchen Tagen arbeitest du?</Label>
+				<WorkdayPicker bind:value={workdays} />
+				<p class="text-muted-foreground text-xs">
+					Nicht-Arbeitstage (z.&nbsp;B. Wochenende) werden beim Kalender-Import und bei
+					Abwesenheits-Zeiträumen übersprungen und tauchen nicht im Bericht auf.
+				</p>
+			</div>
+			<div class="grid grid-cols-2 gap-2">
+				<div class="space-y-1">
+					<Label for="hpd">Stunden / Arbeitstag</Label>
+					<Input id="hpd" type="time" bind:value={hoursPerDay} />
+					<p class="text-muted-foreground text-xs">
+						Als Uhrzeit, z.&nbsp;B. 07:30. Ganzer Abwesenheitstag = dieser Wert.
+					</p>
+				</div>
+				<div class="space-y-1">
+					<Label for="round">Rundung</Label>
+					<select
+						id="round"
+						bind:value={rounding}
+						class="border-input bg-background h-8 w-full rounded-lg border px-3 text-sm"
+					>
+						<option value="0.25">Viertelstunde (0:15)</option>
+						<option value="0.5">Halbe Stunde (0:30)</option>
+						<option value="1">Volle Stunde (1:00)</option>
+					</select>
+				</div>
+			</div>
+			<Button onclick={saveGeneral}>Speichern</Button>
 		</Card.Content>
 	</Card.Root>
 

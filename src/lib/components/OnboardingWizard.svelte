@@ -167,11 +167,11 @@
 					</p>
 				</div>
 				<div class="space-y-1">
-					<Label>Arbeitstage</Label>
+					<Label>An welchen Tagen arbeitest du?</Label>
 					<WorkdayPicker bind:value={workdays} />
 					<p class="text-muted-foreground text-xs">
-						An diesen Tagen wird regulär gearbeitet. Andere Tage (z. B. Wochenende) werden nicht
-						importiert und tauchen nicht im Bericht auf.
+						Standard Mo–Fr. Andere Tage (z. B. Wochenende) werden nicht importiert und tauchen nicht
+						im Bericht auf – wichtig, falls du z. B. samstags arbeitest.
 					</p>
 				</div>
 			</div>
