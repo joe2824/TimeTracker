@@ -387,9 +387,11 @@
 				{#each days as day (day.date)}
 					<li
 						id={`day-row-${day.date}`}
-						class="flex items-start gap-3 px-3 py-1.5 text-sm {day.weekend
-							? 'bg-muted/60'
-							: ''}"
+						class="flex items-start gap-3 px-3 py-1.5 text-sm {day.date === todayStr
+							? 'bg-primary/5 ring-primary/30 ring-1 ring-inset'
+							: day.weekend
+								? 'bg-muted/60'
+								: ''}"
 					>
 						<div class="w-14 shrink-0 pt-1">
 							<div class="font-mono tabular-nums">{String(day.d).padStart(2, "0")}</div>

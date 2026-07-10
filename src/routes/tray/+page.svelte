@@ -150,11 +150,8 @@
 	</div>
 
 	<div class="text-muted-foreground text-xs font-medium">Schnellstart</div>
-	<!-- Dünner, dezenter Scrollbalken via Tailwind-Arbitrary-Variants: so fluchten
-	     die rechten Kanten von Status-Karte, Einträgen und Button. -->
-	<div
-		class="flex-1 space-y-1 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-foreground/20 [&::-webkit-scrollbar-track]:bg-transparent hover:[&::-webkit-scrollbar-thumb]:bg-foreground/35"
-	>
+	<!-- Scrollbalken kommt global aus app.css (dünn, dezent). -->
+	<div class="flex-1 space-y-1 overflow-y-auto">
 		{#each quick as a (a.id)}
 			{@const active = app.running?.activityId === a.id}
 			<button
