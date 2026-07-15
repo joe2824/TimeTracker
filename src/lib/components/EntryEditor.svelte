@@ -23,12 +23,15 @@
 	import * as Card from "$lib/components/ui/card";
 	import * as Dialog from "$lib/components/ui/dialog";
 	import CalendarImport from "$lib/components/CalendarImport.svelte";
+	import ActivityCombobox from "$lib/components/ActivityCombobox.svelte";
 	import BulkEntryDialog from "$lib/components/BulkEntryDialog.svelte";
 	import VacationRange from "$lib/components/VacationRange.svelte";
 	import PlusIcon from "@lucide/svelte/icons/plus";
 	import Trash2Icon from "@lucide/svelte/icons/trash-2";
 	import LayersIcon from "@lucide/svelte/icons/layers";
 	import PalmtreeIcon from "@lucide/svelte/icons/palmtree";
+	import ChevronLeftIcon from "@lucide/svelte/icons/chevron-left";
+	import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
 
 	let month = $state(app.currentMonth);
 	let months = $state<string[]>([]);
@@ -56,9 +59,6 @@
 	let dur = $state(""); // Stunden-Eingabe, bidirektional mit Von/Bis
 	let startText = $state(""); // Roh-Eingabe Von, erst beim Verlassen normalisiert
 	let endText = $state(""); // Roh-Eingabe Bis
-	let activityText = $state(""); // Aktivitäts-Eingabe (Combobox, nur Filter)
-	let comboOpen = $state(false); // Dropdown sichtbar
-	let comboIndex = $state(0); // hervorgehobene Zeile (Tastatur)
 	const draftIsAbsence = $derived(app.isAbsenceId(draft.activityId));
 
 	// Abwesenheiten werden über den "Abwesenheit"-Button erfasst und tauchen daher
@@ -67,16 +67,6 @@
 	const activityOptions = $derived(
 		app.visibleActivities.filter((a) => !a.isAbsence || a.id === draft.activityId)
 	);
-
-	// Gefilterte Vorschläge: Solange der Text der gewählten Aktivität entspricht (also
-	// nur "geöffnet, nichts getippt"), alle zeigen – so kann man per Klick wechseln,
-	// ohne erst löschen zu müssen. Sobald abweichend getippt wird, filtern wir.
-	const filteredActivities = $derived.by(() => {
-		const q = activityText.trim().toLowerCase();
-		const selName = app.activityName(draft.activityId).toLowerCase();
-		if (!q || q === selName) return activityOptions;
-		return activityOptions.filter((a) => a.name.toLowerCase().includes(q));
-	});
 
 	/** Stunden aus Von/Bis neu berechnen (z.B. 1.5). */
 	function recalcDur() {
@@ -96,74 +86,6 @@
 	function syncTimeText() {
 		startText = draft.start;
 		endText = draft.end;
-		activityText = app.activityName(draft.activityId);
-		comboOpen = false;
-	}
-
-	/** Tippt der Nutzer, filtern wir die Liste und halten draft.activityId synchron
-	 *  (nur bei exakter Übereinstimmung; kein Anlegen neuer Aktivitäten). */
-	function onActivityInput(value: string) {
-		activityText = value;
-		comboOpen = true;
-		const match = app.activities.find(
-			(a) => !a.archived && a.name.toLowerCase() === value.trim().toLowerCase()
-		);
-		draft.activityId = match?.id ?? "";
-		// Bei exaktem Treffer diesen hervorheben (die Liste zeigt dann alle Einträge),
-		// sonst den ersten Vorschlag – damit Enter nie die falsche Aktivität wählt.
-		comboIndex = match ? Math.max(0, filteredActivities.findIndex((a) => a.id === match.id)) : 0;
-	}
-
-	/** Dropdown öffnen und auf die aktuelle Auswahl scrollen. */
-	function openCombo() {
-		comboOpen = true;
-		comboIndex = Math.max(
-			0,
-			filteredActivities.findIndex((a) => a.id === draft.activityId)
-		);
-	}
-
-	/** Vorschlag übernehmen – ohne den alten Text vorher löschen zu müssen. */
-	function selectActivity(a: { id: string; name: string }) {
-		draft.activityId = a.id;
-		activityText = a.name;
-		comboOpen = false;
-	}
-
-	/** Beim Schließen nur bestehende Aktivitäten zulassen: passt der Text nicht exakt
-	 *  zu einer Aktivität, auf die zuletzt gültige Auswahl zurücksetzen. */
-	function commitActivity() {
-		const match = app.activities.find(
-			(a) => !a.archived && a.name.toLowerCase() === activityText.trim().toLowerCase()
-		);
-		if (match) {
-			draft.activityId = match.id;
-			activityText = match.name;
-		} else {
-			activityText = draft.activityId ? app.activityName(draft.activityId) : "";
-		}
-		comboOpen = false;
-	}
-
-	function onActivityKeydown(e: KeyboardEvent) {
-		if (e.key === "ArrowDown") {
-			e.preventDefault();
-			if (!comboOpen) return openCombo();
-			comboIndex = Math.min(comboIndex + 1, filteredActivities.length - 1);
-		} else if (e.key === "ArrowUp") {
-			e.preventDefault();
-			comboIndex = Math.max(comboIndex - 1, 0);
-		} else if (e.key === "Enter") {
-			if (comboOpen && filteredActivities[comboIndex]) {
-				e.preventDefault();
-				selectActivity(filteredActivities[comboIndex]);
-			}
-		} else if (e.key === "Escape") {
-			if (comboOpen) {
-				e.stopPropagation();
-				commitActivity();
-			}
-		}
 	}
 
 	/** Von-Eingabe beim Verlassen normalisieren (z.B. "1800" -> "18:00"). */
@@ -192,10 +114,8 @@
 		return {
 			id: null,
 			originalStartTs: 0,
-			activityId:
-				app.visibleActivities.find((a) => !a.isAbsence)?.id ??
-				app.visibleActivities[0]?.id ??
-				"",
+			// Bewusst leer: der Nutzer wählt die Aktivität selbst (kein Default).
+			activityId: "",
 			date: fmtDate(now.getTime()),
 			start: `${hh}:00`,
 			end: `${hh}:00`,
@@ -208,6 +128,14 @@
 	async function refreshMonths() {
 		const stored = await listEntryMonths();
 		months = [...new Set([app.currentMonth, month, ...stored])].sort().reverse();
+	}
+
+	/** Einen Monat vor/zurück blättern – auch in (noch) leere Monate. */
+	function shiftMonth(delta: number) {
+		const [y, m] = month.split("-").map(Number);
+		const d = new Date(y, m - 1 + delta, 1);
+		month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+		if (!months.includes(month)) months = [...new Set([month, ...months])].sort().reverse();
 	}
 
 	onMount(refreshMonths);
@@ -302,8 +230,7 @@
 	}
 
 	async function save() {
-		// Nur bestehende Aktivitäten – die Combobox legt keine neuen an.
-		commitActivity();
+		// Die Combobox hält draft.activityId stets auf einen gültigen Treffer (oder "").
 		const activityId = draft.activityId;
 		if (!activityId) {
 			toast.error("Bitte eine bestehende Aktivität auswählen.");
@@ -369,15 +296,35 @@
 	<div class="flex flex-wrap items-end justify-between gap-3">
 		<div class="space-y-1">
 			<Label for="month">Monat</Label>
-			<select
-				id="month"
-				bind:value={month}
-				class="border-input bg-background h-9 rounded-md border px-3 text-sm"
-			>
-				{#each months as m (m)}
-					<option value={m}>{monthLabel(m)}</option>
-				{/each}
-			</select>
+			<div class="flex items-center gap-1">
+				<Button
+					variant="outline"
+					size="icon"
+					class="size-9 shrink-0"
+					title="Vorheriger Monat"
+					onclick={() => shiftMonth(-1)}
+				>
+					<ChevronLeftIcon class="size-4" />
+				</Button>
+				<select
+					id="month"
+					bind:value={month}
+					class="border-input bg-background h-9 rounded-md border px-3 text-sm"
+				>
+					{#each months as m (m)}
+						<option value={m}>{monthLabel(m)}</option>
+					{/each}
+				</select>
+				<Button
+					variant="outline"
+					size="icon"
+					class="size-9 shrink-0"
+					title="Nächster Monat"
+					onclick={() => shiftMonth(1)}
+				>
+					<ChevronRightIcon class="size-4" />
+				</Button>
+			</div>
 		</div>
 		<div class="flex flex-wrap items-center gap-3">
 			<span class="text-muted-foreground text-sm">Σ {fmtHoursClock(totalHours)} h</span>
@@ -422,7 +369,7 @@
 										<span class="truncate">{entryLabel(e)}</span>
 									</button>
 									<button
-										class="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100"
+										class="text-muted-foreground hover:text-destructive shrink-0"
 										onclick={() => app.deleteEntry(e)}
 										title="Löschen"
 									>
@@ -472,52 +419,7 @@
 			<div class="space-y-3">
 			<div class="space-y-1">
 				<Label for="act">Aktivität</Label>
-				<div class="relative">
-					<Input
-						id="act"
-						role="combobox"
-						aria-expanded={comboOpen}
-						aria-controls="activity-listbox"
-						autocomplete="off"
-						placeholder="Aktivität wählen oder suchen"
-						value={activityText}
-						oninput={(e) => onActivityInput(e.currentTarget.value)}
-						onfocus={openCombo}
-						onclick={openCombo}
-						onblur={commitActivity}
-						onkeydown={onActivityKeydown}
-					/>
-					{#if comboOpen}
-						<ul
-							id="activity-listbox"
-							role="listbox"
-							class="bg-popover text-popover-foreground absolute z-50 mt-1 max-h-52 w-full overflow-y-auto rounded-md border p-1 shadow-md"
-						>
-							{#if filteredActivities.length === 0}
-								<li class="text-muted-foreground px-2 py-1.5 text-sm">Keine Aktivität gefunden</li>
-							{:else}
-								{#each filteredActivities as a, i (a.id)}
-									<li>
-										<button
-											type="button"
-											class="flex w-full items-center rounded-sm px-2 py-1.5 text-left text-sm {i ===
-											comboIndex
-												? 'bg-accent text-accent-foreground'
-												: ''}"
-											onmousedown={(e) => {
-												e.preventDefault();
-												selectActivity(a);
-											}}
-											onmouseenter={() => (comboIndex = i)}
-										>
-											{a.name}
-										</button>
-									</li>
-								{/each}
-							{/if}
-						</ul>
-					{/if}
-				</div>
+				<ActivityCombobox id="act" bind:value={draft.activityId} options={activityOptions} />
 			</div>
 
 			{#if draftIsAbsence}
