@@ -8,7 +8,8 @@
 	import { toast } from "svelte-sonner";
 	import { fmtDate } from "$lib/time";
 
-	let { open = $bindable(false), onsaved }: { open?: boolean; onsaved?: () => void } = $props();
+	let { open = $bindable(false), onsaved }: { open?: boolean; onsaved?: (month?: string) => void } =
+		$props();
 
 	let from = $state(fmtDate(Date.now()));
 	let to = $state(fmtDate(Date.now()));
@@ -19,7 +20,7 @@
 		if (added > 0) {
 			const extra = skipped > 0 ? ` (${skipped} mit Projektzeit übersprungen)` : "";
 			toast.success(`${added} Abwesenheitstag(e) eingetragen${extra}.`);
-			onsaved?.();
+			onsaved?.(from.slice(0, 7)); // auf den Abwesenheits-Monat springen
 			open = false;
 		} else if (skipped > 0) {
 			toast.error(`${skipped} Tag(e) haben Projektzeiten – nur halber Urlaubstag möglich.`);
