@@ -27,7 +27,6 @@ function absence(id: string, fraction: number, dayOffset = 0): Entry {
 const entries: Entry[] = [
 	work("1", "a", 7200), // 2.0 h
 	work("2", "b", 4800), // 1.333 h -> 1.5
-	work("4", "old", 3600), // archiviert -> nicht im Bericht
 	absence("5", 1, 5), // ganzer Tag (anderer Tag, da Ganztags-Abwesenheit Projektzeit ausschließt) -> 7.5
 	absence("6", 0.5) // halber Tag (darf neben Projektzeit liegen) -> 3.75
 ];
@@ -76,6 +75,20 @@ describe("buildReport", () => {
 		const noFilter = buildReport("2026-07", activities, es, 0.5, HPD);
 		const h2 = Object.fromEntries(noFilter.rows.map((r) => [r.name, r.hours]));
 		expect(h2["Abwesenheiten"]).toBe(15); // ohne Filter beide Tage
+	});
+
+	it("behält Stunden archivierter Aktivitäten im Bericht", () => {
+		const archived: Activity[] = [
+			...activities,
+			{ id: "arch", name: "Altprojekt X", sortOrder: 5, archived: true, isAbsence: false }
+		];
+		// Mit Stunden -> Zeile erscheint trotz archiviert.
+		const withHours = buildReport("2026-06", archived, [work("z", "arch", 3600)], 0.5, HPD);
+		expect(withHours.rows.map((r) => r.name)).toContain("Altprojekt X");
+		expect(withHours.workHours).toBe(1.0);
+		// Ohne Stunden -> archivierte Zeile bleibt aus (kein Ballast).
+		const noHours = buildReport("2026-06", archived, [], 0.5, HPD);
+		expect(noHours.rows.map((r) => r.name)).not.toContain("Altprojekt X");
 	});
 
 	it("ignoriert Projektzeiten an Ganztags-Abwesenheitstagen", () => {

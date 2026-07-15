@@ -56,8 +56,10 @@ export function buildReport(
 		hoursByActivity.set(e.activityId, (hoursByActivity.get(e.activityId) ?? 0) + h);
 	}
 
+	// Aktive Aktivitäten immer; archivierte nur, wenn sie in diesem Monat Stunden haben
+	// (so bleiben erfasste Stunden IMMER im Bericht – Archivieren verliert nichts).
 	const ordered = activities
-		.filter((a) => !a.archived)
+		.filter((a) => !a.archived || (hoursByActivity.get(a.id) ?? 0) > 0)
 		.sort((a, b) => a.sortOrder - b.sortOrder);
 
 	const rows: ReportRow[] = ordered.map((a) => {
