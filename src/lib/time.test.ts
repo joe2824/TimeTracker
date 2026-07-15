@@ -14,8 +14,25 @@ import {
 	monthLabel,
 	parseClock,
 	parseHours,
-	roundHours
+	roundHours,
+	stepDate
 } from "./time";
+
+describe("stepDate", () => {
+	it("rollt über Monats- und Jahresgrenzen", () => {
+		expect(stepDate("2026-07-01", -1)).toBe("2026-06-30");
+		expect(stepDate("2026-06-30", 1)).toBe("2026-07-01");
+		expect(stepDate("2026-01-01", -1)).toBe("2025-12-31");
+		expect(stepDate("2026-12-31", 1)).toBe("2027-01-01");
+	});
+	it("beachtet Schaltjahre (2028)", () => {
+		expect(stepDate("2028-02-28", 1)).toBe("2028-02-29");
+		expect(stepDate("2028-03-01", -1)).toBe("2028-02-29");
+	});
+	it("gibt bei ungültiger Eingabe unverändert zurück", () => {
+		expect(stepDate("", 1)).toBe("");
+	});
+});
 
 describe("isWorkday", () => {
 	const MON_FRI = [1, 2, 3, 4, 5];

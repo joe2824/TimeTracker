@@ -47,6 +47,14 @@ export function fmtDate(ts: number): string {
 	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+/** Verschiebt ein "YYYY-MM-DD"-Datum um `delta` Tage – mit Monats-/Jahresübergang. */
+export function stepDate(date: string, delta: number): string {
+	const d = new Date(`${date}T12:00:00`);
+	if (Number.isNaN(d.getTime())) return date;
+	d.setDate(d.getDate() + delta);
+	return fmtDate(d.getTime());
+}
+
 /** Ist der Tag von `ts` ein regulärer Arbeitstag? (workdays: Wochentagsnummern 0=So..6=Sa) */
 export function isWorkday(ts: number, workdays: number[]): boolean {
 	return workdays.includes(new Date(ts).getDay());

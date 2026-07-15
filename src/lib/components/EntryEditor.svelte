@@ -24,6 +24,7 @@
 	import * as Dialog from "$lib/components/ui/dialog";
 	import CalendarImport from "$lib/components/CalendarImport.svelte";
 	import ActivityCombobox from "$lib/components/ActivityCombobox.svelte";
+	import DateInput from "$lib/components/DateInput.svelte";
 	import BulkEntryDialog from "$lib/components/BulkEntryDialog.svelte";
 	import VacationRange from "$lib/components/VacationRange.svelte";
 	import PlusIcon from "@lucide/svelte/icons/plus";
@@ -406,7 +407,7 @@
 	<CalendarImport {month} onimported={refreshMonths} bind:previewActive={importPreview} />
 </div>
 
-<BulkEntryDialog bind:open={bulkOpen} {month} onsaved={refreshMonths} />
+<BulkEntryDialog bind:open={bulkOpen} onsaved={refreshMonths} />
 
 <VacationRange bind:open={vacOpen} onsaved={refreshMonths} />
 
@@ -426,7 +427,7 @@
 				<div class="grid grid-cols-2 gap-2">
 					<div class="space-y-1">
 						<Label for="date">Datum</Label>
-						<Input id="date" type="date" bind:value={draft.date} />
+						<DateInput id="date" bind:value={draft.date} />
 					</div>
 					<div class="space-y-1">
 						<Label for="frac">Umfang</Label>
@@ -444,7 +445,7 @@
 				<div class="grid grid-cols-3 gap-2">
 					<div class="col-span-3 space-y-1">
 						<Label for="date">Datum</Label>
-						<Input id="date" type="date" bind:value={draft.date} />
+						<DateInput id="date" bind:value={draft.date} />
 					</div>
 					<div class="space-y-1">
 						<Label for="start">Von</Label>

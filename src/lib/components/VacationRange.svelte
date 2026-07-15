@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
 	import { Button } from "$lib/components/ui/button";
-	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
 	import { Switch } from "$lib/components/ui/switch";
 	import * as Dialog from "$lib/components/ui/dialog";
+	import DateInput from "$lib/components/DateInput.svelte";
 	import { toast } from "svelte-sonner";
 	import { fmtDate } from "$lib/time";
 
@@ -43,11 +43,11 @@
 				<div class="flex flex-wrap items-end gap-4">
 					<div class="space-y-1">
 						<Label for="vacfrom">Von</Label>
-						<Input id="vacfrom" type="date" bind:value={from} class="w-40" />
+						<DateInput id="vacfrom" bind:value={from} class="w-40" />
 					</div>
 					<div class="space-y-1">
 						<Label for="vacto">Bis</Label>
-						<Input id="vacto" type="date" bind:value={to} class="w-40" />
+						<DateInput id="vacto" bind:value={to} class="w-40" />
 					</div>
 				</div>
 				<label class="flex items-center justify-between gap-2 text-sm">

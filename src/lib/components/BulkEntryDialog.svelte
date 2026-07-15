@@ -7,13 +7,13 @@
 	import * as Dialog from "$lib/components/ui/dialog";
 	import ActivityCombobox from "$lib/components/ActivityCombobox.svelte";
 	import WorkdayPicker from "$lib/components/WorkdayPicker.svelte";
+	import DateInput from "$lib/components/DateInput.svelte";
 	import { toast } from "svelte-sonner";
 
 	let {
 		open = $bindable(false),
-		month,
 		onsaved
-	}: { open?: boolean; month: string; onsaved: () => void } = $props();
+	}: { open?: boolean; onsaved: () => void } = $props();
 
 	// Keine Vorauswahl – der Nutzer wählt die Aktivität selbst.
 	let activityId = $state("");
@@ -37,8 +37,7 @@
 	$effect(() => {
 		if (!open) return;
 		activityId = "";
-		von = `${month}-01`;
-		bis = `${month}-01`;
+		von = bis = fmtDate(Date.now()); // Default: heute
 		days = [...app.settings.workdays];
 		start = startText = "08:00";
 		end = endText = "16:00";
@@ -147,11 +146,11 @@
 				<div class="grid grid-cols-2 gap-2">
 					<div class="space-y-1">
 						<Label for="von">Von</Label>
-						<Input id="von" type="date" bind:value={von} />
+						<DateInput id="von" bind:value={von} />
 					</div>
 					<div class="space-y-1">
 						<Label for="bis">Bis</Label>
-						<Input id="bis" type="date" bind:value={bis} />
+						<DateInput id="bis" bind:value={bis} />
 					</div>
 				</div>
 
