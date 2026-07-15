@@ -6,6 +6,8 @@
 	import { Label } from "$lib/components/ui/label";
 	import { Switch } from "$lib/components/ui/switch";
 	import * as Dialog from "$lib/components/ui/dialog";
+	import ActivityCombobox from "$lib/components/ActivityCombobox.svelte";
+	import WorkdayPicker from "$lib/components/WorkdayPicker.svelte";
 	import { toast } from "svelte-sonner";
 
 	let {
@@ -14,25 +16,36 @@
 		onsaved
 	}: { open?: boolean; month: string; onsaved: () => void } = $props();
 
-	let mode = $state<"days" | "lump">("days");
-	let activityId = $state(app.visibleActivities[0]?.id ?? "");
+	// Keine Vorauswahl – der Nutzer wählt die Aktivität selbst.
+	let activityId = $state("");
 	const isAbsence = $derived(app.isAbsenceId(activityId));
 
-	// Mehrere Tage (Datums-Defaults kommen aus dem $effect unten)
+	// false = Zeitraum (Von–Bis), true = Pauschalsumme auf einen Tag (nur Nicht-Abwesenheit).
+	let lump = $state(false);
+
+	// Zeitraum
 	let von = $state("");
 	let bis = $state("");
-	let onlyWeekdays = $state(true);
+	let days = $state<number[]>([...app.settings.workdays]); // gewählte Wochentage (0=So..6=Sa)
 	let start = $state("08:00");
 	let end = $state("16:00");
-	let startText = $state("08:00"); // Roh-Eingabe, erst beim Verlassen normalisiert
+	let startText = $state("08:00");
 	let endText = $state("16:00");
 	let fraction = $state(1);
 
-	// Pauschal (Summe auf einen Tag)
+	// Pauschal
 	let lumpDate = $state("");
 	let lumpHours = $state("8");
 
-	/** Uhrzeit-Eingabe beim Verlassen normalisieren (z.B. "1800" -> "18:00"). */
+	// Beim Öffnen: Datums-Defaults auf den gewählten Monat, Tage auf die Arbeitstage.
+	$effect(() => {
+		if (!open) return;
+		von = `${month}-01`;
+		bis = `${month}-01`;
+		lumpDate = `${month}-01`;
+		days = [...app.settings.workdays];
+	});
+
 	function commitStart() {
 		const p = parseClock(startText);
 		if (p) start = p;
@@ -44,18 +57,15 @@
 		endText = end;
 	}
 
-	$effect(() => {
-		// Wenn der Monat wechselt, Default-Daten anpassen.
-		von = `${month}-01`;
-		bis = `${month}-01`;
-		lumpDate = `${month}-01`;
-	});
-
 	function toTs(date: string, time: string): number {
 		return new Date(`${date}T${time}:00`).getTime();
 	}
 
-	async function saveDays() {
+	async function saveRange() {
+		if (!activityId) {
+			toast.error("Bitte eine Aktivität wählen.");
+			return;
+		}
 		commitStart();
 		commitEnd();
 		const a = new Date(`${von}T12:00:00`);
@@ -64,21 +74,23 @@
 			toast.error("Ungültiger Datumsbereich.");
 			return;
 		}
+		if (days.length === 0) {
+			toast.error("Bitte mindestens einen Wochentag wählen.");
+			return;
+		}
 		let count = 0;
 		for (let d = new Date(a); d <= b; d.setDate(d.getDate() + 1)) {
-			const wd = d.getDay();
-			if (onlyWeekdays && (wd === 0 || wd === 6)) continue;
+			if (!days.includes(d.getDay())) continue; // nur gewählte Wochentage
 			const date = fmtDate(d.getTime());
 			if (isAbsence) {
 				const ts = toTs(date, "12:00");
-				await app.addEntry(activityId, ts, ts, "", "manual", fraction);
+				if (await app.addEntry(activityId, ts, ts, "", "manual", fraction)) count++;
 			} else {
 				let s = toTs(date, start);
 				let e = toTs(date, end);
 				if (e < s) e += 24 * 3600 * 1000;
-				await app.addEntry(activityId, s, e, "", "manual");
+				if (await app.addEntry(activityId, s, e, "", "manual")) count++;
 			}
-			count++;
 		}
 		toast.success(`${count} Eintrag/Einträge angelegt.`);
 		open = false;
@@ -86,6 +98,10 @@
 	}
 
 	async function saveLump() {
+		if (!activityId) {
+			toast.error("Bitte eine Aktivität wählen.");
+			return;
+		}
 		const hours = parseHours(lumpHours);
 		if (hours == null || hours <= 0) {
 			toast.error("Bitte gültige Stundenzahl angeben.");
@@ -93,17 +109,17 @@
 		}
 		const s = toTs(lumpDate, "08:00");
 		const e = s + hours * 3600 * 1000;
-		await app.addEntry(activityId, s, e, "Pauschaleintrag", "manual");
-		toast.success(`${fmtHours(hours)} h angelegt.`);
-		open = false;
-		onsaved();
+		if (await app.addEntry(activityId, s, e, "Pauschaleintrag", "manual")) {
+			toast.success(`${fmtHours(hours)} h angelegt.`);
+			open = false;
+			onsaved();
+		}
 	}
 
-	/** Enter bestätigt den jeweils aktiven Modus (Pauschal bei Abwesenheit gesperrt). */
 	function onSubmit(e: SubmitEvent) {
 		e.preventDefault();
-		if (mode === "days") saveDays();
-		else if (!isAbsence) saveLump();
+		if (lump && !isAbsence) saveLump();
+		else saveRange();
 	}
 </script>
 
@@ -112,126 +128,114 @@
 		<form class="grid gap-4" onsubmit={onSubmit}>
 			<Dialog.Header>
 				<Dialog.Title>Schnelleingabe</Dialog.Title>
-				<Dialog.Description>Mehrere Tage auf einmal oder eine Pauschalsumme erfassen.</Dialog.Description>
+				<Dialog.Description>
+					Mehrere Tage eines Zeitraums auf einmal – oder eine Pauschalsumme auf einen Tag.
+				</Dialog.Description>
 			</Dialog.Header>
 
 			<div class="space-y-3">
-				<div class="bg-muted flex gap-1 rounded-md p-1 text-sm">
-					<button
-						type="button"
-						class="flex-1 rounded px-2 py-1 {mode === 'days' ? 'bg-background shadow-sm' : ''}"
-						onclick={() => (mode = "days")}
-					>
-						Mehrere Tage
-					</button>
-					<button
-						type="button"
-						class="flex-1 rounded px-2 py-1 {mode === 'lump' ? 'bg-background shadow-sm' : ''}"
-						onclick={() => (mode = "lump")}
-					>
-						Pauschal (Summe)
-					</button>
+				<div class="space-y-1">
+					<Label for="bact">Aktivität</Label>
+					<ActivityCombobox id="bact" bind:value={activityId} options={app.visibleActivities} />
 				</div>
 
-			<div class="space-y-1">
-				<Label for="bact">Aktivität</Label>
-				<select
-					id="bact"
-					bind:value={activityId}
-					class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
-				>
-					{#each app.visibleActivities as a (a.id)}
-						<option value={a.id}>{a.name}</option>
-					{/each}
-				</select>
-			</div>
+				{#if !isAbsence}
+					<label class="flex items-center justify-between gap-2 text-sm">
+						<span>
+							Pauschalsumme
+							<span class="text-muted-foreground text-xs">(eine Summe auf einen Tag)</span>
+						</span>
+						<Switch bind:checked={lump} />
+					</label>
+				{/if}
 
-			{#if mode === "days"}
-				<div class="grid grid-cols-2 gap-2">
-					<div class="space-y-1">
-						<Label for="von">Von</Label>
-						<Input id="von" type="date" bind:value={von} />
+				{#if lump && !isAbsence}
+					<div class="grid grid-cols-2 gap-2">
+						<div class="space-y-1">
+							<Label for="ldate">Tag (Buchung)</Label>
+							<Input id="ldate" type="date" bind:value={lumpDate} />
+						</div>
+						<div class="space-y-1">
+							<Label for="lhours">Stunden gesamt</Label>
+							<Input
+								id="lhours"
+								type="text"
+								inputmode="decimal"
+								placeholder="z. B. 8 · 7,5 · 7:30"
+								bind:value={lumpHours}
+							/>
+						</div>
 					</div>
-					<div class="space-y-1">
-						<Label for="bis">Bis</Label>
-						<Input id="bis" type="date" bind:value={bis} />
-					</div>
-				</div>
-				<div class="flex items-center justify-between">
-					<Label for="wd">Nur Werktage (Mo–Fr)</Label>
-					<Switch id="wd" checked={onlyWeekdays} onCheckedChange={(v) => (onlyWeekdays = v)} />
-				</div>
-				{#if isAbsence}
-					<div class="space-y-1">
-						<Label for="bfrac">Umfang je Tag</Label>
-						<select
-							id="bfrac"
-							bind:value={fraction}
-							class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
-						>
-							<option value={1}>Ganzer Tag ({fmtHours(app.settings.hoursPerDay)} h)</option>
-							<option value={0.5}>Halber Tag ({fmtHours(app.settings.hoursPerDay / 2)} h)</option>
-						</select>
-					</div>
+					<p class="text-muted-foreground text-xs">
+						Legt einen einzelnen Eintrag mit der gesamten Stundenzahl an (z. B. 80 h für ein Projekt
+						im Monat).
+					</p>
 				{:else}
 					<div class="grid grid-cols-2 gap-2">
 						<div class="space-y-1">
-							<Label for="bstart">Von (Uhrzeit)</Label>
-							<Input
-								id="bstart"
-								type="text"
-								inputmode="numeric"
-								placeholder="z. B. 0800"
-								value={startText}
-								oninput={(e) => (startText = e.currentTarget.value)}
-								onchange={commitStart}
-							/>
+							<Label for="von">Von</Label>
+							<Input id="von" type="date" bind:value={von} />
 						</div>
 						<div class="space-y-1">
-							<Label for="bend">Bis (Uhrzeit)</Label>
-							<Input
-								id="bend"
-								type="text"
-								inputmode="numeric"
-								placeholder="z. B. 1600"
-								value={endText}
-								oninput={(e) => (endText = e.currentTarget.value)}
-								onchange={commitEnd}
-							/>
+							<Label for="bis">Bis</Label>
+							<Input id="bis" type="date" bind:value={bis} />
 						</div>
 					</div>
+					<div class="space-y-1">
+						<Label>Wochentage</Label>
+						<WorkdayPicker bind:value={days} />
+						<p class="text-muted-foreground text-xs">
+							Nur an diesen Tagen im Zeitraum wird gebucht (Standard: deine Arbeitstage; Sa/So
+							wählbar).
+						</p>
+					</div>
+					{#if isAbsence}
+						<div class="space-y-1">
+							<Label for="bfrac">Umfang je Tag</Label>
+							<select
+								id="bfrac"
+								bind:value={fraction}
+								class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+							>
+								<option value={1}>Ganzer Tag ({fmtHours(app.settings.hoursPerDay)} h)</option>
+								<option value={0.5}>Halber Tag ({fmtHours(app.settings.hoursPerDay / 2)} h)</option>
+							</select>
+						</div>
+					{:else}
+						<div class="grid grid-cols-2 gap-2">
+							<div class="space-y-1">
+								<Label for="bstart">Von (Uhrzeit)</Label>
+								<Input
+									id="bstart"
+									type="text"
+									inputmode="numeric"
+									placeholder="z. B. 0800"
+									value={startText}
+									oninput={(e) => (startText = e.currentTarget.value)}
+									onchange={commitStart}
+								/>
+							</div>
+							<div class="space-y-1">
+								<Label for="bend">Bis (Uhrzeit)</Label>
+								<Input
+									id="bend"
+									type="text"
+									inputmode="numeric"
+									placeholder="z. B. 1600"
+									value={endText}
+									oninput={(e) => (endText = e.currentTarget.value)}
+									onchange={commitEnd}
+								/>
+							</div>
+						</div>
+					{/if}
 				{/if}
-				<Dialog.Footer>
-					<Button type="button" variant="outline" onclick={() => (open = false)}>Abbrechen</Button>
-					<Button type="submit">Anlegen</Button>
-				</Dialog.Footer>
-			{:else}
-				<div class="grid grid-cols-2 gap-2">
-					<div class="space-y-1">
-						<Label for="ldate">Tag (Buchung)</Label>
-						<Input id="ldate" type="date" bind:value={lumpDate} />
-					</div>
-					<div class="space-y-1">
-						<Label for="lhours">Stunden gesamt</Label>
-						<Input
-							id="lhours"
-							type="text"
-							inputmode="decimal"
-							placeholder="z. B. 8 · 7,5 · 7:30"
-							bind:value={lumpHours}
-						/>
-					</div>
-				</div>
-				<p class="text-muted-foreground text-xs">
-					Legt einen einzelnen Eintrag mit der gesamten Stundenzahl an (z.B. 80 h für ein Projekt im
-					Monat). Für Urlaub bitte „Mehrere Tage“ verwenden.
-				</p>
-				<Dialog.Footer>
-					<Button type="button" variant="outline" onclick={() => (open = false)}>Abbrechen</Button>
-					<Button type="submit" disabled={isAbsence}>Anlegen</Button>
-				</Dialog.Footer>
-			{/if}
 			</div>
+
+			<Dialog.Footer>
+				<Button type="button" variant="outline" onclick={() => (open = false)}>Abbrechen</Button>
+				<Button type="submit">Anlegen</Button>
+			</Dialog.Footer>
 		</form>
 	</Dialog.Content>
 </Dialog.Root>
