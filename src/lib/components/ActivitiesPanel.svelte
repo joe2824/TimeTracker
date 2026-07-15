@@ -1,15 +1,17 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
-	import { BUILTIN_OTHERS, ACTIVITY_COLORS } from "$lib/types";
+	import { BUILTIN_OTHERS, ACTIVITY_COLORS, type Activity } from "$lib/types";
 	import { acceleratorFromEvent, applyShortcuts } from "$lib/shortcuts";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Textarea } from "$lib/components/ui/textarea";
 	import { Badge } from "$lib/components/ui/badge";
 	import * as Card from "$lib/components/ui/card";
+	import * as Dialog from "$lib/components/ui/dialog";
 	import { toast } from "svelte-sonner";
 	import GripVerticalIcon from "@lucide/svelte/icons/grip-vertical";
 	import Trash2Icon from "@lucide/svelte/icons/trash-2";
+	import ArchiveIcon from "@lucide/svelte/icons/archive";
 	import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
 	import StarIcon from "@lucide/svelte/icons/star";
 	import EyeIcon from "@lucide/svelte/icons/eye";
@@ -29,6 +31,30 @@
 
 	let recordingId = $state<string | null>(null);
 	let colorOpenId = $state<string | null>(null);
+
+	// Echtes Löschen (mit allen Einträgen) – Bestätigungsdialog.
+	let deleteTarget = $state<Activity | null>(null);
+	let deleteCount = $state(-1); // -1 = wird geladen
+	let deleting = $state(false);
+
+	async function askDelete(a: Activity) {
+		deleteTarget = a;
+		deleteCount = -1;
+		deleteCount = await app.countActivityEntries(a.id);
+	}
+
+	async function confirmDelete() {
+		if (!deleteTarget) return;
+		deleting = true;
+		try {
+			const name = deleteTarget.name;
+			const n = await app.deleteActivity(deleteTarget.id);
+			toast.success(`„${name}" gelöscht${n ? ` (${n} Eintrag/Einträge entfernt)` : ""}.`);
+			deleteTarget = null;
+		} finally {
+			deleting = false;
+		}
+	}
 
 	async function pickColor(id: string, color: string | null) {
 		await app.setColor(id, color);
@@ -304,13 +330,28 @@
 						{/if}
 						{#if isBuiltin(a.name, a.isAbsence)}
 							<Badge variant="secondary">fix</Badge>
-						{:else if a.archived}
-							<Button variant="ghost" size="icon" title="Wiederherstellen" onclick={() => app.setArchived(a.id, false)}>
-								<RotateCcwIcon class="size-4" />
-							</Button>
 						{:else}
-							<Button variant="ghost" size="icon" title="Archivieren" onclick={() => app.setArchived(a.id, true)}>
-								<Trash2Icon class="size-4" />
+							{#if a.archived}
+								<Button variant="ghost" size="icon" title="Wiederherstellen (zurück in die Auswahl)" onclick={() => app.setArchived(a.id, false)}>
+									<RotateCcwIcon class="size-4" />
+								</Button>
+							{:else}
+								<Button
+									variant="ghost"
+									size="icon"
+									title="Archivieren – aus Auswahl/Timer entfernen; erfasste Stunden bleiben im Bericht"
+									onclick={() => app.setArchived(a.id, true)}
+								>
+									<ArchiveIcon class="size-4" />
+								</Button>
+							{/if}
+							<Button
+								variant="ghost"
+								size="icon"
+								title="Löschen – Aktivität und alle Einträge unwiderruflich entfernen"
+								onclick={() => askDelete(a)}
+							>
+								<Trash2Icon class="text-destructive size-4" />
 							</Button>
 						{/if}
 					</li>
@@ -319,3 +360,32 @@
 		</Card.Content>
 	</Card.Root>
 </div>
+
+<Dialog.Root open={!!deleteTarget} onOpenChange={(v) => { if (!v && !deleting) deleteTarget = null; }}>
+	<Dialog.Content class="sm:max-w-md">
+		<Dialog.Header>
+			<Dialog.Title>Aktivität löschen?</Dialog.Title>
+			<Dialog.Description>
+				„{deleteTarget?.name}" wird
+				{#if deleteCount < 0}
+					mit allen zugehörigen Einträgen
+				{:else if deleteCount === 0}
+					(keine Einträge vorhanden)
+				{:else}
+					<strong>samt {deleteCount} Eintrag/Einträgen</strong>
+				{/if}
+				unwiderruflich gelöscht. Diese Daten sind danach weg – auch aus dem Bericht.
+				Zum reinen Ausblenden lieber <em>Archivieren</em> nutzen.
+			</Dialog.Description>
+		</Dialog.Header>
+		<Dialog.Footer>
+			<Button type="button" variant="outline" onclick={() => (deleteTarget = null)} disabled={deleting}>
+				Abbrechen
+			</Button>
+			<Button type="button" variant="destructive" onclick={confirmDelete} disabled={deleting}>
+				<Trash2Icon class="size-4" />
+				{deleting ? "Lösche…" : "Endgültig löschen"}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

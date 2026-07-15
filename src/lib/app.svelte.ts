@@ -6,6 +6,7 @@ import { fmtDate } from "./time";
 import { dayConflict } from "./conflicts";
 import {
 	cleanupOldMonths,
+	listEntryMonths,
 	loadActivities,
 	loadEntries,
 	loadSettings,
@@ -234,6 +235,42 @@ class AppState {
 			a.archived = archived;
 			await this.persistActivities();
 		}
+	}
+
+	/** Zählt ALLE Einträge dieser Aktivität über alle Monate (lädt fehlende Monate nach). */
+	async countActivityEntries(id: string): Promise<number> {
+		let count = 0;
+		for (const m of await listEntryMonths()) {
+			await this.ensureMonth(m);
+			count += (this.entriesByMonth[m] ?? []).filter((e) => e.activityId === id).length;
+		}
+		return count;
+	}
+
+	/**
+	 * Löscht eine Aktivität UND alle ihre Einträge über alle Monate unwiderruflich.
+	 * "Others"/"Abwesenheiten" sind geschützt. Liefert die Zahl gelöschter Einträge.
+	 */
+	async deleteActivity(id: string): Promise<number> {
+		const a = this.activities.find((x) => x.id === id);
+		if (!a || a.isAbsence || a.name === BUILTIN_OTHERS) return 0;
+
+		let removed = 0;
+		for (const m of await listEntryMonths()) {
+			await this.ensureMonth(m);
+			const list = this.entriesByMonth[m];
+			if (!list) continue;
+			const kept = list.filter((e) => e.activityId !== id);
+			if (kept.length !== list.length) {
+				removed += list.length - kept.length;
+				this.entriesByMonth[m] = kept;
+				await this.#saveMonth(m);
+			}
+		}
+		if (this.running?.activityId === id) this.running = null;
+		this.activities = this.activities.filter((x) => x.id !== id);
+		await this.persistActivities();
+		return removed;
 	}
 
 	/** Verschiebt `draggedId` vor/hinter `targetId` (Drag & Drop). */
