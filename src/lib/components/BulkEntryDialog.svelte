@@ -132,7 +132,7 @@
 	<Dialog.Content class="sm:max-w-lg">
 		<form class="grid gap-4" onsubmit={onSubmit}>
 			<Dialog.Header>
-				<Dialog.Title>Schnelleingabe</Dialog.Title>
+				<Dialog.Title>Mehrere Tage</Dialog.Title>
 				<Dialog.Description>
 					Für jeden gewählten Wochentag im Zeitraum einen Eintrag anlegen – mit Uhrzeit oder pauschal.
 				</Dialog.Description>

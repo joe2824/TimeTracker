@@ -28,7 +28,7 @@
 	import VacationRange from "$lib/components/VacationRange.svelte";
 	import PlusIcon from "@lucide/svelte/icons/plus";
 	import Trash2Icon from "@lucide/svelte/icons/trash-2";
-	import LayersIcon from "@lucide/svelte/icons/layers";
+	import CalendarDaysIcon from "@lucide/svelte/icons/calendar-days";
 	import PalmtreeIcon from "@lucide/svelte/icons/palmtree";
 	import ChevronLeftIcon from "@lucide/svelte/icons/chevron-left";
 	import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
@@ -332,7 +332,7 @@
 				<PalmtreeIcon class="size-4" /> Abwesenheit
 			</Button>
 			<Button variant="outline" onclick={() => (bulkOpen = true)}>
-				<LayersIcon class="size-4" /> Schnelleingabe
+				<CalendarDaysIcon class="size-4" /> Mehrere Tage
 			</Button>
 			<Button onclick={() => openAdd()}><PlusIcon class="size-4" /> Eintrag</Button>
 		</div>
