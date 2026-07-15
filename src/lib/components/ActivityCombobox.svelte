@@ -1,6 +1,6 @@
 <script lang="ts">
 	// Suchbare Aktivitäts-Auswahl (Combobox). `value` ist die activityId ("" = keine).
-	// Wird im Eintrag-Dialog und in der Schnelleingabe gemeinsam genutzt.
+	// Wird im Eintrag-Dialog und im „Mehrere Tage"-Dialog gemeinsam genutzt.
 	import { app } from "$lib/app.svelte";
 	import { Input } from "$lib/components/ui/input";
 	import type { Activity } from "$lib/types";
