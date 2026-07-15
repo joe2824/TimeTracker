@@ -13,7 +13,7 @@
 	let {
 		open = $bindable(false),
 		onsaved
-	}: { open?: boolean; onsaved: () => void } = $props();
+	}: { open?: boolean; onsaved: (month?: string) => void } = $props();
 
 	// Keine Vorauswahl – der Nutzer wählt die Aktivität selbst.
 	let activityId = $state("");
@@ -118,7 +118,7 @@
 		}
 		toast.success(`${count} Eintrag/Einträge angelegt.`);
 		open = false;
-		onsaved();
+		onsaved(von.slice(0, 7)); // auf den Zeitraum-Monat springen
 	}
 
 	function onSubmit(e: SubmitEvent) {

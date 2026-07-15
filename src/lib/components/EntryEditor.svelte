@@ -201,8 +201,8 @@
 	const todayStr = $derived(fmtDate(app.now));
 
 	function openAdd(date?: string) {
-		draft = emptyDraft();
-		draft.date = date ?? `${month}-01`;
+		draft = emptyDraft(); // date = heute
+		if (date) draft.date = date;
 		recalcDur();
 		syncTimeText();
 		dialogOpen = true;
@@ -279,7 +279,15 @@
 			if (!created) return;
 		}
 		dialogOpen = false;
+		// Auf den Monat des gespeicherten Eintrags springen, damit er sichtbar ist.
+		month = draft.date.slice(0, 7);
 		await refreshMonths();
+	}
+
+	/** Nach Speichern aus einem Unterdialog: ggf. auf dessen Monat springen + neu laden. */
+	function afterExternalSave(m?: string) {
+		if (m) month = m;
+		void refreshMonths();
 	}
 
 	function entryLabel(e: Entry): string {
@@ -407,9 +415,9 @@
 	<CalendarImport {month} onimported={refreshMonths} bind:previewActive={importPreview} />
 </div>
 
-<BulkEntryDialog bind:open={bulkOpen} onsaved={refreshMonths} />
+<BulkEntryDialog bind:open={bulkOpen} onsaved={afterExternalSave} />
 
-<VacationRange bind:open={vacOpen} onsaved={refreshMonths} />
+<VacationRange bind:open={vacOpen} onsaved={afterExternalSave} />
 
 <Dialog.Root bind:open={dialogOpen}>
 	<Dialog.Content class="sm:max-w-md">
