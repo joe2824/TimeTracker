@@ -12,6 +12,7 @@
 	import PlayIcon from "@lucide/svelte/icons/play";
 	import StarIcon from "@lucide/svelte/icons/star";
 	import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
+	import ActivityDot from "$lib/components/ActivityDot.svelte";
 
 	const win = getCurrentWebviewWindow();
 
@@ -166,9 +167,7 @@
 				{:else}
 					<PlayIcon class="size-4 shrink-0" />
 				{/if}
-				{#if a.color}
-					<span class="size-2.5 shrink-0 rounded-full" style={`background:${a.color}`}></span>
-				{/if}
+				<ActivityDot color={a.color} />
 				<span class="flex-1 truncate">{a.name}</span>
 				{#if a.favorite}
 					<StarIcon class="size-3.5 shrink-0 fill-yellow-400 text-yellow-400" />

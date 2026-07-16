@@ -13,7 +13,8 @@
 	import { Input } from "$lib/components/ui/input";
 	import WorkdayPicker from "$lib/components/WorkdayPicker.svelte";
 	import { Label } from "$lib/components/ui/label";
-	import { Switch } from "$lib/components/ui/switch";
+	import SettingToggle from "$lib/components/SettingToggle.svelte";
+	import * as Select from "$lib/components/ui/select";
 	import * as Card from "$lib/components/ui/card";
 	import { toast } from "svelte-sonner";
 	import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
@@ -29,8 +30,16 @@
 	import XIcon from "@lucide/svelte/icons/x";
 	import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
 	import WrenchIcon from "@lucide/svelte/icons/wrench";
+	import ShortcutKey from "$lib/components/ShortcutKey.svelte";
 
 	const REPO_URL = "https://github.com/joe2824/TimeTracker";
+
+	/** Rundungsstufen des Berichts: Wert (Stunden) -> Beschriftung. */
+	const ROUNDINGS: Record<string, string> = {
+		"0.25": "Viertelstunde (0:15)",
+		"0.5": "Halbe Stunde (0:30)",
+		"1": "Volle Stunde (1:00)"
+	};
 	let appVersion = $state("");
 
 	// Versteckter Dev-Modus: 10× schnell (≤3 s) aufs Logo tippen.
@@ -269,16 +278,13 @@
 					{"{month}"} = Monat, {"{name}"} = dein Name
 				</p>
 			</div>
-			<div class="flex items-center justify-between space-x-2 border-t pt-3">
-				<Label for="stats" class="flex flex-col items-start gap-1">
-					<span class="text-sm font-medium">Auswertung anzeigen</span>
-					<span class="text-muted-foreground text-xs font-normal">
-						Saldo, Stunden je Aktivität und Jahres-Heatmap im Tab „Bericht“. Nur für dich –
-						die E-Mail bleibt unverändert.
-					</span>
-				</Label>
-				<Switch id="stats" bind:checked={statsEnabled} />
-			</div>
+			<SettingToggle
+				id="stats"
+				title="Auswertung anzeigen"
+				description="Saldo, Stunden je Aktivität und Jahres-Heatmap im Tab „Bericht“. Nur für dich – die E-Mail bleibt unverändert."
+				bind:checked={statsEnabled}
+				class="border-t pt-3"
+			/>
 			<Button onclick={saveGeneral}>Speichern</Button>
 		</Card.Content>
 	</Card.Root>
@@ -304,15 +310,12 @@
 			</div>
 
 			<div class="space-y-2 border-t pt-3">
-				<div class="flex items-center justify-between space-x-2">
-					<Label for="reprem" class="flex flex-col items-start gap-1">
-						<span class="text-sm font-medium">Monatlicher Bericht-Hinweis</span>
-						<span class="text-muted-foreground text-xs font-normal">
-							Am letzten Werktag erinnern, den Bericht zu senden.
-						</span>
-					</Label>
-					<Switch id="reprem" bind:checked={reportReminder} />
-				</div>
+				<SettingToggle
+					id="reprem"
+					title="Monatlicher Bericht-Hinweis"
+					description="Am letzten Werktag erinnern, den Bericht zu senden."
+					bind:checked={reportReminder}
+				/>
 				{#if reportReminder}
 					<div class="grid grid-cols-2 gap-2">
 						<div class="space-y-1">
@@ -356,15 +359,14 @@
 				</div>
 				<div class="space-y-1">
 					<Label for="round">Rundung</Label>
-					<select
-						id="round"
-						bind:value={rounding}
-						class="border-input bg-background h-8 w-full rounded-lg border px-3 text-sm"
-					>
-						<option value="0.25">Viertelstunde (0:15)</option>
-						<option value="0.5">Halbe Stunde (0:30)</option>
-						<option value="1">Volle Stunde (1:00)</option>
-					</select>
+					<Select.Root type="single" bind:value={rounding}>
+						<Select.Trigger id="round" class="w-full">{ROUNDINGS[rounding] ?? rounding}</Select.Trigger>
+						<Select.Content>
+							{#each Object.entries(ROUNDINGS) as [v, label] (v)}
+								<Select.Item value={v} {label}>{label}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
 				</div>
 			</div>
 			<Button onclick={saveGeneral}>Speichern</Button>
@@ -388,23 +390,19 @@
 				</div>
 			</div>
 
-			<div class="flex items-center justify-between space-x-2">
-				<Label for="scnotify" class="flex flex-col items-start gap-1">
-					<span class="text-sm font-medium">Hinweis bei Shortcut-Start/Stop</span>
-					<span class="text-muted-foreground text-xs font-normal">Kurze Meldung, verschwindet selbst.</span>
-				</Label>
-				<Switch id="scnotify" bind:checked={shortcutNotify} />
-			</div>
+			<SettingToggle
+				id="scnotify"
+				title="Hinweis bei Shortcut-Start/Stop"
+				description="Kurze Meldung, verschwindet selbst."
+				bind:checked={shortcutNotify}
+			/>
 
-			<div class="flex items-center justify-between space-x-2">
-				<Label for="pomo" class="flex flex-col items-start gap-1">
-					<span class="text-sm font-medium">Pomodoro</span>
-					<span class="text-muted-foreground text-xs font-normal">
-						Fokus-/Pausen-Zyklus mit Hinweisen (optional).
-					</span>
-				</Label>
-				<Switch id="pomo" bind:checked={pomodoroEnabled} />
-			</div>
+			<SettingToggle
+				id="pomo"
+				title="Pomodoro"
+				description="Fokus-/Pausen-Zyklus mit Hinweisen (optional)."
+				bind:checked={pomodoroEnabled}
+			/>
 			{#if pomodoroEnabled}
 				<div class="grid grid-cols-2 gap-2">
 					<div class="space-y-1">
@@ -423,18 +421,20 @@
 				<div class="flex items-center gap-2">
 					{#if recordingToggle}
 						<span class="text-muted-foreground text-sm italic">Taste drücken… (Esc=Abbruch)</span>
-					{:else}
-						<button
-							class="border-input bg-muted hover:bg-accent cursor-pointer rounded border px-2 py-1 font-mono text-xs"
+					{:else if app.settings.toggleShortcut}
+						<ShortcutKey
+							shortcut={app.settings.toggleShortcut}
 							onclick={() => (recordingToggle = true)}
-						>
-							{app.settings.toggleShortcut || "Festlegen…"}
-						</button>
-						{#if app.settings.toggleShortcut}
-							<Button variant="ghost" size="icon" class="size-7" onclick={clearToggle} title="Entfernen">
-								<XIcon class="size-3.5" />
-							</Button>
-						{/if}
+						/>
+						<Button variant="ghost" size="icon-sm" onclick={clearToggle} title="Entfernen">
+							<XIcon />
+						</Button>
+					{:else}
+						<!-- Festlegen ist eine Aktion, keine Taste – also ein normaler Button
+						     statt der Keycap-Optik, die es vorher trug. -->
+						<Button variant="outline" size="sm" onclick={() => (recordingToggle = true)}>
+							Festlegen…
+						</Button>
 					{/if}
 				</div>
 			</div>
@@ -446,13 +446,13 @@
 	<Card.Root>
 		<Card.Header><Card.Title>System</Card.Title></Card.Header>
 		<Card.Content class="space-y-4">
-			<div class="flex items-center justify-between space-x-2">
-				<Label for="autostart" class="flex flex-col items-start gap-1">
-					<span class="text-sm font-medium">Mit Windows starten</span>
-					<span class="text-muted-foreground text-xs font-normal">App läuft im Hintergrund (Tray).</span>
-				</Label>
-				<Switch id="autostart" bind:checked={autostart} onCheckedChange={toggleAutostart} />
-			</div>
+			<SettingToggle
+				id="autostart"
+				title="Mit Windows starten"
+				description="App läuft im Hintergrund (Tray)."
+				bind:checked={autostart}
+				onCheckedChange={toggleAutostart}
+			/>
 			<Button variant="outline" onclick={checkUpdate} disabled={checking}>
 				{checking ? "Suche…" : "Nach Updates suchen"}
 			</Button>

@@ -12,10 +12,12 @@ import {
 	isWorkday,
 	minToClock,
 	monthLabel,
+	noonTs,
 	parseClock,
 	parseHours,
 	roundHours,
-	stepDate
+	stepDate,
+	toTs
 } from "./time";
 
 describe("stepDate", () => {
@@ -294,5 +296,35 @@ describe("durationHours", () => {
 		const end = minToClock(start + 1.5 * 60);
 		expect(end).toBe("10:30");
 		expect(durationHours("09:00", end)).toBe(1.5);
+	});
+});
+
+describe("toTs / noonTs", () => {
+	it("toTs liefert die lokale Zeit des Tages", () => {
+		const ts = toTs("2026-06-10", "08:30");
+		const d = new Date(ts);
+		expect(d.getFullYear()).toBe(2026);
+		expect(d.getMonth()).toBe(5);
+		expect(d.getDate()).toBe(10);
+		expect(d.getHours()).toBe(8);
+		expect(d.getMinutes()).toBe(30);
+	});
+
+	it("toTs gibt NaN bei Unsinn", () => {
+		expect(Number.isNaN(toTs("kein-datum", "08:00"))).toBe(true);
+	});
+
+	it("noonTs trifft die Tagesmitte", () => {
+		const d = new Date(noonTs("2026-06-10"));
+		expect(d.getHours()).toBe(12);
+		expect(fmtDate(noonTs("2026-06-10"))).toBe("2026-06-10");
+	});
+
+	it("noonTs bleibt an DST-Grenzen auf dem gemeinten Tag", () => {
+		// Genau dafuer ist der Mittag da: um Mitternacht kippen manche Zonen
+		// auf den Vortag. Deutsche Umstellungstage 2026: 29.03. und 25.10.
+		for (const date of ["2026-03-29", "2026-10-25", "2026-01-01", "2026-12-31"]) {
+			expect(fmtDate(noonTs(date)), date).toBe(date);
+		}
 	});
 });

@@ -47,9 +47,27 @@ export function fmtDate(ts: number): string {
 	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+/**
+ * Epoch-ms fuer "YYYY-MM-DD" + "HH:MM" in Lokalzeit. NaN bei ungueltiger Eingabe.
+ */
+export function toTs(date: string, time: string): number {
+	return new Date(`${date}T${time}:00`).getTime();
+}
+
+/**
+ * Epoch-ms fuer die Tagesmitte eines "YYYY-MM-DD".
+ *
+ * 12:00 statt 00:00, weil ein Tag an DST-Grenzen um Mitternacht auf den Vortag
+ * kippen kann. Der Mittag haelt in jeder Zeitzone Abstand zu beiden Raendern.
+ * Abwesenheiten haengen genau daran (start == end == Tagesmitte).
+ */
+export function noonTs(date: string): number {
+	return toTs(date, "12:00");
+}
+
 /** Verschiebt ein "YYYY-MM-DD"-Datum um `delta` Tage – mit Monats-/Jahresübergang. */
 export function stepDate(date: string, delta: number): string {
-	const d = new Date(`${date}T12:00:00`);
+	const d = new Date(noonTs(date));
 	if (Number.isNaN(d.getTime())) return date;
 	d.setDate(d.getDate() + delta);
 	return fmtDate(d.getTime());

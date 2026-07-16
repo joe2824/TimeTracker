@@ -11,8 +11,10 @@
 		fmtDate,
 		fmtHoursClock,
 		minToClock,
+		noonTs,
 		parseClock,
-		parseHours
+		parseHours,
+		toTs
 	} from "$lib/time";
 	import type { Entry, EntrySource } from "$lib/types";
 	import { Button } from "$lib/components/ui/button";
@@ -216,10 +218,6 @@
 		dialogOpen = true;
 	}
 
-	function toTs(date: string, time: string): number {
-		return new Date(`${date}T${time}:00`).getTime();
-	}
-
 	async function save() {
 		// Die Combobox hält draft.activityId stets auf einen gültigen Treffer (oder "").
 		const activityId = draft.activityId;
@@ -235,7 +233,7 @@
 		let startTs: number;
 		let endTs: number;
 		if (absence) {
-			startTs = toTs(draft.date, "12:00");
+			startTs = noonTs(draft.date);
 			endTs = startTs;
 		} else {
 			startTs = toTs(draft.date, draft.start);
