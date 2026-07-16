@@ -55,7 +55,7 @@
 		<Dialog.Header>
 			<Dialog.Title>Bericht noch nicht gesendet</Dialog.Title>
 			<Dialog.Description>
-				Der Stundenbericht für <strong>{monthLabel(shownMonth)}</strong> wurde noch nicht an den Chef
+				Der Stundenbericht für <strong>{monthLabel(shownMonth)}</strong> wurde noch nicht an die Vorgesetzten
 				geschickt.
 			</Dialog.Description>
 		</Dialog.Header>

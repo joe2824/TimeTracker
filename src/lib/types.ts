@@ -76,7 +76,7 @@ export interface Settings {
 	pomodoroBreakMin: number;
 	/** Kurze (auto-schließende) Benachrichtigung beim Start/Stop per Shortcut/Hotkey */
 	shortcutNotify: boolean;
-	/** Monatliche Erinnerung, den Bericht an den Chef zu senden */
+	/** Monatliche Erinnerung, den Bericht an die Vorgesetzten zu senden */
 	reportReminderEnabled: boolean;
 	/** Uhrzeit der Berichts-Erinnerung am letzten Werktag des Monats ("HH:MM") */
 	reportReminderTime: string;
