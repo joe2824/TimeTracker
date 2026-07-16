@@ -17,6 +17,7 @@ import {
 	parseClock,
 	parseHours,
 	roundHours,
+	splitAtMidnight,
 	stepDate,
 	toTs
 } from "./time";
@@ -342,5 +343,69 @@ describe("fmtDateHuman", () => {
 		const kurzNachMitternacht = toTs("2026-07-17", "00:53");
 		const vor60Min = kurzNachMitternacht - 60 * 60 * 1000;
 		expect(fmtDateHuman(vor60Min)).toBe("Do., 16.07.2026");
+	});
+});
+
+describe("splitAtMidnight", () => {
+	it("laesst eine Spanne innerhalb eines Tages unangetastet", () => {
+		const a = toTs("2026-07-16", "08:00");
+		const b = toTs("2026-07-16", "12:00");
+		expect(splitAtMidnight(a, b)).toEqual([{ startTs: a, endTs: b }]);
+	});
+
+	it("teilt an Mitternacht – genau Joels 23:57–01:01", () => {
+		const a = toTs("2026-07-16", "23:57");
+		const b = toTs("2026-07-17", "01:01");
+		const parts = splitAtMidnight(a, b);
+		expect(parts).toHaveLength(2);
+		expect(fmtDate(parts[0].startTs)).toBe("2026-07-16");
+		expect(parts[0].endTs).toBe(toTs("2026-07-17", "00:00"));
+		expect(parts[1].startTs).toBe(toTs("2026-07-17", "00:00"));
+		expect(parts[1].endTs).toBe(b);
+	});
+
+	it("die Stuecke ergeben zusammen die Ausgangsspanne", () => {
+		const a = toTs("2026-07-16", "23:57");
+		const b = toTs("2026-07-17", "01:01");
+		const sum = splitAtMidnight(a, b).reduce((s, p) => s + (p.endTs - p.startTs), 0);
+		expect(sum).toBe(b - a);
+	});
+
+	it("teilt ueber mehrere Tage (App lief durch)", () => {
+		const a = toTs("2026-07-16", "22:00");
+		const b = toTs("2026-07-19", "03:00");
+		const parts = splitAtMidnight(a, b);
+		expect(parts.map((p) => fmtDate(p.startTs))).toEqual([
+			"2026-07-16",
+			"2026-07-17",
+			"2026-07-18",
+			"2026-07-19"
+		]);
+	});
+
+	it("teilt ueber eine Monatsgrenze – dort landete die Zeit sonst im falschen Bericht", () => {
+		const a = toTs("2026-07-31", "23:00");
+		const b = toTs("2026-08-01", "01:00");
+		const parts = splitAtMidnight(a, b);
+		expect(parts.map((p) => fmtDate(p.startTs))).toEqual(["2026-07-31", "2026-08-01"]);
+	});
+
+	it("kommt an DST-Tagen klar (23- und 25-Stunden-Tage)", () => {
+		for (const [from, to] of [
+			["2026-03-29", "2026-03-30"], // Sommerzeit: 23-Stunden-Tag
+			["2026-10-25", "2026-10-26"] // Winterzeit: 25-Stunden-Tag
+		]) {
+			const a = toTs(from, "23:30");
+			const b = toTs(to, "00:30");
+			const parts = splitAtMidnight(a, b);
+			expect(parts.map((p) => fmtDate(p.startTs)), from).toEqual([from, to]);
+			const sum = parts.reduce((s, p) => s + (p.endTs - p.startTs), 0);
+			expect(sum, from).toBe(b - a);
+		}
+	});
+
+	it("gibt bei Laenge 0 ein Stueck zurueck", () => {
+		const a = toTs("2026-07-16", "08:00");
+		expect(splitAtMidnight(a, a)).toEqual([{ startTs: a, endTs: a }]);
 	});
 });

@@ -202,6 +202,39 @@ export function durationHours(start: string, end: string): number {
 	return d / 60;
 }
 
+/**
+ * Mitternacht des Folgetags. setHours(24,…) statt +24h: an DST-Tagen hat ein Tag
+ * 23 oder 25 Stunden, eine feste Addition traefe die Grenze dort nicht.
+ */
+export function startOfNextDay(ts: number): number {
+	const d = new Date(ts);
+	d.setHours(24, 0, 0, 0);
+	return d.getTime();
+}
+
+/**
+ * Zerlegt [startTs, endTs] an Mitternacht in Tagesstuecke.
+ *
+ * Ein Timer ueber Mitternacht muss dort enden und am neuen Tag fortgesetzt
+ * werden – sonst zaehlt die Zeit nach 00:00 zum Vortag, und an einer
+ * Monatsgrenze landet sie sogar in der falschen Monatsdatei.
+ *
+ * Ein Zeitraum innerhalb eines Tages ergibt genau ein Stueck.
+ */
+export function splitAtMidnight(
+	startTs: number,
+	endTs: number
+): { startTs: number; endTs: number }[] {
+	const parts: { startTs: number; endTs: number }[] = [];
+	let cur = startTs;
+	while (cur < endTs) {
+		const end = Math.min(startOfNextDay(cur), endTs);
+		parts.push({ startTs: cur, endTs: end });
+		cur = end;
+	}
+	return parts.length > 0 ? parts : [{ startTs, endTs }];
+}
+
 /** Datum deutsch mit Wochentag, z.B. "Do., 16.07.2026" – fuer Meldungen und Tooltips. */
 export function fmtDateHuman(ts: number): string {
 	return new Date(ts).toLocaleDateString("de-DE", {

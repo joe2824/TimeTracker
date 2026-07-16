@@ -2,7 +2,7 @@
 import { toast } from "svelte-sonner";
 import type { Activity, Entry, EntrySource, Settings } from "./types";
 import { BUILTIN_ABSENCE, BUILTIN_OTHERS, defaultSettings } from "./types";
-import { fmtClock, fmtDate, fmtDateHuman, noonTs } from "./time";
+import { fmtClock, fmtDate, fmtDateHuman, noonTs, splitAtMidnight } from "./time";
 import { dayConflict, overlapConflict } from "./conflicts";
 import { planBackdate, planNeedsConfirm, type BackdatePlan } from "./backdate";
 import {
@@ -69,6 +69,7 @@ class AppState {
 		this.loaded = true;
 		this.#tick = setInterval(() => {
 			this.now = Date.now();
+			void this.#rolloverAtMidnight();
 		}, 1000);
 	}
 
@@ -513,16 +514,75 @@ class AppState {
 	/** Schließt ALLE offenen Einträge (egal welches Fenster sie öffnete). running = null. */
 	async #closeAllOpen(endTs = Date.now()): Promise<void> {
 		const months = new Set<string>();
+		// Kopie je Liste: die Tagesstuecke unten haengen waehrend des Laufs an.
 		for (const [m, list] of Object.entries(this.entriesByMonth)) {
-			for (const e of list) {
-				if (e.endTs === null) {
-					e.endTs = Math.max(e.startTs, endTs);
-					months.add(m);
+			for (const e of [...list]) {
+				if (e.endTs !== null) continue;
+				const end = Math.max(e.startTs, endTs);
+				// Ueber Mitternacht in Tagesstuecke zerlegen: sonst zaehlte die Zeit
+				// nach 00:00 zum Vortag – an einer Monatsgrenze sogar in der falschen
+				// Monatsdatei und damit im falschen Bericht.
+				const parts = splitAtMidnight(e.startTs, end);
+				e.endTs = parts[0].endTs;
+				months.add(m);
+				for (const p of parts.slice(1)) {
+					months.add(await this.#addSegment(e, p.startTs, p.endTs));
 				}
 			}
 		}
 		this.running = null;
 		for (const m of months) await this.#saveMonth(m);
+	}
+
+	/** Folgetag-Stueck eines geteilten Eintrags anlegen; liefert dessen Monat. */
+	async #addSegment(from: Entry, startTs: number, endTs: number | null): Promise<string> {
+		const m = monthKey(startTs);
+		await this.ensureMonth(m);
+		this.entriesByMonth[m].push({
+			id: uid(),
+			activityId: from.activityId,
+			startTs,
+			endTs,
+			note: from.note,
+			source: from.source
+		});
+		return m;
+	}
+
+	/**
+	 * Laeuft der Timer ueber Mitternacht, wird er dort beendet und am neuen Tag
+	 * fortgesetzt. Laeuft jede Sekunde mit – der Datumsvergleich haelt das billig.
+	 */
+	async #rolloverAtMidnight(): Promise<void> {
+		if (!this.running || fmtDate(this.running.startTs) === fmtDate(Date.now())) return;
+		await this.#exclusive(async () => {
+			// Nach dem Anstehen erneut pruefen: der Tick feuert im Sekundentakt.
+			const cur = this.running;
+			if (!cur || fmtDate(cur.startTs) === fmtDate(Date.now())) return;
+			const parts = splitAtMidnight(cur.startTs, Date.now());
+			if (parts.length < 2) return;
+
+			const months = new Set<string>([monthKey(cur.startTs)]);
+			cur.endTs = parts[0].endTs;
+			// Zwischentage entstehen, wenn die App durchlief; das letzte Stueck laeuft weiter.
+			for (const p of parts.slice(1, -1)) months.add(await this.#addSegment(cur, p.startTs, p.endTs));
+
+			const last = parts[parts.length - 1];
+			const m = monthKey(last.startTs);
+			await this.ensureMonth(m);
+			const next: Entry = {
+				id: uid(),
+				activityId: cur.activityId,
+				startTs: last.startTs,
+				endTs: null,
+				note: cur.note,
+				source: cur.source
+			};
+			this.entriesByMonth[m].push(next);
+			this.running = next;
+			months.add(m);
+			for (const mm of months) await this.#saveMonth(mm);
+		});
 	}
 
 	#findRunning(): void {
