@@ -26,6 +26,7 @@
 	import OnboardingWizard from "$lib/components/OnboardingWizard.svelte";
 	import CommandPalette from "$lib/components/CommandPalette.svelte";
 	import ReportReminderDialog from "$lib/components/ReportReminderDialog.svelte";
+	import BackdateDialog from "$lib/components/BackdateDialog.svelte";
 
 	let tab = $state("tracking");
 	let paletteOpen = $state(false);
@@ -200,6 +201,7 @@
 	<IdleDialog />
 	<LongTimerDialog />
 	<ReportReminderDialog />
+	<BackdateDialog />
 
 	{#if app.showOnboarding}
 		<OnboardingWizard />

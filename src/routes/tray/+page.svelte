@@ -5,6 +5,7 @@
 	import { START_PRESETS, resolveStartTs, toStartArg } from "$lib/startTime";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
+	import BackdateDialog from "$lib/components/BackdateDialog.svelte";
 	import { WebviewWindow, getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 	import { emit, listen } from "@tauri-apps/api/event";
 	import { toast } from "svelte-sonner";
@@ -203,3 +204,5 @@
 		{/if}
 	</div>
 </div>
+
+<BackdateDialog />
