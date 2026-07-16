@@ -2,8 +2,8 @@
 import { toast } from "svelte-sonner";
 import type { Activity, Entry, EntrySource, Settings } from "./types";
 import { BUILTIN_ABSENCE, BUILTIN_OTHERS, defaultSettings } from "./types";
-import { fmtDate, noonTs } from "./time";
-import { dayConflict } from "./conflicts";
+import { fmtClock, fmtDate, noonTs } from "./time";
+import { dayConflict, overlapConflict } from "./conflicts";
 import {
 	deleteYear,
 	listEntryMonths,
@@ -365,7 +365,7 @@ class AppState {
 		await this.ensureMonth(month);
 
 		// Regel: Ganztags-Abwesenheit und Projektzeit am selben Tag schließen sich aus.
-		if (this.#reportConflict({ activityId, startTs, dayFraction })) return null;
+		if (this.#reportConflict({ activityId, startTs, endTs, dayFraction })) return null;
 
 		const entry: Entry = { id: uid(), activityId, startTs, endTs, note, source };
 		if (dayFraction != null) entry.dayFraction = dayFraction;
@@ -421,21 +421,37 @@ class AppState {
 	#reportConflict(candidate: {
 		activityId: string;
 		startTs: number;
+		endTs?: number | null;
 		dayFraction?: number;
 		id?: string;
 	}): boolean {
-		const conflict = dayConflict(
-			this.monthEntries(monthKey(candidate.startTs)),
-			candidate,
-			this.absenceActivity?.id,
-			{ excludeId: candidate.id }
-		);
+		const monthEntries = this.monthEntries(monthKey(candidate.startTs));
+		const conflict = dayConflict(monthEntries, candidate, this.absenceActivity?.id, {
+			excludeId: candidate.id
+		});
 		if (conflict === "full-day-absence") {
 			toast.error("An diesem Tag ist eine Ganztags-Abwesenheit eingetragen.");
 			return true;
 		}
 		if (conflict === "project-time") {
 			toast.error("An diesem Tag gibt es Projektzeiten – nur halber Urlaubstag möglich.");
+			return true;
+		}
+
+		// Man kann nicht gleichzeitig an zwei Dingen arbeiten.
+		const absenceIds = new Set(this.activities.filter((a) => a.isAbsence).map((a) => a.id));
+		const overlap = overlapConflict(
+			monthEntries,
+			{ activityId: candidate.activityId, startTs: candidate.startTs, endTs: candidate.endTs ?? null },
+			absenceIds,
+			{ excludeId: candidate.id, now: this.now }
+		);
+		if (overlap) {
+			const von = fmtClock(overlap.startTs);
+			const bis = overlap.endTs ? fmtClock(overlap.endTs) : "läuft";
+			toast.error(
+				`Überschneidet sich mit „${this.activityName(overlap.activityId)}" (${von}–${bis}).`
+			);
 			return true;
 		}
 		return false;
