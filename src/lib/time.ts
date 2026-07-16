@@ -202,6 +202,16 @@ export function durationHours(start: string, end: string): number {
 	return d / 60;
 }
 
+/** Datum deutsch mit Wochentag, z.B. "Do., 16.07.2026" – fuer Meldungen und Tooltips. */
+export function fmtDateHuman(ts: number): string {
+	return new Date(ts).toLocaleDateString("de-DE", {
+		weekday: "short",
+		day: "2-digit",
+		month: "2-digit",
+		year: "numeric"
+	});
+}
+
 /** Monatsname deutsch, z.B. "Juni 2026" aus "2026-06". */
 export function monthLabel(monthKey: string): string {
 	const [y, m] = monthKey.split("-").map(Number);

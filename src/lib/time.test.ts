@@ -6,6 +6,7 @@ import {
 	durationSeconds,
 	entryHours,
 	fmtDate,
+	fmtDateHuman,
 	fmtHMS,
 	fmtHours,
 	fmtHoursClock,
@@ -326,5 +327,20 @@ describe("toTs / noonTs", () => {
 		for (const date of ["2026-03-29", "2026-10-25", "2026-01-01", "2026-12-31"]) {
 			expect(fmtDate(noonTs(date)), date).toBe(date);
 		}
+	});
+});
+
+describe("fmtDateHuman", () => {
+	it("formatiert deutsch mit Wochentag", () => {
+		// 16.07.2026 ist ein Donnerstag.
+		expect(fmtDateHuman(noonTs("2026-07-16"))).toBe("Do., 16.07.2026");
+	});
+
+	it("nennt den Vortag korrekt – der Fall beim rueckdatierten Timer-Start", () => {
+		// Kurz nach Mitternacht "vor 60 Min" landet auf dem Vortag; genau darum
+		// muss die Meldung den Tag benennen statt "an diesem Tag" zu sagen.
+		const kurzNachMitternacht = toTs("2026-07-17", "00:53");
+		const vor60Min = kurzNachMitternacht - 60 * 60 * 1000;
+		expect(fmtDateHuman(vor60Min)).toBe("Do., 16.07.2026");
 	});
 });
