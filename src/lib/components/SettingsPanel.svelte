@@ -361,17 +361,24 @@
 					onCheckedChange={() => saveTimes()}
 				/>
 				{#if reportReminder}
-					<div class="grid grid-cols-2 gap-2">
-						<div class="space-y-1">
-							<Label for="replead">Werktage vorher</Label>
-							<Input id="replead" type="number" min="0" max="10" bind:value={reportLead} onchange={saveTimes} />
-							<p class="text-muted-foreground text-xs">0 = letzter Werktag.</p>
-						</div>
-						<div class="space-y-1">
-							<Label for="reptime">Uhrzeit</Label>
-							<Input id="reptime" type="time" bind:value={reportTime} onchange={saveTimes} />
-						</div>
-					</div>
+					<SettingRow id="replead" title="Werktage vorher" description="0 = letzter Werktag.">
+						{#snippet control()}
+							<Input
+								id="replead"
+								type="number"
+								min="0"
+								max="10"
+								class="w-24"
+								bind:value={reportLead}
+								onchange={saveTimes}
+							/>
+						{/snippet}
+					</SettingRow>
+					<SettingRow id="reptime" title="Uhrzeit" description="Wann an diesem Tag erinnert wird.">
+						{#snippet control()}
+							<Input id="reptime" type="time" class="w-32" bind:value={reportTime} onchange={saveTimes} />
+						{/snippet}
+					</SettingRow>
 				{/if}
 			</div>
 
@@ -476,28 +483,32 @@
 				</div>
 			{/if}
 
-			<div class="space-y-1">
-				<Label>Globaler Start/Stop-Hotkey (letzter Timer)</Label>
-				<div class="flex items-center gap-2">
-					{#if recordingToggle}
-						<span class="text-muted-foreground text-sm italic">Taste drücken… (Esc=Abbruch)</span>
-					{:else if app.settings.toggleShortcut}
-						<ShortcutKey
-							shortcut={app.settings.toggleShortcut}
-							onclick={() => (recordingToggle = true)}
-						/>
-						<Button variant="ghost" size="icon-sm" onclick={clearToggle} title="Entfernen">
-							<XIcon />
-						</Button>
-					{:else}
-						<!-- Festlegen ist eine Aktion, keine Taste – also ein normaler Button
-						     statt der Keycap-Optik, die es vorher trug. -->
-						<Button variant="outline" size="sm" onclick={() => (recordingToggle = true)}>
-							Festlegen…
-						</Button>
-					{/if}
-				</div>
-			</div>
+			<SettingRow
+				title="Globaler Start/Stop-Hotkey"
+				description="Startet/stoppt den zuletzt benutzten Timer – auch wenn die App im Hintergrund ist."
+			>
+				{#snippet control()}
+					<div class="flex items-center gap-1">
+						{#if recordingToggle}
+							<span class="text-muted-foreground text-sm italic">Taste drücken… (Esc=Abbruch)</span>
+						{:else if app.settings.toggleShortcut}
+							<ShortcutKey
+								shortcut={app.settings.toggleShortcut}
+								onclick={() => (recordingToggle = true)}
+							/>
+							<Button variant="ghost" size="icon-sm" onclick={clearToggle} title="Entfernen">
+								<XIcon />
+							</Button>
+						{:else}
+							<!-- Festlegen ist eine Aktion, keine Taste – also ein normaler Button
+							     statt der Keycap-Optik, die es vorher trug. -->
+							<Button variant="outline" size="sm" onclick={() => (recordingToggle = true)}>
+								Festlegen…
+							</Button>
+						{/if}
+					</div>
+				{/snippet}
+			</SettingRow>
 
 		</Card.Content>
 	</Card.Root>

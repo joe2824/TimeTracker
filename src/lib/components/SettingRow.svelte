@@ -7,8 +7,9 @@
 	import { Label } from "$lib/components/ui/label";
 
 	interface Props {
-		/** id des Bedienelements; verknuepft Label und Control */
-		id: string;
+		/** id des Bedienelements; verknuepft Label und Control.
+		 *  Entfaellt, wenn rechts kein einzelnes Feld steht (z.B. wechselnde Zustaende). */
+		id?: string;
 		title: string;
 		/** erklaerende Zeile darunter – hier gehoeren Hinweise wie "0 = aus" hin */
 		description?: string;
