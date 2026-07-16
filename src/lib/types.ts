@@ -84,6 +84,8 @@ export interface Settings {
 	reportReminderTime: string;
 	/** Wie viele Werktage VOR dem letzten Werktag erinnert wird (0 = letzter Werktag) */
 	reportReminderLeadDays: number;
+	/** Auswertung (Saldo, Stunden je Aktivitaet, Jahres-Heatmap) im Bericht zeigen */
+	statsEnabled: boolean;
 	/** Monate (YYYY-MM), deren Bericht gesendet oder bewusst ignoriert wurde */
 	reportSentMonths: string[];
 }
@@ -109,7 +111,8 @@ export const defaultSettings: Settings = {
 	reportReminderEnabled: true,
 	reportReminderTime: "16:00",
 	reportReminderLeadDays: 0,
-	reportSentMonths: []
+	reportSentMonths: [],
+	statsEnabled: false
 };
 
 /** Namen der eingebauten Zeilen, die immer im Bericht erscheinen. */
