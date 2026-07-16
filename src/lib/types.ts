@@ -88,6 +88,9 @@ export interface Settings {
 	statsEnabled: boolean;
 }
 
+/** Standard-Betreff des Monatsberichts. */
+export const DEFAULT_SUBJECT = "Stundenerfassung {month} – {name}";
+
 export const defaultSettings: Settings = {
 	reminderTimes: ["14:00"],
 	bossEmail: "",
@@ -97,7 +100,7 @@ export const defaultSettings: Settings = {
 	hoursPerDay: 7.5,
 	workdays: [1, 2, 3, 4, 5],
 	calendarKeywordMap: {},
-	reportSubjectTemplate: "Stundenerfassung {month} – {name}",
+	reportSubjectTemplate: DEFAULT_SUBJECT,
 	idleThresholdMin: 10,
 	maxTimerHours: 10,
 	toggleShortcut: "",
