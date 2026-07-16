@@ -1,6 +1,13 @@
 <script lang="ts">
 	// Auswahl der regulären Arbeitstage. `value` sind Wochentagsnummern (0=So..6=Sa).
-	let { value = $bindable([] as number[]) }: { value?: number[] } = $props();
+	import { Button } from "$lib/components/ui/button";
+
+	interface Props {
+		value?: number[];
+		/** feuert nach jedem Umschalten – fuers automatische Speichern */
+		onchange?: () => void;
+	}
+	let { value = $bindable([] as number[]), onchange }: Props = $props();
 
 	// Anzeige Mo–So (deutscher Wochenstart); n = getDay()-Wert.
 	const DAYS = [
@@ -15,20 +22,22 @@
 
 	function toggle(n: number) {
 		value = value.includes(n) ? value.filter((d) => d !== n) : [...value, n].sort((a, b) => a - b);
+		onchange?.();
 	}
 </script>
 
 <div class="flex flex-wrap gap-1">
 	{#each DAYS as d (d.n)}
-		<button
-			type="button"
-			aria-pressed={value.includes(d.n)}
-			class="w-10 rounded-md border px-2 py-1 text-sm transition-colors {value.includes(d.n)
-				? 'border-primary bg-primary text-primary-foreground'
-				: 'text-muted-foreground hover:bg-accent'}"
+		{@const on = value.includes(d.n)}
+		<!-- Gewaehlt/ungewaehlt ueber die Button-Varianten statt eigener Klassen. -->
+		<Button
+			variant={on ? "default" : "outline"}
+			size="sm"
+			class="w-10"
+			aria-pressed={on}
 			onclick={() => toggle(d.n)}
 		>
 			{d.label}
-		</button>
+		</Button>
 	{/each}
 </div>
