@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from "svelte";
 	import { app } from "$lib/app.svelte";
+	import { listEntryYears, type StoredYear } from "$lib/store";
 	import { scheduleReminders, scheduleReportReminder, ensureNotificationPermission } from "$lib/reminders";
 	import {
 		devTriggerIdle,
@@ -69,13 +70,12 @@
 	let hoursPerDay = $state(minToClock(app.settings.hoursPerDay * 60));
 	let workdays = $state([...app.settings.workdays]);
 	let subjectTpl = $state(app.settings.reportSubjectTemplate);
-	let times = $state<string[]>([...app.settings.reminderTimes]);
 	let statsEnabled = $state(app.settings.statsEnabled);
+	let times = $state<string[]>([...app.settings.reminderTimes]);
 	let reportReminder = $state(app.settings.reportReminderEnabled);
 	let reportTime = $state(app.settings.reportReminderTime);
 	let reportLead = $state(String(app.settings.reportReminderLeadDays));
 	let autostart = $state(app.settings.autostart);
-	let autoCleanup = $state(app.settings.autoCleanup);
 
 	let idleMin = $state(String(app.settings.idleThresholdMin));
 	let maxHours = $state(String(app.settings.maxTimerHours));
@@ -174,8 +174,30 @@
 		}
 	}
 
-	async function toggleCleanup(v: boolean) {
-		await app.updateSettings({ autoCleanup: v });
+	// ---- Daten: ganze Jahre loeschen ----
+	let years = $state<StoredYear[]>([]);
+	let yearToDelete = $state<StoredYear | null>(null);
+	let deleting = $state(false);
+
+	async function refreshYears() {
+		years = await listEntryYears();
+	}
+	onMount(refreshYears);
+
+	async function confirmDeleteYear() {
+		const target = yearToDelete;
+		if (!target) return;
+		deleting = true;
+		try {
+			const months = await app.deleteYearEntries(target.year);
+			await refreshYears();
+			toast.success(`${target.year} gelöscht (${months} Monatsdatei${months === 1 ? "" : "en"}).`);
+			yearToDelete = null;
+		} catch (e) {
+			toast.error(`Löschen fehlgeschlagen: ${e}`);
+		} finally {
+			deleting = false;
+		}
 	}
 
 	let checking = $state(false);
@@ -247,6 +269,16 @@
 					{"{month}"} = Monat, {"{name}"} = dein Name
 				</p>
 			</div>
+			<div class="flex items-center justify-between space-x-2 border-t pt-3">
+				<Label for="stats" class="flex flex-col items-start gap-1">
+					<span class="text-sm font-medium">Auswertung anzeigen</span>
+					<span class="text-muted-foreground text-xs font-normal">
+						Saldo, Stunden je Aktivität und Jahres-Heatmap im Tab „Bericht“. Nur für dich –
+						die E-Mail bleibt unverändert.
+					</span>
+				</Label>
+				<Switch id="stats" bind:checked={statsEnabled} />
+			</div>
 			<Button onclick={saveGeneral}>Speichern</Button>
 		</Card.Content>
 	</Card.Root>
@@ -269,16 +301,6 @@
 				<Button variant="outline" size="sm" onclick={() => (times = [...times, "14:00"])}>
 					<PlusIcon class="size-4" /> Uhrzeit
 				</Button>
-			<div class="flex items-center justify-between space-x-2 border-t pt-3">
-				<Label for="stats" class="flex flex-col items-start gap-1">
-					<span class="text-sm font-medium">Auswertung anzeigen</span>
-					<span class="text-muted-foreground text-xs font-normal">
-						Saldo, Stunden je Aktivität und Jahres-Heatmap im Tab „Bericht“. Nur für dich –
-						die E-Mail bleibt unverändert.
-					</span>
-				</Label>
-				<Switch id="stats" bind:checked={statsEnabled} />
-			</div>
 			</div>
 
 			<div class="space-y-2 border-t pt-3">
@@ -431,16 +453,39 @@
 				</Label>
 				<Switch id="autostart" bind:checked={autostart} onCheckedChange={toggleAutostart} />
 			</div>
-			<div class="flex items-center justify-between space-x-2">
-				<Label for="autocleanup" class="flex flex-col items-start gap-1">
-					<span class="text-sm font-medium">Alte Monate automatisch löschen</span>
-					<span class="text-muted-foreground text-xs font-normal">Monatsdateien älter als 12 Monate.</span>
-				</Label>
-				<Switch id="autocleanup" bind:checked={autoCleanup} onCheckedChange={toggleCleanup} />
-			</div>
 			<Button variant="outline" onclick={checkUpdate} disabled={checking}>
 				{checking ? "Suche…" : "Nach Updates suchen"}
 			</Button>
+		</Card.Content>
+	</Card.Root>
+
+	<Card.Root>
+		<Card.Header>
+			<Card.Title>Daten</Card.Title>
+			<Card.Description>
+				Erfasste Zeiten bleiben liegen, bis du sie löschst. Es wird nichts automatisch entfernt.
+			</Card.Description>
+		</Card.Header>
+		<Card.Content class="space-y-3">
+			{#if years.length === 0}
+				<p class="text-muted-foreground text-sm">Noch keine erfassten Zeiten.</p>
+			{:else}
+				{#each years as y (y.year)}
+					<div class="flex items-center justify-between gap-3 border-b pb-2 last:border-0">
+						<div>
+							<div class="text-sm font-medium">{y.year}</div>
+							<div class="text-muted-foreground text-xs">
+								{y.months} Monat{y.months === 1 ? "" : "e"} · {y.entries} Eintr{y.entries === 1
+									? "ag"
+									: "äge"}
+							</div>
+						</div>
+						<Button variant="outline" size="sm" onclick={() => (yearToDelete = y)}>
+							<Trash2Icon class="size-4" /> Löschen
+						</Button>
+					</div>
+				{/each}
+			{/if}
 		</Card.Content>
 	</Card.Root>
 
@@ -545,6 +590,29 @@
 			<Button variant="outline" disabled={installing} onclick={() => (pending = null)}>Später</Button>
 			<Button disabled={installing} onclick={installUpdate}>
 				{installing ? "Installiere…" : "Jetzt installieren"}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<!-- Loeschen ist endgueltig: kein Papierkorb, kein Backup. Deshalb wird vorher
+     genannt, was genau verschwindet. -->
+<Dialog.Root open={yearToDelete !== null} onOpenChange={(o) => !o && (yearToDelete = null)}>
+	<Dialog.Content>
+		<Dialog.Header>
+			<Dialog.Title>{yearToDelete?.year} löschen?</Dialog.Title>
+			<Dialog.Description>
+				{yearToDelete?.entries} Einträge aus {yearToDelete?.months} Monat{yearToDelete?.months === 1
+					? ""
+					: "e"} werden endgültig gelöscht. Das lässt sich nicht rückgängig machen.
+			</Dialog.Description>
+		</Dialog.Header>
+		<Dialog.Footer>
+			<Button variant="outline" disabled={deleting} onclick={() => (yearToDelete = null)}>
+				Abbrechen
+			</Button>
+			<Button disabled={deleting} onclick={confirmDeleteYear}>
+				{deleting ? "Lösche…" : `${yearToDelete?.year} endgültig löschen`}
 			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>

@@ -59,8 +59,6 @@ export interface Settings {
 	hoursPerDay: number;
 	/** Regulaere Arbeitstage als Wochentagsnummern (0=So .. 6=Sa), Standard Mo–Fr */
 	workdays: number[];
-	/** Monatsdateien aelter als 12 Monate beim Start loeschen */
-	autoCleanup: boolean;
 	/** Stichwort (lowercase) -> activityId fuer Kalender-Auto-Zuordnung */
 	calendarKeywordMap: Record<string, string>;
 	reportSubjectTemplate: string;
@@ -84,10 +82,10 @@ export interface Settings {
 	reportReminderTime: string;
 	/** Wie viele Werktage VOR dem letzten Werktag erinnert wird (0 = letzter Werktag) */
 	reportReminderLeadDays: number;
-	/** Auswertung (Saldo, Stunden je Aktivitaet, Jahres-Heatmap) im Bericht zeigen */
-	statsEnabled: boolean;
 	/** Monate (YYYY-MM), deren Bericht gesendet oder bewusst ignoriert wurde */
 	reportSentMonths: string[];
+	/** Auswertung (Saldo, Stunden je Aktivitaet, Jahres-Heatmap) im Bericht zeigen */
+	statsEnabled: boolean;
 }
 
 export const defaultSettings: Settings = {
@@ -98,7 +96,6 @@ export const defaultSettings: Settings = {
 	autostart: true,
 	hoursPerDay: 7.5,
 	workdays: [1, 2, 3, 4, 5],
-	autoCleanup: true,
 	calendarKeywordMap: {},
 	reportSubjectTemplate: "Stundenerfassung {month} – {name}",
 	idleThresholdMin: 10,

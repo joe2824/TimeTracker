@@ -49,7 +49,8 @@ JSON im App-Daten-Ordner unter `data/`:
 - `data/settings.json` – Einstellungen (global)
 - `data/entries-YYYY-MM.json` – eine Datei pro Monat
 
-Monatsdateien älter als 12 Monate können beim Start automatisch gelöscht werden.
+Es wird nichts automatisch gelöscht. Unter „Einstellungen → Daten“ lassen sich ganze Jahre
+gezielt entfernen (mit Rückfrage); Monate ohne Einträge hinterlassen keine Datei.
 
 ## Entwicklung
 

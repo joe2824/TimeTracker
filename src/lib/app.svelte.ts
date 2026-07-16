@@ -5,7 +5,7 @@ import { BUILTIN_ABSENCE, BUILTIN_OTHERS, defaultSettings } from "./types";
 import { fmtDate } from "./time";
 import { dayConflict } from "./conflicts";
 import {
-	cleanupOldMonths,
+	deleteYear,
 	listEntryMonths,
 	loadActivities,
 	loadEntries,
@@ -48,13 +48,6 @@ class AppState {
 		const firstRun = !(await settingsFileExists());
 		this.activities = await loadActivities();
 		this.settings = await loadSettings();
-		if (this.settings.autoCleanup) {
-			try {
-				await cleanupOldMonths(12);
-			} catch (e) {
-				console.error("Cleanup fehlgeschlagen", e);
-			}
-		}
 		await this.#seedBuiltins();
 		await this.ensureMonth(this.currentMonth);
 		await this.ensureMonth(prevMonthKey());
@@ -310,6 +303,20 @@ class AppState {
 
 	monthEntries(month: string): Entry[] {
 		return this.entriesByMonth[month] ?? [];
+	}
+
+	/**
+	 * Alle Eintraege eines Jahres endgueltig loeschen.
+	 * Der Cache muss mit: sonst zeigte die App Eintraege weiter an, die es auf der
+	 * Platte nicht mehr gibt. Ein laufender Timer in dem Jahr wird vorher gestoppt.
+	 */
+	async deleteYearEntries(year: number): Promise<number> {
+		const deleted = await deleteYear(year);
+		for (const m of deleted) delete this.entriesByMonth[m];
+		if (this.running && monthKey(this.running.startTs).startsWith(`${year}-`)) {
+			this.running = null;
+		}
+		return deleted.length;
 	}
 
 	async #saveMonth(month: string): Promise<void> {
