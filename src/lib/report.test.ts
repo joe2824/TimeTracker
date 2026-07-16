@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildReport, reportToHtml } from "./report";
+import { buildReport, reportSubject, reportToHtml } from "./report";
 import type { Activity, Entry } from "./types";
 
 const HPD = 7.5;
@@ -123,5 +123,43 @@ describe("reportToHtml", () => {
 		const r = buildReport("2026-06", tricky, [], 0.5, HPD);
 		const h = reportToHtml(r);
 		expect(h).toContain("A &amp; B &lt;Test&gt;");
+	});
+});
+
+describe("reportSubject", () => {
+	it("ersetzt beide Platzhalter", () => {
+		expect(reportSubject("Stundenerfassung {month} – {name}", "Juli 2026", "Joel Klein")).toBe(
+			"Stundenerfassung Juli 2026 – Joel Klein"
+		);
+	});
+
+	it("haengt den Namen an, wenn die Vorlage {name} nicht enthaelt", () => {
+		// Genau der Fall: Platzhalter beim Bearbeiten der Vorlage verloren,
+		// Name steht aber in den Einstellungen.
+		expect(reportSubject("Stundenerfassung {month}", "Juli 2026", "Joel Klein")).toBe(
+			"Stundenerfassung Juli 2026 – Joel Klein"
+		);
+	});
+
+	it("haengt nichts an, wenn kein Name hinterlegt ist", () => {
+		expect(reportSubject("Stundenerfassung {month}", "Juli 2026", "")).toBe(
+			"Stundenerfassung Juli 2026"
+		);
+	});
+
+	it("laesst ohne Namen keinen leeren Trenner stehen", () => {
+		expect(reportSubject("Stundenerfassung {month} – {name}", "Juli 2026", "  ")).toBe(
+			"Stundenerfassung Juli 2026"
+		);
+	});
+
+	it("faellt bei leerer Vorlage auf den Standard zurueck", () => {
+		expect(reportSubject("", "Juli 2026", "Joel")).toBe("Stundenerfassung Juli 2026 – Joel");
+	});
+
+	it("dupliziert den Namen nicht, wenn {name} schon vorkommt", () => {
+		expect(reportSubject("{name}: Stunden {month}", "Juli 2026", "Joel")).toBe(
+			"Joel: Stunden Juli 2026"
+		);
 	});
 });

@@ -1,16 +1,10 @@
 import { app } from "./app.svelte";
-import { buildReport, reportToHtml } from "./report";
+import { buildReport, reportSubject as buildSubject, reportToHtml } from "./report";
 import { createOutlookDraft } from "./outlook";
 
-/** Betreff aus Vorlage ({month}, {name}) bauen und Trenner aufräumen. */
+/** Betreff aus Vorlage und Einstellungen – Regel siehe report.ts. */
 export function reportSubject(label: string): string {
-	return (app.settings.reportSubjectTemplate || "Stundenerfassung {month} – {name}")
-		.replaceAll("{month}", label)
-		.replaceAll("{name}", app.settings.senderName.trim())
-		.replace(/\s*[–-]\s*$/, "")
-		.replace(/^\s*[–-]\s*/, "")
-		.replace(/\s{2,}/g, " ")
-		.trim();
+	return buildSubject(app.settings.reportSubjectTemplate, label, app.settings.senderName);
 }
 
 /**

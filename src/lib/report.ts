@@ -1,5 +1,28 @@
 import type { Activity, Entry } from "./types";
+import { DEFAULT_SUBJECT } from "./types";
 import { entryHours, fmtDate, fmtHoursClock, isWorkday, monthLabel, roundHours } from "./time";
+
+/**
+ * Betreff aus der Vorlage bauen. Platzhalter: {month}, {name}.
+ *
+ * Fehlt {name} in der Vorlage, obwohl ein Name hinterlegt ist, wird er angehaengt.
+ * Sonst ginge der Absender still verloren, nur weil der Platzhalter beim Bearbeiten
+ * der Vorlage herausfiel – und der Name steht ja genau dafuer in den Einstellungen.
+ *
+ * Ohne Namen bleiben keine leeren Trenner stehen ("Stundenerfassung Juli 2026 –").
+ */
+export function reportSubject(template: string, label: string, name: string): string {
+	const trimmedName = name.trim();
+	const tpl = template.trim() || DEFAULT_SUBJECT;
+	const withName = trimmedName && !tpl.includes("{name}") ? `${tpl} – {name}` : tpl;
+	return withName
+		.replaceAll("{month}", label)
+		.replaceAll("{name}", trimmedName)
+		.replace(/\s*[–-]\s*$/, "")
+		.replace(/^\s*[–-]\s*/, "")
+		.replace(/\s{2,}/g, " ")
+		.trim();
+}
 
 export interface ReportRow {
 	activityId: string;

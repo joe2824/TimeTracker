@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
-	import { buildReport, reportToHtml, reportToText } from "$lib/report";
+	import { buildReport, reportSubject, reportToHtml, reportToText } from "$lib/report";
 	import { fmtHoursClock } from "$lib/time";
 	import { openUrl } from "@tauri-apps/plugin-opener";
 	import { createOutlookDraft, detectOutlook, explainOutlookError, mailtoFallback } from "$lib/outlook";
@@ -33,16 +33,7 @@
 		)
 	);
 	const html = $derived(reportToHtml(report));
-	const subject = $derived(
-		(app.settings.reportSubjectTemplate || "Stundenerfassung {month} – {name}")
-			.replaceAll("{month}", report.label)
-			.replaceAll("{name}", app.settings.senderName.trim())
-			// leere {name}-Platzhalter und übrige Trenner aufräumen
-			.replace(/\s*[–-]\s*$/, "")
-			.replace(/^\s*[–-]\s*/, "")
-			.replace(/\s{2,}/g, " ")
-			.trim()
-	);
+	const subject = $derived(reportSubject(app.settings.reportSubjectTemplate, report.label, app.settings.senderName));
 
 	/** @returns true, wenn der Entwurf geoeffnet wurde. */
 	async function sendToOutlook(): Promise<boolean> {
