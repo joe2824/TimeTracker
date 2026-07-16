@@ -431,6 +431,8 @@ class AppState {
 		endTs?: number | null;
 		dayFraction?: number;
 		id?: string;
+		/** true = Zeiten unveraendert, Ueberschneidung nicht neu pruefen */
+		skipOverlap?: boolean;
 	}): boolean {
 		const monthEntries = this.monthEntries(monthKey(candidate.startTs));
 		const conflict = dayConflict(monthEntries, candidate, this.absenceActivity?.id, {
@@ -448,6 +450,7 @@ class AppState {
 		}
 
 		// Man kann nicht gleichzeitig an zwei Dingen arbeiten.
+		if (candidate.skipOverlap) return false;
 		const absenceIds = new Set(this.activities.filter((a) => a.isAbsence).map((a) => a.id));
 		const overlap = overlapConflict(
 			monthEntries,
@@ -472,7 +475,14 @@ class AppState {
 		const newMonth = monthKey(updated.startTs);
 		await this.ensureMonth(oldMonth);
 		await this.ensureMonth(newMonth);
-		if (this.#reportConflict({ ...updated })) return false;
+		// Die Ueberschneidungs-Regel ist neu; aeltere Daten koennen sie verletzen.
+		// Wer nur die Notiz aendert, darf davon nicht ausgesperrt werden – sonst
+		// bliebe fuer solche Eintraege nur noch Loeschen. Zeiten unveraendert ->
+		// keine neue Ueberschneidung moeglich.
+		const old = this.monthEntries(oldMonth).find((e) => e.id === updated.id);
+		const timesUnchanged =
+			!!old && old.startTs === updated.startTs && old.endTs === updated.endTs;
+		if (this.#reportConflict({ ...updated, skipOverlap: timesUnchanged })) return false;
 		if (oldMonth === newMonth) {
 			const list = this.entriesByMonth[oldMonth];
 			const i = list.findIndex((e) => e.id === updated.id);
@@ -526,7 +536,8 @@ class AppState {
 				e.endTs = parts[0].endTs;
 				months.add(m);
 				for (const p of parts.slice(1)) {
-					months.add(await this.#addSegment(e, p.startTs, p.endTs));
+					const seg = await this.#addSegment(e, p.startTs, p.endTs);
+					if (seg) months.add(seg);
 				}
 			}
 		}
@@ -534,10 +545,17 @@ class AppState {
 		for (const m of months) await this.#saveMonth(m);
 	}
 
-	/** Folgetag-Stueck eines geteilten Eintrags anlegen; liefert dessen Monat. */
-	async #addSegment(from: Entry, startTs: number, endTs: number | null): Promise<string> {
+	/**
+	 * Folgetag-Stueck eines geteilten Eintrags anlegen; liefert dessen Monat –
+	 * oder null, wenn der Tag eine Ganztags-Abwesenheit traegt.
+	 *
+	 * Ohne diese Wache umginge die Teilung die Regel, die #reportConflict ueberall
+	 * sonst durchsetzt: an einem Ganztags-Abwesenheitstag gibt es keine Projektzeit.
+	 */
+	async #addSegment(from: Entry, startTs: number, endTs: number | null): Promise<string | null> {
 		const m = monthKey(startTs);
 		await this.ensureMonth(m);
+		if (this.hasFullDayAbsence(startTs)) return null;
 		this.entriesByMonth[m].push({
 			id: uid(),
 			activityId: from.activityId,
@@ -565,11 +583,24 @@ class AppState {
 			const months = new Set<string>([monthKey(cur.startTs)]);
 			cur.endTs = parts[0].endTs;
 			// Zwischentage entstehen, wenn die App durchlief; das letzte Stueck laeuft weiter.
-			for (const p of parts.slice(1, -1)) months.add(await this.#addSegment(cur, p.startTs, p.endTs));
+			for (const p of parts.slice(1, -1)) {
+				const seg = await this.#addSegment(cur, p.startTs, p.endTs);
+				if (seg) months.add(seg);
+			}
 
 			const last = parts[parts.length - 1];
 			const m = monthKey(last.startTs);
 			await this.ensureMonth(m);
+			// An einem Ganztags-Abwesenheitstag gibt es keine Projektzeit – dort endet
+			// der Timer an der Tagesgrenze, statt die Regel zu umgehen.
+			if (this.hasFullDayAbsence(last.startTs)) {
+				this.running = null;
+				for (const mm of months) await this.#saveMonth(mm);
+				toast.info(
+					`Timer um Mitternacht beendet: am ${fmtDateHuman(last.startTs)} ist eine Ganztags-Abwesenheit eingetragen.`
+				);
+				return;
+			}
 			const next: Entry = {
 				id: uid(),
 				activityId: cur.activityId,
@@ -619,8 +650,14 @@ class AppState {
 		// Läuft genau diese Aktivität schon? -> nichts tun (kein zweiter Eintrag).
 		if (this.running?.activityId === activityId) return;
 		const now = Date.now();
-		// Rückdatierter Start: nie in der Zukunft, nie länger als 24 h zurück.
+		// Rückdatierter Start: nie in der Zukunft.
 		const start = Math.min(startTs ?? now, now);
+
+		// Laden VOR dem Pruefen: monthEntries liefert fuer einen ungeladenen Monat
+		// [], jede Wache ginge sonst still durch. Ein ueber den Monatswechsel
+		// offenes Fenster hat den aktuellen Monat nicht zwingend geladen.
+		await this.#ensureSpan(start);
+
 		if (this.hasFullDayAbsence(start)) {
 			// Den Tag benennen: bei rueckdatiertem Start kann das der VORTAG sein
 			// (kurz nach Mitternacht "vor 60 Min"). "An diesem Tag" liess einen dann
@@ -630,32 +667,47 @@ class AppState {
 			);
 			return;
 		}
-		// Der neue Timer spannt [start, jetzt]. Bei Rueckdatierung ueber einen
-		// Monatswechsel liegen beide Enden in verschiedenen Monatsdateien – beide
-		// muessen geladen sein, sonst bliebe eine angeschnittene Zeit unbemerkt.
+
+		// Abgeschlossene Zeiten anzufassen ist eine Ansage – dafuer wird gefragt.
+		// Einen laufenden Timer zu kuerzen ist der normale Wechsel, das laeuft still.
+		if (planNeedsConfirm(this.#planFor(start))) {
+			this.backdatePrompt = { activityId, start, plan: this.#planFor(start) };
+			return;
+		}
+		await this.#applyStart(activityId, start);
+	}
+
+	/** Beide Enden von [start, jetzt] laden – bei Rueckdatierung ueber einen
+	 *  Monatswechsel liegen sie in verschiedenen Dateien. */
+	async #ensureSpan(start: number): Promise<void> {
 		await this.ensureMonth(monthKey(start));
 		await this.ensureMonth(monthKey(Date.now()));
+	}
 
-		const plan = planBackdate(
+	#planFor(start: number): BackdatePlan {
+		return planBackdate(
 			Object.values(this.entriesByMonth).flat(),
 			start,
 			new Set(this.activities.filter((a) => a.isAbsence).map((a) => a.id)),
 			Date.now()
 		);
-
-		// Abgeschlossene Zeiten anzufassen ist eine Ansage – dafuer wird gefragt.
-		// Einen laufenden Timer zu kuerzen ist der normale Wechsel, das laeuft still.
-		if (planNeedsConfirm(plan)) {
-			this.backdatePrompt = { activityId, start, plan };
-			return;
-		}
-		await this.#applyStart(activityId, start, plan);
 	}
 
-	/** Plan anwenden und den Timer setzen. */
-	async #applyStart(activityId: string, start: number, plan: BackdatePlan): Promise<void> {
+	/**
+	 * Plan anwenden und den Timer setzen.
+	 *
+	 * Der Plan wird HIER neu gebildet, nicht von der Rueckfrage mitgebracht:
+	 * dazwischen liegt eine Luecke ohne Sperre. Ein anderes Fenster kann per
+	 * `data-reload` ein `reload()` ausloesen, das die Eintrags-Objekte komplett
+	 * ersetzt – ein mitgebrachter Plan schriebe dann in abgehaengte Objekte, und
+	 * die Kuerzung ginge lautlos verloren. Ausserdem koennen in der Luecke neue
+	 * offene Eintraege entstehen (Mitternachts-Wechsel, Tray), die ein alter Plan
+	 * nicht kennt – es gaebe zwei laufende Timer.
+	 */
+	async #applyStart(activityId: string, start: number): Promise<void> {
+		await this.#ensureSpan(start);
+		const plan = this.#planFor(start);
 		const month = monthKey(start);
-		await this.ensureMonth(month);
 
 		// Wechsel ohne Flackern: alte Eintraege anpassen UND neuen setzen in EINEM
 		// synchronen Schritt (kein await dazwischen -> running wird nie kurz null).
@@ -681,12 +733,12 @@ class AppState {
 		for (const m of months) await this.#saveMonth(m);
 	}
 
-	/** Rueckfrage bestaetigen: Plan anwenden und starten. */
+	/** Rueckfrage bestaetigen: Plan neu bilden und starten. */
 	async confirmBackdate(): Promise<void> {
 		const p = this.backdatePrompt;
 		if (!p) return;
 		this.backdatePrompt = null;
-		await this.#exclusive(() => this.#applyStart(p.activityId, p.start, p.plan));
+		await this.#exclusive(() => this.#applyStart(p.activityId, p.start));
 	}
 
 	/** Startet einen Timer, optional rückdatiert (startTs in der Vergangenheit). */

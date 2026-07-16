@@ -12,6 +12,7 @@
 		fmtHoursClock,
 		minToClock,
 		noonTs,
+		startOfNextDay,
 		parseClock,
 		parseHours,
 		toTs
@@ -254,9 +255,16 @@
 		} else {
 			startTs = toTs(draft.date, draft.start);
 			endTs = toTs(draft.date, draft.end);
-			if (endTs < startTs) endTs += 24 * 3600 * 1000;
+			// Bis vor Von -> Folgetag. startOfNextDay statt +24 h: an DST-Tagen hat
+			// ein Tag 23 oder 25 Stunden.
+			if (endTs < startTs) endTs = toTs(fmtDate(startOfNextDay(startTs)), draft.end);
 		}
 		if (Number.isNaN(startTs) || Number.isNaN(endTs)) return;
+		// Von == Bis waere ein 0-Stunden-Eintrag: erfasst nichts, steht aber im Weg.
+		if (!absence && endTs <= startTs) {
+			toast.error("Bis muss nach Von liegen.");
+			return;
+		}
 
 		if (draft.id) {
 			const entry: Entry = {

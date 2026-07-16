@@ -34,14 +34,16 @@
 				detail: `${fmtClock(t.entry.startTs)}–${fmtClock(t.entry.endTs as number)} → ${fmtClock(t.endTs)} · −${hours((t.entry.endTs as number) - t.endTs)} h`,
 				drop: false
 			})),
-		...(p?.plan.remove ?? [])
-			.filter((e) => e.endTs !== null)
-			.map((e) => ({
-				id: e.id,
-				activityId: e.activityId,
-				detail: `${fmtClock(e.startTs)}–${fmtClock(e.endTs as number)} · ${hours((e.endTs as number) - e.startTs)} h`,
-				drop: true
-			}))
+		// Auch laufende Eintraege zeigen: die verschwinden sonst kommentarlos.
+		...(p?.plan.remove ?? []).map((e) => ({
+			id: e.id,
+			activityId: e.activityId,
+			detail:
+				e.endTs === null
+					? `läuft seit ${fmtClock(e.startTs)}`
+					: `${fmtClock(e.startTs)}–${fmtClock(e.endTs)} · ${hours(e.endTs - e.startTs)} h`,
+			drop: true
+		}))
 	]);
 
 	const cutCount = $derived(rows.filter((r) => !r.drop).length);

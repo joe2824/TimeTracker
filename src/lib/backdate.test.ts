@@ -93,7 +93,16 @@ describe("planNeedsConfirm", () => {
 	});
 
 	it("fragt NICHT beim normalen Wechsel eines laufenden Timers", () => {
+		// Kuerzen = Wechsel. Dafuer jedes Mal ein Dialog waere unertraeglich.
 		expect(planNeedsConfirm(planBackdate([e("r", 8, null)], at(9), ABSENCES, NOW))).toBe(false);
+	});
+
+	it("fragt, wenn ein laufender Timer ganz entfernt wuerde", () => {
+		// Seit 10:00 laeuft A, um 10:30 Start "ab 09:00" -> A verschwaende sonst
+		// samt seiner halben Stunde kommentarlos.
+		const plan = planBackdate([e("r", 9, null)], at(8), ABSENCES, NOW);
+		expect(plan.remove.map((x) => x.id)).toEqual(["r"]);
+		expect(planNeedsConfirm(plan)).toBe(true);
 	});
 
 	it("fragt nicht, wenn nichts betroffen ist", () => {
