@@ -7,6 +7,7 @@
 		type CalendarEvent
 	} from "$lib/outlook";
 	import { allDayNoons, fmtDate, isWorkday } from "$lib/time";
+	import { activityOptions, guessActivity } from "$lib/calendarMap";
 	import { Button } from "$lib/components/ui/button";
 	import { Badge } from "$lib/components/ui/badge";
 	import * as Card from "$lib/components/ui/card";
@@ -32,19 +33,10 @@
 	// true, sobald „Termine laden" gedrückt wurde -> große Import-Ansicht (Monatsliste aus).
 	let active = $state(false);
 
-	function guessActivity(ev: CalendarEvent): string {
-		// Ganztägig oder "abwesend" -> Abwesenheiten
-		if (ev.allDay || ev.busyStatus === 3) {
-			return app.absenceActivity?.id ?? "";
-		}
-		const subj = ev.subject.toLowerCase();
-		for (const [kw, id] of Object.entries(app.settings.calendarKeywordMap)) {
-			if (kw && subj.includes(kw)) return id;
-		}
-		// Name-Treffer
-		const hit = app.visibleActivities.find((a) => subj.includes(a.name.toLowerCase()));
-		return hit?.id ?? "";
-	}
+	/** Auswahl je Termin – bei Uhrzeit ohne "Abwesenheiten" (siehe calendarMap). */
+	const optionsFor = (ev: CalendarEvent) => activityOptions(ev, app.visibleActivities);
+	const guessFor = (ev: CalendarEvent) =>
+		guessActivity(ev, app.visibleActivities, app.settings.calendarKeywordMap);
 
 	/** Fällt (mindestens ein Tag) des Termins auf einen regulären Arbeitstag? */
 	function eventHasWorkday(ev: CalendarEvent): boolean {
@@ -114,7 +106,7 @@
 			events = await readOutlookCalendar(start, end);
 			// Termine ohne Arbeitstag oder bereits importierte standardmäßig auf „ignorieren".
 			mapping = events.map((ev) =>
-				eventHasWorkday(ev) && !alreadyImported(ev) ? guessActivity(ev) : ""
+				eventHasWorkday(ev) && !alreadyImported(ev) ? guessFor(ev) : ""
 			);
 			loaded = true;
 		} catch (e) {
@@ -173,20 +165,17 @@
 					if (created) count++;
 				}
 			} else {
+				// Abwesenheit mit Uhrzeit gibt es nicht: die Auswahl bietet sie bei
+				// Terminen mit Uhrzeit gar nicht an, das hier faengt nur Altlasten aus
+				// der Stichwort-Zuordnung ab. Frueher entstand hier ein widerspruech-
+				// licher Eintrag – echte Zeitspanne UND Tagesanteil 0.5 –, der still
+				// einen halben Urlaubstag buchte.
+				if (isAbsence) continue;
 				// Wochenenden/freie Tage nicht importieren – sind keine Arbeitstage.
 				if (!isWorkday(startTs, app.settings.workdays)) continue;
 				await app.ensureMonth(monthOf(startTs));
 				if (timedAlreadyImported(startTs, endTs, ev.subject)) continue; // schon importiert
-				// Abwesenheit mit Uhrzeit -> halber Tag; sonst normaler Zeiteintrag.
-				const dayFraction = isAbsence ? 0.5 : undefined;
-				const created = await app.addEntry(
-					activityId,
-					startTs,
-					endTs,
-					ev.subject,
-					"calendar",
-					dayFraction
-				);
+				const created = await app.addEntry(activityId, startTs, endTs, ev.subject, "calendar");
 				if (created) count++;
 			}
 			newMap[ev.subject.toLowerCase()] = activityId; // fuer naechstes Mal merken
@@ -293,7 +282,8 @@
 								</Select.Trigger>
 								<Select.Content>
 									<Select.Item value="" label="— ignorieren —">— ignorieren —</Select.Item>
-									{#each app.visibleActivities as a (a.id)}
+									<!-- Bei Uhrzeit ohne „Abwesenheiten“: die ist tagesgenau. -->
+									{#each optionsFor(ev) as a (a.id)}
 										<Select.Item value={a.id} label={a.name}>{a.name}</Select.Item>
 									{/each}
 								</Select.Content>
