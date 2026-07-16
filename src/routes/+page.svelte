@@ -150,7 +150,10 @@
 
 				<Tabs.List variant="line" class="justify-self-center gap-2">
 					<Tabs.Trigger value="tracking"><TimerIcon />Tracking</Tabs.Trigger>
-					<Tabs.Trigger value="entries"><PencilLineIcon />Einträge</Tabs.Trigger>
+					<!-- Wie „Einträge anzeigen“ aus dem Tracking: auf heute springen. -->
+					<Tabs.Trigger value="entries" onclick={() => entriesFocus.requestToday()}>
+						<PencilLineIcon />Einträge
+					</Tabs.Trigger>
 					<Tabs.Trigger value="report"><ChartColumnIcon />Bericht</Tabs.Trigger>
 					<Tabs.Trigger value="activities"><LayersIcon />Aktivitäten</Tabs.Trigger>
 					<Tabs.Trigger value="settings"><SettingsIcon />Einstellungen</Tabs.Trigger>

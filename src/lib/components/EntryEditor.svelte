@@ -306,19 +306,39 @@
 
 	<Card.Root>
 		<Card.Content class="p-0">
-			<ul class="divide-border max-h-[calc(100vh-20rem)] divide-y overflow-y-auto">
-				{#each days as day (day.date)}
+			<!-- Kein divide-y: die Linie UNTER einer Zeile waere der border-top der
+			     naechsten, damit liesse sie sich fuer heute nicht abschalten. Mit
+			     eigenem border-b je Zeile geht das. -->
+			<ul class="max-h-[calc(100vh-20rem)] overflow-y-auto">
+				{#each days as day, i (day.date)}
+					{@const isToday = day.date === todayStr}
+					<!-- Heute traegt nur den linken Balken: die Zeilen konkurrieren schon mit
+					     Amber (Abwesenheit) und bg-muted (freier Tag). Die Trennlinien ober-
+					     und unterhalb entfallen, damit der Block zusammenhaengt – deshalb auch
+					     border-b weg an der Zeile DAVOR. Alle Zeilen tragen den linken Balken
+					     transparent, sonst versetzte heute den Inhalt um 2px. -->
 					<li
 						id={`day-row-${day.date}`}
-						class="flex items-start gap-3 px-3 py-1.5 text-sm {day.date === todayStr
-							? 'bg-primary/5 ring-primary/30 ring-1 ring-inset'
+						class="flex items-start gap-3 border-b border-l-2 px-3 py-1.5 text-sm last:border-b-0 {isToday ||
+						days[i + 1]?.date === todayStr
+							? 'border-b-transparent'
+							: 'border-b-border'} {isToday
+							? 'border-l-primary bg-primary/10'
 							: day.nonWorkday
-								? 'bg-muted/60'
-								: ''}"
+								? 'border-l-transparent bg-muted/60'
+								: 'border-l-transparent'}"
 					>
 						<div class="w-14 shrink-0 pt-1">
-							<div class="font-mono tabular-nums">{String(day.d).padStart(2, "0")}</div>
-							<div class="text-muted-foreground text-xs">{day.weekday}</div>
+							<div
+								class="font-mono tabular-nums {day.date === todayStr
+									? 'text-primary font-bold'
+									: ''}"
+							>
+								{String(day.d).padStart(2, "0")}
+							</div>
+							<div class="text-muted-foreground text-xs">
+								{day.weekday}{day.date === todayStr ? " · heute" : ""}
+							</div>
 						</div>
 						<div class="flex-1 space-y-1 py-0.5">
 							{#each day.entries as e (e.id)}
