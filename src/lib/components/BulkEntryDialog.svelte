@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
-	import { fmtDate, fmtHours, parseClock, parseHours } from "$lib/time";
+	import { fmtDate, parseClock, parseHours } from "$lib/time";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
@@ -8,6 +8,7 @@
 	import ActivityCombobox from "$lib/components/ActivityCombobox.svelte";
 	import WorkdayPicker from "$lib/components/WorkdayPicker.svelte";
 	import DateInput from "$lib/components/DateInput.svelte";
+	import DayFractionSwitch from "$lib/components/DayFractionSwitch.svelte";
 	import { toast } from "svelte-sonner";
 
 	let {
@@ -163,17 +164,7 @@
 				</div>
 
 				{#if isAbsence}
-					<div class="space-y-1">
-						<Label for="bfrac">Umfang je Tag</Label>
-						<select
-							id="bfrac"
-							bind:value={fraction}
-							class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
-						>
-							<option value={1}>Ganzer Tag ({fmtHours(app.settings.hoursPerDay)} h)</option>
-							<option value={0.5}>Halber Tag ({fmtHours(app.settings.hoursPerDay / 2)} h)</option>
-						</select>
-					</div>
+					<DayFractionSwitch id="bfrac" label="Umfang je Tag" bind:value={fraction} />
 				{:else}
 					<div class="grid grid-cols-2 gap-2">
 						<div class="space-y-1">

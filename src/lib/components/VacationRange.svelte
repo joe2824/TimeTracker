@@ -2,9 +2,9 @@
 	import { app } from "$lib/app.svelte";
 	import { Button } from "$lib/components/ui/button";
 	import { Label } from "$lib/components/ui/label";
-	import { Switch } from "$lib/components/ui/switch";
 	import * as Dialog from "$lib/components/ui/dialog";
 	import DateInput from "$lib/components/DateInput.svelte";
+	import DayFractionSwitch from "$lib/components/DayFractionSwitch.svelte";
 	import { toast } from "svelte-sonner";
 	import { fmtDate } from "$lib/time";
 
@@ -13,10 +13,12 @@
 
 	let from = $state(fmtDate(Date.now()));
 	let to = $state(fmtDate(Date.now()));
-	let halfDay = $state(false);
+	// Tagesanteil statt Boolean: dieselbe Groesse, die addAbsenceRange und die
+	// anderen Dialoge verwenden – kein Umrechnen an der Grenze mehr.
+	let fraction = $state(1);
 
 	async function add() {
-		const { added, skipped } = await app.addAbsenceRange(from, to, halfDay ? 0.5 : 1);
+		const { added, skipped } = await app.addAbsenceRange(from, to, fraction);
 		if (added > 0) {
 			const extra = skipped > 0 ? ` (${skipped} mit Projektzeit übersprungen)` : "";
 			toast.success(`${added} Abwesenheitstag(e) eingetragen${extra}.`);
@@ -51,9 +53,7 @@
 						<DateInput id="vacto" bind:value={to} class="w-40" />
 					</div>
 				</div>
-				<label class="flex items-center justify-between gap-2 text-sm">
-					Halbe Tage <Switch bind:checked={halfDay} />
-				</label>
+				<DayFractionSwitch id="vacfrac" label="Umfang je Tag" bind:value={fraction} />
 			</div>
 			<Dialog.Footer>
 				<Button type="button" variant="ghost" onclick={() => (open = false)}>Abbrechen</Button>
