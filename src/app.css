@@ -129,6 +129,17 @@
 		@apply bg-background text-foreground;
 	}
 
+	/* Anklickbares zeigt den Zeiger. Browser geben <button> von Haus aus
+	   `cursor: default`; die shadcn-Button-Komponente setzt `cursor-pointer`
+	   deshalb selbst, rohe <button> im Projekt hatten ihn aber nur teilweise.
+	   Als base-Regel gilt er überall – auch für künftige Buttons – und
+	   Utility-Klassen (z.B. `disabled:cursor-not-allowed`) schlagen ihn weiterhin. */
+	button:not(:disabled),
+	[role="button"]:not([aria-disabled="true"]),
+	summary {
+		cursor: pointer;
+	}
+
 	/* Dünner, dezenter Scrollbalken projektweit (WebView2/Chromium, theme-fähig via --foreground). */
 	*::-webkit-scrollbar {
 		width: 6px;

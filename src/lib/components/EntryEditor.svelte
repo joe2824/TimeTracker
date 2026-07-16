@@ -53,6 +53,7 @@
 	}
 
 	let dialogOpen = $state(false);
+	let dialogEl = $state<HTMLElement | null>(null);
 	let draft = $state<Draft>(emptyDraft());
 	let dur = $state(""); // Stunden-Eingabe, bidirektional mit Von/Bis
 	let startText = $state(""); // Roh-Eingabe Von, erst beim Verlassen normalisiert
@@ -343,18 +344,25 @@
 						<div class="flex-1 space-y-1 py-0.5">
 							{#each day.entries as e (e.id)}
 								{@const isAbs = app.isAbsenceId(e.activityId)}
+								<!-- Button-Komponente statt roher <button>: bringt Fokusring, Hover
+								     und Zeiger aus dem Design-System mit. `text-sm` überschreibt das
+								     `text-xs` der xs-Größe, sonst schrumpfte die Eintragszeile. -->
 								<div class="group flex items-center gap-1">
-									<button
-										class="flex flex-1 items-center gap-1.5 truncate rounded px-1.5 py-0.5 text-left {isAbs
-											? 'bg-amber-500/15 text-amber-700 hover:bg-amber-500/25 dark:text-amber-300'
-											: 'hover:bg-accent'}"
+									<Button
+										variant="ghost"
+										size="xs"
+										class="min-w-0 flex-1 justify-start text-sm font-normal {isAbs
+											? 'bg-amber-500/15 text-amber-700 hover:bg-amber-500/25 hover:text-amber-700 dark:text-amber-300 dark:hover:text-amber-300'
+											: ''}"
 										onclick={() => openEdit(e)}
 										title="Bearbeiten"
 									>
-										{#if isAbs}<PalmtreeIcon class="size-3.5 shrink-0" />{/if}
+										{#if isAbs}<PalmtreeIcon />{/if}
 										<span class="truncate">{entryLabel(e)}</span>
-									</button>
-									<button
+									</Button>
+									<Button
+										variant="ghost"
+										size="icon-xs"
 										class="text-muted-foreground hover:text-destructive shrink-0"
 										onclick={async () => {
 											await app.deleteEntry(e);
@@ -364,8 +372,8 @@
 										}}
 										title="Löschen"
 									>
-										<Trash2Icon class="size-3.5" />
-									</button>
+										<Trash2Icon />
+									</Button>
 								</div>
 							{/each}
 						</div>
@@ -402,7 +410,20 @@
 <VacationRange bind:open={vacOpen} onsaved={afterExternalSave} />
 
 <Dialog.Root bind:open={dialogOpen}>
-	<Dialog.Content class="sm:max-w-md">
+	<!-- Beim BEARBEITEN nicht automatisch in die Aktivitäts-Combobox springen: sie
+	     klappt bei Fokus ihre Liste auf und legt sich über die Felder, die man
+	     eigentlich ändern wollte. Beim NEUEN Eintrag ist genau das erwünscht – dort
+	     fehlt die Aktivität noch. Der Fokus wandert stattdessen auf den Dialog
+	     selbst, damit er im Modal bleibt (Tab/Escape). -->
+	<Dialog.Content
+		bind:ref={dialogEl}
+		class="sm:max-w-md"
+		onOpenAutoFocus={(e) => {
+			if (draft.id === null) return;
+			e.preventDefault();
+			dialogEl?.focus();
+		}}
+	>
 		<form class="grid gap-4" onsubmit={(e) => { e.preventDefault(); save(); }}>
 			<Dialog.Header>
 				<Dialog.Title>{draft.id ? "Eintrag bearbeiten" : "Neuer Eintrag"}</Dialog.Title>
