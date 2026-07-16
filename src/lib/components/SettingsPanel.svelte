@@ -151,51 +151,73 @@
 	// (OS-API bzw. globale Registrierung), zwei gleich aussehende Schalter mit
 	// zwei Verhalten waren der Bruch. Statt Toast je Aenderung ein kurzer Hinweis
 	// an der Card – ein Toast pro Tastendruck waere Laerm.
-	let savedGeneral = $state(0);
+	// Je Card ein eigener Zeitstempel UND eine eigene Speicherfunktion: eine
+	// gemeinsame haette den Hinweis auch auf der Card blinken lassen, die man gar
+	// nicht angefasst hat.
+	let savedReport = $state(0);
+	let savedWorktime = $state(0);
 	let savedTimes = $state(0);
 	let savedTracking = $state(0);
 	let savedSystem = $state(0);
 
-	async function saveGeneral() {
+	/**
+	 * Leeres Feld auf den gespeicherten Wert zuruecksetzen, sonst den getrimmten
+	 * nehmen. Liefert immer einen gueltigen Wert.
+	 *
+	 * Ohne Speichern-Button ist das Pflicht: `x || default` schriebe beim Leeren des
+	 * Feldes still den Default fort – wer eine Vorlage zum Neutippen leert, haette
+	 * sie damit auf den Standardtext gesetzt. Zurueckgesetzt wird nur das eine Feld;
+	 * die uebrigen der Card werden trotzdem gespeichert.
+	 */
+	function orStored(raw: string, stored: string): string {
+		return raw.trim() || stored;
+	}
+
+	async function saveReport() {
+		subjectTpl = orStored(subjectTpl, app.settings.reportSubjectTemplate);
 		await app.updateSettings({
 			bossEmail: bossEmail.trim(),
 			senderName: senderName.trim(),
-			rounding: Number(rounding),
-			hoursPerDay: (clockToMin(hoursPerDay) ?? 450) / 60,
-			workdays: [...workdays].sort((a, b) => a - b),
-			reportSubjectTemplate: subjectTpl.trim() || "Stundenerfassung {month} – {name}",
+			reportSubjectTemplate: subjectTpl,
 			statsEnabled
 		});
-		savedGeneral = Date.now();
+		savedReport = Date.now();
 	}
 
-	/**
-	 * Arbeitszeit je Tag uebernehmen (bei echter Aenderung).
-	 * Unbrauchbare Eingabe springt auf den gespeicherten Wert zurueck, statt still
-	 * den 7:30-Default zu schreiben – beim Autospeichern wuerde sonst schon das
-	 * Leeren des Feldes zum Neutippen die Einstellung ueberschreiben.
-	 */
-	function commitHoursPerDay() {
-		const min = clockToMin(hoursPerDay);
-		if (min == null || min <= 0) {
-			hoursPerDay = minToClock(app.settings.hoursPerDay * 60);
-			return;
-		}
-		hoursPerDay = minToClock(min);
-		void saveGeneral();
+	async function saveWorktime() {
+		// Normalisieren statt aussteigen: ein leeres Stunden-Feld darf nicht das
+		// Speichern von Rundung und Arbeitstagen verhindern.
+		const min = clockToMin(hoursPerDay) ?? 0;
+		const valid = min > 0 ? min : app.settings.hoursPerDay * 60;
+		hoursPerDay = minToClock(valid);
+		await app.updateSettings({
+			rounding: Number(rounding),
+			hoursPerDay: valid / 60,
+			workdays: [...workdays].sort((a, b) => a - b)
+		});
+		savedWorktime = Date.now();
+	}
+
+	/** Fokusdauer uebernehmen; leeres Feld haette sonst still 50 fortgeschrieben. */
+	function commitPomodoroMin() {
+		pomodoroMin = orStored(pomodoroMin, String(app.settings.pomodoroMin));
+		void saveTracking();
 	}
 
 	async function saveTimes() {
+		reportTime = orStored(reportTime, app.settings.reportReminderTime);
 		const clean = times.map((t) => t.trim()).filter(Boolean);
 		await app.updateSettings({
 			reminderTimes: clean,
 			reportReminderEnabled: reportReminder,
-			reportReminderTime: reportTime || "16:00",
+			reportReminderTime: reportTime,
 			reportReminderLeadDays: Math.max(0, Number(reportLead) || 0)
 		});
 		scheduleReminders();
 		scheduleReportReminder();
-		await ensureNotificationPermission();
+		// Nur fragen, wenn ueberhaupt etwas benachrichtigen soll – beim Abschalten
+		// nach der Erlaubnis zu fragen waere verkehrt herum.
+		if (clean.length > 0 || reportReminder) await ensureNotificationPermission();
 		savedTimes = Date.now();
 	}
 
@@ -292,20 +314,20 @@
 	<Card.Root>
 		<Card.Header>
 			<Card.Title>Bericht & E-Mail</Card.Title>
-			<Card.Action><SavedHint at={savedGeneral} /></Card.Action>
+			<Card.Action><SavedHint at={savedReport} /></Card.Action>
 		</Card.Header>
 		<Card.Content class="space-y-3">
 			<div class="space-y-1">
 				<Label for="boss">E-Mail des Chefs</Label>
-				<Input id="boss" type="email" bind:value={bossEmail} placeholder="chef@firma.de" onchange={saveGeneral} />
+				<Input id="boss" type="email" bind:value={bossEmail} placeholder="chef@firma.de" onchange={saveReport} />
 			</div>
 			<div class="space-y-1">
 				<Label for="sender">Dein Name (optional)</Label>
-				<Input id="sender" bind:value={senderName} onchange={saveGeneral} />
+				<Input id="sender" bind:value={senderName} onchange={saveReport} />
 			</div>
 			<div class="space-y-1">
 				<Label for="subj">Betreff-Vorlage</Label>
-				<Input id="subj" bind:value={subjectTpl} onchange={saveGeneral} />
+				<Input id="subj" bind:value={subjectTpl} onchange={saveReport} />
 				<p class="text-muted-foreground text-xs">
 					{"{month}"} = Monat, {"{name}"} = dein Name
 				</p>
@@ -315,7 +337,7 @@
 				title="Auswertung anzeigen"
 				description="Saldo, Stunden je Aktivität und Jahres-Heatmap im Tab „Bericht“. Nur für dich – die E-Mail bleibt unverändert."
 				bind:checked={statsEnabled}
-				onCheckedChange={() => saveGeneral()}
+				onCheckedChange={() => saveReport()}
 				class="border-t pt-3"
 			/>
 		</Card.Content>
@@ -347,7 +369,16 @@
 				</div>
 			{/each}
 			<div class="flex gap-2">
-				<Button variant="outline" size="sm" onclick={() => (times = [...times, "14:00"])}>
+				<Button
+					variant="outline"
+					size="sm"
+					onclick={() => {
+						times = [...times, "14:00"];
+						// Ohne Speichern-Button muss das Anlegen selbst persistieren – sonst
+						// stuende die neue Zeit nur im Fenster und waere beim Neustart weg.
+						void saveTimes();
+					}}
+				>
 					<PlusIcon class="size-4" /> Uhrzeit
 				</Button>
 			</div>
@@ -389,12 +420,12 @@
 		<Card.Header>
 			<Card.Title>Arbeitszeit</Card.Title>
 			<Card.Description>Arbeitstage & -zeit – Basis für Abwesenheiten und Bericht.</Card.Description>
-			<Card.Action><SavedHint at={savedGeneral} /></Card.Action>
+			<Card.Action><SavedHint at={savedWorktime} /></Card.Action>
 		</Card.Header>
 		<Card.Content class="space-y-3">
 			<div class="space-y-1">
 				<Label>An welchen Tagen arbeitest du?</Label>
-				<WorkdayPicker bind:value={workdays} onchange={saveGeneral} />
+				<WorkdayPicker bind:value={workdays} onchange={saveWorktime} />
 				<p class="text-muted-foreground text-xs">
 					Nicht-Arbeitstage (z.&nbsp;B. Wochenende) werden beim Kalender-Import und bei
 					Abwesenheits-Zeiträumen übersprungen und tauchen nicht im Bericht auf.
@@ -407,12 +438,12 @@
 				class="border-t pt-3"
 			>
 				{#snippet control()}
-					<Input id="hpd" type="time" class="w-32" bind:value={hoursPerDay} onchange={commitHoursPerDay} />
+					<Input id="hpd" type="time" class="w-32" bind:value={hoursPerDay} onchange={saveWorktime} />
 				{/snippet}
 			</SettingRow>
 			<SettingRow id="round" title="Rundung" description="Stunden je Aktivität im Bericht.">
 				{#snippet control()}
-					<Select.Root type="single" bind:value={rounding} onValueChange={() => saveGeneral()}>
+					<Select.Root type="single" bind:value={rounding} onValueChange={() => saveWorktime()}>
 						<Select.Trigger id="round" class="w-48">{ROUNDINGS[rounding] ?? rounding}</Select.Trigger>
 						<Select.Content>
 							{#each Object.entries(ROUNDINGS) as [v, label] (v)}
@@ -474,7 +505,7 @@
 				<div class="grid grid-cols-2 gap-2">
 					<div class="space-y-1">
 						<Label for="pomomin">Fokus (Min)</Label>
-						<Input id="pomomin" type="number" min="1" bind:value={pomodoroMin} onchange={saveTracking} />
+						<Input id="pomomin" type="number" min="1" bind:value={pomodoroMin} onchange={commitPomodoroMin} />
 					</div>
 					<div class="space-y-1">
 						<Label for="pomobreak">Pause (Min, 0 = aus)</Label>
