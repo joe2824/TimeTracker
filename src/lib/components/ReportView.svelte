@@ -164,13 +164,18 @@
 	<Dialog.Content class="sm:max-w-3xl">
 		<Dialog.Header>
 			<Dialog.Title>Vorschau · {report.label}</Dialog.Title>
-			<Dialog.Description>So erscheint die Tabelle in der E-Mail an deinen Chef.</Dialog.Description>
+			<Dialog.Description>So erscheint die Tabelle in der E-Mail an deine Vorgesetzten.</Dialog.Description>
 		</Dialog.Header>
 		<!-- Feste helle Flaeche: die Tabelle traegt Inline-Styles fuer Outlook und
 		     wuerde im Dunkelmodus sonst schwarz auf dunkel stehen. -->
 		<div class="max-h-[60vh] overflow-auto rounded-md border bg-white p-4 text-black">
-			<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-			{@html html}
+			<!-- Mittig ueber `mx-auto` im Block-Layout, nicht per Flex: die Tabelle ist
+			     520px breit, im Scroll-Container wuerde flex+center bei wenig Platz den
+			     linken Rand abschneiden. Auto-Margins fallen beim Ueberlaufen auf 0. -->
+			<div class="mx-auto w-fit">
+				<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+				{@html html}
+			</div>
 		</div>
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => fromPreview(copyHtml)}>
