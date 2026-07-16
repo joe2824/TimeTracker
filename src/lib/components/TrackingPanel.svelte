@@ -3,6 +3,7 @@
 	import { durationSeconds, fmtClock, fmtDate, fmtHMS } from "$lib/time";
 	import { START_PRESETS, resolveStartTs, toStartArg } from "$lib/startTime";
 	import { Button } from "$lib/components/ui/button";
+	import * as ButtonGroup from "$lib/components/ui/button-group";
 	import { Input } from "$lib/components/ui/input";
 	import * as Card from "$lib/components/ui/card";
 	import { toast } from "svelte-sonner";
@@ -10,6 +11,7 @@
 	import PlayIcon from "@lucide/svelte/icons/play";
 	import StarIcon from "@lucide/svelte/icons/star";
 	import ListIcon from "@lucide/svelte/icons/list";
+	import XIcon from "@lucide/svelte/icons/x";
 	import ActivityDot from "$lib/components/ActivityDot.svelte";
 
 	let { onShowEntries }: { onShowEntries?: () => void } = $props();
@@ -22,6 +24,9 @@
 	// Startzeit-Auswahl: Preset "vor X min" (0 = jetzt) oder freie Uhrzeit (überschreibt Preset).
 	let presetMin = $state(0);
 	let customStart = $state("");
+	let clockInput = $state<HTMLInputElement | null>(null);
+	/** Gilt gerade die freie Uhrzeit? Steuert Hervorhebung UND Auswertung. */
+	const usingClock = $derived(customStart !== "");
 
 	// Hinweistext (tickt mit app.now); null wenn "jetzt" oder ungültig.
 	const startHint = $derived.by(() => {
@@ -93,43 +98,65 @@
 	{#if !app.running}
 		<div class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border p-2 text-sm">
 			<span class="text-muted-foreground font-medium">Startzeit</span>
-			<div class="flex flex-wrap items-center gap-1">
-				<button
-					type="button"
-					class="hover:bg-accent rounded px-2 py-1 {presetMin === 0 && !customStart
-						? 'bg-accent font-medium'
-						: ''}"
+			<!-- Eine Auswahl aus vier Möglichkeiten: die gewählte ist hervorgehoben.
+			     „ab Uhrzeit" gehört dazu – vorher überschrieb ein Wert im Feld die
+			     Presets still, und markiert war dann gar nichts. -->
+			<ButtonGroup.Root>
+				<Button
+					variant={usingClock || presetMin !== 0 ? "outline" : "default"}
+					size="sm"
 					onclick={() => {
 						presetMin = 0;
 						customStart = "";
 					}}
 				>
 					Jetzt
-				</button>
+				</Button>
 				{#each START_PRESETS as m (m)}
-					<button
-						type="button"
-						class="hover:bg-accent rounded px-2 py-1 {presetMin === m && !customStart
-							? 'bg-accent font-medium'
-							: ''}"
+					<Button
+						variant={!usingClock && presetMin === m ? "default" : "outline"}
+						size="sm"
 						onclick={() => {
 							presetMin = m;
 							customStart = "";
 						}}
 					>
 						−{m} min
-					</button>
+					</Button>
 				{/each}
-			</div>
-			<div class="flex items-center gap-1.5">
-				<span class="text-muted-foreground text-xs">oder ab</span>
-				<Input
-					type="time"
-					bind:value={customStart}
-					class="h-8 w-24"
-					oninput={() => (presetMin = 0)}
-				/>
-			</div>
+				<Button
+					variant={usingClock ? "default" : "outline"}
+					size="sm"
+					title="Ab einer bestimmten Uhrzeit starten"
+					onclick={() => {
+						// Mit der aktuellen Zeit vorbelegen, damit das Feld nie leer aktiv ist.
+						if (!customStart) customStart = fmtClock(Date.now());
+						presetMin = 0;
+						clockInput?.focus();
+					}}
+				>
+					ab Uhrzeit
+				</Button>
+			</ButtonGroup.Root>
+			{#if usingClock}
+				<div class="flex items-center gap-1.5">
+					<Input
+						bind:ref={clockInput}
+						type="time"
+						bind:value={customStart}
+						class="h-7 w-24"
+						oninput={() => (presetMin = 0)}
+					/>
+					<Button
+						variant="ghost"
+						size="icon-sm"
+						title="Uhrzeit verwerfen"
+						onclick={() => (customStart = "")}
+					>
+						<XIcon />
+					</Button>
+				</div>
+			{/if}
 			{#if startHint}
 				<span class="text-muted-foreground text-xs">· {startHint}</span>
 			{/if}

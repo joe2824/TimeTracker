@@ -4,6 +4,7 @@
 	import { fmtClock, fmtHMS } from "$lib/time";
 	import { START_PRESETS, resolveStartTs, toStartArg } from "$lib/startTime";
 	import { Button } from "$lib/components/ui/button";
+	import * as ButtonGroup from "$lib/components/ui/button-group";
 	import { Input } from "$lib/components/ui/input";
 	import BackdateDialog from "$lib/components/BackdateDialog.svelte";
 	import { WebviewWindow, getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -12,6 +13,8 @@
 	import SquareIcon from "@lucide/svelte/icons/square";
 	import PlayIcon from "@lucide/svelte/icons/play";
 	import StarIcon from "@lucide/svelte/icons/star";
+	import XIcon from "@lucide/svelte/icons/x";
+	import ClockIcon from "@lucide/svelte/icons/clock";
 	import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
 	import ActivityDot from "$lib/components/ActivityDot.svelte";
 
@@ -63,6 +66,9 @@
 	// oder freie Uhrzeit. Nützlich, wenn man den Timer verspätet startet.
 	let presetMin = $state(0);
 	let customStart = $state("");
+	let clockInput = $state<HTMLInputElement | null>(null);
+	/** Gilt gerade die freie Uhrzeit? Steuert Anzeige UND Auswertung. */
+	const usingClock = $derived(customStart !== "");
 
 	const startHint = $derived.by(() => {
 		void app.now;
@@ -114,39 +120,53 @@
 			</div>
 		{:else}
 			<div class="text-muted-foreground text-center text-[11px] leading-none">Timer starten</div>
-			<div class="flex flex-1 flex-nowrap items-center gap-1 rounded-md border px-1.5 text-xs">
-				<button
-					type="button"
-					class="hover:bg-accent shrink-0 rounded px-1.5 py-0.5 {presetMin === 0 && !customStart
-						? 'bg-accent font-medium'
-						: ''}"
-					onclick={() => {
-						presetMin = 0;
-						customStart = "";
-					}}
-				>
-					Jetzt
-				</button>
-				{#each START_PRESETS as m (m)}
-					<button
-						type="button"
-						class="hover:bg-accent shrink-0 rounded px-1 py-0.5 {presetMin === m && !customStart
-							? 'bg-accent font-medium'
-							: ''}"
-						onclick={() => {
-							presetMin = m;
-							customStart = "";
-						}}
-					>
-						−{m}
-					</button>
-				{/each}
-				<Input
-					type="time"
-					bind:value={customStart}
-					class="h-6 w-18 shrink-0 px-1 text-xs"
-					oninput={() => (presetMin = 0)}
-				/>
+			<!-- 300px Flyout: xs-Groesse, und das Uhrzeitfeld erscheint erst, wenn es
+			     gebraucht wird. Die gewaehlte Option ist hervorgehoben – vorher
+			     ueberschrieb ein Wert im Feld die Presets still. -->
+			<div class="flex flex-1 items-center justify-center gap-1">
+				{#if usingClock}
+					<Input
+						bind:ref={clockInput}
+						type="time"
+						bind:value={customStart}
+						class="h-6 w-20 shrink-0 px-1 text-xs"
+						oninput={() => (presetMin = 0)}
+					/>
+					<Button variant="ghost" size="icon-xs" title="Uhrzeit verwerfen" onclick={() => (customStart = "")}>
+						<XIcon />
+					</Button>
+				{:else}
+					<ButtonGroup.Root>
+						<Button
+							variant={presetMin === 0 ? "default" : "outline"}
+							size="xs"
+							onclick={() => (presetMin = 0)}
+						>
+							Jetzt
+						</Button>
+						{#each START_PRESETS as m (m)}
+							<Button
+								variant={presetMin === m ? "default" : "outline"}
+								size="xs"
+								onclick={() => (presetMin = m)}
+							>
+								−{m}
+							</Button>
+						{/each}
+						<Button
+							variant="outline"
+							size="icon-xs"
+							title="Ab einer bestimmten Uhrzeit"
+							onclick={() => {
+								customStart = fmtClock(Date.now());
+								presetMin = 0;
+								clockInput?.focus();
+							}}
+						>
+							<ClockIcon />
+						</Button>
+					</ButtonGroup.Root>
+				{/if}
 			</div>
 		{/if}
 	</div>
