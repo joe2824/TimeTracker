@@ -44,12 +44,14 @@
 			.trim()
 	);
 
-	async function sendToOutlook() {
+	/** @returns true, wenn der Entwurf geoeffnet wurde. */
+	async function sendToOutlook(): Promise<boolean> {
 		sending = true;
 		try {
 			await createOutlookDraft(app.settings.bossEmail, subject, html);
 			await app.markReportSent(month);
 			toast.success("Outlook-Entwurf geöffnet. Bitte prüfen und senden.");
+			return true;
 		} catch (e) {
 			// Klar erklaeren (z.B. nur neues Outlook) und den mailto-Fallback anbieten.
 			const info = await detectOutlook().catch(() => null);
@@ -64,27 +66,28 @@
 						)
 				}
 			});
+			return false;
 		} finally {
 			sending = false;
 		}
 	}
 
 	/**
-	 * Aktion aus der Vorschau heraus: danach schliessen, damit man nicht auf einem
-	 * Dialog sitzenbleibt, dessen Zweck erledigt ist. Beide Aktionen fangen ihre
-	 * Fehler selbst ab und melden sie per Toast – der bleibt auch ohne Dialog sichtbar.
+	 * Aktion aus der Vorschau heraus: nur bei Erfolg schliessen. Ging es schief, bleibt
+	 * die Vorschau offen – man wollte ja genau von hier aus noch einmal ansetzen.
 	 */
-	async function fromPreview(action: () => Promise<void>) {
-		await action();
-		previewOpen = false;
+	async function fromPreview(action: () => Promise<boolean>) {
+		if (await action()) previewOpen = false;
 	}
 
 	/**
 	 * Legt die Tabelle als "text/html" UND "text/plain" in die Zwischenablage.
 	 * Nur mit dem text/html-Flavor fuegt Outlook die gerenderte Tabelle ein –
 	 * writeText() allein landet als Quelltext in der Mail.
+	 *
+	 * @returns true, wenn irgendetwas Brauchbares in der Zwischenablage liegt.
 	 */
-	async function copyHtml() {
+	async function copyHtml(): Promise<boolean> {
 		try {
 			await navigator.clipboard.write([
 				new ClipboardItem({
@@ -93,7 +96,7 @@
 				})
 			]);
 			toast.success("Tabelle kopiert – in Outlook mit Strg+V einfügen.");
-			return;
+			return true;
 		} catch (e) {
 			// Aeltere Webviews ohne ClipboardItem/write: Quelltext ist besser als nichts.
 			try {
@@ -101,8 +104,10 @@
 				toast.success("HTML-Quelltext kopiert.", {
 					description: "Rich-Text wird von diesem System nicht unterstützt."
 				});
+				return true;
 			} catch {
 				toast.error(`Kopieren fehlgeschlagen: ${e}`);
+				return false;
 			}
 		}
 	}

@@ -33,19 +33,28 @@ export function dayActivityHours(
 	return byDay;
 }
 
+/**
+ * Tagessummen aus einer bereits aufgeschluesselten Map.
+ * Getrennt von dayWorkHours, damit ein Aufrufer, der die Aufschluesselung ohnehin
+ * braucht (Tooltip), nicht ein zweites Mal ueber alle Eintraege laeuft.
+ */
+export function sumPerDay(detail: Map<string, Map<string, number>>): Map<string, number> {
+	const byDay = new Map<string, number>();
+	for (const [day, perActivity] of detail) {
+		let sum = 0;
+		for (const h of perActivity.values()) sum += h;
+		byDay.set(day, sum);
+	}
+	return byDay;
+}
+
 /** Gearbeitete Stunden je Tag ("YYYY-MM-DD" -> Stunden). */
 export function dayWorkHours(
 	entries: Entry[],
 	absenceIds: Set<string>,
 	now = Date.now()
 ): Map<string, number> {
-	const byDay = new Map<string, number>();
-	for (const [day, perActivity] of dayActivityHours(entries, absenceIds, now)) {
-		let sum = 0;
-		for (const h of perActivity.values()) sum += h;
-		byDay.set(day, sum);
-	}
-	return byDay;
+	return sumPerDay(dayActivityHours(entries, absenceIds, now));
 }
 
 /**
