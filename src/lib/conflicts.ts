@@ -38,3 +38,38 @@ export function dayConflict(
 	}
 	return null;
 }
+
+/**
+ * Ueberschneidet sich die Zeitspanne mit einer bestehenden Projektzeit?
+ * Man kann nicht gleichzeitig an zwei Dingen arbeiten.
+ *
+ * Abwesenheiten bleiben aussen vor – die sind tagesgenau (start == end == Tagesmitte)
+ * und haben keine Spanne, die sich ueberschneiden koennte.
+ *
+ * Intervalle sind halboffen: 08:00–12:00 und 12:00–14:00 stossen an, ueberschneiden
+ * sich also nicht. Ein laufender Eintrag (endTs === null) zaehlt bis `now`.
+ *
+ * @returns der erste ueberschneidende Eintrag, sonst null
+ */
+export function overlapConflict(
+	entries: Entry[],
+	candidate: { activityId: string; startTs: number; endTs: number | null },
+	absenceIds: Set<string>,
+	opts: { excludeId?: string; now?: number } = {}
+): Entry | null {
+	// Ein laufender Timer hat noch kein Ende – erst beim Stoppen steht die Spanne fest.
+	if (candidate.endTs == null) return null;
+	if (absenceIds.has(candidate.activityId)) return null;
+
+	const now = opts.now ?? Date.now();
+	const aStart = candidate.startTs;
+	const aEnd = candidate.endTs;
+
+	for (const e of entries) {
+		if (e.id === opts.excludeId) continue;
+		if (absenceIds.has(e.activityId)) continue;
+		const bEnd = e.endTs ?? now;
+		if (aStart < bEnd && e.startTs < aEnd) return e;
+	}
+	return null;
+}
