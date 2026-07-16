@@ -4,6 +4,7 @@ import type { Activity, Entry, EntrySource, Settings } from "./types";
 import { BUILTIN_ABSENCE, BUILTIN_OTHERS, defaultSettings } from "./types";
 import { fmtClock, fmtDate, fmtDateHuman, noonTs } from "./time";
 import { dayConflict, overlapConflict } from "./conflicts";
+import { planBackdate, planNeedsConfirm, type BackdatePlan } from "./backdate";
 import {
 	deleteYear,
 	listEntryMonths,
@@ -40,6 +41,11 @@ class AppState {
 	showOnboarding = $state(false);
 	/** Cache: Monat "YYYY-MM" -> Eintraege */
 	entriesByMonth = $state<Record<string, Entry[]>>({});
+	/**
+	 * Offene Rueckfrage: ein rueckdatierter Start wuerde abgeschlossene Zeiten
+	 * kuerzen oder entfernen. Ein Dialog zeigt den Plan und bestaetigt ihn.
+	 */
+	backdatePrompt = $state<{ activityId: string; start: number; plan: BackdatePlan } | null>(null);
 
 	#tick: ReturnType<typeof setInterval> | null = null;
 
@@ -564,20 +570,48 @@ class AppState {
 			);
 			return;
 		}
+		// Der neue Timer spannt [start, jetzt]. Bei Rueckdatierung ueber einen
+		// Monatswechsel liegen beide Enden in verschiedenen Monatsdateien – beide
+		// muessen geladen sein, sonst bliebe eine angeschnittene Zeit unbemerkt.
+		await this.ensureMonth(monthKey(start));
+		await this.ensureMonth(monthKey(Date.now()));
+
+		const plan = planBackdate(
+			Object.values(this.entriesByMonth).flat(),
+			start,
+			new Set(this.activities.filter((a) => a.isAbsence).map((a) => a.id)),
+			Date.now()
+		);
+
+		// Abgeschlossene Zeiten anzufassen ist eine Ansage – dafuer wird gefragt.
+		// Einen laufenden Timer zu kuerzen ist der normale Wechsel, das laeuft still.
+		if (planNeedsConfirm(plan)) {
+			this.backdatePrompt = { activityId, start, plan };
+			return;
+		}
+		await this.#applyStart(activityId, start, plan);
+	}
+
+	/** Plan anwenden und den Timer setzen. */
+	async #applyStart(activityId: string, start: number, plan: BackdatePlan): Promise<void> {
 		const month = monthKey(start);
 		await this.ensureMonth(month);
 
-		// Wechsel ohne Flackern: alten Timer schließen UND neuen setzen in EINEM
+		// Wechsel ohne Flackern: alte Eintraege anpassen UND neuen setzen in EINEM
 		// synchronen Schritt (kein await dazwischen -> running wird nie kurz null).
 		const months = new Set<string>();
-		for (const [m, list] of Object.entries(this.entriesByMonth)) {
-			for (const e of list) {
-				if (e.endTs === null) {
-					e.endTs = Math.max(e.startTs, start);
-					months.add(m);
-				}
-			}
+		for (const { entry, endTs } of plan.truncate) {
+			entry.endTs = endTs;
+			months.add(monthKey(entry.startTs));
 		}
+		for (const dead of plan.remove) {
+			const m = monthKey(dead.startTs);
+			const list = this.entriesByMonth[m];
+			const i = list?.findIndex((e) => e.id === dead.id) ?? -1;
+			if (i >= 0) list.splice(i, 1);
+			months.add(m);
+		}
+
 		const entry: Entry = { id: uid(), activityId, startTs: start, endTs: null, note: "", source: "timer" };
 		this.entriesByMonth[month].push(entry);
 		this.running = entry;
@@ -585,6 +619,14 @@ class AppState {
 
 		// Persistieren erst danach (beeinflusst die UI nicht mehr).
 		for (const m of months) await this.#saveMonth(m);
+	}
+
+	/** Rueckfrage bestaetigen: Plan anwenden und starten. */
+	async confirmBackdate(): Promise<void> {
+		const p = this.backdatePrompt;
+		if (!p) return;
+		this.backdatePrompt = null;
+		await this.#exclusive(() => this.#applyStart(p.activityId, p.start, p.plan));
 	}
 
 	/** Startet einen Timer, optional rückdatiert (startTs in der Vergangenheit). */
