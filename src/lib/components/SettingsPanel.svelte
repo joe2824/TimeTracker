@@ -70,6 +70,7 @@
 	let workdays = $state([...app.settings.workdays]);
 	let subjectTpl = $state(app.settings.reportSubjectTemplate);
 	let times = $state<string[]>([...app.settings.reminderTimes]);
+	let statsEnabled = $state(app.settings.statsEnabled);
 	let reportReminder = $state(app.settings.reportReminderEnabled);
 	let reportTime = $state(app.settings.reportReminderTime);
 	let reportLead = $state(String(app.settings.reportReminderLeadDays));
@@ -141,7 +142,8 @@
 			rounding: Number(rounding),
 			hoursPerDay: (clockToMin(hoursPerDay) ?? 450) / 60,
 			workdays: [...workdays].sort((a, b) => a - b),
-			reportSubjectTemplate: subjectTpl.trim() || "Stundenerfassung {month} – {name}"
+			reportSubjectTemplate: subjectTpl.trim() || "Stundenerfassung {month} – {name}",
+			statsEnabled
 		});
 		toast.success("Einstellungen gespeichert.");
 	}
@@ -267,6 +269,16 @@
 				<Button variant="outline" size="sm" onclick={() => (times = [...times, "14:00"])}>
 					<PlusIcon class="size-4" /> Uhrzeit
 				</Button>
+			<div class="flex items-center justify-between space-x-2 border-t pt-3">
+				<Label for="stats" class="flex flex-col items-start gap-1">
+					<span class="text-sm font-medium">Auswertung anzeigen</span>
+					<span class="text-muted-foreground text-xs font-normal">
+						Saldo, Stunden je Aktivität und Jahres-Heatmap im Tab „Bericht“. Nur für dich –
+						die E-Mail bleibt unverändert.
+					</span>
+				</Label>
+				<Switch id="stats" bind:checked={statsEnabled} />
+			</div>
 			</div>
 
 			<div class="space-y-2 border-t pt-3">
