@@ -336,7 +336,12 @@
 									</button>
 									<button
 										class="text-muted-foreground hover:text-destructive shrink-0"
-										onclick={() => app.deleteEntry(e)}
+										onclick={async () => {
+											await app.deleteEntry(e);
+											// War es der letzte Eintrag des Monats, ist die Datei jetzt weg –
+											// ohne Refresh bliebe der Monat als Geist in der Auswahl stehen.
+											await refreshMonths();
+										}}
 										title="Löschen"
 									>
 										<Trash2Icon class="size-3.5" />

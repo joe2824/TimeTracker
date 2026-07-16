@@ -27,9 +27,8 @@ vi.mock("@tauri-apps/plugin-fs", () => ({
 	}
 }));
 
-const { deleteYear, listEntryMonths, listEntryYears, loadEntries, saveEntries } = await import(
-	"./store"
-);
+const { deleteYear, listEntryMonths, listEntryYears, loadEntries, pruneEmptyMonthFiles, saveEntries } =
+	await import("./store");
 
 function entry(id: string): Entry {
 	return { id, activityId: "a1", startTs: Date.UTC(2026, 5, 10, 8), endTs: null, note: "", source: "manual" };
@@ -69,13 +68,6 @@ describe("listEntryMonths", () => {
 		await saveEntries("2026-06", [entry("e2")]);
 		await saveEntries("2026-07", [entry("e3")]);
 		expect(await listEntryMonths()).toEqual(["2026-07", "2026-06", "2026-05"]);
-	});
-
-	it("filtert leere Altlast-Dateien aus frueheren Versionen weg", async () => {
-		await saveEntries("2026-06", [entry("e1")]);
-		// So sahen leere Monate vor der Umstellung auf der Platte aus.
-		files.set(file("2026-03"), "[]");
-		expect(await listEntryMonths()).toEqual(["2026-06"]);
 	});
 
 	it("ignoriert fremde Dateien im Datenordner", async () => {
@@ -134,5 +126,29 @@ describe("deleteYear", () => {
 		await saveEntries("2026-01", [entry("a")]);
 		expect(await deleteYear(2019)).toEqual([]);
 		expect(await listEntryMonths()).toEqual(["2026-01"]);
+	});
+});
+
+describe("pruneEmptyMonthFiles", () => {
+	it("entfernt leere Altlast-Dateien frueherer Versionen", async () => {
+		await saveEntries("2026-06", [entry("e1")]);
+		// So sahen leere Monate vor der Umstellung auf der Platte aus.
+		files.set(file("2026-03"), "[]");
+		files.set(file("2025-09"), "[]");
+
+		expect(await pruneEmptyMonthFiles()).toEqual(["2025-09", "2026-03"]);
+		expect(await listEntryMonths()).toEqual(["2026-06"]);
+	});
+
+	it("laesst Monate mit Eintraegen in Ruhe", async () => {
+		await saveEntries("2026-06", [entry("e1")]);
+		expect(await pruneEmptyMonthFiles()).toEqual([]);
+		expect(await listEntryMonths()).toEqual(["2026-06"]);
+	});
+
+	it("fasst fremde Dateien nicht an", async () => {
+		files.set("data/settings.json", "{}");
+		await pruneEmptyMonthFiles();
+		expect(files.has("data/settings.json")).toBe(true);
 	});
 });

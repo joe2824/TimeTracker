@@ -103,18 +103,42 @@ export async function saveEntries(month: string, entries: Entry[]): Promise<void
 	return writeJson(entriesFile(month), entries);
 }
 
-/** Alle Monats-Keys MIT Eintraegen, neueste zuerst. */
+/**
+ * Alle Monats-Keys mit Eintraegen, neueste zuerst.
+ *
+ * Liest nur das Verzeichnis: seit `saveEntries` leere Monate loescht, bedeutet
+ * "Datei da" = "hat Eintraege". Altlasten aus frueheren Versionen raeumt
+ * `pruneEmptyMonthFiles()` einmalig beim Start weg – diese Funktion laeuft nach
+ * jedem Speichern und darf nicht jedes Mal den ganzen Bestand einlesen.
+ */
 export async function listEntryMonths(): Promise<string[]> {
 	await ensureDir();
 	const dir = await readDir(DIR, baseOpts);
-	const keys = dir
-		.map((e) => e.name?.match(MONTH_FILE_RE)?.[1])
-		.filter((m): m is string => m !== undefined);
-	// Altlasten aus frueheren Versionen: leere "[]"-Dateien nicht mitlisten.
-	const filled = await Promise.all(
-		keys.map(async (m) => ((await loadEntries(m)).length > 0 ? m : null))
-	);
-	return filled.filter((m): m is string => m !== null).sort().reverse();
+	const months: string[] = [];
+	for (const e of dir) {
+		const m = e.name?.match(MONTH_FILE_RE);
+		if (m) months.push(m[1]);
+	}
+	return months.sort().reverse();
+}
+
+/**
+ * Einmalig beim Start: leere "[]"-Monatsdateien entfernen, die fruehere Versionen
+ * liegen liessen. Ohne das geisterten die Monate ohne Eintraege durch die Auswahl.
+ */
+export async function pruneEmptyMonthFiles(): Promise<string[]> {
+	await ensureDir();
+	const dir = await readDir(DIR, baseOpts);
+	const pruned: string[] = [];
+	for (const e of dir) {
+		const m = e.name?.match(MONTH_FILE_RE);
+		if (!m) continue;
+		if ((await loadEntries(m[1])).length === 0) {
+			await remove(`${DIR}/${e.name}`, baseOpts);
+			pruned.push(m[1]);
+		}
+	}
+	return pruned.sort();
 }
 
 export interface StoredYear {

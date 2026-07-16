@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
 	import type { MonthReport } from "$lib/report";
-	import { dayActivityHours, dayWorkHours, heatmapYear, targetHours, type HeatmapDay } from "$lib/stats";
+	import { dayActivityHours, heatmapYear, sumPerDay, targetHours } from "$lib/stats";
 	import { fmtHoursClock, monthLabel } from "$lib/time";
 	import type { Entry } from "$lib/types";
 	import * as Card from "$lib/components/ui/card";
@@ -31,13 +31,27 @@
 		new Set(app.activities.filter((a) => a.isAbsence).map((a) => a.id))
 	);
 	const yearEntries = $derived(monthKeys.flatMap((m) => app.monthEntries(m) as Entry[]));
-	const byDay = $derived(dayWorkHours(yearEntries, absenceIds, app.now));
-	const detailByDay = $derived(dayActivityHours(yearEntries, absenceIds, app.now));
+
+	// `app.now` tickt im Sekundentakt. Nur ein laufender Timer IN DIESEM JAHR braucht
+	// ihn (seine Dauer waechst); sonst liefe die komplette Jahresauswertung – zwei
+	// Maps, das Wochenraster und ~370 keyed Spans – jede Sekunde neu. Abgeschlossene
+	// Eintraege haben ein endTs und lesen `now` gar nicht, der Wert ist dann egal.
+	const runningInYear = $derived(
+		app.running !== null && new Date(app.running.startTs).getFullYear() === year
+	);
+	const statsNow = $derived(runningInYear ? app.now : 0);
+
+	// Einmal aufschluesseln, Summen daraus ableiten – nicht zweimal ueber alles laufen.
+	const detailByDay = $derived(dayActivityHours(yearEntries, absenceIds, statsNow));
+	const byDay = $derived(sumPerDay(detailByDay));
 	const weeks = $derived(heatmapYear(year, byDay));
 
 	// EIN Tooltip-Element fuer alle Zellen: ein Jahr hat ~365 davon, eine
-	// Floating-Instanz je Zelle waere reine Verschwendung.
-	let hover = $state<{ day: HeatmapDay; x: number; y: number } | null>(null);
+	// Floating-Instanz je Zelle waere reine Verschwendung. Gemerkt wird nur das
+	// Datum – ein festgehaltener Tag waere eine Kopie und veraltete, sobald ein
+	// Timer an diesem Tag weiterlaeuft.
+	let hover = $state<{ date: string; x: number; y: number } | null>(null);
+	const hoverHours = $derived(hover ? (byDay.get(hover.date) ?? 0) : 0);
 	let tipW = $state(0);
 	let tipH = $state(0);
 
@@ -60,7 +74,7 @@
 	/** Projekte eines Tages, absteigend nach Stunden. */
 	const hoverRows = $derived.by(() => {
 		if (!hover) return [];
-		const perActivity = detailByDay.get(hover.day.date);
+		const perActivity = detailByDay.get(hover.date);
 		if (!perActivity) return [];
 		return [...perActivity.entries()]
 			.map(([id, hours]) => ({ name: app.activityName(id), hours }))
@@ -223,8 +237,8 @@
 											data-level={day.level}
 											role="img"
 											aria-label="{dateLabel(day.date)}: {heatLabel(day.hours)}"
-											onmouseenter={(e) => (hover = { day, x: e.clientX, y: e.clientY })}
-											onmousemove={(e) => (hover = { day, x: e.clientX, y: e.clientY })}
+											onmouseenter={(e) => (hover = { date: day.date, x: e.clientX, y: e.clientY })}
+											onmousemove={(e) => (hover = { date: day.date, x: e.clientX, y: e.clientY })}
 											onmouseleave={() => (hover = null)}
 										></span>
 									{/if}
@@ -253,8 +267,8 @@
 		class="bg-popover text-popover-foreground pointer-events-none fixed z-50 rounded-md border px-2.5 py-1.5 text-xs shadow-md"
 		style="left:{tipPos.left}px; top:{tipPos.top}px"
 	>
-		<div class="font-medium">{dateLabel(hover.day.date)}</div>
-		<div class="text-muted-foreground">{heatLabel(hover.day.hours)}</div>
+		<div class="font-medium">{dateLabel(hover.date)}</div>
+		<div class="text-muted-foreground">{heatLabel(hoverHours)}</div>
 		{#if hoverRows.length > 0}
 			<div class="mt-1 space-y-0.5 border-t pt-1">
 				{#each hoverRows as r (r.name)}

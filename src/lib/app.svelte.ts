@@ -11,6 +11,7 @@ import {
 	loadEntries,
 	loadSettings,
 	monthKey,
+	pruneEmptyMonthFiles,
 	saveActivities,
 	saveEntries,
 	saveSettings,
@@ -48,6 +49,12 @@ class AppState {
 		const firstRun = !(await settingsFileExists());
 		this.activities = await loadActivities();
 		this.settings = await loadSettings();
+		// Altlasten frueherer Versionen einmalig wegraeumen; darf den Start nie kippen.
+		try {
+			await pruneEmptyMonthFiles();
+		} catch (e) {
+			console.error("Aufraeumen leerer Monatsdateien fehlgeschlagen", e);
+		}
 		await this.#seedBuiltins();
 		await this.ensureMonth(this.currentMonth);
 		await this.ensureMonth(prevMonthKey());
@@ -320,7 +327,12 @@ class AppState {
 	}
 
 	async #saveMonth(month: string): Promise<void> {
-		await saveEntries(month, $state.snapshot(this.entriesByMonth[month] ?? []) as Entry[]);
+		const list = this.entriesByMonth[month];
+		// Kein Cache-Eintrag heisst "nicht geladen", nicht "leer". Frueher war das
+		// egal, weil `[]` eine leere Datei schrieb – heute LOESCHT saveEntries sie.
+		// Ohne diese Wache wuerde ein ungeladener Monat still geleert.
+		if (!list) return;
+		await saveEntries(month, $state.snapshot(list) as Entry[]);
 	}
 
 	/** Ganztags-Abwesenheit an diesem Tag vorhanden? (Tagesanteil >= 1) */
