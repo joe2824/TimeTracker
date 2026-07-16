@@ -81,7 +81,7 @@
 		const now = Date.now();
 		const ts = resolveStartTs(presetMin, customStart, now);
 		if (ts == null) {
-			toast.error("Ungültige Startzeit (liegt in der Zukunft?).");
+			toast.error("Unlesbare Startzeit.");
 			return;
 		}
 		await app.startActivity(id, toStartArg(ts, now));

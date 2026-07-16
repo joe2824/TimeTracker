@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
-	import { durationSeconds, fmtClock, fmtDate, fmtHMS } from "$lib/time";
+	import { durationSeconds, fmtClock, fmtDate, fmtDateHuman, fmtHMS, splitAtMidnight } from "$lib/time";
 	import { START_PRESETS, resolveStartTs, toStartArg } from "$lib/startTime";
 	import { Button } from "$lib/components/ui/button";
 	import * as ButtonGroup from "$lib/components/ui/button-group";
@@ -28,12 +28,18 @@
 	/** Gilt gerade die freie Uhrzeit? Steuert Hervorhebung UND Auswertung. */
 	const usingClock = $derived(customStart !== "");
 
-	// Hinweistext (tickt mit app.now); null wenn "jetzt" oder ungültig.
+	// Hinweistext (tickt mit app.now); null wenn "jetzt".
 	const startHint = $derived.by(() => {
-		void app.now;
 		if (!customStart && presetMin === 0) return null;
-		const ts = resolveStartTs(presetMin, customStart);
-		if (ts == null) return "ungültige Uhrzeit";
+		const now = app.now;
+		const ts = resolveStartTs(presetMin, customStart, now);
+		if (ts == null) return "unlesbare Uhrzeit";
+		// Ueber Mitternacht wird der Eintrag geteilt – das gehoert vorher gesagt,
+		// nicht erst hinterher in der Liste entdeckt.
+		const parts = splitAtMidnight(ts, now).length;
+		if (parts > 1) {
+			return `beginnt ${fmtDateHuman(ts)} um ${fmtClock(ts)} – über Mitternacht, wird in ${parts} Einträge geteilt`;
+		}
 		return `Timer beginnt um ${fmtClock(ts)}`;
 	});
 
@@ -41,7 +47,7 @@
 		const now = Date.now();
 		const ts = resolveStartTs(presetMin, customStart, now);
 		if (ts == null) {
-			toast.error("Ungültige Startzeit (liegt in der Zukunft?).");
+			toast.error("Unlesbare Startzeit.");
 			return;
 		}
 		void app.startActivity(activityId, toStartArg(ts, now));

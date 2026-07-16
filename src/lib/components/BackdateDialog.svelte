@@ -1,7 +1,11 @@
 <script lang="ts">
 	// Rueckfrage vor einem rueckdatierten Timer-Start, der bereits erfasste Zeiten
-	// anfasst. Zeigt jede betroffene Zeile einzeln – wer blind bestaetigen muss,
-	// bestaetigt irgendwann das Falsche.
+	// anfasst.
+	//
+	// Muss auch im Tray-Flyout (300x420) funktionieren: dialog-content bringt weder
+	// max-height noch overflow mit, und nebeneinander gestellt bleibt vom Namen bei
+	// der Breite nichts uebrig. Deshalb: feste Hoehengrenze mit scrollender Liste
+	// und je Zeile Name OBEN, Details darunter – das traegt jede Fensterbreite.
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { Button } from "$lib/components/ui/button";
 	import { app } from "$lib/app.svelte";
@@ -11,59 +15,71 @@
 	const p = $derived(app.backdatePrompt);
 	const open = $derived(!!p);
 
-	const hours = (from: number, to: number) => fmtHoursClock(Math.max(0, to - from) / 3600000);
+	const hours = (ms: number) => fmtHoursClock(Math.max(0, ms) / 3600000);
+
+	interface Row {
+		id: string;
+		activityId: string;
+		detail: string;
+		drop: boolean;
+	}
 
 	/** Nur abgeschlossene Zeiten sind der Grund fuer die Rueckfrage. */
-	const cuts = $derived(
-		(p?.plan.truncate ?? [])
+	const rows = $derived<Row[]>([
+		...(p?.plan.truncate ?? [])
 			.filter((t) => t.entry.endTs !== null)
 			.map((t) => ({
 				id: t.entry.id,
 				activityId: t.entry.activityId,
-				von: t.entry.startTs,
-				alt: t.entry.endTs as number,
-				neu: t.endTs
+				detail: `${fmtClock(t.entry.startTs)}–${fmtClock(t.entry.endTs as number)} → ${fmtClock(t.endTs)} · −${hours((t.entry.endTs as number) - t.endTs)} h`,
+				drop: false
+			})),
+		...(p?.plan.remove ?? [])
+			.filter((e) => e.endTs !== null)
+			.map((e) => ({
+				id: e.id,
+				activityId: e.activityId,
+				detail: `${fmtClock(e.startTs)}–${fmtClock(e.endTs as number)} · ${hours((e.endTs as number) - e.startTs)} h`,
+				drop: true
 			}))
+	]);
+
+	const cutCount = $derived(rows.filter((r) => !r.drop).length);
+	const dropCount = $derived(rows.filter((r) => r.drop).length);
+	const summary = $derived(
+		[
+			cutCount > 0 ? `${cutCount} gekürzt` : null,
+			dropCount > 0 ? `${dropCount} gelöscht` : null
+		]
+			.filter(Boolean)
+			.join(", ")
 	);
-	const drops = $derived((p?.plan.remove ?? []).filter((e) => e.endTs !== null));
 </script>
 
 <Dialog.Root {open} onOpenChange={(v) => !v && (app.backdatePrompt = null)}>
-	<Dialog.Content class="sm:max-w-lg">
+	<Dialog.Content
+		class="grid max-h-[calc(100dvh-1.5rem)] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-lg"
+	>
 		<Dialog.Header>
-			<Dialog.Title>Bereits erfasste Zeit anpassen?</Dialog.Title>
+			<Dialog.Title>Erfasste Zeit anpassen?</Dialog.Title>
 			<Dialog.Description>
 				{#if p}
-					„{app.activityName(p.activityId)}" soll um {fmtClock(p.start)} beginnen
-					({fmtDateHuman(p.start)}). Dort liegt schon erfasste Zeit.
+					„{app.activityName(p.activityId)}" ab {fmtClock(p.start)} ({fmtDateHuman(p.start)}) –
+					{summary}.
 				{/if}
 			</Dialog.Description>
 		</Dialog.Header>
 
-		<div class="space-y-3 text-sm">
-			{#each cuts as c (c.id)}
-				<div class="flex items-center justify-between gap-3 border-b pb-2 last:border-0">
-					<span class="flex min-w-0 items-center gap-2">
-						<ActivityDot color={app.activityColor(c.activityId)} />
-						<span class="truncate">{app.activityName(c.activityId)}</span>
-					</span>
-					<span class="text-muted-foreground shrink-0 tabular-nums">
-						{fmtClock(c.von)}–<s>{fmtClock(c.alt)}</s>
-						<strong class="text-foreground">{fmtClock(c.neu)}</strong>
-						· −{hours(c.neu, c.alt)} h
-					</span>
-				</div>
-			{/each}
-
-			{#each drops as d (d.id)}
-				<div class="flex items-center justify-between gap-3 border-b pb-2 last:border-0">
-					<span class="flex min-w-0 items-center gap-2">
-						<ActivityDot color={app.activityColor(d.activityId)} />
-						<span class="truncate">{app.activityName(d.activityId)}</span>
-					</span>
-					<span class="text-destructive shrink-0 tabular-nums">
-						{fmtClock(d.startTs)}–{fmtClock(d.endTs as number)} · wird gelöscht
-					</span>
+		<div class="min-h-0 space-y-2 overflow-y-auto pr-1">
+			{#each rows as r (r.id)}
+				<div class="border-b pb-1.5 last:border-0">
+					<div class="flex items-center gap-2">
+						<ActivityDot color={app.activityColor(r.activityId)} />
+						<span class="min-w-0 flex-1 truncate text-sm">{app.activityName(r.activityId)}</span>
+					</div>
+					<div class="ml-4 text-xs tabular-nums {r.drop ? 'text-destructive' : 'text-muted-foreground'}">
+						{r.detail}{r.drop ? " · wird gelöscht" : ""}
+					</div>
 				</div>
 			{/each}
 		</div>
