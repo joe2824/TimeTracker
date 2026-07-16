@@ -2,7 +2,7 @@
 import { toast } from "svelte-sonner";
 import type { Activity, Entry, EntrySource, Settings } from "./types";
 import { BUILTIN_ABSENCE, BUILTIN_OTHERS, defaultSettings } from "./types";
-import { fmtDate } from "./time";
+import { fmtDate, noonTs } from "./time";
 import { dayConflict } from "./conflicts";
 import {
 	deleteYear,
@@ -592,8 +592,8 @@ class AppState {
 	): Promise<{ added: number; skipped: number }> {
 		const abs = this.absenceActivity;
 		if (!abs) return { added: 0, skipped: 0 };
-		const start = new Date(startDate + "T12:00:00");
-		const end = new Date(endDate + "T12:00:00");
+		const start = new Date(noonTs(startDate));
+		const end = new Date(noonTs(endDate));
 		if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) {
 			return { added: 0, skipped: 0 };
 		}

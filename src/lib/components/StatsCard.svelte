@@ -2,7 +2,7 @@
 	import { app } from "$lib/app.svelte";
 	import type { MonthReport } from "$lib/report";
 	import { dayActivityHours, heatmapYear, sumPerDay, targetHours } from "$lib/stats";
-	import { fmtHoursClock, monthLabel } from "$lib/time";
+	import { fmtHoursClock, monthLabel, noonTs } from "$lib/time";
 	import type { Entry } from "$lib/types";
 	import * as Card from "$lib/components/ui/card";
 	import * as Chart from "$lib/components/ui/chart";
@@ -82,7 +82,7 @@
 	});
 
 	const dateLabel = (iso: string) =>
-		new Date(iso + "T12:00:00").toLocaleDateString("de-DE", {
+		new Date(noonTs(iso)).toLocaleDateString("de-DE", {
 			weekday: "short",
 			day: "2-digit",
 			month: "2-digit",

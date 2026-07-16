@@ -3,6 +3,7 @@
 	import { app } from "$lib/app.svelte";
 	import PlayIcon from "@lucide/svelte/icons/play";
 	import SquareIcon from "@lucide/svelte/icons/square";
+	import ActivityDot from "$lib/components/ActivityDot.svelte";
 
 	let { open = $bindable(false), onNavigate }: { open?: boolean; onNavigate?: (tab: string) => void } =
 		$props();
@@ -102,9 +103,7 @@
 						{:else}
 							<PlayIcon class="size-4 shrink-0" />
 						{/if}
-						{#if it.color}
-							<span class="size-2.5 shrink-0 rounded-full" style={`background:${it.color}`}></span>
-						{/if}
+						<ActivityDot color={it.color} />
 						<span class="flex-1">{it.label}</span>
 						{#if it.hint}
 							<span class="text-muted-foreground shrink-0 font-mono text-[10px]">{it.hint}</span>

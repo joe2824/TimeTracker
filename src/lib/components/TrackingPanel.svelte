@@ -10,6 +10,7 @@
 	import PlayIcon from "@lucide/svelte/icons/play";
 	import StarIcon from "@lucide/svelte/icons/star";
 	import ListIcon from "@lucide/svelte/icons/list";
+	import ActivityDot from "$lib/components/ActivityDot.svelte";
 
 	let { onShowEntries }: { onShowEntries?: () => void } = $props();
 
@@ -170,9 +171,7 @@
 						{:else}
 							<PlayIcon class="size-4 shrink-0" />
 						{/if}
-						{#if a.color}
-							<span class="size-2.5 shrink-0 rounded-full" style={`background:${a.color}`}></span>
-						{/if}
+						<ActivityDot color={a.color} />
 						<span class="flex-1">{a.name}</span>
 						{#if a.shortcut}
 							<span class="shrink-0 font-mono text-[10px] opacity-60">{a.shortcut}</span>
@@ -201,12 +200,7 @@
 					{#each todayEntries as e (e.id)}
 						<li class="flex items-center justify-between py-1.5">
 							<span class="flex items-center gap-2">
-								{#if app.activityColor(e.activityId)}
-									<span
-										class="size-2.5 shrink-0 rounded-full"
-										style={`background:${app.activityColor(e.activityId)}`}
-									></span>
-								{/if}
+								<ActivityDot color={app.activityColor(e.activityId)} />
 								{app.activityName(e.activityId)}
 							</span>
 							<span class="text-muted-foreground font-mono tabular-nums">

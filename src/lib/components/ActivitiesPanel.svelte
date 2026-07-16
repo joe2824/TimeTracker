@@ -18,6 +18,7 @@
 	import EyeOffIcon from "@lucide/svelte/icons/eye-off";
 	import KeyboardIcon from "@lucide/svelte/icons/keyboard";
 	import XIcon from "@lucide/svelte/icons/x";
+	import ShortcutKey from "$lib/components/ShortcutKey.svelte";
 
 	let pasteText = $state("");
 	let newName = $state("");
@@ -279,13 +280,7 @@
 									Taste drücken… (Esc=Abbruch)
 								</span>
 							{:else if a.shortcut}
-								<button
-									class="border-input bg-muted hover:bg-accent rounded border px-1.5 py-0.5 font-mono text-xs"
-									title="Shortcut ändern"
-									onclick={() => (recordingId = a.id)}
-								>
-									{a.shortcut}
-								</button>
+								<ShortcutKey shortcut={a.shortcut} onclick={() => (recordingId = a.id)} />
 								<Button
 									variant="ghost"
 									size="icon"

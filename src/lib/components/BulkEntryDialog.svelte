@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
-	import { fmtDate, parseClock, parseHours } from "$lib/time";
+	import { fmtDate, noonTs, parseClock, parseHours, toTs } from "$lib/time";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
@@ -66,10 +66,6 @@
 		endText = end;
 	}
 
-	function toTs(date: string, time: string): number {
-		return new Date(`${date}T${time}:00`).getTime();
-	}
-
 	async function save() {
 		if (!activityId) {
 			toast.error("Bitte eine Aktivität wählen.");
@@ -77,8 +73,8 @@
 		}
 		commitStart();
 		commitEnd();
-		const a = new Date(`${von}T12:00:00`);
-		const b = new Date(`${bis}T12:00:00`);
+		const a = new Date(noonTs(von));
+		const b = new Date(noonTs(bis));
 		if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime()) || a > b) {
 			toast.error("Ungültiger Datumsbereich.");
 			return;
@@ -104,7 +100,7 @@
 			if (!days.includes(d.getDay())) continue; // nur gewählte Wochentage
 			const date = fmtDate(d.getTime());
 			if (isAbsence) {
-				const ts = toTs(date, "12:00");
+				const ts = noonTs(date);
 				if (await app.addEntry(activityId, ts, ts, "", "manual", fraction)) count++;
 			} else if (useTimes) {
 				let s = toTs(date, start);

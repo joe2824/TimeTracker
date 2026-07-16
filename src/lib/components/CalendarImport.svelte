@@ -15,6 +15,7 @@
 	import LoaderCircleIcon from "@lucide/svelte/icons/loader-circle";
 	import PalmtreeIcon from "@lucide/svelte/icons/palmtree";
 	import CheckIcon from "@lucide/svelte/icons/check";
+	import * as Select from "$lib/components/ui/select";
 
 	let {
 		month,
@@ -286,15 +287,17 @@
 								<CheckIcon class="size-3.5" /> bereits importiert
 							</Badge>
 						{:else}
-							<select
-								bind:value={mapping[i]}
-								class="border-input bg-background h-8 rounded-md border px-2 text-xs"
-							>
-								<option value="">— ignorieren —</option>
-								{#each app.visibleActivities as a (a.id)}
-									<option value={a.id}>{a.name}</option>
-								{/each}
-							</select>
+							<Select.Root type="single" bind:value={mapping[i]}>
+								<Select.Trigger size="sm" class="w-44">
+									{mapping[i] ? app.activityName(mapping[i]) : "— ignorieren —"}
+								</Select.Trigger>
+								<Select.Content>
+									<Select.Item value="" label="— ignorieren —">— ignorieren —</Select.Item>
+									{#each app.visibleActivities as a (a.id)}
+										<Select.Item value={a.id} label={a.name}>{a.name}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
 						{/if}
 					</li>
 				{/each}
