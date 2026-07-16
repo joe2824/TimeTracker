@@ -146,7 +146,7 @@
 			</div>
 			{#if !app.settings.bossEmail}
 				<p class="text-muted-foreground mt-2 text-xs">
-					Hinweis: Keine Chef-E-Mail hinterlegt (Tab „Einstellungen“). Der Entwurf wird ohne
+					Hinweis: Keine Empfänger-Adresse hinterlegt (Tab „Einstellungen“). Der Entwurf wird ohne
 					Empfänger geöffnet.
 				</p>
 			{/if}

@@ -318,8 +318,8 @@
 		</Card.Header>
 		<Card.Content class="space-y-3">
 			<div class="space-y-1">
-				<Label for="boss">E-Mail des Chefs</Label>
-				<Input id="boss" type="email" bind:value={bossEmail} placeholder="chef@firma.de" onchange={saveReport} />
+				<Label for="boss">E-Mail der/des Vorgesetzten</Label>
+				<Input id="boss" type="email" bind:value={bossEmail} placeholder="name@firma.de" onchange={saveReport} />
 			</div>
 			<div class="space-y-1">
 				<Label for="sender">Dein Name (optional)</Label>

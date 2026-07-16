@@ -55,7 +55,7 @@
 
 	const features = [
 		{ icon: TimerIcon, title: "Timer & Tracking", text: "Zeit pro Aktivität starten/stoppen – auch per globalem Hotkey." },
-		{ icon: MailIcon, title: "Monatsbericht", text: "Erfasste Stunden und sende diese, am Monatsende, einfach an den Vorgesetzten." },
+		{ icon: MailIcon, title: "Monatsbericht", text: "Erfasste Stunden und sende diese, am Monatsende, einfach an deine Vorgesetzten." },
 		{ icon: PalmtreeIcon, title: "Abwesenheiten", text: "Urlaub, Krankheit & Co. als ganze oder halbe Tage erfassen." },
 		{ icon: BellIcon, title: "Erinnerungen", text: "Tägliche Erinnerung ans Erfassen und monatlich an den Bericht." }
 	];
@@ -147,11 +147,11 @@
 					<Input id="ob-name" placeholder="z. B. Max Mustermann" bind:value={senderName} />
 				</div>
 				<div class="space-y-1">
-					<Label for="ob-boss">E-Mail des Vorgesetzten</Label>
+					<Label for="ob-boss">E-Mail der/des Vorgesetzten</Label>
 					<Input
 						id="ob-boss"
 						type="email"
-						placeholder="chef@firma.de"
+						placeholder="name@firma.de"
 						bind:value={bossEmail}
 						aria-invalid={emailInvalid}
 					/>

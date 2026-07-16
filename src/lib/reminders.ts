@@ -78,7 +78,7 @@ export function scheduleReportReminder(): void {
 		if (await ensureNotificationPermission()) {
 			sendNotification({
 				title: "TimeTracker – Bericht senden",
-				body: "Monatsende: Stundenbericht an den Chef schicken nicht vergessen."
+				body: "Monatsende: Stundenbericht an die Vorgesetzten schicken nicht vergessen."
 			});
 		}
 		scheduleReportReminder();
