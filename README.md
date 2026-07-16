@@ -31,8 +31,8 @@ Die App aktualisiert sich anschließend selbst (Einstellungen → „Nach Update
 - **Auto-Stop-Warnung** und **Pomodoro/Pausen-Erinnerung** (konfigurierbar).
 - **Globaler Start/Stop-Hotkey** für den zuletzt benutzten Timer.
 - **Befehlspalette** (Cmd/Ctrl+K) – Timer per Fuzzy-Suche starten/stoppen, Tabs wechseln.
-- **Auswertung** (optional, Einstellungen) – Soll/Ist-Saldo, Stunden je Aktivität und
-  Jahres-Heatmap der gearbeiteten Tage. Rein lokal, kein Teil der E-Mail.
+- **Auswertung** – Soll/Ist-Saldo, Stunden je Aktivität und Jahres-Heatmap der gearbeiteten
+  Tage. Rein lokal, kein Teil der E-Mail; in den Einstellungen abschaltbar.
 - **Autostart** mit dem System (versteckt im Tray), **Updater**, Datei-basierte Persistenz.
 
 ## Regeln

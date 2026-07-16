@@ -109,7 +109,7 @@ export const defaultSettings: Settings = {
 	reportReminderTime: "16:00",
 	reportReminderLeadDays: 0,
 	reportSentMonths: [],
-	statsEnabled: false
+	statsEnabled: true
 };
 
 /** Namen der eingebauten Zeilen, die immer im Bericht erscheinen. */

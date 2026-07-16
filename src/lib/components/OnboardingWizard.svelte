@@ -249,16 +249,15 @@
 			{/each}
 		</div>
 
-		<div class="flex items-center justify-between gap-2">
-			<Button variant="ghost" size="sm" disabled={saving} onclick={finish}>Überspringen</Button>
-			<div class="flex gap-2">
-				{#if step > 0}
-					<Button variant="outline" onclick={back} disabled={saving}>Zurück</Button>
-				{/if}
-				<Button onclick={next} disabled={saving}>
-					{step < STEPS - 1 ? "Weiter" : saving ? "Speichere…" : "Los geht's"}
-				</Button>
-			</div>
+		<!-- Kein „Überspringen“: wer den Assistenten wegklickt, sieht nie, was sich
+		     überhaupt einstellen lässt. Jeder Schritt lässt sich leer bestätigen. -->
+		<div class="flex items-center justify-end gap-2">
+			{#if step > 0}
+				<Button variant="outline" onclick={back} disabled={saving}>Zurück</Button>
+			{/if}
+			<Button onclick={next} disabled={saving}>
+				{step < STEPS - 1 ? "Weiter" : saving ? "Speichere…" : "Los geht's"}
+			</Button>
 		</div>
 	</div>
 </div>
