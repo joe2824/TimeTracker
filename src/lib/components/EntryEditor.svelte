@@ -26,6 +26,7 @@
 	import BulkEntryDialog from "$lib/components/BulkEntryDialog.svelte";
 	import VacationRange from "$lib/components/VacationRange.svelte";
 	import MonthSelector from "$lib/components/MonthSelector.svelte";
+	import DayFractionSwitch from "$lib/components/DayFractionSwitch.svelte";
 	import PlusIcon from "@lucide/svelte/icons/plus";
 	import Trash2Icon from "@lucide/svelte/icons/trash-2";
 	import CalendarDaysIcon from "@lucide/svelte/icons/calendar-days";
@@ -440,17 +441,7 @@
 						<Label for="date">Datum</Label>
 						<DateInput id="date" bind:value={draft.date} />
 					</div>
-					<div class="space-y-1">
-						<Label for="frac">Umfang</Label>
-						<select
-							id="frac"
-							bind:value={draft.fraction}
-							class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
-						>
-							<option value={1}>Ganzer Tag ({fmtHoursClock(app.settings.hoursPerDay)} h)</option>
-							<option value={0.5}>Halber Tag ({fmtHoursClock(app.settings.hoursPerDay / 2)} h)</option>
-						</select>
-					</div>
+					<DayFractionSwitch id="frac" bind:value={draft.fraction} />
 				</div>
 			{:else}
 				<div class="grid grid-cols-3 gap-2">
