@@ -27,7 +27,9 @@ vi.mock("@tauri-apps/plugin-fs", () => ({
 	}
 }));
 
-const { listEntryMonths, loadEntries, saveEntries } = await import("./store");
+const { deleteYear, listEntryMonths, listEntryYears, loadEntries, saveEntries } = await import(
+	"./store"
+);
 
 function entry(id: string): Entry {
 	return { id, activityId: "a1", startTs: Date.UTC(2026, 5, 10, 8), endTs: null, note: "", source: "manual" };
@@ -85,5 +87,52 @@ describe("listEntryMonths", () => {
 
 	it("gibt eine leere Liste zurueck, wenn es keine Eintraege gibt", async () => {
 		expect(await listEntryMonths()).toEqual([]);
+	});
+});
+
+describe("listEntryYears", () => {
+	it("gruppiert Monate zu Jahren, neueste zuerst", async () => {
+		await saveEntries("2025-11", [entry("a"), entry("b")]);
+		await saveEntries("2026-01", [entry("c")]);
+		await saveEntries("2026-02", [entry("d"), entry("e"), entry("f")]);
+		expect(await listEntryYears()).toEqual([
+			{ year: 2026, months: 2, entries: 4 },
+			{ year: 2025, months: 1, entries: 2 }
+		]);
+	});
+
+	it("ist leer, wenn nichts erfasst wurde", async () => {
+		expect(await listEntryYears()).toEqual([]);
+	});
+});
+
+describe("deleteYear", () => {
+	it("loescht nur das genannte Jahr", async () => {
+		await saveEntries("2025-12", [entry("a")]);
+		await saveEntries("2026-01", [entry("b")]);
+		await saveEntries("2026-06", [entry("c")]);
+
+		const deleted = await deleteYear(2026);
+
+		expect(deleted).toEqual(["2026-01", "2026-06"]);
+		expect(await listEntryMonths()).toEqual(["2025-12"]);
+		expect(files.has(file("2025-12"))).toBe(true);
+	});
+
+	it("laesst Aktivitaeten und Einstellungen unangetastet", async () => {
+		files.set("data/settings.json", '{"bossEmail":"chef@firma.de"}');
+		files.set("data/activities.json", '[{"id":"a"}]');
+		await saveEntries("2026-01", [entry("a")]);
+
+		await deleteYear(2026);
+
+		expect(files.get("data/settings.json")).toBe('{"bossEmail":"chef@firma.de"}');
+		expect(files.get("data/activities.json")).toBe('[{"id":"a"}]');
+	});
+
+	it("ist bei einem Jahr ohne Daten ein No-op", async () => {
+		await saveEntries("2026-01", [entry("a")]);
+		expect(await deleteYear(2019)).toEqual([]);
+		expect(await listEntryMonths()).toEqual(["2026-01"]);
 	});
 });

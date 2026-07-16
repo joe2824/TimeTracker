@@ -117,20 +117,39 @@ export async function listEntryMonths(): Promise<string[]> {
 	return filled.filter((m): m is string => m !== null).sort().reverse();
 }
 
-/** Monatsdateien aelter als `keepMonths` Monate loeschen. */
-export async function cleanupOldMonths(keepMonths = 12): Promise<string[]> {
+export interface StoredYear {
+	year: number;
+	/** Monate mit Eintraegen in diesem Jahr */
+	months: number;
+	/** Eintraege insgesamt – damit vor dem Loeschen sichtbar ist, was weg waere */
+	entries: number;
+}
+
+/** Jahre mit Eintraegen, neueste zuerst, inkl. Umfang fuer die Loesch-Abfrage. */
+export async function listEntryYears(): Promise<StoredYear[]> {
+	const byYear = new Map<number, StoredYear>();
+	for (const m of await listEntryMonths()) {
+		const year = Number(m.slice(0, 4));
+		const count = (await loadEntries(m)).length;
+		const acc = byYear.get(year) ?? { year, months: 0, entries: 0 };
+		acc.months += 1;
+		acc.entries += count;
+		byYear.set(year, acc);
+	}
+	return [...byYear.values()].sort((a, b) => b.year - a.year);
+}
+
+/** Alle Monatsdateien eines Jahres loeschen. Gibt die geloeschten Monate zurueck. */
+export async function deleteYear(year: number): Promise<string[]> {
 	await ensureDir();
-	const cutoff = new Date();
-	cutoff.setMonth(cutoff.getMonth() - keepMonths);
-	const cutoffKey = monthKey(cutoff.getTime());
 	const deleted: string[] = [];
 	const dir = await readDir(DIR, baseOpts);
 	for (const e of dir) {
 		const m = e.name?.match(MONTH_FILE_RE);
-		if (m && m[1] < cutoffKey) {
+		if (m && m[1].startsWith(`${year}-`)) {
 			await remove(`${DIR}/${e.name}`, baseOpts);
 			deleted.push(m[1]);
 		}
 	}
-	return deleted;
+	return deleted.sort();
 }
