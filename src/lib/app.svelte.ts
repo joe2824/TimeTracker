@@ -2,7 +2,7 @@
 import { toast } from "svelte-sonner";
 import type { Activity, Entry, EntrySource, Settings } from "./types";
 import { BUILTIN_ABSENCE, BUILTIN_OTHERS, defaultSettings } from "./types";
-import { fmtClock, fmtDate, noonTs } from "./time";
+import { fmtClock, fmtDate, fmtDateHuman, noonTs } from "./time";
 import { dayConflict, overlapConflict } from "./conflicts";
 import {
 	deleteYear,
@@ -430,11 +430,13 @@ class AppState {
 			excludeId: candidate.id
 		});
 		if (conflict === "full-day-absence") {
-			toast.error("An diesem Tag ist eine Ganztags-Abwesenheit eingetragen.");
+			toast.error(`Am ${fmtDateHuman(candidate.startTs)} ist eine Ganztags-Abwesenheit eingetragen.`);
 			return true;
 		}
 		if (conflict === "project-time") {
-			toast.error("An diesem Tag gibt es Projektzeiten – nur halber Urlaubstag möglich.");
+			toast.error(
+				`Am ${fmtDateHuman(candidate.startTs)} gibt es Projektzeiten – nur halber Urlaubstag möglich.`
+			);
 			return true;
 		}
 
@@ -554,7 +556,12 @@ class AppState {
 		// Rückdatierter Start: nie in der Zukunft, nie länger als 24 h zurück.
 		const start = Math.min(startTs ?? now, now);
 		if (this.hasFullDayAbsence(start)) {
-			toast.error("An diesem Tag ist eine Ganztags-Abwesenheit eingetragen – kein Timer möglich.");
+			// Den Tag benennen: bei rueckdatiertem Start kann das der VORTAG sein
+			// (kurz nach Mitternacht "vor 60 Min"). "An diesem Tag" liess einen dann
+			// auf heute schauen, wo gar keine Abwesenheit steht.
+			toast.error(
+				`Am ${fmtDateHuman(start)} ist eine Ganztags-Abwesenheit eingetragen – dort kann kein Timer beginnen.`
+			);
 			return;
 		}
 		const month = monthKey(start);
