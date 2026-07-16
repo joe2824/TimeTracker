@@ -8,7 +8,6 @@
 	import ActivityCombobox from "$lib/components/ActivityCombobox.svelte";
 	import WorkdayPicker from "$lib/components/WorkdayPicker.svelte";
 	import DateInput from "$lib/components/DateInput.svelte";
-	import DayFractionSwitch from "$lib/components/DayFractionSwitch.svelte";
 	import { toast } from "svelte-sonner";
 
 	let {
@@ -18,7 +17,6 @@
 
 	// Keine Vorauswahl – der Nutzer wählt die Aktivität selbst.
 	let activityId = $state("");
-	const isAbsence = $derived(app.isAbsenceId(activityId));
 
 	let von = $state("");
 	let bis = $state("");
@@ -32,8 +30,6 @@
 	let endText = $state("16:00");
 	let lumpHours = $state(""); // pauschale Stunden je Tag (wenn keine Uhrzeit)
 
-	let fraction = $state(1); // nur Abwesenheit
-
 	// Beim Öffnen alles auf Standard: keine Aktivität, Datums-Defaults, Arbeitstage.
 	$effect(() => {
 		if (!open) return;
@@ -43,7 +39,6 @@
 		start = startText = "08:00";
 		end = endText = "16:00";
 		lumpHours = "";
-		fraction = 1;
 	});
 
 	/** Uhrzeit beim Verlassen normalisieren; leere Eingabe bleibt leer (= pauschal). */
@@ -85,9 +80,9 @@
 		}
 
 		// Zeitmodus, wenn Von UND Bis Uhrzeit gesetzt sind; sonst pauschal.
-		const useTimes = !isAbsence && start !== "" && end !== "";
+		const useTimes = start !== "" && end !== "";
 		let lump: number | null = null;
-		if (!isAbsence && !useTimes) {
+		if (!useTimes) {
 			lump = parseHours(lumpHours);
 			if (lump == null || lump <= 0) {
 				toast.error("Bitte Von/Bis-Uhrzeit angeben – oder Stunden (pauschal) je Tag.");
@@ -99,10 +94,7 @@
 		for (let d = new Date(a); d <= b; d.setDate(d.getDate() + 1)) {
 			if (!days.includes(d.getDay())) continue; // nur gewählte Wochentage
 			const date = fmtDate(d.getTime());
-			if (isAbsence) {
-				const ts = noonTs(date);
-				if (await app.addEntry(activityId, ts, ts, "", "manual", fraction)) count++;
-			} else if (useTimes) {
+			if (useTimes) {
 				let s = toTs(date, start);
 				let e = toTs(date, end);
 				if (e < s) e += 24 * 3600 * 1000;
@@ -137,7 +129,11 @@
 			<div class="space-y-3">
 				<div class="space-y-1">
 					<Label for="bact">Aktivität</Label>
-					<ActivityCombobox id="bact" bind:value={activityId} options={app.visibleActivities} />
+					<ActivityCombobox
+							id="bact"
+							bind:value={activityId}
+							options={app.visibleActivities.filter((a) => !a.isAbsence)}
+						/>
 				</div>
 
 				<div class="grid grid-cols-2 gap-2">
@@ -159,10 +155,7 @@
 					</p>
 				</div>
 
-				{#if isAbsence}
-					<DayFractionSwitch id="bfrac" label="Umfang je Tag" bind:value={fraction} />
-				{:else}
-					<div class="grid grid-cols-2 gap-2">
+				<div class="grid grid-cols-2 gap-2">
 						<div class="space-y-1">
 							<Label for="bstart">Von (Uhrzeit)</Label>
 							<Input
@@ -202,7 +195,6 @@
 							Stunden je Tag pauschal gebucht.
 						</p>
 					</div>
-				{/if}
 			</div>
 
 			<Dialog.Footer>
