@@ -93,19 +93,28 @@ export async function loadEntries(month: string): Promise<Entry[]> {
 	return readJson<Entry[]>(entriesFile(month), []);
 }
 export async function saveEntries(month: string, entries: Entry[]): Promise<void> {
+	// Ein leerer Monat hinterlaesst keine Datei: sonst bliebe eine "[]"-Datei liegen
+	// und der Monat geisterte ohne Eintraege weiter durch die Monatsauswahl.
+	if (entries.length === 0) {
+		const path = `${DIR}/${entriesFile(month)}`;
+		if (await exists(path, baseOpts)) await remove(path, baseOpts);
+		return;
+	}
 	return writeJson(entriesFile(month), entries);
 }
 
-/** Alle vorhandenen Monats-Keys, neueste zuerst. */
+/** Alle Monats-Keys MIT Eintraegen, neueste zuerst. */
 export async function listEntryMonths(): Promise<string[]> {
 	await ensureDir();
 	const dir = await readDir(DIR, baseOpts);
-	const months: string[] = [];
-	for (const e of dir) {
-		const m = e.name?.match(MONTH_FILE_RE);
-		if (m) months.push(m[1]);
-	}
-	return months.sort().reverse();
+	const keys = dir
+		.map((e) => e.name?.match(MONTH_FILE_RE)?.[1])
+		.filter((m): m is string => m !== undefined);
+	// Altlasten aus frueheren Versionen: leere "[]"-Dateien nicht mitlisten.
+	const filled = await Promise.all(
+		keys.map(async (m) => ((await loadEntries(m)).length > 0 ? m : null))
+	);
+	return filled.filter((m): m is string => m !== null).sort().reverse();
 }
 
 /** Monatsdateien aelter als `keepMonths` Monate loeschen. */

@@ -1,9 +1,8 @@
 <script lang="ts">
-	import { onMount, tick } from "svelte";
+	import { tick } from "svelte";
 	import { toast } from "svelte-sonner";
 	import { app } from "$lib/app.svelte";
 	import { entriesFocus } from "$lib/entriesFocus.svelte";
-	import { listEntryMonths } from "$lib/store";
 	import {
 		clockToMin,
 		durationHours,
@@ -12,7 +11,6 @@
 		fmtDate,
 		fmtHoursClock,
 		minToClock,
-		monthLabel,
 		parseClock,
 		parseHours
 	} from "$lib/time";
@@ -27,15 +25,14 @@
 	import DateInput from "$lib/components/DateInput.svelte";
 	import BulkEntryDialog from "$lib/components/BulkEntryDialog.svelte";
 	import VacationRange from "$lib/components/VacationRange.svelte";
+	import MonthSelector from "$lib/components/MonthSelector.svelte";
 	import PlusIcon from "@lucide/svelte/icons/plus";
 	import Trash2Icon from "@lucide/svelte/icons/trash-2";
 	import CalendarDaysIcon from "@lucide/svelte/icons/calendar-days";
 	import PalmtreeIcon from "@lucide/svelte/icons/palmtree";
-	import ChevronLeftIcon from "@lucide/svelte/icons/chevron-left";
-	import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
 
 	let month = $state(app.currentMonth);
-	let months = $state<string[]>([]);
+	let monthSel = $state<MonthSelector>();
 	let bulkOpen = $state(false);
 	let vacOpen = $state(false);
 	// true, solange der Kalender-Import eine Termin-Vorschau zeigt -> Monatsliste ausblenden.
@@ -126,20 +123,11 @@
 		};
 	}
 
-	async function refreshMonths() {
-		const stored = await listEntryMonths();
-		months = [...new Set([app.currentMonth, month, ...stored])].sort().reverse();
+	/** Monatsliste im Selektor neu einlesen (nach Speichern/Löschen/Import). */
+	function refreshMonths() {
+		return monthSel?.refresh();
 	}
 
-	/** Einen Monat vor/zurück blättern – auch in (noch) leere Monate. */
-	function shiftMonth(delta: number) {
-		const [y, m] = month.split("-").map(Number);
-		const d = new Date(y, m - 1 + delta, 1);
-		month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-		if (!months.includes(month)) months = [...new Set([month, ...months])].sort().reverse();
-	}
-
-	onMount(refreshMonths);
 	$effect(() => {
 		void app.ensureMonth(month);
 	});
@@ -303,38 +291,7 @@
 <div class="space-y-4">
 	{#if !importPreview}
 	<div class="flex flex-wrap items-end justify-between gap-3">
-		<div class="space-y-1">
-			<Label for="month">Monat</Label>
-			<div class="flex items-center gap-1">
-				<Button
-					variant="outline"
-					size="icon"
-					class="size-9 shrink-0"
-					title="Vorheriger Monat"
-					onclick={() => shiftMonth(-1)}
-				>
-					<ChevronLeftIcon class="size-4" />
-				</Button>
-				<select
-					id="month"
-					bind:value={month}
-					class="border-input bg-background h-9 rounded-md border px-3 text-sm"
-				>
-					{#each months as m (m)}
-						<option value={m}>{monthLabel(m)}</option>
-					{/each}
-				</select>
-				<Button
-					variant="outline"
-					size="icon"
-					class="size-9 shrink-0"
-					title="Nächster Monat"
-					onclick={() => shiftMonth(1)}
-				>
-					<ChevronRightIcon class="size-4" />
-				</Button>
-			</div>
-		</div>
+		<MonthSelector bind:this={monthSel} bind:month id="month" />
 		<div class="flex flex-wrap items-center gap-3">
 			<span class="text-muted-foreground text-sm">Σ {fmtHoursClock(totalHours)} h</span>
 			<Button variant="outline" onclick={() => (vacOpen = true)}>
