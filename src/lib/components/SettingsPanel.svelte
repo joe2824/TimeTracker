@@ -31,6 +31,8 @@
 	import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
 	import WrenchIcon from "@lucide/svelte/icons/wrench";
 	import ShortcutKey from "$lib/components/ShortcutKey.svelte";
+	import SavedHint from "$lib/components/SavedHint.svelte";
+	import SettingRow from "$lib/components/SettingRow.svelte";
 
 	const REPO_URL = "https://github.com/joe2824/TimeTracker";
 
@@ -103,7 +105,7 @@
 			pomodoroBreakMin: Math.max(0, Number(pomodoroBreakMin) || 0),
 			shortcutNotify
 		});
-		toast.success("Zeiterfassungs-Einstellungen gespeichert.");
+		savedTracking = Date.now();
 	}
 
 	async function onToggleKey(e: KeyboardEvent) {
@@ -144,6 +146,16 @@
 		}
 	});
 
+	// ---- Automatisches Speichern ----
+	// Kein Speichern-Button: Autostart und Hotkey mussten ohnehin sofort wirken
+	// (OS-API bzw. globale Registrierung), zwei gleich aussehende Schalter mit
+	// zwei Verhalten waren der Bruch. Statt Toast je Aenderung ein kurzer Hinweis
+	// an der Card – ein Toast pro Tastendruck waere Laerm.
+	let savedGeneral = $state(0);
+	let savedTimes = $state(0);
+	let savedTracking = $state(0);
+	let savedSystem = $state(0);
+
 	async function saveGeneral() {
 		await app.updateSettings({
 			bossEmail: bossEmail.trim(),
@@ -154,7 +166,23 @@
 			reportSubjectTemplate: subjectTpl.trim() || "Stundenerfassung {month} – {name}",
 			statsEnabled
 		});
-		toast.success("Einstellungen gespeichert.");
+		savedGeneral = Date.now();
+	}
+
+	/**
+	 * Arbeitszeit je Tag uebernehmen (bei echter Aenderung).
+	 * Unbrauchbare Eingabe springt auf den gespeicherten Wert zurueck, statt still
+	 * den 7:30-Default zu schreiben – beim Autospeichern wuerde sonst schon das
+	 * Leeren des Feldes zum Neutippen die Einstellung ueberschreiben.
+	 */
+	function commitHoursPerDay() {
+		const min = clockToMin(hoursPerDay);
+		if (min == null || min <= 0) {
+			hoursPerDay = minToClock(app.settings.hoursPerDay * 60);
+			return;
+		}
+		hoursPerDay = minToClock(min);
+		void saveGeneral();
 	}
 
 	async function saveTimes() {
@@ -168,7 +196,7 @@
 		scheduleReminders();
 		scheduleReportReminder();
 		await ensureNotificationPermission();
-		toast.success("Erinnerungen aktualisiert.");
+		savedTimes = Date.now();
 	}
 
 	async function toggleAutostart(v: boolean) {
@@ -177,6 +205,7 @@
 			if (v) await enable();
 			else await disable();
 			await app.updateSettings({ autostart: v });
+			savedSystem = Date.now();
 		} catch (e) {
 			autostart = !v;
 			toast.error(`Autostart fehlgeschlagen: ${e}`, { duration: 60000 });
@@ -261,19 +290,22 @@
 
 <div class="grid gap-4 lg:grid-cols-2">
 	<Card.Root>
-		<Card.Header><Card.Title>Bericht & E-Mail</Card.Title></Card.Header>
+		<Card.Header>
+			<Card.Title>Bericht & E-Mail</Card.Title>
+			<Card.Action><SavedHint at={savedGeneral} /></Card.Action>
+		</Card.Header>
 		<Card.Content class="space-y-3">
 			<div class="space-y-1">
 				<Label for="boss">E-Mail des Chefs</Label>
-				<Input id="boss" type="email" bind:value={bossEmail} placeholder="chef@firma.de" />
+				<Input id="boss" type="email" bind:value={bossEmail} placeholder="chef@firma.de" onchange={saveGeneral} />
 			</div>
 			<div class="space-y-1">
 				<Label for="sender">Dein Name (optional)</Label>
-				<Input id="sender" bind:value={senderName} />
+				<Input id="sender" bind:value={senderName} onchange={saveGeneral} />
 			</div>
 			<div class="space-y-1">
 				<Label for="subj">Betreff-Vorlage</Label>
-				<Input id="subj" bind:value={subjectTpl} />
+				<Input id="subj" bind:value={subjectTpl} onchange={saveGeneral} />
 				<p class="text-muted-foreground text-xs">
 					{"{month}"} = Monat, {"{name}"} = dein Name
 				</p>
@@ -283,22 +315,33 @@
 				title="Auswertung anzeigen"
 				description="Saldo, Stunden je Aktivität und Jahres-Heatmap im Tab „Bericht“. Nur für dich – die E-Mail bleibt unverändert."
 				bind:checked={statsEnabled}
+				onCheckedChange={() => saveGeneral()}
 				class="border-t pt-3"
 			/>
-			<Button onclick={saveGeneral}>Speichern</Button>
 		</Card.Content>
 	</Card.Root>
 
 	<Card.Root>
-		<Card.Header><Card.Title>Erinnerungen</Card.Title></Card.Header>
+		<Card.Header>
+			<Card.Title>Erinnerungen</Card.Title>
+			<Card.Action><SavedHint at={savedTimes} /></Card.Action>
+		</Card.Header>
 		<Card.Content class="space-y-3">
 			<p class="text-muted-foreground text-sm">
 				Zu diesen Uhrzeiten erinnert dich die App, deine Zeiten einzutragen.
 			</p>
 			{#each times as _, i (i)}
 				<div class="flex gap-2">
-					<Input type="time" bind:value={times[i]} />
-					<Button variant="ghost" size="icon" onclick={() => (times = times.filter((_, j) => j !== i))}>
+					<Input type="time" bind:value={times[i]} onchange={saveTimes} />
+					<Button
+						variant="ghost"
+						size="icon"
+						title="Uhrzeit entfernen"
+						onclick={() => {
+							times = times.filter((_, j) => j !== i);
+							void saveTimes();
+						}}
+					>
 						<Trash2Icon class="size-4" />
 					</Button>
 				</div>
@@ -315,23 +358,23 @@
 					title="Monatlicher Bericht-Hinweis"
 					description="Am letzten Werktag erinnern, den Bericht zu senden."
 					bind:checked={reportReminder}
+					onCheckedChange={() => saveTimes()}
 				/>
 				{#if reportReminder}
 					<div class="grid grid-cols-2 gap-2">
 						<div class="space-y-1">
 							<Label for="replead">Werktage vorher</Label>
-							<Input id="replead" type="number" min="0" max="10" bind:value={reportLead} />
+							<Input id="replead" type="number" min="0" max="10" bind:value={reportLead} onchange={saveTimes} />
 							<p class="text-muted-foreground text-xs">0 = letzter Werktag.</p>
 						</div>
 						<div class="space-y-1">
 							<Label for="reptime">Uhrzeit</Label>
-							<Input id="reptime" type="time" bind:value={reportTime} />
+							<Input id="reptime" type="time" bind:value={reportTime} onchange={saveTimes} />
 						</div>
 					</div>
 				{/if}
 			</div>
 
-			<Button size="sm" onclick={saveTimes}>Erinnerungen speichern</Button>
 		</Card.Content>
 	</Card.Root>
 
@@ -339,37 +382,39 @@
 		<Card.Header>
 			<Card.Title>Arbeitszeit</Card.Title>
 			<Card.Description>Arbeitstage & -zeit – Basis für Abwesenheiten und Bericht.</Card.Description>
+			<Card.Action><SavedHint at={savedGeneral} /></Card.Action>
 		</Card.Header>
 		<Card.Content class="space-y-3">
 			<div class="space-y-1">
 				<Label>An welchen Tagen arbeitest du?</Label>
-				<WorkdayPicker bind:value={workdays} />
+				<WorkdayPicker bind:value={workdays} onchange={saveGeneral} />
 				<p class="text-muted-foreground text-xs">
 					Nicht-Arbeitstage (z.&nbsp;B. Wochenende) werden beim Kalender-Import und bei
 					Abwesenheits-Zeiträumen übersprungen und tauchen nicht im Bericht auf.
 				</p>
 			</div>
-			<div class="grid grid-cols-2 gap-2">
-				<div class="space-y-1">
-					<Label for="hpd">Stunden / Arbeitstag</Label>
-					<Input id="hpd" type="time" bind:value={hoursPerDay} />
-					<p class="text-muted-foreground text-xs">
-						Als Uhrzeit, z.&nbsp;B. 07:30. Ganzer Abwesenheitstag = dieser Wert.
-					</p>
-				</div>
-				<div class="space-y-1">
-					<Label for="round">Rundung</Label>
-					<Select.Root type="single" bind:value={rounding}>
-						<Select.Trigger id="round" class="w-full">{ROUNDINGS[rounding] ?? rounding}</Select.Trigger>
+			<SettingRow
+				id="hpd"
+				title="Stunden / Arbeitstag"
+				description="Als Uhrzeit, z. B. 07:30. Ganzer Abwesenheitstag = dieser Wert."
+				class="border-t pt-3"
+			>
+				{#snippet control()}
+					<Input id="hpd" type="time" class="w-32" bind:value={hoursPerDay} onchange={commitHoursPerDay} />
+				{/snippet}
+			</SettingRow>
+			<SettingRow id="round" title="Rundung" description="Stunden je Aktivität im Bericht.">
+				{#snippet control()}
+					<Select.Root type="single" bind:value={rounding} onValueChange={() => saveGeneral()}>
+						<Select.Trigger id="round" class="w-48">{ROUNDINGS[rounding] ?? rounding}</Select.Trigger>
 						<Select.Content>
 							{#each Object.entries(ROUNDINGS) as [v, label] (v)}
 								<Select.Item value={v} {label}>{label}</Select.Item>
 							{/each}
 						</Select.Content>
 					</Select.Root>
-				</div>
-			</div>
-			<Button onclick={saveGeneral}>Speichern</Button>
+				{/snippet}
+			</SettingRow>
 		</Card.Content>
 	</Card.Root>
 
@@ -377,24 +422,38 @@
 		<Card.Header>
 			<Card.Title>Zeiterfassung</Card.Title>
 			<Card.Description>Verhalten von Timer, Hinweisen und Hotkey.</Card.Description>
+			<Card.Action><SavedHint at={savedTracking} /></Card.Action>
 		</Card.Header>
 		<Card.Content class="space-y-4">
-			<div class="grid gap-4 sm:grid-cols-2">
-				<div class="space-y-1">
-					<Label for="idle">Leerlauf nachfragen ab (Min, 0 = aus)</Label>
-					<Input id="idle" type="number" min="0" bind:value={idleMin} />
-				</div>
-				<div class="space-y-1">
-					<Label for="maxh">Auto-Stop-Warnung ab (Std, 0 = aus)</Label>
-					<Input id="maxh" type="number" min="0" bind:value={maxHours} />
-				</div>
-			</div>
+			<!-- Ein Rhythmus wie bei den Schaltern darunter: Titel links, Feld rechts.
+			     Vorher ein 2er-Grid mit überlangen Labels („… (Min, 0 = aus)“) – die
+			     Hinweise stehen jetzt in der Erklärungszeile, wo sie hingehören. -->
+			<SettingRow
+				id="idle"
+				title="Leerlauf nachfragen ab"
+				description="Nach so vielen Minuten ohne Eingabe nachfragen. 0 = aus."
+			>
+				{#snippet control()}
+					<Input id="idle" type="number" min="0" class="w-24" bind:value={idleMin} onchange={saveTracking} />
+				{/snippet}
+			</SettingRow>
+
+			<SettingRow
+				id="maxh"
+				title="Auto-Stop-Warnung ab"
+				description="Warnen, wenn ein Timer länger als so viele Stunden läuft. 0 = aus."
+			>
+				{#snippet control()}
+					<Input id="maxh" type="number" min="0" class="w-24" bind:value={maxHours} onchange={saveTracking} />
+				{/snippet}
+			</SettingRow>
 
 			<SettingToggle
 				id="scnotify"
 				title="Hinweis bei Shortcut-Start/Stop"
 				description="Kurze Meldung, verschwindet selbst."
 				bind:checked={shortcutNotify}
+				onCheckedChange={() => saveTracking()}
 			/>
 
 			<SettingToggle
@@ -402,16 +461,17 @@
 				title="Pomodoro"
 				description="Fokus-/Pausen-Zyklus mit Hinweisen (optional)."
 				bind:checked={pomodoroEnabled}
+				onCheckedChange={() => saveTracking()}
 			/>
 			{#if pomodoroEnabled}
 				<div class="grid grid-cols-2 gap-2">
 					<div class="space-y-1">
 						<Label for="pomomin">Fokus (Min)</Label>
-						<Input id="pomomin" type="number" min="1" bind:value={pomodoroMin} />
+						<Input id="pomomin" type="number" min="1" bind:value={pomodoroMin} onchange={saveTracking} />
 					</div>
 					<div class="space-y-1">
 						<Label for="pomobreak">Pause (Min, 0 = aus)</Label>
-						<Input id="pomobreak" type="number" min="0" bind:value={pomodoroBreakMin} />
+						<Input id="pomobreak" type="number" min="0" bind:value={pomodoroBreakMin} onchange={saveTracking} />
 					</div>
 				</div>
 			{/if}
@@ -439,12 +499,14 @@
 				</div>
 			</div>
 
-			<Button size="sm" onclick={saveTracking}>Speichern</Button>
 		</Card.Content>
 	</Card.Root>
 
 	<Card.Root>
-		<Card.Header><Card.Title>System</Card.Title></Card.Header>
+		<Card.Header>
+			<Card.Title>System</Card.Title>
+			<Card.Action><SavedHint at={savedSystem} /></Card.Action>
+		</Card.Header>
 		<Card.Content class="space-y-4">
 			<SettingToggle
 				id="autostart"
