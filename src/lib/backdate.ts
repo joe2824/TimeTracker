@@ -45,12 +45,13 @@ export function planIsEmpty(plan: BackdatePlan): boolean {
 /**
  * Muss vorher gefragt werden?
  *
- * Nur wenn ABGESCHLOSSENE Zeiten betroffen sind. Einen laufenden Timer zu kuerzen
- * ist der ganz normale Wechsel – dafuer jedes Mal einen Dialog zu zeigen waere
- * unertraeglich.
+ * Einen laufenden Timer zu KUERZEN ist der ganz normale Wechsel – dafuer jedes Mal
+ * einen Dialog zu zeigen waere unertraeglich. Ihn ganz zu ENTFERNEN ist es nicht:
+ * wer um 10:30 "ab 09:00" startet, waehrend seit 10:00 ein Timer laeuft, verlaere
+ * dessen halbe Stunde sonst kommentarlos.
+ *
+ * Bei abgeschlossenen Zeiten wird immer gefragt.
  */
 export function planNeedsConfirm(plan: BackdatePlan): boolean {
-	return (
-		plan.truncate.some((t) => t.entry.endTs !== null) || plan.remove.some((e) => e.endTs !== null)
-	);
+	return plan.truncate.some((t) => t.entry.endTs !== null) || plan.remove.length > 0;
 }
