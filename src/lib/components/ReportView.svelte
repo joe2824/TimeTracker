@@ -73,12 +73,31 @@
 		}
 	}
 
+	/**
+	 * Legt die Tabelle als "text/html" UND "text/plain" in die Zwischenablage.
+	 * Nur mit dem text/html-Flavor fuegt Outlook die gerenderte Tabelle ein –
+	 * writeText() allein landet als Quelltext in der Mail.
+	 */
 	async function copyHtml() {
 		try {
-			await navigator.clipboard.writeText(html);
-			toast.success("HTML-Tabelle in die Zwischenablage kopiert.");
+			await navigator.clipboard.write([
+				new ClipboardItem({
+					"text/html": new Blob([html], { type: "text/html" }),
+					"text/plain": new Blob([reportToText(report)], { type: "text/plain" })
+				})
+			]);
+			toast.success("Tabelle kopiert – in Outlook mit Strg+V einfügen.");
+			return;
 		} catch (e) {
-			toast.error(`Kopieren fehlgeschlagen: ${e}`);
+			// Aeltere Webviews ohne ClipboardItem/write: Quelltext ist besser als nichts.
+			try {
+				await navigator.clipboard.writeText(html);
+				toast.success("HTML-Quelltext kopiert.", {
+					description: "Rich-Text wird von diesem System nicht unterstützt."
+				});
+			} catch {
+				toast.error(`Kopieren fehlgeschlagen: ${e}`);
+			}
 		}
 	}
 </script>
