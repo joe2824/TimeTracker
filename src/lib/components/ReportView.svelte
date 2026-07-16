@@ -1,27 +1,19 @@
 <script lang="ts">
-	import { onMount } from "svelte";
 	import { app } from "$lib/app.svelte";
-	import { listEntryMonths } from "$lib/store";
 	import { buildReport, reportToHtml, reportToText } from "$lib/report";
-	import { fmtHoursClock, monthLabel } from "$lib/time";
+	import { fmtHoursClock } from "$lib/time";
 	import { openUrl } from "@tauri-apps/plugin-opener";
 	import { createOutlookDraft, detectOutlook, explainOutlookError, mailtoFallback } from "$lib/outlook";
 	import { Button } from "$lib/components/ui/button";
-	import { Label } from "$lib/components/ui/label";
+	import MonthSelector from "$lib/components/MonthSelector.svelte";
 	import * as Card from "$lib/components/ui/card";
 	import { toast } from "svelte-sonner";
 	import MailIcon from "@lucide/svelte/icons/mail";
 	import CopyIcon from "@lucide/svelte/icons/copy";
 
 	let month = $state(app.currentMonth);
-	let months = $state<string[]>([]);
 	let sending = $state(false);
 
-	async function refreshMonths() {
-		const stored = await listEntryMonths();
-		months = [...new Set([app.currentMonth, month, ...stored])].sort().reverse();
-	}
-	onMount(refreshMonths);
 	$effect(() => {
 		void app.ensureMonth(month);
 	});
@@ -104,18 +96,7 @@
 
 <div class="space-y-4">
 	<div class="flex flex-wrap items-end justify-between gap-3">
-		<div class="space-y-1">
-			<Label for="rmonth">Monat</Label>
-			<select
-				id="rmonth"
-				bind:value={month}
-				class="border-input bg-background h-9 rounded-md border px-3 text-sm"
-			>
-				{#each months as m (m)}
-					<option value={m}>{monthLabel(m)}</option>
-				{/each}
-			</select>
-		</div>
+		<MonthSelector bind:month id="rmonth" />
 		<div class="flex flex-wrap gap-2">
 			<Button variant="outline" onclick={copyHtml}><CopyIcon class="size-4" /> HTML kopieren</Button>
 			<Button onclick={sendToOutlook} disabled={sending}>
