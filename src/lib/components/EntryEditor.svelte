@@ -43,6 +43,11 @@
 
 	const WEEKDAYS = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 
+	// Von/Bis sind Uhrzeiten eines Tages; laeuft Bis vor Von, gilt der Folgetag.
+	// Damit ist die laengste darstellbare Spanne knapp unter 24 h – bei genau 24 h
+	// waere das Ende wieder der Start, also ein 0-Stunden-Eintrag.
+	const MAX_ENTRY_HOURS = 24;
+
 	interface Draft {
 		id: string | null;
 		originalStartTs: number;
@@ -75,11 +80,22 @@
 		const h = durationHours(draft.start, draft.end);
 		dur = h ? String(Math.round(h * 100) / 100).replace(".", ",") : "";
 	}
-	/** Bis aus Von + Stunden-Eingabe ableiten. Akzeptiert "7,5" und "7:30". */
+	/**
+	 * Bis aus Von + Stunden-Eingabe ableiten. Akzeptiert "7,5" und "7:30".
+	 *
+	 * Ueber 24 h wird abgelehnt statt gerechnet: minToClock rechnet modulo 24 h,
+	 * aus "30" wuerde sonst still ein Ende 6 h nach dem Start – die Eingabe kaeme
+	 * als 6-Stunden-Eintrag zurueck, ohne Fehler.
+	 */
 	function applyDur() {
 		const h = parseHours(dur);
 		const a = clockToMin(draft.start);
 		if (h == null || a == null) return;
+		if (h >= MAX_ENTRY_HOURS) {
+			toast.error(`Ein Eintrag muss kürzer als ${MAX_ENTRY_HOURS} Stunden sein.`);
+			recalcDur();
+			return;
+		}
 		draft.end = minToClock(a + h * 60);
 		endText = draft.end;
 	}
