@@ -9,7 +9,9 @@
 		entryHours,
 		fmtClock,
 		fmtDate,
+		fmtDateHuman,
 		fmtHoursClock,
+		midnightSplitHint,
 		minToClock,
 		noonTs,
 		startOfNextDay,
@@ -67,6 +69,22 @@
 	let startText = $state(""); // Roh-Eingabe Von, erst beim Verlassen normalisiert
 	let endText = $state(""); // Roh-Eingabe Bis
 	const draftIsAbsence = $derived(app.isAbsenceId(draft.activityId));
+
+	/**
+	 * Hinweis, dass aus dem Entwurf zwei Einträge werden (Von 23:00 / Bis 01:00).
+	 * Rechnet dieselbe Folgetag-Regel wie save(), sonst zeigte der Hinweis etwas
+	 * anderes an, als am Ende gespeichert wird.
+	 */
+	const splitHint = $derived.by(() => {
+		if (draftIsAbsence) return null;
+		const s = toTs(draft.date, startText || draft.start);
+		let e = toTs(draft.date, endText || draft.end);
+		if (Number.isNaN(s) || Number.isNaN(e)) return null;
+		if (e < s) e = toTs(fmtDate(startOfNextDay(s)), endText || draft.end);
+		if (Number.isNaN(e) || e <= s) return null;
+		const geteilt = midnightSplitHint(s, e);
+		return geteilt ? `Geht ${geteilt}: ${fmtDateHuman(s)} und ${fmtDateHuman(e)}.` : null;
+	});
 
 	// Abwesenheiten werden über den "Abwesenheit"-Button erfasst und tauchen daher
 	// nicht in der Aktivitäts-Auswahl auf – außer beim Bearbeiten eines bestehenden
@@ -496,6 +514,9 @@
 						/>
 					</div>
 				</div>
+				{#if splitHint}
+					<p class="text-muted-foreground text-xs">{splitHint}</p>
+				{/if}
 			{/if}
 
 			</div>

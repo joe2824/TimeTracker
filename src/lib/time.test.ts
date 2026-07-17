@@ -17,6 +17,7 @@ import {
 	parseClock,
 	parseHours,
 	roundHours,
+	midnightSplitHint,
 	splitAtMidnight,
 	startOfNextDay,
 	stepDate,
@@ -425,5 +426,26 @@ describe("splitAtMidnight – manuelle Einträge", () => {
 		// +24h waere hier eine Stunde daneben.
 		const a = toTs("2026-10-25", "23:00");
 		expect(startOfNextDay(a)).toBe(toTs("2026-10-26", "00:00"));
+	});
+});
+
+describe("midnightSplitHint", () => {
+	it("schweigt bei einer Spanne innerhalb eines Tages", () => {
+		expect(midnightSplitHint(toTs("2026-07-16", "08:00"), toTs("2026-07-16", "12:00"))).toBeNull();
+	});
+
+	it("meldet die Teilung bei 23:00–01:00", () => {
+		const hint = midnightSplitHint(toTs("2026-07-16", "23:00"), toTs("2026-07-17", "01:00"));
+		expect(hint).toBe("über Mitternacht, wird in 2 Einträge geteilt");
+	});
+
+	it("nennt die tatsaechliche Anzahl, wenn die App durchlief", () => {
+		const hint = midnightSplitHint(toTs("2026-07-16", "22:00"), toTs("2026-07-19", "03:00"));
+		expect(hint).toBe("über Mitternacht, wird in 4 Einträge geteilt");
+	});
+
+	it("schweigt, wenn eine Spanne exakt an Mitternacht endet", () => {
+		// Sonst warnte der letzte Eintrag des Tages vor einer Teilung, die nicht kommt.
+		expect(midnightSplitHint(toTs("2026-07-16", "22:00"), toTs("2026-07-17", "00:00"))).toBeNull();
 	});
 });

@@ -235,6 +235,22 @@ export function splitAtMidnight(
 	return parts.length > 0 ? parts : [{ startTs, endTs }];
 }
 
+/**
+ * Hinweistext, wenn eine Spanne ueber Mitternacht geht – sonst null.
+ *
+ * Ueber Mitternacht entsteht ein Eintrag JE TAG. Das gehoert vor dem Speichern
+ * gesagt, nicht erst hinterher in der Liste entdeckt.
+ *
+ * Liegt hier und nicht in einer Komponente, weil dieselbe Regel an drei Stellen
+ * gilt: Timer-Start im Hauptfenster, Timer-Start im Tray und der manuelle
+ * Eintrag. Zweimal hat der Hinweis schlicht gefehlt, weil jede Stelle ihren
+ * eigenen Text baute.
+ */
+export function midnightSplitHint(startTs: number, endTs: number): string | null {
+	const parts = splitAtMidnight(startTs, endTs).length;
+	return parts > 1 ? `über Mitternacht, wird in ${parts} Einträge geteilt` : null;
+}
+
 /** Datum deutsch mit Wochentag, z.B. "Do., 16.07.2026" – fuer Meldungen und Tooltips. */
 export function fmtDateHuman(ts: number): string {
 	return new Date(ts).toLocaleDateString("de-DE", {

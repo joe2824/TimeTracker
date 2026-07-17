@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from "svelte";
 	import { app } from "$lib/app.svelte";
-	import { fmtClock, fmtHMS } from "$lib/time";
+	import { fmtClock, fmtHMS, midnightSplitHint } from "$lib/time";
 	import { START_PRESETS, resolveStartTs, toStartArg } from "$lib/startTime";
 	import { Button } from "$lib/components/ui/button";
 	import * as ButtonGroup from "$lib/components/ui/button-group";
@@ -71,10 +71,14 @@
 	const usingClock = $derived(customStart !== "");
 
 	const startHint = $derived.by(() => {
-		void app.now;
+		const now = app.now;
 		if (!customStart && presetMin === 0) return null;
 		const ts = resolveStartTs(presetMin, customStart);
-		return ts == null ? "ungültige Uhrzeit" : `ab ${fmtClock(ts)}`;
+		if (ts == null) return "ungültige Uhrzeit";
+		// Auch im Tray sagen, dass zwei Eintraege entstehen: der Hinweis stand
+		// bisher nur im Hauptfenster, obwohl hier genauso rueckdatiert wird.
+		const geteilt = midnightSplitHint(ts, now);
+		return geteilt ? `ab ${fmtClock(ts)} – ${geteilt}` : `ab ${fmtClock(ts)}`;
 	});
 
 	async function start(id: string) {
@@ -123,7 +127,16 @@
 				</Button>
 			</div>
 		{:else}
-			<div class="text-muted-foreground text-center text-[11px] leading-none">Timer starten</div>
+			<!-- Der Hinweis nimmt den Platz der Ueberschrift ein, statt eine Zeile
+			     zu ergaenzen: der Statusbereich hat feste Hoehe, damit die Liste
+			     darunter nicht springt. Sobald eine Startzeit gewaehlt ist, sagt
+			     der Hinweis ohnehin mehr als "Timer starten". -->
+			<div
+				class="text-muted-foreground line-clamp-2 text-center text-[11px] leading-tight"
+				title={startHint ?? undefined}
+			>
+				{startHint ?? "Timer starten"}
+			</div>
 			<!-- 300px Flyout: xs-Groesse, und das Uhrzeitfeld erscheint erst, wenn es
 			     gebraucht wird. Die gewaehlte Option ist hervorgehoben – vorher
 			     ueberschrieb ein Wert im Feld die Presets still. -->
