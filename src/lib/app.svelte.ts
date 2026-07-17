@@ -57,26 +57,33 @@ class AppState {
 	#tick: ReturnType<typeof setInterval> | null = null;
 
 	async init(): Promise<void> {
-		if (this.loaded) return;
-		// Erster Start? (settings.json noch nicht vorhanden – vor dem ersten Speichern pruefen)
-		const firstRun = !(await settingsFileExists());
-		this.activities = await loadActivities();
-		this.settings = await loadSettings();
-		// Altlasten frueherer Versionen einmalig wegraeumen; darf den Start nie kippen.
-		try {
-			await pruneEmptyMonthFiles();
-		} catch (e) {
-			console.error("Aufraeumen leerer Monatsdateien fehlgeschlagen", e);
+		if (!this.loaded) {
+			// Erster Start? (settings.json noch nicht vorhanden – vor dem ersten Speichern pruefen)
+			const firstRun = !(await settingsFileExists());
+			this.activities = await loadActivities();
+			this.settings = await loadSettings();
+			// Altlasten frueherer Versionen einmalig wegraeumen; darf den Start nie kippen.
+			try {
+				await pruneEmptyMonthFiles();
+			} catch (e) {
+				console.error("Aufraeumen leerer Monatsdateien fehlgeschlagen", e);
+			}
+			await this.#seedBuiltins();
+			await this.ensureMonth(this.currentMonth);
+			await this.ensureMonth(prevMonthKey());
+			this.#findRunning();
+			this.showOnboarding = firstRun;
+			this.loaded = true;
 		}
-		await this.#seedBuiltins();
-		await this.ensureMonth(this.currentMonth);
-		await this.ensureMonth(prevMonthKey());
-		this.#findRunning();
-		this.showOnboarding = firstRun;
-		this.loaded = true;
-		// Einen etwaigen alten Tick zuerst stoppen: bei einem Reload der Webview
-		// (Dev-HMR, Fenster-Neuladen) liefe er sonst gegen eine abgehaengte Instanz
-		// weiter – zwei Ticks, zwei Mitternachts-Wechsel, doppelte Eintraege.
+		// IMMER (neu) starten, auch wenn die Daten schon geladen sind: der Cleanup der
+		// Seite ruft dispose(), und ein frueher Ausstieg oben liess die Uhr danach fuer
+		// immer stehen – kein Tick, keine Live-Dauer, kein Mitternachts-Wechsel.
+		this.#startTick();
+	}
+
+	#startTick(): void {
+		// Erst den alten stoppen: sonst tickten nach einem Remount zwei gegeneinander,
+		// mit zwei Mitternachts-Wechseln und doppelten Eintraegen als Folge.
 		this.dispose();
 		this.#tick = setInterval(() => {
 			this.now = Date.now();
