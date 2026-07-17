@@ -89,8 +89,38 @@ export async function saveSettings(settings: Settings): Promise<void> {
 }
 
 // ---- Eintraege (pro Monat) ----
+/**
+ * Eintraege eines Monats lesen.
+ *
+ * Eine beschaedigte Datei wird NICHT als "leer" behandelt, sondern zur Seite
+ * gelegt: readJson verschluckt Parse-Fehler und liefert [] – pruneEmptyMonthFiles
+ * haette die Datei damit fuer leer gehalten und beim naechsten Start geloescht,
+ * ebenso der naechste Speichervorgang. Ein halb geschriebener Monat (Stromausfall
+ * im Fallback-Zweig von writeJson) waere so lautlos komplett verloren.
+ */
 export async function loadEntries(month: string): Promise<Entry[]> {
-	return readJson<Entry[]>(entriesFile(month), []);
+	const file = entriesFile(month);
+	const path = `${DIR}/${file}`;
+	if (!(await exists(path, baseOpts))) return [];
+	const txt = await readTextFile(path, baseOpts);
+	if (!txt.trim()) return [];
+	try {
+		return JSON.parse(txt) as Entry[];
+	} catch (e) {
+		// Umbenennen statt loeschen – der Name passt dann nicht mehr auf
+		// MONTH_FILE_RE, wird also weder gelistet noch aufgeraeumt.
+		const quarantine = `${path}.beschaedigt-${Date.now()}`;
+		console.error(`${file} ist beschaedigt, abgelegt als ${quarantine}`, e);
+		try {
+			await rename(path, quarantine, {
+				oldPathBaseDir: BaseDirectory.AppData,
+				newPathBaseDir: BaseDirectory.AppData
+			});
+		} catch (renameErr) {
+			console.error("Beschaedigte Datei konnte nicht abgelegt werden", renameErr);
+		}
+		return [];
+	}
 }
 export async function saveEntries(month: string, entries: Entry[]): Promise<void> {
 	// Ein leerer Monat hinterlaesst keine Datei: sonst bliebe eine "[]"-Datei liegen

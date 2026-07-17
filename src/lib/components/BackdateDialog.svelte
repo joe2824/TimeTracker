@@ -12,6 +12,12 @@
 	import { fmtClock, fmtDateHuman, fmtHoursClock } from "$lib/time";
 	import ActivityDot from "$lib/components/ActivityDot.svelte";
 
+	interface Props {
+		/** Nach dem tatsaechlichen Start – das Tray meldet damit dem Hauptfenster. */
+		onapplied?: () => void;
+	}
+	let { onapplied }: Props = $props();
+
 	const p = $derived(app.backdatePrompt);
 	const open = $derived(!!p);
 
@@ -88,7 +94,14 @@
 
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (app.backdatePrompt = null)}>Abbrechen</Button>
-			<Button onclick={() => app.confirmBackdate()}>Anpassen und starten</Button>
+			<Button
+				onclick={async () => {
+					await app.confirmBackdate();
+					onapplied?.();
+				}}
+			>
+				Anpassen und starten
+			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

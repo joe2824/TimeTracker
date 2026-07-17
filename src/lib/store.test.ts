@@ -152,3 +152,37 @@ describe("pruneEmptyMonthFiles", () => {
 		expect(files.has("data/settings.json")).toBe(true);
 	});
 });
+
+describe("beschädigte Monatsdatei", () => {
+	/** Halb geschriebene Datei, z.B. nach Stromausfall im Fallback-Zweig. */
+	const kaputt = '[{"id":"e1","activityId":"a1","startTs":123';
+
+	it("wird nicht als leer gelesen, sondern zur Seite gelegt", async () => {
+		files.set(file("2026-06"), kaputt);
+		expect(await loadEntries("2026-06")).toEqual([]);
+		// Original weg, Inhalt aber unter neuem Namen erhalten.
+		expect(files.has(file("2026-06"))).toBe(false);
+		const abgelegt = [...files.entries()].find(([p]) => p.includes("beschaedigt"));
+		expect(abgelegt?.[1]).toBe(kaputt);
+	});
+
+	it("überlebt pruneEmptyMonthFiles – der Monat wird nicht gelöscht", async () => {
+		files.set(file("2026-06"), kaputt);
+		await pruneEmptyMonthFiles();
+		// Vorher loeschte prune die Datei, weil sie als "[]" gelesen wurde.
+		expect([...files.keys()].some((p) => p.includes("beschaedigt"))).toBe(true);
+	});
+
+	it("taucht danach nicht mehr in der Monatsliste auf", async () => {
+		files.set(file("2026-06"), kaputt);
+		await saveEntries("2026-07", [entry("e1")]);
+		await loadEntries("2026-06"); // legt die kaputte Datei ab
+		expect(await listEntryMonths()).toEqual(["2026-07"]);
+	});
+
+	it("liest eine gültige Datei ganz normal", async () => {
+		await saveEntries("2026-06", [entry("e1")]);
+		expect(await loadEntries("2026-06")).toHaveLength(1);
+		expect([...files.keys()].some((p) => p.includes("beschaedigt"))).toBe(false);
+	});
+});

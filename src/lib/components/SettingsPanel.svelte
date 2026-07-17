@@ -211,7 +211,9 @@
 			reminderTimes: clean,
 			reportReminderEnabled: reportReminder,
 			reportReminderTime: reportTime,
-			reportReminderLeadDays: Math.max(0, Number(reportLead) || 0)
+			// Auch nach oben begrenzen: max="10" am Feld haelt eine getippte 40 nicht
+			// auf, und ein zu grosser Vorlauf schiebt das Ziel in die Vergangenheit.
+			reportReminderLeadDays: Math.min(10, Math.max(0, Number(reportLead) || 0))
 		});
 		scheduleReminders();
 		scheduleReportReminder();

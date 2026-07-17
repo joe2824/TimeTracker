@@ -170,3 +170,27 @@ function escapeHtml(s: string): string {
 		.replace(/>/g, "&gt;")
 		.replace(/"/g, "&quot;");
 }
+
+/**
+ * Erinnerungs-Datum für den Monat von `d`: letzter Werktag, optional `lead`
+ * Werktage davor, auf `time` (HH:MM) gesetzt.
+ */
+export function reportReminderDate(d: Date, time: string, lead: number): Date {
+	// Nicht `h || 16`: Stunde 0 ist falsy, eine Erinnerung um 00:30 feuerte um 16:30.
+	const [rawH, rawM] = time.split(":").map(Number);
+	const h = Number.isFinite(rawH) ? rawH : 16;
+	const m = Number.isFinite(rawM) ? rawM : 0;
+	const day = new Date(d.getFullYear(), d.getMonth() + 1, 0); // letzter Tag des Monats
+	const stepBackToWeekday = () => {
+		while (day.getDay() === 0 || day.getDay() === 6) day.setDate(day.getDate() - 1);
+	};
+	stepBackToWeekday();
+	// `lead` weitere Werktage zurückgehen.
+	for (let i = 0; i < Math.max(0, lead); i++) {
+		day.setDate(day.getDate() - 1);
+		stepBackToWeekday();
+	}
+	day.setHours(h, m, 0, 0);
+	return day;
+}
+
