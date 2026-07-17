@@ -52,6 +52,13 @@ async function writeJson(file: string, data: unknown): Promise<void> {
 		});
 	} catch {
 		await writeTextFile(target, json, baseOpts);
+		// Die temp-Datei liegt sonst fuer immer im Datenordner – und zwar bei
+		// JEDEM Speichern erneut, solange rename scheitert.
+		try {
+			if (await exists(tmp, baseOpts)) await remove(tmp, baseOpts);
+		} catch {
+			/* Aufraeumen darf das Speichern nicht kippen */
+		}
 	}
 }
 
