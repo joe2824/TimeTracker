@@ -49,6 +49,16 @@ class AppState {
 	/** Cache: Monat "YYYY-MM" -> Eintraege */
 	entriesByMonth = $state<Record<string, Entry[]>>({});
 	/**
+	 * Zaehlt bei jeder Aenderung an den Eintragsdateien hoch.
+	 *
+	 * Monatsauswahl und Jahresliste leiten sich vom DATEISYSTEM ab, nicht vom
+	 * Cache – ohne dieses Signal muesste jeder Schreiber jeden Leser kennen und
+	 * von Hand benachrichtigen. Genau daran hing es: ein geloeschtes Jahr blieb in
+	 * der Monatsauswahl stehen, und neue Eintraege tauchten in der Jahresliste
+	 * erst nach einem Neuladen der Seite auf.
+	 */
+	entriesVersion = $state(0);
+	/**
 	 * Offene Rueckfrage: ein rueckdatierter Start wuerde abgeschlossene Zeiten
 	 * kuerzen oder entfernen. Ein Dialog zeigt den Plan und bestaetigt ihn.
 	 */
@@ -114,6 +124,8 @@ class AppState {
 		this.#findRunning();
 		this.now = Date.now();
 		this.loaded = true;
+		// Ein anderes Fenster hat geschrieben – abgeleitete Listen neu lesen.
+		this.entriesVersion++;
 	}
 
 	get currentMonth(): string {
@@ -368,6 +380,7 @@ class AppState {
 		if (this.running && monthKey(this.running.startTs).startsWith(`${year}-`)) {
 			this.running = null;
 		}
+		this.entriesVersion++;
 		return deleted.length;
 	}
 
@@ -378,6 +391,9 @@ class AppState {
 		// Ohne diese Wache wuerde ein ungeladener Monat still geleert.
 		if (!list) return;
 		await saveEntries(month, $state.snapshot(list) as Entry[]);
+		// Einziger Weg, auf dem Eintraege auf die Platte kommen – deshalb sitzt das
+		// Signal hier und nicht bei den Aufrufern.
+		this.entriesVersion++;
 	}
 
 	/** Ganztags-Abwesenheit an diesem Tag vorhanden? (Tagesanteil >= 1) */
