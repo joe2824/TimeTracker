@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
-	import { durationSeconds, fmtClock, fmtDate, fmtDateHuman, fmtHMS, splitAtMidnight } from "$lib/time";
+	import { durationSeconds, fmtClock, fmtDate, fmtDateHuman, fmtHMS, midnightSplitHint } from "$lib/time";
 	import { START_PRESETS, resolveStartTs, toStartArg } from "$lib/startTime";
 	import { Button } from "$lib/components/ui/button";
 	import * as ButtonGroup from "$lib/components/ui/button-group";
@@ -34,12 +34,8 @@
 		const now = app.now;
 		const ts = resolveStartTs(presetMin, customStart, now);
 		if (ts == null) return "unlesbare Uhrzeit";
-		// Ueber Mitternacht wird der Eintrag geteilt – das gehoert vorher gesagt,
-		// nicht erst hinterher in der Liste entdeckt.
-		const parts = splitAtMidnight(ts, now).length;
-		if (parts > 1) {
-			return `beginnt ${fmtDateHuman(ts)} um ${fmtClock(ts)} – über Mitternacht, wird in ${parts} Einträge geteilt`;
-		}
+		const geteilt = midnightSplitHint(ts, now);
+		if (geteilt) return `beginnt ${fmtDateHuman(ts)} um ${fmtClock(ts)} – ${geteilt}`;
 		return `Timer beginnt um ${fmtClock(ts)}`;
 	});
 
