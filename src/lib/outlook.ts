@@ -28,10 +28,18 @@ export async function readOutlookCalendar(start: string, end: string): Promise<C
 	return Array.isArray(res) ? res : [];
 }
 
-/** Fallback: oeffnet den Standard-Mailclient via mailto (ohne HTML-Tabelle). */
+/**
+ * Fallback: oeffnet den Standard-Mailclient via mailto (ohne HTML-Tabelle).
+ *
+ * Nicht URLSearchParams: das kodiert Leerzeichen als "+" (Formular-Kodierung),
+ * mailto nimmt "+" laut RFC 6068 aber woertlich. Der Betreff kam damit als
+ * "Stundenerfassung+Juli+2026+–+Joel+Klein" bei den Vorgesetzten an – und zwar
+ * genau dann, wenn kein klassisches Outlook da ist, also im Fall, fuer den es
+ * diesen Fallback ueberhaupt gibt.
+ */
 export function mailtoFallback(to: string, subject: string, bodyText: string): string {
-	const params = new URLSearchParams({ subject, body: bodyText });
-	return `mailto:${encodeURIComponent(to)}?${params.toString()}`;
+	const q = `subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText)}`;
+	return `mailto:${encodeURIComponent(to)}?${q}`;
 }
 
 export interface OutlookInfo {
