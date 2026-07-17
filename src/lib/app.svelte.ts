@@ -81,7 +81,7 @@ class AppState {
 			await this.#seedBuiltins();
 			await this.ensureMonth(this.currentMonth);
 			await this.ensureMonth(prevMonthKey());
-			this.#findRunning();
+			await this.#findRunning();
 			this.showOnboarding = firstRun;
 			this.loaded = true;
 		}
@@ -121,7 +121,7 @@ class AppState {
 			this.entriesByMonth[m] = await loadEntries(m);
 		}
 		this.running = null;
-		this.#findRunning();
+		await this.#findRunning();
 		this.now = Date.now();
 		this.loaded = true;
 		// Ein anderes Fenster hat geschrieben – abgeleitete Listen neu lesen.
@@ -730,17 +730,46 @@ class AppState {
 		});
 	}
 
-	#findRunning(): void {
-		// Neueste offene Aktivität ist die laufende; etwaige ältere Duplikate schließen.
+	/**
+	 * Den laufenden Eintrag bestimmen: der neueste offene. Aeltere offene bleiben
+	 * zurueck, wenn die App abgestuerzt ist oder ein Start den vorherigen nicht
+	 * sauber beendet hat – die muessen geschlossen werden, sonst laufen sie ewig.
+	 *
+	 * Sie werden GESCHAETZT geschlossen, nicht genullt: frueher bekam so ein
+	 * Eintrag endTs = startTs, also Dauer 0. Damit war echte Arbeitszeit still
+	 * verschwunden – ohne Meldung, und niemand haette es je gemerkt.
+	 *
+	 * Geschaetzt wird nach derselben Regel, die der Bericht ohnehin auf offene
+	 * Eintraege anwendet (siehe `until` in report.ts): bis zum naechsten Start –
+	 * dann wurde die Arbeit gewechselt – hoechstens aber bis zum Ende des eigenen
+	 * Tages. Ohne diese Kappung schluckte ein Eintrag nach einem Absturz von
+	 * Freitag ein ganzes Wochenende.
+	 */
+	async #findRunning(): Promise<void> {
 		const open = this.#openEntries().sort((a, b) => b.startTs - a.startTs);
 		this.running = open[0] ?? null;
-		if (open.length > 1) {
-			const months = new Set<string>();
-			for (const e of open.slice(1)) {
-				e.endTs = e.startTs; // Duplikat ohne Dauer schließen
-				months.add(monthKey(e.startTs));
-			}
-			void Promise.all([...months].map((m) => this.#saveMonth(m)));
+		if (open.length <= 1) return;
+
+		const months = new Set<string>();
+		let geschaetzt = 0;
+		// open[i-1] ist der naechstjuengere: dessen Start beendete open[i].
+		for (let i = 1; i < open.length; i++) {
+			const e = open[i];
+			const end = Math.min(open[i - 1].startTs, startOfNextDay(e.startTs));
+			e.endTs = Math.max(e.startTs, end);
+			if (e.endTs > e.startTs) geschaetzt++;
+			months.add(monthKey(e.startTs));
+		}
+		for (const m of months) await this.#saveMonth(m);
+
+		// Melden statt still korrigieren: die Zeiten sind geraten, nur der Benutzer
+		// weiss, ob sie stimmen.
+		if (geschaetzt > 0) {
+			toast.warning(
+				geschaetzt === 1
+					? "Ein Eintrag lief noch – das Ende wurde geschätzt. Bitte prüfen."
+					: `${geschaetzt} Einträge liefen noch – die Enden wurden geschätzt. Bitte prüfen.`
+			);
 		}
 	}
 
