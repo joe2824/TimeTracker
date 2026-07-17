@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
-	import { fmtDate, noonTs, parseClock, parseHours, toTs } from "$lib/time";
+	import { fmtDate, noonTs, parseClock, parseHours, startOfNextDay, toTs } from "$lib/time";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
@@ -95,9 +95,11 @@
 			if (!days.includes(d.getDay())) continue; // nur gewählte Wochentage
 			const date = fmtDate(d.getTime());
 			if (useTimes) {
-				let s = toTs(date, start);
+				const s = toTs(date, start);
 				let e = toTs(date, end);
-				if (e < s) e += 24 * 3600 * 1000;
+				// Bis vor Von -> Folgetag. startOfNextDay statt +24 h: an DST-Tagen hat
+				// ein Tag 23 oder 25 Stunden. Ueber Mitternacht teilt addEntry selbst.
+				if (e < s) e = toTs(fmtDate(startOfNextDay(s)), end);
 				if (await app.addEntry(activityId, s, e, "", "manual")) count++;
 			} else {
 				const s = toTs(date, "08:00");
