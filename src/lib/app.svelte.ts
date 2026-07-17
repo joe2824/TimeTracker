@@ -2,7 +2,7 @@
 import { toast } from "svelte-sonner";
 import type { Activity, Entry, EntrySource, Settings } from "./types";
 import { BUILTIN_ABSENCE, BUILTIN_OTHERS, defaultSettings } from "./types";
-import { fmtClock, fmtDate, fmtDateHuman, noonTs, splitAtMidnight } from "./time";
+import { fmtClock, fmtDate, fmtDateHuman, noonTs, splitAtMidnight, startOfNextDay } from "./time";
 import { dayConflict, overlapConflict } from "./conflicts";
 import { planBackdate, planNeedsConfirm, type BackdatePlan } from "./backdate";
 import {
@@ -360,6 +360,15 @@ class AppState {
 		);
 	}
 
+	/**
+	 * Eintrag anlegen. Geht er ueber Mitternacht, entsteht je Tag einer – dieselbe
+	 * Regel wie beim Timer: sonst zaehlte die Zeit nach 00:00 zum Vortag und an
+	 * einer Monatsgrenze im falschen Bericht.
+	 *
+	 * Der Konflikt-Check laeuft ueber die GANZE Spanne, bevor geteilt wird.
+	 *
+	 * @returns das erste Tagesstueck, oder null wenn nichts angelegt wurde
+	 */
 	async addEntry(
 		activityId: string,
 		startTs: number,
@@ -368,12 +377,38 @@ class AppState {
 		source: EntrySource = "manual",
 		dayFraction?: number
 	): Promise<Entry | null> {
-		const month = monthKey(startTs);
-		await this.ensureMonth(month);
+		await this.ensureMonth(monthKey(startTs));
+		if (endTs !== null) await this.ensureMonth(monthKey(endTs));
 
 		// Regel: Ganztags-Abwesenheit und Projektzeit am selben Tag schließen sich aus.
 		if (this.#reportConflict({ activityId, startTs, endTs, dayFraction })) return null;
 
+		// Abwesenheiten sind tagesgenau (start == end == Tagesmitte), ein laufender
+		// Timer hat noch kein Ende – beide koennen nicht ueber Mitternacht gehen.
+		const parts =
+			endTs === null || dayFraction != null
+				? [{ startTs, endTs }]
+				: splitAtMidnight(startTs, endTs);
+
+		let first: Entry | null = null;
+		for (const p of parts) {
+			const e = await this.#pushEntry(activityId, p.startTs, p.endTs, note, source, dayFraction);
+			first ??= e;
+		}
+		return first;
+	}
+
+	/** Einen Eintrag ohne weitere Pruefung anlegen und speichern. */
+	async #pushEntry(
+		activityId: string,
+		startTs: number,
+		endTs: number | null,
+		note: string,
+		source: EntrySource,
+		dayFraction?: number
+	): Promise<Entry> {
+		const month = monthKey(startTs);
+		await this.ensureMonth(month);
 		const entry: Entry = { id: uid(), activityId, startTs, endTs, note, source };
 		if (dayFraction != null) entry.dayFraction = dayFraction;
 		this.entriesByMonth[month].push(entry);
@@ -483,6 +518,15 @@ class AppState {
 		const timesUnchanged =
 			!!old && old.startTs === updated.startTs && old.endTs === updated.endTs;
 		if (this.#reportConflict({ ...updated, skipOverlap: timesUnchanged })) return false;
+
+		// Ueber Mitternacht bearbeitet: der Eintrag behaelt den ersten Tag, die
+		// weiteren Tage werden eigene Eintraege – wie beim Anlegen und beim Timer.
+		const rest =
+			updated.endTs !== null && updated.dayFraction == null
+				? splitAtMidnight(updated.startTs, updated.endTs).slice(1)
+				: [];
+		if (rest.length > 0) updated.endTs = startOfNextDay(updated.startTs);
+
 		if (oldMonth === newMonth) {
 			const list = this.entriesByMonth[oldMonth];
 			const i = list.findIndex((e) => e.id === updated.id);
@@ -495,6 +539,10 @@ class AppState {
 			this.entriesByMonth[newMonth].push(updated);
 			await this.#saveMonth(oldMonth);
 			await this.#saveMonth(newMonth);
+		}
+
+		for (const p of rest) {
+			await this.#pushEntry(updated.activityId, p.startTs, p.endTs, updated.note, updated.source);
 		}
 		return true;
 	}

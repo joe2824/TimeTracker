@@ -18,6 +18,7 @@ import {
 	parseHours,
 	roundHours,
 	splitAtMidnight,
+	startOfNextDay,
 	stepDate,
 	toTs
 } from "./time";
@@ -407,5 +408,23 @@ describe("splitAtMidnight", () => {
 	it("gibt bei Laenge 0 ein Stueck zurueck", () => {
 		const a = toTs("2026-07-16", "08:00");
 		expect(splitAtMidnight(a, a)).toEqual([{ startTs: a, endTs: a }]);
+	});
+});
+
+describe("splitAtMidnight – manuelle Einträge", () => {
+	it("teilt einen von Hand angelegten Eintrag 23:00–01:00", () => {
+		// Derselbe Fall wie beim Timer, nur ueber „Eintrag" oder „Mehrere Tage":
+		// vorher zaehlte die ganze Spanne auf den Starttag.
+		const a = toTs("2026-07-16", "23:00");
+		const b = toTs("2026-07-17", "01:00");
+		const parts = splitAtMidnight(a, b);
+		expect(parts.map((p) => fmtDate(p.startTs))).toEqual(["2026-07-16", "2026-07-17"]);
+		expect(parts[0].endTs).toBe(startOfNextDay(a));
+	});
+
+	it("startOfNextDay trifft die Grenze auch am 25-Stunden-Tag", () => {
+		// +24h waere hier eine Stunde daneben.
+		const a = toTs("2026-10-25", "23:00");
+		expect(startOfNextDay(a)).toBe(toTs("2026-10-26", "00:00"));
 	});
 });
