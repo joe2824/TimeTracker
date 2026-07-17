@@ -85,6 +85,10 @@
 			return;
 		}
 		await app.startActivity(id, toStartArg(ts, now));
+		// Rueckfrage offen? Dann ist nichts gestartet – erst der Dialog meldet
+		// (onapplied unten). Sonst haette das Hauptfenster einen Zustand geladen,
+		// in dem gar nichts passiert ist, und den spaeteren Start nie erfahren.
+		if (app.backdatePrompt) return;
 		// Nach dem Start zurück auf "jetzt", damit der Offset nicht am nächsten Start klebt.
 		presetMin = 0;
 		customStart = "";
@@ -225,4 +229,10 @@
 	</div>
 </div>
 
-<BackdateDialog />
+<BackdateDialog
+	onapplied={() => {
+		presetMin = 0;
+		customStart = "";
+		void emit("data-reload");
+	}}
+/>

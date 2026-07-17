@@ -266,9 +266,13 @@
 								{/if}
 							</div>
 						{/if}
+						<!-- Eingebaute Zeilen nicht umbenennbar: #seedBuiltins erkennt sie am
+						     Namen und legte sonst beim naechsten Start eine zweite an. -->
 						<input
-							class="flex-1 bg-transparent text-sm outline-none"
+							class="flex-1 bg-transparent text-sm outline-none disabled:cursor-default disabled:opacity-100"
 							value={a.name}
+							disabled={app.isBuiltinActivity(a)}
+							title={app.isBuiltinActivity(a) ? "Eingebaute Zeile – nicht umbenennbar" : "Umbenennen"}
 							onchange={(e: Event) => app.renameActivity(a.id, (e.target as HTMLInputElement).value)}
 						/>
 						{#if a.hidden && !a.archived}

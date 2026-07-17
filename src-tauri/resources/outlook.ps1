@@ -107,8 +107,10 @@ if ($Action -eq 'draft') {
 }
 
 if ($Action -eq 'calendar') {
-  $startDt = [DateTime]::Parse($Start)
-  $endDt = [DateTime]::Parse($End)
+  $startDt = [DateTime]::Parse($Start).Date
+  # Ende EINSCHLIESSLICH: "2026-07-31" parst zu 31.07. 00:00, der Filter unten ist
+  # <= – ohne das Tagesende fehlte jeder Termin am Monatsletzten im Import.
+  $endDt = [DateTime]::Parse($End).Date.AddDays(1).AddSeconds(-1)
 
   $result = Invoke-WithRetry -Action {
     $ol = Get-Outlook
@@ -136,9 +138,11 @@ if ($Action -eq 'calendar') {
     $acc
   }
 
-  $json = ConvertTo-Json -InputObject $result -Depth 4
-  if (-not $json) { $json = '[]' }
-  elseif ($json[0] -ne '[') { $json = "[$json]" }   # PS 5.1 entpackt Einzel-Objekt
+  # @(...) erzwingt ein Array: PowerShell entpackt ein leeres Ergebnis zu $null
+  # (ConvertTo-Json -> "null", was die alte '[]'-Wache nicht abfing und zu "[null]"
+  # aufgeblasen wurde) und ein einzelnes Objekt zu einem Objekt statt einer Liste.
+  $json = ConvertTo-Json -InputObject @($result) -Depth 4
+  if (-not $json -or $json -eq 'null') { $json = '[]' }
   Write-Output $json
   exit 0
 }

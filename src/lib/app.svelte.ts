@@ -23,10 +23,17 @@ function uid(): string {
 	return crypto.randomUUID();
 }
 
-function prevMonthKey(): string {
-	const d = new Date();
-	d.setMonth(d.getMonth() - 1);
-	return monthKey(d.getTime());
+/**
+ * Der Vormonat.
+ *
+ * Ueber den Monatsersten rechnen, nicht per setMonth() auf dem heutigen Datum:
+ * am 31. rollt "31. Juni" auf den 1. Juli, `setMonth(-1)` lieferte dort also den
+ * AKTUELLEN Monat. Folge waren ein nie geladener Vormonat und ein Bericht-Hinweis,
+ * der ausgerechnet am Monatsletzten verschwand.
+ */
+function prevMonthKey(now = Date.now()): string {
+	const d = new Date(now);
+	return monthKey(new Date(d.getFullYear(), d.getMonth() - 1, 1).getTime());
 }
 
 class AppState {
@@ -67,10 +74,22 @@ class AppState {
 		this.#findRunning();
 		this.showOnboarding = firstRun;
 		this.loaded = true;
+		// Einen etwaigen alten Tick zuerst stoppen: bei einem Reload der Webview
+		// (Dev-HMR, Fenster-Neuladen) liefe er sonst gegen eine abgehaengte Instanz
+		// weiter – zwei Ticks, zwei Mitternachts-Wechsel, doppelte Eintraege.
+		this.dispose();
 		this.#tick = setInterval(() => {
 			this.now = Date.now();
 			void this.#rolloverAtMidnight();
 		}, 1000);
+	}
+
+	/** Tick stoppen. Fuer den Cleanup der Seite. */
+	dispose(): void {
+		if (this.#tick !== null) {
+			clearInterval(this.#tick);
+			this.#tick = null;
+		}
 	}
 
 	/**
@@ -187,12 +206,24 @@ class AppState {
 		return id;
 	}
 
+	/**
+	 * Umbenennen – ausser bei den eingebauten Zeilen.
+	 *
+	 * #seedBuiltins erkennt sie am NAMEN: umbenannt legte der naechste Start eine
+	 * zweite an. Die stuende dann als 0-h-Zeile im Bericht beim Chef und liesse
+	 * sich nicht mehr loeschen (deleteActivity schuetzt Abwesenheiten). Archivieren,
+	 * Ausblenden und Loeschen sind fuer sie ohnehin schon gesperrt.
+	 */
 	async renameActivity(id: string, name: string): Promise<void> {
 		const a = this.activities.find((x) => x.id === id);
-		if (a) {
-			a.name = name.trim() || a.name;
-			await this.persistActivities();
-		}
+		if (!a || a.isAbsence || a.name === BUILTIN_OTHERS) return;
+		a.name = name.trim() || a.name;
+		await this.persistActivities();
+	}
+
+	/** Eingebaute Zeile? Die sind nicht umbenennbar/loeschbar. */
+	isBuiltinActivity(a: Activity): boolean {
+		return a.isAbsence || a.name === BUILTIN_OTHERS;
 	}
 
 	async toggleFavorite(id: string): Promise<void> {
@@ -639,6 +670,18 @@ class AppState {
 			const last = parts[parts.length - 1];
 			const m = monthKey(last.startTs);
 			await this.ensureMonth(m);
+			// Idempotent: gibt es fuer diese Aktivitaet schon einen offenen Eintrag
+			// exakt ab dieser Mitternacht, lief der Wechsel bereits. Sonst entstuende
+			// ein zweiter – zwei offene Eintraege mit identischem Start, die spaeter
+			// beide geschlossen werden und als Duplikat in der Liste stehen.
+			if (
+				this.#openEntries().some(
+					(e) => e.id !== cur.id && e.activityId === cur.activityId && e.startTs === last.startTs
+				)
+			) {
+				for (const mm of months) await this.#saveMonth(mm);
+				return;
+			}
 			// An einem Ganztags-Abwesenheitstag gibt es keine Projektzeit – dort endet
 			// der Timer an der Tagesgrenze, statt die Regel zu umgehen.
 			if (this.hasFullDayAbsence(last.startTs)) {

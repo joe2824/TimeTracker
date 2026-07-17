@@ -100,6 +100,7 @@
 		return () => {
 			unlisteners.forEach((u) => u());
 			stopWatchers();
+			app.dispose();
 		};
 	});
 
