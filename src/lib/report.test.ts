@@ -163,3 +163,63 @@ describe("reportSubject", () => {
 		);
 	});
 });
+
+describe("buildReport – offene Einträge", () => {
+	const P1: Activity = {
+		id: "p1",
+		name: "Projekt 1",
+		sortOrder: 0,
+		archived: false,
+		isAbsence: false
+	};
+	/** Feste Uhr: 17.07.2026, 08:30 – sonst prüfte der Test die Wanduhr. */
+	const NOW = new Date(2026, 6, 17, 8, 30, 0).getTime();
+	const offen = (start: number): Entry => ({
+		id: "x",
+		activityId: "p1",
+		startTs: start,
+		endTs: null,
+		note: "",
+		source: "timer"
+	});
+
+	it("kappt einen vergessenen offenen Eintrag am Ende SEINES Tages", () => {
+		// Vorher zählte der bis Date.now(): ein offener Eintrag vom 1. Juni meldete
+		// über 1000 h – und die gingen so an die Vorgesetzten.
+		const r = buildReport(
+			"2026-06",
+			[P1],
+			[offen(new Date(2026, 5, 1, 8, 0, 0).getTime())],
+			0.5,
+			7.5,
+			[1, 2, 3, 4, 5],
+			NOW
+		);
+		expect(r.workHours).toBe(16); // 08:00 bis Mitternacht
+	});
+
+	it("rechnet einen HEUTE laufenden Timer bis jetzt", () => {
+		const r = buildReport(
+			"2026-07",
+			[P1],
+			[offen(new Date(2026, 6, 17, 6, 30, 0).getTime())],
+			0.5,
+			7.5,
+			[1, 2, 3, 4, 5],
+			NOW
+		);
+		expect(r.workHours).toBe(2); // 06:30 -> 08:30
+	});
+
+	it("bleibt auch ohne now-Argument begrenzt", () => {
+		const r = buildReport(
+			"2026-06",
+			[P1],
+			[offen(new Date(2026, 5, 1, 8, 0, 0).getTime())],
+			0.5,
+			7.5,
+			[1, 2, 3, 4, 5]
+		);
+		expect(r.workHours).toBeLessThanOrEqual(24);
+	});
+});

@@ -1,6 +1,14 @@
 import type { Activity, Entry } from "./types";
 import { DEFAULT_SUBJECT } from "./types";
-import { entryHours, fmtDate, fmtHoursClock, isWorkday, monthLabel, roundHours } from "./time";
+import {
+	entryHours,
+	fmtDate,
+	fmtHoursClock,
+	isWorkday,
+	monthLabel,
+	roundHours,
+	startOfNextDay
+} from "./time";
 
 /**
  * Betreff aus der Vorlage bauen. Platzhalter: {month}, {name}.
@@ -51,9 +59,24 @@ export function buildReport(
 	entries: Entry[],
 	step: number,
 	hoursPerDay: number,
-	workdays?: number[]
+	workdays?: number[],
+	now = Date.now()
 ): MonthReport {
 	const absenceIds = new Set(activities.filter((a) => a.isAbsence).map((a) => a.id));
+
+	/**
+	 * Endzeitpunkt fuer die Stundenrechnung.
+	 *
+	 * Ein offener Eintrag (endTs === null) zaehlte sonst bis `Date.now()` – eine
+	 * vergessene offene Zeile in einem alten Monat meldete damit Hunderte Stunden,
+	 * steigend im Sekundentakt, und die gingen so an die Vorgesetzten. Erreichbar,
+	 * weil beim Start nur der aktuelle und der Vormonat geladen werden: eine
+	 * aeltere offene Zeile findet und schliesst niemand.
+	 *
+	 * Ein laufender Timer wird an Mitternacht geteilt, kann also nie ueber seinen
+	 * eigenen Tag hinausreichen – dort wird gekappt.
+	 */
+	const until = (e: Entry) => (e.endTs === null ? Math.min(now, startOfNextDay(e.startTs)) : now);
 
 	// Abwesenheiten an Nicht-Arbeitstagen (z. B. Wochenende) zaehlen nicht mit –
 	// weder als Abwesenheitsstunden noch als Ganztags-Sperre.
@@ -75,7 +98,7 @@ export function buildReport(
 		if (isAbs && workdays && !isWorkday(e.startTs, workdays)) continue;
 		// Projekteintraege an Ganztags-Abwesenheitstagen ignorieren.
 		if (!isAbs && fullDayAbsenceDays.has(fmtDate(e.startTs))) continue;
-		const h = entryHours(e, isAbs, hoursPerDay);
+		const h = entryHours(e, isAbs, hoursPerDay, until(e));
 		hoursByActivity.set(e.activityId, (hoursByActivity.get(e.activityId) ?? 0) + h);
 	}
 

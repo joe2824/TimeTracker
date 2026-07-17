@@ -1,0 +1,31 @@
+name: CI
+
+# Bei jedem Push und jedem PR. Vorher liefen die Tests nur, wenn jemand sie von
+# Hand startete – ein Release ging raus, egal ob sie gruen waren.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run check
+
+      - name: Tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
