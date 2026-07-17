@@ -1,31 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Entry } from "./types";
+import { fakeFs, files, fsFaults, resetFakeFs } from "./testing/fakeFs";
 
-// In-Memory-Dateisystem als Ersatz fuer tauri-plugin-fs.
-// Schluessel = Pfad relativ zum AppData-Ordner, Wert = Dateiinhalt.
-const files = new Map<string, string>();
-
-vi.mock("@tauri-apps/plugin-fs", () => ({
-	BaseDirectory: { AppData: 1 },
-	exists: async (p: string) => files.has(p) || p === "data",
-	mkdir: async () => {},
-	readDir: async () => [...files.keys()].map((p) => ({ name: p.split("/").pop() })),
-	readTextFile: async (p: string) => {
-		const txt = files.get(p);
-		if (txt === undefined) throw new Error(`ENOENT: ${p}`);
-		return txt;
-	},
-	remove: async (p: string) => {
-		files.delete(p);
-	},
-	rename: async (from: string, to: string) => {
-		files.set(to, files.get(from)!);
-		files.delete(from);
-	},
-	writeTextFile: async (p: string, txt: string) => {
-		files.set(p, txt);
-	}
-}));
+vi.mock("@tauri-apps/plugin-fs", async () => (await import("./testing/fakeFs")).fakeFs);
 
 const { deleteYear, listEntryMonths, listEntryYears, loadEntries, pruneEmptyMonthFiles, saveEntries } =
 	await import("./store");
@@ -36,7 +13,7 @@ function entry(id: string): Entry {
 
 const file = (month: string) => `data/entries-${month}.json`;
 
-beforeEach(() => files.clear());
+beforeEach(resetFakeFs);
 
 describe("saveEntries", () => {
 	it("schreibt einen Monat mit Eintraegen", async () => {
@@ -54,11 +31,6 @@ describe("saveEntries", () => {
 	it("legt fuer einen leeren Monat gar keine Datei an", async () => {
 		await saveEntries("2026-07", []);
 		expect(files.has(file("2026-07"))).toBe(false);
-	});
-
-	it("laesst keine .tmp-Datei zurueck", async () => {
-		await saveEntries("2026-06", [entry("e1")]);
-		expect([...files.keys()].filter((p) => p.includes(".tmp"))).toEqual([]);
 	});
 });
 
@@ -184,5 +156,53 @@ describe("beschädigte Monatsdatei", () => {
 		await saveEntries("2026-06", [entry("e1")]);
 		expect(await loadEntries("2026-06")).toHaveLength(1);
 		expect([...files.keys()].some((p) => p.includes("beschaedigt"))).toBe(false);
+	});
+});
+
+describe("Speichern, wenn rename fehlschlägt", () => {
+	// Der Fallback-Zweig von writeJson lief in keinem Test: der Mock konnte
+	// vorher gar nicht werfen. Genau der Zweig schreibt nicht-atomar.
+	beforeEach(() => {
+		fsFaults.renameThrows = true;
+	});
+
+	it("schreibt trotzdem eine vollständige, lesbare Datei", async () => {
+		await saveEntries("2026-06", [entry("e1"), entry("e2")]);
+		const roh = files.get(file("2026-06"));
+		expect(roh).toBeDefined();
+		expect(() => JSON.parse(roh!)).not.toThrow();
+		expect(await loadEntries("2026-06")).toHaveLength(2);
+	});
+
+	it("überschreibt einen vorhandenen Monat vollständig", async () => {
+		fsFaults.renameThrows = false;
+		await saveEntries("2026-06", [entry("alt1"), entry("alt2"), entry("alt3")]);
+		fsFaults.renameThrows = true;
+		await saveEntries("2026-06", [entry("neu")]);
+		const es = await loadEntries("2026-06");
+		expect(es.map((e) => e.id)).toEqual(["neu"]);
+	});
+
+	it("lässt keine .tmp-Datei zurück", async () => {
+		await saveEntries("2026-06", [entry("e1")]);
+		expect([...files.keys()].filter((p) => p.endsWith(".tmp"))).toEqual([]);
+	});
+});
+
+describe("Rundlauf", () => {
+	it("erhält alle Felder unverändert", async () => {
+		// Der Standard-entry() deckt nur eine Form ab; dayFraction, ein gesetztes
+		// endTs und Sonderzeichen in der Notiz gingen bisher durch keinen Test.
+		const voll: Entry = {
+			id: "e1",
+			activityId: "a1",
+			startTs: Date.UTC(2026, 5, 10, 8),
+			endTs: Date.UTC(2026, 5, 10, 12),
+			note: 'Kunde "Müller & Co" – 50% <fertig>\nZeile zwei',
+			source: "calendar",
+			dayFraction: 0.5
+		};
+		await saveEntries("2026-06", [voll]);
+		expect((await loadEntries("2026-06"))[0]).toEqual(voll);
 	});
 });
