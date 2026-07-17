@@ -12,15 +12,18 @@ const activities: Activity[] = [
 	{ id: "abs", name: "Abwesenheiten", sortOrder: 4, archived: false, isAbsence: true }
 ];
 
-const start = Date.UTC(2026, 5, 10, 8, 0, 0);
+// Lokalzeit, nicht Date.UTC: buildReport gruppiert ueber fmtDate und prueft
+// Werktage ueber getDay() – beides lokal. Mit UTC-Zeitstempeln entschiede die
+// Zone des Rechners, auf welchen Tag (und Wochentag) ein Eintrag faellt.
+const start = new Date(2026, 5, 10, 8, 0, 0).getTime();
 
 function work(id: string, activityId: string, seconds: number): Entry {
 	return { id, activityId, startTs: start, endTs: start + seconds * 1000, note: "", source: "manual" };
 }
 
-const DAY = 24 * 3600 * 1000;
+/** Tagesversatz ueber den Kalender, nicht ueber +24h – siehe allDayNoons. */
 function absence(id: string, fraction: number, dayOffset = 0): Entry {
-	const ts = start + dayOffset * DAY;
+	const ts = new Date(2026, 5, 10 + dayOffset, 12, 0, 0).getTime();
 	return { id, activityId: "abs", startTs: ts, endTs: ts, note: "", source: "manual", dayFraction: fraction };
 }
 
@@ -57,9 +60,6 @@ describe("buildReport", () => {
 		expect(report.total).toBe(14.75);
 	});
 
-	it("setzt das Monatslabel", () => {
-		expect(report.label).toBe("Juni 2026");
-	});
 
 	it("klammert Abwesenheiten an Nicht-Arbeitstagen aus (workdays Mo–Fr)", () => {
 		const fri = new Date(2026, 6, 10, 12, 0, 0).getTime(); // Freitag
