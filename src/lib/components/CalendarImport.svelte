@@ -20,9 +20,8 @@
 
 	let {
 		month,
-		onimported,
 		previewActive = $bindable(false)
-	}: { month: string; onimported: () => void; previewActive?: boolean } = $props();
+	}: { month: string; previewActive?: boolean } = $props();
 
 	let loading = $state(false);
 	let applying = $state(false);
@@ -186,7 +185,6 @@
 		events = [];
 		loaded = false;
 		active = false; // zurück zur Normalansicht
-		onimported();
 	}
 
 	function busyLabel(s: number): string {

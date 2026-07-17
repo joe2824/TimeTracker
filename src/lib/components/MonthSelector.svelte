@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from "svelte";
 	import { app } from "$lib/app.svelte";
 	import { listEntryMonths } from "$lib/store";
 	import { monthLabel } from "$lib/time";
@@ -21,11 +20,13 @@
 	/** Monate mit Eintraegen (von der Platte). */
 	let stored = $state<string[]>([]);
 
-	/** Monatsliste neu einlesen – nach Speichern/Loeschen/Import aufrufen. */
-	export async function refresh(): Promise<void> {
-		stored = await listEntryMonths();
-	}
-	onMount(refresh);
+	// Neu lesen, sobald sich Eintraege geaendert haben – egal wo. Vorher musste
+	// jeder Schreiber hier von Hand Bescheid sagen: ein in den Einstellungen
+	// geloeschtes Jahr blieb deshalb bis zum Neuladen der Seite in der Auswahl.
+	$effect(() => {
+		app.entriesVersion;
+		void listEntryMonths().then((m) => (stored = m));
+	});
 
 	// Abgeleitet statt mutiert: dadurch kann sich kein leerer Monat dauerhaft in die
 	// Liste schreiben – er verschwindet, sobald man ihn verlaesst. Aktueller und

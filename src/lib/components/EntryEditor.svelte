@@ -36,7 +36,6 @@
 	import PalmtreeIcon from "@lucide/svelte/icons/palmtree";
 
 	let month = $state(app.currentMonth);
-	let monthSel = $state<MonthSelector>();
 	let bulkOpen = $state(false);
 	let vacOpen = $state(false);
 	// true, solange der Kalender-Import eine Termin-Vorschau zeigt -> Monatsliste ausblenden.
@@ -144,11 +143,6 @@
 		};
 	}
 
-	/** Monatsliste im Selektor neu einlesen (nach Speichern/Löschen/Import). */
-	function refreshMonths() {
-		return monthSel?.refresh();
-	}
-
 	$effect(() => {
 		void app.ensureMonth(month);
 	});
@@ -160,7 +154,6 @@
 		if (month !== targetMonth) {
 			month = targetMonth;
 			await app.ensureMonth(targetMonth);
-			await refreshMonths();
 		}
 		await tick(); // Warten, bis die Tage neu gerendert sind.
 		document
@@ -293,13 +286,11 @@
 		dialogOpen = false;
 		// Auf den Monat des gespeicherten Eintrags springen, damit er sichtbar ist.
 		month = draft.date.slice(0, 7);
-		await refreshMonths();
 	}
 
 	/** Nach Speichern aus einem Unterdialog: ggf. auf dessen Monat springen + neu laden. */
 	function afterExternalSave(m?: string) {
 		if (m) month = m;
-		void refreshMonths();
 	}
 
 	function entryLabel(e: Entry): string {
@@ -315,7 +306,7 @@
 <div class="space-y-4">
 	{#if !importPreview}
 	<div class="flex flex-wrap items-end justify-between gap-3">
-		<MonthSelector bind:this={monthSel} bind:month id="month" />
+		<MonthSelector bind:month id="month" />
 		<div class="flex flex-wrap items-center gap-3">
 			<span class="text-muted-foreground text-sm">Σ {fmtHoursClock(totalHours)} h</span>
 			<Button variant="outline" onclick={() => (vacOpen = true)}>
@@ -387,12 +378,7 @@
 										variant="ghost"
 										size="icon-xs"
 										class="text-muted-foreground hover:text-destructive shrink-0"
-										onclick={async () => {
-											await app.deleteEntry(e);
-											// War es der letzte Eintrag des Monats, ist die Datei jetzt weg –
-											// ohne Refresh bliebe der Monat als Geist in der Auswahl stehen.
-											await refreshMonths();
-										}}
+										onclick={() => app.deleteEntry(e)}
 										title="Löschen"
 									>
 										<Trash2Icon />
@@ -425,7 +411,7 @@
 	</Card.Root>
 	{/if}
 
-	<CalendarImport {month} onimported={refreshMonths} bind:previewActive={importPreview} />
+	<CalendarImport {month} bind:previewActive={importPreview} />
 </div>
 
 <BulkEntryDialog bind:open={bulkOpen} onsaved={afterExternalSave} />

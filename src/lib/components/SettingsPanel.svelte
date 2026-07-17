@@ -241,10 +241,13 @@
 	let yearToDelete = $state<StoredYear | null>(null);
 	let deleting = $state(false);
 
-	async function refreshYears() {
-		years = await listEntryYears();
-	}
-	onMount(refreshYears);
+	// Neu lesen, sobald sich Eintraege geaendert haben – egal wo. Vorher lief das
+	// nur beim Mount und nach dem Loeschen hier: neue Eintraege liessen das Jahr
+	// erst nach einem Neuladen der Seite wieder auftauchen.
+	$effect(() => {
+		app.entriesVersion;
+		void listEntryYears().then((y) => (years = y));
+	});
 
 	async function confirmDeleteYear() {
 		const target = yearToDelete;
@@ -252,7 +255,6 @@
 		deleting = true;
 		try {
 			const months = await app.deleteYearEntries(target.year);
-			await refreshYears();
 			toast.success(`${target.year} gelöscht (${months} Monatsdatei${months === 1 ? "" : "en"}).`);
 			yearToDelete = null;
 		} catch (e) {
