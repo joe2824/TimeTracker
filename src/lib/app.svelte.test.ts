@@ -142,6 +142,52 @@ describe("deleteYearEntries", () => {
 	});
 });
 
+describe("Zurückgebliebene offene Einträge (Absturz)", () => {
+	/** Zustand von Platte lesen – der Weg, auf dem #findRunning läuft. */
+	async function reloadAt(now: number, entries: Entry[]) {
+		reset({ "2026-07": entries });
+		app.entriesByMonth = {};
+		files.set("data/activities.json", JSON.stringify(ACTIVITIES));
+		app.now = now; // reload() liest currentMonth hieraus, bevor es now neu setzt
+		await app.reload();
+	}
+
+	it("schließt einen zurückgebliebenen Eintrag am nächsten Start – statt ihn zu nullen", async () => {
+		// Der Klassiker: Absturz um 12, danach neu gestartet. Der 09–12-Block ist
+		// echte Arbeit und bekam frueher endTs = startTs, also Dauer 0.
+		await reloadAt(at(17, 15), [entry("alt", P1, at(17, 9), null), entry("neu", P2, at(17, 12), null)]);
+
+		const alt = onDisk("2026-07").find((e) => e.id === "alt")!;
+		expect(alt.endTs).toBe(at(17, 12)); // nicht at(17, 9)
+		expect(app.running?.id).toBe("neu"); // der neueste läuft weiter
+	});
+
+	it("kappt am eigenen Tagesende, statt ein Wochenende zu schlucken", async () => {
+		// Absturz am Freitag, App erst Montag wieder auf. Ohne Kappung stuenden
+		// hier 72 Stunden.
+		await reloadAt(at(20, 10), [entry("fr", P1, at(17, 9), null), entry("mo", P2, at(20, 8), null)]);
+
+		const fr = onDisk("2026-07").find((e) => e.id === "fr")!;
+		expect(fr.endTs).toBe(at(18, 0)); // Mitternacht des eigenen Tages
+	});
+
+	it("lässt einen echten Doppelstart bei Dauer 0", async () => {
+		// Gleicher Zeitstempel = versehentlich zweimal gestartet, keine Arbeitszeit.
+		await reloadAt(at(17, 15), [entry("a", P1, at(17, 9), null), entry("b", P2, at(17, 9), null)]);
+
+		const geschlossen = onDisk("2026-07").filter((e) => e.endTs !== null);
+		expect(geschlossen).toHaveLength(1);
+		expect(geschlossen[0].endTs).toBe(geschlossen[0].startTs);
+	});
+
+	it("rührt einen einzelnen laufenden Eintrag nicht an", async () => {
+		await reloadAt(at(17, 15), [entry("r", P1, at(17, 9), null)]);
+
+		expect(app.running?.id).toBe("r");
+		expect(onDisk("2026-07")[0].endTs).toBeNull();
+	});
+});
+
 describe("Teilung respektiert Ganztags-Abwesenheiten", () => {
 	it("legt kein Folgetag-Stück an, wenn der neue Tag ganztags abwesend ist", async () => {
 		// Sonst umginge die Mitternachts-Teilung die Regel, die #reportConflict
