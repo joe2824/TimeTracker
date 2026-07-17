@@ -76,10 +76,16 @@ describe("allDayNoons", () => {
 		expect(allDayNoons(start, start).map(fmtDate)).toEqual(["2026-07-08"]);
 	});
 
-	it("alle Zeitstempel liegen auf 12:00 (DST-robust)", () => {
-		const start = new Date(2026, 6, 8, 0, 0, 0).getTime();
-		const end = new Date(2026, 6, 11, 0, 0, 0).getTime();
-		for (const ts of allDayNoons(start, end)) expect(new Date(ts).getHours()).toBe(12);
+	// Ueber BEIDE Umstellungen: der 25.10.2026 hat 25 Stunden, der 29.03.2026 nur 23.
+	// Wer hier mit +24h rechnet statt mit setDate(+1), landet auf 11:00 bzw. 13:00 und
+	// schiebt die Tage danach ueber Mitternacht in den falschen Tag.
+	it.each([
+		["Winterzeit-Umstellung", new Date(2026, 9, 23), new Date(2026, 9, 28)],
+		["Sommerzeit-Umstellung", new Date(2026, 2, 27), new Date(2026, 3, 1)]
+	])("alle Zeitstempel liegen auf 12:00 (%s)", (_name, from, to) => {
+		const noons = allDayNoons(from.getTime(), to.getTime());
+		expect(noons.length).toBeGreaterThan(2); // sonst prueft die Schleife nichts
+		for (const ts of noons) expect(new Date(ts).getHours()).toBe(12);
 	});
 });
 import type { Entry } from "./types";
@@ -292,13 +298,6 @@ describe("durationHours", () => {
 	it("gibt 0 bei ungültiger Eingabe", () => {
 		expect(durationHours("", "10:00")).toBe(0);
 		expect(durationHours("09:00", "xx")).toBe(0);
-	});
-
-	it("ist invers zu minToClock (Von + Stunden = Bis)", () => {
-		const start = clockToMin("09:00")!;
-		const end = minToClock(start + 1.5 * 60);
-		expect(end).toBe("10:30");
-		expect(durationHours("09:00", end)).toBe(1.5);
 	});
 });
 

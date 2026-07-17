@@ -3,8 +3,12 @@ import { dayConflict, overlapConflict } from "./conflicts";
 import type { Entry } from "./types";
 
 const ABS = "abs";
-const DAY = Date.UTC(2026, 5, 10, 8, 0, 0);
-const NEXT = DAY + 24 * 3600 * 1000;
+// Lokalzeit, nicht Date.UTC: dayConflict gruppiert ueber fmtDate, also nach dem
+// LOKALEN Tag. Mit UTC-Zeitstempeln haengt es an der Zone des Rechners, ob zwei
+// Eintraege ueberhaupt auf denselben Tag fallen – der Test prueft dann anderes,
+// als er behauptet. Aus demselben Grund kein "+24h" fuer den Folgetag.
+const DAY = new Date(2026, 5, 10, 8, 0, 0).getTime();
+const NEXT = new Date(2026, 5, 11, 8, 0, 0).getTime();
 
 function e(id: string, activityId: string, startTs: number, dayFraction?: number): Entry {
 	const entry: Entry = { id, activityId, startTs, endTs: startTs, note: "", source: "manual" };

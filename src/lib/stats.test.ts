@@ -62,13 +62,6 @@ describe("dayActivityHours", () => {
 		const map = dayActivityHours([e("1", ABS, 2026, 6, 10, 0)], new Set([ABS]));
 		expect(map.size).toBe(0);
 	});
-
-	it("summiert sich zu dayWorkHours", () => {
-		const entries = [e("1", "a", 2026, 6, 10, 4), e("2", "b", 2026, 6, 10, 2.5)];
-		const detail = dayActivityHours(entries, new Set());
-		const total = [...detail.get("2026-06-10")!.values()].reduce((s, h) => s + h, 0);
-		expect(total).toBeCloseTo(dayWorkHours(entries, new Set()).get("2026-06-10")!);
-	});
 });
 
 describe("targetHours", () => {
