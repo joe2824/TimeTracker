@@ -1,7 +1,7 @@
 // Reine Statistik-Logik fuer die Auswertungs-Card: keine Svelte-/Tauri-Abhaengigkeit,
 // damit alles direkt testbar bleibt.
 import type { Entry } from "./types";
-import { durationSeconds, fmtDate, isWorkday } from "./time";
+import { durationSeconds, fmtDate, isWorkday, openEntryUntil } from "./time";
 
 /** "YYYY-MM" fuer ein lokales Datum. */
 function monthOf(d: Date): string {
@@ -27,7 +27,7 @@ export function dayActivityHours(
 			perActivity = new Map();
 			byDay.set(key, perActivity);
 		}
-		const h = durationSeconds(e, now) / 3600;
+		const h = durationSeconds(e, openEntryUntil(e, now)) / 3600;
 		perActivity.set(e.activityId, (perActivity.get(e.activityId) ?? 0) + h);
 	}
 	return byDay;

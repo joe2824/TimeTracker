@@ -39,6 +39,18 @@ describe("dayWorkHours", () => {
 		const map = dayWorkHours([running], new Set(), start + 2 * 3600 * 1000);
 		expect(map.get("2026-06-10")).toBeCloseTo(2);
 	});
+
+	it("kappt einen vergessenen offenen Eintrag am Ende SEINES Tages, statt bis now zu zaehlen", () => {
+		// Sonst kann ein liegen gebliebener offener Eintrag (siehe app.svelte.ts
+		// #findRunning, das nur den aktuellen+Vormonat beim Start bereinigt) die
+		// Jahres-Heatmap sprengen: normalisiert wird auf den staerksten Tag, ein
+		// einzelner Tag mit Hunderten Stunden flacht dann alle anderen auf ~0 ab.
+		const start = new Date(2026, 5, 1, 8, 0, 0).getTime(); // 1. Juni
+		const now = new Date(2026, 6, 17, 8, 30, 0).getTime(); // erst Mitte Juli entdeckt
+		const stale: Entry = { id: "x", activityId: "a", startTs: start, endTs: null, note: "", source: "timer" };
+		const map = dayWorkHours([stale], new Set(), now);
+		expect(map.get("2026-06-01")).toBeCloseTo(16); // 08:00 bis Mitternacht, nicht bis now
+	});
 });
 
 describe("dayActivityHours", () => {

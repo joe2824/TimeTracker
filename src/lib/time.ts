@@ -20,6 +20,20 @@ export function entryHours(
 	return durationSeconds(e, now) / 3600;
 }
 
+/**
+ * Ende eines offenen Eintrags (endTs === null) fuer Auswertungen: gekappt auf
+ * das Ende SEINES Tages, nie unbegrenzt bis `now`.
+ *
+ * Ein vergessener offener Eintrag in einem alten Monat zaehlte sonst bis
+ * `now` weiter – erreichbar, weil beim Start nur der aktuelle und der
+ * Vormonat geladen werden und eine aeltere offene Zeile niemand schliesst.
+ * Ein laufender Timer wird an Mitternacht geteilt, kann also nie ueber
+ * seinen eigenen Tag hinausreichen – dort wird gekappt.
+ */
+export function openEntryUntil(e: Entry, now: number): number {
+	return e.endTs === null ? Math.min(now, startOfNextDay(e.startTs)) : now;
+}
+
 export function roundHours(hours: number, step: number): number {
 	if (!step || step <= 0) return hours;
 	return Math.round(hours / step) * step;
