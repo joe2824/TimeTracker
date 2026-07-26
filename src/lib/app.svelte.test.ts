@@ -305,3 +305,33 @@ describe("Rueckfrage bei Ganztags-Abwesenheit auf einem Folgetag", () => {
 		expect(folgetag.endTs).toBe(at(18, 1));
 	});
 });
+
+describe("#reportConflict über Monatsgrenzen", () => {
+	it("erkennt eine Überschneidung, wenn der Kandidat über den Monatswechsel reicht", async () => {
+		// Vorher pruefte #reportConflict nur den Monat von candidate.startTs (Juli) –
+		// ein Eintrag am 1. August war fuer den Ueberschneidungs-Check unsichtbar.
+		const augustStart = new Date(2026, 7, 1, 0, 0, 0).getTime();
+		const bestehend = entry("aug", P2, augustStart, augustStart + 30 * 60 * 1000); // 00:00–00:30
+		reset({ "2026-08": [bestehend] });
+
+		const silvester = new Date(2026, 6, 31, 23, 45, 0).getTime();
+		const ende = new Date(2026, 7, 1, 0, 15, 0).getTime(); // überschneidet 00:00–00:15 mit "aug"
+		const result = await app.addEntry(P1, silvester, ende);
+
+		expect(result).toBeNull();
+		expect(onDisk("2026-07")).toHaveLength(0);
+		expect(onDisk("2026-08")).toHaveLength(1); // nur der bestehende Eintrag
+	});
+
+	it("lässt einen anstoßenden (nicht überschneidenden) Monatswechsel weiterhin zu", async () => {
+		const augustStart = new Date(2026, 7, 1, 0, 15, 0).getTime();
+		const bestehend = entry("aug", P2, augustStart, augustStart + 30 * 60 * 1000); // 00:15–00:45
+		reset({ "2026-08": [bestehend] });
+
+		const silvester = new Date(2026, 6, 31, 23, 45, 0).getTime();
+		const ende = new Date(2026, 7, 1, 0, 15, 0).getTime(); // endet genau, wo "aug" beginnt
+		const result = await app.addEntry(P1, silvester, ende);
+
+		expect(result).not.toBeNull();
+	});
+});
