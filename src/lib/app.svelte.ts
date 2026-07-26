@@ -601,7 +601,17 @@ class AppState {
 		/** true = Zeiten unveraendert, Ueberschneidung nicht neu pruefen */
 		skipOverlap?: boolean;
 	}): boolean {
-		const monthEntries = this.monthEntries(monthKey(candidate.startTs));
+		// Ein Kandidat kann ueber Mitternacht bis in einen anderen Monat reichen
+		// (Monatsletzter -> Monatserster). dayConflict interessiert sich ohnehin
+		// nur fuer den Tag von candidate.startTs, filtert also unpassende
+		// endMonth-Eintraege selbst heraus – overlapConflict braucht die vollstaendige
+		// Liste, sonst uebersaehe es eine Ueberschneidung am Monatsanfang.
+		const startMonth = monthKey(candidate.startTs);
+		const endMonth = candidate.endTs != null ? monthKey(candidate.endTs) : startMonth;
+		const monthEntries =
+			startMonth === endMonth
+				? this.monthEntries(startMonth)
+				: [...this.monthEntries(startMonth), ...this.monthEntries(endMonth)];
 		const conflict = dayConflict(monthEntries, candidate, this.absenceActivity?.id, {
 			excludeId: candidate.id
 		});
@@ -642,6 +652,9 @@ class AppState {
 		const newMonth = monthKey(updated.startTs);
 		await this.ensureMonth(oldMonth);
 		await this.ensureMonth(newMonth);
+		// Kann von newMonth abweichen, wenn die Bearbeitung ueber einen Monatswechsel
+		// reicht – #reportConflict braucht diesen Monat fuer den Ueberschneidungs-Check.
+		if (updated.endTs != null) await this.ensureMonth(monthKey(updated.endTs));
 		// Die Ueberschneidungs-Regel ist neu; aeltere Daten koennen sie verletzen.
 		// Wer nur die Notiz aendert, darf davon nicht ausgesperrt werden – sonst
 		// bliebe fuer solche Eintraege nur noch Loeschen. Zeiten unveraendert ->
