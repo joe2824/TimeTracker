@@ -27,6 +27,7 @@
 	import CommandPalette from "$lib/components/CommandPalette.svelte";
 	import ReportReminderDialog from "$lib/components/ReportReminderDialog.svelte";
 	import BackdateDialog from "$lib/components/BackdateDialog.svelte";
+	import AbsenceOverrideDialog from "$lib/components/AbsenceOverrideDialog.svelte";
 
 	let tab = $state("tracking");
 	let paletteOpen = $state(false);
@@ -203,6 +204,7 @@
 	<LongTimerDialog />
 	<ReportReminderDialog />
 	<BackdateDialog />
+	<AbsenceOverrideDialog />
 
 	{#if app.showOnboarding}
 		<OnboardingWizard />

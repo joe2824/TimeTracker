@@ -296,7 +296,8 @@
 				endTs,
 				draft.note,
 				"manual",
-				absence ? draft.fraction : undefined
+				absence ? draft.fraction : undefined,
+				{ confirmAbsenceOverride: true }
 			);
 			// Konflikt (z.B. Ganztags-Abwesenheit) -> addEntry hat null + Toast geliefert.
 			if (!created) return;

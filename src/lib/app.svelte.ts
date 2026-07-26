@@ -23,6 +23,15 @@ function uid(): string {
 	return crypto.randomUUID();
 }
 
+/** Ein Folgetag aus einer Mitternachts-Teilung, der auf eine Ganztags-Abwesenheit trifft. */
+interface BlockedDay {
+	/** Der Abwesenheits-Eintrag, der dem Tag im Weg steht. */
+	entry: Entry;
+	/** "YYYY-MM-DD" des betroffenen Tages. */
+	date: string;
+	activityName: string;
+}
+
 /**
  * Der Vormonat.
  *
@@ -63,6 +72,27 @@ class AppState {
 	 * kuerzen oder entfernen. Ein Dialog zeigt den Plan und bestaetigt ihn.
 	 */
 	backdatePrompt = $state<{ activityId: string; start: number; plan: BackdatePlan } | null>(null);
+	/**
+	 * Offene Rueckfrage: ein Eintrag reicht ueber Mitternacht in einen Tag mit
+	 * Ganztags-Abwesenheit. Bestaetigen entfernt die Abwesenheit(en) und legt
+	 * den Eintrag danach normal an.
+	 */
+	absenceOverridePrompt = $state<
+		| {
+				kind: "add";
+				args: {
+					activityId: string;
+					startTs: number;
+					endTs: number | null;
+					note: string;
+					source: EntrySource;
+					dayFraction?: number;
+				};
+				days: BlockedDay[];
+		  }
+		| { kind: "update"; originalStartTs: number; entry: Entry; days: BlockedDay[] }
+		| null
+	>(null);
 
 	#tick: ReturnType<typeof setInterval> | null = null;
 
@@ -396,14 +426,37 @@ class AppState {
 		this.entriesVersion++;
 	}
 
-	/** Ganztags-Abwesenheit an diesem Tag vorhanden? (Tagesanteil >= 1) */
-	hasFullDayAbsence(ts: number): boolean {
+	/** Ganztags-Abwesenheit an diesem Tag, falls vorhanden. */
+	#findFullDayAbsence(ts: number): Entry | undefined {
 		const absId = this.absenceActivity?.id;
-		if (!absId) return false;
+		if (!absId) return undefined;
 		const key = fmtDate(ts);
-		return this.monthEntries(monthKey(ts)).some(
+		return this.monthEntries(monthKey(ts)).find(
 			(e) => e.activityId === absId && (e.dayFraction ?? 1) >= 1 && fmtDate(e.startTs) === key
 		);
+	}
+
+	/** Ganztags-Abwesenheit an diesem Tag vorhanden? (Tagesanteil >= 1) */
+	hasFullDayAbsence(ts: number): boolean {
+		return !!this.#findFullDayAbsence(ts);
+	}
+
+	/**
+	 * Sammelt die Ganztags-Abwesenheiten, auf die die uebergebenen Tage treffen
+	 * (dedupliziert nach Abwesenheits-Eintrag). Fuer die Folgetage einer
+	 * Mitternachts-Teilung, die #reportConflict (nur der erste Tag) nicht sieht.
+	 */
+	#collectBlockedDays(parts: { startTs: number }[]): BlockedDay[] {
+		const out: BlockedDay[] = [];
+		const seen = new Set<string>();
+		for (const p of parts) {
+			const abs = this.#findFullDayAbsence(p.startTs);
+			if (abs && !seen.has(abs.id)) {
+				seen.add(abs.id);
+				out.push({ entry: abs, date: fmtDate(p.startTs), activityName: this.activityName(abs.activityId) });
+			}
+		}
+		return out;
 	}
 
 	/** Projekt-(Nicht-Abwesenheits-)Eintrag an diesem Tag vorhanden? */
@@ -429,7 +482,8 @@ class AppState {
 		endTs: number | null,
 		note = "",
 		source: EntrySource = "manual",
-		dayFraction?: number
+		dayFraction?: number,
+		opts: { confirmAbsenceOverride?: boolean } = {}
 	): Promise<Entry | null> {
 		await this.ensureMonth(monthKey(startTs));
 		if (endTs !== null) await this.ensureMonth(monthKey(endTs));
@@ -443,6 +497,30 @@ class AppState {
 			endTs === null || dayFraction != null
 				? [{ startTs, endTs }]
 				: splitAtMidnight(startTs, endTs);
+
+		// #reportConflict prueft nur den ERSTEN Tag. Ein Folgetag aus der Teilung
+		// kann trotzdem auf eine Ganztags-Abwesenheit treffen – ohne diese Wache
+		// entstuende dort still Projektzeit (dieselbe Regel, die #addSegment fuer
+		// den Timer-Pfad schon durchsetzt). Interaktive Aufrufer koennen per
+		// opts.confirmAbsenceOverride stattdessen eine Rueckfrage anbieten, die
+		// die Abwesenheit entfernt statt einfach abzulehnen (siehe confirmAbsenceOverride).
+		if (parts.length > 1) {
+			const blocked = this.#collectBlockedDays(parts.slice(1));
+			if (blocked.length > 0) {
+				if (!opts.confirmAbsenceOverride) {
+					toast.error(
+						`Am ${fmtDateHuman(blocked[0].entry.startTs)} ist eine Ganztags-Abwesenheit eingetragen.`
+					);
+					return null;
+				}
+				this.absenceOverridePrompt = {
+					kind: "add",
+					args: { activityId, startTs, endTs, note, source, dayFraction },
+					days: blocked
+				};
+				return null;
+			}
+		}
 
 		let first: Entry | null = null;
 		for (const p of parts) {
@@ -579,6 +657,22 @@ class AppState {
 			updated.endTs !== null && updated.dayFraction == null
 				? splitAtMidnight(updated.startTs, updated.endTs).slice(1)
 				: [];
+
+		// Wie bei addEntry: #reportConflict sieht nur den ersten Tag. Ein Folgetag
+		// kann auf eine Ganztags-Abwesenheit treffen – dann erst fragen (siehe
+		// confirmAbsenceOverride), statt still Projektzeit dort anzulegen.
+		if (rest.length > 0) {
+			const blocked = this.#collectBlockedDays(rest);
+			if (blocked.length > 0) {
+				this.absenceOverridePrompt = {
+					kind: "update",
+					originalStartTs,
+					entry: { ...updated },
+					days: blocked
+				};
+				return false;
+			}
+		}
 		if (rest.length > 0) updated.endTs = startOfNextDay(updated.startTs);
 
 		if (oldMonth === newMonth) {
@@ -882,6 +976,31 @@ class AppState {
 		if (!p) return;
 		this.backdatePrompt = null;
 		await this.#exclusive(() => this.#applyStart(p.activityId, p.start));
+	}
+
+	/**
+	 * Rueckfrage bestaetigen: die blockierenden Ganztags-Abwesenheiten entfernen
+	 * und den urspruenglichen Aufruf danach unveraendert wiederholen – die
+	 * Wache greift dann nicht mehr, weil der Tag frei ist.
+	 */
+	async confirmAbsenceOverride(): Promise<void> {
+		const p = this.absenceOverridePrompt;
+		if (!p) return;
+		this.absenceOverridePrompt = null;
+		for (const d of p.days) await this.deleteEntry(d.entry);
+		if (p.kind === "add") {
+			await this.addEntry(
+				p.args.activityId,
+				p.args.startTs,
+				p.args.endTs,
+				p.args.note,
+				p.args.source,
+				p.args.dayFraction,
+				{ confirmAbsenceOverride: true }
+			);
+		} else {
+			await this.updateEntry(p.originalStartTs, p.entry);
+		}
 	}
 
 	/** Startet einen Timer, optional rückdatiert (startTs in der Vergangenheit). */
