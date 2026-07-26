@@ -31,6 +31,7 @@ function reset(entries: Record<string, Entry[]> = {}) {
 	app.running = null;
 	app.entriesByMonth = {};
 	app.backdatePrompt = null;
+	app.absenceOverridePrompt = null;
 	for (const [m, list] of Object.entries(entries)) {
 		app.entriesByMonth[m] = list;
 		files.set(monthFile(m), JSON.stringify(list));
@@ -202,5 +203,105 @@ describe("Teilung respektiert Ganztags-Abwesenheiten", () => {
 		const projekt = onDisk("2026-07").filter((e) => e.activityId === P1);
 		expect(projekt).toHaveLength(1);
 		expect(projekt[0].endTs).toBe(at(17, 0)); // endet an Mitternacht, kein Stueck danach
+	});
+
+	it("splittet addEntry normal, wenn der Folgetag NICHT abwesend ist", async () => {
+		reset();
+		const e = await app.addEntry(P1, at(17, 23), at(18, 1));
+		expect(e).not.toBeNull();
+		const es = onDisk("2026-07").sort((a, b) => a.startTs - b.startTs);
+		expect(es).toHaveLength(2);
+		expect(es[0].endTs).toBe(at(18, 0));
+		expect(es[1].startTs).toBe(at(18, 0));
+		expect(es[1].endTs).toBe(at(18, 1));
+	});
+
+	it("addEntry (ohne Rueckfrage-Option) lehnt einen Folgetag mit Ganztags-Abwesenheit ab", async () => {
+		const urlaub: Entry = { ...entry("v", ABS, at(18, 12), at(18, 12)), dayFraction: 1 };
+		reset({ "2026-07": [urlaub] });
+
+		const result = await app.addEntry(P1, at(17, 23), at(18, 1));
+
+		expect(result).toBeNull();
+		expect(app.absenceOverridePrompt).toBeNull(); // keine Rueckfrage ohne Opt-in
+		expect(onDisk("2026-07")).toHaveLength(1); // nur der Urlaub, nichts angelegt (auch nicht Tag 1)
+	});
+});
+
+describe("Rueckfrage bei Ganztags-Abwesenheit auf einem Folgetag", () => {
+	it("addEntry mit confirmAbsenceOverride zeigt eine Rueckfrage statt zu schreiben", async () => {
+		const urlaub: Entry = { ...entry("v", ABS, at(18, 12), at(18, 12)), dayFraction: 1 };
+		reset({ "2026-07": [urlaub] });
+
+		const result = await app.addEntry(
+			P1,
+			at(17, 23),
+			at(18, 1),
+			"",
+			"manual",
+			undefined,
+			{ confirmAbsenceOverride: true }
+		);
+
+		expect(result).toBeNull();
+		expect(onDisk("2026-07")).toHaveLength(1); // noch nichts veraendert
+		expect(app.absenceOverridePrompt?.kind).toBe("add");
+		expect(app.absenceOverridePrompt?.days).toHaveLength(1);
+		expect(app.absenceOverridePrompt?.days[0].entry.id).toBe("v");
+	});
+
+	it("confirmAbsenceOverride entfernt die Abwesenheit und legt den Eintrag danach an (add)", async () => {
+		const urlaub: Entry = { ...entry("v", ABS, at(18, 12), at(18, 12)), dayFraction: 1 };
+		reset({ "2026-07": [urlaub] });
+		await app.addEntry(P1, at(17, 23), at(18, 1), "", "manual", undefined, {
+			confirmAbsenceOverride: true
+		});
+
+		await app.confirmAbsenceOverride();
+
+		expect(app.absenceOverridePrompt).toBeNull();
+		const disk = onDisk("2026-07").sort((a, b) => a.startTs - b.startTs);
+		expect(disk.find((e) => e.id === "v")).toBeUndefined(); // Abwesenheit entfernt
+		const projekt = disk.filter((e) => e.activityId === P1);
+		expect(projekt).toHaveLength(2);
+		expect(projekt[0].endTs).toBe(at(18, 0));
+		expect(projekt[1].startTs).toBe(at(18, 0));
+		expect(projekt[1].endTs).toBe(at(18, 1));
+	});
+
+	it("updateEntry zeigt dieselbe Rueckfrage, ohne den Eintrag vorher zu veraendern", async () => {
+		const urlaub: Entry = { ...entry("v", ABS, at(18, 12), at(18, 12)), dayFraction: 1 };
+		const bestehend = entry("e", P1, at(17, 22), at(17, 23));
+		reset({ "2026-07": [urlaub, bestehend] });
+
+		const result = await app.updateEntry(at(17, 22), {
+			...bestehend,
+			endTs: at(18, 1) // reicht jetzt in den Urlaubstag
+		});
+
+		expect(result).toBe(false);
+		expect(app.absenceOverridePrompt?.kind).toBe("update");
+		expect(app.absenceOverridePrompt?.days[0].entry.id).toBe("v");
+		const disk = onDisk("2026-07").find((e) => e.id === "e")!;
+		expect(disk.endTs).toBe(at(17, 23)); // unveraendert, solange die Rueckfrage offen ist
+	});
+
+	it("confirmAbsenceOverride entfernt die Abwesenheit und uebernimmt die Bearbeitung (update)", async () => {
+		const urlaub: Entry = { ...entry("v", ABS, at(18, 12), at(18, 12)), dayFraction: 1 };
+		const bestehend = entry("e", P1, at(17, 22), at(17, 23));
+		reset({ "2026-07": [urlaub, bestehend] });
+		await app.updateEntry(at(17, 22), { ...bestehend, endTs: at(18, 1) });
+
+		await app.confirmAbsenceOverride();
+
+		expect(app.absenceOverridePrompt).toBeNull();
+		const disk = onDisk("2026-07").sort((a, b) => a.startTs - b.startTs);
+		expect(disk.find((e) => e.id === "v")).toBeUndefined();
+		const e = disk.find((x) => x.id === "e")!;
+		expect(e.startTs).toBe(at(17, 22));
+		expect(e.endTs).toBe(at(18, 0)); // Tag 1 behaelt die id, endet an Mitternacht
+		const folgetag = disk.find((x) => x.id !== "e" && x.activityId === P1)!;
+		expect(folgetag.startTs).toBe(at(18, 0));
+		expect(folgetag.endTs).toBe(at(18, 1));
 	});
 });
