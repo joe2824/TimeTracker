@@ -23,6 +23,22 @@ function uid(): string {
 	return crypto.randomUUID();
 }
 
+/**
+ * Lesbarer Text zu einem geworfenen Wert.
+ *
+ * Tauri wirft haeufig blanke Strings statt Error-Objekten; `${e}` allein liefert
+ * bei einem Error nur "Error: …" ohne die oft entscheidende Ursache.
+ */
+export function errorText(e: unknown): string {
+	if (e instanceof Error) return e.message || e.name;
+	if (typeof e === "string") return e;
+	try {
+		return JSON.stringify(e);
+	} catch {
+		return String(e);
+	}
+}
+
 /** Ein Folgetag aus einer Mitternachts-Teilung, der auf eine Ganztags-Abwesenheit trifft. */
 interface BlockedDay {
 	/** Der Abwesenheits-Eintrag, der dem Tag im Weg steht. */
@@ -53,6 +69,16 @@ class AppState {
 	/** tickt jede Sekunde fuer Live-Dauer */
 	now = $state(Date.now());
 	loaded = $state(false);
+	/**
+	 * Woran der Start gerade arbeitet – der Ladebildschirm zeigt es an.
+	 *
+	 * Ohne diese Angabe blieb bei einem haengenden oder gescheiterten Start nur
+	 * ein ewiges "Laedt…" stehen: kein Schritt, keine Meldung, kein Weg weiter.
+	 * Genau in dem Zustand landete die App schon nach einem Update.
+	 */
+	initStep = $state<string | null>(null);
+	/** Start gescheitert: Schritt und Meldung fuer den Ladebildschirm. */
+	initError = $state<{ step: string; message: string } | null>(null);
 	/** true = Willkommensbildschirm anzeigen (erster Start oder Dev-Re-Trigger) */
 	showOnboarding = $state(false);
 	/** Cache: Monat "YYYY-MM" -> Eintraege */
@@ -96,29 +122,55 @@ class AppState {
 
 	#tick: ReturnType<typeof setInterval> | null = null;
 
-	async init(): Promise<void> {
+	/**
+	 * Daten laden und die Uhr starten. Erneut aufrufbar (Knopf "Erneut versuchen").
+	 *
+	 * @returns true = bereit; false = gescheitert, Details stehen in `initError`.
+	 */
+	async init(): Promise<boolean> {
 		if (!this.loaded) {
-			// Erster Start? (settings.json noch nicht vorhanden – vor dem ersten Speichern pruefen)
-			const firstRun = !(await settingsFileExists());
-			this.activities = await loadActivities();
-			this.settings = await loadSettings();
-			// Altlasten frueherer Versionen einmalig wegraeumen; darf den Start nie kippen.
+			this.initError = null;
 			try {
-				await pruneEmptyMonthFiles();
+				// Erster Start? (settings.json noch nicht vorhanden – vor dem ersten Speichern pruefen)
+				const firstRun = !(await this.#step("Einstellungen suchen", settingsFileExists));
+				this.activities = await this.#step("Aktivitäten laden", loadActivities);
+				this.settings = await this.#step("Einstellungen laden", loadSettings);
+				// Altlasten frueherer Versionen einmalig wegraeumen; darf den Start nie kippen.
+				await this.#step("Datenordner aufräumen", async () => {
+					try {
+						await pruneEmptyMonthFiles();
+					} catch (e) {
+						console.error("Aufraeumen leerer Monatsdateien fehlgeschlagen", e);
+					}
+				});
+				await this.#step("Aktivitäten prüfen", () => this.#seedBuiltins());
+				const month = this.currentMonth;
+				await this.#step(`Einträge ${month} laden`, () => this.ensureMonth(month));
+				const prev = prevMonthKey();
+				await this.#step(`Einträge ${prev} laden`, () => this.ensureMonth(prev));
+				await this.#step("Laufenden Timer suchen", () => this.#findRunning());
+				this.showOnboarding = firstRun;
+				this.loaded = true;
+				this.initStep = null;
 			} catch (e) {
-				console.error("Aufraeumen leerer Monatsdateien fehlgeschlagen", e);
+				// Merken statt werfen: eine abgewiesene Promise landete nur in der
+				// Konsole, und davor sitzt niemand – zu sehen war weiterhin "Laedt…".
+				console.error(`Start fehlgeschlagen (${this.initStep})`, e);
+				this.initError = { step: this.initStep ?? "Start", message: errorText(e) };
+				return false;
 			}
-			await this.#seedBuiltins();
-			await this.ensureMonth(this.currentMonth);
-			await this.ensureMonth(prevMonthKey());
-			await this.#findRunning();
-			this.showOnboarding = firstRun;
-			this.loaded = true;
 		}
 		// IMMER (neu) starten, auch wenn die Daten schon geladen sind: der Cleanup der
 		// Seite ruft dispose(), und ein frueher Ausstieg oben liess die Uhr danach fuer
 		// immer stehen – kein Tick, keine Live-Dauer, kein Mitternachts-Wechsel.
 		this.#startTick();
+		return true;
+	}
+
+	/** Einen Startschritt benennen und ausfuehren; der Name steht im Ladebildschirm. */
+	async #step<T>(label: string, fn: () => Promise<T>): Promise<T> {
+		this.initStep = label;
+		return await fn();
 	}
 
 	#startTick(): void {

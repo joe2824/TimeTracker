@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Activity, Entry } from "./types";
-import { files, resetFakeFs } from "./testing/fakeFs";
+import { files, fsFaults, resetFakeFs } from "./testing/fakeFs";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("./testing/fakeFs")).fakeFs);
 // Toasts sind hier Beiwerk; die Meldungen selbst prueft niemand.
@@ -333,5 +333,44 @@ describe("#reportConflict über Monatsgrenzen", () => {
 		const result = await app.addEntry(P1, silvester, ende);
 
 		expect(result).not.toBeNull();
+	});
+});
+
+describe("init() – was der Ladebildschirm anzeigt", () => {
+	// Der Zustand ist ein Singleton: nach diesen Tests muss er wieder "nicht
+	// geladen" sein, sonst haengt der Sekunden-Tick in der Suite weiter.
+	afterEach(() => {
+		app.dispose();
+		app.loaded = false;
+		app.initStep = null;
+		app.initError = null;
+	});
+
+	it("meldet Schritt und Meldung, statt still im Ladebildschirm zu bleiben", async () => {
+		reset();
+		app.loaded = false;
+		fsFaults.existsThrows = true; // fs-Plugin antwortet nicht (z.B. fehlende Berechtigung)
+
+		const ok = await app.init();
+
+		expect(ok).toBe(false);
+		expect(app.loaded).toBe(false);
+		expect(app.initError?.step).toBe("Einstellungen suchen");
+		expect(app.initError?.message).toContain("forbidden");
+	});
+
+	it("laedt nach einem Fehlversuch beim naechsten Anlauf normal", async () => {
+		reset();
+		app.loaded = false;
+		fsFaults.existsThrows = true;
+		expect(await app.init()).toBe(false);
+
+		fsFaults.existsThrows = false;
+		const ok = await app.init();
+
+		expect(ok).toBe(true);
+		expect(app.loaded).toBe(true);
+		expect(app.initError).toBeNull();
+		expect(app.initStep).toBeNull();
 	});
 });
