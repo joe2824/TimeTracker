@@ -12,17 +12,25 @@ export const files = new Map<string, string>();
  * `renameThrows` deckt den Fallback-Zweig von writeJson ab – den, der bei
  * Stromausfall eine halbe Datei hinterlassen kann. Ohne ihn lief genau der
  * Zweig in keinem Test.
+ *
+ * `existsThrows` steht fuer ein Dateisystem, das gar nicht antwortet – so
+ * verhaelt sich das fs-Plugin, wenn ihm die Berechtigung fehlt. Der Start muss
+ * das melden, statt im Ladebildschirm haengen zu bleiben.
  */
-export const fsFaults = { renameThrows: false };
+export const fsFaults = { renameThrows: false, existsThrows: false };
 
 export function resetFakeFs(): void {
 	files.clear();
 	fsFaults.renameThrows = false;
+	fsFaults.existsThrows = false;
 }
 
 export const fakeFs = {
 	BaseDirectory: { AppData: 1 },
-	exists: async (p: string) => files.has(p) || p === "data",
+	exists: async (p: string) => {
+		if (fsFaults.existsThrows) throw new Error("fs.scope forbidden path");
+		return files.has(p) || p === "data";
+	},
 	mkdir: async () => {},
 	readDir: async () => [...files.keys()].map((p) => ({ name: p.split("/").pop() })),
 	readTextFile: async (p: string) => {

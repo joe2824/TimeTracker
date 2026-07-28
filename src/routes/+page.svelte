@@ -5,7 +5,8 @@
 	import { enable, isEnabled } from "@tauri-apps/plugin-autostart";
 	import { check } from "@tauri-apps/plugin-updater";
 	import { toast } from "svelte-sonner";
-	import { app } from "$lib/app.svelte";
+	import { app, errorText } from "$lib/app.svelte";
+	import { Button } from "$lib/components/ui/button";
 	import { scheduleReminders, scheduleReportReminder } from "$lib/reminders";
 	import { applyShortcuts } from "$lib/shortcuts";
 	import { startWatchers, stopWatchers, watchers } from "$lib/watchers.svelte";
@@ -56,10 +57,31 @@
 		}
 	}
 
-	onMount(() => {
-		const unlisteners: Array<() => void> = [];
-		(async () => {
-			await app.init();
+	const unlisteners: Array<() => void> = [];
+
+	/**
+	 * Alles einrichten, was die App zum Laufen braucht.
+	 *
+	 * Laeuft beim "Erneut versuchen" im Ladebildschirm nochmal – die Ereignis-Abos
+	 * deshalb nur beim ersten erfolgreichen Durchlauf, sonst reagierte die App
+	 * danach doppelt auf jeden Tray-Klick.
+	 */
+	async function startup() {
+		// false = Laden gescheitert; der Ladebildschirm zeigt Schritt und Meldung.
+		if (!(await app.init())) return;
+		try {
+			if (unlisteners.length === 0) {
+				unlisteners.push(
+					await listen("tray-stop-timer", () => void app.stop()),
+					await listen<string>("tray-start-activity", (e) => void app.startActivity(e.payload)),
+					// Flyout-Fenster hat Daten geändert -> neu laden.
+					await listen("data-reload", () => void app.reload()),
+					// Tray-Flyout wurde geöffnet und fragt den aktuellen Hinweis-Status ab.
+					await listen("tray-request-attention", () => {
+						void emit("main-attention", { active: attention }).catch(() => {});
+					})
+				);
+			}
 			scheduleReminders();
 			scheduleReportReminder();
 			void applyShortcuts();
@@ -73,36 +95,46 @@
 					console.error("Autostart konnte nicht aktiviert werden", e);
 				}
 			}
+		} catch (e) {
+			// Die Daten stehen, nur das Drumherum klemmt – das gehoert gesagt, statt
+			// als abgewiesene Promise in der Konsole zu verschwinden.
+			console.error("Einrichtung nach dem Laden fehlgeschlagen", e);
+			toast.error(`Einrichtung unvollständig: ${errorText(e)}`, { duration: 60000 });
+		}
 
-			unlisteners.push(
-				await listen("tray-stop-timer", () => void app.stop()),
-				await listen<string>("tray-start-activity", (e) => void app.startActivity(e.payload)),
-				// Flyout-Fenster hat Daten geändert -> neu laden.
-				await listen("data-reload", () => void app.reload()),
-				// Tray-Flyout wurde geöffnet und fragt den aktuellen Hinweis-Status ab.
-				await listen("tray-request-attention", () => {
-					void emit("main-attention", { active: attention }).catch(() => {});
-				})
-			);
-
-			// Beim Start still nach Updates suchen und ggf. Hinweis zeigen.
-			try {
-				const update = await check();
-				if (update) {
-					toast.info(`Update ${update.version} verfügbar`, {
-						duration: 15000,
-						action: { label: "Installieren", onClick: () => (tab = "settings") }
-					});
-				}
-			} catch {
-				/* offline o. Updater nicht konfiguriert – ignorieren */
+		// Beim Start still nach Updates suchen und ggf. Hinweis zeigen.
+		try {
+			const update = await check();
+			if (update) {
+				toast.info(`Update ${update.version} verfügbar`, {
+					duration: 15000,
+					action: { label: "Installieren", onClick: () => (tab = "settings") }
+				});
 			}
-		})();
+		} catch {
+			/* offline o. Updater nicht konfiguriert – ignorieren */
+		}
+	}
+
+	onMount(() => {
+		void startup();
 		return () => {
 			unlisteners.forEach((u) => u());
+			unlisteners.length = 0;
 			stopWatchers();
 			app.dispose();
 		};
+	});
+
+	// Sekunden im Ladebildschirm. Ab einer Weile ist "Laedt…" keine Auskunft mehr,
+	// sondern nur noch die Frage, ob ueberhaupt etwas passiert – dann nennt der
+	// Bildschirm den Schritt, an dem es haengt.
+	let waiting = $state(0);
+	$effect(() => {
+		if (app.loaded || app.initError) return;
+		waiting = 0;
+		const id = setInterval(() => waiting++, 1000);
+		return () => clearInterval(id);
 	});
 
 	// Tray-Menü (OneDrive-Stil) aktuell halten: laufender Timer + Schnellstart (Favoriten, zuletzt benutzt).
@@ -135,7 +167,44 @@
 </script>
 
 {#if !app.loaded}
-	<div class="text-muted-foreground p-8">Lädt…</div>
+	<!-- Ladebildschirm mit Auskunft: welcher Schritt laeuft, wie lange schon, und
+	     bei einem Fehler die Meldung samt Weg zurueck. Vorher stand hier nur
+	     "Laedt…" – nach einem Update blieb die App genau so stehen, ohne dass
+	     erkennbar war, woran es haengt. -->
+	<div class="flex min-h-screen items-center justify-center p-8">
+		<div class="w-full max-w-md space-y-4 text-center">
+			<img src="/logo.svg" alt="TimeTracker" class="mx-auto h-12 w-auto" />
+			{#if app.initError}
+				<div class="space-y-1">
+					<h1 class="text-lg font-semibold">Start fehlgeschlagen</h1>
+					<p class="text-muted-foreground text-sm">Schritt: {app.initError.step}</p>
+				</div>
+				<pre
+					class="bg-muted max-h-40 overflow-auto rounded-md p-3 text-left text-xs whitespace-pre-wrap select-text">{app
+						.initError.message}</pre>
+				<p class="text-muted-foreground text-xs">
+					Deine erfassten Zeiten sind davon nicht betroffen – sie liegen als Dateien im
+					App-Datenordner.
+				</p>
+				<div class="flex justify-center gap-2">
+					<Button onclick={() => void startup()}>Erneut versuchen</Button>
+					<Button variant="outline" onclick={() => location.reload()}>Neu laden</Button>
+				</div>
+			{:else}
+				<p class="text-muted-foreground text-sm">
+					{app.initStep ? `${app.initStep}…` : "Lädt…"}
+				</p>
+				{#if waiting >= 8}
+					<div class="space-y-2">
+						<p class="text-muted-foreground text-xs">
+							Das dauert ungewöhnlich lange ({waiting}&nbsp;s bei „{app.initStep ?? "Start"}").
+						</p>
+						<Button variant="outline" size="sm" onclick={() => location.reload()}>Neu laden</Button>
+					</div>
+				{/if}
+			{/if}
+		</div>
+	</div>
 {:else}
 	<Tabs.Root bind:value={tab}>
 		<header

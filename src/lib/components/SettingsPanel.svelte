@@ -9,6 +9,8 @@
 		devTriggerReportReminder
 	} from "$lib/watchers.svelte";
 	import { clockToMin, minToClock } from "$lib/time";
+	import { changedSettingKeys } from "$lib/settingsSync";
+	import type { Settings } from "$lib/types";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import WorkdayPicker from "$lib/components/WorkdayPicker.svelte";
@@ -95,6 +97,52 @@
 	let pomodoroBreakMin = $state(String(app.settings.pomodoroBreakMin));
 	let shortcutNotify = $state(app.settings.shortcutNotify);
 	let recordingToggle = $state(false);
+
+	/**
+	 * Zuletzt uebernommener Stand der Einstellungen.
+	 *
+	 * Bewusst KEIN $state: der Vergleich unten soll den Effekt nicht selbst wieder
+	 * ausloesen. Und eine Momentaufnahme statt der Referenz, sonst zeigte er beim
+	 * naechsten Lauf ohnehin schon die neuen Werte und faende nie einen Unterschied.
+	 */
+	let synced = $state.snapshot(app.settings) as Settings;
+
+	/**
+	 * Die Felder oben sind Kopien vom Aufbau dieser Seite. Aendert etwas anderes die
+	 * Einstellungen – der Willkommens-Assistent, oder das Tray-Fenster ueber
+	 * reload() –, zeigten sie sonst weiter die alten Werte und schrieben sie beim
+	 * naechsten onchange zurueck.
+	 *
+	 * Der Assistent trifft das mit voller Wucht: bits-ui baut ALLE Tab-Inhalte
+	 * sofort auf (inaktive nur `hidden`), diese Seite steht also schon mit leeren
+	 * Feldern da, waehrend der Assistent noch offen ist. Die dort eingetragene
+	 * Adresse der Vorgesetzten war damit beim ersten Klick in den Einstellungen
+	 * wieder weg.
+	 */
+	$effect(() => {
+		const s = $state.snapshot(app.settings) as Settings;
+		const changed = changedSettingKeys(synced, s);
+		synced = s;
+		if (changed.size === 0) return;
+		if (changed.has("bossEmail")) bossEmail = s.bossEmail;
+		if (changed.has("senderName")) senderName = s.senderName;
+		if (changed.has("reportSubjectTemplate")) subjectTpl = s.reportSubjectTemplate;
+		if (changed.has("statsEnabled")) statsEnabled = s.statsEnabled;
+		if (changed.has("rounding")) rounding = String(s.rounding);
+		if (changed.has("hoursPerDay")) hoursPerDay = minToClock(s.hoursPerDay * 60);
+		if (changed.has("workdays")) workdays = [...s.workdays];
+		if (changed.has("reminderTimes")) times = [...s.reminderTimes];
+		if (changed.has("reportReminderEnabled")) reportReminder = s.reportReminderEnabled;
+		if (changed.has("reportReminderTime")) reportTime = s.reportReminderTime;
+		if (changed.has("reportReminderLeadDays")) reportLead = String(s.reportReminderLeadDays);
+		if (changed.has("autostart")) autostart = s.autostart;
+		if (changed.has("idleThresholdMin")) idleMin = String(s.idleThresholdMin);
+		if (changed.has("maxTimerHours")) maxHours = String(s.maxTimerHours);
+		if (changed.has("pomodoroEnabled")) pomodoroEnabled = s.pomodoroEnabled;
+		if (changed.has("pomodoroMin")) pomodoroMin = String(s.pomodoroMin);
+		if (changed.has("pomodoroBreakMin")) pomodoroBreakMin = String(s.pomodoroBreakMin);
+		if (changed.has("shortcutNotify")) shortcutNotify = s.shortcutNotify;
+	});
 
 	async function saveTracking() {
 		await app.updateSettings({

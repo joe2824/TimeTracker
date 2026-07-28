@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from "svelte";
-	import { app } from "$lib/app.svelte";
+	import { app, errorText } from "$lib/app.svelte";
 	import { fmtClock, fmtHMS, midnightSplitHint } from "$lib/time";
 	import { START_PRESETS, resolveStartTs, toStartArg } from "$lib/startTime";
 	import { Button } from "$lib/components/ui/button";
@@ -37,8 +37,18 @@
 	// Offene Benachrichtigung im Hauptfenster? -> Hinweis-Badge an „App öffnen".
 	let attention = $state(false);
 
+	// Lesefehler benennen: sonst zeigte das Flyout nur eine leere Schnellstart-Liste
+	// und sah aus wie „keine Aktivitaeten", obwohl die Daten nur nicht lesbar waren.
+	let loadError = $state<string | null>(null);
+
 	async function refresh() {
-		await app.reload();
+		try {
+			await app.reload();
+			loadError = null;
+		} catch (e) {
+			console.error("Flyout konnte die Daten nicht laden", e);
+			loadError = errorText(e);
+		}
 		// Aktuellen Hinweis-Status beim Hauptfenster anfragen (Antwort via "main-attention").
 		void emit("tray-request-attention").catch(() => {});
 	}
@@ -189,6 +199,9 @@
 	</div>
 
 	<div class="text-muted-foreground text-xs font-medium">Schnellstart</div>
+	{#if loadError}
+		<p class="text-destructive px-2 text-xs">Daten nicht lesbar: {loadError}</p>
+	{/if}
 	<!-- Scrollbalken kommt global aus app.css (dünn, dezent). -->
 	<div class="flex-1 space-y-1 overflow-y-auto">
 		{#each quick as a (a.id)}
