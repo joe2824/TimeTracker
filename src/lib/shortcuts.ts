@@ -7,6 +7,7 @@ import {
 } from "@tauri-apps/plugin-global-shortcut";
 import { toast } from "svelte-sonner";
 import { app } from "./app.svelte";
+import { logWarn } from "./log";
 
 /** Kurze, automatisch verschwindende Rückmeldung beim Start/Stop per Shortcut. */
 function notifyShortcut(message: string) {
@@ -38,7 +39,7 @@ export async function applyShortcuts(): Promise<void> {
 				});
 			});
 		} catch (e) {
-			console.error(`Toggle-Shortcut ${toggle} konnte nicht registriert werden`, e);
+			logWarn(`Toggle-Shortcut ${toggle} konnte nicht registriert werden`, e);
 		}
 	}
 
@@ -58,7 +59,7 @@ export async function applyShortcuts(): Promise<void> {
 				});
 			});
 		} catch (e) {
-			console.error(`Shortcut ${acc} konnte nicht registriert werden`, e);
+			logWarn(`Shortcut ${acc} konnte nicht registriert werden`, e);
 		}
 	}
 }

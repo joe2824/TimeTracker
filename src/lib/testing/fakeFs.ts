@@ -19,8 +19,13 @@ export const files = new Map<string, string>();
  */
 export const fsFaults = { renameThrows: false, existsThrows: false };
 
+/** Angelegte Ordner. "data" gibt es immer, den legt niemand extra an. */
+const dirs = new Set<string>(["data"]);
+
 export function resetFakeFs(): void {
 	files.clear();
+	dirs.clear();
+	dirs.add("data");
 	fsFaults.renameThrows = false;
 	fsFaults.existsThrows = false;
 }
@@ -29,10 +34,21 @@ export const fakeFs = {
 	BaseDirectory: { AppData: 1 },
 	exists: async (p: string) => {
 		if (fsFaults.existsThrows) throw new Error("fs.scope forbidden path");
-		return files.has(p) || p === "data";
+		// Ordner gelten als vorhanden, sobald sie angelegt wurden oder etwas darin
+		// liegt – sonst haelt ein Aufrufer seinen frisch erzeugten Ordner fuer leer
+		// und laesst das Verzeichnis gar nicht erst lesen.
+		return files.has(p) || dirs.has(p) || [...files.keys()].some((f) => f.startsWith(`${p}/`));
 	},
-	mkdir: async () => {},
-	readDir: async () => [...files.keys()].map((p) => ({ name: p.split("/").pop() })),
+	mkdir: async (p: string) => {
+		dirs.add(p);
+	},
+	// Nur den gefragten Ordner: sonst saehe jeder Leser auch die Dateien der
+	// anderen (Eintraege, Einstellungen, Protokolle) und die Tests haetten sich
+	// still auf ein Dateisystem verlassen, das es so nicht gibt.
+	readDir: async (dir: string) =>
+		[...files.keys()]
+			.filter((p) => p.startsWith(`${dir}/`))
+			.map((p) => ({ name: p.slice(dir.length + 1) })),
 	readTextFile: async (p: string) => {
 		const txt = files.get(p);
 		if (txt === undefined) throw new Error(`ENOENT: ${p}`);
@@ -46,7 +62,9 @@ export const fakeFs = {
 		files.set(to, files.get(from)!);
 		files.delete(from);
 	},
-	writeTextFile: async (p: string, txt: string) => {
-		files.set(p, txt);
+	// `append` mitspielen: das Protokoll haengt jede Zeile an, ein ueberschreibender
+	// Fake haette genau den Fehler durchgewunken, den es zu vermeiden gilt.
+	writeTextFile: async (p: string, txt: string, opts?: { append?: boolean }) => {
+		files.set(p, opts?.append ? (files.get(p) ?? "") + txt : txt);
 	}
 };

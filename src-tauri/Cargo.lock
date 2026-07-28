@@ -4297,6 +4297,7 @@ dependencies = [
 name = "timetracker"
 version = "0.5.3"
 dependencies = [
+ "chrono",
  "serde",
  "serde_json",
  "tauri",
