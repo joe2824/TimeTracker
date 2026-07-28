@@ -5,6 +5,7 @@ import { BUILTIN_ABSENCE, BUILTIN_OTHERS, defaultSettings } from "./types";
 import { fmtClock, fmtDate, fmtDateHuman, noonTs, splitAtMidnight, startOfNextDay } from "./time";
 import { dayConflict, overlapConflict } from "./conflicts";
 import { planBackdate, planNeedsConfirm, type BackdatePlan } from "./backdate";
+import { errorText, logDebug, logError, logInfo, logWarn } from "./log";
 import {
 	deleteYear,
 	listEntryMonths,
@@ -23,21 +24,8 @@ function uid(): string {
 	return crypto.randomUUID();
 }
 
-/**
- * Lesbarer Text zu einem geworfenen Wert.
- *
- * Tauri wirft haeufig blanke Strings statt Error-Objekten; `${e}` allein liefert
- * bei einem Error nur "Error: …" ohne die oft entscheidende Ursache.
- */
-export function errorText(e: unknown): string {
-	if (e instanceof Error) return e.message || e.name;
-	if (typeof e === "string") return e;
-	try {
-		return JSON.stringify(e);
-	} catch {
-		return String(e);
-	}
-}
+/** Wie lange ein vorgefuehrter Haenger stehen bleibt, bevor es weitergeht. */
+const DEV_HANG_MS = 20_000;
 
 /** Ein Folgetag aus einer Mitternachts-Teilung, der auf eine Ganztags-Abwesenheit trifft. */
 interface BlockedDay {
@@ -81,6 +69,19 @@ class AppState {
 	initError = $state<{ step: string; message: string } | null>(null);
 	/** true = Willkommensbildschirm anzeigen (erster Start oder Dev-Re-Trigger) */
 	showOnboarding = $state(false);
+	/**
+	 * Versteckter Dev-Modus (ueber das Logo aktiviert).
+	 *
+	 * Liegt hier statt in der Einstellungs-Seite: die wird beim Vorfuehren des
+	 * Ladebildschirms kurz abgebaut, und danach waere das Dev-Menue jedes Mal
+	 * wieder zu.
+	 */
+	devMode = $state(false);
+	/**
+	 * Dev: den naechsten Startschritt scheitern lassen ("error") oder aufhalten
+	 * ("hang"), sobald sein Name `step` enthaelt. Siehe devSimulateStartFault().
+	 */
+	devFail = $state<{ step: string; mode: "error" | "hang" } | null>(null);
 	/** Cache: Monat "YYYY-MM" -> Eintraege */
 	entriesByMonth = $state<Record<string, Entry[]>>({});
 	/**
@@ -130,6 +131,7 @@ class AppState {
 	async init(): Promise<boolean> {
 		if (!this.loaded) {
 			this.initError = null;
+			const begonnen = Date.now();
 			try {
 				// Erster Start? (settings.json noch nicht vorhanden – vor dem ersten Speichern pruefen)
 				const firstRun = !(await this.#step("Einstellungen suchen", settingsFileExists));
@@ -140,7 +142,7 @@ class AppState {
 					try {
 						await pruneEmptyMonthFiles();
 					} catch (e) {
-						console.error("Aufraeumen leerer Monatsdateien fehlgeschlagen", e);
+						logWarn("Aufräumen leerer Monatsdateien fehlgeschlagen", e);
 					}
 				});
 				await this.#step("Aktivitäten prüfen", () => this.#seedBuiltins());
@@ -152,10 +154,17 @@ class AppState {
 				this.showOnboarding = firstRun;
 				this.loaded = true;
 				this.initStep = null;
+				logInfo("Daten geladen", {
+					ms: Date.now() - begonnen,
+					erstStart: firstRun,
+					aktivitaeten: this.activities.length,
+					eintraege: this.monthEntries(month).length + this.monthEntries(prev).length,
+					laeuft: this.#runningName()
+				});
 			} catch (e) {
 				// Merken statt werfen: eine abgewiesene Promise landete nur in der
 				// Konsole, und davor sitzt niemand – zu sehen war weiterhin "Laedt…".
-				console.error(`Start fehlgeschlagen (${this.initStep})`, e);
+				logError(`Start fehlgeschlagen beim Schritt „${this.initStep}"`, e);
 				this.initError = { step: this.initStep ?? "Start", message: errorText(e) };
 				return false;
 			}
@@ -170,7 +179,28 @@ class AppState {
 	/** Einen Startschritt benennen und ausfuehren; der Name steht im Ladebildschirm. */
 	async #step<T>(label: string, fn: () => Promise<T>): Promise<T> {
 		this.initStep = label;
+		await this.#devInterrupt(label);
 		return await fn();
+	}
+
+	/**
+	 * Dev-Stoerung, siehe `devFail`. Wirkt genau einmal und VOR dem Schritt: der
+	 * Schritt selbst laeuft dann gar nicht erst an, es wird also nichts gelesen,
+	 * geschrieben oder geloescht.
+	 */
+	async #devInterrupt(label: string): Promise<void> {
+		const fault = this.devFail;
+		if (!fault || !label.includes(fault.step)) return;
+		// Zuruecksetzen, bevor es knallt: der naechste Anlauf ("Erneut versuchen")
+		// soll normal durchlaufen, sonst haenge man in der Schleife fest.
+		this.devFail = null;
+		if (fault.mode === "error") {
+			throw new Error(`Test aus dem Dev-Menü: Schritt „${label}" abgebrochen`);
+		}
+		logWarn(`Dev-Test: Start bleibt absichtlich bei „${label}" stehen (${DEV_HANG_MS / 1000} s)`);
+		// Von selbst weiter, statt fuer immer zu stehen – wer nur schauen wollte,
+		// muss die App sonst neu laden.
+		await new Promise((resolve) => setTimeout(resolve, DEV_HANG_MS));
 	}
 
 	#startTick(): void {
@@ -208,6 +238,12 @@ class AppState {
 		this.loaded = true;
 		// Ein anderes Fenster hat geschrieben – abgeleitete Listen neu lesen.
 		this.entriesVersion++;
+		logDebug("Daten neu geladen", { laeuft: this.#runningName() });
+	}
+
+	/** Name des laufenden Timers, fuers Protokoll. */
+	#runningName(): string | null {
+		return this.running ? this.activityName(this.running.activityId) : null;
 	}
 
 	get currentMonth(): string {
@@ -407,8 +443,11 @@ class AppState {
 			}
 		}
 		if (this.running?.activityId === id) this.running = null;
+		const name = a.name;
 		this.activities = this.activities.filter((x) => x.id !== id);
 		await this.persistActivities();
+		// Unwiderruflich – hinterher will man wissen, was da genau verschwunden ist.
+		logWarn(`Aktivität gelöscht: ${name}`, { id, eintraege: removed });
 		return removed;
 	}
 
@@ -458,6 +497,7 @@ class AppState {
 	 */
 	async deleteYearEntries(year: number): Promise<number> {
 		const deleted = await deleteYear(year);
+		logWarn(`Jahr ${year} gelöscht`, { monate: deleted });
 		for (const m of deleted) delete this.entriesByMonth[m];
 		if (this.running && monthKey(this.running.startTs).startsWith(`${year}-`)) {
 			this.running = null;
@@ -784,6 +824,13 @@ class AppState {
 
 	/** Schließt ALLE offenen Einträge (egal welches Fenster sie öffnete). running = null. */
 	async #closeAllOpen(endTs = Date.now()): Promise<void> {
+		const offen = this.#openEntries();
+		if (offen.length > 0) {
+			logInfo(`Timer gestoppt: ${offen.map((e) => this.activityName(e.activityId)).join(", ")}`, {
+				ende: new Date(endTs).toISOString(),
+				sekunden: offen.map((e) => Math.round((Math.max(e.startTs, endTs) - e.startTs) / 1000))
+			});
+		}
 		const months = new Set<string>();
 		// Kopie je Liste: die Tagesstuecke unten haengen waehrend des Laufs an.
 		for (const [m, list] of Object.entries(this.entriesByMonth)) {
@@ -886,6 +933,10 @@ class AppState {
 			this.running = next;
 			months.add(m);
 			for (const mm of months) await this.#saveMonth(mm);
+			logInfo(`Timer über Mitternacht geteilt: ${this.activityName(cur.activityId)}`, {
+				tage: parts.length,
+				weiterAb: new Date(last.startTs).toISOString()
+			});
 		});
 	}
 
@@ -924,6 +975,13 @@ class AppState {
 		// Melden statt still korrigieren: die Zeiten sind geraten, nur der Benutzer
 		// weiss, ob sie stimmen.
 		if (geschaetzt > 0) {
+			logWarn(`${geschaetzt} offene Einträge geschätzt geschlossen`, {
+				eintraege: open.slice(1).map((e) => ({
+					aktivitaet: this.activityName(e.activityId),
+					von: new Date(e.startTs).toISOString(),
+					bis: e.endTs ? new Date(e.endTs).toISOString() : null
+				}))
+			});
 			toast.warning(
 				geschaetzt === 1
 					? "Ein Eintrag lief noch – das Ende wurde geschätzt. Bitte prüfen."
@@ -1033,6 +1091,12 @@ class AppState {
 
 		// Persistieren erst danach (beeinflusst die UI nicht mehr).
 		for (const m of months) await this.#saveMonth(m);
+		logInfo(`Timer gestartet: ${this.activityName(activityId)}`, {
+			start: new Date(start).toISOString(),
+			rueckdatiert: Date.now() - start > 60_000 ? Math.round((Date.now() - start) / 60_000) : 0,
+			gekuerzt: plan.truncate.length,
+			entfernt: plan.remove.length
+		});
 	}
 
 	/** Rueckfrage bestaetigen: Plan neu bilden und starten. */
@@ -1180,6 +1244,10 @@ class AppState {
 	async updateSettings(patch: Partial<Settings>): Promise<void> {
 		this.settings = { ...this.settings, ...patch };
 		await saveSettings($state.snapshot(this.settings) as Settings);
+		// Mit Werten: „E-Mail war leer" ist die Art Frage, die hinterher niemand
+		// mehr beantworten kann. Die Einstellungen sind harmlos – kein Passwort,
+		// keine Zeiten, nur die Konfiguration, die der Benutzer selbst sieht.
+		logDebug("Einstellungen gespeichert", patch);
 	}
 
 	// ---------- Onboarding ----------
@@ -1196,6 +1264,28 @@ class AppState {
 	/** Willkommensbildschirm erneut oeffnen (Dev-Re-Trigger). */
 	openOnboarding(): void {
 		this.showOnboarding = true;
+	}
+
+	/**
+	 * Dev: den Ladebildschirm vorfuehren – Start wiederholen und dabei am Schritt
+	 * `step` scheitern ("error") oder haengen bleiben ("hang").
+	 *
+	 * Die Stoerung sitzt in #step, also genau dort, wo auch echte Fehler entstehen:
+	 * ein bloss gesetzter `initError` pruefte weder den Fang-Zweig noch das
+	 * Protokoll noch den zweiten Anlauf.
+	 *
+	 * Kaputtgehen kann dabei nichts: der gestoerte Schritt laeuft nicht an, alle
+	 * anderen lesen nur, der Sekundentakt laeuft weiter (ein laufender Timer
+	 * zaehlt unbeirrt mit), und die Stoerung gilt genau einmal – "Erneut versuchen"
+	 * startet die App wieder normal.
+	 */
+	async devSimulateStartFault(mode: "error" | "hang", step = "Einträge"): Promise<void> {
+		logInfo(`Dev-Test: Ladebildschirm (${mode}) bei Schritt „${step}"`);
+		this.devFail = { step, mode };
+		this.initError = null;
+		this.initStep = null;
+		this.loaded = false;
+		await this.init();
 	}
 }
 

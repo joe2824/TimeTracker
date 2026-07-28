@@ -2,6 +2,60 @@ mod outlook;
 
 use tauri::{Emitter, Manager};
 
+/// Muss zu `identifier` in tauri.conf.json passen: der Panic-Hook laeuft, bevor
+/// es eine App-Instanz gibt, die den Pfad nennen koennte.
+const IDENTIFIER: &str = "com.jklein.timetracker";
+
+/// Protokollordner – derselbe, in den das Frontend schreibt (BaseDirectory::AppData).
+fn log_dir() -> Option<std::path::PathBuf> {
+    let base = std::env::var_os("APPDATA")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/share"))
+        })?;
+    Some(base.join(IDENTIFIER).join("logs"))
+}
+
+/// Eine Zeile an die heutige Protokolldatei anhaengen – im selben Format wie das
+/// Frontend, damit sich beide Seiten in einer Datei zusammen lesen lassen.
+///
+/// Schluckt jeden Fehler: Protokollieren darf einen Absturz nicht verschlimmern.
+fn log_line(level: &str, text: &str) {
+    use std::io::Write;
+    let Some(dir) = log_dir() else { return };
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let now = chrono::Local::now();
+    let path = dir.join(format!("{}.log", now.format("%Y-%m-%d")));
+    let line = format!(
+        "{} rust {:<5} {}\n",
+        now.format("%Y-%m-%d %H:%M:%S%.3f"),
+        level,
+        text
+    );
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = f.write_all(line.as_bytes());
+    }
+}
+
+/// Abstuerze des Rust-Teils mitschreiben.
+///
+/// Die hinterliessen bisher gar nichts: das Fenster war einfach weg (oder kam nie),
+/// und im Frontend-Protokoll steht dazu naturgemaess nichts. Frueh installiert,
+/// damit auch ein Panic beim Aufbau der Plugins noch in der Datei landet.
+fn install_panic_logging() {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let ort = info
+            .location()
+            .map(|l| format!("{}:{}", l.file(), l.line()))
+            .unwrap_or_else(|| "unbekannt".into());
+        log_line("ERROR", &format!("Absturz im Rust-Teil ({ort}): {info}"));
+        previous(info);
+    }));
+}
+
 #[derive(serde::Deserialize, Clone)]
 pub struct TrayActivity {
     id: String,
@@ -219,6 +273,11 @@ fn show_main(app: &tauri::AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    install_panic_logging();
+    // Eine Zeile je Prozessstart: erst daran ist im Protokoll zu erkennen, dass
+    // die App zwischendurch neu gestartet wurde – etwa durch ein Update.
+    log_line("INFO", &format!("Prozess gestartet (v{})", env!("CARGO_PKG_VERSION")));
+
     let mut builder = tauri::Builder::default();
 
     // Desktop-Plugins direkt in der Builder-Kette registrieren (kanonisch),

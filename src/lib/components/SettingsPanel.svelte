@@ -35,6 +35,8 @@
 	import ShortcutKey from "$lib/components/ShortcutKey.svelte";
 	import SavedHint from "$lib/components/SavedHint.svelte";
 	import SettingRow from "$lib/components/SettingRow.svelte";
+	import LogPanel from "$lib/components/LogPanel.svelte";
+	import { errorText, flushLog, logError, logInfo } from "$lib/log";
 
 	const REPO_URL = "https://github.com/joe2824/TimeTracker";
 
@@ -47,14 +49,15 @@
 	let appVersion = $state("");
 
 	// Versteckter Dev-Modus: 10× schnell (≤3 s) aufs Logo tippen.
-	let devMode = $state(false);
+	// Der Schalter selbst liegt im App-Zustand, damit er das Vorfuehren des
+	// Ladebildschirms ueberlebt – dabei wird diese Seite kurz abgebaut.
 	let logoTaps: number[] = [];
 	function tapLogo() {
 		const now = Date.now();
 		logoTaps = logoTaps.filter((t) => now - t < 3000);
 		logoTaps.push(now);
-		if (!devMode && logoTaps.length >= 10) {
-			devMode = true;
+		if (!app.devMode && logoTaps.length >= 10) {
+			app.devMode = true;
 			logoTaps = [];
 			toast.success("Dev-Modus aktiviert");
 		}
@@ -323,13 +326,15 @@
 		checking = true;
 		try {
 			const update = await check();
+			logInfo(update ? `Update ${update.version} gefunden` : "Kein Update verfügbar");
 			if (update) {
 				pending = update;
 			} else {
 				toast.success("Du bist auf dem neuesten Stand.");
 			}
 		} catch (e) {
-			toast.error(`Update-Prüfung nicht möglich: ${e}`);
+			logError("Update-Prüfung fehlgeschlagen", e);
+			toast.error(`Update-Prüfung nicht möglich: ${errorText(e)}`);
 		} finally {
 			checking = false;
 		}
@@ -341,6 +346,9 @@
 		progress = -1;
 		downloaded = 0;
 		totalBytes = 0;
+		// Vor dem Neustart schreiben: was hier schiefgeht, sieht danach niemand mehr –
+		// genau die Luecke, in der die App nach einem Update seltsam dastand.
+		logInfo(`Update ${pending.version} wird installiert`);
 		try {
 			await pending.downloadAndInstall((event) => {
 				if (event.event === "Started") {
@@ -353,10 +361,13 @@
 					progress = 100;
 				}
 			});
+			logInfo(`Update ${pending.version} installiert, App startet neu`);
 			toast.success("Update installiert – App wird neu gestartet.");
+			await flushLog(); // der Neustart wartet auf niemanden
 			await relaunch();
 		} catch (e) {
-			toast.error(`Update fehlgeschlagen: ${e}`, { duration: 60000 });
+			logError("Update fehlgeschlagen", e);
+			toast.error(`Update fehlgeschlagen: ${errorText(e)}`, { duration: 60000 });
 			installing = false;
 		}
 	}
@@ -645,6 +656,8 @@
 		</Card.Content>
 	</Card.Root>
 
+	<LogPanel />
+
 	<Card.Root>
 		<Card.Header><Card.Title>Über</Card.Title></Card.Header>
 		<Card.Content class="space-y-3">
@@ -655,7 +668,7 @@
 				<div>
 					<div class="flex items-center gap-1.5">
 						<span class="text-sm font-medium">TimeTracker</span>
-						{#if devMode}
+						{#if app.devMode}
 							<span
 								class="bg-primary/10 text-primary inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium"
 								title="Dev-Modus aktiv"
@@ -676,7 +689,7 @@
 				Zeiterfassung für Projektzeiten mit Monatsbericht.
 			</p>
 
-			{#if devMode}
+			{#if app.devMode}
 				<div class="border-t pt-3">
 					<div class="text-muted-foreground mb-2 text-xs font-medium">Dev</div>
 					<div class="flex flex-wrap gap-2">
@@ -695,6 +708,29 @@
 							Berichts-Erinnerung
 						</Button>
 					</div>
+					<div class="text-muted-foreground mt-3 mb-1.5 text-xs">Ladebildschirm</div>
+					<div class="flex flex-wrap gap-2">
+						<Button
+							variant="secondary"
+							size="sm"
+							title="Startet die App neu und lässt den Schritt „Einträge laden“ scheitern. „Erneut versuchen“ bringt alles zurück."
+							onclick={() => app.devSimulateStartFault("error")}
+						>
+							Startfehler
+						</Button>
+						<Button
+							variant="secondary"
+							size="sm"
+							title="Startet die App neu und hält den Schritt „Einträge laden“ 20 s auf – danach läuft er von selbst weiter."
+							onclick={() => app.devSimulateStartFault("hang")}
+						>
+							Start hängen lassen
+						</Button>
+					</div>
+					<p class="text-muted-foreground mt-1.5 text-xs">
+						Beide durchlaufen den echten Startweg. An den erfassten Zeiten ändert sich nichts, ein
+						laufender Timer zählt weiter.
+					</p>
 				</div>
 			{/if}
 		</Card.Content>

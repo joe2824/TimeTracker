@@ -2,6 +2,7 @@
 	import { app } from "$lib/app.svelte";
 	import { clockToMin } from "$lib/time";
 	import { scheduleReminders } from "$lib/reminders";
+	import { logInfo, logWarn } from "$lib/log";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
@@ -84,6 +85,13 @@
 			reminderTimes: cleanTimes,
 			autostart
 		});
+		logInfo("Willkommens-Assistent abgeschlossen", {
+			name: senderName.trim(),
+			vorgesetzte: bossEmail.trim(),
+			stundenProTag: hpd,
+			arbeitstage: workdays.length,
+			erinnerungen: cleanTimes.length
+		});
 		// Erinnerungen mit den neuen Zeiten neu planen.
 		scheduleReminders();
 		// Autostart-Wahl direkt anwenden (der Aufruf beim App-Start lief bereits vorher).
@@ -94,7 +102,7 @@
 				await disable();
 			}
 		} catch (e) {
-			console.error("Autostart konnte nicht gesetzt werden", e);
+			logWarn("Autostart konnte nicht gesetzt werden", e);
 		}
 	}
 

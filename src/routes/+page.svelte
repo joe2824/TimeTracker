@@ -4,8 +4,12 @@
 	import { invoke } from "@tauri-apps/api/core";
 	import { enable, isEnabled } from "@tauri-apps/plugin-autostart";
 	import { check } from "@tauri-apps/plugin-updater";
+	import { getVersion } from "@tauri-apps/api/app";
 	import { toast } from "svelte-sonner";
-	import { app, errorText } from "$lib/app.svelte";
+	import { app } from "$lib/app.svelte";
+	import { errorText, logError, logFile, logInfo, logWarn, pruneOldLogs } from "$lib/log";
+	import { appDataDir, join } from "@tauri-apps/api/path";
+	import { revealItemInDir } from "@tauri-apps/plugin-opener";
 	import { Button } from "$lib/components/ui/button";
 	import { scheduleReminders, scheduleReportReminder } from "$lib/reminders";
 	import { applyShortcuts } from "$lib/shortcuts";
@@ -67,6 +71,18 @@
 	 * danach doppelt auf jeden Tray-Klick.
 	 */
 	async function startup() {
+		// Als erstes ins Protokoll, mit Version: bei "seit dem Update geht X nicht"
+		// ist genau das die Zeile, an der die Suche beginnt.
+		let version = "?";
+		try {
+			version = await getVersion();
+		} catch {
+			/* nicht-desktop */
+		}
+		logInfo(`Hauptfenster startet (Version ${version})`);
+		// Nicht abwarten: das Aufraeumen alter Tage darf den Start nicht bremsen.
+		void pruneOldLogs();
+
 		// false = Laden gescheitert; der Ladebildschirm zeigt Schritt und Meldung.
 		if (!(await app.init())) return;
 		try {
@@ -92,13 +108,13 @@
 				try {
 					if (!(await isEnabled())) await enable();
 				} catch (e) {
-					console.error("Autostart konnte nicht aktiviert werden", e);
+					logWarn("Autostart konnte nicht aktiviert werden", e);
 				}
 			}
 		} catch (e) {
 			// Die Daten stehen, nur das Drumherum klemmt – das gehoert gesagt, statt
 			// als abgewiesene Promise in der Konsole zu verschwinden.
-			console.error("Einrichtung nach dem Laden fehlgeschlagen", e);
+			logError("Einrichtung nach dem Laden fehlgeschlagen", e);
 			toast.error(`Einrichtung unvollständig: ${errorText(e)}`, { duration: 60000 });
 		}
 
@@ -106,13 +122,16 @@
 		try {
 			const update = await check();
 			if (update) {
+				logInfo(`Update ${update.version} verfügbar`);
 				toast.info(`Update ${update.version} verfügbar`, {
 					duration: 15000,
 					action: { label: "Installieren", onClick: () => (tab = "settings") }
 				});
 			}
-		} catch {
-			/* offline o. Updater nicht konfiguriert – ignorieren */
+		} catch (e) {
+			// Offline oder Updater nicht konfiguriert – kein Fall fuer den Benutzer,
+			// aber der Grund gehoert ins Protokoll (der Updater hat schon gepatzt).
+			logWarn("Update-Prüfung beim Start nicht möglich", e);
 		}
 	}
 
@@ -125,6 +144,15 @@
 			app.dispose();
 		};
 	});
+
+	/** Protokollordner im Explorer zeigen – vom Fehlerbildschirm aus. */
+	async function openLogFolder() {
+		try {
+			await revealItemInDir(await join(await appDataDir(), logFile()));
+		} catch (e) {
+			toast.error(`Ordner nicht zu öffnen: ${errorText(e)}`, { duration: 30000 });
+		}
+	}
 
 	// Sekunden im Ladebildschirm. Ab einer Weile ist "Laedt…" keine Auskunft mehr,
 	// sondern nur noch die Frage, ob ueberhaupt etwas passiert – dann nennt der
@@ -186,9 +214,12 @@
 					Deine erfassten Zeiten sind davon nicht betroffen – sie liegen als Dateien im
 					App-Datenordner.
 				</p>
-				<div class="flex justify-center gap-2">
+				<div class="flex flex-wrap justify-center gap-2">
 					<Button onclick={() => void startup()}>Erneut versuchen</Button>
 					<Button variant="outline" onclick={() => location.reload()}>Neu laden</Button>
+					<!-- Hier ist die App unbedienbar; das Protokoll ist der einzige Weg,
+					     mehr ueber die Ursache zu erfahren als diese eine Zeile. -->
+					<Button variant="outline" onclick={openLogFolder}>Protokoll öffnen</Button>
 				</div>
 			{:else}
 				<p class="text-muted-foreground text-sm">

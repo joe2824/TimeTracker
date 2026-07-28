@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from "svelte";
-	import { app, errorText } from "$lib/app.svelte";
+	import { app } from "$lib/app.svelte";
+	import { errorText, logError, logInfo } from "$lib/log";
 	import { fmtClock, fmtHMS, midnightSplitHint } from "$lib/time";
 	import { START_PRESETS, resolveStartTs, toStartArg } from "$lib/startTime";
 	import { Button } from "$lib/components/ui/button";
@@ -46,7 +47,7 @@
 			await app.reload();
 			loadError = null;
 		} catch (e) {
-			console.error("Flyout konnte die Daten nicht laden", e);
+			logError("Flyout konnte die Daten nicht laden", e);
 			loadError = errorText(e);
 		}
 		// Aktuellen Hinweis-Status beim Hauptfenster anfragen (Antwort via "main-attention").
@@ -54,6 +55,7 @@
 	}
 
 	onMount(() => {
+		logInfo("Tray-Flyout geöffnet");
 		void refresh();
 		// Eigener Tick (dieses Fenster ruft app.init() nicht auf) für die Live-Anzeige.
 		const tick = setInterval(() => (app.now = Date.now()), 1000);

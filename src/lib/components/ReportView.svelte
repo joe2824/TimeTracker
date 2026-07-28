@@ -4,6 +4,7 @@
 	import { fmtHoursClock } from "$lib/time";
 	import { openUrl } from "@tauri-apps/plugin-opener";
 	import { createOutlookDraft, detectOutlook, explainOutlookError, mailtoFallback } from "$lib/outlook";
+	import { errorText, logError, logInfo } from "$lib/log";
 	import { Button } from "$lib/components/ui/button";
 	import MonthSelector from "$lib/components/MonthSelector.svelte";
 	import StatsCard from "$lib/components/StatsCard.svelte";
@@ -41,12 +42,16 @@
 		try {
 			await createOutlookDraft(app.settings.bossEmail, subject, html);
 			await app.markReportSent(month);
+			logInfo(`Outlook-Entwurf für ${month} erstellt`, { an: app.settings.bossEmail });
 			toast.success("Outlook-Entwurf geöffnet. Bitte prüfen und senden.");
 			return true;
 		} catch (e) {
 			// Klar erklaeren (z.B. nur neues Outlook) und den mailto-Fallback anbieten.
 			const info = await detectOutlook().catch(() => null);
 			const msg = explainOutlookError(e, info);
+			// Mit der Outlook-Erkennung daneben: die Meldung allein sagt spaeter nicht,
+			// WELCHES Outlook der Rechner ueberhaupt hat.
+			logError(`Outlook-Entwurf für ${month} fehlgeschlagen`, { fehler: errorText(e), outlook: info });
 			toast.error(msg, {
 				description: "Fallback: E-Mail als Text öffnen (ohne HTML-Tabelle) oder „HTML kopieren“.",
 				action: {

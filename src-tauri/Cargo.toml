@@ -25,6 +25,9 @@ tauri-plugin-notification = "2"
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Nur fuer den Zeitstempel im Absturz-Protokoll (steckte ohnehin schon als
+# indirekte Abhaengigkeit im Baum).
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 user-idle = "0.6"

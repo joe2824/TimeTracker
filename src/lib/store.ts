@@ -15,6 +15,7 @@ import {
 } from "@tauri-apps/plugin-fs";
 import type { Activity, Entry, Settings } from "./types";
 import { defaultSettings } from "./types";
+import { logError, logWarn } from "./log";
 
 const DIR = "data";
 const baseOpts = { baseDir: BaseDirectory.AppData } as const;
@@ -50,7 +51,10 @@ async function writeJson(file: string, data: unknown): Promise<void> {
 			oldPathBaseDir: BaseDirectory.AppData,
 			newPathBaseDir: BaseDirectory.AppData
 		});
-	} catch {
+	} catch (e) {
+		// Der unsichere Weg: ab hier kann ein Stromausfall eine halbe Datei
+		// hinterlassen. Wenn das dauerhaft passiert, steht der Grund im Protokoll.
+		logWarn(`${file}: atomares Schreiben nicht möglich, schreibe direkt`, e);
 		await writeTextFile(target, json, baseOpts);
 		// Die temp-Datei liegt sonst fuer immer im Datenordner – und zwar bei
 		// JEDEM Speichern erneut, solange rename scheitert.
@@ -117,14 +121,14 @@ export async function loadEntries(month: string): Promise<Entry[]> {
 		// Umbenennen statt loeschen – der Name passt dann nicht mehr auf
 		// MONTH_FILE_RE, wird also weder gelistet noch aufgeraeumt.
 		const quarantine = `${path}.beschaedigt-${Date.now()}`;
-		console.error(`${file} ist beschaedigt, abgelegt als ${quarantine}`, e);
+		logError(`${file} ist beschädigt, abgelegt als ${quarantine}`, e);
 		try {
 			await rename(path, quarantine, {
 				oldPathBaseDir: BaseDirectory.AppData,
 				newPathBaseDir: BaseDirectory.AppData
 			});
 		} catch (renameErr) {
-			console.error("Beschaedigte Datei konnte nicht abgelegt werden", renameErr);
+			logError("Beschädigte Datei konnte nicht abgelegt werden", renameErr);
 		}
 		return [];
 	}

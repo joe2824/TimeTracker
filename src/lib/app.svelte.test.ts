@@ -374,3 +374,53 @@ describe("init() – was der Ladebildschirm anzeigt", () => {
 		expect(app.initStep).toBeNull();
 	});
 });
+
+describe("devSimulateStartFault() – Ladebildschirm vorführen", () => {
+	afterEach(() => {
+		app.dispose();
+		app.loaded = false;
+		app.devFail = null;
+		app.initStep = null;
+		app.initError = null;
+	});
+
+	it("nimmt den echten Fehlerweg und lässt sich danach normal starten", async () => {
+		const laufend = entry("r", P1, at(17, 9), null);
+		reset({ "2026-07": [laufend] });
+		app.loaded = true; // App laeuft bereits
+		const vorher = files.get(monthFile("2026-07"));
+
+		await app.devSimulateStartFault("error");
+
+		expect(app.loaded).toBe(false);
+		expect(app.initError?.step).toContain("Einträge");
+		expect(app.initError?.message).toContain("Dev-Menü");
+		// Nichts angefasst: der gestoerte Schritt laeuft gar nicht erst an.
+		expect(files.get(monthFile("2026-07"))).toBe(vorher);
+
+		// „Erneut versuchen": die Stoerung gilt nur einmal.
+		expect(await app.init()).toBe(true);
+		expect(app.initError).toBeNull();
+		expect(app.initStep).toBeNull();
+	});
+
+	it("hält den Start nur auf – und läuft von selbst weiter", async () => {
+		vi.useFakeTimers();
+		try {
+			reset();
+			app.loaded = true;
+			const start = app.devSimulateStartFault("hang");
+
+			await vi.advanceTimersByTimeAsync(1000);
+			expect(app.loaded).toBe(false); // steht im Ladebildschirm …
+			expect(app.initStep).toContain("Einträge"); // … und sagt, woran
+			expect(app.initError).toBeNull(); // kein Fehler, nur langsam
+
+			await vi.advanceTimersByTimeAsync(20_000);
+			await start;
+			expect(app.loaded).toBe(true);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+});
