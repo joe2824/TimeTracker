@@ -277,9 +277,14 @@
 {/if}
 
 <style>
-	/* Sequenzielle Rampe (eine Hue, hell->dunkel), gegen die echten Card-Flaechen
-	   validiert: Light #ffffff, Dark #171717. Im Dunkelmodus kippt der Anker –
-	   "wenig" liegt nah an der dunklen Flaeche, "viel" wird hell. */
+	/* Sequenzielle Rampe (eine Hue, hell->dunkel) – in BEIDEN Themes in dieselbe
+	   Richtung: hell = wenig, dunkel = viel. Frueher kippte der Anker im
+	   Dunkelmodus (viel = hell), rein aus Kontrastgruenden gegen die dunkle Card.
+	   Nur liest niemand eine Legende zweimal: "dunkler = mehr Arbeit" ist die
+	   Bedeutung, die haengen bleibt, und die darf nicht am Theme haengen.
+	   Im Dunkelmodus endet die Rampe deshalb bei einem mittleren Blau statt im
+	   Schwarz – dunkel genug fuer die Aussage, hell genug gegen die Card (#171717).
+	   Level 0 (nichts erfasst) bleibt neutral grau und faellt so aus der Rampe. */
 	.heat {
 		background: var(--heat-0);
 	}
@@ -297,9 +302,9 @@
 	}
 	:global(.dark) {
 		--heat-0: #262626;
-		--heat-1: #184f95;
-		--heat-2: #256abf;
-		--heat-3: #3987e5;
-		--heat-4: #86b6ef;
+		--heat-1: #b8d4f6;
+		--heat-2: #6ea6ec;
+		--heat-3: #3d7fcf;
+		--heat-4: #1e5296;
 	}
 </style>

@@ -69,6 +69,15 @@
 	let startText = $state(""); // Roh-Eingabe Von, erst beim Verlassen normalisiert
 	let endText = $state(""); // Roh-Eingabe Bis
 	const draftIsAbsence = $derived(app.isAbsenceId(draft.activityId));
+	/**
+	 * Warnung beim Öffnen: der gespeicherte Eintrag passt nicht in Datum + Von/Bis.
+	 *
+	 * Der Dialog kennt nur EIN Datum und zwei Uhrzeiten. Ein Eintrag über mehrere
+	 * Tage (vergessener Timer) sah darin völlig unauffällig aus – 09:00–17:00 –,
+	 * während die Liste daneben 73 Stunden zeigte und der Bericht sie übernahm.
+	 * Lieber sagen, was wirklich gespeichert ist.
+	 */
+	let spanNote = $state<string | null>(null);
 
 	/**
 	 * Hinweis, dass aus dem Entwurf zwei Einträge werden (Von 23:00 / Bis 01:00).
@@ -223,13 +232,33 @@
 	function openAdd(date?: string) {
 		draft = emptyDraft(); // date = heute
 		if (date) draft.date = date;
+		spanNote = null;
 		recalcDur();
 		syncTimeText();
 		dialogOpen = true;
 	}
 
+	/**
+	 * Endzeitpunkt, den der Dialog aus Datum + Von/Bis wieder herstellen würde –
+	 * dieselbe Folgetag-Regel wie in save(). Weicht er vom gespeicherten Ende ab,
+	 * zeigt der Dialog etwas anderes an, als in der Datei steht.
+	 */
+	function reprEnd(e: Entry): number {
+		const day = fmtDate(e.startTs);
+		const clock = fmtClock(e.endTs!);
+		const same = toTs(day, clock);
+		return same < e.startTs ? toTs(fmtDate(startOfNextDay(e.startTs)), clock) : same;
+	}
+
+	/** Zeitstempel auf volle Minuten – fmtClock kennt keine Sekunden. */
+	const toMin = (ts: number) => Math.floor(ts / 60000);
+
 	function openEdit(e: Entry) {
 		const end = e.endTs ?? Date.now();
+		spanNote =
+			e.endTs !== null && !app.isAbsenceId(e.activityId) && toMin(reprEnd(e)) !== toMin(e.endTs)
+				? `Gespeichert ist ${fmtDateHuman(e.startTs)} ${fmtClock(e.startTs)} bis ${fmtDateHuman(e.endTs)} ${fmtClock(e.endTs)} – ${fmtHoursClock((e.endTs - e.startTs) / 3600000)} h. Speichern kürzt den Eintrag auf die Zeiten unten.`
+				: null;
 		draft = {
 			id: e.id,
 			originalStartTs: e.startTs,
@@ -318,7 +347,12 @@
 			return `${name} · ${(e.dayFraction ?? 1) === 0.5 ? "½ Tag" : "ganzer Tag"}`;
 		}
 		const h = entryHours(e, false, app.settings.hoursPerDay, app.now);
-		return `${name} · ${fmtClock(e.startTs)}–${e.endTs ? fmtClock(e.endTs) : "…"} (${fmtHoursClock(h)} h)`;
+		// Reicht der Eintrag über seinen Tag hinaus (vergessener Timer), gehört der
+		// Endtag dazu – sonst stünde da "09:00–10:00" neben 73 Stunden.
+		const bis = e.endTs
+			? fmtClock(e.endTs) + (e.endTs > startOfNextDay(e.startTs) ? ` am ${fmtDateHuman(e.endTs)}` : "")
+			: "…";
+		return `${name} · ${fmtClock(e.startTs)}–${bis} (${fmtHoursClock(h)} h)`;
 	}
 </script>
 
@@ -457,6 +491,13 @@
 				<Dialog.Title>{draft.id ? "Eintrag bearbeiten" : "Neuer Eintrag"}</Dialog.Title>
 			</Dialog.Header>
 			<div class="space-y-3">
+			{#if spanNote}
+				<p
+					class="rounded-md bg-amber-500/15 px-2.5 py-2 text-xs text-amber-700 dark:text-amber-300"
+				>
+					{spanNote}
+				</p>
+			{/if}
 			<div class="space-y-1">
 				<Label for="act">Aktivität</Label>
 				<ActivityCombobox id="act" bind:value={draft.activityId} options={activityOptions} />

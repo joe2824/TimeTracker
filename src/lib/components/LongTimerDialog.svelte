@@ -4,11 +4,20 @@
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
 	import { app } from "$lib/app.svelte";
-	import { fmtClock, fmtDate, fmtHMS } from "$lib/time";
+	import { fmtClock, fmtDate, fmtDateHuman, fmtHMS } from "$lib/time";
 	import { watchers, resolveLongTimer } from "$lib/watchers.svelte";
 
 	const p = $derived(watchers.longTimerPrompt);
 	const open = $derived(!!p);
+
+	// Über mehrere Tage sagt die Uhrzeit allein nichts – dann gehört der Tag dazu.
+	const startLabel = $derived(
+		p && fmtDate(p.startTs) !== fmtDate(Date.now())
+			? `${fmtDateHuman(p.startTs)} ${fmtClock(p.startTs)}`
+			: p
+				? fmtClock(p.startTs)
+				: ""
+	);
 
 	/** datetime-local-Wert "YYYY-MM-DDTHH:MM" der eingegebenen Endzeit. */
 	let endValue = $state("");
@@ -41,8 +50,7 @@
 			<Dialog.Description>
 				{#if p}
 					„{app.activityName(p.activityId)}" läuft seit
-					<strong>{fmtHMS(p.elapsedSec)}</strong> (Start {fmtClock(p.startTs)}). Wann hast du
-					aufgehört?
+					<strong>{fmtHMS(p.elapsedSec)}</strong> (Start {startLabel}). Wann hast du aufgehört?
 				{/if}
 			</Dialog.Description>
 		</Dialog.Header>
