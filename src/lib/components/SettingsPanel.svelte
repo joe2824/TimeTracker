@@ -20,8 +20,7 @@
 	import * as Card from "$lib/components/ui/card";
 	import { toast } from "svelte-sonner";
 	import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
-	import { check, type Update } from "@tauri-apps/plugin-updater";
-	import { relaunch } from "@tauri-apps/plugin-process";
+	import { checkForUpdate, updater } from "$lib/updater.svelte";
 	import { getVersion } from "@tauri-apps/api/app";
 	import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 	import { openUrl } from "@tauri-apps/plugin-opener";
@@ -36,7 +35,6 @@
 	import SavedHint from "$lib/components/SavedHint.svelte";
 	import SettingRow from "$lib/components/SettingRow.svelte";
 	import LogPanel from "$lib/components/LogPanel.svelte";
-	import { errorText, flushLog, logError, logInfo } from "$lib/log";
 
 	const REPO_URL = "https://github.com/joe2824/TimeTracker";
 
@@ -315,61 +313,10 @@
 		}
 	}
 
-	let checking = $state(false);
-	let pending = $state<Update | null>(null);
-	let installing = $state(false);
-	let progress = $state(0); // 0..100, -1 = unbestimmt
-	let downloaded = $state(0);
-	let totalBytes = $state(0);
-
-	async function checkUpdate() {
-		checking = true;
-		try {
-			const update = await check();
-			logInfo(update ? `Update ${update.version} gefunden` : "Kein Update verfügbar");
-			if (update) {
-				pending = update;
-			} else {
-				toast.success("Du bist auf dem neuesten Stand.");
-			}
-		} catch (e) {
-			logError("Update-Prüfung fehlgeschlagen", e);
-			toast.error(`Update-Prüfung nicht möglich: ${errorText(e)}`);
-		} finally {
-			checking = false;
-		}
-	}
-
-	async function installUpdate() {
-		if (!pending) return;
-		installing = true;
-		progress = -1;
-		downloaded = 0;
-		totalBytes = 0;
-		// Vor dem Neustart schreiben: was hier schiefgeht, sieht danach niemand mehr –
-		// genau die Luecke, in der die App nach einem Update seltsam dastand.
-		logInfo(`Update ${pending.version} wird installiert`);
-		try {
-			await pending.downloadAndInstall((event) => {
-				if (event.event === "Started") {
-					totalBytes = event.data.contentLength ?? 0;
-					progress = totalBytes ? 0 : -1;
-				} else if (event.event === "Progress") {
-					downloaded += event.data.chunkLength;
-					if (totalBytes) progress = Math.round((downloaded / totalBytes) * 100);
-				} else if (event.event === "Finished") {
-					progress = 100;
-				}
-			});
-			logInfo(`Update ${pending.version} installiert, App startet neu`);
-			toast.success("Update installiert – App wird neu gestartet.");
-			await flushLog(); // der Neustart wartet auf niemanden
-			await relaunch();
-		} catch (e) {
-			logError("Update fehlgeschlagen", e);
-			toast.error(`Update fehlgeschlagen: ${errorText(e)}`, { duration: 60000 });
-			installing = false;
-		}
+	// Suche und Dialog liegen in $lib/updater.svelte – der Hinweis-Toast beim Start
+	// öffnet denselben Dialog, ohne dass jemand hier vorbeikommen muss.
+	function checkUpdate() {
+		void checkForUpdate();
 	}
 </script>
 
@@ -620,8 +567,8 @@
 				bind:checked={autostart}
 				onCheckedChange={toggleAutostart}
 			/>
-			<Button variant="outline" onclick={checkUpdate} disabled={checking}>
-				{checking ? "Suche…" : "Nach Updates suchen"}
+			<Button variant="outline" onclick={checkUpdate} disabled={updater.checking}>
+				{updater.checking ? "Suche…" : "Nach Updates suchen"}
 			</Button>
 		</Card.Content>
 	</Card.Root>
@@ -736,56 +683,6 @@
 		</Card.Content>
 	</Card.Root>
 </div>
-
-<Dialog.Root
-	open={!!pending}
-	onOpenChange={(v) => {
-		if (!v && !installing) pending = null;
-	}}
->
-	<Dialog.Content class="sm:max-w-md">
-		<Dialog.Header>
-			<Dialog.Title>Update verfügbar</Dialog.Title>
-			<Dialog.Description>
-				Version {pending?.version}
-				{#if pending?.date}· {pending.date.split(" ")[0]}{/if}
-			</Dialog.Description>
-		</Dialog.Header>
-
-		{#if pending?.body}
-			<div class="text-muted-foreground max-h-40 overflow-y-auto whitespace-pre-wrap text-sm">
-				{pending.body}
-			</div>
-		{/if}
-
-		{#if installing}
-			<div class="space-y-1">
-				<div class="bg-muted h-2 w-full overflow-hidden rounded">
-					<div
-						class="bg-primary h-full transition-all"
-						style={`width:${progress < 0 ? 100 : progress}%`}
-						class:animate-pulse={progress < 0}
-					></div>
-				</div>
-				<p class="text-muted-foreground text-xs">
-					{#if progress < 0}
-						Lädt…
-					{:else}
-						{progress}%{#if totalBytes}
-							· {(downloaded / 1e6).toFixed(1)} / {(totalBytes / 1e6).toFixed(1)} MB{/if}
-					{/if}
-				</p>
-			</div>
-		{/if}
-
-		<Dialog.Footer>
-			<Button variant="outline" disabled={installing} onclick={() => (pending = null)}>Später</Button>
-			<Button disabled={installing} onclick={installUpdate}>
-				{installing ? "Installiere…" : "Jetzt installieren"}
-			</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
 
 <!-- Loeschen ist endgueltig: kein Papierkorb, kein Backup. Deshalb wird vorher
      genannt, was genau verschwindet. -->

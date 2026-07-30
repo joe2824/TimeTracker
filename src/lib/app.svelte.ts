@@ -822,6 +822,52 @@ class AppState {
 		return out;
 	}
 
+	/**
+	 * Die zusammenhaengenden Stuecke EINES Laufs, aeltestes zuerst.
+	 *
+	 * Ein Timer ueber Mitternacht wird dort geteilt (#rolloverAtMidnight), aus einem
+	 * Lauf werden also mehrere Eintraege. Wer ihn spaeter mit einer frueheren Endzeit
+	 * beendet, meint den GANZEN Lauf – nicht nur das letzte Stueck. Ohne diese Kette
+	 * blieben die Tagesstuecke mit je 24 h stehen, die nie gearbeitet wurden, und
+	 * landeten so im Bericht.
+	 *
+	 * Erkennungsmerkmal der Teilung: gleiche Aktivitaet, das Vorgaengerstueck endet
+	 * exakt an der Mitternacht, an der das naechste beginnt. Zwei manuelle Eintraege,
+	 * die zufaellig aneinander stossen, erfuellen das nicht.
+	 *
+	 * Gesucht wird nur in den geladenen Monaten – weiter zurueck reicht kein Lauf,
+	 * der noch offen ist.
+	 */
+	runChain(entry: Entry): Entry[] {
+		const all = Object.values(this.entriesByMonth).flat();
+		const chain = [entry];
+		const seen = new Set([entry.id]);
+		for (;;) {
+			const cur = chain[0];
+			const prev = all.find(
+				(e) =>
+					!seen.has(e.id) &&
+					e.activityId === cur.activityId &&
+					e.endTs === cur.startTs &&
+					startOfNextDay(e.startTs) === cur.startTs
+			);
+			if (!prev) return chain;
+			seen.add(prev.id);
+			chain.unshift(prev);
+		}
+	}
+
+	/** Beginn des laufenden Laufs – vor der Mitternachts-Teilung. Null = kein Timer. */
+	get runStartTs(): number | null {
+		return this.running ? this.runChain(this.running)[0].startTs : null;
+	}
+
+	/** Sekunden des laufenden LAUFS, ueber Mitternachts-Teilungen hinweg. */
+	get runSeconds(): number {
+		const start = this.runStartTs;
+		return start === null ? 0 : Math.max(0, Math.floor((this.now - start) / 1000));
+	}
+
 	/** Schließt ALLE offenen Einträge (egal welches Fenster sie öffnete). running = null. */
 	async #closeAllOpen(endTs = Date.now()): Promise<void> {
 		const offen = this.#openEntries();
@@ -832,19 +878,31 @@ class AppState {
 			});
 		}
 		const months = new Set<string>();
-		// Kopie je Liste: die Tagesstuecke unten haengen waehrend des Laufs an.
-		for (const [m, list] of Object.entries(this.entriesByMonth)) {
-			for (const e of [...list]) {
-				if (e.endTs !== null) continue;
-				const end = Math.max(e.startTs, endTs);
+		for (const open of offen) {
+			// Der ganze Lauf, nicht nur das letzte Tagesstueck: eine Endzeit vor
+			// Mitternacht muss die schon abgetrennten Stuecke mitnehmen.
+			const chain = this.runChain(open);
+			// Nie vor den Beginn des Laufs – sonst entstuende eine negative Dauer.
+			const end = Math.max(chain[0].startTs, endTs);
+			for (const piece of chain) {
+				const m = monthKey(piece.startTs);
+				months.add(m);
+				// Stuecke komplett nach dem Ende gab es nie. Das erste bleibt, damit
+				// ein Lauf nicht spurlos verschwindet (dann eben mit Dauer 0).
+				if (piece.id !== chain[0].id && piece.startTs >= end) {
+					const list = this.entriesByMonth[m];
+					const i = list?.findIndex((x) => x.id === piece.id) ?? -1;
+					if (i >= 0) list.splice(i, 1);
+					continue;
+				}
+				if (piece.endTs !== null && piece.endTs <= end) continue;
 				// Ueber Mitternacht in Tagesstuecke zerlegen: sonst zaehlte die Zeit
 				// nach 00:00 zum Vortag – an einer Monatsgrenze sogar in der falschen
 				// Monatsdatei und damit im falschen Bericht.
-				const parts = splitAtMidnight(e.startTs, end);
-				e.endTs = parts[0].endTs;
-				months.add(m);
+				const parts = splitAtMidnight(piece.startTs, Math.max(piece.startTs, end));
+				piece.endTs = parts[0].endTs;
 				for (const p of parts.slice(1)) {
-					const seg = await this.#addSegment(e, p.startTs, p.endTs);
+					const seg = await this.#addSegment(piece, p.startTs, p.endTs);
 					if (seg) months.add(seg);
 				}
 			}
@@ -1072,8 +1130,14 @@ class AppState {
 		// Wechsel ohne Flackern: alte Eintraege anpassen UND neuen setzen in EINEM
 		// synchronen Schritt (kein await dazwischen -> running wird nie kurz null).
 		const months = new Set<string>();
+		// Tagesstuecke der Kuerzung erst nach dem synchronen Block anlegen (#addSegment
+		// ist async). Ein offener Eintrag von vorgestern, der jetzt gekuerzt wird, ergaebe
+		// sonst EINEN Eintrag ueber mehrere Tage – im Bericht eine 50-Stunden-Zeile.
+		const followUps: { from: Entry; startTs: number; endTs: number }[] = [];
 		for (const { entry, endTs } of plan.truncate) {
-			entry.endTs = endTs;
+			const parts = splitAtMidnight(entry.startTs, endTs);
+			entry.endTs = parts[0].endTs;
+			for (const p of parts.slice(1)) followUps.push({ from: entry, ...p });
 			months.add(monthKey(entry.startTs));
 		}
 		for (const dead of plan.remove) {
@@ -1088,6 +1152,11 @@ class AppState {
 		this.entriesByMonth[month].push(entry);
 		this.running = entry;
 		months.add(month);
+
+		for (const f of followUps) {
+			const seg = await this.#addSegment(f.from, f.startTs, f.endTs);
+			if (seg) months.add(seg);
+		}
 
 		// Persistieren erst danach (beeinflusst die UI nicht mehr).
 		for (const m of months) await this.#saveMonth(m);

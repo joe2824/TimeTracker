@@ -30,8 +30,15 @@ let lastPomoKey: string | null = null;
 let lastPomoSig = "";
 /** Prompt bereits gezeigt; bleibt true bis der Nutzer wieder aktiv ist (idle < Schwelle). */
 let idlePromptShown = false;
-/** Eintrags-id des zuletzt gesehenen laufenden Timers (für Flag-Reset bei Wechsel). */
-let lastRunningId: string | null = null;
+/**
+ * Beginn des zuletzt gesehenen Laufs (für Flag-Reset bei Wechsel).
+ *
+ * Bewusst der Lauf-Beginn und nicht die Eintrags-id: an Mitternacht wird der Timer
+ * geteilt, die id wechselt also mitten im Lauf. Am id-Wechsel hing der Reset –
+ * damit verschwand der offene "Timer läuft noch"-Dialog um 00:00 von selbst und
+ * die Warnung begann am neuen Tag wieder bei null.
+ */
+let lastRunStart: number | null = null;
 /** Zuletzt gesetzter Tray-Tooltip (vermeidet IPC bei unveränderter Anzeige). */
 let lastTooltip = "";
 
@@ -61,17 +68,20 @@ async function tick() {
 
 	if (!running) {
 		resetFlags();
-		lastRunningId = null;
+		lastRunStart = null;
 		return;
 	}
 
-	// Aktivitätswechsel = neuer Eintrag -> Erinnerungen wieder scharf stellen.
-	if (running.id !== lastRunningId) {
-		lastRunningId = running.id;
+	// Aktivitätswechsel = neuer Lauf -> Erinnerungen wieder scharf stellen.
+	const runStart = app.runStartTs;
+	if (runStart !== lastRunStart) {
+		lastRunStart = runStart;
 		resetFlags();
 	}
 
-	const elapsedSec = app.runningSeconds;
+	// Der ganze Lauf, nicht nur das Stück seit Mitternacht: sonst meldete sich die
+	// Warnung bei einem vergessenen Timer jeden Tag aufs Neue mit "läuft seit 10 h".
+	const elapsedSec = app.runSeconds;
 
 	// --- Auto-Stop-Warnung (Timer vergessen) ---
 	if (s.maxTimerHours > 0 && elapsedSec >= s.maxTimerHours * 3600 && !autoStopNotified) {
@@ -79,7 +89,7 @@ async function tick() {
 		// In-App-Dialog mit Endzeit-Eingabe (falls App offen) …
 		watchers.longTimerPrompt = {
 			activityId: running.activityId,
-			startTs: running.startTs,
+			startTs: runStart ?? running.startTs,
 			elapsedSec
 		};
 		// … und OS-Benachrichtigung (falls App nur im Tray läuft).

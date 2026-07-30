@@ -3,7 +3,7 @@
 	import { listen, emit } from "@tauri-apps/api/event";
 	import { invoke } from "@tauri-apps/api/core";
 	import { enable, isEnabled } from "@tauri-apps/plugin-autostart";
-	import { check } from "@tauri-apps/plugin-updater";
+	import { checkForUpdate, openUpdateDialog, updater } from "$lib/updater.svelte";
 	import { getVersion } from "@tauri-apps/api/app";
 	import { toast } from "svelte-sonner";
 	import { app } from "$lib/app.svelte";
@@ -33,6 +33,7 @@
 	import ReportReminderDialog from "$lib/components/ReportReminderDialog.svelte";
 	import BackdateDialog from "$lib/components/BackdateDialog.svelte";
 	import AbsenceOverrideDialog from "$lib/components/AbsenceOverrideDialog.svelte";
+	import UpdateDialog from "$lib/components/UpdateDialog.svelte";
 
 	let tab = $state("tracking");
 	let paletteOpen = $state(false);
@@ -118,20 +119,14 @@
 			toast.error(`Einrichtung unvollständig: ${errorText(e)}`, { duration: 60000 });
 		}
 
-		// Beim Start still nach Updates suchen und ggf. Hinweis zeigen.
-		try {
-			const update = await check();
-			if (update) {
-				logInfo(`Update ${update.version} verfügbar`);
-				toast.info(`Update ${update.version} verfügbar`, {
-					duration: 15000,
-					action: { label: "Installieren", onClick: () => (tab = "settings") }
-				});
-			}
-		} catch (e) {
-			// Offline oder Updater nicht konfiguriert – kein Fall fuer den Benutzer,
-			// aber der Grund gehoert ins Protokoll (der Updater hat schon gepatzt).
-			logWarn("Update-Prüfung beim Start nicht möglich", e);
+		// Beim Start still nach Updates suchen und ggf. Hinweis zeigen. „Installieren"
+		// öffnet direkt den Update-Dialog – vorher landete man nur im Einstellungs-Tab
+		// und musste die Suche dort von Hand wiederholen.
+		if (await checkForUpdate({ silent: true })) {
+			toast.info(`Update ${updater.pending?.version} verfügbar`, {
+				duration: 15000,
+				action: { label: "Installieren", onClick: () => void openUpdateDialog() }
+			});
 		}
 	}
 
@@ -305,6 +300,7 @@
 	<ReportReminderDialog />
 	<BackdateDialog />
 	<AbsenceOverrideDialog />
+	<UpdateDialog />
 
 	{#if app.showOnboarding}
 		<OnboardingWizard />

@@ -91,6 +91,107 @@ describe("stop() – Teilung an Mitternacht", () => {
 	});
 });
 
+describe("stop() – Lauf über mehrere Tage nachträglich beenden", () => {
+	/**
+	 * Der Fall aus der Praxis: Timer am 16. um 09:00 gestartet, Rechner drei Tage
+	 * zugeklappt. Der Mitternachts-Wechsel hat daraus vier Stuecke gemacht (zwei
+	 * davon volle 24-Stunden-Tage). Wer im "Timer läuft noch"-Dialog das echte
+	 * Ende einträgt, meint den ganzen Lauf – nicht nur das letzte Stueck.
+	 */
+	function laufUeberDreiTage() {
+		const stuecke = [
+			entry("t1", P1, at(16, 9), at(17, 0)),
+			entry("t2", P1, at(17, 0), at(18, 0)),
+			entry("t3", P1, at(18, 0), at(19, 0)),
+			entry("t4", P1, at(19, 0), null)
+		];
+		reset({ "2026-07": stuecke });
+		app.running = stuecke[3];
+		return stuecke;
+	}
+
+	it("räumt die Tagesstücke weg, die nach der eingetragenen Endzeit liegen", async () => {
+		laufUeberDreiTage();
+
+		await app.stop(at(16, 17)); // "aufgehört habe ich am 16. um 17 Uhr"
+
+		const es = onDisk("2026-07");
+		expect(es).toHaveLength(1);
+		expect(es[0].id).toBe("t1");
+		expect(es[0].endTs).toBe(at(16, 17));
+		expect(app.running).toBeNull();
+	});
+
+	it("kürzt das Stück, in dem die Endzeit liegt, und löscht nur die danach", async () => {
+		laufUeberDreiTage();
+
+		await app.stop(at(18, 10));
+
+		const es = onDisk("2026-07").sort((a, b) => a.startTs - b.startTs);
+		expect(es.map((e) => e.id)).toEqual(["t1", "t2", "t3"]);
+		expect(es[2].endTs).toBe(at(18, 10)); // t3 gekuerzt, t4 weg
+	});
+
+	it("lässt einen Lauf nie spurlos verschwinden", async () => {
+		laufUeberDreiTage();
+
+		await app.stop(at(15, 8)); // vor dem Start – unmoeglich
+
+		const es = onDisk("2026-07");
+		expect(es).toHaveLength(1);
+		expect(es[0].startTs).toBe(at(16, 9));
+		expect(es[0].endTs).toBe(at(16, 9)); // Dauer 0 statt negativ
+	});
+
+	it("fasst zwei zufällig aneinanderstoßende Einträge nicht zu einem Lauf zusammen", async () => {
+		// Manuell erfasst, kein Mitternachts-Stueck: der Vormittag bleibt stehen.
+		const vormittag = entry("v", P1, at(17, 8), at(17, 12));
+		const laufend = entry("r", P1, at(17, 12), null);
+		reset({ "2026-07": [vormittag, laufend] });
+		app.running = laufend;
+
+		await app.stop(at(17, 10));
+
+		const es = onDisk("2026-07").sort((a, b) => a.startTs - b.startTs);
+		expect(es).toHaveLength(2);
+		expect(es[0].endTs).toBe(at(17, 12)); // unangetastet
+	});
+
+	it("runSeconds zählt den ganzen Lauf, nicht nur das Stück seit Mitternacht", () => {
+		laufUeberDreiTage();
+		app.now = at(19, 9);
+
+		expect(app.runStartTs).toBe(at(16, 9));
+		expect(app.runSeconds).toBe(3 * 24 * 3600);
+	});
+});
+
+describe("Rückdatierter Start kürzt einen Eintrag über mehrere Tage", () => {
+	it("teilt den gekürzten Eintrag an Mitternacht, statt eine Mehrtages-Zeile zu lassen", async () => {
+		// Vergessener Timer vom 16., neuer Timer am 18. Der alte wird auf den neuen
+		// Start gekuerzt – ohne Teilung stuende dort ein Eintrag ueber 49 Stunden.
+		vi.useFakeTimers({ now: at(18, 10) });
+		try {
+			const vergessen = entry("alt", P1, at(16, 9), null);
+			reset({ "2026-07": [vergessen] });
+			app.running = vergessen;
+			app.now = at(18, 10);
+
+			await app.startActivity(P2, at(18, 9));
+
+			const alt = onDisk("2026-07")
+				.filter((e) => e.activityId === P1)
+				.sort((a, b) => a.startTs - b.startTs);
+			expect(alt).toHaveLength(3); // 16., 17., 18. statt einer 49-Stunden-Zeile
+			expect(alt[0].endTs).toBe(at(17, 0));
+			expect(alt[2].endTs).toBe(at(18, 9));
+			expect(app.running?.activityId).toBe(P2);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+});
+
 describe("addEntry – Konfliktregeln", () => {
 	it("lehnt eine Überschneidung ab", async () => {
 		reset({ "2026-07": [entry("a", P1, at(17, 8), at(17, 12))] });
