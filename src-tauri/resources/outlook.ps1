@@ -2,14 +2,19 @@
 # Wird von Rust (src-tauri/src/outlook.rs) aufgerufen.
 #   -Action draft    : erstellt einen E-Mail-Entwurf und zeigt ihn an (kein automatischer Versand)
 #   -Action calendar : liest Kalendereintraege im Zeitraum und gibt sie als JSON aus
+#   -Action mails    : liest Mails des Posteingangs im Zeitraum (Chef-Modus) und gibt sie als JSON aus
 #   -Action detect   : meldet als JSON, welche Outlook-Variante verfuegbar/aktiv ist (kein COM-Aufruf)
 param(
-  [Parameter(Mandatory = $true)][ValidateSet('draft', 'calendar', 'detect')][string]$Action,
+  [Parameter(Mandatory = $true)][ValidateSet('draft', 'calendar', 'mails', 'detect')][string]$Action,
   [string]$To = '',
   [string]$Subject = '',
   [string]$BodyFile = '',
   [string]$Start = '',
-  [string]$End = ''
+  [string]$End = '',
+  # nur fuer -Action mails:
+  [string]$SubjectFilter = '',
+  [switch]$Subfolders,
+  [int]$Max = 300
 )
 
 $ErrorActionPreference = 'Stop'
@@ -84,6 +89,43 @@ function Get-OutlookInfo {
   }
 }
 
+# Anzeigename des Absenders. Faellt auf die Adresse zurueck, damit eine Mail nie
+# voellig namenlos in der Team-Uebersicht steht.
+function Get-SenderName {
+  param($mail)
+  try {
+    $n = [string]$mail.SenderName
+    if ($n) { return $n }
+  } catch {}
+  try { return [string]$mail.SenderEmailAddress } catch { return '' }
+}
+
+# SMTP-Adresse des Absenders.
+#
+# Bei internen Exchange-Absendern liefert SenderEmailAddress KEINE Mailadresse,
+# sondern den X500-Verzeichnisnamen ("/O=…/CN=RECIPIENTS/CN=Meier"). Genau die
+# internen Absender sind aber das ganze Team – ohne diese Aufloesung passte kein
+# einziger Bericht auf einen Eintrag der Teamliste.
+function Get-SenderSmtp {
+  param($mail)
+  try {
+    if ([string]$mail.SenderEmailType -eq 'EX') {
+      try {
+        $u = $mail.Sender.GetExchangeUser()
+        if ($u -and $u.PrimarySmtpAddress) { return [string]$u.PrimarySmtpAddress }
+      } catch {}
+      try {
+        # PR_SENT_REPRESENTING_SMTP_ADDRESS – greift auch, wenn der Absender nicht
+        # mehr im Verzeichnis steht (ausgeschiedene Mitarbeiter).
+        $smtp = [string]$mail.PropertyAccessor.GetProperty(
+          'http://schemas.microsoft.com/mapi/proptag/0x5D01001E')
+        if ($smtp) { return $smtp }
+      } catch {}
+    }
+    return [string]$mail.SenderEmailAddress
+  } catch { return '' }
+}
+
 if ($Action -eq 'detect') {
   Write-Output (ConvertTo-Json -InputObject (Get-OutlookInfo) -Depth 3 -Compress)
   exit 0
@@ -141,6 +183,102 @@ if ($Action -eq 'calendar') {
   # @(...) erzwingt ein Array: PowerShell entpackt ein leeres Ergebnis zu $null
   # (ConvertTo-Json -> "null", was die alte '[]'-Wache nicht abfing und zu "[null]"
   # aufgeblasen wurde) und ein einzelnes Objekt zu einem Objekt statt einer Liste.
+  $json = ConvertTo-Json -InputObject @($result) -Depth 4
+  if (-not $json -or $json -eq 'null') { $json = '[]' }
+  Write-Output $json
+  exit 0
+}
+
+if ($Action -eq 'mails') {
+  $startDt = [DateTime]::Parse($Start).Date
+  # Ende EINSCHLIESSLICH, wie beim Kalender: sonst fehlten alle Mails des letzten Tages.
+  $endDt = [DateTime]::Parse($End).Date.AddDays(1).AddSeconds(-1)
+
+  # Ein einzelner Body kann Megabytes gross sein (eingebettete Bilder als base64).
+  # Fuer die Tabelle reicht der Anfang bei weitem – ungekappt stand die ganze
+  # Postfach-Ausbeute als JSON in der Prozessausgabe.
+  $maxBody = 200000
+
+  $result = Invoke-WithRetry -Action {
+    $ol = Get-Outlook
+    $ns = $ol.GetNamespace('MAPI')
+    try { $ns.Logon($null, $null, $false, $false) } catch {}
+    $inbox = $ns.GetDefaultFolder(6)     # olFolderInbox
+
+    # Zu durchsuchende Ordner sammeln: Posteingang, auf Wunsch mit Unterordnern
+    # (viele lassen Berichts-Mails per Outlook-Regel dorthin einsortieren).
+    $folders = [System.Collections.Generic.List[object]]::new()
+    $folders.Add($inbox)
+    if ($Subfolders) {
+      $queue = [System.Collections.Generic.Queue[object]]::new()
+      $queue.Enqueue($inbox)
+      # Deckel gegen Postfaecher mit hunderten Ordnern - der Aufruf soll Sekunden dauern.
+      while ($queue.Count -gt 0 -and $folders.Count -lt 50) {
+        $cur = $queue.Dequeue()
+        foreach ($sub in $cur.Folders) {
+          # DefaultItemType 0 = olMailItem; Kalender/Kontakte gar nicht erst anfassen.
+          if ($sub.DefaultItemType -ne 0) { continue }
+          $folders.Add($sub)
+          $queue.Enqueue($sub)
+        }
+      }
+    }
+
+    # Wildcards im Suchbegriff woertlich nehmen: ein getipptes "*" oder "[" machte
+    # -like sonst zum Platzhalter und lieferte fremde Mails.
+    $pattern = ''
+    if ($SubjectFilter) {
+      $pattern = '*' + [System.Management.Automation.WildcardPattern]::Escape($SubjectFilter) + '*'
+    }
+
+    $acc = @()
+    $filter = "[ReceivedTime] >= '" + $startDt.ToString('g') + "' AND [ReceivedTime] <= '" + $endDt.ToString('g') + "'"
+    foreach ($folder in $folders) {
+      if ($acc.Count -ge $Max) { break }
+      $items = $folder.Items
+      $items.Sort('[ReceivedTime]', $true)
+      $restricted = $items.Restrict($filter)
+      foreach ($item in $restricted) {
+        if ($acc.Count -ge $Max) { break }
+        # 43 = olMail. Termin-Antworten und Berichte anderer Klassen haben weder
+        # Absender-Adresse noch HTMLBody in der erwarteten Form.
+        try { if ($item.Class -ne 43) { continue } } catch { continue }
+        $subj = [string]$item.Subject
+        if ($pattern -and ($subj -notlike $pattern)) { continue }
+
+        # Kopf-only-Mails (Cached-Modus "nur Kopfzeilen") haben keinen Body. Das
+        # Nachladen anstossen – ueber InvokeMember, weil PowerShell die Methode auf
+        # einem spaet gebundenen COM-Objekt sonst nicht findet. Klappt nicht
+        # ueberall; schlaegt es fehl, bleibt der Body leer und die App sagt es.
+        try {
+          if ($item.DownloadState -eq 1) {
+            [void]$item.GetType().InvokeMember('Download', 'InvokeMethod', $null, $item, $null)
+          }
+        } catch {}
+
+        $body = ''
+        try { $body = [string]$item.HTMLBody } catch {}
+        if (-not $body) { try { $body = [string]$item.Body } catch {} }
+        if ($body.Length -gt $maxBody) { $body = $body.Substring(0, $maxBody) }
+
+        $received = ''
+        try { $received = $item.ReceivedTime.ToString('o') } catch {}
+
+        $acc += [PSCustomObject]@{
+          subject     = $subj
+          senderName  = Get-SenderName $item
+          senderEmail = Get-SenderSmtp $item
+          received    = $received
+          body        = $body
+          folder      = [string]$folder.Name
+        }
+      }
+    }
+    $acc
+  }
+
+  # @(...) wie beim Kalender: sonst wird ein leeres Ergebnis zu "null" und ein
+  # einzelnes Objekt zu einem Objekt statt einer Liste.
   $json = ConvertTo-Json -InputObject @($result) -Depth 4
   if (-not $json -or $json -eq 'null') { $json = '[]' }
   Write-Output $json

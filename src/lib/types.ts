@@ -47,6 +47,16 @@ export interface Entry {
 	dayFraction?: number;
 }
 
+/**
+ * Ein Teammitglied im Chef-Modus: von dieser Person wird ein Monatsbericht
+ * erwartet. Die Zuordnung eingehender Mails laeuft ueber `email`.
+ */
+export interface TeamMember {
+	id: string;
+	name: string;
+	email: string;
+}
+
 export interface Settings {
 	/** Erinnerungszeiten im Format "HH:MM" */
 	reminderTimes: string[];
@@ -86,10 +96,28 @@ export interface Settings {
 	reportSentMonths: string[];
 	/** Auswertung (Saldo, Stunden je Aktivitaet, Jahres-Heatmap) im Bericht zeigen */
 	statsEnabled: boolean;
+	/** Chef-Modus: Tab „Team" mit Auswertung der eingegangenen Berichts-Mails */
+	bossMode: boolean;
+	/** Team, von dem monatlich ein Bericht erwartet wird */
+	team: TeamMember[];
+	/** Betreff-Merkmal (Teilstring), an dem eine Berichts-Mail erkannt wird */
+	teamSubjectFilter: string;
+	/** Auch Unterordner des Posteingangs durchsuchen (Outlook-Regeln sortieren dorthin) */
+	teamScanSubfolders: boolean;
+	/** Empfaenger der Team-Zusammenfassung (leer = Entwurf ohne Empfaenger) */
+	teamSummaryEmail: string;
 }
 
 /** Standard-Betreff des Monatsberichts. */
 export const DEFAULT_SUBJECT = "Stundenerfassung {month} – {name}";
+
+/**
+ * Standard-Merkmal, an dem der Chef-Modus Berichts-Mails erkennt.
+ *
+ * Bewusst nur das erste Wort von DEFAULT_SUBJECT: der Rest der Vorlage (Monat,
+ * Name) ist je Absender verschieden, und viele passen die Vorlage an.
+ */
+export const DEFAULT_TEAM_SUBJECT_FILTER = "Stundenerfassung";
 
 export const defaultSettings: Settings = {
 	reminderTimes: ["14:00"],
@@ -112,7 +140,12 @@ export const defaultSettings: Settings = {
 	reportReminderTime: "16:00",
 	reportReminderLeadDays: 0,
 	reportSentMonths: [],
-	statsEnabled: true
+	statsEnabled: true,
+	bossMode: false,
+	team: [],
+	teamSubjectFilter: DEFAULT_TEAM_SUBJECT_FILTER,
+	teamScanSubfolders: true,
+	teamSummaryEmail: ""
 };
 
 /** Namen der eingebauten Zeilen, die immer im Bericht erscheinen. */

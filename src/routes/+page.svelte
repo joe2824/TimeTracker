@@ -20,12 +20,14 @@
 	import PencilLineIcon from "@lucide/svelte/icons/pencil-line";
 	import ChartColumnIcon from "@lucide/svelte/icons/chart-column";
 	import LayersIcon from "@lucide/svelte/icons/layers";
+	import UsersIcon from "@lucide/svelte/icons/users";
 	import SettingsIcon from "@lucide/svelte/icons/settings";
 	import TrackingPanel from "$lib/components/TrackingPanel.svelte";
 	import EntryEditor from "$lib/components/EntryEditor.svelte";
 	import ReportView from "$lib/components/ReportView.svelte";
 	import ActivitiesPanel from "$lib/components/ActivitiesPanel.svelte";
 	import SettingsPanel from "$lib/components/SettingsPanel.svelte";
+	import TeamPanel from "$lib/components/TeamPanel.svelte";
 	import IdleDialog from "$lib/components/IdleDialog.svelte";
 	import LongTimerDialog from "$lib/components/LongTimerDialog.svelte";
 	import OnboardingWizard from "$lib/components/OnboardingWizard.svelte";
@@ -182,6 +184,12 @@
 		);
 	});
 
+	// Chef-Modus abgeschaltet, während der Team-Tab offen war: sonst bliebe eine
+	// leere Seite ohne zugehörigen Reiter stehen.
+	$effect(() => {
+		if (tab === "team" && !app.settings.bossMode) tab = "tracking";
+	});
+
 	// Hinweis-Status ans Tray-Flyout melden, sobald er sich ändert.
 	$effect(() => {
 		const active = attention;
@@ -253,6 +261,9 @@
 						<PencilLineIcon />Einträge
 					</Tabs.Trigger>
 					<Tabs.Trigger value="report"><ChartColumnIcon />Bericht</Tabs.Trigger>
+					{#if app.settings.bossMode}
+						<Tabs.Trigger value="team"><UsersIcon />Team</Tabs.Trigger>
+					{/if}
 					<Tabs.Trigger value="activities"><LayersIcon />Aktivitäten</Tabs.Trigger>
 					<Tabs.Trigger value="settings"><SettingsIcon />Einstellungen</Tabs.Trigger>
 				</Tabs.List>
@@ -286,6 +297,13 @@
 			<Tabs.Content value="report" class="mt-4">
 				<ReportView />
 			</Tabs.Content>
+			<!-- Nur bei aktivem Chef-Modus einhaengen: bits-ui baut ALLE Tab-Inhalte
+			     sofort auf, ein blosses Ausblenden liesse das Panel mitlaufen. -->
+			{#if app.settings.bossMode}
+				<Tabs.Content value="team" class="mt-4">
+					<TeamPanel />
+				</Tabs.Content>
+			{/if}
 			<Tabs.Content value="activities" class="mt-4">
 				<ActivitiesPanel />
 			</Tabs.Content>

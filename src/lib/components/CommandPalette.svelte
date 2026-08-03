@@ -21,6 +21,13 @@
 		{ id: "nav:settings", label: "Gehe zu: Einstellungen", run: () => onNavigate?.("settings") }
 	];
 
+	/** Den Team-Tab gibt es nur im Chef-Modus – sonst führte der Eintrag ins Leere. */
+	const navItems = $derived(
+		app.settings.bossMode
+			? [...nav, { id: "nav:team", label: "Gehe zu: Team", run: () => onNavigate?.("team") }]
+			: nav
+	);
+
 	function fuzzy(text: string, q: string): boolean {
 		text = text.toLowerCase();
 		q = q.toLowerCase();
@@ -38,7 +45,7 @@
 			hint: app.running?.activityId === a.id ? "läuft" : a.shortcut,
 			run: () => (app.running?.activityId === a.id ? app.stop() : app.startActivity(a.id))
 		}));
-		const all = [...acts, ...nav];
+		const all = [...acts, ...navItems];
 		if (!q) return all;
 		return all.filter((i) => fuzzy(i.label, q));
 	});

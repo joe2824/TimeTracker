@@ -28,6 +28,40 @@ export async function readOutlookCalendar(start: string, end: string): Promise<C
 	return Array.isArray(res) ? res : [];
 }
 
+/** Eine gelesene Mail aus dem Posteingang (Chef-Modus). */
+export interface OutlookMail {
+	subject: string;
+	senderName: string;
+	/** SMTP-Adresse; bei Exchange-Absendern aufgeloest (siehe outlook.ps1) */
+	senderEmail: string;
+	/** ISO-Zeitstempel des Empfangs */
+	received: string;
+	/** HTML-Body, sonst der Text-Body; auf 200.000 Zeichen gekappt */
+	body: string;
+	folder: string;
+}
+
+/**
+ * Liest Mails des Posteingangs im Zeitraum (ISO-Datum, inkl. Grenzen), gefiltert
+ * auf einen Betreff-Teilstring. Reiner Lesezugriff.
+ */
+export async function readOutlookMails(
+	start: string,
+	end: string,
+	subjectFilter: string,
+	subfolders: boolean,
+	max = 300
+): Promise<OutlookMail[]> {
+	const res = await invoke<OutlookMail[]>("read_outlook_mails", {
+		start,
+		end,
+		subjectFilter,
+		subfolders,
+		max
+	});
+	return Array.isArray(res) ? res : [];
+}
+
 /**
  * Fallback: oeffnet den Standard-Mailclient via mailto (ohne HTML-Tabelle).
  *
