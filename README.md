@@ -34,11 +34,10 @@ Die App aktualisiert sich anschließend selbst (Einstellungen → „Nach Update
 - **Auswertung** – Soll/Ist-Saldo, Stunden je Aktivität und Jahres-Heatmap der gearbeiteten
   Tage. Rein lokal, kein Teil der E-Mail; in den Einstellungen abschaltbar.
 - **Chef-Modus** (optional, in den Einstellungen einschaltbar und dauerhaft gespeichert) –
-  Tab „Team“: liest die eingegangenen Monatsberichte des Teams aus dem Outlook-Posteingang,
-  fasst sie zu einer Matrix *Person × Aktivität* zusammen, zeigt wer noch fehlt, und erstellt
-  daraus einen **Outlook-Entwurf**, einen **CSV-Export** oder eine **Erinnerung an die
-  Fehlenden**. Reiner Lesezugriff – es wird keine Mail verschoben, markiert oder gelöscht.
-  Siehe [Chef-Modus](#chef-modus).
+  Tab „Team“: prüft im Outlook-Posteingang, wer seinen Monatsbericht geschickt hat und wer
+  nicht, exportiert die Liste als **CSV** und erstellt eine **Erinnerung an die Fehlenden** als
+  Outlook-Entwurf. Reiner Lesezugriff – es wird keine Mail verschoben, markiert oder gelöscht.
+  Stunden wertet der Chef-Modus bewusst **nicht** aus, siehe [Chef-Modus](#chef-modus).
 - **Autostart** mit dem System (versteckt im Tray), **Updater**, Datei-basierte Persistenz.
 
 ## Regeln
@@ -50,42 +49,37 @@ Die App aktualisiert sich anschließend selbst (Einstellungen → „Nach Update
 ## Chef-Modus
 
 Für Vorgesetzte, die die Berichte ihres Teams selbst per Mail bekommen. Einschalten unter
-**Einstellungen → Chef-Modus**; dort werden auch das Team (Name + E-Mail), das Betreff-Merkmal
-und optional der Empfänger der Zusammenfassung hinterlegt. Der Schalter liegt in
-`settings.json` und bleibt damit über Neustarts erhalten.
+**Einstellungen → Chef-Modus** (Karte weit unten); dort werden auch das Team (Name + E-Mail) und
+das Betreff-Merkmal hinterlegt. Der Schalter liegt in `settings.json` und bleibt damit über
+Neustarts erhalten.
 
 Im Tab **Team** wird ein Monat gewählt und „Berichte einlesen“ gedrückt. Gesucht wird im
 Posteingang (auf Wunsch samt Unterordnern) vom Monatsersten bis zum 20. des Folgemonats nach
-Mails mit dem Betreff-Merkmal.
-
-Gelesen werden ausschließlich Berichte, die TimeTracker selbst erzeugt hat – die HTML-Tabelle
-aus dem Monatsbericht bzw. deren Textfassung. Fremde Formate werden **nicht geraten**: eine
-falsch gelesene Stundenzahl fiele niemandem auf. Solche Mails erscheinen als „Tabelle nicht
-lesbar“ und zählen nicht mit.
+Mails mit dem Betreff-Merkmal. Das Ergebnis ist eine Liste: wer hat abgegeben (mit Datum), wer
+fehlt. Dazu CSV-Export und eine Sammel-Erinnerung an die Fehlenden.
 
 Zuordnung zur Person: E-Mail-Adresse, sonst Absendername, sonst der Name aus dem Betreff.
-Wer im Team steht, aber nichts geschickt hat, erscheint als „kein Bericht“.
 
-### Voraussetzung: Outlook muss Inhalte herausgeben
+### Warum ohne Stunden?
+
+Der Chef-Modus liest **nur den Briefumschlag** – Betreff und Empfangszeit –, nicht den Inhalt
+der Mails. Das ist kein Versehen, sondern die Konsequenz aus dem, was Outlook per COM herausgibt.
 
 Die Integration spricht COM, also das **klassische** Outlook (siehe unten) – derselbe Weg wie
 beim Erstellen des Berichts-Entwurfs. Entwürfe *schreiben* ist unkritisch; vorhandene Mails
-*lesen* kann eine Sicherheitsrichtlinie dagegen einschränken.
-
-Ist der programmatische Zugriff gesperrt, liefert das Objektmodell nur noch die Hülle:
-**Betreff und Empfangszeit kommen an, Body, Absendername und -adresse bleiben leer**
-(`PropertyAccessor` ist dann `null`, `DownloadState` meldet dauerhaft „nur Kopfzeilen“).
-Typische Auslöser sind die Gruppenrichtlinien unter
+*lesen* schränken Sicherheitsrichtlinien dagegen ein. Ist der programmatische Zugriff gesperrt,
+liefert das Objektmodell nur noch die Hülle: Betreff und Empfangszeit kommen an, **Body,
+Absendername und -adresse bleiben leer** (`PropertyAccessor` ist dann `null`, `DownloadState`
+meldet dauerhaft „nur Kopfzeilen“). Typische Auslöser sind die Gruppenrichtlinien unter
 `HKCU\Software\Policies\Microsoft\Office\16.0\Outlook\Security`
 (`adminsecuritymode = 3`, `promptoomaddressinformationaccess = 0`).
 
 Daran ändert weder ein laufendes klassisches Outlook noch ein Sync, `Display()`, `GetInspector`
-oder `Folder.GetTable()` etwas – das ist geprüft. Freigeben kann das nur die IT.
+oder `Folder.GetTable()` etwas – das ist durchgemessen. Freigeben kann das nur die IT.
 
-Solange der Zugriff gesperrt ist, funktioniert der Chef-Modus **eingeschränkt, aber nützlich**:
-Wer abgegeben hat und wer fehlt, ergibt sich aus Betreff und Empfangszeit – inklusive der
-Erinnerung an die Fehlenden. Nur die Stundenmatrix bleibt leer; die App sagt das deutlich, statt
-Nullen zu zeigen. Die Zuordnung zur Person läuft dann über den Namen im Betreff.
+Eine Stundenauswertung wäre unter diesen Bedingungen dauerhaft leer. Statt einer Tabelle voller
+Nullen zeigt der Chef-Modus deshalb nur, was wirklich ankommt. Die fertige Auswertung der
+Stundentabellen liegt in Commit `90f6aa1`, falls der Zugriff je freigegeben wird.
 
 ## Datenablage
 
@@ -125,7 +119,7 @@ src/
     app.svelte.ts              zentraler Zustand (Svelte 5 Runes)
     store.ts                   Datei-Persistenz (tauri-plugin-fs)
     time.ts / report.ts        reine Logik (getestet)
-    teamReport.ts              Chef-Modus: Mails lesen/aggregieren (getestet)
+    teamReport.ts              Chef-Modus: Abgabe-Kontrolle (getestet)
     shortcuts.ts               globale Tastenkürzel
     reminders.ts               Erinnerungen (Notifications)
     watchers.svelte.ts         Leerlauf, Auto-Stop, Pomodoro, Tray-Tooltip

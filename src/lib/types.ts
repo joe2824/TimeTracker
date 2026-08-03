@@ -104,8 +104,6 @@ export interface Settings {
 	teamSubjectFilter: string;
 	/** Auch Unterordner des Posteingangs durchsuchen (Outlook-Regeln sortieren dorthin) */
 	teamScanSubfolders: boolean;
-	/** Empfaenger der Team-Zusammenfassung (leer = Entwurf ohne Empfaenger) */
-	teamSummaryEmail: string;
 }
 
 /** Standard-Betreff des Monatsberichts. */
@@ -144,8 +142,7 @@ export const defaultSettings: Settings = {
 	bossMode: false,
 	team: [],
 	teamSubjectFilter: DEFAULT_TEAM_SUBJECT_FILTER,
-	teamScanSubfolders: true,
-	teamSummaryEmail: ""
+	teamScanSubfolders: true
 };
 
 /** Namen der eingebauten Zeilen, die immer im Bericht erscheinen. */
