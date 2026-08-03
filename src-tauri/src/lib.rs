@@ -251,6 +251,23 @@ fn idle_seconds() -> u64 {
     }
 }
 
+/// Schreibt Text an einen frei gewaehlten Pfad – fuer den CSV-Export aus dem
+/// Chef-Modus, dessen Ziel aus dem Speichern-Dialog kommt.
+///
+/// Bewusst hier statt ueber tauri-plugin-fs: dessen Freigabe reicht nur in den
+/// App-Datenordner, ein Export soll aber dort landen, wo der Benutzer ihn hin
+/// speichert.
+///
+/// Mit BOM, weil Excel eine UTF-8-CSV ohne BOM als ANSI liest – aus "Bürozeit"
+/// wurde dort "BÃ¼rozeit".
+#[tauri::command]
+fn write_export_file(path: String, contents: String) -> Result<(), String> {
+    let mut bytes = Vec::with_capacity(contents.len() + 3);
+    bytes.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
+    bytes.extend_from_slice(contents.as_bytes());
+    std::fs::write(&path, bytes).map_err(|e| format!("{path} konnte nicht geschrieben werden: {e}"))
+}
+
 /// Setzt den Tray-Tooltip (z.B. laufende Zeit "Projekt 1 – 1:23:45").
 #[tauri::command]
 fn set_tray_tooltip(app: tauri::AppHandle, text: String) -> Result<(), String> {
@@ -334,8 +351,10 @@ pub fn run() {
             set_tray_state,
             idle_seconds,
             set_tray_tooltip,
+            write_export_file,
             outlook::create_outlook_draft,
             outlook::read_outlook_calendar,
+            outlook::read_outlook_mails,
             outlook::detect_outlook
         ])
         .run(tauri::generate_context!())

@@ -91,6 +91,14 @@
 	let reportLead = $state(String(app.settings.reportReminderLeadDays));
 	let autostart = $state(app.settings.autostart);
 
+	// Chef-Modus. Die Teamliste ist eine Arbeitskopie: bearbeitet wird in den
+	// Feldern, gespeichert beim Verlassen des Feldes (wie ueberall auf dieser Seite).
+	let bossMode = $state(app.settings.bossMode);
+	let team = $state(app.settings.team.map((m) => ({ ...m })));
+	let teamSubjectFilter = $state(app.settings.teamSubjectFilter);
+	let teamScanSubfolders = $state(app.settings.teamScanSubfolders);
+	let teamSummaryEmail = $state(app.settings.teamSummaryEmail);
+
 	let idleMin = $state(String(app.settings.idleThresholdMin));
 	let maxHours = $state(String(app.settings.maxTimerHours));
 	let pomodoroEnabled = $state(app.settings.pomodoroEnabled);
@@ -143,6 +151,14 @@
 		if (changed.has("pomodoroMin")) pomodoroMin = String(s.pomodoroMin);
 		if (changed.has("pomodoroBreakMin")) pomodoroBreakMin = String(s.pomodoroBreakMin);
 		if (changed.has("shortcutNotify")) shortcutNotify = s.shortcutNotify;
+		if (changed.has("bossMode")) bossMode = s.bossMode;
+		// Der Team-Tab nimmt gefundene Absender per Klick auf – ohne diesen Abgleich
+		// stuende die neue Person zwar in der Datei, hier aber nicht in der Liste,
+		// und das naechste Speichern dieser Karte haette sie wieder entfernt.
+		if (changed.has("team")) team = s.team.map((m) => ({ ...m }));
+		if (changed.has("teamSubjectFilter")) teamSubjectFilter = s.teamSubjectFilter;
+		if (changed.has("teamScanSubfolders")) teamScanSubfolders = s.teamScanSubfolders;
+		if (changed.has("teamSummaryEmail")) teamSummaryEmail = s.teamSummaryEmail;
 	});
 
 	async function saveTracking() {
@@ -208,6 +224,7 @@
 	let savedTimes = $state(0);
 	let savedTracking = $state(0);
 	let savedSystem = $state(0);
+	let savedBoss = $state(0);
 
 	/**
 	 * Leeres Feld auf den gespeicherten Wert zuruecksetzen, sonst den getrimmten
@@ -231,6 +248,22 @@
 			statsEnabled
 		});
 		savedReport = Date.now();
+	}
+
+	async function saveBossMode() {
+		teamSubjectFilter = orStored(teamSubjectFilter, app.settings.teamSubjectFilter);
+		await app.updateSettings({
+			bossMode,
+			// Namenlose Zeilen entstehen beim Anlegen und wieder Verwerfen einer Zeile;
+			// sie wuerden sonst als leere Person in der Team-Uebersicht stehen.
+			team: team
+				.map((m) => ({ ...m, name: m.name.trim(), email: m.email.trim() }))
+				.filter((m) => m.name || m.email),
+			teamSubjectFilter,
+			teamScanSubfolders,
+			teamSummaryEmail: teamSummaryEmail.trim()
+		});
+		savedBoss = Date.now();
 	}
 
 	async function saveWorktime() {
@@ -350,6 +383,94 @@
 				onCheckedChange={() => saveReport()}
 				class="border-t pt-3"
 			/>
+		</Card.Content>
+	</Card.Root>
+
+	<Card.Root>
+		<Card.Header>
+			<Card.Title>Chef-Modus</Card.Title>
+			<Card.Description>
+				Liest die Monatsberichte deines Teams aus dem Outlook-Posteingang und fasst sie zusammen.
+			</Card.Description>
+			<Card.Action><SavedHint at={savedBoss} /></Card.Action>
+		</Card.Header>
+		<Card.Content class="space-y-3">
+			<SettingToggle
+				id="bossmode"
+				title="Chef-Modus"
+				description="Blendet den Tab „Team“ ein. Es wird ausschließlich gelesen – keine Mail wird verschoben oder markiert."
+				bind:checked={bossMode}
+				onCheckedChange={() => saveBossMode()}
+			/>
+
+			{#if bossMode}
+				<div class="space-y-2 border-t pt-3">
+					<Label>Team</Label>
+					<p class="text-muted-foreground text-xs">
+						Von wem monatlich ein Bericht erwartet wird. Die Zuordnung läuft über die E-Mail-Adresse
+						– fehlt jemand hier, taucht sein Bericht trotzdem auf, nur eben ohne „fehlt“-Abgleich.
+					</p>
+					<!-- Nach id, nicht nach Index: beim Loeschen einer Zeile ruecken sonst
+					     alle folgenden Felder eine Position hoch und zeigen fremde Werte. -->
+					{#each team as m, i (m.id)}
+						<div class="flex gap-2">
+							<Input placeholder="Name" bind:value={team[i].name} onchange={saveBossMode} />
+							<Input
+								type="email"
+								placeholder="name@firma.de"
+								bind:value={team[i].email}
+								onchange={saveBossMode}
+							/>
+							<Button
+								variant="ghost"
+								size="icon"
+								title="Aus dem Team entfernen"
+								onclick={() => {
+									team = team.filter((_, j) => j !== i);
+									void saveBossMode();
+								}}
+							>
+								<Trash2Icon class="size-4" />
+							</Button>
+						</div>
+					{/each}
+					<Button
+						variant="outline"
+						size="sm"
+						onclick={() => (team = [...team, { id: crypto.randomUUID(), name: "", email: "" }])}
+					>
+						<PlusIcon class="size-4" /> Mitarbeiter
+					</Button>
+				</div>
+
+				<div class="space-y-1 border-t pt-3">
+					<Label for="tsubj">Betreff enthält</Label>
+					<Input id="tsubj" bind:value={teamSubjectFilter} onchange={saveBossMode} />
+					<p class="text-muted-foreground text-xs">
+						Nur Mails mit diesem Text im Betreff werden gelesen. Standard ist der Anfang der
+						Betreff-Vorlage, die TimeTracker selbst verschickt.
+					</p>
+				</div>
+
+				<div class="space-y-1">
+					<Label for="tsumto">Zusammenfassung an (optional)</Label>
+					<Input
+						id="tsumto"
+						type="email"
+						bind:value={teamSummaryEmail}
+						placeholder="name@firma.de"
+						onchange={saveBossMode}
+					/>
+				</div>
+
+				<SettingToggle
+					id="tsubf"
+					title="Unterordner mitlesen"
+					description="Auch Unterordner des Posteingangs durchsuchen – für alle, die Berichte per Regel einsortieren lassen."
+					bind:checked={teamScanSubfolders}
+					onCheckedChange={() => saveBossMode()}
+				/>
+			{/if}
 		</Card.Content>
 	</Card.Root>
 

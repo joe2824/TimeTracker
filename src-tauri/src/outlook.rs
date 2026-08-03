@@ -14,7 +14,14 @@ fn ensure_script(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join("outlook.ps1");
-    std::fs::write(&path, OUTLOOK_PS1).map_err(|e| e.to_string())?;
+    // MIT BOM schreiben: `powershell.exe` (Windows PowerShell 5.1) liest eine
+    // .ps1 ohne BOM als ANSI, nicht als UTF-8. Aus "Outlook ist beschäftigt"
+    // wurde damit "Outlook ist beschÃ¤ftigt" – und zwar genau in den Meldungen,
+    // die dem Benutzer als Fehlertext angezeigt werden.
+    let mut bytes = Vec::with_capacity(OUTLOOK_PS1.len() + 3);
+    bytes.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
+    bytes.extend_from_slice(OUTLOOK_PS1.as_bytes());
+    std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
     Ok(path)
 }
 
@@ -76,6 +83,48 @@ pub fn detect_outlook(app: tauri::AppHandle) -> Result<serde_json::Value, String
         let stdout = String::from_utf8_lossy(&output.stdout);
         serde_json::from_str(stdout.trim())
             .map_err(|e| format!("JSON konnte nicht gelesen werden: {e}; Ausgabe: {stdout}"))
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    }
+}
+
+/// Liest Mails des Posteingangs im Zeitraum [start, end] (ISO-Datum), gefiltert
+/// auf einen Betreff-Teilstring. Fuer den Chef-Modus: die eingegangenen
+/// Monatsberichte des Teams.
+///
+/// Liest nur - es wird nichts verschoben, markiert oder geloescht.
+#[tauri::command]
+pub fn read_outlook_mails(
+    app: tauri::AppHandle,
+    start: String,
+    end: String,
+    subject_filter: String,
+    subfolders: bool,
+    max: u32,
+) -> Result<serde_json::Value, String> {
+    let script = ensure_script(&app)?;
+    let max = max.clamp(1, 2000).to_string();
+    let mut cmd = powershell(&script);
+    cmd.args(["-Action", "mails", "-Start", &start, "-End", &end])
+        .args(["-SubjectFilter", &subject_filter])
+        .args(["-Max", &max]);
+    if subfolders {
+        cmd.arg("-Subfolders");
+    }
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("PowerShell konnte nicht gestartet werden: {e}"))?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        serde_json::from_str(stdout.trim()).map_err(|e| {
+            // Die Ausgabe kann hier Megabytes gross sein (Mail-Bodies) - nur den
+            // Anfang in die Meldung, sonst sprengt ein Fehler jeden Toast und jede
+            // Protokollzeile.
+            let head: String = stdout.chars().take(400).collect();
+            format!("JSON konnte nicht gelesen werden: {e}; Ausgabe: {head}")
+        })
     } else {
         Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
     }
