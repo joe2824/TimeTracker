@@ -28,7 +28,12 @@ export async function readOutlookCalendar(start: string, end: string): Promise<C
 	return Array.isArray(res) ? res : [];
 }
 
-/** Eine gelesene Mail aus dem Posteingang (Chef-Modus). */
+/**
+ * Der Briefumschlag einer Mail aus dem Posteingang (Chef-Modus).
+ *
+ * Ohne Inhalt: den gibt Outlook auf gesperrten Rechnern ohnehin nicht heraus,
+ * und fuer die Abgabe-Kontrolle reichen Betreff und Empfangszeit.
+ */
 export interface OutlookMail {
 	subject: string;
 	senderName: string;
@@ -36,14 +41,12 @@ export interface OutlookMail {
 	senderEmail: string;
 	/** ISO-Zeitstempel des Empfangs */
 	received: string;
-	/** HTML-Body, sonst der Text-Body; auf 200.000 Zeichen gekappt */
-	body: string;
 	folder: string;
 }
 
 /**
- * Liest Mails des Posteingangs im Zeitraum (ISO-Datum, inkl. Grenzen), gefiltert
- * auf einen Betreff-Teilstring. Reiner Lesezugriff.
+ * Liest die Briefumschlaege des Posteingangs im Zeitraum (ISO-Datum, inkl.
+ * Grenzen), gefiltert auf einen Betreff-Teilstring. Reiner Lesezugriff.
  */
 export async function readOutlookMails(
 	start: string,

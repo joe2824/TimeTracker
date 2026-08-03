@@ -194,10 +194,9 @@ if ($Action -eq 'mails') {
   # Ende EINSCHLIESSLICH, wie beim Kalender: sonst fehlten alle Mails des letzten Tages.
   $endDt = [DateTime]::Parse($End).Date.AddDays(1).AddSeconds(-1)
 
-  # Ein einzelner Body kann Megabytes gross sein (eingebettete Bilder als base64).
-  # Fuer die Tabelle reicht der Anfang bei weitem – ungekappt stand die ganze
-  # Postfach-Ausbeute als JSON in der Prozessausgabe.
-  $maxBody = 200000
+  # Der Mail-INHALT wird bewusst nicht gelesen: gesperrte Rechner geben ihn
+  # ohnehin nicht heraus (siehe README), und fuer die Abgabe-Kontrolle reichen
+  # Betreff und Empfangszeit. Spart nebenbei megabyteweise JSON.
 
   $result = Invoke-WithRetry -Action {
     $ol = Get-Outlook
@@ -246,21 +245,6 @@ if ($Action -eq 'mails') {
         $subj = [string]$item.Subject
         if ($pattern -and ($subj -notlike $pattern)) { continue }
 
-        # Kopf-only-Mails (Cached-Modus "nur Kopfzeilen") haben keinen Body. Das
-        # Nachladen anstossen – ueber InvokeMember, weil PowerShell die Methode auf
-        # einem spaet gebundenen COM-Objekt sonst nicht findet. Klappt nicht
-        # ueberall; schlaegt es fehl, bleibt der Body leer und die App sagt es.
-        try {
-          if ($item.DownloadState -eq 1) {
-            [void]$item.GetType().InvokeMember('Download', 'InvokeMethod', $null, $item, $null)
-          }
-        } catch {}
-
-        $body = ''
-        try { $body = [string]$item.HTMLBody } catch {}
-        if (-not $body) { try { $body = [string]$item.Body } catch {} }
-        if ($body.Length -gt $maxBody) { $body = $body.Substring(0, $maxBody) }
-
         $received = ''
         try { $received = $item.ReceivedTime.ToString('o') } catch {}
 
@@ -269,7 +253,6 @@ if ($Action -eq 'mails') {
           senderName  = Get-SenderName $item
           senderEmail = Get-SenderSmtp $item
           received    = $received
-          body        = $body
           folder      = [string]$folder.Name
         }
       }

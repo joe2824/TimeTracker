@@ -97,7 +97,6 @@
 	let team = $state(app.settings.team.map((m) => ({ ...m })));
 	let teamSubjectFilter = $state(app.settings.teamSubjectFilter);
 	let teamScanSubfolders = $state(app.settings.teamScanSubfolders);
-	let teamSummaryEmail = $state(app.settings.teamSummaryEmail);
 
 	let idleMin = $state(String(app.settings.idleThresholdMin));
 	let maxHours = $state(String(app.settings.maxTimerHours));
@@ -158,7 +157,6 @@
 		if (changed.has("team")) team = s.team.map((m) => ({ ...m }));
 		if (changed.has("teamSubjectFilter")) teamSubjectFilter = s.teamSubjectFilter;
 		if (changed.has("teamScanSubfolders")) teamScanSubfolders = s.teamScanSubfolders;
-		if (changed.has("teamSummaryEmail")) teamSummaryEmail = s.teamSummaryEmail;
 	});
 
 	async function saveTracking() {
@@ -260,8 +258,7 @@
 				.map((m) => ({ ...m, name: m.name.trim(), email: m.email.trim() }))
 				.filter((m) => m.name || m.email),
 			teamSubjectFilter,
-			teamScanSubfolders,
-			teamSummaryEmail: teamSummaryEmail.trim()
+			teamScanSubfolders
 		});
 		savedBoss = Date.now();
 	}
@@ -383,94 +380,6 @@
 				onCheckedChange={() => saveReport()}
 				class="border-t pt-3"
 			/>
-		</Card.Content>
-	</Card.Root>
-
-	<Card.Root>
-		<Card.Header>
-			<Card.Title>Chef-Modus</Card.Title>
-			<Card.Description>
-				Liest die Monatsberichte deines Teams aus dem Outlook-Posteingang und fasst sie zusammen.
-			</Card.Description>
-			<Card.Action><SavedHint at={savedBoss} /></Card.Action>
-		</Card.Header>
-		<Card.Content class="space-y-3">
-			<SettingToggle
-				id="bossmode"
-				title="Chef-Modus"
-				description="Blendet den Tab „Team“ ein. Es wird ausschließlich gelesen – keine Mail wird verschoben oder markiert."
-				bind:checked={bossMode}
-				onCheckedChange={() => saveBossMode()}
-			/>
-
-			{#if bossMode}
-				<div class="space-y-2 border-t pt-3">
-					<Label>Team</Label>
-					<p class="text-muted-foreground text-xs">
-						Von wem monatlich ein Bericht erwartet wird. Die Zuordnung läuft über die E-Mail-Adresse
-						– fehlt jemand hier, taucht sein Bericht trotzdem auf, nur eben ohne „fehlt“-Abgleich.
-					</p>
-					<!-- Nach id, nicht nach Index: beim Loeschen einer Zeile ruecken sonst
-					     alle folgenden Felder eine Position hoch und zeigen fremde Werte. -->
-					{#each team as m, i (m.id)}
-						<div class="flex gap-2">
-							<Input placeholder="Name" bind:value={team[i].name} onchange={saveBossMode} />
-							<Input
-								type="email"
-								placeholder="name@firma.de"
-								bind:value={team[i].email}
-								onchange={saveBossMode}
-							/>
-							<Button
-								variant="ghost"
-								size="icon"
-								title="Aus dem Team entfernen"
-								onclick={() => {
-									team = team.filter((_, j) => j !== i);
-									void saveBossMode();
-								}}
-							>
-								<Trash2Icon class="size-4" />
-							</Button>
-						</div>
-					{/each}
-					<Button
-						variant="outline"
-						size="sm"
-						onclick={() => (team = [...team, { id: crypto.randomUUID(), name: "", email: "" }])}
-					>
-						<PlusIcon class="size-4" /> Mitarbeiter
-					</Button>
-				</div>
-
-				<div class="space-y-1 border-t pt-3">
-					<Label for="tsubj">Betreff enthält</Label>
-					<Input id="tsubj" bind:value={teamSubjectFilter} onchange={saveBossMode} />
-					<p class="text-muted-foreground text-xs">
-						Nur Mails mit diesem Text im Betreff werden gelesen. Standard ist der Anfang der
-						Betreff-Vorlage, die TimeTracker selbst verschickt.
-					</p>
-				</div>
-
-				<div class="space-y-1">
-					<Label for="tsumto">Zusammenfassung an (optional)</Label>
-					<Input
-						id="tsumto"
-						type="email"
-						bind:value={teamSummaryEmail}
-						placeholder="name@firma.de"
-						onchange={saveBossMode}
-					/>
-				</div>
-
-				<SettingToggle
-					id="tsubf"
-					title="Unterordner mitlesen"
-					description="Auch Unterordner des Posteingangs durchsuchen – für alle, die Berichte per Regel einsortieren lassen."
-					bind:checked={teamScanSubfolders}
-					onCheckedChange={() => saveBossMode()}
-				/>
-			{/if}
 		</Card.Content>
 	</Card.Root>
 
@@ -720,6 +629,83 @@
 						</Button>
 					</div>
 				{/each}
+			{/if}
+		</Card.Content>
+	</Card.Root>
+
+	<Card.Root>
+		<Card.Header>
+			<Card.Title>Chef-Modus</Card.Title>
+			<Card.Description>
+				Prüft im Outlook-Posteingang, wer seinen Monatsbericht geschickt hat und wer nicht.
+			</Card.Description>
+			<Card.Action><SavedHint at={savedBoss} /></Card.Action>
+		</Card.Header>
+		<Card.Content class="space-y-3">
+			<SettingToggle
+				id="bossmode"
+				title="Chef-Modus"
+				description="Blendet den Tab „Team“ ein. Es wird ausschließlich gelesen – keine Mail wird verschoben oder markiert."
+				bind:checked={bossMode}
+				onCheckedChange={() => saveBossMode()}
+			/>
+
+			{#if bossMode}
+				<div class="space-y-2 border-t pt-3">
+					<Label>Team</Label>
+					<p class="text-muted-foreground text-xs">
+						Von wem monatlich ein Bericht erwartet wird. Die Zuordnung läuft über die E-Mail-Adresse
+						– fehlt jemand hier, taucht sein Bericht trotzdem auf, nur eben ohne „fehlt“-Abgleich.
+					</p>
+					<!-- Nach id, nicht nach Index: beim Loeschen einer Zeile ruecken sonst
+					     alle folgenden Felder eine Position hoch und zeigen fremde Werte. -->
+					{#each team as m, i (m.id)}
+						<div class="flex gap-2">
+							<Input placeholder="Name" bind:value={team[i].name} onchange={saveBossMode} />
+							<Input
+								type="email"
+								placeholder="name@firma.de"
+								bind:value={team[i].email}
+								onchange={saveBossMode}
+							/>
+							<Button
+								variant="ghost"
+								size="icon"
+								title="Aus dem Team entfernen"
+								onclick={() => {
+									team = team.filter((_, j) => j !== i);
+									void saveBossMode();
+								}}
+							>
+								<Trash2Icon class="size-4" />
+							</Button>
+						</div>
+					{/each}
+					<Button
+						variant="outline"
+						size="sm"
+						onclick={() => (team = [...team, { id: crypto.randomUUID(), name: "", email: "" }])}
+					>
+						<PlusIcon class="size-4" /> Mitarbeiter
+					</Button>
+				</div>
+
+				<div class="space-y-1 border-t pt-3">
+					<Label for="tsubj">Betreff enthält</Label>
+					<Input id="tsubj" bind:value={teamSubjectFilter} onchange={saveBossMode} />
+					<p class="text-muted-foreground text-xs">
+						Nur Mails mit diesem Text im Betreff werden gelesen. Standard ist der Anfang der
+						Betreff-Vorlage, die TimeTracker selbst verschickt.
+					</p>
+				</div>
+
+				<SettingToggle
+					id="tsubf"
+					title="Unterordner mitlesen"
+					description="Auch Unterordner des Posteingangs durchsuchen – für alle, die Berichte per Regel einsortieren lassen."
+					bind:checked={teamScanSubfolders}
+					onCheckedChange={() => saveBossMode()}
+				/>
 			{/if}
 		</Card.Content>
 	</Card.Root>
