@@ -288,12 +288,102 @@ fn show_main(app: &tauri::AppHandle) {
     }
 }
 
+/// Zweite Instanz abfangen, bevor Tauri irgendetwas aufbaut.
+///
+/// Warum zusaetzlich zum single-instance-Plugin? Das Plugin beendet die zweite
+/// Instanz nur, wenn es das Zielfenster der ersten findet:
+///
+/// ```text
+/// if GetLastError() == ERROR_ALREADY_EXISTS {
+///     let hwnd = FindWindowW(...);
+///     if !hwnd.is_null() { ...; exit(0); }
+///     // kein Fenster gefunden -> faellt durch und laeuft einfach weiter
+/// }
+/// ```
+///
+/// Faellt eine Instanz einmal durch diese Luecke (etwa weil sie startet, waehrend
+/// die vorige gerade herunterfaehrt: deren Mutex lebt noch, ihr Fenster ist schon
+/// zerstoert), dann legt sie selbst nie ein Zielfenster an. Ab da findet *jeder*
+/// weitere Start den Mutex, aber kein Fenster – und laeuft ebenfalls durch. Der
+/// Zustand haelt sich selbst am Leben, bis alle Prozesse beendet sind. Genau das
+/// war hier passiert: Mutex vorhanden, Zielfenster nirgends, beliebig viele
+/// Instanzen gleichzeitig.
+///
+/// Diese Funktion schliesst die Luecke, ohne dem Plugin den Normalfall
+/// wegzunehmen.
+#[cfg(windows)]
+fn enforce_single_instance() {
+    use windows_sys::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
+    use windows_sys::Win32::System::Threading::CreateMutexW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        FindWindowW, IsIconic, SetForegroundWindow, ShowWindow, SW_RESTORE, SW_SHOW,
+    };
+
+    fn wide(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    // Bewusst ein eigener Name: wuerden wir den Mutex des Plugins anlegen, saehe
+    // das Plugin im selben Prozess ERROR_ALREADY_EXISTS und die *erste* Instanz
+    // hielte sich fuer die zweite.
+    let mutex_name = wide(&format!("{IDENTIFIER}-guard"));
+    // Handle absichtlich nicht schliessen: der Mutex soll genau so lange
+    // existieren wie der Prozess. Windows raeumt ihn beim Beenden selbst ab.
+    let _mutex = unsafe { CreateMutexW(std::ptr::null(), 0, mutex_name.as_ptr()) };
+    if unsafe { GetLastError() } != ERROR_ALREADY_EXISTS {
+        return; // Wir sind die erste Instanz.
+    }
+
+    // Ab hier laeuft schon jemand. Ist das Zielfenster des Plugins da, ist alles
+    // gesund: weiterlaufen lassen, das Plugin holt gleich das Fenster der ersten
+    // Instanz nach vorn und beendet uns sauber.
+    let plugin_class = wide(&format!("{IDENTIFIER}-sic"));
+    let plugin_title = wide(&format!("{IDENTIFIER}-siw"));
+    if !unsafe { FindWindowW(plugin_class.as_ptr(), plugin_title.as_ptr()) }.is_null() {
+        return;
+    }
+
+    // Kein Zielfenster – das Plugin wuerde uns jetzt durchlassen. Selbst pruefen,
+    // ob die andere Instanz ueberhaupt noch ein Hauptfenster hat.
+    let main_class = wide("Tauri Window");
+    let main_title = wide("Time Tracker");
+    let main = unsafe { FindWindowW(main_class.as_ptr(), main_title.as_ptr()) };
+    if main.is_null() {
+        // Kein Mutex-Besitzer mit Fenster: die andere Instanz faehrt gerade
+        // herunter. Dann duerfen wir ihren Platz einnehmen.
+        return;
+    }
+
+    // Fenster der laufenden Instanz nach vorn holen und uns beenden – das ist
+    // das, was das Plugin hier haette tun sollen.
+    unsafe {
+        if IsIconic(main) != 0 {
+            ShowWindow(main, SW_RESTORE);
+        } else {
+            ShowWindow(main, SW_SHOW);
+        }
+        SetForegroundWindow(main);
+    }
+    log_line(
+        "WARN",
+        "Zweite Instanz beendet (Zielfenster des single-instance-Plugins fehlte)",
+    );
+    std::process::exit(0);
+}
+
+#[cfg(not(windows))]
+fn enforce_single_instance() {}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     install_panic_logging();
     // Eine Zeile je Prozessstart: erst daran ist im Protokoll zu erkennen, dass
     // die App zwischendurch neu gestartet wurde – etwa durch ein Update.
     log_line("INFO", &format!("Prozess gestartet (v{})", env!("CARGO_PKG_VERSION")));
+    // Direkt danach, aber noch bevor Tauri Fenster baut: so blitzt bei einer
+    // zweiten Instanz nichts auf, und ihr Ende steht im Protokoll unter ihrer
+    // eigenen Startzeile.
+    enforce_single_instance();
 
     let mut builder = tauri::Builder::default();
 
