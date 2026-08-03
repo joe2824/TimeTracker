@@ -29,6 +29,15 @@ serde_json = "1"
 # indirekte Abhaengigkeit im Baum).
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 
+[target.'cfg(windows)'.dependencies]
+# Nur fuer die Einzelinstanz-Absicherung (Mutex + Fenster suchen). Die Version
+# steckt ohnehin schon als indirekte Abhaengigkeit im Baum.
+windows-sys = { version = "0.60", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 user-idle = "0.6"
 tauri-plugin-single-instance = "2"
