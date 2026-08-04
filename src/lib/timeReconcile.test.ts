@@ -310,10 +310,20 @@ describe("planFill", () => {
 		// Verlaengerung bliebe der Tag fuer immer als „teilweise" stehen.
 		const tag = day({ firstIn: "11:05", lastOut: "16:52", hours: 7.37 });
 		const plan = planFill(reconcileOne(tag, []), [])!;
-		expect(plan.blocks).toHaveLength(1);
-		expect(plan.blocks[0].start).toBe(665); // 11:05
-		expect(plan.blocks[0].end).toBeGreaterThan(1012); // ueber 16:52 hinaus
-		expect(plan.hours).toBeCloseTo(7.37, 2);
+		// Der gestempelte Teil endet punktgenau an „Letztes gehen" …
+		expect(asClock(plan.blocks)).toEqual(["11:05–16:52"]);
+		// … der Rest wird getrennt ausgewiesen, damit er auf etwas anderes gebucht
+		// werden kann.
+		expect(plan.extraBlocks).toHaveLength(1);
+		expect(plan.extraBlocks[0].start).toBe(1012); // 16:52
+		expect(plan.extraHours).toBeCloseTo(7.37 - 5.783, 2);
+		expect(plan.hours + plan.extraHours).toBeCloseTo(7.37, 2);
+	});
+
+	it("weist nichts als ausserhalb-der-Stempel aus, wenn das Fenster reicht", () => {
+		const plan = planFill(reconcileOne(day()), [])!;
+		expect(plan.extraBlocks).toEqual([]);
+		expect(plan.extraHours).toBe(0);
 	});
 
 	it("erfindet keine Anwesenheit, wenn LOGA nur anders abgezogen hat", () => {

@@ -21,6 +21,7 @@
 		type ReconcileStatus
 	} from "$lib/timeReconcile";
 	import { loadTimeReport, saveTimeReport, type StoredTimeReport } from "$lib/store";
+	import { BUILTIN_OTHERS } from "$lib/types";
 	import { errorText, logError, logInfo } from "$lib/log";
 	import { fmtDateHuman, fmtHoursClock, monthLabel, noonTs, startOfNextDay, toTs } from "$lib/time";
 	import { Button } from "$lib/components/ui/button";
@@ -66,6 +67,8 @@
 	/** Auswahl und Zuordnung je Tag, Schluessel = Datum. */
 	let selected = $state<Record<string, boolean>>({});
 	let activityFor = $state<Record<string, string>>({});
+	/** Zuordnung der Stunden JENSEITS der Stempelzeiten, Schluessel = Datum. */
+	let extraActivityFor = $state<Record<string, string>>({});
 	/** „Alle Tage auf …" – wirkt beim Wechsel auf alle Zeilen mit Uhrzeiten. */
 	let bulkActivity = $state("");
 	let lastBulk = "";
@@ -165,6 +168,17 @@
 		return Math.round(((relevant - summary.missing - summary.partial) / relevant) * 100);
 	});
 
+	/**
+	 * Vorschlag fuer die ungestempelten Stunden: die eingebaute Zeile „Others".
+	 *
+	 * Die gibt es in jedem Bestand (siehe #seedBuiltins) und sie ist genau dafuer
+	 * da – Zeit, die zu keinem Projekt gehoert. Fehlt sie wider Erwarten, bleibt
+	 * die Auswahl leer und der Nutzer waehlt selbst.
+	 */
+	function othersActivity(): string {
+		return app.trackableActivities.find((a) => a.name === BUILTIN_OTHERS)?.id ?? "";
+	}
+
 	/** Die im Monat meistgenutzte Aktivitaet – als Vorschlag fuer alle Zeilen. */
 	function suggestedActivity(): string {
 		const seconds = new Map<string, number>();
@@ -180,15 +194,19 @@
 	/** Auswahl und Aktivitaeten fuer den aktuellen Abgleich neu setzen. */
 	function resetSelection() {
 		const suggestion = suggestedActivity();
+		const others = othersActivity();
 		const sel: Record<string, boolean> = {};
 		const acts: Record<string, string> = {};
+		const extra: Record<string, string> = {};
 		for (const { day, plan } of rows) {
 			// Schon Nachgetragenes nicht erneut anhaken – sonst entstuenden Dubletten.
 			sel[day.date] = plan !== null && !day.alreadyFilled;
 			acts[day.date] = suggestion;
+			extra[day.date] = others;
 		}
 		selected = sel;
 		activityFor = acts;
+		extraActivityFor = extra;
 		bulkActivity = "";
 		lastBulk = "";
 	}
@@ -361,17 +379,25 @@
 						failed++;
 						continue;
 					}
-					for (const block of plan.blocks) {
-						const e = await app.addEntry(
-							activityId,
-							tsAt(day.date, block.start),
-							tsAt(day.date, block.end),
-							NOTE,
-							"loga"
-						);
-						if (e) {
-							created++;
-							any = true;
+					// Gestempelte Zeit und die Stunden jenseits davon koennen auf
+					// verschiedene Aktivitaeten gehen.
+					const parts: { blocks: typeof plan.blocks; id: string }[] = [
+						{ blocks: plan.blocks, id: activityId },
+						{ blocks: plan.extraBlocks, id: extraActivityFor[day.date] || activityId }
+					];
+					for (const part of parts) {
+						for (const block of part.blocks) {
+							const e = await app.addEntry(
+								part.id,
+								tsAt(day.date, block.start),
+								tsAt(day.date, block.end),
+								NOTE,
+								"loga"
+							);
+							if (e) {
+								created++;
+								any = true;
+							}
 						}
 					}
 				}
@@ -753,15 +779,38 @@
 												Abwesenheit · {planLabel(plan)}
 											</span>
 										{:else if plan?.kind === "time"}
-											<div class="flex flex-wrap items-center gap-2">
-												<div class="w-52">
-													<ActivityCombobox
-														id={`act-${day.date}`}
-														bind:value={activityFor[day.date]}
-														options={app.trackableActivities}
-													/>
+											<div class="space-y-1.5">
+												<div class="flex flex-wrap items-center gap-2">
+													<div class="w-52">
+														<ActivityCombobox
+															id={`act-${day.date}`}
+															bind:value={activityFor[day.date]}
+															options={app.trackableActivities}
+														/>
+													</div>
+													<span class="text-muted-foreground font-mono text-xs">{planLabel(plan)}</span>
 												</div>
-												<span class="text-muted-foreground font-mono text-xs">{planLabel(plan)}</span>
+												{#if plan.extraBlocks.length > 0}
+													<!-- LOGA kennt mehr Stunden, als gestempelt wurde. Die gehören
+													     meist nicht auf dasselbe Projekt wie der gestempelte Tag –
+													     deshalb eine eigene Auswahl, vorbelegt mit „Others". -->
+													<div class="flex flex-wrap items-center gap-2">
+														<div class="w-52">
+															<ActivityCombobox
+																id={`extra-${day.date}`}
+																bind:value={extraActivityFor[day.date]}
+																options={app.trackableActivities}
+																placeholder="Rest buchen auf …"
+															/>
+														</div>
+														<span class="text-xs text-amber-700 dark:text-amber-300">
+															+{fmtHoursClock(plan.extraHours)} h über die Stempelzeiten hinaus
+															<span class="text-muted-foreground font-mono">
+																({plan.extraBlocks.map((b) => `${clock(b.start)}–${clock(b.end)}`).join(", ")})
+															</span>
+														</span>
+													</div>
+												{/if}
 											</div>
 										{:else if day.status === "over"}
 											{@const pause = breakHours(day.report)}
