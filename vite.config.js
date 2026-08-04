@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import { sveltekit } from "@sveltejs/kit/vite";
 import tailwindcss from "@tailwindcss/vite";
 
-// @ts-expect-error process is a nodejs global
+// process ist ein Node-Global – seit @types/node im Projekt liegt, ist es typisiert.
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/

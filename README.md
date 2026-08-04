@@ -22,6 +22,9 @@ Die App aktualisiert sich anschließend selbst (Einstellungen → „Nach Update
 - **Einträge** – Tagesraster pro Monat; Eintrag mit gekoppelten Feldern **Von / Bis / Stunden**
   (eines wird aus den anderen berechnet); **Urlaub/Abwesenheit als Zeitraum** (halbe/ganze Tage,
   Wochenenden überspringen); Schnelleingabe; Kalender-Import.
+- **Zeitwächter-Abgleich** – den Zeitwirtschaftsreport (.xlsx) aus LOGA/Scout per Drag & Drop
+  einlesen und sehen, an welchen Tagen Zeit fehlt; fehlende Zeiten lassen sich in einem Rutsch
+  einem Projekt zuordnen, siehe [Zeitwächter-Abgleich](#zeitwächter-abgleich).
 - **Bericht** – Monatsaggregation je Aktivität, Rundung, HTML-Vorschau, „HTML kopieren" und
   **Outlook-Entwurf** erstellen.
 - **Tray-Menü (OneDrive-Stil)** – Links-Klick öffnet Schnellstart: laufender Timer + Stop,
@@ -45,6 +48,45 @@ Die App aktualisiert sich anschließend selbst (Einstellungen → „Nach Update
 - Eine **Ganztags-Abwesenheit** und Projektzeit am selben Tag schließen sich aus; ein
   **halber Urlaubstag** darf neben Projektzeit liegen.
 - Tage mit Ganztags-Abwesenheit werden im Bericht ohne Projektzeiten gewertet.
+
+## Zeitwächter-Abgleich
+
+In LOGA lässt sich über den Zeitwächter ein **Zeitwirtschaftsreport** („gesetzliche
+Arbeitszeitverstöße") erzeugen und in Scout als `.xlsx` herunterladen. Diese Datei wird im Tab
+**Einträge** auf die Karte „Zeitwächter-Report" gezogen (oder über einen Klick ausgewählt).
+
+Der Report hat eine Zeile je Kalendertag. Verglichen wird die Spalte **„Arbeitszeit täglich"** –
+die ist **netto**, LOGA hat die Pause dort bereits abgezogen (ab 4 h 15 Minuten, ab 6 h weitere
+30). Ihr gegenüber steht, was in der App für den Tag erfasst ist. Abweichungen über
+**15 Minuten** fallen auf:
+
+| Status | Bedeutung |
+|---|---|
+| stimmt | Differenz innerhalb der Toleranz |
+| fehlt | LOGA kennt Stunden, hier ist nichts erfasst |
+| teilweise | hier ist weniger erfasst als LOGA kennt |
+| zu viel | hier ist mehr erfasst als LOGA kennt |
+
+Für jeden auffälligen Tag schlägt die App einen Nachtrag vor, der sich einer Aktivität zuordnen
+lässt – einzeln oder für alle Tage auf einmal. Zwei Regeln stecken darin:
+
+- **Tage ohne Stempel** mit genau einem halben oder ganzen Tagessatz sind Urlaub, Feiertag oder
+  Gleittag – LOGA gibt alle drei identisch aus. Sie werden als **Abwesenheit** vorgeschlagen,
+  nicht als Projektzeit.
+- **Gestempelte Tage** werden zwischen „Erstes kommen" und „Letztes gehen" aufgefüllt, mit einer
+  **Lücke in Höhe der Pause** um die Mittagszeit. Bereits erfasste Zeiten bleiben unberührt, der
+  Nachtrag legt sich in die freien Lücken.
+
+Nachgetragene Einträge tragen die Notiz „Zeitwächter" und werden beim nächsten Abgleich als
+*bereits nachgetragen* erkannt – ein zweiter Durchlauf erzeugt keine Dubletten. Die Verstoß-Spalten
+des Reports (Ruhepause, > 10 h, Sonntags-/Feiertagsarbeit) erscheinen als Badge am jeweiligen Tag.
+
+Der eingelesene Report bleibt unter `data/timereport-YYYY-MM.json` liegen. In der Tagesliste
+markiert er Tage, an denen Zeit fehlt, mit einem Fehlbetrag – auch ohne geöffneten Abgleich.
+
+> Die heruntergeladene `.xlsx` enthält Personalnummer und Klarnamen. Sie wird nicht ins Repo
+> übernommen (`.gitignore`); für die Tests liegt eine anonymisierte Fassung unter
+> `src/lib/testing/`.
 
 ## Chef-Modus
 
@@ -88,9 +130,11 @@ JSON im App-Daten-Ordner unter `data/`:
 - `data/activities.json` – Aktivitäten (global)
 - `data/settings.json` – Einstellungen (global)
 - `data/entries-YYYY-MM.json` – eine Datei pro Monat
+- `data/timereport-YYYY-MM.json` – eingelesener Zeitwirtschaftsreport, eine Datei pro Monat
 
 Es wird nichts automatisch gelöscht. Unter „Einstellungen → Daten“ lassen sich ganze Jahre
-gezielt entfernen (mit Rückfrage); Monate ohne Einträge hinterlassen keine Datei.
+gezielt entfernen (mit Rückfrage) – die Reports des Jahres gehen mit; Monate ohne Einträge
+hinterlassen keine Datei.
 
 ## Entwicklung
 
@@ -120,6 +164,9 @@ src/
     store.ts                   Datei-Persistenz (tauri-plugin-fs)
     time.ts / report.ts        reine Logik (getestet)
     teamReport.ts              Chef-Modus: Abgabe-Kontrolle (getestet)
+    xlsx.ts                    XLSX-Leser (ZIP + XML, ohne Paket; getestet)
+    timeReport.ts              LOGA-Zeitwirtschaftsreport auswerten (getestet)
+    timeReconcile.ts           Abgleich LOGA ↔ Einträge, Nachtrag planen (getestet)
     shortcuts.ts               globale Tastenkürzel
     reminders.ts               Erinnerungen (Notifications)
     watchers.svelte.ts         Leerlauf, Auto-Stop, Pomodoro, Tray-Tooltip

@@ -29,7 +29,8 @@ export const ACTIVITY_COLORS = [
 	"#64748b"
 ];
 
-export type EntrySource = "timer" | "manual" | "calendar";
+/** Woher ein Eintrag stammt. "loga" = aus einem Zeitwirtschaftsreport nachgetragen. */
+export type EntrySource = "timer" | "manual" | "calendar" | "loga";
 
 export interface Entry {
 	id: string;

@@ -3,6 +3,7 @@
 //   data/activities.json          (global)
 //   data/settings.json            (global)
 //   data/entries-YYYY-MM.json     (eine Datei pro Monat)
+//   data/timereport-YYYY-MM.json  (eingelesener LOGA-Report, eine Datei pro Monat)
 import {
 	BaseDirectory,
 	exists,
@@ -14,6 +15,7 @@ import {
 	writeTextFile
 } from "@tauri-apps/plugin-fs";
 import type { Activity, Entry, Settings } from "./types";
+import type { TimeReportDay } from "./timeReport";
 import { defaultSettings } from "./types";
 import { logError, logWarn } from "./log";
 
@@ -77,6 +79,7 @@ function entriesFile(month: string): string {
 }
 
 const MONTH_FILE_RE = /^entries-(\d{4}-\d{2})\.json$/;
+const REPORT_FILE_RE = /^timereport-(\d{4}-\d{2})\.json$/;
 
 // ---- Aktivitaeten ----
 export async function loadActivities(): Promise<Activity[]> {
@@ -182,6 +185,36 @@ export async function pruneEmptyMonthFiles(): Promise<string[]> {
 	return pruned.sort();
 }
 
+// ---- Zeitwirtschaftsreport (pro Monat) ----
+
+/** Ein eingelesener LOGA-Report, auf einen Monat und eine Person eingedampft. */
+export interface StoredTimeReport {
+	/** "YYYY-MM" */
+	month: string;
+	/** Wann die Datei eingelesen wurde (Epoch-ms) */
+	importedAt: number;
+	/** Person aus der Datei – bei einem Team-Export gibt es mehrere zur Auswahl. */
+	personKey: string;
+	personName: string;
+	/** Nur die Tage DIESES Monats, aufsteigend. */
+	days: TimeReportDay[];
+}
+
+function reportFile(month: string): string {
+	return `timereport-${month}.json`;
+}
+
+/** Den gespeicherten Report eines Monats lesen. Null, wenn keiner vorliegt. */
+export async function loadTimeReport(month: string): Promise<StoredTimeReport | null> {
+	const stored = await readJson<StoredTimeReport | null>(reportFile(month), null);
+	// Eine Datei aus einer aelteren/kaputten Fassung soll die Ansicht nicht kippen.
+	return stored && Array.isArray(stored.days) ? stored : null;
+}
+
+export async function saveTimeReport(report: StoredTimeReport): Promise<void> {
+	return writeJson(reportFile(report.month), report);
+}
+
 export interface StoredYear {
 	year: number;
 	/** Monate mit Eintraegen in diesem Jahr */
@@ -204,7 +237,13 @@ export async function listEntryYears(): Promise<StoredYear[]> {
 	return [...byYear.values()].sort((a, b) => b.year - a.year);
 }
 
-/** Alle Monatsdateien eines Jahres loeschen. Gibt die geloeschten Monate zurueck. */
+/**
+ * Alle Monatsdateien eines Jahres loeschen. Gibt die geloeschten Monate zurueck.
+ *
+ * Die eingelesenen LOGA-Reports des Jahres gehen mit: sie enthalten dieselben
+ * Arbeitszeiten wie die Eintraege selbst. Wer ein Jahr entfernt, will nicht,
+ * dass der Abgleich es danach weiter kennt.
+ */
 export async function deleteYear(year: number): Promise<string[]> {
 	await ensureDir();
 	const deleted: string[] = [];
@@ -214,6 +253,8 @@ export async function deleteYear(year: number): Promise<string[]> {
 		if (m && m[1].startsWith(`${year}-`)) {
 			await remove(`${DIR}/${e.name}`, baseOpts);
 			deleted.push(m[1]);
+		} else if (e.name?.match(REPORT_FILE_RE)?.[1]?.startsWith(`${year}-`)) {
+			await remove(`${DIR}/${e.name}`, baseOpts);
 		}
 	}
 	return deleted.sort();
