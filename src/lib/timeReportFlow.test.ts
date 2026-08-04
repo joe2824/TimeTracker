@@ -17,6 +17,7 @@ import type { Entry } from "./types";
 const HPD = 7.5;
 const ABS = "abs";
 const PROJ = "proj";
+const OTHERS = "others";
 const absenceIds = new Set([ABS]);
 
 let person: TimeReportPerson;
@@ -62,15 +63,22 @@ function fillMonth(month: string, deductBreaks: boolean) {
 				dayFraction: plan.fraction
 			});
 		} else {
-			for (const b of plan.blocks) {
-				entries.push({
-					id: `e${uid++}`,
-					activityId: PROJ,
-					startTs: tsAt(day.date, b.start),
-					endTs: tsAt(day.date, b.end),
-					note: "",
-					source: "loga"
-				});
+			// Wie die Oberflaeche: gestempelte Zeit auf das Projekt, die Stunden
+			// jenseits der Stempel auf „Others".
+			for (const [blocks, activityId] of [
+				[plan.blocks, PROJ],
+				[plan.extraBlocks, OTHERS]
+			] as const) {
+				for (const b of blocks) {
+					entries.push({
+						id: `e${uid++}`,
+						activityId,
+						startTs: tsAt(day.date, b.start),
+						endTs: tsAt(day.date, b.end),
+						note: "",
+						source: "loga"
+					});
+				}
 			}
 		}
 	}

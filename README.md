@@ -109,7 +109,9 @@ Zwei Sonderfälle, die der echte Report zeigt:
 
 - Meldet LOGA **mehr Stunden, als zwischen Kommen und Gehen liegen** (nachgebuchte Zeiten,
   Dienstreise), reicht der Nachtrag über „Letztes gehen" hinaus – sonst ließe sich der Tag nie
-  vollständig erfassen.
+  vollständig erfassen. Die Zeile weist diesen Teil **getrennt** aus („+1:35 h über die
+  Stempelzeiten hinaus") und bietet eine **eigene Aktivitätsauswahl** dafür an, vorbelegt mit
+  „Others" – solche Stunden gehören selten auf dasselbe Projekt wie der gestempelte Tag.
 - Zieht LOGA an einem Tag **anders ab als die Hausregel** (gestempelte Zusatzpause,
   Korrekturbuchung), bleibt nach dem Nachtrag eine Differenz stehen. Sie wird *nicht* mit
   erfundener Anwesenheit aufgefüllt; die Zeile sagt stattdessen, wie viel LOGA dort abgezogen

@@ -291,10 +291,21 @@ export interface FillPlan {
 	kind: "absence" | "time";
 	/** nur bei kind === "absence" */
 	fraction: number;
-	/** nur bei kind === "time"; Minuten ab Mitternacht */
+	/** Blöcke INNERHALB der Stempelzeiten; Minuten ab Mitternacht */
 	blocks: Interval[];
-	/** Summe der Blöcke bzw. der Abwesenheit in Stunden */
+	/** Summe von `blocks` bzw. der Abwesenheit in Stunden */
 	hours: number;
+	/**
+	 * Blöcke JENSEITS der Stempelzeiten.
+	 *
+	 * Entstehen, wenn LOGA mehr Stunden meldet, als zwischen „Erstes kommen" und
+	 * „Letztes gehen" liegen – die Zeit wurde gebucht, aber nicht gestempelt.
+	 * Getrennt ausgewiesen, weil sie meist auf etwas anderes gehört als der
+	 * gestempelte Arbeitstag (Dienstreise, Rufbereitschaft, „Others").
+	 */
+	extraBlocks: Interval[];
+	/** Summe von `extraBlocks` in Stunden */
+	extraHours: number;
 }
 
 export interface FillOptions {
@@ -356,7 +367,14 @@ export function planFill(
 		// stuende hier ein Vorschlag, den addEntry beim Uebernehmen abweist – bei
 		// einer Sammeluebernahme fuer jeden solchen Tag mit eigener Fehlermeldung.
 		if (day.absenceFraction >= 1 && occupied.length > 0) return null;
-		return { kind: "absence", fraction: day.absenceFraction, blocks: [], hours: day.diff };
+		return {
+			kind: "absence",
+			fraction: day.absenceFraction,
+			blocks: [],
+			hours: day.diff,
+			extraBlocks: [],
+			extraHours: 0
+		};
 	}
 
 	// An einem Ganztags-Abwesenheitstag gibt es keine Projektzeit (App-Regel).
@@ -378,6 +396,9 @@ export function planFill(
 	let window: Interval;
 	// true = das Stempelfenster reicht nicht, es wurde verlaengert.
 	let stretched = false;
+	// Ende der Stempelzeiten – die Grenze, ab der Nachtrag als „nicht gestempelt"
+	// gilt. Ohne Verlaengerung gibt es diese Grenze nicht.
+	let stampEnd = Infinity;
 	if (hasStamps(day.report)) {
 		window = { start: clockMin(day.report.firstIn!), end: clockMin(day.report.lastOut!) };
 		if (window.end <= window.start) window.end = 1440; // ueber Mitternacht gestempelt
@@ -391,6 +412,7 @@ export function planFill(
 		// unsere Pausenregel von LOGAs Abzug abweicht, wird nicht mit erfundener
 		// Anwesenheit aufgefuellt.
 		if (day.report.hours > grossHours(day.report)) {
+			stampEnd = window.end;
 			window.end = 1440;
 			stretched = true;
 		}
@@ -429,6 +451,26 @@ export function planFill(
 
 	blocks = blocks.filter((b) => b.end > b.start);
 	if (blocks.length === 0) return null;
-	const minutes = blocks.reduce((s, b) => s + (b.end - b.start), 0);
-	return { kind: "time", fraction: 1, blocks, hours: minutes / 60 };
+
+	// An der Stempelgrenze auftrennen: was dahinter liegt, wurde in LOGA gebucht,
+	// aber nicht gestempelt – und gehoert damit meist auf eine andere Aktivitaet.
+	const inside: Interval[] = [];
+	const extra: Interval[] = [];
+	for (const b of blocks) {
+		if (b.end <= stampEnd) inside.push(b);
+		else if (b.start >= stampEnd) extra.push(b);
+		else {
+			inside.push({ start: b.start, end: stampEnd });
+			extra.push({ start: stampEnd, end: b.end });
+		}
+	}
+	const sum = (list: Interval[]) => list.reduce((acc, b) => acc + (b.end - b.start), 0) / 60;
+	return {
+		kind: "time",
+		fraction: 1,
+		blocks: inside,
+		hours: sum(inside),
+		extraBlocks: extra,
+		extraHours: sum(extra)
+	};
 }
