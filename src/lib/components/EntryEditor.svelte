@@ -512,9 +512,10 @@
 	     zweite unter den Fensterrand und war praktisch nicht auffindbar.
 	     Uebernimmt eine Karte die Ansicht, weicht die andere und die verbleibende
 	     bekommt die volle Breite. -->
-	<!-- items-start: sonst zieht das Raster die kuerzere Karte auf die Hoehe der
-	     Ablegeflaeche, und darunter stuende ein leerer Block. -->
-	<div class="grid items-start gap-4 {anyPreview ? '' : 'md:grid-cols-2'}">
+	<!-- Gleiche Hoehe fuer beide Karten (kein items-start): unterschiedlich hohe
+	     Nachbarn sahen unfertig aus. Die kuerzere Karte setzt ihre Aktion dafuer
+	     ans untere Ende, statt Leerraum zu hinterlassen. -->
+	<div class="grid gap-4 {anyPreview ? '' : 'md:grid-cols-2'}">
 		{#if !reportPreview}
 			<CalendarImport {month} bind:previewActive={importPreview} />
 		{/if}
