@@ -94,15 +94,33 @@
 	const absenceId = $derived(app.absenceActivity?.id ?? "");
 	const absenceIds = $derived(new Set(app.activities.filter((a) => a.isAbsence).map((a) => a.id)));
 
-	const summary = $derived.by(() => {
-		if (!active) return null;
-		return reconcile(active.days, app.monthEntries(active.month), {
+	function summarize(report: StoredTimeReport) {
+		return reconcile(report.days, app.monthEntries(report.month), {
 			hoursPerDay: app.settings.hoursPerDay,
 			tolerance: TOLERANCE,
 			absenceIds,
 			now: app.now
 		});
+	}
+
+	const summary = $derived(active ? summarize(active) : null);
+
+	// Ohne die geladenen Eintraege waere jeder Tag „fehlt".
+	$effect(() => {
+		if (stored) void app.ensureMonth(stored.month).catch(() => {});
 	});
+
+	/**
+	 * Bilanz des gespeicherten Reports fuer die Ruhe-Ansicht der Karte.
+	 *
+	 * Erst wenn der Monat wirklich geladen ist: `monthEntries` liefert fuer einen
+	 * ungeladenen Monat `[]`, und die Karte meldete fuer den Bruchteil bis zum
+	 * Laden „23 Tage offen". Ein leerer, aber geladener Monat ist `[]` und damit
+	 * truthy – nur `undefined` heisst „noch nicht da".
+	 */
+	const storedSummary = $derived(
+		stage === "idle" && stored && app.entriesByMonth[stored.month] ? summarize(stored) : null
+	);
 
 	/** Nur die Tage, zu denen es etwas zu sagen gibt – freie Tage bleiben draussen. */
 	const rows = $derived.by(() => {
@@ -438,10 +456,17 @@
 	onchange={pickFile}
 />
 
-<Card.Root>
+<!-- overflow-visible im Abgleich: die Karte kappt sonst die Liste der
+     Aktivitäts-Combobox in den unteren Tabellenzeilen. -->
+<Card.Root class={stage === "review" ? "overflow-visible" : ""}>
 	<Card.Header>
-		<Card.Title class="flex items-center gap-2">
-			<FileSpreadsheetIcon class="size-4" /> Zeitwächter-Report
+		<Card.Title class="flex items-center gap-2.5">
+			<span
+				class="bg-primary/10 text-primary flex size-8 shrink-0 items-center justify-center rounded-md"
+			>
+				<FileSpreadsheetIcon class="size-4" />
+			</span>
+			Zeitwächter-Report
 		</Card.Title>
 		<Card.Description>
 			Den Zeitwirtschaftsreport aus Scout ablegen – die App zeigt, an welchen Tagen Zeit fehlt, und
@@ -474,11 +499,17 @@
 				}}
 				ondragleave={() => (dragOver = false)}
 				ondrop={onDrop}
-				class="flex w-full cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed px-6 py-8 text-center transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none {dragOver
-					? 'border-primary bg-primary/10'
-					: 'border-border hover:border-primary/50 hover:bg-muted/50'}"
+				class="group focus-visible:ring-ring/50 flex w-full cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed px-6 py-7 text-center transition-colors focus-visible:ring-2 focus-visible:outline-none {dragOver
+					? 'border-primary bg-primary/5'
+					: 'border-border/70 hover:border-primary/40 hover:bg-muted/40'}"
 			>
-				<UploadIcon class="text-muted-foreground size-6" />
+				<span
+					class="flex size-11 items-center justify-center rounded-full transition-colors {dragOver
+						? 'bg-primary/15 text-primary'
+						: 'bg-muted text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary'}"
+				>
+					<UploadIcon class="size-5" />
+				</span>
 				<span class="text-sm font-medium">Zeitwirtschaftsreport hier ablegen</span>
 				<span class="text-muted-foreground text-xs">
 					.xlsx aus Scout · oder klicken, um eine Datei zu wählen
@@ -486,12 +517,43 @@
 			</button>
 
 			{#if stored}
-				<div class="flex flex-wrap items-center justify-between gap-2 text-sm">
-					<span class="text-muted-foreground">
-						Report für {monthLabel(stored.month)} vom {fmtDateHuman(stored.importedAt)}
-						{#if stored.personName}· {stored.personName}{/if}
-					</span>
-					<Button variant="outline" size="sm" onclick={openStored}>Abgleich öffnen</Button>
+				{@const offen = storedSummary ? storedSummary.missing + storedSummary.partial : 0}
+				<!-- Der gespeicherte Report sagt hier gleich, ob noch etwas offen ist –
+				     sonst müsste man den Abgleich öffnen, nur um „alles gut" zu sehen. -->
+				<div class="flex items-center justify-between gap-3 rounded-lg border p-3">
+					<div class="flex min-w-0 items-start gap-2.5">
+						<span
+							class="flex size-8 shrink-0 items-center justify-center rounded-md {offen > 0
+								? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+								: 'bg-muted text-muted-foreground'}"
+						>
+							{#if offen > 0}
+								<TriangleAlertIcon class="size-4" />
+							{:else}
+								<CheckIcon class="size-4" />
+							{/if}
+						</span>
+						<div class="min-w-0">
+							<p class="truncate text-sm font-medium">
+								{monthLabel(stored.month)}
+								{#if stored.personName}
+									<span class="text-muted-foreground font-normal">· {stored.personName}</span>
+								{/if}
+							</p>
+							<p class="text-muted-foreground truncate text-xs">
+								{#if storedSummary && offen > 0}
+									{offen} Tag{offen === 1 ? "" : "e"} offen · {fmtHoursClock(storedSummary.missingHours)} h
+									fehlen ·
+								{:else if storedSummary}
+									alles erfasst ·
+								{/if}
+								eingelesen {fmtDateHuman(stored.importedAt)}
+							</p>
+						</div>
+					</div>
+					<Button variant={offen > 0 ? "default" : "outline"} size="sm" onclick={openStored}>
+						Abgleich öffnen
+					</Button>
 				</div>
 			{/if}
 		</Card.Content>

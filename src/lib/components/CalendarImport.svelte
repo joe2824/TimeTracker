@@ -194,7 +194,14 @@
 
 <Card.Root>
 	<Card.Header>
-		<Card.Title class="flex items-center gap-2"><CalendarIcon class="size-4" /> Outlook-Kalender</Card.Title>
+		<Card.Title class="flex items-center gap-2.5">
+			<span
+				class="bg-primary/10 text-primary flex size-8 shrink-0 items-center justify-center rounded-md"
+			>
+				<CalendarIcon class="size-4" />
+			</span>
+			Outlook-Kalender
+		</Card.Title>
 		<Card.Description>
 			Termine des Monats importieren und auf Aktivitäten verteilen. Ganztägige/abwesend-Termine
 			gehen automatisch in „Abwesenheiten“.
