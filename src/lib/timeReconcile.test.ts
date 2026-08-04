@@ -10,6 +10,7 @@ import {
 import type { TimeReportDay } from "./timeReport";
 import type { Entry } from "./types";
 import { noonTs, startOfNextDay, toTs } from "./time";
+import { deductBreakFromHours } from "./breaks";
 
 const PROJEKT = "act-projekt";
 const URLAUB = "act-urlaub";
@@ -314,5 +315,63 @@ describe("planFill", () => {
 		// dem Folgetag und wuerde beim Anlegen ohnehin geteilt.
 		expect(asClock(plan.blocks)).toEqual(["22:00–24:00"]);
 		expect(plan.hours).toBe(2);
+	});
+});
+
+describe("Zusammenspiel mit dem automatischen Pausenabzug", () => {
+	const MIT_ABZUG = { ...OPTS, deductBreaks: true };
+
+	it("rechnet die erfasste Zeit auf derselben Grundlage wie LOGA", () => {
+		// Timer lief 08:36–16:49 durch, also 8,22 h brutto. LOGA meldet 7,47 h
+		// netto. Ohne Abzug staende der Tag als „zu viel" da, mit Abzug stimmt er.
+		const vorhanden = [entry("2026-01-12", "08:36", "16:49")];
+		const tag = day({ firstIn: "08:36", lastOut: "16:49", hours: 7.47 });
+
+		expect(reconcile([tag], vorhanden, OPTS).days[0].status).toBe("over");
+
+		const mit = reconcile([tag], vorhanden, MIT_ABZUG).days[0];
+		expect(mit.status).toBe("ok");
+		expect(mit.tracked).toBeCloseTo(7.47, 2);
+		// Die Brutto-Zeit bleibt daneben erhalten.
+		expect(mit.workedGross).toBeCloseTo(8.2167, 3);
+	});
+
+	it("zieht die Pause nicht von einem Urlaubstag ab", () => {
+		const vorhanden = [absence("2026-01-05", 1)];
+		const tag = day({ date: "2026-01-05", firstIn: null, lastOut: null, hours: 7.5 });
+		expect(reconcile([tag], vorhanden, MIT_ABZUG).days[0]).toMatchObject({
+			tracked: 7.5,
+			status: "ok"
+		});
+	});
+
+	it("traegt die ANWESENHEIT nach, nicht die Nettozeit", () => {
+		// 7,67 h eins zu eins eingetragen bekaemen den Abzug ein zweites Mal und
+		// der Tag bliebe bei 6,92 h stehen. Gebraucht werden 8,42 h Anwesenheit.
+		const tag = day({ firstIn: "09:10", lastOut: "17:35", hours: 7.67 });
+		const plan = planFill(reconcileOne(tag, []), [], {
+			...DEFAULT_FILL_OPTIONS,
+			deductBreaks: true
+		})!;
+		// Keine Pausenluecke: der Block spannt die Anwesenheit auf.
+		expect(asClock(plan.blocks)).toEqual(["09:10–17:35"]);
+		expect(plan.hours).toBeCloseTo(8.4167, 3);
+		// Und nach dem Abzug kommt genau die LOGA-Zahl heraus.
+		expect(deductBreakFromHours(plan.hours)).toBeCloseTo(7.67, 2);
+	});
+
+	it("beruecksichtigt beim Teil-Nachtrag die schon erfasste Brutto-Zeit", () => {
+		const vorhanden = [entry("2026-01-12", "09:10", "11:00")]; // 1,833 h brutto
+		const tag = day({ firstIn: "09:10", lastOut: "17:35", hours: 7.67 });
+		const abgleich = reconcile([tag], vorhanden, MIT_ABZUG).days[0];
+		const plan = planFill(abgleich, vorhanden, { ...DEFAULT_FILL_OPTIONS, deductBreaks: true })!;
+		expect(asClock(plan.blocks)).toEqual(["11:00–17:35"]);
+		// Brutto des ganzen Tages danach: 1,833 + 6,583 = 8,417 -> netto 7,67.
+		expect(deductBreakFromHours(abgleich.workedGross + plan.hours)).toBeCloseTo(7.67, 2);
+	});
+
+	it("spart die Pause weiterhin aus, wenn der Abzug aus ist", () => {
+		const plan = planFill(reconcileOne(day()), [], DEFAULT_FILL_OPTIONS)!;
+		expect(asClock(plan.blocks)).toEqual(["09:10–12:00", "12:45–17:35"]);
 	});
 });

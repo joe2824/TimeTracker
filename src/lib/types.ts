@@ -68,6 +68,12 @@ export interface Settings {
 	autostart: boolean;
 	/** Stunden eines vollen Arbeitstags (fuer Abwesenheits-Umrechnung) */
 	hoursPerDay: number;
+	/**
+	 * Pause automatisch von der Tagesarbeitszeit abziehen (ab 4 h 15 min, ab 6 h
+	 * 45 min) – wie LOGA es tut. Wirkt auf Tagessummen, Bericht und Auswertung;
+	 * die erfassten Eintraege selbst bleiben unveraendert.
+	 */
+	breakDeduction: boolean;
 	/** Regulaere Arbeitstage als Wochentagsnummern (0=So .. 6=Sa), Standard Mo–Fr */
 	workdays: number[];
 	/** Stichwort (lowercase) -> activityId fuer Kalender-Auto-Zuordnung */
@@ -125,6 +131,7 @@ export const defaultSettings: Settings = {
 	rounding: 0.5,
 	autostart: true,
 	hoursPerDay: 7.5,
+	breakDeduction: true,
 	workdays: [1, 2, 3, 4, 5],
 	calendarKeywordMap: {},
 	reportSubjectTemplate: DEFAULT_SUBJECT,

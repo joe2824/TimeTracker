@@ -34,6 +34,8 @@ Die App aktualisiert sich anschließend selbst (Einstellungen → „Nach Update
 - **Auto-Stop-Warnung** und **Pomodoro/Pausen-Erinnerung** (konfigurierbar).
 - **Globaler Start/Stop-Hotkey** für den zuletzt benutzten Timer.
 - **Befehlspalette** (Cmd/Ctrl+K) – Timer per Fuzzy-Suche starten/stoppen, Tabs wechseln.
+- **Automatischer Pausenabzug** – ab 4 h Tagesarbeitszeit 15 Minuten, ab 6 h insgesamt 45; wie
+  LOGA es rechnet. Abschaltbar, siehe [Automatischer Pausenabzug](#automatischer-pausenabzug).
 - **Auswertung** – Soll/Ist-Saldo, Stunden je Aktivität und Jahres-Heatmap der gearbeiteten
   Tage. Rein lokal, kein Teil der E-Mail; in den Einstellungen abschaltbar.
 - **Chef-Modus** (optional, in den Einstellungen einschaltbar und dauerhaft gespeichert) –
@@ -48,6 +50,26 @@ Die App aktualisiert sich anschließend selbst (Einstellungen → „Nach Update
 - Eine **Ganztags-Abwesenheit** und Projektzeit am selben Tag schließen sich aus; ein
   **halber Urlaubstag** darf neben Projektzeit liegen.
 - Tage mit Ganztags-Abwesenheit werden im Bericht ohne Projektzeiten gewertet.
+
+### Automatischer Pausenabzug
+
+Standardmäßig aktiv, abschaltbar unter **Einstellungen → Arbeitszeit → „Pause automatisch
+abziehen"**. Ab **4 h** Tagesarbeitszeit werden **15 Minuten** abgezogen, ab **6 h** insgesamt
+**45** – dieselbe Regel, die LOGA auf die Anwesenheit anwendet. Damit rechnet die App auf
+derselben Grundlage wie der Zeitwirtschaftsreport, auch wenn der Timer über die Mittagspause
+weiterläuft.
+
+Wichtig dazu:
+
+- Geschwellt wird auf der **Tagessumme** aller Projektzeiten, nicht je Eintrag: zwei Einträge
+  von je 3,5 h ergeben zusammen 7 h und damit 45 Minuten Abzug.
+- Der Abzug verteilt sich **anteilig** auf die Aktivitäten des Tages, ist also unabhängig von
+  deren Reihenfolge.
+- **Abwesenheiten sind ausgenommen** – auf einen Urlaubstag gibt es keine Pause.
+- Die **erfassten Einträge bleiben unverändert**; abgezogen wird erst beim Aufsummieren. Der
+  Schalter lässt sich damit jederzeit zurücknehmen, ohne dass Zeiten verloren gehen.
+- Der Abzug wirkt auf Tagessummen, **Bericht** (und damit die E-Mail) und Auswertung. Die
+  Verifikations-Zeile im Tab „Bericht" weist ihn getrennt aus.
 
 ## Zeitwächter-Abgleich
 
@@ -73,9 +95,15 @@ lässt – einzeln oder für alle Tage auf einmal. Zwei Regeln stecken darin:
 - **Tage ohne Stempel** mit genau einem halben oder ganzen Tagessatz sind Urlaub, Feiertag oder
   Gleittag – LOGA gibt alle drei identisch aus. Sie werden als **Abwesenheit** vorgeschlagen,
   nicht als Projektzeit.
-- **Gestempelte Tage** werden zwischen „Erstes kommen" und „Letztes gehen" aufgefüllt, mit einer
-  **Lücke in Höhe der Pause** um die Mittagszeit. Bereits erfasste Zeiten bleiben unberührt, der
-  Nachtrag legt sich in die freien Lücken.
+- **Gestempelte Tage** werden zwischen „Erstes kommen" und „Letztes gehen" aufgefüllt. Bereits
+  erfasste Zeiten bleiben unberührt, der Nachtrag legt sich in die freien Lücken.
+
+Wie dabei gerechnet wird, hängt am [automatischen Pausenabzug](#automatischer-pausenabzug): ist
+er **aktiv**, trägt der Nachtrag die **Anwesenheit** ein (also inklusive Pause, wie ein
+durchlaufender Timer sie erfasst) und die App zieht sie anschließend ab. Ist er **aus**, spart
+der Nachtrag stattdessen eine **Lücke in Höhe der Pause** um die Mittagszeit aus. Beides ergibt
+am Ende die Stundenzahl aus dem Report – die LOGA-Zahl eins zu eins einzutragen wäre bei aktivem
+Abzug zu wenig, weil sie den Abzug ein zweites Mal bekäme.
 
 Nachgetragene Einträge tragen die Notiz „Zeitwächter" und werden beim nächsten Abgleich als
 *bereits nachgetragen* erkannt – ein zweiter Durchlauf erzeugt keine Dubletten. Die Verstoß-Spalten
@@ -163,6 +191,7 @@ src/
     app.svelte.ts              zentraler Zustand (Svelte 5 Runes)
     store.ts                   Datei-Persistenz (tauri-plugin-fs)
     time.ts / report.ts        reine Logik (getestet)
+    breaks.ts                  automatischer Pausenabzug (getestet)
     teamReport.ts              Chef-Modus: Abgabe-Kontrolle (getestet)
     xlsx.ts                    XLSX-Leser (ZIP + XML, ohne Paket; getestet)
     timeReport.ts              LOGA-Zeitwirtschaftsreport auswerten (getestet)

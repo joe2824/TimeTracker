@@ -83,6 +83,7 @@
 	// Als Uhrzeit ("HH:MM") statt Dezimalstunden eingeben.
 	let hoursPerDay = $state(minToClock(app.settings.hoursPerDay * 60));
 	let workdays = $state([...app.settings.workdays]);
+	let breakDeduction = $state(app.settings.breakDeduction);
 	let subjectTpl = $state(app.settings.reportSubjectTemplate);
 	let statsEnabled = $state(app.settings.statsEnabled);
 	let times = $state<string[]>([...app.settings.reminderTimes]);
@@ -139,6 +140,7 @@
 		if (changed.has("rounding")) rounding = String(s.rounding);
 		if (changed.has("hoursPerDay")) hoursPerDay = minToClock(s.hoursPerDay * 60);
 		if (changed.has("workdays")) workdays = [...s.workdays];
+		if (changed.has("breakDeduction")) breakDeduction = s.breakDeduction;
 		if (changed.has("reminderTimes")) times = [...s.reminderTimes];
 		if (changed.has("reportReminderEnabled")) reportReminder = s.reportReminderEnabled;
 		if (changed.has("reportReminderTime")) reportTime = s.reportReminderTime;
@@ -272,6 +274,7 @@
 		await app.updateSettings({
 			rounding: Number(rounding),
 			hoursPerDay: valid / 60,
+			breakDeduction,
 			workdays: [...workdays].sort((a, b) => a - b)
 		});
 		savedWorktime = Date.now();
@@ -481,7 +484,15 @@
 					<Input id="hpd" type="time" class="w-32" bind:value={hoursPerDay} onchange={saveWorktime} />
 				{/snippet}
 			</SettingRow>
-			<SettingRow id="round" title="Rundung" description="Stunden je Aktivität im Bericht.">
+			<SettingToggle
+				id="breakded"
+				title="Pause automatisch abziehen"
+				description="Ab 4 h Tagesarbeitszeit 15 Minuten, ab 6 h insgesamt 45 – wie LOGA es rechnet. Wirkt auf Tagessummen, Bericht und Auswertung; die erfassten Einträge bleiben unverändert."
+				bind:checked={breakDeduction}
+				onCheckedChange={() => saveWorktime()}
+				class="border-t pt-3"
+			/>
+			<SettingRow id="round" title="Rundung" description="Stunden je Aktivität im Bericht." class="border-t pt-3">
 				{#snippet control()}
 					<Select.Root type="single" bind:value={rounding} onValueChange={() => saveWorktime()}>
 						<Select.Trigger id="round" class="w-48">{ROUNDINGS[rounding] ?? rounding}</Select.Trigger>

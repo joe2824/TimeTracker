@@ -19,7 +19,9 @@ export async function sendReport(month: string): Promise<void> {
 		app.monthEntries(month),
 		app.settings.rounding,
 		app.settings.hoursPerDay,
-		app.settings.workdays
+		app.settings.workdays,
+		Date.now(),
+		app.settings.breakDeduction
 	);
 	const html = reportToHtml(report);
 	await createOutlookDraft(app.settings.bossEmail, reportSubject(report.label), html);

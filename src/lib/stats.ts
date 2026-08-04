@@ -2,6 +2,7 @@
 // damit alles direkt testbar bleibt.
 import type { Entry } from "./types";
 import { durationSeconds, fmtDate, isWorkday, openEntryUntil } from "./time";
+import { deductBreakFromDay } from "./breaks";
 
 /** "YYYY-MM" fuer ein lokales Datum. */
 function monthOf(d: Date): string {
@@ -16,7 +17,8 @@ function monthOf(d: Date): string {
 export function dayActivityHours(
 	entries: Entry[],
 	absenceIds: Set<string>,
-	now = Date.now()
+	now = Date.now(),
+	deductBreaks = false
 ): Map<string, Map<string, number>> {
 	const byDay = new Map<string, Map<string, number>>();
 	for (const e of entries) {
@@ -29,6 +31,11 @@ export function dayActivityHours(
 		}
 		const h = durationSeconds(e, openEntryUntil(e, now)) / 3600;
 		perActivity.set(e.activityId, (perActivity.get(e.activityId) ?? 0) + h);
+	}
+	// Der Abzug haengt an der Tagesarbeitszeit, also erst hier – wenn der Tag
+	// vollstaendig ist.
+	if (deductBreaks) {
+		for (const [day, perActivity] of byDay) byDay.set(day, deductBreakFromDay(perActivity));
 	}
 	return byDay;
 }
@@ -52,9 +59,10 @@ export function sumPerDay(detail: Map<string, Map<string, number>>): Map<string,
 export function dayWorkHours(
 	entries: Entry[],
 	absenceIds: Set<string>,
-	now = Date.now()
+	now = Date.now(),
+	deductBreaks = false
 ): Map<string, number> {
-	return sumPerDay(dayActivityHours(entries, absenceIds, now));
+	return sumPerDay(dayActivityHours(entries, absenceIds, now, deductBreaks));
 }
 
 /**

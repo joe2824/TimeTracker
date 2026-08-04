@@ -6,6 +6,7 @@
 import type { Entry } from "./types";
 import type { TimeReportDay } from "./timeReport";
 import { breakHours, hasStamps } from "./timeReport";
+import { deductBreakFromHours, grossForNet } from "./breaks";
 import { entryHours, fmtDate, openEntryUntil, startOfNextDay } from "./time";
 
 /** Zeitspanne innerhalb eines Tages, in Minuten ab Mitternacht. */
@@ -30,8 +31,10 @@ export interface ReconcileDay {
 	/** "YYYY-MM-DD" */
 	date: string;
 	report: TimeReportDay;
-	/** Erfasste Stunden dieses Tages (Projektzeit + Abwesenheit) */
+	/** Erfasste Stunden dieses Tages (Projektzeit + Abwesenheit), nach Pausenabzug */
 	tracked: number;
+	/** Erfasste Projektzeit dieses Tages VOR dem Pausenabzug, ohne Abwesenheiten */
+	workedGross: number;
 	/** LOGA minus erfasst; positiv = es fehlt etwas */
 	diff: number;
 	status: ReconcileStatus;
@@ -58,6 +61,14 @@ export interface ReconcileOptions {
 	tolerance: number;
 	absenceIds: Set<string>;
 	now?: number;
+	/**
+	 * Pause automatisch abziehen (settings.breakDeduction).
+	 *
+	 * Ist der Abzug aktiv, rechnet die App auf derselben Grundlage wie LOGA, und
+	 * die Spalte „erfasst" ist unmittelbar mit „Arbeitszeit täglich" vergleichbar.
+	 * Ohne ihn steht ein durchlaufender Timer dauerhaft als „zu viel" da.
+	 */
+	deductBreaks?: boolean;
 }
 
 export interface ReconcileSummary {
@@ -90,19 +101,32 @@ export function reconcile(
 	const { hoursPerDay, tolerance, absenceIds } = opts;
 
 	// Erfasste Stunden je Tag; Abwesenheiten mit ihrem Tagesanteil.
-	const tracked = new Map<string, number>();
+	// Projektzeit und Abwesenheit getrennt sammeln: die Pause wird nur von der
+	// gearbeiteten Zeit abgezogen, nie von einem Urlaubstag.
+	const work = new Map<string, number>();
+	const absence = new Map<string, number>();
 	const fullDayAbsence = new Set<string>();
 	const anyAbsence = new Set<string>();
 	const filled = new Set<string>();
 	for (const e of entries) {
 		const day = fmtDate(e.startTs);
 		const isAbsence = absenceIds.has(e.activityId);
-		tracked.set(day, (tracked.get(day) ?? 0) + entryHours(e, isAbsence, hoursPerDay, openEntryUntil(e, now)));
+		const h = entryHours(e, isAbsence, hoursPerDay, openEntryUntil(e, now));
 		if (isAbsence) {
+			absence.set(day, (absence.get(day) ?? 0) + h);
 			anyAbsence.add(day);
 			if ((e.dayFraction ?? 1) >= 1) fullDayAbsence.add(day);
+		} else {
+			work.set(day, (work.get(day) ?? 0) + h);
 		}
 		if (e.source === "loga") filled.add(day);
+	}
+
+	const tracked = new Map<string, number>();
+	for (const day of new Set([...work.keys(), ...absence.keys()])) {
+		const worked = work.get(day) ?? 0;
+		const netto = opts.deductBreaks ? deductBreakFromHours(worked) : worked;
+		tracked.set(day, netto + (absence.get(day) ?? 0));
 	}
 
 	const out: ReconcileDay[] = [];
@@ -142,6 +166,7 @@ export function reconcile(
 			date: report.date,
 			report,
 			tracked: trackedHours,
+			workedGross: roundHours(work.get(report.date) ?? 0),
 			diff,
 			status,
 			looksLikeAbsence,
@@ -278,6 +303,15 @@ export interface FillOptions {
 	/** Uhrzeit, an der die Pause bevorzugt liegt ("HH:MM") */
 	lunchAt: string;
 	now?: number;
+	/**
+	 * Zieht die App die Pause selbst ab (settings.breakDeduction)?
+	 *
+	 * Das dreht die Bedeutung des Nachtrags um: dann wird die ANWESENHEIT
+	 * eingetragen (also inklusive Pause, wie ein durchlaufender Timer sie
+	 * erfasst), und die App zieht sie anschliessend ab. Ohne den Abzug wird die
+	 * Pause stattdessen als Luecke ausgespart.
+	 */
+	deductBreaks?: boolean;
 }
 
 export const DEFAULT_FILL_OPTIONS: FillOptions = { defaultStart: "09:00", lunchAt: "12:00" };
@@ -328,7 +362,13 @@ export function planFill(
 	// An einem Ganztags-Abwesenheitstag gibt es keine Projektzeit (App-Regel).
 	if (day.blockedByAbsence) return null;
 
-	const missingMin = Math.round(day.diff * 60);
+	// Zieht die App die Pause selbst ab, ist die Zielgroesse die ANWESENHEIT:
+	// LOGA-Stunden sind netto, eins zu eins eingetragen bekaemen sie den Abzug
+	// ein zweites Mal und der Tag bliebe dauerhaft zu niedrig.
+	const missing = opts.deductBreaks
+		? Math.max(0, grossForNet(day.report.hours) - day.workedGross)
+		: day.diff;
+	const missingMin = Math.round(missing * 60);
 	if (missingMin <= 0) return null;
 
 	const pauseMin = Math.round(breakHours(day.report) * 60);
@@ -352,7 +392,9 @@ export function planFill(
 	const slack = freeMin - takeMin;
 
 	let blocks: Interval[];
-	if (slack <= 0) {
+	// Bei aktivem Pausenabzug keine Luecke aussparen: der Block spannt die
+	// Anwesenheit auf, den Rest erledigt der Abzug.
+	if (slack <= 0 || opts.deductBreaks) {
 		blocks = carve(free, [{ take: true, min: takeMin }]);
 	} else {
 		// Arbeit vor der Mittagspause: so viel freie Zeit, wie vor `lunchAt` liegt.

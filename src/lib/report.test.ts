@@ -223,3 +223,63 @@ describe("buildReport – offene Einträge", () => {
 		expect(r.workHours).toBeLessThanOrEqual(24);
 	});
 });
+
+describe("buildReport mit automatischem Pausenabzug", () => {
+	/** Eintrag an einem frei waehlbaren Tag im Juni 2026. */
+	function workOn(id: string, activityId: string, day: number, hours: number): Entry {
+		const ts = new Date(2026, 5, day, 8, 0, 0).getTime();
+		return {
+			id,
+			activityId,
+			startTs: ts,
+			endTs: ts + hours * 3600 * 1000,
+			note: "",
+			source: "manual"
+		};
+	}
+
+	it("zieht die Pause je Tag ab und verteilt sie anteilig", () => {
+		// Ein Tag mit 6 h auf „a" und 2 h auf „b" -> 8 h, also 45 Minuten Abzug.
+		const list = [workOn("1", "a", 10, 6), workOn("2", "b", 10, 2)];
+		const report = buildReport("2026-06", activities, list, 0, HPD, undefined, Date.now(), true);
+		const hours = (name: string) => report.rows.find((r) => r.name === name)!.hours;
+		expect(hours("Projekt 1")).toBeCloseTo(6 * (7.25 / 8), 6);
+		expect(hours("Projekt 2")).toBeCloseTo(2 * (7.25 / 8), 6);
+		expect(report.workHours).toBeCloseTo(7.25, 6);
+		expect(report.breakHours).toBeCloseTo(0.75, 6);
+	});
+
+	it("schwellt je Tag, nicht auf der Monatssumme", () => {
+		// Drei Tage mit je 3 h liegen einzeln unter 4 h – zusammen sind es 9 h.
+		// Auf der Monatssumme geschwellt entstuende hier faelschlich ein Abzug.
+		const list = [workOn("1", "a", 10, 3), workOn("2", "a", 11, 3), workOn("3", "a", 12, 3)];
+		const report = buildReport("2026-06", activities, list, 0, HPD, undefined, Date.now(), true);
+		expect(report.workHours).toBeCloseTo(9, 6);
+		expect(report.breakHours).toBe(0);
+	});
+
+	it("laesst Abwesenheiten unangetastet", () => {
+		// Auf einen Urlaubstag gibt es keine Pause.
+		const list = [absence("u", 1, 5)];
+		const report = buildReport("2026-06", activities, list, 0, HPD, undefined, Date.now(), true);
+		expect(report.absenceHours).toBe(7.5);
+		expect(report.breakHours).toBe(0);
+	});
+
+	it("zieht an einem halben Urlaubstag nur von der Projektzeit ab", () => {
+		// 5 h gearbeitet + halber Urlaubstag: die 15 Minuten gehen von den 5 h ab,
+		// die 3,75 h Abwesenheit bleiben unberuehrt.
+		const list = [workOn("1", "a", 10, 5), absence("u", 0.5, 0)];
+		const report = buildReport("2026-06", activities, list, 0, HPD, undefined, Date.now(), true);
+		expect(report.workHours).toBeCloseTo(4.75, 6);
+		expect(report.absenceHours).toBe(3.75);
+		expect(report.breakHours).toBeCloseTo(0.25, 6);
+	});
+
+	it("aendert ohne den Schalter nichts", () => {
+		const list = [workOn("1", "a", 10, 8)];
+		const ohne = buildReport("2026-06", activities, list, 0, HPD, undefined, Date.now(), false);
+		expect(ohne.workHours).toBeCloseTo(8, 6);
+		expect(ohne.breakHours).toBe(0);
+	});
+});

@@ -11,6 +11,7 @@
 		type TimeReportPerson
 	} from "$lib/timeReport";
 	import {
+		DEFAULT_FILL_OPTIONS,
 		planFill,
 		reconcile,
 		type FillPlan,
@@ -99,7 +100,8 @@
 			hoursPerDay: app.settings.hoursPerDay,
 			tolerance: TOLERANCE,
 			absenceIds,
-			now: app.now
+			now: app.now,
+			deductBreaks: app.settings.breakDeduction
 		});
 	}
 
@@ -128,7 +130,13 @@
 		const entries = app.monthEntries(active!.month);
 		return summary.days
 			.filter((d) => d.status !== "free")
-			.map((day) => ({ day, plan: planFill(day, entries) }));
+			.map((day) => ({
+				day,
+				plan: planFill(day, entries, {
+					...DEFAULT_FILL_OPTIONS,
+					deductBreaks: app.settings.breakDeduction
+				})
+			}));
 	});
 
 	/** Die Person, um die es gerade geht – nur bekannt, wenn eine Datei offen ist. */

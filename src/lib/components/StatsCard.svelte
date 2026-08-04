@@ -42,7 +42,7 @@
 	const statsNow = $derived(runningInYear ? app.now : 0);
 
 	// Einmal aufschluesseln, Summen daraus ableiten – nicht zweimal ueber alles laufen.
-	const detailByDay = $derived(dayActivityHours(yearEntries, absenceIds, statsNow));
+	const detailByDay = $derived(dayActivityHours(yearEntries, absenceIds, statsNow, app.settings.breakDeduction));
 	const byDay = $derived(sumPerDay(detailByDay));
 	const weeks = $derived(heatmapYear(year, byDay));
 

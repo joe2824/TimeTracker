@@ -21,6 +21,7 @@
 	} from "$lib/time";
 	import type { Entry, EntrySource } from "$lib/types";
 	import { loadTimeReport, type StoredTimeReport } from "$lib/store";
+	import { breakDeduction } from "$lib/breaks";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
@@ -236,10 +237,18 @@
 			const date = `${month}-${String(d).padStart(2, "0")}`;
 			const wd = new Date(y, m - 1, d).getDay();
 			const entries = (byDate.get(date) ?? []).sort((a, b) => a.startTs - b.startTs);
-			const hours = entries.reduce(
-				(s, e) => s + entryHours(e, app.isAbsenceId(e.activityId), app.settings.hoursPerDay, app.now),
-				0
-			);
+			// Projektzeit und Abwesenheit getrennt: die Pause geht nur von der
+			// gearbeiteten Zeit ab, nie von einem Urlaubstag.
+			let worked = 0;
+			let absent = 0;
+			for (const e of entries) {
+				const isAbs = app.isAbsenceId(e.activityId);
+				const h = entryHours(e, isAbs, app.settings.hoursPerDay, app.now);
+				if (isAbs) absent += h;
+				else worked += h;
+			}
+			const pause = app.settings.breakDeduction ? breakDeduction(worked) : 0;
+			const hours = worked - pause + absent;
 			// Fehlbetrag laut LOGA – nur dort, wo ein Report vorliegt und der Tag
 			// ueberhaupt Stunden kennt.
 			const reportHours = reportByDate.get(date);
@@ -254,6 +263,7 @@
 				nonWorkday: !app.settings.workdays.includes(wd),
 				entries,
 				hours,
+				pause,
 				reportHours,
 				missing
 			});
@@ -482,6 +492,16 @@
 									title={`LOGA: ${fmtHoursClock(day.reportHours ?? 0)} h – hier fehlen ${fmtHoursClock(day.missing)} h`}
 								>
 									−{fmtHoursClock(day.missing)}
+								</span>
+							{/if}
+							{#if day.pause > 0}
+								<!-- Der Abzug muss sichtbar sein: die Tagessumme daneben ist sonst
+								     unerklaerlich niedriger als die Eintraege darueber. -->
+								<span
+									class="text-muted-foreground text-xs"
+									title={`${fmtHoursClock(day.pause)} h Pause automatisch abgezogen`}
+								>
+									−{fmtHoursClock(day.pause)}&nbsp;Pause
 								</span>
 							{/if}
 							{#if day.hours > 0}
