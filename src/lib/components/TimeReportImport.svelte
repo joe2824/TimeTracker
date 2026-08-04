@@ -1,0 +1,716 @@
+<script lang="ts">
+	import { app } from "$lib/app.svelte";
+	import { toast } from "svelte-sonner";
+	import { readXlsx, XlsxError } from "$lib/xlsx";
+	import {
+		parseTimeReport,
+		TimeReportError,
+		breakHours,
+		hasStamps,
+		type ParsedTimeReport,
+		type TimeReportPerson
+	} from "$lib/timeReport";
+	import {
+		planFill,
+		reconcile,
+		type FillPlan,
+		type ReconcileDay,
+		type ReconcileStatus
+	} from "$lib/timeReconcile";
+	import { loadTimeReport, saveTimeReport, type StoredTimeReport } from "$lib/store";
+	import { errorText, logError, logInfo } from "$lib/log";
+	import { fmtDateHuman, fmtHoursClock, monthLabel, noonTs, startOfNextDay, toTs } from "$lib/time";
+	import { Button } from "$lib/components/ui/button";
+	import { Badge } from "$lib/components/ui/badge";
+	import { Checkbox } from "$lib/components/ui/checkbox";
+	import { Progress } from "$lib/components/ui/progress";
+	import * as Alert from "$lib/components/ui/alert";
+	import * as Card from "$lib/components/ui/card";
+	import * as Select from "$lib/components/ui/select";
+	import * as Table from "$lib/components/ui/table";
+	import ActivityCombobox from "$lib/components/ActivityCombobox.svelte";
+	import * as Tooltip from "$lib/components/ui/tooltip";
+	import FileSpreadsheetIcon from "@lucide/svelte/icons/file-spreadsheet";
+	import UploadIcon from "@lucide/svelte/icons/upload";
+	import LoaderCircleIcon from "@lucide/svelte/icons/loader-circle";
+	import PalmtreeIcon from "@lucide/svelte/icons/palmtree";
+	import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
+	import CheckIcon from "@lucide/svelte/icons/check";
+
+	let {
+		month = $bindable(),
+		previewActive = $bindable(false)
+	}: { month: string; previewActive?: boolean } = $props();
+
+	/** Ab welcher Abweichung ein Tag auffaellt (Stunden). 15 Minuten. */
+	const TOLERANCE = 0.25;
+	/** Notiz der nachgetragenen Eintraege – macht sie in der Tagesliste erkennbar. */
+	const NOTE = "Zeitwächter";
+
+	let stage = $state<"idle" | "loading" | "review">("idle");
+	let dragOver = $state(false);
+	let applying = $state(false);
+	let fileInput = $state<HTMLInputElement | null>(null);
+
+	/** Die eingelesene Datei, solange die Auswahl von Person/Monat laeuft. */
+	let parsed = $state<ParsedTimeReport | null>(null);
+	let personKey = $state("");
+	/** Der Report, gegen den gerade abgeglichen wird (aus Datei oder von Platte). */
+	let active = $state<StoredTimeReport | null>(null);
+	/** Der auf Platte liegende Report des aktuellen Monats (fuer den Ruhezustand). */
+	let stored = $state<StoredTimeReport | null>(null);
+
+	/** Auswahl und Zuordnung je Tag, Schluessel = Datum. */
+	let selected = $state<Record<string, boolean>>({});
+	let activityFor = $state<Record<string, string>>({});
+	/** „Alle Tage auf …" – wirkt beim Wechsel auf alle Zeilen mit Uhrzeiten. */
+	let bulkActivity = $state("");
+	let lastBulk = "";
+
+	$effect(() => {
+		const id = bulkActivity;
+		if (!id || id === lastBulk) return;
+		lastBulk = id;
+		setAllActivities(id);
+	});
+
+	$effect(() => {
+		previewActive = stage !== "idle";
+	});
+
+	// Im Ruhezustand zeigen, ob fuer diesen Monat schon ein Report vorliegt.
+	$effect(() => {
+		const m = month;
+		if (stage !== "idle") return;
+		void loadTimeReport(m)
+			.then((r) => {
+				if (month === m) stored = r;
+			})
+			.catch(() => {});
+	});
+
+	// ---------- Abgleich ----------
+
+	const absenceId = $derived(app.absenceActivity?.id ?? "");
+	const absenceIds = $derived(new Set(app.activities.filter((a) => a.isAbsence).map((a) => a.id)));
+
+	const summary = $derived.by(() => {
+		if (!active) return null;
+		return reconcile(active.days, app.monthEntries(active.month), {
+			hoursPerDay: app.settings.hoursPerDay,
+			tolerance: TOLERANCE,
+			absenceIds,
+			now: app.now
+		});
+	});
+
+	/** Nur die Tage, zu denen es etwas zu sagen gibt – freie Tage bleiben draussen. */
+	const rows = $derived.by(() => {
+		if (!summary) return [];
+		const entries = app.monthEntries(active!.month);
+		return summary.days
+			.filter((d) => d.status !== "free")
+			.map((day) => ({ day, plan: planFill(day, entries) }));
+	});
+
+	/** Die Person, um die es gerade geht – nur bekannt, wenn eine Datei offen ist. */
+	const activePerson = $derived(parsed?.people.find((p) => p.key === active?.personKey) ?? null);
+	/**
+	 * Die Monate DIESER Person, nicht die der ganzen Datei.
+	 *
+	 * In einem Team-Export deckt nicht jede Person jeden Monat ab; ein Monat aus
+	 * der Gesamtliste kann fuer die gewaehlte Person leer sein.
+	 */
+	const availableMonths = $derived(activePerson ? monthsOf(activePerson) : []);
+
+	function monthsOf(person: TimeReportPerson): string[] {
+		return [...new Set(person.days.map((d) => d.date.slice(0, 7)))].sort();
+	}
+
+	const fixable = $derived(rows.filter((r) => r.plan !== null && !r.day.alreadyFilled));
+	const chosen = $derived(fixable.filter((r) => selected[r.day.date]));
+	/** Wie viel der Monat schon abgedeckt ist – 100 % heisst „nichts offen". */
+	const coverage = $derived.by(() => {
+		if (!summary) return 100;
+		const relevant = summary.days.filter((d) => d.report.hours > 0).length;
+		if (relevant === 0) return 100;
+		return Math.round(((relevant - summary.missing - summary.partial) / relevant) * 100);
+	});
+
+	/** Die im Monat meistgenutzte Aktivitaet – als Vorschlag fuer alle Zeilen. */
+	function suggestedActivity(): string {
+		const seconds = new Map<string, number>();
+		for (const e of app.monthEntries(active?.month ?? month)) {
+			if (absenceIds.has(e.activityId) || e.endTs === null) continue;
+			seconds.set(e.activityId, (seconds.get(e.activityId) ?? 0) + (e.endTs - e.startTs));
+		}
+		const top = [...seconds.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+		if (top && app.trackableActivities.some((a) => a.id === top)) return top;
+		return app.trackableActivities[0]?.id ?? "";
+	}
+
+	/** Auswahl und Aktivitaeten fuer den aktuellen Abgleich neu setzen. */
+	function resetSelection() {
+		const suggestion = suggestedActivity();
+		const sel: Record<string, boolean> = {};
+		const acts: Record<string, string> = {};
+		for (const { day, plan } of rows) {
+			// Schon Nachgetragenes nicht erneut anhaken – sonst entstuenden Dubletten.
+			sel[day.date] = plan !== null && !day.alreadyFilled;
+			acts[day.date] = suggestion;
+		}
+		selected = sel;
+		activityFor = acts;
+		bulkActivity = "";
+		lastBulk = "";
+	}
+
+	function setAllActivities(id: string) {
+		for (const { day, plan } of rows) {
+			if (plan?.kind === "time") activityFor[day.date] = id;
+		}
+	}
+
+	function toggleAll(on: boolean) {
+		for (const r of fixable) selected[r.day.date] = on;
+	}
+
+	// ---------- Datei einlesen ----------
+
+	async function handleFile(file: File) {
+		stage = "loading";
+		try {
+			const report = parseTimeReport(await readXlsx(await file.arrayBuffer()));
+			parsed = report;
+			// Bei genau einer Person gibt es nichts zu waehlen.
+			personKey = report.people.length === 1 ? report.people[0].key : (matchOwnPerson(report) ?? "");
+			logInfo("Zeitwirtschaftsreport eingelesen", {
+				datei: file.name,
+				personen: report.people.length,
+				monate: report.months
+			});
+			const person = report.people.find((p) => p.key === personKey);
+			if (person) await useReport(person.key, preferredMonth(person));
+			else stage = "review"; // Personenauswahl zeigen
+		} catch (e) {
+			stage = "idle";
+			parsed = null;
+			if (e instanceof XlsxError || e instanceof TimeReportError) toast.error(e.message);
+			else {
+				logError("Zeitwirtschaftsreport konnte nicht gelesen werden", e);
+				toast.error(`Datei konnte nicht gelesen werden: ${errorText(e)}`);
+			}
+		}
+	}
+
+	/**
+	 * Der Monat, mit dem der Abgleich startet: der aus der Einträge-Ansicht, wenn
+	 * die Datei ihn enthaelt, sonst der letzte darin.
+	 *
+	 * Ohne diesen Rueckfall stuende bei einer Datei, die den gerade gewaehlten
+	 * Monat nicht abdeckt, eine leere Tabelle da – ohne erkennbaren Grund.
+	 */
+	function preferredMonth(person: TimeReportPerson): string {
+		const months = monthsOf(person);
+		if (months.length === 0) return month;
+		return months.includes(month) ? month : months[months.length - 1];
+	}
+
+	/**
+	 * Die eigene Person in einem Team-Export raten: ueber den Absendernamen aus
+	 * den Einstellungen. Trifft es nicht, wird gefragt.
+	 */
+	function matchOwnPerson(report: ParsedTimeReport): string | null {
+		const own = app.settings.senderName.trim().toLowerCase();
+		if (!own) return null;
+		const hit = report.people.find((p) => p.name.toLowerCase() === own);
+		return hit?.key ?? null;
+	}
+
+	/** Person + Monat festlegen, speichern und in den Abgleich wechseln. */
+	async function useReport(key: string, targetMonth: string) {
+		const person = parsed?.people.find((p) => p.key === key);
+		if (!person) return;
+		const days = person.days.filter((d) => d.date.startsWith(`${targetMonth}-`));
+		// Nichts speichern, was nichts enthaelt: ein leerer Monat wuerde einen
+		// frueher eingelesenen Report desselben Monats ueberschreiben, und der
+		// Abgleich zeigte danach eine leere Tabelle ohne erkennbaren Grund.
+		if (days.length === 0) {
+			toast.error(`Für ${monthLabel(targetMonth)} enthält die Datei keine Tage von ${person.name}.`);
+			return;
+		}
+		// Ohne das bliebe bei einem Team-Export die Personenauswahl stehen und der
+		// Klick sähe aus, als passiere nichts.
+		personKey = person.key;
+		const report: StoredTimeReport = {
+			month: targetMonth,
+			importedAt: Date.now(),
+			personKey: person.key,
+			personName: person.name,
+			days
+		};
+		month = targetMonth;
+		await app.ensureMonth(targetMonth);
+		try {
+			await saveTimeReport(report);
+		} catch (e) {
+			// Der Abgleich geht auch ohne gespeicherte Datei – nur nicht nach einem Neustart.
+			logError("Zeitwirtschaftsreport konnte nicht gespeichert werden", e);
+			toast.warning("Der Report wurde eingelesen, aber nicht gespeichert.");
+		}
+		active = report;
+		stored = report;
+		stage = "review";
+		resetSelection();
+	}
+
+	/** Den gespeicherten Report dieses Monats wieder oeffnen. */
+	async function openStored() {
+		if (!stored) return;
+		await app.ensureMonth(stored.month);
+		parsed = null;
+		active = stored;
+		stage = "review";
+		resetSelection();
+	}
+
+	function pickFile(e: Event) {
+		const file = (e.currentTarget as HTMLInputElement).files?.[0];
+		if (file) void handleFile(file);
+		// Zuruecksetzen, damit dieselbe Datei erneut gewaehlt werden kann.
+		(e.currentTarget as HTMLInputElement).value = "";
+	}
+
+	function onDrop(e: DragEvent) {
+		e.preventDefault();
+		dragOver = false;
+		const file = e.dataTransfer?.files?.[0];
+		if (!file) return;
+		if (!file.name.toLowerCase().endsWith(".xlsx")) {
+			toast.error("Bitte die .xlsx aus Scout ablegen.");
+			return;
+		}
+		void handleFile(file);
+	}
+
+	function close() {
+		if (applying) return;
+		stage = "idle";
+		parsed = null;
+		active = null;
+	}
+
+	// ---------- Uebernehmen ----------
+
+	/** Zeitstempel fuer „Minute X dieses Tages"; 1440 ist Mitternacht des Folgetags. */
+	function tsAt(date: string, minutes: number): number {
+		if (minutes >= 1440) return startOfNextDay(noonTs(date));
+		const hh = String(Math.floor(minutes / 60)).padStart(2, "0");
+		const mm = String(minutes % 60).padStart(2, "0");
+		return toTs(date, `${hh}:${mm}`);
+	}
+
+	async function apply() {
+		if (applying || chosen.length === 0) return;
+		applying = true;
+		let days = 0;
+		let created = 0;
+		let failed = 0;
+		try {
+			for (const { day, plan } of chosen) {
+				if (!plan) continue;
+				let any = false;
+				if (plan.kind === "absence") {
+					if (!absenceId) {
+						failed++;
+						continue;
+					}
+					const ts = noonTs(day.date);
+					any = !!(await app.addEntry(absenceId, ts, ts, NOTE, "loga", plan.fraction));
+				} else {
+					const activityId = activityFor[day.date];
+					if (!activityId) {
+						failed++;
+						continue;
+					}
+					for (const block of plan.blocks) {
+						const e = await app.addEntry(
+							activityId,
+							tsAt(day.date, block.start),
+							tsAt(day.date, block.end),
+							NOTE,
+							"loga"
+						);
+						if (e) {
+							created++;
+							any = true;
+						}
+					}
+				}
+				if (any) days++;
+				else failed++;
+			}
+		} catch (e) {
+			// Mittendrin gescheitert: das bereits Angelegte steht auf der Platte.
+			// Was schon durch ist, wird unten trotzdem gemeldet.
+			logError("Nachtragen aus dem Zeitwirtschaftsreport abgebrochen", e);
+			toast.error(`Nachtragen abgebrochen: ${errorText(e)}`);
+		} finally {
+			applying = false;
+		}
+
+		if (days > 0) {
+			logInfo("Zeiten aus dem Zeitwirtschaftsreport nachgetragen", {
+				monat: active?.month,
+				tage: days,
+				eintraege: created
+			});
+			toast.success(`${days} Tag${days === 1 ? "" : "e"} nachgetragen.`);
+		}
+		if (failed > 0) {
+			toast.warning(
+				`${failed} Tag${failed === 1 ? " konnte" : "e konnten"} nicht nachgetragen werden – bitte einzeln prüfen.`
+			);
+		}
+		resetSelection();
+	}
+
+	// ---------- Darstellung ----------
+
+	const STATUS: Record<ReconcileStatus, { label: string; class: string }> = {
+		missing: { label: "fehlt", class: "bg-destructive/15 text-destructive" },
+		partial: { label: "teilweise", class: "bg-amber-500/15 text-amber-700 dark:text-amber-300" },
+		over: { label: "zu viel", class: "bg-sky-500/15 text-sky-700 dark:text-sky-300" },
+		ok: { label: "stimmt", class: "text-muted-foreground" },
+		free: { label: "frei", class: "text-muted-foreground" }
+	};
+
+	const FLAG_HINT: Record<string, string> = {
+		ruhepause: "Die gesetzliche Ruhepause wurde an diesem Tag nicht eingehalten.",
+		ueber10: "Die tägliche Arbeitszeit lag über 10 Stunden.",
+		soll10: "Die Soll-Arbeitszeit liegt über 10 Stunden.",
+		wiedereingliederung: "Tag im Rahmen einer Wiedereingliederung.",
+		sonntag: "An diesem Sonntag wurde gearbeitet.",
+		feiertag: "An diesem Feiertag wurde gearbeitet."
+	};
+
+	/** "Mo 12.01." – kurz genug fuer die Tabellenspalte. */
+	function dayLabel(date: string): string {
+		return new Date(noonTs(date)).toLocaleDateString("de-DE", {
+			weekday: "short",
+			day: "2-digit",
+			month: "2-digit"
+		});
+	}
+
+	function planLabel(plan: FillPlan): string {
+		if (plan.kind === "absence") return plan.fraction === 0.5 ? "½ Tag" : "ganzer Tag";
+		return plan.blocks
+			.map((b) => `${clock(b.start)}–${clock(b.end)}`)
+			.join(", ");
+	}
+
+	function clock(minutes: number): string {
+		return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+	}
+
+	function stampLabel(day: ReconcileDay): string {
+		return hasStamps(day.report) ? `${day.report.firstIn}–${day.report.lastOut}` : "—";
+	}
+</script>
+
+<!--
+	Eine Datei, die NEBEN der Ablegefläche landet, würde die Webview sonst zur
+	`file://`-Adresse navigieren und die App damit aus dem Fenster werfen – der
+	laufende Timer inklusive. Das native Drag-Drop von Tauri ist abgeschaltet
+	(`dragDropEnabled: false`), also muss die Seite das selbst abfangen.
+-->
+<svelte:window
+	ondragover={(e) => e.preventDefault()}
+	ondrop={(e) => e.preventDefault()}
+/>
+
+<input
+	bind:this={fileInput}
+	type="file"
+	accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+	class="hidden"
+	onchange={pickFile}
+/>
+
+<Card.Root>
+	<Card.Header>
+		<Card.Title class="flex items-center gap-2">
+			<FileSpreadsheetIcon class="size-4" /> Zeitwächter-Report
+		</Card.Title>
+		<Card.Description>
+			Den Zeitwirtschaftsreport aus Scout ablegen – die App zeigt, an welchen Tagen Zeit fehlt, und
+			trägt sie auf Wunsch nach.
+		</Card.Description>
+		{#if stage === "review"}
+			<Card.Action>
+				<Button variant="outline" size="sm" onclick={close} disabled={applying}>Schließen</Button>
+			</Card.Action>
+		{/if}
+	</Card.Header>
+
+	{#if stage === "loading"}
+		<Card.Content class="space-y-2">
+			<div class="text-muted-foreground flex items-center gap-2 text-sm">
+				<LoaderCircleIcon class="size-4 shrink-0 animate-spin" /> Datei wird gelesen…
+			</div>
+		</Card.Content>
+
+	{:else if stage === "idle"}
+		<Card.Content class="space-y-3">
+			<!-- Ablegen UND Klicken auf demselben Element: ein <button> bringt Fokus
+			     und Tastaturbedienung mit, ein <div> mit Drop-Handler haette beides nicht. -->
+			<button
+				type="button"
+				onclick={() => fileInput?.click()}
+				ondragover={(e) => {
+					e.preventDefault();
+					dragOver = true;
+				}}
+				ondragleave={() => (dragOver = false)}
+				ondrop={onDrop}
+				class="flex w-full cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed px-6 py-8 text-center transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none {dragOver
+					? 'border-primary bg-primary/10'
+					: 'border-border hover:border-primary/50 hover:bg-muted/50'}"
+			>
+				<UploadIcon class="text-muted-foreground size-6" />
+				<span class="text-sm font-medium">Zeitwirtschaftsreport hier ablegen</span>
+				<span class="text-muted-foreground text-xs">
+					.xlsx aus Scout · oder klicken, um eine Datei zu wählen
+				</span>
+			</button>
+
+			{#if stored}
+				<div class="flex flex-wrap items-center justify-between gap-2 text-sm">
+					<span class="text-muted-foreground">
+						Report für {monthLabel(stored.month)} vom {fmtDateHuman(stored.importedAt)}
+						{#if stored.personName}· {stored.personName}{/if}
+					</span>
+					<Button variant="outline" size="sm" onclick={openStored}>Abgleich öffnen</Button>
+				</div>
+			{/if}
+		</Card.Content>
+
+	{:else if parsed && !personKey}
+		<!-- Team-Export: erst klaeren, um wen es geht. -->
+		<Card.Content class="space-y-3">
+			<p class="text-sm">Die Datei enthält mehrere Personen. Wessen Zeiten sollen abgeglichen werden?</p>
+			<div class="flex flex-wrap gap-2">
+				{#each parsed.people as p (p.key)}
+					<Button variant="outline" size="sm" onclick={() => useReport(p.key, preferredMonth(p))}>
+						{p.name}
+						{#if p.personnelNo}<span class="text-muted-foreground">· {p.personnelNo}</span>{/if}
+					</Button>
+				{/each}
+			</div>
+			<Button variant="ghost" size="sm" onclick={close}>Abbrechen</Button>
+		</Card.Content>
+
+	{:else if active && summary}
+		<Card.Content class="space-y-3 p-0">
+			<div class="space-y-3 px-6">
+				<!-- Kopfzeile: Monat, Person, Bilanz -->
+				<div class="flex flex-wrap items-center justify-between gap-3">
+					<div class="flex flex-wrap items-center gap-2">
+						{#if availableMonths.length > 1}
+							<Select.Root
+								type="single"
+								value={active.month}
+								onValueChange={(v) => v && useReport(active!.personKey, v)}
+							>
+								<Select.Trigger size="sm" class="w-44">{monthLabel(active.month)}</Select.Trigger>
+								<Select.Content>
+									{#each availableMonths as m (m)}
+										<Select.Item value={m} label={monthLabel(m)}>{monthLabel(m)}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						{:else}
+							<span class="font-medium">{monthLabel(active.month)}</span>
+						{/if}
+						{#if active.personName}
+							<Badge variant="secondary">{active.personName}</Badge>
+						{/if}
+					</div>
+					<div class="text-muted-foreground flex flex-wrap items-center gap-3 text-sm">
+						<span>{summary.ok} stimmen</span>
+						{#if summary.missing > 0}<span class="text-destructive">{summary.missing} fehlen</span>{/if}
+						{#if summary.partial > 0}
+							<span class="text-amber-700 dark:text-amber-300">{summary.partial} teilweise</span>
+						{/if}
+						{#if summary.over > 0}
+							<span class="text-sky-700 dark:text-sky-300">{summary.over} zu viel</span>
+						{/if}
+					</div>
+				</div>
+
+				<Progress value={coverage} />
+
+				{#if summary.missingHours > 0}
+					<Alert.Root>
+						<TriangleAlertIcon />
+						<Alert.Title>
+							{fmtHoursClock(summary.missingHours)} h sind in {monthLabel(active.month)} nicht erfasst
+						</Alert.Title>
+						<Alert.Description>
+							Verglichen wird die Spalte „Arbeitszeit täglich" – die Pause hat LOGA dort schon
+							abgezogen. Vorgeschlagene Zeiten lassen die Pause deshalb aus und meiden bereits
+							erfasste Zeiten.
+						</Alert.Description>
+					</Alert.Root>
+				{/if}
+
+				<!-- Sammelaktionen -->
+				{#if fixable.length > 0}
+					<div class="flex flex-wrap items-center gap-2">
+						<Button variant="outline" size="sm" onclick={() => toggleAll(chosen.length < fixable.length)}>
+							{chosen.length < fixable.length ? "Alle auswählen" : "Auswahl aufheben"}
+						</Button>
+						<div class="w-56">
+							<ActivityCombobox
+								id="act-bulk"
+								bind:value={bulkActivity}
+								options={app.trackableActivities}
+								placeholder="Alle Tage auf …"
+							/>
+						</div>
+						<span class="text-muted-foreground text-sm">{chosen.length} ausgewählt</span>
+					</div>
+				{/if}
+			</div>
+
+			<!-- Bewusst ohne eigenen Scrollbereich: die Aktivitäts-Combobox klappt ihre
+			     Liste absolut positioniert auf, ein `overflow-y-auto` hier würde sie
+			     abschneiden. Die Seite scrollt stattdessen, die Fußzeile bleibt sichtbar. -->
+			<Tooltip.Provider>
+				<div class="border-y">
+					<Table.Root>
+						<Table.Header class="bg-background sticky top-0 z-10">
+							<Table.Row>
+								<Table.Head class="w-10"></Table.Head>
+								<Table.Head class="w-24">Tag</Table.Head>
+								<Table.Head class="w-28">Stempel</Table.Head>
+								<Table.Head class="w-20 text-right">LOGA</Table.Head>
+								<Table.Head class="w-20 text-right">erfasst</Table.Head>
+								<Table.Head class="w-24">Status</Table.Head>
+								<Table.Head>Nachtrag</Table.Head>
+							</Table.Row>
+						</Table.Header>
+						<Table.Body>
+							{#each rows as { day, plan } (day.date)}
+								{@const info = STATUS[day.status]}
+								<Table.Row class={day.status === "ok" ? "text-muted-foreground" : ""}>
+									<Table.Cell>
+										{#if plan && !day.alreadyFilled}
+											<Checkbox
+												bind:checked={selected[day.date]}
+												aria-label={`${dayLabel(day.date)} nachtragen`}
+											/>
+										{/if}
+									</Table.Cell>
+									<Table.Cell class="font-medium whitespace-nowrap">
+										{dayLabel(day.date)}
+										{#if day.report.flags.length > 0}
+											<span class="ml-1 inline-flex gap-1 align-middle">
+												{#each day.report.flags as f (f.key)}
+													<Tooltip.Root>
+														<Tooltip.Trigger>
+															<Badge variant="outline" class="text-[10px] text-amber-700 dark:text-amber-300">
+																{f.label}
+															</Badge>
+														</Tooltip.Trigger>
+														<Tooltip.Content>
+															{FLAG_HINT[f.key] ?? f.label}
+															{#if f.value && f.value !== "X"}({f.value}){/if}
+														</Tooltip.Content>
+													</Tooltip.Root>
+												{/each}
+											</span>
+										{/if}
+									</Table.Cell>
+									<Table.Cell class="text-muted-foreground font-mono text-xs whitespace-nowrap">
+										{stampLabel(day)}
+									</Table.Cell>
+									<Table.Cell class="text-right font-mono tabular-nums">
+										{fmtHoursClock(day.report.hours)}
+									</Table.Cell>
+									<Table.Cell class="text-right font-mono tabular-nums">
+										{fmtHoursClock(day.tracked)}
+									</Table.Cell>
+									<Table.Cell>
+										<span class={`rounded px-1.5 py-0.5 text-xs font-medium ${info.class}`}>
+											{info.label}
+										</span>
+									</Table.Cell>
+									<Table.Cell>
+										{#if day.alreadyFilled}
+											<span class="text-muted-foreground inline-flex items-center gap-1 text-xs">
+												<CheckIcon class="size-3.5" /> bereits nachgetragen
+											</span>
+										{:else if plan?.kind === "absence"}
+											<span class="inline-flex items-center gap-1.5 text-sm text-amber-700 dark:text-amber-300">
+												<PalmtreeIcon class="size-3.5" />
+												Abwesenheit · {planLabel(plan)}
+											</span>
+										{:else if plan?.kind === "time"}
+											<div class="flex flex-wrap items-center gap-2">
+												<div class="w-52">
+													<ActivityCombobox
+														id={`act-${day.date}`}
+														bind:value={activityFor[day.date]}
+														options={app.trackableActivities}
+													/>
+												</div>
+												<span class="text-muted-foreground font-mono text-xs">{planLabel(plan)}</span>
+											</div>
+										{:else if day.status === "over"}
+											{@const pause = breakHours(day.report)}
+											<span class="text-muted-foreground text-xs">
+												{fmtHoursClock(-day.diff)} h mehr erfasst als LOGA kennt
+												{#if pause > 0}
+													<!-- Der häufigste Grund: der Timer lief über die Pause weiter,
+													     während LOGA sie abzieht. -->
+													· LOGA zieht {fmtHoursClock(pause)} h Pause ab
+												{/if}
+											</span>
+										{:else if day.status === "ok"}
+											<span class="text-muted-foreground text-xs">—</span>
+										{:else if day.blockedByAbsence}
+											<span class="text-muted-foreground text-xs">Ganztags-Abwesenheit eingetragen</span>
+										{:else if day.looksLikeAbsence}
+											<!-- Urlaub/Feiertag laut LOGA, aber am Tag steht schon Projektzeit:
+											     ganztägige Abwesenheit und Projektzeit schließen sich aus. -->
+											<span class="text-muted-foreground text-xs">
+												Urlaub/Feiertag – am Tag ist bereits Projektzeit erfasst
+											</span>
+										{:else}
+											<span class="text-muted-foreground text-xs">kein Platz im Tag</span>
+										{/if}
+									</Table.Cell>
+								</Table.Row>
+							{/each}
+						</Table.Body>
+					</Table.Root>
+				</div>
+			</Tooltip.Provider>
+
+			<!-- Bleibt beim Scrollen der langen Tabelle erreichbar. -->
+			<div class="bg-card sticky bottom-0 flex justify-end gap-2 border-t px-6 py-3">
+				<Button variant="outline" onclick={close} disabled={applying}>Schließen</Button>
+				<Button onclick={apply} disabled={applying || chosen.length === 0}>
+					{#if applying}<LoaderCircleIcon class="size-4 animate-spin" />{/if}
+					{applying
+						? "Übernehme…"
+						: chosen.length > 0
+							? `${chosen.length} Tag${chosen.length === 1 ? "" : "e"} übernehmen`
+							: "Nichts ausgewählt"}
+				</Button>
+			</div>
+		</Card.Content>
+	{/if}
+</Card.Root>

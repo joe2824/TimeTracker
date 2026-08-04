@@ -8,3 +8,10 @@ node_modules
 !.env.example
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Echte Zeitwirtschaftsreports aus LOGA/Scout: enthalten Personalnummer und
+# Klarnamen. Bewusst ohne Anker und breit gefasst – eine umbenannte oder in einen
+# Unterordner gelegte Kopie traegt dieselben Daten. Fuer Tests liegt eine
+# anonymisierte Fassung unter src/lib/testing/ (Ausnahme unten).
+*.xlsx
+!src/lib/testing/*.fixture.xlsx

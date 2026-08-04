@@ -20,12 +20,14 @@
 		toTs
 	} from "$lib/time";
 	import type { Entry, EntrySource } from "$lib/types";
+	import { loadTimeReport, type StoredTimeReport } from "$lib/store";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
 	import * as Card from "$lib/components/ui/card";
 	import * as Dialog from "$lib/components/ui/dialog";
 	import CalendarImport from "$lib/components/CalendarImport.svelte";
+	import TimeReportImport from "$lib/components/TimeReportImport.svelte";
 	import ActivityCombobox from "$lib/components/ActivityCombobox.svelte";
 	import DateInput from "$lib/components/DateInput.svelte";
 	import BulkEntryDialog from "$lib/components/BulkEntryDialog.svelte";
@@ -42,6 +44,30 @@
 	let vacOpen = $state(false);
 	// true, solange der Kalender-Import eine Termin-Vorschau zeigt -> Monatsliste ausblenden.
 	let importPreview = $state(false);
+	// dito fuer den Abgleich mit dem Zeitwirtschaftsreport.
+	let reportPreview = $state(false);
+	const anyPreview = $derived(importPreview || reportPreview);
+
+	/** Ab welcher Abweichung ein Tag als „fehlt etwas" markiert wird (Stunden). */
+	const REPORT_TOLERANCE = 0.25;
+	/** Der eingelesene LOGA-Report dieses Monats, falls einer vorliegt. */
+	let report = $state<StoredTimeReport | null>(null);
+	const reportByDate = $derived(new Map((report?.days ?? []).map((d) => [d.date, d.hours])));
+
+	// Nach dem Schliessen des Abgleichs neu lesen: dort kann gerade ein Report
+	// eingelesen oder gewechselt worden sein. `entriesVersion` haengt mit dran,
+	// weil „Einstellungen → Daten → Jahr loeschen" die Reports des Jahres
+	// mitnimmt – ohne das blieben die Fehlbetrags-Markierungen stehen.
+	$effect(() => {
+		const m = month;
+		void reportPreview;
+		void app.entriesVersion;
+		void loadTimeReport(m)
+			.then((r) => {
+				if (month === m) report = r;
+			})
+			.catch(() => {});
+	});
 
 	const WEEKDAYS = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 
@@ -214,13 +240,22 @@
 				(s, e) => s + entryHours(e, app.isAbsenceId(e.activityId), app.settings.hoursPerDay, app.now),
 				0
 			);
+			// Fehlbetrag laut LOGA – nur dort, wo ein Report vorliegt und der Tag
+			// ueberhaupt Stunden kennt.
+			const reportHours = reportByDate.get(date);
+			const missing =
+				reportHours != null && reportHours > 0 && reportHours - hours > REPORT_TOLERANCE
+					? reportHours - hours
+					: 0;
 			list.push({
 				d,
 				date,
 				weekday: WEEKDAYS[wd],
 				nonWorkday: !app.settings.workdays.includes(wd),
 				entries,
-				hours
+				hours,
+				reportHours,
+				missing
 			});
 		}
 		return list;
@@ -357,7 +392,7 @@
 </script>
 
 <div class="space-y-4">
-	{#if !importPreview}
+	{#if !anyPreview}
 	<div class="flex flex-wrap items-end justify-between gap-3">
 		<MonthSelector bind:month id="month" />
 		<div class="flex flex-wrap items-center gap-3">
@@ -440,6 +475,15 @@
 							{/each}
 						</div>
 						<div class="flex items-center gap-2 pt-0.5">
+							{#if day.missing > 0}
+								<!-- Aus dem Zeitwirtschaftsreport: hier fehlt Zeit gegenueber LOGA. -->
+								<span
+									class="rounded bg-amber-500/15 px-1.5 py-0.5 font-mono text-xs tabular-nums text-amber-700 dark:text-amber-300"
+									title={`LOGA: ${fmtHoursClock(day.reportHours ?? 0)} h – hier fehlen ${fmtHoursClock(day.missing)} h`}
+								>
+									−{fmtHoursClock(day.missing)}
+								</span>
+							{/if}
 							{#if day.hours > 0}
 								<span class="text-muted-foreground w-14 text-right font-mono text-xs tabular-nums">
 									{fmtHoursClock(day.hours)} h
@@ -464,7 +508,14 @@
 	</Card.Root>
 	{/if}
 
-	<CalendarImport {month} bind:previewActive={importPreview} />
+	<!-- Die beiden Import-Karten uebernehmen im aktiven Zustand die ganze Flaeche;
+	     die jeweils andere weicht dann, statt darunter herumzustehen. -->
+	{#if !reportPreview}
+		<CalendarImport {month} bind:previewActive={importPreview} />
+	{/if}
+	{#if !importPreview}
+		<TimeReportImport bind:month bind:previewActive={reportPreview} />
+	{/if}
 </div>
 
 <BulkEntryDialog bind:open={bulkOpen} onsaved={afterExternalSave} />
