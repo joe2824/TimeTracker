@@ -16,7 +16,11 @@
 // Aufsummieren. Sonst waere die urspruengliche Zeit unwiederbringlich weg,
 // sobald jemand den Schalter umlegt.
 
-/** Nur Abwesenheiten sind ausgenommen; alles andere zaehlt als Arbeitszeit. */
+/**
+ * Die Stufen der Regel, ABSTEIGEND nach Schwelle – breakDeduction nimmt die
+ * erste passende. Eine dritte Stufe liesse sich hier einhaengen, ohne dass
+ * grossForNet oder die Verteilung etwas davon mitbekommen muessten.
+ */
 export const BREAK_STEPS = [
 	{ afterHours: 6, deduction: 0.75 },
 	{ afterHours: 4, deduction: 0.25 }

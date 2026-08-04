@@ -6,7 +6,9 @@
 		parseTimeReport,
 		TimeReportError,
 		breakHours,
+		grossHours,
 		hasStamps,
+		ruleBreakHours,
 		type ParsedTimeReport,
 		type TimeReportPerson
 	} from "$lib/timeReport";
@@ -440,6 +442,17 @@
 		return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 	}
 
+	/**
+	 * Bleibt an diesem Tag eine Differenz stehen, weil LOGA anders abgezogen hat
+	 * als die Hausregel? Dann sind die Stempelzeiten voll erfasst und mehr geht
+	 * nicht, ohne Anwesenheit zu erfinden.
+	 */
+	function ruleMismatch(day: ReconcileDay): boolean {
+		if (!app.settings.breakDeduction || !hasStamps(day.report)) return false;
+		const brutto = grossHours(day.report);
+		return Math.abs(brutto - day.report.hours - ruleBreakHours(brutto)) > TOLERANCE;
+	}
+
 	function stampLabel(day: ReconcileDay): string {
 		return hasStamps(day.report) ? `${day.report.firstIn}–${day.report.lastOut}` : "—";
 	}
@@ -633,9 +646,16 @@
 							{fmtHoursClock(summary.missingHours)} h sind in {monthLabel(active.month)} nicht erfasst
 						</Alert.Title>
 						<Alert.Description>
-							Verglichen wird die Spalte „Arbeitszeit täglich" – die Pause hat LOGA dort schon
-							abgezogen. Vorgeschlagene Zeiten lassen die Pause deshalb aus und meiden bereits
-							erfasste Zeiten.
+							Verglichen wird die Spalte „Arbeitszeit täglich" – die ist netto, LOGA hat die Pause
+							dort bereits abgezogen.
+							{#if app.settings.breakDeduction}
+								Da die App die Pause ebenfalls abzieht, tragen die Vorschläge die
+								<strong>Anwesenheit</strong> ein (Kommen bis Gehen); der Abzug ergibt daraus wieder
+								die Stundenzahl aus dem Report.
+							{:else}
+								Vorgeschlagene Zeiten sparen die Pause deshalb als Lücke aus.
+							{/if}
+							Bereits erfasste Zeiten bleiben unberührt.
 						</Alert.Description>
 					</Alert.Root>
 				{/if}
@@ -747,9 +767,10 @@
 											{@const pause = breakHours(day.report)}
 											<span class="text-muted-foreground text-xs">
 												{fmtHoursClock(-day.diff)} h mehr erfasst als LOGA kennt
-												{#if pause > 0}
-													<!-- Der häufigste Grund: der Timer lief über die Pause weiter,
-													     während LOGA sie abzieht. -->
+												{#if pause > 0 && !app.settings.breakDeduction}
+													<!-- Nur ohne eigenen Abzug ist die Pause die Erklärung: der Timer
+													     lief über sie hinweg, während LOGA sie abzieht. Mit aktivem
+													     Abzug steht sie auf BEIDEN Seiten und erklärt nichts mehr. -->
 													· LOGA zieht {fmtHoursClock(pause)} h Pause ab
 												{/if}
 											</span>
@@ -762,6 +783,16 @@
 											     ganztägige Abwesenheit und Projektzeit schließen sich aus. -->
 											<span class="text-muted-foreground text-xs">
 												Urlaub/Feiertag – am Tag ist bereits Projektzeit erfasst
+											</span>
+										{:else if ruleMismatch(day)}
+											<!-- Die Stempelzeiten sind voll erfasst, es bleibt trotzdem eine
+											     Differenz: LOGA hat an diesem Tag anders abgezogen als die
+											     Hausregel (gestempelte Zusatzpause, Korrekturbuchung). Das
+											     lässt sich nicht auffüllen, ohne Anwesenheit zu erfinden. -->
+											<span class="text-muted-foreground text-xs">
+												LOGA zieht hier {fmtHoursClock(breakHours(day.report))} h Pause ab statt
+												{fmtHoursClock(ruleBreakHours(grossHours(day.report)))} h – Stempelzeiten sind
+												vollständig erfasst
 											</span>
 										{:else}
 											<span class="text-muted-foreground text-xs">kein Platz im Tag</span>
