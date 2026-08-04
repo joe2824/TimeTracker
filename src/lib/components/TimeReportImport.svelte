@@ -501,20 +501,23 @@
 				}}
 				ondragleave={() => (dragOver = false)}
 				ondrop={onDrop}
-				class="group focus-visible:ring-ring/50 flex w-full flex-1 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-6 py-7 text-center transition-colors focus-visible:ring-2 focus-visible:outline-none {dragOver
+				class="group focus-visible:ring-ring/50 flex w-full flex-1 cursor-pointer items-center justify-center gap-3 rounded-lg border-2 border-dashed px-5 py-4 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none {dragOver
 					? 'border-primary bg-primary/5'
 					: 'border-border/70 hover:border-primary/40 hover:bg-muted/40'}"
 			>
 				<span
-					class="flex size-11 items-center justify-center rounded-full transition-colors {dragOver
+					class="flex size-9 shrink-0 items-center justify-center rounded-full transition-colors {dragOver
 						? 'bg-primary/15 text-primary'
 						: 'bg-muted text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary'}"
 				>
-					<UploadIcon class="size-5" />
+					<UploadIcon class="size-4" />
 				</span>
-				<span class="text-sm font-medium">Zeitwirtschaftsreport hier ablegen</span>
-				<span class="text-muted-foreground text-xs">
-					.xlsx aus Scout · oder klicken, um eine Datei zu wählen
+				<!-- Spans statt divs: der Inhalt eines <button> darf nur Phrasing Content sein. -->
+				<span class="min-w-0">
+					<span class="block text-sm font-medium">Zeitwirtschaftsreport hier ablegen</span>
+					<span class="text-muted-foreground block text-xs">
+						.xlsx aus Scout · oder klicken, um eine Datei zu wählen
+					</span>
 				</span>
 			</button>
 
