@@ -1,5 +1,6 @@
 import type { Activity, Entry } from "./types";
 import { DEFAULT_SUBJECT } from "./types";
+import { deductBreakFromDay } from "./breaks";
 import {
 	entryHours,
 	fmtDate,
@@ -46,12 +47,19 @@ export interface MonthReport {
 	total: number;
 	absenceHours: number;
 	workHours: number;
+	/** Wie viel Pause insgesamt abgezogen wurde (0 = Abzug aus). */
+	breakHours: number;
 }
 
 /**
  * Aggregiert die Eintraege eines Monats zu einer Zeile je Aktivitaet.
  * Es erscheinen ALLE nicht-archivierten Aktivitaeten (auch mit 0 Stunden),
  * jeweils auf `step` Stunden gerundet.
+ *
+ * Ist `deductBreaks` gesetzt, wird die Pause JE TAG abgezogen und anteilig auf
+ * die Aktivitaeten des Tages verteilt (siehe breaks.ts). Der Abzug muss
+ * tageweise passieren, nicht auf der Monatssumme: die Regel haengt an der
+ * Tagesarbeitszeit, und ein Monat liegt immer ueber jeder Schwelle.
  */
 export function buildReport(
 	month: string,
@@ -60,7 +68,8 @@ export function buildReport(
 	step: number,
 	hoursPerDay: number,
 	workdays?: number[],
-	now = Date.now()
+	now = Date.now(),
+	deductBreaks = false
 ): MonthReport {
 	const absenceIds = new Set(activities.filter((a) => a.isAbsence).map((a) => a.id));
 
@@ -81,6 +90,13 @@ export function buildReport(
 	}
 
 	const hoursByActivity = new Map<string, number>();
+	const add = (id: string, h: number) =>
+		hoursByActivity.set(id, (hoursByActivity.get(id) ?? 0) + h);
+
+	// Projektzeit erst je TAG sammeln: der Pausenabzug haengt an der
+	// Tagesarbeitszeit. Abwesenheiten laufen daran vorbei – auf einen Urlaubstag
+	// gibt es keine Pause.
+	const workByDay = new Map<string, Map<string, number>>();
 	for (const e of entries) {
 		const isAbs = absenceIds.has(e.activityId);
 		// Abwesenheit an einem Nicht-Arbeitstag komplett ignorieren.
@@ -88,7 +104,30 @@ export function buildReport(
 		// Projekteintraege an Ganztags-Abwesenheitstagen ignorieren.
 		if (!isAbs && fullDayAbsenceDays.has(fmtDate(e.startTs))) continue;
 		const h = entryHours(e, isAbs, hoursPerDay, until(e));
-		hoursByActivity.set(e.activityId, (hoursByActivity.get(e.activityId) ?? 0) + h);
+		if (isAbs) {
+			add(e.activityId, h);
+			continue;
+		}
+		const day = fmtDate(e.startTs);
+		let perActivity = workByDay.get(day);
+		if (!perActivity) {
+			perActivity = new Map();
+			workByDay.set(day, perActivity);
+		}
+		perActivity.set(e.activityId, (perActivity.get(e.activityId) ?? 0) + h);
+	}
+
+	let breakHours = 0;
+	for (const perActivity of workByDay.values()) {
+		let brutto = 0;
+		for (const h of perActivity.values()) brutto += h;
+		const netto = deductBreaks ? deductBreakFromDay(perActivity) : perActivity;
+		let sum = 0;
+		for (const [id, h] of netto) {
+			add(id, h);
+			sum += h;
+		}
+		breakHours += brutto - sum;
 	}
 
 	// Aktive Aktivitäten immer; archivierte nur, wenn sie in diesem Monat Stunden haben
@@ -117,7 +156,8 @@ export function buildReport(
 		rows,
 		total: workHours + absenceHours,
 		absenceHours,
-		workHours
+		workHours,
+		breakHours
 	};
 }
 

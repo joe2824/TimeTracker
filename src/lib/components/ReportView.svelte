@@ -30,7 +30,11 @@
 			app.monthEntries(month),
 			app.settings.rounding,
 			app.settings.hoursPerDay,
-			app.settings.workdays
+			app.settings.workdays,
+			// Bewusst Date.now() statt app.now: sonst haenge die Vorschau am
+			// Sekundentakt und baute sich samt HTML jede Sekunde neu auf.
+			Date.now(),
+			app.settings.breakDeduction
 		)
 	);
 	const html = $derived(reportToHtml(report));
@@ -133,6 +137,14 @@
 			<div class="flex flex-wrap items-center justify-between gap-4">
 				<div class="flex flex-wrap gap-6 text-sm">
 					<div>Arbeitszeit: <strong>{fmtHoursClock(report.workHours)} h</strong></div>
+					{#if report.breakHours > 0}
+						<!-- Der Abzug steckt bereits in den Zahlen der Tabelle. Er gehoert
+						     genannt: sonst steht im Bericht weniger als erfasst wurde, ohne
+						     dass irgendwo steht, warum. -->
+						<div class="text-muted-foreground">
+							abzgl. Pause: <strong>{fmtHoursClock(report.breakHours)} h</strong>
+						</div>
+					{/if}
 					<div>Abwesenheiten: <strong>{fmtHoursClock(report.absenceHours)} h</strong></div>
 					<div>Gesamt: <strong>{fmtHoursClock(report.total)} h</strong></div>
 				</div>
