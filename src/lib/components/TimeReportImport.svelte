@@ -458,7 +458,7 @@
 
 <!-- overflow-visible im Abgleich: die Karte kappt sonst die Liste der
      Aktivitäts-Combobox in den unteren Tabellenzeilen. -->
-<Card.Root class={stage === "review" ? "overflow-visible" : ""}>
+<Card.Root class="h-full {stage === 'review' ? 'overflow-visible' : ''}">
 	<Card.Header>
 		<Card.Title class="flex items-center gap-2.5">
 			<span
@@ -487,7 +487,9 @@
 		</Card.Content>
 
 	{:else if stage === "idle"}
-		<Card.Content class="space-y-3">
+		<!-- flex-1: die Ablegefläche wächst mit, wenn die Nachbarkarte die höhere
+		     ist – sonst bliebe sie oben kleben und darunter stünde Leerraum. -->
+		<Card.Content class="flex flex-1 flex-col gap-3">
 			<!-- Ablegen UND Klicken auf demselben Element: ein <button> bringt Fokus
 			     und Tastaturbedienung mit, ein <div> mit Drop-Handler haette beides nicht. -->
 			<button
@@ -499,7 +501,7 @@
 				}}
 				ondragleave={() => (dragOver = false)}
 				ondrop={onDrop}
-				class="group focus-visible:ring-ring/50 flex w-full cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed px-6 py-7 text-center transition-colors focus-visible:ring-2 focus-visible:outline-none {dragOver
+				class="group focus-visible:ring-ring/50 flex w-full flex-1 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-6 py-7 text-center transition-colors focus-visible:ring-2 focus-visible:outline-none {dragOver
 					? 'border-primary bg-primary/5'
 					: 'border-border/70 hover:border-primary/40 hover:bg-muted/40'}"
 			>

@@ -192,7 +192,20 @@
 	}
 </script>
 
-<Card.Root>
+{#snippet loadButton(fullWidth: boolean)}
+	<Button
+		variant="outline"
+		size="sm"
+		class={fullWidth ? "w-full" : ""}
+		onclick={load}
+		disabled={loading}
+	>
+		{#if loading}<LoaderCircleIcon class="size-4 animate-spin" />{/if}
+		{loading ? "Lädt…" : "Termine laden"}
+	</Button>
+{/snippet}
+
+<Card.Root class="h-full">
 	<Card.Header>
 		<Card.Title class="flex items-center gap-2.5">
 			<span
@@ -206,13 +219,15 @@
 			Termine des Monats importieren und auf Aktivitäten verteilen. Ganztägige/abwesend-Termine
 			gehen automatisch in „Abwesenheiten“.
 		</Card.Description>
-		<Card.Action>
-			<Button variant="outline" size="sm" onclick={load} disabled={loading}>
-				{#if loading}<LoaderCircleIcon class="size-4 animate-spin" />{/if}
-				{loading ? "Lädt…" : "Termine laden"}
-			</Button>
-		</Card.Action>
+		<!-- Im Ruhezustand sitzt der Knopf unten (siehe weiter unten), damit diese
+		     Karte dieselbe Hoehe fuellt wie die daneben, statt oben zu enden. -->
+		{#if active}
+			<Card.Action>{@render loadButton(false)}</Card.Action>
+		{/if}
 	</Card.Header>
+	{#if !active}
+		<Card.Content class="mt-auto">{@render loadButton(true)}</Card.Content>
+	{/if}
 	{#if loading}
 		<Card.Content class="space-y-2">
 			<div class="text-muted-foreground flex items-center gap-2 text-sm">
