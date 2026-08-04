@@ -5,7 +5,7 @@
 // und gehoert in Tests.
 import type { Entry } from "./types";
 import type { TimeReportDay } from "./timeReport";
-import { breakHours, hasStamps } from "./timeReport";
+import { breakHours, grossHours, hasStamps } from "./timeReport";
 import { deductBreakFromHours, grossForNet } from "./breaks";
 import { entryHours, fmtDate, openEntryUntil, startOfNextDay } from "./time";
 
@@ -376,9 +376,24 @@ export function planFill(
 	// Fenster: die Anwesenheit laut Stempeln, sonst ein Ersatzfenster ab
 	// defaultStart, das die fehlende Zeit samt Pause fasst.
 	let window: Interval;
+	// true = das Stempelfenster reicht nicht, es wurde verlaengert.
+	let stretched = false;
 	if (hasStamps(day.report)) {
 		window = { start: clockMin(day.report.firstIn!), end: clockMin(day.report.lastOut!) };
 		if (window.end <= window.start) window.end = 1440; // ueber Mitternacht gestempelt
+		// Der Report kann MEHR Stunden melden, als zwischen Kommen und Gehen
+		// liegen – dann wurde ausserhalb der Stempelung gearbeitet (nachgebuchte
+		// Zeiten, Dienstreise, Korrektur). Im Beispiel: 11:05–16:52 gestempelt,
+		// aber 7,37 h gutgeschrieben. Ohne Verlaengerung liesse sich so ein Tag
+		// nie vollstaendig nachtragen und bliebe fuer immer als „teilweise" stehen.
+		//
+		// Bewusst NUR in diesem Fall: ein Rest, der blosss daraus entsteht, dass
+		// unsere Pausenregel von LOGAs Abzug abweicht, wird nicht mit erfundener
+		// Anwesenheit aufgefuellt.
+		if (day.report.hours > grossHours(day.report)) {
+			window.end = 1440;
+			stretched = true;
+		}
 	} else {
 		const start = clockMin(opts.defaultStart);
 		window = { start, end: Math.min(1440, start + missingMin + pauseMin) };
@@ -392,9 +407,10 @@ export function planFill(
 	const slack = freeMin - takeMin;
 
 	let blocks: Interval[];
-	// Bei aktivem Pausenabzug keine Luecke aussparen: der Block spannt die
-	// Anwesenheit auf, den Rest erledigt der Abzug.
-	if (slack <= 0 || opts.deductBreaks) {
+	// Keine Luecke aussparen, wenn der Abzug sie ohnehin erledigt oder das
+	// Fenster ohnehin schon ueber die Stempelzeiten hinaus verlaengert wurde –
+	// dort ist von der urspruenglichen Tagesform nichts mehr uebrig.
+	if (slack <= 0 || opts.deductBreaks || stretched) {
 		blocks = carve(free, [{ take: true, min: takeMin }]);
 	} else {
 		// Arbeit vor der Mittagspause: so viel freie Zeit, wie vor `lunchAt` liegt.

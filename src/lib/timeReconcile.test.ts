@@ -304,9 +304,27 @@ describe("planFill", () => {
 		expect(planFill(reconcileOne(day(), [entry("2026-01-12", "09:10", "16:50")]), [])).toBeNull();
 	});
 
-	it("traegt nichts nach, wenn das Fenster voll belegt ist", () => {
-		const vorhanden = [entry("2026-01-12", "09:00", "18:00", { activityId: "anderes" })];
-		expect(planFill(reconcileOne(day({ hours: 12 }), vorhanden), vorhanden)).toBeNull();
+	it("verlaengert das Fenster, wenn LOGA mehr meldet als gestempelt wurde", () => {
+		// Echter Tag aus dem Report: 11:05–16:52 gestempelt (5,78 h), aber 7,37 h
+		// gutgeschrieben – es wurde ausserhalb der Stempelung gearbeitet. Ohne
+		// Verlaengerung bliebe der Tag fuer immer als „teilweise" stehen.
+		const tag = day({ firstIn: "11:05", lastOut: "16:52", hours: 7.37 });
+		const plan = planFill(reconcileOne(tag, []), [])!;
+		expect(plan.blocks).toHaveLength(1);
+		expect(plan.blocks[0].start).toBe(665); // 11:05
+		expect(plan.blocks[0].end).toBeGreaterThan(1012); // ueber 16:52 hinaus
+		expect(plan.hours).toBeCloseTo(7.37, 2);
+	});
+
+	it("erfindet keine Anwesenheit, wenn LOGA nur anders abgezogen hat", () => {
+		// 06:30–14:00 gestempelt (7,5 h), LOGA zieht nur 15 min ab statt der 45
+		// der Hausregel. Die Stempelzeiten sind voll erfasst – der Rest liesse
+		// sich nur mit erfundener Zeit schliessen. Also nichts vorschlagen.
+		const vorhanden = [entry("2026-01-12", "06:30", "14:00")];
+		const tag = day({ firstIn: "06:30", lastOut: "14:00", hours: 7.25 });
+		const abgleich = reconcile([tag], vorhanden, { ...OPTS, deductBreaks: true }).days[0];
+		expect(abgleich.status).toBe("partial");
+		expect(planFill(abgleich, vorhanden, { ...DEFAULT_FILL_OPTIONS, deductBreaks: true })).toBeNull();
 	});
 
 	it("bleibt bei einem ueber Mitternacht gestempelten Tag im Tag", () => {

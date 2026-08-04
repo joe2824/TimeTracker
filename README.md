@@ -105,6 +105,16 @@ der Nachtrag stattdessen eine **Lücke in Höhe der Pause** um die Mittagszeit a
 am Ende die Stundenzahl aus dem Report – die LOGA-Zahl eins zu eins einzutragen wäre bei aktivem
 Abzug zu wenig, weil sie den Abzug ein zweites Mal bekäme.
 
+Zwei Sonderfälle, die der echte Report zeigt:
+
+- Meldet LOGA **mehr Stunden, als zwischen Kommen und Gehen liegen** (nachgebuchte Zeiten,
+  Dienstreise), reicht der Nachtrag über „Letztes gehen" hinaus – sonst ließe sich der Tag nie
+  vollständig erfassen.
+- Zieht LOGA an einem Tag **anders ab als die Hausregel** (gestempelte Zusatzpause,
+  Korrekturbuchung), bleibt nach dem Nachtrag eine Differenz stehen. Sie wird *nicht* mit
+  erfundener Anwesenheit aufgefüllt; die Zeile sagt stattdessen, wie viel LOGA dort abgezogen
+  hat. Im vorliegenden Report betrifft das rund 11 % der gestempelten Tage.
+
 Nachgetragene Einträge tragen die Notiz „Zeitwächter" und werden beim nächsten Abgleich als
 *bereits nachgetragen* erkannt – ein zweiter Durchlauf erzeugt keine Dubletten. Die Verstoß-Spalten
 des Reports (Ruhepause, > 10 h, Sonntags-/Feiertagsarbeit) erscheinen als Badge am jeweiligen Tag.
