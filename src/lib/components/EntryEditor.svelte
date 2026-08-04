@@ -508,14 +508,20 @@
 	</Card.Root>
 	{/if}
 
-	<!-- Die beiden Import-Karten uebernehmen im aktiven Zustand die ganze Flaeche;
-	     die jeweils andere weicht dann, statt darunter herumzustehen. -->
-	{#if !reportPreview}
-		<CalendarImport {month} bind:previewActive={importPreview} />
-	{/if}
-	{#if !importPreview}
-		<TimeReportImport bind:month bind:previewActive={reportPreview} />
-	{/if}
+	<!-- Nebeneinander, damit beide Wege sichtbar sind: untereinander rutschte der
+	     zweite unter den Fensterrand und war praktisch nicht auffindbar.
+	     Uebernimmt eine Karte die Ansicht, weicht die andere und die verbleibende
+	     bekommt die volle Breite. -->
+	<!-- items-start: sonst zieht das Raster die kuerzere Karte auf die Hoehe der
+	     Ablegeflaeche, und darunter stuende ein leerer Block. -->
+	<div class="grid items-start gap-4 {anyPreview ? '' : 'md:grid-cols-2'}">
+		{#if !reportPreview}
+			<CalendarImport {month} bind:previewActive={importPreview} />
+		{/if}
+		{#if !importPreview}
+			<TimeReportImport bind:month bind:previewActive={reportPreview} />
+		{/if}
+	</div>
 </div>
 
 <BulkEntryDialog bind:open={bulkOpen} onsaved={afterExternalSave} />
