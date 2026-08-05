@@ -16,7 +16,8 @@ Die App aktualisiert sich anschließend selbst (Einstellungen → „Nach Update
 
 ## Features
 
-- **Timer-Tracking** – Aktivität wählen, Timer starten/stoppen, „Heute"-Übersicht.
+- **Timer-Tracking** – Aktivität wählen, Timer starten/stoppen, „Heute"-Übersicht mit allen
+  Zeiten des Tages und einer Bilanz: erfasst, Pausenabzug, Arbeitszeit.
 - **Aktivitäten** – importieren (Textfeld/Datei), umbenennen, sortieren (Drag & Drop), Favoriten,
   ausblenden, archivieren, eigene **Farbe** und globaler **Tastenkürzel** je Aktivität.
 - **Einträge** – Tagesraster pro Monat; Eintrag mit gekoppelten Feldern **Von / Bis / Stunden**
