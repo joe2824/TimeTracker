@@ -1,6 +1,16 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
-	import { durationSeconds, fmtClock, fmtDate, fmtDateHuman, fmtHMS, midnightSplitHint } from "$lib/time";
+	import {
+		durationSeconds,
+		entryHours,
+		fmtClock,
+		fmtDate,
+		fmtDateHuman,
+		fmtHMS,
+		fmtHoursClock,
+		midnightSplitHint
+	} from "$lib/time";
+	import { breakDeduction } from "$lib/breaks";
 	import { START_PRESETS, resolveStartTs, toStartArg } from "$lib/startTime";
 	import { Button } from "$lib/components/ui/button";
 	import * as ButtonGroup from "$lib/components/ui/button-group";
@@ -59,6 +69,26 @@
 			.filter((e) => fmtDate(e.startTs) === today)
 			.sort((a, b) => b.startTs - a.startTs)
 	);
+
+	/**
+	 * Tagesbilanz: erfasst, Pausenabzug, Arbeitszeit.
+	 *
+	 * Tickt ueber app.now mit, solange ein Timer laeuft – und damit auch der
+	 * Abzug: er setzt beim Ueberschreiten von 4 bzw. 6 Stunden ein, und genau
+	 * dann will man sehen, dass die Arbeitszeit gerade um 15 Minuten springt.
+	 */
+	const todaySum = $derived.by(() => {
+		let worked = 0;
+		let absent = 0;
+		for (const e of todayEntries) {
+			const isAbs = app.isAbsenceId(e.activityId);
+			const h = entryHours(e, isAbs, app.settings.hoursPerDay, app.now);
+			if (isAbs) absent += h;
+			else worked += h;
+		}
+		const pause = app.settings.breakDeduction ? breakDeduction(worked) : 0;
+		return { worked, absent, pause, net: worked - pause };
+	});
 </script>
 
 <div class="space-y-4">
@@ -215,9 +245,26 @@
 	</div>
 
 	<Card.Root>
-		<Card.Header class="flex flex-row items-center justify-between gap-2 space-y-0">
-			<Card.Title>Heute ({today})</Card.Title>
-			<Button variant="outline" size="sm" onclick={() => onShowEntries?.()}>
+		<Card.Header class="flex flex-row items-start justify-between gap-2 space-y-0">
+			<div class="min-w-0">
+				<Card.Title>Heute ({today})</Card.Title>
+				{#if todaySum.worked > 0 || todaySum.absent > 0}
+					<!-- Kleine Tagesbilanz: erfasst, Abzug, Arbeitszeit. Ohne sie muesste
+					     man die Zeilen darunter im Kopf zusammenrechnen – und der
+					     Pausenabzug waere gar nicht zu sehen. -->
+					<p class="text-muted-foreground mt-0.5 font-mono text-xs tabular-nums">
+						Σ {fmtHoursClock(todaySum.worked)} h erfasst
+						{#if todaySum.pause > 0}
+							· −{fmtHoursClock(todaySum.pause)} Pause ·
+							<span class="text-foreground font-medium">{fmtHoursClock(todaySum.net)} h Arbeitszeit</span>
+						{/if}
+						{#if todaySum.absent > 0}
+							· {fmtHoursClock(todaySum.absent)} h Abwesenheit
+						{/if}
+					</p>
+				{/if}
+			</div>
+			<Button variant="outline" size="sm" class="shrink-0" onclick={() => onShowEntries?.()}>
 				<ListIcon class="size-4" /> Einträge anzeigen
 			</Button>
 		</Card.Header>
@@ -227,14 +274,23 @@
 			{:else}
 				<ul class="divide-border divide-y text-sm">
 					{#each todayEntries as e (e.id)}
-						<li class="flex items-center justify-between py-1.5">
-							<span class="flex items-center gap-2">
+						{@const isAbs = app.isAbsenceId(e.activityId)}
+						<li class="flex items-center justify-between gap-2 py-1.5">
+							<span class="flex min-w-0 items-center gap-2">
 								<ActivityDot color={app.activityColor(e.activityId)} />
-								{app.activityName(e.activityId)}
+								<span class="truncate">{app.activityName(e.activityId)}</span>
 							</span>
-							<span class="text-muted-foreground font-mono tabular-nums">
-								{fmtClock(e.startTs)}–{e.endTs ? fmtClock(e.endTs) : "…"}
-								&nbsp;({fmtHMS(durationSeconds(e, app.now))})
+							<span class="text-muted-foreground shrink-0 font-mono tabular-nums">
+								{#if isAbs}
+									<!-- Abwesenheiten sind tagesgenau: start == end. Als Uhrzeitspanne
+									     stand hier „12:00–12:00 (0:00:00)" – während die Tagesbilanz
+									     oben den Tagessatz mitzählt. -->
+									{(e.dayFraction ?? 1) === 0.5 ? "½ Tag" : "ganzer Tag"}
+									&nbsp;({fmtHoursClock((e.dayFraction ?? 1) * app.settings.hoursPerDay)} h)
+								{:else}
+									{fmtClock(e.startTs)}–{e.endTs ? fmtClock(e.endTs) : "…"}
+									&nbsp;({fmtHMS(durationSeconds(e, app.now))})
+								{/if}
 							</span>
 						</li>
 					{/each}
