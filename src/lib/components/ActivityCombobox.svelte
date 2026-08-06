@@ -21,6 +21,47 @@
 	let open = $state(false);
 	let index = $state(0);
 
+	let wrap = $state<HTMLDivElement | null>(null);
+	let list = $state<HTMLUListElement | null>(null);
+	/** true = Liste klappt nach OBEN auf, weil unten kein Platz ist. */
+	let up = $state(false);
+
+	/**
+	 * Aufklapp-Richtung bestimmen.
+	 *
+	 * In langen Tabellen (Zeitwächter-Abgleich) sitzen die untersten Zeilen dicht
+	 * am Fensterrand – dort verschwand die Liste hinter der Fußzeile bzw. unter
+	 * dem Fensterrand und war nicht mehr zu bedienen.
+	 */
+	function place() {
+		if (!wrap) return;
+		const r = wrap.getBoundingClientRect();
+		// Vor der ersten Messung die Maximalhoehe annehmen (max-h-52 = 208px).
+		const height = list?.offsetHeight || 208;
+		const below = window.innerHeight - r.bottom - 8;
+		// Nur umklappen, wenn oben tatsaechlich mehr Platz ist – sonst waere die
+		// Liste dort genauso abgeschnitten, nur am anderen Ende.
+		up = below < height && r.top - 8 > below;
+	}
+
+	$effect(() => {
+		if (!open) {
+			up = false;
+			return;
+		}
+		// Die Liste wird beim Tippen kuerzer: dann neu messen.
+		filtered.length;
+		place();
+		const onMove = () => place();
+		window.addEventListener("resize", onMove);
+		// capture: auch das Scrollen innerhalb von Containern zaehlt.
+		window.addEventListener("scroll", onMove, true);
+		return () => {
+			window.removeEventListener("resize", onMove);
+			window.removeEventListener("scroll", onMove, true);
+		};
+	});
+
 	// Anzeigetext an `value` koppeln, solange die Liste geschlossen ist
 	// (beim Tippen nicht überschreiben). Deckt externes Setzen/Reset ab.
 	$effect(() => {
@@ -86,7 +127,7 @@
 	}
 </script>
 
-<div class="relative">
+<div class="relative" bind:this={wrap}>
 	<Input
 		{id}
 		role="combobox"
@@ -102,8 +143,11 @@
 	/>
 	{#if open}
 		<ul
+			bind:this={list}
 			role="listbox"
-			class="bg-popover text-popover-foreground absolute z-50 mt-1 max-h-52 w-full overflow-y-auto rounded-md border p-1 shadow-md"
+			class="bg-popover text-popover-foreground absolute z-50 max-h-52 w-full overflow-y-auto rounded-md border p-1 shadow-md {up
+				? 'bottom-full mb-1'
+				: 'mt-1'}"
 		>
 			{#if filtered.length === 0}
 				<li class="text-muted-foreground px-2 py-1.5 text-sm">Keine Aktivität gefunden</li>
