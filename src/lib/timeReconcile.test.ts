@@ -5,6 +5,7 @@ import {
 	freeIntervals,
 	occupiedIntervals,
 	planFill,
+	rebalanceShares,
 	reconcile,
 	splitBlocks,
 	type ReconcileDay
@@ -516,5 +517,48 @@ describe("distributeDays", () => {
 
 	it("liefert nichts, wenn kein Projekt einen Anteil hat", () => {
 		expect(distributeDays(zehnTage, [{ id: A, share: 0 }])).toEqual({});
+	});
+});
+
+describe("rebalanceShares", () => {
+	/** Was auf den Reglern steht, muss immer 100 % ergeben. */
+	const summe = (pcts: number[]) => pcts.reduce((s, p) => s + p, 0);
+
+	it("zieht den Rest im Verhaeltnis der uebrigen nach", () => {
+		expect(rebalanceShares([50, 50], 0, 70)).toEqual([70, 30]);
+		expect(rebalanceShares([60, 20, 20], 0, 40)).toEqual([40, 30, 30]);
+	});
+
+	it("bleibt bei vielen kleinen Anteilen auf 100 Prozent", () => {
+		// Genau der Fall, in dem einzeln gerundet 101 % herauskamen und der
+		// letzte Regler dafuer auf 0 fiel.
+		const next = rebalanceShares([17, 17, 17, 17, 17, 15], 0, 97);
+		expect(summe(next)).toBe(100);
+		expect(next[0]).toBe(97);
+		expect(next.slice(1).every((p) => p >= 0)).toBe(true);
+	});
+
+	it("haelt die Summe ueber viele Zuege hinweg", () => {
+		let pcts = [20, 20, 20, 20, 20];
+		for (const [i, v] of [
+			[0, 93],
+			[3, 61],
+			[1, 7],
+			[4, 100],
+			[2, 33]
+		] as const) {
+			pcts = rebalanceShares(pcts, i, v);
+			expect(summe(pcts)).toBe(100);
+			expect(pcts[i]).toBe(v);
+			expect(pcts.every((p) => p >= 0 && p <= 100)).toBe(true);
+		}
+	});
+
+	it("verteilt gleichmaessig, wenn die uebrigen alle auf null stehen", () => {
+		expect(rebalanceShares([100, 0, 0], 0, 40)).toEqual([40, 30, 30]);
+	});
+
+	it("laesst einen einzelnen Regler auf 100 stehen", () => {
+		expect(rebalanceShares([100], 0, 40)).toEqual([100]);
 	});
 });

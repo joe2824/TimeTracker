@@ -267,8 +267,16 @@
 		}
 	}
 
-	/** Die ausgewaehlten Tage mit Zeitnachtrag – nur die lassen sich verteilen. */
-	const splittable = $derived(picked.filter((r) => r.plan?.kind === "time"));
+	/**
+	 * Die ausgewaehlten Tage mit Zeitnachtrag – nur die lassen sich verteilen.
+	 *
+	 * Ohne Bloecke INNERHALB der Stempelzeiten gibt es nichts zu schneiden: solche
+	 * Tage haengen ganz an der Auswahl fuer die ungestempelten Stunden. Waeren sie
+	 * dabei, stuende in der Zeile eine leere Verteilung, die als zugeordnet zaehlt.
+	 */
+	const splittable = $derived(
+		picked.filter((r) => r.plan?.kind === "time" && r.plan.blocks.length > 0)
+	);
 	const splittableHours = $derived(splittable.reduce((s, r) => s + (r.plan?.hours ?? 0), 0));
 
 	/**
@@ -297,7 +305,13 @@
 				activityFor[r.day.date] = "";
 			}
 		}
-		splitOpen = false;
+		// „Alle Tage auf …" muss danach wieder greifen, auch mit derselben Auswahl:
+		// der Wechsel-Effekt vergleicht mit dem zuletzt gesetzten Wert.
+		bulkActivity = "";
+		lastBulk = "";
+		// Der Bereich bleibt offen: nach dem ersten Blick auf das Ergebnis will man
+		// das Verhältnis meist noch einmal nachziehen, und dafür müssten sonst alle
+		// Projekte und Prozente neu eingegeben werden.
 		toast.success(
 			`Verteilt auf ${splittable.length} Tag${splittable.length === 1 ? "" : "e"}${
 				mode === "days" ? " (tageweise)" : ""
@@ -424,9 +438,10 @@
 		}
 		month = target;
 		await app.ensureMonth(target);
-		// Die Datei gehoert nicht mehr zum Gezeigten: der gespeicherte Report kann
-		// von einer anderen Person stammen, und die Personenauswahl wuerde luegen.
-		parsed = null;
+		// `parsed` bleibt stehen: sonst verschwaenden die uebrigen Monate der noch
+		// offenen Datei aus der Auswahl und waeren nur ueber einen neuen Import
+		// wieder zu erreichen. Stammt der gespeicherte Report von jemand anderem,
+		// faellt `activePerson` von selbst weg – es haengt an `active.personKey`.
 		personKey = report.personKey;
 		active = report;
 		stored = report;

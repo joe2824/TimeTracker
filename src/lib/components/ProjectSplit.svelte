@@ -11,7 +11,7 @@
 	import XIcon from "@lucide/svelte/icons/x";
 	import { fmtHoursClock } from "$lib/time";
 	import type { Activity } from "$lib/types";
-	import type { Share, SplitMode } from "$lib/timeReconcile";
+	import { rebalanceShares, type Share, type SplitMode } from "$lib/timeReconcile";
 
 	let {
 		options,
@@ -57,23 +57,12 @@
 	 * durcheinanderwirft.
 	 */
 	function setPct(i: number, value: number) {
-		const val = Math.max(0, Math.min(100, Math.round(value)));
-		parts[i].pct = val;
-		const others = parts.filter((_, j) => j !== i);
-		if (others.length === 0) {
-			parts[i].pct = 100;
-			return;
-		}
-		const rest = 100 - val;
-		const sum = others.reduce((s, p) => s + p.pct, 0);
-		let left = rest;
-		others.forEach((p, k) => {
-			const last = k === others.length - 1;
-			// Alles auf null: dann gleichmäßig, sonst bliebe der Rest liegen.
-			const share = last ? left : sum === 0 ? Math.floor(rest / others.length) : Math.round((p.pct / sum) * rest);
-			p.pct = Math.max(0, last ? left : share);
-			left -= p.pct;
-		});
+		const next = rebalanceShares(
+			parts.map((p) => p.pct),
+			i,
+			value
+		);
+		parts.forEach((p, k) => (p.pct = next[k]));
 	}
 
 	function addPart() {

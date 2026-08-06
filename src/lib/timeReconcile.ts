@@ -485,6 +485,43 @@ export interface Share {
 }
 
 /**
+ * Einen Regler auf `value` setzen und die übrigen so nachziehen, dass die Summe
+ * 100 bleibt – im Verhältnis ihrer bisherigen Werte.
+ *
+ * Ganze Prozent, damit Anzeige und Regler dasselbe sagen. Vergeben wird immer
+ * nur, was noch übrig ist: einzeln gerundet summierten sich mehrere kleine
+ * Anteile sonst über den Rest hinaus, und das letzte Projekt fiel dafür
+ * stillschweigend auf 0 – die Summe stand dann auf 101 %.
+ *
+ * @param pcts aktuelle Anteile in Prozent
+ * @param index der Regler, an dem gezogen wurde
+ * @param value sein neuer Wert (0..100)
+ */
+export function rebalanceShares(pcts: number[], index: number, value: number): number[] {
+	const out = [...pcts];
+	if (out.length === 0) return out;
+	const val = Math.max(0, Math.min(100, Math.round(value)));
+	out[index] = val;
+	if (out.length === 1) {
+		out[index] = 100;
+		return out;
+	}
+
+	const rest = 100 - val;
+	const others = out.map((p, i) => ({ p, i })).filter((o) => o.i !== index);
+	const sum = others.reduce((s, o) => s + o.p, 0);
+	let left = rest;
+	others.forEach((o, k) => {
+		const last = k === others.length - 1;
+		// Alles auf null: dann gleichmäßig, sonst bliebe der Rest liegen.
+		const want = sum === 0 ? Math.round(rest / others.length) : Math.round((o.p / sum) * rest);
+		out[o.i] = last ? left : Math.max(0, Math.min(left, want));
+		left -= out[o.i];
+	});
+	return out;
+}
+
+/**
  * Wie die Anteile auf die Tage kommen.
  *
  * "days" = jeder Tag geht ganz an ein Projekt (siehe `distributeDays`),
