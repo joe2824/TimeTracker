@@ -14,13 +14,22 @@
 	} from "$lib/timeReport";
 	import {
 		DEFAULT_FILL_OPTIONS,
+		distributeDays,
 		planFill,
 		reconcile,
+		splitBlocks,
 		type FillPlan,
 		type ReconcileDay,
-		type ReconcileStatus
+		type ReconcileStatus,
+		type Share,
+		type SplitMode
 	} from "$lib/timeReconcile";
-	import { loadTimeReport, saveTimeReport, type StoredTimeReport } from "$lib/store";
+	import {
+		listTimeReportMonths,
+		loadTimeReport,
+		saveTimeReport,
+		type StoredTimeReport
+	} from "$lib/store";
 	import { BUILTIN_OTHERS } from "$lib/types";
 	import { errorText, logError, logInfo } from "$lib/log";
 	import { fmtDateHuman, fmtHoursClock, monthLabel, noonTs, startOfNextDay, toTs } from "$lib/time";
@@ -33,6 +42,7 @@
 	import * as Select from "$lib/components/ui/select";
 	import * as Table from "$lib/components/ui/table";
 	import ActivityCombobox from "$lib/components/ActivityCombobox.svelte";
+	import ProjectSplit from "$lib/components/ProjectSplit.svelte";
 	import * as Tooltip from "$lib/components/ui/tooltip";
 	import FileSpreadsheetIcon from "@lucide/svelte/icons/file-spreadsheet";
 	import UploadIcon from "@lucide/svelte/icons/upload";
@@ -40,6 +50,8 @@
 	import PalmtreeIcon from "@lucide/svelte/icons/palmtree";
 	import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
 	import CheckIcon from "@lucide/svelte/icons/check";
+	import SplitIcon from "@lucide/svelte/icons/split";
+	import XIcon from "@lucide/svelte/icons/x";
 
 	let {
 		month = $bindable(),
@@ -63,12 +75,32 @@
 	let active = $state<StoredTimeReport | null>(null);
 	/** Der auf Platte liegende Report des aktuellen Monats (fuer den Ruhezustand). */
 	let stored = $state<StoredTimeReport | null>(null);
+	/** Alle Monate, zu denen ein Report auf der Platte liegt. */
+	let reportMonths = $state<string[]>([]);
+
+	async function refreshReportMonths() {
+		try {
+			reportMonths = await listTimeReportMonths();
+		} catch {
+			// Nicht schlimm: dann steht in der Auswahl nur der offene Monat.
+		}
+	}
+	void refreshReportMonths();
 
 	/** Auswahl und Zuordnung je Tag, Schluessel = Datum. */
 	let selected = $state<Record<string, boolean>>({});
 	let activityFor = $state<Record<string, string>>({});
 	/** Zuordnung der Stunden JENSEITS der Stempelzeiten, Schluessel = Datum. */
 	let extraActivityFor = $state<Record<string, string>>({});
+	/**
+	 * Tage, die auf MEHRERE Projekte aufgeteilt werden, Schluessel = Datum.
+	 *
+	 * Liegt hier etwas, gilt es statt `activityFor`: der Tag wird beim Uebernehmen
+	 * entlang der Uhr in Bloecke je Projekt geschnitten.
+	 */
+	let splitFor = $state<Record<string, Share[]>>({});
+	/** Der Verteilen-Bereich ist zugeklappt, bis jemand ihn braucht. */
+	let splitOpen = $state(false);
 	/** „Alle Tage auf …" – wirkt beim Wechsel auf alle Zeilen mit Uhrzeiten. */
 	let bulkActivity = $state("");
 	let lastBulk = "";
@@ -147,19 +179,42 @@
 	/** Die Person, um die es gerade geht – nur bekannt, wenn eine Datei offen ist. */
 	const activePerson = $derived(parsed?.people.find((p) => p.key === active?.personKey) ?? null);
 	/**
-	 * Die Monate DIESER Person, nicht die der ganzen Datei.
+	 * Monate, die sich hier direkt aufrufen lassen: die DIESER Person aus der
+	 * offenen Datei plus alles, was schon eingelesen auf der Platte liegt.
 	 *
 	 * In einem Team-Export deckt nicht jede Person jeden Monat ab; ein Monat aus
-	 * der Gesamtliste kann fuer die gewaehlte Person leer sein.
+	 * der Gesamtliste kann fuer die gewaehlte Person leer sein. Die gespeicherten
+	 * Monate kommen dazu, damit der Wechsel auch ohne offene Datei geht.
 	 */
-	const availableMonths = $derived(activePerson ? monthsOf(activePerson) : []);
+	const availableMonths = $derived.by(() => {
+		const set = new Set(reportMonths);
+		if (activePerson) for (const m of monthsOf(activePerson)) set.add(m);
+		if (active) set.add(active.month);
+		return [...set].sort();
+	});
 
 	function monthsOf(person: TimeReportPerson): string[] {
 		return [...new Set(person.days.map((d) => d.date.slice(0, 7)))].sort();
 	}
 
 	const fixable = $derived(rows.filter((r) => r.plan !== null && !r.day.alreadyFilled));
-	const chosen = $derived(fixable.filter((r) => selected[r.day.date]));
+	const picked = $derived(fixable.filter((r) => selected[r.day.date]));
+	/**
+	 * Angehakt UND zuordenbar.
+	 *
+	 * Ohne Aktivitaet gaebe es beim Uebernehmen nur eine Fehlermeldung je Tag –
+	 * seit die Auswahl leer startet, waere das der Normalfall statt der Ausnahme.
+	 */
+	const chosen = $derived(
+		picked.filter(
+			(r) =>
+				r.plan?.kind === "absence" ||
+				!!activityFor[r.day.date] ||
+				(splitFor[r.day.date]?.length ?? 0) > 0
+		)
+	);
+	/** Angehakt, aber noch ohne Projekt – die Zahl gehoert sichtbar neben den Knopf. */
+	const unassigned = $derived(picked.length - chosen.length);
 	/** Wie viel der Monat schon abgedeckt ist – 100 % heisst „nichts offen". */
 	const coverage = $derived.by(() => {
 		if (!summary) return 100;
@@ -179,21 +234,8 @@
 		return app.trackableActivities.find((a) => a.name === BUILTIN_OTHERS)?.id ?? "";
 	}
 
-	/** Die im Monat meistgenutzte Aktivitaet – als Vorschlag fuer alle Zeilen. */
-	function suggestedActivity(): string {
-		const seconds = new Map<string, number>();
-		for (const e of app.monthEntries(active?.month ?? month)) {
-			if (absenceIds.has(e.activityId) || e.endTs === null) continue;
-			seconds.set(e.activityId, (seconds.get(e.activityId) ?? 0) + (e.endTs - e.startTs));
-		}
-		const top = [...seconds.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
-		if (top && app.trackableActivities.some((a) => a.id === top)) return top;
-		return app.trackableActivities[0]?.id ?? "";
-	}
-
 	/** Auswahl und Aktivitaeten fuer den aktuellen Abgleich neu setzen. */
 	function resetSelection() {
-		const suggestion = suggestedActivity();
 		const others = othersActivity();
 		const sel: Record<string, boolean> = {};
 		const acts: Record<string, string> = {};
@@ -201,20 +243,71 @@
 		for (const { day, plan } of rows) {
 			// Schon Nachgetragenes nicht erneut anhaken – sonst entstuenden Dubletten.
 			sel[day.date] = plan !== null && !day.alreadyFilled;
-			acts[day.date] = suggestion;
+			// Bewusst leer: die meistgenutzte Aktivitaet als Vorschlag traf oft das
+			// falsche Projekt und wurde beim Durchklicken nicht bemerkt. Lieber
+			// einmal bewusst zuordnen – ueber „Alle Tage auf …" geht das in einem Zug.
+			acts[day.date] = "";
 			extra[day.date] = others;
 		}
 		selected = sel;
 		activityFor = acts;
 		extraActivityFor = extra;
+		splitFor = {};
 		bulkActivity = "";
 		lastBulk = "";
 	}
 
 	function setAllActivities(id: string) {
 		for (const { day, plan } of rows) {
-			if (plan?.kind === "time") activityFor[day.date] = id;
+			if (plan?.kind !== "time") continue;
+			activityFor[day.date] = id;
+			// „Alle Tage auf X" heisst genau ein Projekt – eine fruehere Verteilung
+			// stuende sonst still daneben und gaebe beim Uebernehmen den Ton an.
+			delete splitFor[day.date];
 		}
+	}
+
+	/** Die ausgewaehlten Tage mit Zeitnachtrag – nur die lassen sich verteilen. */
+	const splittable = $derived(picked.filter((r) => r.plan?.kind === "time"));
+	const splittableHours = $derived(splittable.reduce((s, r) => s + (r.plan?.hours ?? 0), 0));
+
+	/**
+	 * Die Anteile auf die ausgewaehlten Tage legen.
+	 *
+	 * "days": jeder Tag geht ganz an ein Projekt, die Anteile entscheiden nur, an
+	 * welches – das ergibt weniger Eintraege. "within": jeder Tag wird in sich
+	 * geschnitten, dafuer stimmt das Verhaeltnis an jedem einzelnen Tag.
+	 */
+	function applySplit(shares: Share[], mode: SplitMode) {
+		if (shares.length === 0 || splittable.length === 0) return;
+		if (mode === "days") {
+			const map = distributeDays(
+				splittable.map((r) => ({ date: r.day.date, hours: r.plan!.hours })),
+				shares
+			);
+			for (const r of splittable) {
+				if (!map[r.day.date]) continue;
+				activityFor[r.day.date] = map[r.day.date];
+				delete splitFor[r.day.date];
+			}
+		} else {
+			for (const r of splittable) {
+				splitFor[r.day.date] = shares;
+				// Die Einzelauswahl der Zeile hat jetzt nichts mehr zu sagen.
+				activityFor[r.day.date] = "";
+			}
+		}
+		splitOpen = false;
+		toast.success(
+			`Verteilt auf ${splittable.length} Tag${splittable.length === 1 ? "" : "e"}${
+				mode === "days" ? " (tageweise)" : ""
+			}.`
+		);
+	}
+
+	/** Einen Tag aus der Verteilung nehmen und wieder einzeln zuordnen. */
+	function clearSplit(date: string) {
+		delete splitFor[date];
 	}
 
 	function toggleAll(on: boolean) {
@@ -307,6 +400,36 @@
 		active = report;
 		stored = report;
 		stage = "review";
+		void refreshReportMonths();
+		resetSelection();
+	}
+
+	/**
+	 * Im Abgleich den Monat wechseln – aus der offenen Datei, wenn sie ihn kennt,
+	 * sonst aus dem gespeicherten Report.
+	 *
+	 * Nimmt die Eintraege-Ansicht mit (`month` ist gebunden): sonst zeigte die
+	 * Tabelle daneben weiter den alten Monat.
+	 */
+	async function switchMonth(target: string) {
+		if (!target || target === active?.month) return;
+		if (activePerson && monthsOf(activePerson).includes(target)) {
+			await useReport(activePerson.key, target);
+			return;
+		}
+		const report = await loadTimeReport(target).catch(() => null);
+		if (!report) {
+			toast.error(`Für ${monthLabel(target)} liegt kein eingelesener Report vor.`);
+			return;
+		}
+		month = target;
+		await app.ensureMonth(target);
+		// Die Datei gehoert nicht mehr zum Gezeigten: der gespeicherte Report kann
+		// von einer anderen Person stammen, und die Personenauswahl wuerde luegen.
+		parsed = null;
+		personKey = report.personKey;
+		active = report;
+		stored = report;
 		resetSelection();
 	}
 
@@ -374,18 +497,30 @@
 					const ts = noonTs(day.date);
 					any = !!(await app.addEntry(absenceId, ts, ts, NOTE, "loga", plan.fraction));
 				} else {
+					const split = splitFor[day.date] ?? [];
 					const activityId = activityFor[day.date];
-					if (!activityId) {
+					if (!activityId && split.length === 0) {
 						failed++;
 						continue;
 					}
 					// Gestempelte Zeit und die Stunden jenseits davon koennen auf
-					// verschiedene Aktivitaeten gehen.
+					// verschiedene Aktivitaeten gehen; die gestempelte Zeit selbst
+					// zusaetzlich auf mehrere, wenn der Tag verteilt wurde.
+					const inside =
+						split.length > 0
+							? splitBlocks(plan.blocks, split)
+							: [{ id: activityId, blocks: plan.blocks }];
 					const parts: { blocks: typeof plan.blocks; id: string }[] = [
-						{ blocks: plan.blocks, id: activityId },
-						{ blocks: plan.extraBlocks, id: extraActivityFor[day.date] || activityId }
+						...inside,
+						{
+							blocks: plan.extraBlocks,
+							// Ohne eigene Wahl auf das erste Projekt des Tages – bei einer
+							// Verteilung gibt es keine „eine" Aktivitaet mehr.
+							id: extraActivityFor[day.date] || activityId || inside[0]?.id || ""
+						}
 					];
 					for (const part of parts) {
+						if (!part.id) continue;
 						for (const block of part.blocks) {
 							const e = await app.addEntry(
 								part.id,
@@ -635,7 +770,7 @@
 							<Select.Root
 								type="single"
 								value={active.month}
-								onValueChange={(v) => v && useReport(active!.personKey, v)}
+								onValueChange={(v) => v && switchMonth(v)}
 							>
 								<Select.Trigger size="sm" class="w-44">{monthLabel(active.month)}</Select.Trigger>
 								<Select.Content>
@@ -689,8 +824,8 @@
 				<!-- Sammelaktionen -->
 				{#if fixable.length > 0}
 					<div class="flex flex-wrap items-center gap-2">
-						<Button variant="outline" size="sm" onclick={() => toggleAll(chosen.length < fixable.length)}>
-							{chosen.length < fixable.length ? "Alle auswählen" : "Auswahl aufheben"}
+						<Button variant="outline" size="sm" onclick={() => toggleAll(picked.length < fixable.length)}>
+							{picked.length < fixable.length ? "Alle auswählen" : "Auswahl aufheben"}
 						</Button>
 						<div class="w-56">
 							<ActivityCombobox
@@ -700,8 +835,31 @@
 								placeholder="Alle Tage auf …"
 							/>
 						</div>
-						<span class="text-muted-foreground text-sm">{chosen.length} ausgewählt</span>
+						<Button
+							variant={splitOpen ? "secondary" : "outline"}
+							size="sm"
+							onclick={() => (splitOpen = !splitOpen)}
+						>
+							<SplitIcon class="size-3.5" /> Verteilen
+						</Button>
+						<span class="text-muted-foreground text-sm">
+							{picked.length} ausgewählt
+							{#if unassigned > 0}
+								· <span class="text-amber-700 dark:text-amber-300">
+									{unassigned} noch ohne Projekt
+								</span>
+							{/if}
+						</span>
 					</div>
+
+					{#if splitOpen}
+						<ProjectSplit
+							options={app.trackableActivities}
+							days={splittable.length}
+							hours={splittableHours}
+							onApply={applySplit}
+						/>
+					{/if}
 				{/if}
 			</div>
 
@@ -781,14 +939,39 @@
 										{:else if plan?.kind === "time"}
 											<div class="space-y-1.5">
 												<div class="flex flex-wrap items-center gap-2">
-													<div class="w-52">
-														<ActivityCombobox
-															id={`act-${day.date}`}
-															bind:value={activityFor[day.date]}
-															options={app.trackableActivities}
-														/>
-													</div>
-													<span class="text-muted-foreground font-mono text-xs">{planLabel(plan)}</span>
+													{#if splitFor[day.date]?.length}
+														<!-- Verteilter Tag: statt einer Auswahl steht hier, wie der Tag
+														     geschnitten wird. Das ✕ nimmt ihn wieder heraus. -->
+														<span class="flex flex-wrap items-center gap-1">
+															{#each splitBlocks(plan.blocks, splitFor[day.date]) as part, i (part.id)}
+																{#if i > 0}<span class="text-muted-foreground text-xs">·</span>{/if}
+																<Badge variant="secondary" class="font-normal">
+																	{app.activityName(part.id)}
+																	<span class="text-muted-foreground ml-1 font-mono text-[10px]">
+																		{part.blocks.map((b) => `${clock(b.start)}–${clock(b.end)}`).join(", ")}
+																	</span>
+																</Badge>
+															{/each}
+															<Button
+																variant="ghost"
+																size="icon"
+																class="size-6"
+																aria-label={`Verteilung für ${dayLabel(day.date)} aufheben`}
+																onclick={() => clearSplit(day.date)}
+															>
+																<XIcon class="size-3" />
+															</Button>
+														</span>
+													{:else}
+														<div class="w-52">
+															<ActivityCombobox
+																id={`act-${day.date}`}
+																bind:value={activityFor[day.date]}
+																options={app.trackableActivities}
+															/>
+														</div>
+														<span class="text-muted-foreground font-mono text-xs">{planLabel(plan)}</span>
+													{/if}
 												</div>
 												{#if plan.extraBlocks.length > 0}
 													<!-- LOGA kennt mehr Stunden, als gestempelt wurde. Die gehören

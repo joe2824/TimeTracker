@@ -215,6 +215,24 @@ export async function saveTimeReport(report: StoredTimeReport): Promise<void> {
 	return writeJson(reportFile(report.month), report);
 }
 
+/**
+ * Monate, zu denen ein eingelesener Report auf der Platte liegt, aufsteigend.
+ *
+ * Damit der Abgleich den Monat wechseln kann, ohne dass die Datei noch offen ist –
+ * sonst muesste man ihn schliessen, den Monat in der Eintraege-Ansicht umstellen
+ * und ihn wieder oeffnen.
+ */
+export async function listTimeReportMonths(): Promise<string[]> {
+	await ensureDir();
+	const dir = await readDir(DIR, baseOpts);
+	const months: string[] = [];
+	for (const e of dir) {
+		const m = e.name?.match(REPORT_FILE_RE);
+		if (m) months.push(m[1]);
+	}
+	return months.sort();
+}
+
 export interface StoredYear {
 	year: number;
 	/** Monate mit Eintraegen in diesem Jahr */

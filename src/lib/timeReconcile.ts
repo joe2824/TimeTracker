@@ -474,3 +474,113 @@ export function planFill(
 		extraHours: sum(extra)
 	};
 }
+
+// ---------------------------------------------------------------- Verteilen
+
+/** Ein Projekt mit seinem Anteil an der Gesamtzeit (0..1). */
+export interface Share {
+	id: string;
+	/** Anteil als Bruchteil, nicht als Prozent. */
+	share: number;
+}
+
+/**
+ * Wie die Anteile auf die Tage kommen.
+ *
+ * "days" = jeder Tag geht ganz an ein Projekt (siehe `distributeDays`),
+ * "within" = jeder Tag wird in sich geschnitten (siehe `splitBlocks`).
+ */
+export type SplitMode = "days" | "within";
+
+/**
+ * Die Zeit EINES Tages der Reihe nach auf mehrere Projekte schneiden.
+ *
+ * Die Blöcke bleiben, wo sie sind – geschnitten wird entlang der Uhr, damit der
+ * Tag danach lückenlos und in der richtigen Reihenfolge dasteht. Rundungsreste
+ * gehen an das letzte Projekt, sonst fehlten am Ende ein paar Minuten.
+ *
+ * Anteile ohne Zeit fallen raus: ein Eintrag über null Minuten ist kein Eintrag.
+ *
+ * @param blocks zusammenhängende Zeitblöcke des Tages (Minuten ab Mitternacht)
+ * @param shares Projekte mit Anteilen; müssen sich nicht auf 1 summieren
+ */
+export function splitBlocks(blocks: Interval[], shares: Share[]): { id: string; blocks: Interval[] }[] {
+	const active = shares.filter((s) => s.id && s.share > 0);
+	if (active.length === 0 || blocks.length === 0) return [];
+	if (active.length === 1) return [{ id: active[0].id, blocks: [...blocks] }];
+
+	const total = blocks.reduce((acc, b) => acc + (b.end - b.start), 0);
+	const weight = active.reduce((acc, s) => acc + s.share, 0);
+	// Minuten je Projekt; das letzte bekommt, was die Rundung übrig lässt.
+	const quota = active.map((s) => Math.round((total * s.share) / weight));
+	quota[quota.length - 1] = total - quota.slice(0, -1).reduce((a, b) => a + b, 0);
+
+	const out: { id: string; blocks: Interval[] }[] = [];
+	let idx = 0;
+	let pos = blocks[0].start;
+	for (let i = 0; i < active.length; i++) {
+		let left = quota[i];
+		const mine: Interval[] = [];
+		while (left > 0 && idx < blocks.length) {
+			const room = blocks[idx].end - pos;
+			const take = Math.min(room, left);
+			if (take > 0) mine.push({ start: pos, end: pos + take });
+			pos += take;
+			left -= take;
+			if (pos >= blocks[idx].end) {
+				idx++;
+				pos = blocks[idx]?.start ?? pos;
+			}
+		}
+		if (mine.length > 0) out.push({ id: active[i].id, blocks: mine });
+	}
+	return out;
+}
+
+/**
+ * GANZE Tage auf mehrere Projekte verteilen, so dass die Anteile über den
+ * Zeitraum möglichst genau hinkommen.
+ *
+ * Die Alternative zu `splitBlocks`: statt jeden Tag zu zerschneiden bekommt jeder
+ * Tag genau ein Projekt. Das ergibt weniger und sauberere Einträge und ist näher
+ * an der Wirklichkeit, wenn man ohnehin tageweise an einem Projekt sitzt.
+ *
+ * Verfahren: Tag für Tag an das Projekt, dem gemessen an seinem Anteil gerade am
+ * meisten fehlt. Bei gleichem Rückstand entscheidet die Reihenfolge der Anteile,
+ * damit dasselbe Ergebnis reproduzierbar bleibt.
+ *
+ * @param days Tage in der Reihenfolge, in der sie vergeben werden (Datum + Stunden)
+ * @returns Zuordnung Datum -> Projekt; leer, wenn nichts zu verteilen ist
+ */
+export function distributeDays(
+	days: { date: string; hours: number }[],
+	shares: Share[]
+): Record<string, string> {
+	const active = shares.filter((s) => s.id && s.share > 0);
+	const out: Record<string, string> = {};
+	if (active.length === 0 || days.length === 0) return out;
+	if (active.length === 1) {
+		for (const d of days) out[d.date] = active[0].id;
+		return out;
+	}
+
+	const weight = active.reduce((acc, s) => acc + s.share, 0);
+	const totalHours = days.reduce((acc, d) => acc + d.hours, 0);
+	const target = active.map((s) => (totalHours * s.share) / weight);
+	const got = active.map(() => 0);
+
+	for (const day of days) {
+		let best = 0;
+		let bestGap = -Infinity;
+		for (let i = 0; i < active.length; i++) {
+			const gap = target[i] - got[i];
+			if (gap > bestGap) {
+				bestGap = gap;
+				best = i;
+			}
+		}
+		out[day.date] = active[best].id;
+		got[best] += day.hours;
+	}
+	return out;
+}

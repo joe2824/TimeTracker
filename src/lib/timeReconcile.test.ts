@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
 	DEFAULT_FILL_OPTIONS,
+	distributeDays,
 	freeIntervals,
 	occupiedIntervals,
 	planFill,
 	reconcile,
+	splitBlocks,
 	type ReconcileDay
 } from "./timeReconcile";
 import type { TimeReportDay } from "./timeReport";
@@ -401,5 +403,118 @@ describe("Zusammenspiel mit dem automatischen Pausenabzug", () => {
 	it("spart die Pause weiterhin aus, wenn der Abzug aus ist", () => {
 		const plan = planFill(reconcileOne(day()), [], DEFAULT_FILL_OPTIONS)!;
 		expect(asClock(plan.blocks)).toEqual(["09:10–12:00", "12:45–17:35"]);
+	});
+});
+
+describe("splitBlocks", () => {
+	/** Blöcke als "HH:MM–HH:MM" – wie oben, nur für die Verteilung. */
+	function asText(blocks: { start: number; end: number }[]): string[] {
+		const hhmm = (m: number) =>
+			`${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+		return blocks.map((b) => `${hhmm(b.start)}–${hhmm(b.end)}`);
+	}
+
+	const A = "act-a";
+	const B = "act-b";
+	const C = "act-c";
+
+	it("teilt einen durchgehenden Tag nach Anteilen der Reihe nach auf", () => {
+		// 08:00–16:00 = 480 Minuten, 60/40 -> 288 / 192.
+		const parts = splitBlocks([{ start: 480, end: 960 }], [
+			{ id: A, share: 0.6 },
+			{ id: B, share: 0.4 }
+		]);
+		expect(parts.map((p) => p.id)).toEqual([A, B]);
+		expect(asText(parts[0].blocks)).toEqual(["08:00–12:48"]);
+		expect(asText(parts[1].blocks)).toEqual(["12:48–16:00"]);
+	});
+
+	it("schneidet ueber eine Pausenluecke hinweg weiter", () => {
+		// 08:00–12:00 und 12:45–16:45 = 480 Minuten, halbe/halbe.
+		const parts = splitBlocks(
+			[
+				{ start: 480, end: 720 },
+				{ start: 765, end: 1005 }
+			],
+			[
+				{ id: A, share: 0.5 },
+				{ id: B, share: 0.5 }
+			]
+		);
+		expect(asText(parts[0].blocks)).toEqual(["08:00–12:00"]);
+		expect(asText(parts[1].blocks)).toEqual(["12:45–16:45"]);
+	});
+
+	it("gibt den Rundungsrest an das letzte Projekt, nichts geht verloren", () => {
+		const blocks = [{ start: 480, end: 941 }]; // 461 Minuten, glatt nicht teilbar
+		const parts = splitBlocks(blocks, [
+			{ id: A, share: 1 },
+			{ id: B, share: 1 },
+			{ id: C, share: 1 }
+		]);
+		const minutes = parts.flatMap((p) => p.blocks).reduce((s, b) => s + (b.end - b.start), 0);
+		expect(minutes).toBe(461);
+		// Lueckenlos und in der Reihenfolge der Uhr.
+		expect(asText(parts.flatMap((p) => p.blocks))).toEqual([
+			"08:00–10:34",
+			"10:34–13:08",
+			"13:08–15:41"
+		]);
+	});
+
+	it("laesst Projekte ohne Anteil weg", () => {
+		const parts = splitBlocks([{ start: 480, end: 960 }], [
+			{ id: A, share: 1 },
+			{ id: B, share: 0 },
+			{ id: "", share: 5 }
+		]);
+		expect(parts.map((p) => p.id)).toEqual([A]);
+		expect(asText(parts[0].blocks)).toEqual(["08:00–16:00"]);
+	});
+});
+
+describe("distributeDays", () => {
+	const A = "act-a";
+	const B = "act-b";
+
+	/** Zehn gleich lange Tage – dann muss 60/40 exakt aufgehen. */
+	const zehnTage = Array.from({ length: 10 }, (_, i) => ({
+		date: `2026-01-${String(i + 1).padStart(2, "0")}`,
+		hours: 8
+	}));
+
+	it("trifft die Anteile ueber gleich lange Tage genau", () => {
+		const zuordnung = distributeDays(zehnTage, [
+			{ id: A, share: 0.6 },
+			{ id: B, share: 0.4 }
+		]);
+		const anzahl = Object.values(zuordnung).filter((id) => id === A).length;
+		expect(anzahl).toBe(6);
+		expect(Object.keys(zuordnung)).toHaveLength(10);
+	});
+
+	it("wiegt lange Tage staerker als kurze", () => {
+		// 12 h + 2 h + 2 h: haelftig heisst NICHT „drei Tage durch zwei".
+		const tage = [
+			{ date: "2026-01-01", hours: 12 },
+			{ date: "2026-01-02", hours: 2 },
+			{ date: "2026-01-03", hours: 2 }
+		];
+		const zuordnung = distributeDays(tage, [
+			{ id: A, share: 0.5 },
+			{ id: B, share: 0.5 }
+		]);
+		// Der lange Tag geht an einen, die beiden kurzen an den anderen.
+		expect(zuordnung["2026-01-02"]).toBe(zuordnung["2026-01-03"]);
+		expect(zuordnung["2026-01-01"]).not.toBe(zuordnung["2026-01-02"]);
+	});
+
+	it("gibt bei einem einzigen Projekt alle Tage an dieses", () => {
+		const zuordnung = distributeDays(zehnTage, [{ id: A, share: 1 }]);
+		expect(new Set(Object.values(zuordnung))).toEqual(new Set([A]));
+	});
+
+	it("liefert nichts, wenn kein Projekt einen Anteil hat", () => {
+		expect(distributeDays(zehnTage, [{ id: A, share: 0 }])).toEqual({});
 	});
 });
