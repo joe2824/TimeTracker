@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from "svelte";
 	import { listen, emit } from "@tauri-apps/api/event";
+	import { getCurrentWindow } from "@tauri-apps/api/window";
 	import { invoke } from "@tauri-apps/api/core";
 	import { enable, isEnabled } from "@tauri-apps/plugin-autostart";
 	import { checkForUpdate, openUpdateDialog, updater } from "$lib/updater.svelte";
@@ -22,6 +23,7 @@
 	import LayersIcon from "@lucide/svelte/icons/layers";
 	import UsersIcon from "@lucide/svelte/icons/users";
 	import SettingsIcon from "@lucide/svelte/icons/settings";
+	import CircleArrowUpIcon from "@lucide/svelte/icons/circle-arrow-up";
 	import TrackingPanel from "$lib/components/TrackingPanel.svelte";
 	import EntryEditor from "$lib/components/EntryEditor.svelte";
 	import ReportView from "$lib/components/ReportView.svelte";
@@ -65,6 +67,40 @@
 	}
 
 	const unlisteners: Array<() => void> = [];
+
+	// Laeuft nur, solange auf ein sichtbares Fenster gewartet wird (siehe unten).
+	let visibilityPoll: ReturnType<typeof setInterval> | undefined;
+
+	/**
+	 * Warten, bis das Hauptfenster tatsaechlich zu sehen ist.
+	 *
+	 * Beim Autostart startet die App mit `--autostart-hidden`: die Oberflaeche
+	 * laeuft, nur sieht sie niemand. Ein Toast dort ist laengst abgelaufen, bevor
+	 * jemand das Fenster oeffnet – genau so ging der Update-Hinweis jeden Morgen
+	 * verloren, und die Suche musste man in den Einstellungen wiederholen.
+	 *
+	 * Minimiert zaehlt nicht als sichtbar; `isVisible()` sagt dazu ja.
+	 */
+	function whenWindowVisible(): Promise<void> {
+		const win = getCurrentWindow();
+		return new Promise((resolve) => {
+			const done = () => {
+				clearInterval(visibilityPoll);
+				visibilityPoll = undefined;
+				resolve();
+			};
+			const check = async () => {
+				try {
+					if ((await win.isVisible()) && !(await win.isMinimized())) done();
+				} catch {
+					// Kein Desktop oder Fenster weg: lieber zeigen als verschlucken.
+					done();
+				}
+			};
+			visibilityPoll = setInterval(() => void check(), 1000);
+			void check();
+		});
+	}
 
 	/**
 	 * Alles einrichten, was die App zum Laufen braucht.
@@ -125,8 +161,13 @@
 		// öffnet direkt den Update-Dialog – vorher landete man nur im Einstellungs-Tab
 		// und musste die Suche dort von Hand wiederholen.
 		if (await checkForUpdate({ silent: true })) {
-			toast.info(`Update ${updater.pending?.version} verfügbar`, {
-				duration: 15000,
+			const version = updater.pending?.version;
+			// Erst zeigen, wenn jemand hinsieht (Autostart!) – und dann lange genug,
+			// dass der Blick auch mal woanders sein darf.
+			await whenWindowVisible();
+			logInfo(`Hinweis auf Update ${version} gezeigt`);
+			toast.info(`Update ${version} verfügbar`, {
+				duration: 60000,
 				action: { label: "Installieren", onClick: () => void openUpdateDialog() }
 			});
 		}
@@ -137,6 +178,8 @@
 		return () => {
 			unlisteners.forEach((u) => u());
 			unlisteners.length = 0;
+			clearInterval(visibilityPoll);
+			visibilityPoll = undefined;
 			stopWatchers();
 			app.dispose();
 		};
@@ -269,7 +312,25 @@
 				</Tabs.List>
 
 				<!-- reservierte rechte Spalte: Pill verschiebt die Tabs nicht mehr -->
-				<div class="justify-self-end">
+				<div class="flex items-center gap-2 justify-self-end">
+					<!-- Bleibt stehen, solange das Update aussteht: der Hinweis-Toast beim
+					     Start ist beim Autostart nicht zu sehen und danach weg. -->
+					{#if updater.pending}
+						<button
+							type="button"
+							onclick={() => void openUpdateDialog()}
+							title="Update {updater.pending.version} verfügbar – jetzt installieren"
+							aria-label="Update {updater.pending.version} verfügbar"
+							class="text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-ring/50 relative inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors outline-none focus-visible:ring-2"
+						>
+							<CircleArrowUpIcon class="size-4.5" />
+							<!-- Ruhiger Punkt, kein Pulsieren: das gehoert daneben dem laufenden
+							     Timer, sonst sagen zwei Herzschlaege dasselbe. -->
+							<span
+								class="bg-primary ring-background absolute top-0.5 right-0.5 size-2 rounded-full ring-2"
+							></span>
+						</button>
+					{/if}
 					{#if app.running}
 						<span
 							class="border-primary/20 bg-primary/10 text-primary inline-flex max-w-45 items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium"
