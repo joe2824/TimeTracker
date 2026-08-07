@@ -8,7 +8,7 @@
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { toast } from "svelte-sonner";
-import { errorText, flushLog, logError, logInfo, logWarn } from "./log";
+import { errorText, flushLog, logDebug, logError, logInfo, logWarn } from "./log";
 
 class UpdaterState {
 	/** Gefundenes Update (auch wenn der Dialog gerade zu ist). */
@@ -25,10 +25,23 @@ class UpdaterState {
 export const updater = new UpdaterState();
 
 /**
+ * Ob die letzte stille Suche schon gescheitert ist.
+ *
+ * Die Suche läuft stündlich weiter. Ohne diese Wache schriebe eine Woche ohne
+ * Netz stündlich dieselbe Warnung ins Protokoll – und ausgerechnet die Ansicht
+ * „nur Probleme" filtert auf WARN/ERROR, wäre also mit genau dem Rauschen
+ * gefüllt, das sie herausfiltern soll.
+ */
+let silentFailureLogged = false;
+
+/**
  * Nach einem Update suchen.
  *
- * `silent`: nur merken und protokollieren, nichts anzeigen – für den Start, der
- * seinen eigenen Toast setzt. Sonst meldet die Funktion selbst, was sie fand.
+ * `silent`: nur merken und protokollieren, nichts anzeigen – für den Start und
+ * die stündliche Suche im Hintergrund, die ihren Hinweis selbst setzen. Ohne
+ * Netz ist das ausdrücklich KEIN Fall für den Benutzer: er hat die Suche nicht
+ * angestoßen, und dass gerade kein Netz da ist, weiß er selbst. Sonst meldet
+ * die Funktion selbst, was sie fand.
  *
  * @returns true = ein Update liegt bereit
  */
@@ -37,18 +50,30 @@ export async function checkForUpdate({ silent = false } = {}): Promise<boolean> 
 	try {
 		const update = await check();
 		updater.pending = update;
-		logInfo(update ? `Update ${update.version} gefunden` : "Kein Update verfügbar");
+		silentFailureLogged = false;
 		if (update) {
+			logInfo(`Update ${update.version} gefunden`);
 			if (!silent) updater.open = true;
 			return true;
 		}
-		if (!silent) toast.success("Du bist auf dem neuesten Stand.");
+		// Im Hintergrund nur als Debug-Zeile: als Info stünde dieselbe Meldung
+		// 24-mal am Tag im Protokoll und verdeckte, was dort wirklich passiert ist.
+		if (silent) {
+			logDebug("Kein Update verfügbar");
+		} else {
+			logInfo("Kein Update verfügbar");
+			toast.success("Du bist auf dem neuesten Stand.");
+		}
 		return false;
 	} catch (e) {
 		// Offline oder Updater nicht konfiguriert – beim stillen Lauf kein Fall für
-		// den Benutzer, der Grund gehört aber ins Protokoll.
+		// den Benutzer, der Grund gehört aber ins Protokoll. Einmal je Ausfall:
+		// die nächste erfolgreiche Suche setzt die Wache zurück.
 		if (silent) {
-			logWarn("Update-Prüfung beim Start nicht möglich", e);
+			if (!silentFailureLogged) {
+				silentFailureLogged = true;
+				logWarn("Update-Prüfung im Hintergrund nicht möglich (z.B. kein Netz)", e);
+			}
 		} else {
 			logError("Update-Prüfung fehlgeschlagen", e);
 			toast.error(`Update-Prüfung nicht möglich: ${errorText(e)}`);
