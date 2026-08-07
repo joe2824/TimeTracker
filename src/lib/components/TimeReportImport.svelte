@@ -38,6 +38,7 @@
 	import { Checkbox } from "$lib/components/ui/checkbox";
 	import { Progress } from "$lib/components/ui/progress";
 	import * as Alert from "$lib/components/ui/alert";
+	import * as ButtonGroup from "$lib/components/ui/button-group";
 	import * as Card from "$lib/components/ui/card";
 	import * as Select from "$lib/components/ui/select";
 	import * as Table from "$lib/components/ui/table";
@@ -50,6 +51,8 @@
 	import PalmtreeIcon from "@lucide/svelte/icons/palmtree";
 	import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
 	import CheckIcon from "@lucide/svelte/icons/check";
+	import ChevronLeftIcon from "@lucide/svelte/icons/chevron-left";
+	import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
 	import SplitIcon from "@lucide/svelte/icons/split";
 	import XIcon from "@lucide/svelte/icons/x";
 
@@ -586,7 +589,8 @@
 		partial: { label: "teilweise", class: "bg-amber-500/15 text-amber-700 dark:text-amber-300" },
 		over: { label: "zu viel", class: "bg-sky-500/15 text-sky-700 dark:text-sky-300" },
 		ok: { label: "stimmt", class: "text-muted-foreground" },
-		free: { label: "frei", class: "text-muted-foreground" }
+		free: { label: "frei", class: "text-muted-foreground" },
+		open: { label: "offen", class: "text-muted-foreground" }
 	};
 
 	const FLAG_HINT: Record<string, string> = {
@@ -782,18 +786,45 @@
 				<div class="flex flex-wrap items-center justify-between gap-3">
 					<div class="flex flex-wrap items-center gap-2">
 						{#if availableMonths.length > 1}
-							<Select.Root
-								type="single"
-								value={active.month}
-								onValueChange={(v) => v && switchMonth(v)}
-							>
-								<Select.Trigger size="sm" class="w-44">{monthLabel(active.month)}</Select.Trigger>
-								<Select.Content>
-									{#each availableMonths as m (m)}
-										<Select.Item value={m} label={monthLabel(m)}>{monthLabel(m)}</Select.Item>
-									{/each}
-								</Select.Content>
-							</Select.Root>
+							{@const idx = availableMonths.indexOf(active.month)}
+							<!-- Pfeile wie in der Monatsauswahl der Eintraege-Ansicht, hier aber
+							     entlang der VORHANDENEN Monate: ein Schritt auf einen Monat ohne
+							     Report brächte nur eine Fehlermeldung. Am Rand sind sie deshalb
+							     abgeschaltet, statt ins Leere zu führen. -->
+							<ButtonGroup.Root>
+								<Button
+									variant="outline"
+									size="icon-sm"
+									aria-label="Vorheriger Monat"
+									title="Vorheriger Monat"
+									disabled={idx <= 0}
+									onclick={() => void switchMonth(availableMonths[idx - 1])}
+								>
+									<ChevronLeftIcon />
+								</Button>
+								<Select.Root
+									type="single"
+									value={active.month}
+									onValueChange={(v) => v && switchMonth(v)}
+								>
+									<Select.Trigger size="sm" class="w-44">{monthLabel(active.month)}</Select.Trigger>
+									<Select.Content>
+										{#each availableMonths as m (m)}
+											<Select.Item value={m} label={monthLabel(m)}>{monthLabel(m)}</Select.Item>
+										{/each}
+									</Select.Content>
+								</Select.Root>
+								<Button
+									variant="outline"
+									size="icon-sm"
+									aria-label="Nächster Monat"
+									title="Nächster Monat"
+									disabled={idx < 0 || idx >= availableMonths.length - 1}
+									onclick={() => void switchMonth(availableMonths[idx + 1])}
+								>
+									<ChevronRightIcon />
+								</Button>
+							</ButtonGroup.Root>
 						{:else}
 							<span class="font-medium">{monthLabel(active.month)}</span>
 						{/if}
@@ -1020,6 +1051,12 @@
 													     Abzug steht sie auf BEIDEN Seiten und erklärt nichts mehr. -->
 													· LOGA zieht {fmtHoursClock(pause)} h Pause ab
 												{/if}
+											</span>
+										{:else if day.status === "open"}
+											<!-- Nur „Kommen" gestempelt: der Tag ist in LOGA noch nicht fertig,
+											     ein Vergleich sagt hier noch nichts. -->
+											<span class="text-muted-foreground text-xs">
+												in LOGA nur „Kommen" gestempelt ({day.report.firstIn})
 											</span>
 										{:else if day.status === "ok"}
 											<span class="text-muted-foreground text-xs">—</span>

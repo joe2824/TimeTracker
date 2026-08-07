@@ -70,6 +70,15 @@
 
 	// Laeuft nur, solange auf ein sichtbares Fenster gewartet wird (siehe unten).
 	let visibilityPoll: ReturnType<typeof setInterval> | undefined;
+	/**
+	 * Das laufende Warten auf ein sichtbares Fenster – alle Wartenden teilen es.
+	 *
+	 * Ohne das setzte ein zweiter Aufruf `visibilityPoll` neu, und der Timer des
+	 * ersten liefe fuer immer weiter. Erreichbar, seit die Update-Suche nicht mehr
+	 * nur beim Start laeuft: findet sie eine neuere Version, waehrend das Fenster
+	 * vom Autostart noch versteckt ist, warten zwei.
+	 */
+	let visibilityWait: Promise<void> | null = null;
 
 	/**
 	 * Warten, bis das Hauptfenster tatsaechlich zu sehen ist.
@@ -83,10 +92,13 @@
 	 */
 	function whenWindowVisible(): Promise<void> {
 		const win = getCurrentWindow();
-		return new Promise((resolve) => {
+		visibilityWait ??= new Promise((resolve) => {
 			const done = () => {
 				clearInterval(visibilityPoll);
 				visibilityPoll = undefined;
+				// Vor dem Aufloesen: ein spaeterer Aufruf soll neu nachsehen, das
+				// Fenster kann dann laengst wieder weg sein.
+				visibilityWait = null;
 				resolve();
 			};
 			const check = async () => {
@@ -99,6 +111,42 @@
 			};
 			visibilityPoll = setInterval(() => void check(), 1000);
 			void check();
+		});
+		return visibilityWait;
+	}
+
+	/**
+	 * Abstand der Update-Suche im Hintergrund.
+	 *
+	 * Gesucht wurde vorher nur beim Start. Bei einer App, die im Autostart liegt
+	 * und wochenlang im Tray durchlaeuft, war das genau einmal – ein Update kam
+	 * damit erst beim naechsten Neustart des Rechners an.
+	 */
+	const UPDATE_CHECK_MS = 60 * 60 * 1000;
+	let updateTimer: ReturnType<typeof setInterval> | undefined;
+	/** Version, zu der schon ein Hinweis stand – sonst meldete jede Runde dieselbe. */
+	let announcedVersion: string | null = null;
+
+	/** Still nach einem Update suchen und beim ersten Fund darauf hinweisen. */
+	async function checkAndAnnounceUpdate() {
+		// Nicht dazwischenfunken, solange der Dialog offen ist oder installiert
+		// wird: `check()` tauscht `updater.pending` aus – mitten im Herunterladen
+		// zoege das dem Dialog das Update unter den Fuessen weg.
+		if (updater.open || updater.installing) return;
+		if (!(await checkForUpdate({ silent: true }))) return;
+		const version = updater.pending?.version;
+		if (!version || version === announcedVersion) return;
+		// Vor dem Warten merken: sonst stellte sich stuendlich ein weiterer Hinweis
+		// zu derselben Version an, solange das Fenster versteckt ist – und beim
+		// Oeffnen kaemen sie alle auf einmal.
+		announcedVersion = version;
+		// Erst zeigen, wenn jemand hinsieht (Autostart!) – und dann lange genug,
+		// dass der Blick auch mal woanders sein darf.
+		await whenWindowVisible();
+		logInfo(`Hinweis auf Update ${version} gezeigt`);
+		toast.info(`Update ${version} verfügbar`, {
+			duration: 60000,
+			action: { label: "Installieren", onClick: () => void openUpdateDialog() }
 		});
 	}
 
@@ -157,20 +205,14 @@
 			toast.error(`Einrichtung unvollständig: ${errorText(e)}`, { duration: 60000 });
 		}
 
-		// Beim Start still nach Updates suchen und ggf. Hinweis zeigen. „Installieren"
-		// öffnet direkt den Update-Dialog – vorher landete man nur im Einstellungs-Tab
-		// und musste die Suche dort von Hand wiederholen.
-		if (await checkForUpdate({ silent: true })) {
-			const version = updater.pending?.version;
-			// Erst zeigen, wenn jemand hinsieht (Autostart!) – und dann lange genug,
-			// dass der Blick auch mal woanders sein darf.
-			await whenWindowVisible();
-			logInfo(`Hinweis auf Update ${version} gezeigt`);
-			toast.info(`Update ${version} verfügbar`, {
-				duration: 60000,
-				action: { label: "Installieren", onClick: () => void openUpdateDialog() }
-			});
-		}
+		// Beim Start und danach stuendlich still nach Updates suchen. „Installieren"
+		// im Hinweis öffnet direkt den Update-Dialog – vorher landete man nur im
+		// Einstellungs-Tab und musste die Suche dort von Hand wiederholen.
+		//
+		// `??=`: `startup()` läuft beim „Erneut versuchen" im Ladebildschirm noch
+		// einmal, ein zweiter Timer suchte danach doppelt.
+		updateTimer ??= setInterval(() => void checkAndAnnounceUpdate(), UPDATE_CHECK_MS);
+		await checkAndAnnounceUpdate();
 	}
 
 	onMount(() => {
@@ -180,6 +222,9 @@
 			unlisteners.length = 0;
 			clearInterval(visibilityPoll);
 			visibilityPoll = undefined;
+			visibilityWait = null;
+			clearInterval(updateTimer);
+			updateTimer = undefined;
 			stopWatchers();
 			app.dispose();
 		};

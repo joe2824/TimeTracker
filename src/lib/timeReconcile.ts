@@ -5,7 +5,7 @@
 // und gehoert in Tests.
 import type { Entry } from "./types";
 import type { TimeReportDay } from "./timeReport";
-import { breakHours, grossHours, hasStamps } from "./timeReport";
+import { breakHours, grossHours, hasStamps, isOpenDay } from "./timeReport";
 import { deductBreakFromHours, grossForNet } from "./breaks";
 import { entryHours, fmtDate, openEntryUntil, startOfNextDay } from "./time";
 
@@ -25,7 +25,9 @@ export type ReconcileStatus =
 	/** hier ist mehr erfasst als LOGA kennt */
 	| "over"
 	/** LOGA kennt keine Stunden (Wochenende/frei) und hier ist auch nichts erfasst */
-	| "free";
+	| "free"
+	/** in LOGA ist nur „Kommen" gestempelt – der Tag ist dort noch nicht fertig */
+	| "open";
 
 export interface ReconcileDay {
 	/** "YYYY-MM-DD" */
@@ -148,6 +150,20 @@ export function reconcile(
 		} else {
 			status = "ok";
 		}
+
+		// Nur „Kommen" gestempelt: LOGA ist mit dem Tag noch nicht durch. Was hier
+		// steht, kann dort noch gar nicht ankommen – „zu viel" waere eine
+		// Falschmeldung.
+		//
+		// Bewusst ohne Datumsvergleich: das ist nicht nur der laufende Tag. Ein
+		// vergessenes Gehen bleibt auch in der Vergangenheit unvollstaendig, und
+		// gegen eine 0 aus LOGA ist jede erfasste Stunde „zu viel" – die Meldung
+		// stuende dann fuer immer da, obwohl sie in LOGA zu klaeren ist. Der Status
+		// „offen" sagt im Abgleich, woran es liegt.
+		//
+		// „fehlt" bleibt stehen: dort ist die LOGA-Zahl bereits groesser als das
+		// Erfasste, das laesst sich durch ein spaeteres Gehen nicht entkraeften.
+		if (status === "over" && isOpenDay(report)) status = "open";
 
 		// Kein Stempel, aber Stunden: Urlaub, Feiertag oder Gleittag. LOGA
 		// unterscheidet das nicht – hier ist alles drei „Abwesenheit".
@@ -473,6 +489,36 @@ export function planFill(
 		extraBlocks: extra,
 		extraHours: sum(extra)
 	};
+}
+
+/**
+ * Auf wie viele Stunden EIN Eintrag gesetzt werden muss, damit sein Tag auf die
+ * von LOGA gemeldete Zeit kommt.
+ *
+ * Gedacht fuer den Eintrags-Dialog: dort ist die Dauer des offenen Eintrags die
+ * Stellschraube, alles andere am Tag steht fest. Deshalb kommt der Rest des
+ * Tages herein und nicht die fertige Abweichung – so bleibt die Zahl richtig,
+ * wenn im Dialog schon an den Zeiten gedreht wurde, und zweimal anwenden
+ * verdoppelt nichts.
+ *
+ * Zieht die App die Pause selbst ab, ist die Zielgroesse die ANWESENHEIT: die
+ * LOGA-Stunden sind netto, eins zu eins uebernommen bekaemen sie den Abzug ein
+ * zweites Mal (dieselbe Ueberlegung wie in `planFill`).
+ *
+ * @param reportHours "Arbeitszeit täglich" des Tages (netto)
+ * @param othersWorked Projektzeit der UEBRIGEN Eintraege des Tages, vor Abzug
+ * @param othersAbsent Abwesenheitsstunden des Tages
+ * @returns Stunden; 0 oder negativ heisst „ueber diesen Eintrag nicht zu regeln"
+ */
+export function targetEntryHours(
+	reportHours: number,
+	othersWorked: number,
+	othersAbsent: number,
+	deductBreaks = false
+): number {
+	const net = reportHours - othersAbsent;
+	const gross = deductBreaks ? grossForNet(net) : net;
+	return gross - othersWorked;
 }
 
 // ---------------------------------------------------------------- Verteilen

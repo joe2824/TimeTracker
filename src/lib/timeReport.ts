@@ -230,6 +230,20 @@ export function hasStamps(day: TimeReportDay): boolean {
 	return !!day.firstIn && !!day.lastOut;
 }
 
+/**
+ * In LOGA ist nur „Kommen" gestempelt – das Gehen fehlt noch.
+ *
+ * So ein Tag ist kein Massstab: „Arbeitszeit täglich" steht dann auf 0 oder auf
+ * einem Zwischenstand, weil LOGA den Feierabend noch nicht kennt. Alles, was
+ * hier erfasst ist, saehe daneben nach „zu viel" aus.
+ *
+ * Trifft den laufenden Tag ebenso wie ein vergessenes Gehen in der
+ * Vergangenheit – beides ist in LOGA zu klaeren, nicht hier.
+ */
+export function isOpenDay(day: TimeReportDay): boolean {
+	return !!day.firstIn && !day.lastOut;
+}
+
 // ---------- Einlesen ----------
 
 /**

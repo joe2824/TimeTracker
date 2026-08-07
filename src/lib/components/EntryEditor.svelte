@@ -14,6 +14,7 @@
 		midnightSplitHint,
 		minToClock,
 		noonTs,
+		openEntryUntil,
 		startOfNextDay,
 		parseClock,
 		parseHours,
@@ -21,6 +22,12 @@
 	} from "$lib/time";
 	import type { Entry, EntrySource } from "$lib/types";
 	import { loadTimeReport, type StoredTimeReport } from "$lib/store";
+	import {
+		reconcile,
+		targetEntryHours,
+		type Interval,
+		type ReconcileDay
+	} from "$lib/timeReconcile";
 	import { breakDeduction } from "$lib/breaks";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
@@ -49,11 +56,33 @@
 	let reportPreview = $state(false);
 	const anyPreview = $derived(importPreview || reportPreview);
 
-	/** Ab welcher Abweichung ein Tag als „fehlt etwas" markiert wird (Stunden). */
+	/** Ab welcher Abweichung ein Tag auffaellt (Stunden) – wie im Abgleich: 15 Minuten. */
 	const REPORT_TOLERANCE = 0.25;
 	/** Der eingelesene LOGA-Report dieses Monats, falls einer vorliegt. */
 	let report = $state<StoredTimeReport | null>(null);
-	const reportByDate = $derived(new Map((report?.days ?? []).map((d) => [d.date, d.hours])));
+	const absenceIds = $derived(new Set(app.activities.filter((a) => a.isAbsence).map((a) => a.id)));
+
+	/**
+	 * Der Abgleich dieses Monats, Tag fuer Tag.
+	 *
+	 * Bewusst ueber `reconcile` statt mit einer eigenen Differenz: die Karte
+	 * „Zeitwächter-Report" rechnet damit, und zwei Rechnungen fuer denselben Tag
+	 * saehen frueher oder spaeter verschieden aus – Pausenabzug, Abwesenheiten und
+	 * angefangene Tage stecken alle da drin.
+	 */
+	const reportByDate = $derived.by(() => {
+		const out = new Map<string, ReconcileDay>();
+		if (!report) return out;
+		const summary = reconcile(report.days, app.monthEntries(month), {
+			hoursPerDay: app.settings.hoursPerDay,
+			tolerance: REPORT_TOLERANCE,
+			absenceIds,
+			now: app.now,
+			deductBreaks: app.settings.breakDeduction
+		});
+		for (const d of summary.days) out.set(d.date, d);
+		return out;
+	});
 
 	// Nach dem Schliessen des Abgleichs neu lesen: dort kann gerade ein Report
 	// eingelesen oder gewechselt worden sein. `entriesVersion` haengt mit dran,
@@ -121,6 +150,88 @@
 		const geteilt = midnightSplitHint(s, e);
 		return geteilt ? `Geht ${geteilt}: ${fmtDateHuman(s)} und ${fmtDateHuman(e)}.` : null;
 	});
+
+	// Die Uhrzeiten, wie sie GERADE im Dialog stehen – auch wenn ein Feld noch nicht
+	// verlassen wurde. Sonst rechnete der Zeitwächter-Hinweis darunter mit dem Stand
+	// von vorhin weiter.
+	const draftStart = $derived(parseClock(startText) ?? draft.start);
+	const draftEnd = $derived(parseClock(endText) ?? draft.end);
+
+	/**
+	 * Was der Zeitwächter zum Tag des Entwurfs sagt – und auf welche Dauer dieser
+	 * eine Eintrag gesetzt werden müsste, damit der Tag zu LOGA passt.
+	 *
+	 * Gerechnet wird über die ANDEREN Einträge des Tages, nicht über die aktuelle
+	 * Abweichung. Nur so stimmt die Zahl auch dann noch, wenn im Dialog schon an
+	 * den Zeiten gedreht wurde – und ein zweiter Klick verdoppelt nichts.
+	 */
+	const dayAdjust = $derived.by(() => {
+		if (draftIsAbsence) return null;
+		const rd = reportByDate.get(draft.date);
+		// „ok"/„free" heißt: nichts zu holen. Bei „open" kennt LOGA den Feierabend
+		// noch nicht – jede Korrektur wäre dort geraten.
+		if (!rd || rd.status === "ok" || rd.status === "free" || rd.status === "open") return null;
+
+		// Der bearbeitete Eintrag zählt nicht mit: seine Dauer ist die Stellschraube.
+		let othersWorked = 0;
+		let othersAbsent = 0;
+		for (const e of app.monthEntries(draft.date.slice(0, 7))) {
+			if (e.id === draft.id || fmtDate(e.startTs) !== draft.date) continue;
+			const isAbs = app.isAbsenceId(e.activityId);
+			// Gekappt wie in `reconcile`: ein vergessener offener Eintrag zaehlte sonst
+			// bis jetzt weiter, und der Hinweis hier widerspräche dem Badge daneben.
+			const h = entryHours(e, isAbs, app.settings.hoursPerDay, openEntryUntil(e, app.now));
+			if (isAbs) othersAbsent += h;
+			else othersWorked += h;
+		}
+
+		const target = targetEntryHours(
+			rd.report.hours,
+			othersWorked,
+			othersAbsent,
+			app.settings.breakDeduction
+		);
+		const targetMin = Math.round(target * 60);
+		const delta = Math.round(targetMin - durationHours(draftStart, draftEnd) * 60) / 60;
+
+		// Wohin der Eintrag käme. Bevorzugt bleibt „Von" stehen und „Bis" wandert;
+		// reicht der Tag dahinter nicht mehr, andersherum. Über Mitternacht zu
+		// laufen wäre hier das Gegenteil von hilfreich: `save()` macht daraus zwei
+		// Einträge, und der Tag bekäme nur den ersten Teil – ein neuer Eintrag am
+		// Abend erwischt das sofort, weil er mit der aktuellen Stunde startet.
+		const from = clockToMin(draftStart);
+		const to = clockToMin(draftEnd);
+		let block: Interval | null = null;
+		if (targetMin > 0 && targetMin <= MAX_ENTRY_HOURS * 60) {
+			if (from != null && from + targetMin <= 1440) block = { start: from, end: from + targetMin };
+			else if (to != null && to - targetMin >= 0) block = { start: to - targetMin, end: to };
+		}
+
+		return {
+			reportHours: rd.report.hours,
+			delta,
+			// Null Minuten sind kein Eintrag, und was nicht in den Tag passt, geht
+			// hier nicht. Wer den Tag so leeren will, löscht den Eintrag.
+			block: delta !== 0 ? block : null
+		};
+	});
+
+	/** Den Entwurf auf `dayAdjust.block` setzen – die Dauer trifft dann die LOGA-Stunden. */
+	function applyDayAdjust() {
+		const block = dayAdjust?.block;
+		if (!block) return;
+		// Fokus JETZT weg vom Knopf, noch vor der Änderung: passt der Tag danach,
+		// verschwindet der Knopf – und ein Fokus, der mit seinem Element entfernt
+		// wird, lässt den Fokus-Fang des Dialogs von vorn anfangen. Der landete auf
+		// der Aktivitäts-Combobox, die daraufhin ihre Liste über die Felder klappt.
+		dialogEl?.focus();
+		draft.start = minToClock(block.start);
+		// 24:00 wird zu "00:00" – save() liest das als Folgetag und trifft damit
+		// genau die Tagesgrenze, ohne zu teilen.
+		draft.end = minToClock(block.end);
+		syncTimeText();
+		recalcDur();
+	}
 
 	// Abwesenheiten werden über den "Abwesenheit"-Button erfasst und tauchen daher
 	// nicht in der Aktivitäts-Auswahl auf – außer beim Bearbeiten eines bestehenden
@@ -249,13 +360,12 @@
 			}
 			const pause = app.settings.breakDeduction ? breakDeduction(worked) : 0;
 			const hours = worked - pause + absent;
-			// Fehlbetrag laut LOGA – nur dort, wo ein Report vorliegt und der Tag
-			// ueberhaupt Stunden kennt.
-			const reportHours = reportByDate.get(date);
-			const missing =
-				reportHours != null && reportHours > 0 && reportHours - hours > REPORT_TOLERANCE
-					? reportHours - hours
-					: 0;
+			// Abweichung laut Zeitwächter, in beide Richtungen. Tage, an denen in LOGA
+			// nur „Kommen" steht, bleiben stumm – dort fehlt der Feierabend, nicht die
+			// Zeit (Status „open", siehe reconcile).
+			const rd = reportByDate.get(date);
+			const missing = rd && (rd.status === "missing" || rd.status === "partial") ? rd.diff : 0;
+			const over = rd?.status === "over" ? -rd.diff : 0;
 			list.push({
 				d,
 				date,
@@ -264,8 +374,9 @@
 				entries,
 				hours,
 				pause,
-				reportHours,
-				missing
+				reportHours: rd?.report.hours ?? 0,
+				missing,
+				over
 			});
 		}
 		return list;
@@ -489,9 +600,19 @@
 								<!-- Aus dem Zeitwirtschaftsreport: hier fehlt Zeit gegenueber LOGA. -->
 								<span
 									class="rounded bg-amber-500/15 px-1.5 py-0.5 font-mono text-xs tabular-nums text-amber-700 dark:text-amber-300"
-									title={`LOGA: ${fmtHoursClock(day.reportHours ?? 0)} h – hier fehlen ${fmtHoursClock(day.missing)} h`}
+									title={`LOGA: ${fmtHoursClock(day.reportHours)} h – hier fehlen ${fmtHoursClock(day.missing)} h`}
 								>
 									−{fmtHoursClock(day.missing)}
+								</span>
+							{:else if day.over > 0}
+								<!-- Die Gegenrichtung: hier steht mehr, als LOGA fuer den Tag kennt.
+								     Gleiches Blau wie „zu viel" im Abgleich, damit beide Ansichten
+								     dieselbe Farbe fuer dieselbe Aussage benutzen. -->
+								<span
+									class="rounded bg-sky-500/15 px-1.5 py-0.5 font-mono text-xs tabular-nums text-sky-700 dark:text-sky-300"
+									title={`LOGA: ${fmtHoursClock(day.reportHours)} h – hier sind ${fmtHoursClock(day.over)} h zu viel erfasst`}
+								>
+									+{fmtHoursClock(day.over)}
 								</span>
 							{/if}
 							{#if day.pause > 0}
@@ -636,6 +757,45 @@
 				</div>
 				{#if splitHint}
 					<p class="text-muted-foreground text-xs">{splitHint}</p>
+				{/if}
+
+				{#if dayAdjust}
+					<!-- Aus dem Zeitwirtschaftsreport: der Tag weicht von LOGA ab. Der Knopf
+					     setzt die Dauer DIESES Eintrags so, dass der Tag hinkommt – „Von"
+					     bleibt stehen, „Bis" wandert. Gespeichert wird dabei nichts: die
+					     Zeiten stehen danach im Formular und lassen sich noch anfassen. -->
+					<div
+						class="flex flex-wrap items-center justify-between gap-2 rounded-md px-2.5 py-2 text-xs {dayAdjust.delta >
+						0
+							? 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+							: dayAdjust.delta < 0
+								? 'bg-sky-500/15 text-sky-700 dark:text-sky-300'
+								: 'bg-muted text-muted-foreground'}"
+					>
+						<span class="min-w-0 flex-1">
+							{#if dayAdjust.delta > 0}
+								Zeitwächter: an diesem Tag fehlen {fmtHoursClock(dayAdjust.delta)} h – LOGA kennt
+								{fmtHoursClock(dayAdjust.reportHours)} h.
+							{:else if dayAdjust.delta < 0}
+								Zeitwächter: an diesem Tag sind {fmtHoursClock(-dayAdjust.delta)} h zu viel erfasst –
+								LOGA kennt {fmtHoursClock(dayAdjust.reportHours)} h.
+							{:else}
+								Passt zum Zeitwächter: der Tag kommt damit auf {fmtHoursClock(
+									dayAdjust.reportHours
+								)} h.
+							{/if}
+							{#if dayAdjust.delta !== 0 && !dayAdjust.block}
+								Über diesen Eintrag allein geht das nicht.
+							{/if}
+						</span>
+						{#if dayAdjust.block}
+							<Button type="button" variant="outline" size="xs" onclick={applyDayAdjust}>
+								{dayAdjust.delta > 0
+									? `${fmtHoursClock(dayAdjust.delta)} h ergänzen`
+									: `${fmtHoursClock(-dayAdjust.delta)} h abziehen`}
+							</Button>
+						{/if}
+					</div>
 				{/if}
 			{/if}
 
