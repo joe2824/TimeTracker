@@ -12,7 +12,11 @@ und **Tailwind CSS v4** / shadcn-svelte.
 Neueste Version (Windows-Installer): **<https://github.com/joe2824/TimeTracker/releases/latest>**
 
 
-Die App aktualisiert sich anschließend selbst (Einstellungen → „Nach Updates suchen").
+Die App aktualisiert sich anschließend selbst: gesucht wird beim Start und danach **stündlich**.
+Ein Fund meldet sich als Hinweis mit „Installieren" und bleibt als Pfeil-Symbol in der Kopfzeile
+stehen, bis er erledigt ist – der Hinweis kommt je Version nur einmal, und erst wenn das Fenster
+auch zu sehen ist (beim Autostart läuft es versteckt). Von Hand geht es weiterhin über
+Einstellungen → „Nach Updates suchen".
 
 ## Features
 
@@ -89,6 +93,15 @@ die ist **netto**, LOGA hat die Pause dort bereits abgezogen (ab 4 h 15 Minuten,
 | fehlt | LOGA kennt Stunden, hier ist nichts erfasst |
 | teilweise | hier ist weniger erfasst als LOGA kennt |
 | zu viel | hier ist mehr erfasst als LOGA kennt |
+| offen | in LOGA ist nur „Kommen" gestempelt – der Tag ist dort noch nicht fertig |
+
+„Offen" ist typischerweise der laufende Tag: solange das Gehen fehlt, steht „Arbeitszeit täglich"
+auf 0 oder auf einem Zwischenstand. Alles Erfasste sähe daneben nach *zu viel* aus, obwohl es LOGA
+nur noch nicht erreicht hat – deshalb bleiben solche Tage in dieser Richtung stumm. Das gilt
+absichtlich auch für ein **vergessenes Gehen in der Vergangenheit**: gegen eine 0 aus LOGA wäre
+jede erfasste Stunde „zu viel", und die Meldung stünde für immer da, obwohl sie in LOGA zu klären
+ist. Ein **Fehlbetrag** wird dagegen weiterhin gemeldet – was LOGA schon gutgeschrieben hat, wird
+durch ein späteres Gehen nicht weniger.
 
 Für jeden auffälligen Tag schlägt die App einen Nachtrag vor, der sich einer Aktivität zuordnen
 lässt – einzeln oder für alle Tage auf einmal. Zwei Regeln stecken darin:
@@ -122,8 +135,24 @@ Nachgetragene Einträge tragen die Notiz „Zeitwächter" und werden beim nächs
 *bereits nachgetragen* erkannt – ein zweiter Durchlauf erzeugt keine Dubletten. Die Verstoß-Spalten
 des Reports (Ruhepause, > 10 h, Sonntags-/Feiertagsarbeit) erscheinen als Badge am jeweiligen Tag.
 
-Der eingelesene Report bleibt unter `data/timereport-YYYY-MM.json` liegen. In der Tagesliste
-markiert er Tage, an denen Zeit fehlt, mit einem Fehlbetrag – auch ohne geöffneten Abgleich.
+Der eingelesene Report bleibt unter `data/timereport-YYYY-MM.json` liegen und wirkt danach im Tab
+**Einträge** weiter, auch ohne geöffneten Abgleich:
+
+- In der **Tagesliste** trägt jeder abweichende Tag seine Differenz: `−1:15` in Amber, wo Zeit
+  fehlt, `+0:45` in Blau, wo mehr erfasst ist als LOGA kennt (dieselben Farben wie im Abgleich).
+- Im **Eintrags-Dialog** steht die Abweichung des Tages unter den Uhrzeiten, mit einem Knopf
+  „1:15 h ergänzen" bzw. „0:45 h abziehen". Er setzt die Dauer **dieses** Eintrags so, dass der Tag
+  auf die LOGA-Stunden kommt: „Von" bleibt stehen und „Bis" wandert – außer der Tag reicht dahinter
+  nicht mehr, dann bleibt „Bis" stehen und „Von" rückt zurück. Über Mitternacht geht es dabei nie,
+  sonst würden daraus zwei Einträge und der Tag bekäme nur den ersten. Gespeichert wird nichts; die
+  Zeiten stehen anschließend im Formular und lassen sich noch anfassen.
+
+Gerechnet wird dabei über die *übrigen* Einträge des Tages, nicht über die angezeigte Differenz:
+so stimmt die Zahl auch, wenn im Dialog schon an den Zeiten gedreht wurde, und zweimal Drücken
+verdoppelt nichts. Ist der [automatische Pausenabzug](#automatischer-pausenabzug) aktiv, zielt der
+Knopf wie der Nachtrag auf die **Anwesenheit** – die LOGA-Zahl ist netto und bekäme den Abzug sonst
+ein zweites Mal. Steht der Tag auch ohne diesen Eintrag schon zu voll, bleibt der Knopf weg: kürzer
+als leer geht ein Eintrag nicht.
 
 > Die heruntergeladene `.xlsx` enthält Personalnummer und Klarnamen. Sie wird nicht ins Repo
 > übernommen (`.gitignore`); für die Tests liegt eine anonymisierte Fassung unter

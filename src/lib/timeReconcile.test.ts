@@ -8,6 +8,7 @@ import {
 	rebalanceShares,
 	reconcile,
 	splitBlocks,
+	targetEntryHours,
 	type ReconcileDay
 } from "./timeReconcile";
 import type { TimeReportDay } from "./timeReport";
@@ -85,6 +86,26 @@ describe("reconcile", () => {
 		expect(r.days[0].status).toBe("over");
 		expect(r.days[0].diff).toBeCloseTo(-2.27);
 		expect(r.over).toBe(1);
+	});
+
+	it("meldet keinen Ueberhang, solange LOGA nur das Kommen kennt", () => {
+		// Der laufende Tag: gestempelt wurde nur das Kommen, „Arbeitszeit taeglich"
+		// steht deshalb noch auf 0. Das Erfasste ist dort nicht zu viel, sondern
+		// schlicht noch nicht angekommen.
+		const r = reconcile(
+			[day({ lastOut: null, hours: 0 })],
+			[entry("2026-01-12", "09:10", "13:00")],
+			OPTS
+		);
+		expect(r.days[0].status).toBe("open");
+		expect(r.over).toBe(0);
+	});
+
+	it("meldet fehlende Zeit auch an einem angefangenen Tag", () => {
+		// Andere Richtung: was LOGA schon gutgeschrieben hat, wird durch ein
+		// spaeteres Gehen nicht weniger – der Fehlbetrag steht.
+		const r = reconcile([day({ lastOut: null, hours: 4 })], [], OPTS);
+		expect(r.days[0].status).toBe("missing");
 	});
 
 	it("haelt ein leeres Wochenende fuer unauffaellig", () => {
@@ -404,6 +425,41 @@ describe("Zusammenspiel mit dem automatischen Pausenabzug", () => {
 	it("spart die Pause weiterhin aus, wenn der Abzug aus ist", () => {
 		const plan = planFill(reconcileOne(day()), [], DEFAULT_FILL_OPTIONS)!;
 		expect(asClock(plan.blocks)).toEqual(["09:10–12:00", "12:45–17:35"]);
+	});
+});
+
+describe("targetEntryHours", () => {
+	it("gibt dem einzigen Eintrag des Tages die LOGA-Stunden", () => {
+		expect(targetEntryHours(7.67, 0, 0)).toBeCloseTo(7.67);
+	});
+
+	it("zieht ab, was am Tag sonst noch steht", () => {
+		// 2 h stehen schon auf einem anderen Projekt -> hier bleiben 5,67 h.
+		expect(targetEntryHours(7.67, 2, 0)).toBeCloseTo(5.67);
+	});
+
+	it("zielt bei aktivem Abzug auf die Anwesenheit, nicht auf die Nettozeit", () => {
+		// 7,67 h netto brauchen 8,42 h erfasste Zeit – sonst bekaeme die Zahl den
+		// Pausenabzug ein zweites Mal.
+		expect(targetEntryHours(7.67, 0, 0, true)).toBeCloseTo(8.42, 2);
+		expect(deductBreakFromHours(targetEntryHours(7.67, 0, 0, true))).toBeCloseTo(7.67, 2);
+	});
+
+	it("rechnet den Abzug ueber den GANZEN Tag, nicht ueber den einzelnen Eintrag", () => {
+		// 1,833 h stehen schon: zusammen muessen 8,42 h herauskommen.
+		const ziel = targetEntryHours(7.67, 1.8333, 0, true);
+		expect(deductBreakFromHours(1.8333 + ziel)).toBeCloseTo(7.67, 2);
+	});
+
+	it("nimmt eine Abwesenheit vom Ziel herunter", () => {
+		// Halber Urlaubstag (3,75 h) neben halb gearbeitet: LOGA meldet 7,5 h.
+		expect(targetEntryHours(7.5, 0, 3.75)).toBeCloseTo(3.75);
+	});
+
+	it("wird negativ, wenn der Tag auch ohne diesen Eintrag schon zu voll ist", () => {
+		// Der Aufrufer erkennt daran, dass sich das ueber diesen Eintrag allein
+		// nicht regeln laesst – kuerzer als leer geht nicht.
+		expect(targetEntryHours(4, 6, 0)).toBeCloseTo(-2);
 	});
 });
 
