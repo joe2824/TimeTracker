@@ -86,6 +86,7 @@
 	let breakDeduction = $state(app.settings.breakDeduction);
 	let subjectTpl = $state(app.settings.reportSubjectTemplate);
 	let statsEnabled = $state(app.settings.statsEnabled);
+	let errorReportsEnabled = $state(app.settings.errorReportsEnabled);
 	let times = $state<string[]>([...app.settings.reminderTimes]);
 	let reportReminder = $state(app.settings.reportReminderEnabled);
 	let reportTime = $state(app.settings.reportReminderTime);
@@ -137,6 +138,7 @@
 		if (changed.has("senderName")) senderName = s.senderName;
 		if (changed.has("reportSubjectTemplate")) subjectTpl = s.reportSubjectTemplate;
 		if (changed.has("statsEnabled")) statsEnabled = s.statsEnabled;
+		if (changed.has("errorReportsEnabled")) errorReportsEnabled = s.errorReportsEnabled;
 		if (changed.has("rounding")) rounding = String(s.rounding);
 		if (changed.has("hoursPerDay")) hoursPerDay = minToClock(s.hoursPerDay * 60);
 		if (changed.has("workdays")) workdays = [...s.workdays];
@@ -248,6 +250,10 @@
 			statsEnabled
 		});
 		savedReport = Date.now();
+	}
+
+	async function saveErrorReports() {
+		await app.updateSettings({ errorReportsEnabled });
 	}
 
 	async function saveBossMode() {
@@ -718,6 +724,36 @@
 					onCheckedChange={() => saveBossMode()}
 				/>
 			{/if}
+		</Card.Content>
+	</Card.Root>
+
+	<Card.Root>
+		<Card.Header><Card.Title>Datenschutz</Card.Title></Card.Header>
+		<Card.Content class="space-y-3">
+			<SettingToggle
+				id="errreports"
+				title="Anonyme Fehlermeldungen senden"
+				description="Hilft, Abstürze und Fehler zu finden, die nur auf anderen Rechnern auftreten."
+				bind:checked={errorReportsEnabled}
+				onCheckedChange={() => saveErrorReports()}
+			/>
+
+			<div class="text-muted-foreground space-y-2 border-t pt-3 text-xs">
+				<p>
+					<span class="text-foreground font-medium">Mit diesem Schalter:</span> der Text von Fehlermeldungen
+					und Abstürzen, bereinigt um Dateipfade, Adressen und lange Zahlen. Nie das Detail dazu – dort
+					stünden Aufruflisten und Dateinamen.
+				</p>
+				<p>
+					<span class="text-foreground font-medium">Nie:</span> Aktivitäten, Projekte, Notizen, Zeiten,
+					Namen, E-Mail-Adressen, Dateien – nichts aus deinen Einträgen. Es gibt keine Kennung, die dich
+					über Programmstarts hinweg wiedererkennt, und keine gespeicherte IP-Adresse. Start- und Endzeiten
+					des Programms werden bewusst nicht gemeldet, weil sich daraus deine Arbeitszeiten ablesen ließen.
+				</p>
+				<p>
+					Verarbeitet wird über Aptabase (EU-Server). Es fallen keine personenbezogenen Daten an.
+				</p>
+			</div>
 		</Card.Content>
 	</Card.Root>
 

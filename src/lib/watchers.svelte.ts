@@ -2,7 +2,9 @@
 // Live-Tray-Tooltip. Läuft per 1-Sekunden-Intervall, solange die App offen ist.
 import { invoke } from "@tauri-apps/api/core";
 import { app } from "./app.svelte";
-import { fmtHMS } from "./time";
+import { track } from "./analytics";
+import type { Settings } from "./types";
+import { fmtDate, fmtHMS } from "./time";
 import { ensureNotificationPermission } from "./reminders";
 import { sendNotification } from "@tauri-apps/plugin-notification";
 
@@ -46,6 +48,44 @@ async function notify(title: string, body: string) {
 	if (await ensureNotificationPermission()) sendNotification({ title, body });
 }
 
+/**
+ * Stunde der Tagesmeldung „aktiv". Fest verdrahtet und mitten am Tag: eine
+ * Meldung beim Start oder beim Beenden waere ein Zeitstempel von Arbeitsbeginn
+ * bzw. -ende. Um 12 liegen die Meldungen aller Leute auf derselben Uhrzeit und
+ * sagen nur noch „an diesem Tag benutzt". Begruendung ausfuehrlich in analytics.ts.
+ */
+const PING_HOUR = 12;
+
+/** Laeuft gerade eine Tagesmeldung? Der Tick kommt jede Sekunde wieder. */
+let pinging = false;
+
+/**
+ * Einmal je Kalendertag „aktiv" melden, sofern die App um 12 Uhr offen ist.
+ *
+ * Haengt bewusst NICHT am Fehler-Schalter: das hier ist die Nutzerzahl, und die
+ * waere bei jeder nennenswerten Ablehnquote nicht ungenau, sondern wertlos. Die
+ * Meldung traegt keinen Inhalt – nur „an diesem Tag benutzt", auf einer festen
+ * Uhrzeit, die nichts ueber Arbeitsbeginn oder Feierabend sagt.
+ *
+ * Wer mittags nichts offen hat, faellt aus der Zaehlung – bewusst in Kauf
+ * genommen. Nachzuholen hiesse, doch wieder zu einer aussagekraeftigen Uhrzeit
+ * zu senden.
+ */
+async function dailyPing(s: Settings): Promise<void> {
+	if (pinging) return;
+	const now = new Date();
+	if (now.getHours() !== PING_HOUR) return;
+	const heute = fmtDate(now.getTime());
+	if (s.usageLastDay === heute) return;
+	pinging = true;
+	try {
+		await track("aktiv");
+		await app.updateSettings({ usageLastDay: heute });
+	} finally {
+		pinging = false;
+	}
+}
+
 function resetFlags() {
 	autoStopNotified = false;
 	lastPomoKey = null;
@@ -56,6 +96,8 @@ function resetFlags() {
 async function tick() {
 	const s = app.settings;
 	const running = app.running;
+
+	void dailyPing(s);
 
 	// --- Live-Tray-Tooltip (nur bei Änderung senden) ---
 	const tooltip = running

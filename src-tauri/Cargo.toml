@@ -45,4 +45,8 @@ tauri-plugin-autostart = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-process = "2"
+# Anonyme Nutzungszahlen. Bewusst nur fuer Desktop: das Plugin kennt in sys.rs
+# nur WebKit/WebKitGTK/WebView2 und liesse sich fuer Android/iOS gar nicht erst
+# uebersetzen.
+tauri-plugin-aptabase = "1"
 

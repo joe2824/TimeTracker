@@ -1,6 +1,29 @@
 mod outlook;
 
 use tauri::{Emitter, Manager};
+#[cfg(desktop)]
+use tauri_plugin_aptabase::EventTracker;
+
+/// App-Key fuer die anonymen Zahlen, zur Uebersetzungszeit eingebaut
+/// (siehe build.rs). Leer = das Plugin sendet nichts.
+#[cfg(desktop)]
+const APTABASE_KEY: &str = match option_env!("APTABASE_KEY") {
+    Some(k) => k,
+    None => "",
+};
+
+/// Spiegelt `errorReportsEnabled` aus den Einstellungen.
+///
+/// Der Absturz-Hook ist der eine Sendeweg, den das Frontend nicht abschalten
+/// kann – ohne diesen Schalter waere der Haken in den Einstellungen dort
+/// wirkungslos, also gelogen.
+///
+/// Standard `false`: bis das Frontend die Einstellungen gelesen und
+/// `set_error_reports_enabled` gerufen hat, wird nichts gemeldet. Lieber eine
+/// verlorene Absturzmeldung als eine gegen den Willen des Benutzers.
+#[cfg(desktop)]
+static ERROR_REPORTS_ENABLED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 /// Muss zu `identifier` in tauri.conf.json passen: der Panic-Hook laeuft, bevor
 /// es eine App-Instanz gibt, die den Pfad nennen koennte.
@@ -268,6 +291,18 @@ fn write_export_file(path: String, contents: String) -> Result<(), String> {
     std::fs::write(&path, bytes).map_err(|e| format!("{path} konnte nicht geschrieben werden: {e}"))
 }
 
+/// Nimmt den Schalter `errorReportsEnabled` aus den Einstellungen entgegen.
+///
+/// Betrifft nur den Absturz-Hook; alles andere sendet ohnehin das Frontend,
+/// das den Schalter selbst kennt.
+#[tauri::command]
+fn set_error_reports_enabled(on: bool) {
+    #[cfg(desktop)]
+    ERROR_REPORTS_ENABLED.store(on, std::sync::atomic::Ordering::Relaxed);
+    #[cfg(not(desktop))]
+    let _ = on;
+}
+
 /// Setzt den Tray-Tooltip (z.B. laufende Zeit "Projekt 1 – 1:23:45").
 #[tauri::command]
 fn set_tray_tooltip(app: tauri::AppHandle, text: String) -> Result<(), String> {
@@ -385,6 +420,29 @@ pub fn run() {
     // eigenen Startzeile.
     enforce_single_instance();
 
+    // Tauris Tokio-Laufzeit fuer diesen Thread setzen, bevor irgendein Plugin
+    // aufgebaut wird.
+    //
+    // Ohne das startet die App gar nicht:
+    //
+    //   thread 'main' panicked at tauri-plugin-aptabase-1.0.0/src/client.rs:78:
+    //   there is no reactor running, must be called from the context of a Tokio
+    //   1.x runtime
+    //
+    // Das Aptabase-Plugin ruft in seinem setup() ein blankes `tokio::spawn` fuer
+    // seine Sende-Schleife. Tauri baut die Plugins aber im .build() auf dem
+    // Hauptthread auf, und dort ist die Laufzeit nicht betreten – Tauri betritt
+    // sie nur um seine eigenen spawn()-Aufrufe herum. Das Beispiel in der
+    // Plugin-Anleitung verdeckt das mit #[tokio::main].
+    //
+    // Bewusst Tauris eigene Laufzeit statt einer zweiten daneben: die lebt so
+    // lange wie der Prozess, und die Sende-Schleife des Plugins soll genau so
+    // lange laufen.
+    #[cfg(desktop)]
+    let rt = tauri::async_runtime::handle();
+    #[cfg(desktop)]
+    let _rt_guard = rt.inner().enter();
+
     let mut builder = tauri::Builder::default();
 
     // Desktop-Plugins direkt in der Builder-Kette registrieren (kanonisch),
@@ -401,7 +459,41 @@ pub fn run() {
             ))
             .plugin(tauri_plugin_updater::Builder::new().build())
             .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-            .plugin(tauri_plugin_process::init());
+            .plugin(tauri_plugin_process::init())
+            // Immer registrieren, auch ohne Key: sonst liefe jeder track_event()
+            // aus dem Frontend in "plugin aptabase not found". Ohne Key ist der
+            // Client abgeschaltet und es geht nichts ins Netz.
+            .plugin(
+                tauri_plugin_aptabase::Builder::new(APTABASE_KEY)
+                    // Abstuerze des Rust-Teils mitzaehlen. Der Hook des Plugins
+                    // ruft danach den vorher gesetzten weiter – install_panic_logging()
+                    // schreibt seine Zeile also unveraendert weiter.
+                    //
+                    // Ort und Meldung stammen aus unserem eigenen Code, nicht aus
+                    // den Daten des Benutzers.
+                    .with_panic_hook(Box::new(|client, info, msg| {
+                        if !ERROR_REPORTS_ENABLED.load(std::sync::atomic::Ordering::Relaxed) {
+                            return;
+                        }
+                        // Nur der Dateiname, nicht der ganze Pfad: bei einem Panic
+                        // in einer Abhaengigkeit steht dort sonst das Heimatverzeichnis
+                        // der Maschine, auf der gebaut wurde.
+                        let ort = info
+                            .location()
+                            .map(|l| {
+                                let datei = l.file().rsplit(['/', '\\']).next().unwrap_or("?");
+                                format!("{datei}:{}", l.line())
+                            })
+                            .unwrap_or_else(|| "unbekannt".into());
+                        let mut meldung = msg;
+                        meldung.truncate(200);
+                        let _ = client.track_event(
+                            "panic",
+                            Some(serde_json::json!({ "ort": ort, "meldung": meldung })),
+                        );
+                    }))
+                    .build(),
+            );
     }
 
     builder
@@ -441,12 +533,28 @@ pub fn run() {
             set_tray_state,
             idle_seconds,
             set_tray_tooltip,
+            set_error_reports_enabled,
             write_export_file,
             outlook::create_outlook_draft,
             outlook::read_outlook_calendar,
             outlook::read_outlook_mails,
             outlook::detect_outlook
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        // .build() statt .run(): nur so kommt man an die Ereignisse der
+        // Laufschleife heran (Start/Ende des Prozesses).
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|_handle, _event| {
+            // Bewusst KEIN Ereignis zu Start und Ende: deren Zeitstempel waeren
+            // Arbeitsbeginn und Feierabend. Die Tagesmeldung „aktiv" kommt
+            // stattdessen um 12 Uhr aus dem Frontend (siehe analytics.ts).
+            //
+            // Beim Beenden bleibt nur das Leeren der Warteschlange: sonst
+            // verfiele ein Fehler, der in der letzten Minute auflief – das
+            // Plugin sendet sonst erst nach 60 Sekunden.
+            #[cfg(desktop)]
+            if matches!(_event, tauri::RunEvent::Exit) {
+                _handle.flush_events_blocking();
+            }
+        });
 }

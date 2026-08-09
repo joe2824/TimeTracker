@@ -13,6 +13,7 @@
 // lib.rs an genau dieselbe Tagesdatei an.
 import { BaseDirectory, exists, mkdir, readDir, readTextFile, remove, writeTextFile } from "@tauri-apps/plugin-fs";
 import { fmtDate } from "./time";
+import { redact, trackError } from "./analytics";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
@@ -140,6 +141,16 @@ function record(level: LogLevel, message: string, detail?: unknown): void {
 	pending.push(line);
 	if (level === "error" || level === "warn") void flushLog();
 	else schedule();
+
+	// Fehler zusaetzlich anonym zaehlen – nur so ist zu sehen, ob eine Fassung
+	// bei den Kollegen reihenweise auf etwas laeuft, das hier nie auftritt.
+	// trackError() und nicht track(): das haengt am Schalter.
+	//
+	// Nur `message`, und die durch redact(). `detail` bleibt draussen: dort
+	// stecken Stacks, Dateipfade und Fremd-Fehlermeldungen.
+	if (level === "error") {
+		void trackError("fehler", { meldung: redact(message) });
+	}
 }
 
 export function logDebug(message: string, detail?: unknown): void {

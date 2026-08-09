@@ -111,6 +111,21 @@ export interface Settings {
 	teamSubjectFilter: string;
 	/** Auch Unterordner des Posteingangs durchsuchen (Outlook-Regeln sortieren dorthin) */
 	teamScanSubfolders: boolean;
+	/**
+	 * Anonyme Fehlermeldungen senden (was genau: siehe analytics.ts).
+	 *
+	 * Gilt NUR fuer Fehler und Abstuerze. Die Tagesmeldung „benutzt" haengt
+	 * bewusst nicht daran: sie ist die Nutzerzahl, und die waere bei jeder
+	 * nennenswerten Ablehnquote wertlos statt nur ungenau.
+	 */
+	errorReportsEnabled: boolean;
+	/**
+	 * Tag (YYYY-MM-DD), an dem zuletzt „aktiv" gemeldet wurde.
+	 *
+	 * Steht hier und nicht im Arbeitsspeicher, weil die Meldung genau einmal je
+	 * Kalendertag rausgehen soll – auch ueber Neustarts hinweg.
+	 */
+	usageLastDay: string;
 }
 
 /** Standard-Betreff des Monatsberichts. */
@@ -150,7 +165,9 @@ export const defaultSettings: Settings = {
 	bossMode: false,
 	team: [],
 	teamSubjectFilter: DEFAULT_TEAM_SUBJECT_FILTER,
-	teamScanSubfolders: true
+	teamScanSubfolders: true,
+	errorReportsEnabled: true,
+	usageLastDay: ""
 };
 
 /** Namen der eingebauten Zeilen, die immer im Bericht erscheinen. */
