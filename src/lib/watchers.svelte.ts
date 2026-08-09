@@ -49,32 +49,40 @@ async function notify(title: string, body: string) {
 }
 
 /**
- * Stunde der Tagesmeldung „aktiv". Fest verdrahtet und mitten am Tag: eine
- * Meldung beim Start oder beim Beenden waere ein Zeitstempel von Arbeitsbeginn
- * bzw. -ende. Um 12 liegen die Meldungen aller Leute auf derselben Uhrzeit und
- * sagen nur noch „an diesem Tag benutzt". Begruendung ausfuehrlich in analytics.ts.
+ * Feste Stunden, zu denen die Tagesmeldung „aktiv" versucht wird. Die erste
+ * erreichte gewinnt, danach ist der Tag erledigt.
+ *
+ * Fest verdrahtet und nicht „beim Start": eine Meldung beim Start oder beim
+ * Beenden waere ein Zeitstempel von Arbeitsbeginn bzw. Feierabend. So landet
+ * jede Meldung auf einer von vier Uhrzeiten – aus einem beliebigen Zeitpunkt
+ * werden vier Toepfe.
+ *
+ * Vier statt nur 12 Uhr, weil sonst jeder herausfaellt, dessen Rechner ueber
+ * Mittag zu ist – und die Zahl waere dann eine Untergrenze statt eines Istwerts.
+ * Der Preis ist bewusst in Kauf genommen: welcher Topf getroffen wird, sagt grob
+ * etwas darueber, ab wann jemand die App offen hat.
  */
-const PING_HOUR = 12;
+const PING_HOURS = [9, 12, 15, 17];
 
 /** Laeuft gerade eine Tagesmeldung? Der Tick kommt jede Sekunde wieder. */
 let pinging = false;
 
 /**
- * Einmal je Kalendertag „aktiv" melden, sofern die App um 12 Uhr offen ist.
+ * Einmal je Kalendertag „aktiv" melden, sobald eine der PING_HOURS erreicht ist
+ * und die App gerade laeuft.
  *
  * Haengt bewusst NICHT am Fehler-Schalter: das hier ist die Nutzerzahl, und die
  * waere bei jeder nennenswerten Ablehnquote nicht ungenau, sondern wertlos. Die
- * Meldung traegt keinen Inhalt – nur „an diesem Tag benutzt", auf einer festen
- * Uhrzeit, die nichts ueber Arbeitsbeginn oder Feierabend sagt.
+ * Meldung traegt keinen Inhalt – nur „an diesem Tag benutzt".
  *
- * Wer mittags nichts offen hat, faellt aus der Zaehlung – bewusst in Kauf
- * genommen. Nachzuholen hiesse, doch wieder zu einer aussagekraeftigen Uhrzeit
- * zu senden.
+ * Wessen Rechner zu keiner der vier Stunden laeuft, faellt aus der Zaehlung.
+ * Nachzuholen hiesse, zu einer beliebigen und damit aussagekraeftigen Uhrzeit zu
+ * senden – genau das soll nicht passieren.
  */
 async function dailyPing(s: Settings): Promise<void> {
 	if (pinging) return;
 	const now = new Date();
-	if (now.getHours() !== PING_HOUR) return;
+	if (!PING_HOURS.includes(now.getHours())) return;
 	const heute = fmtDate(now.getTime());
 	if (s.usageLastDay === heute) return;
 	pinging = true;

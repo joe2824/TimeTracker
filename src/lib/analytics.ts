@@ -1,8 +1,9 @@
 // Anonyme Zaehlung (Aptabase). Bewusst das Minimum – und zwei getrennte Wege:
 //
-//   aktiv  – einmal je Kalendertag, ausgeloest um 12:00 Ortszeit (watchers).
-//            IMMER. Ohne diese eine Meldung gaebe es keine Nutzerzahl, und
-//            genau die ist der Grund fuer die ganze Anbindung.
+//   aktiv  – einmal je Kalendertag, ausgeloest zur ersten erreichten von vier
+//            festen Uhrzeiten (9/12/15/17, siehe watchers). IMMER. Ohne diese
+//            eine Meldung gaebe es keine Nutzerzahl, und genau die ist der
+//            Grund fuer die ganze Anbindung.
 //   fehler – jede ERROR-Zeile des Protokolls (siehe log.ts)  \ nur mit dem
 //   panic  – Absturz des Rust-Teils (siehe lib.rs)           / Schalter
 //
@@ -12,10 +13,13 @@
 // Kollegen benutzen, waere das die eine Zahl, die hier niemanden etwas angeht –
 // und sie liesse sich aus dem Aptabase-Diagramm direkt ablesen.
 //
-// Die Tagesmeldung um 12:00 loest das: sie zaehlt denselben Nutzer genauso
-// einmal pro Tag, aber alle Meldungen aller Leute liegen auf derselben Uhrzeit.
-// Preis dafuer ist eine Untererfassung – wer mittags nicht offen hat, faellt
-// aus der Zaehlung. Das ist die richtige Richtung fuer den Fehler.
+// Die Tagesmeldung loest das: sie zaehlt denselben Nutzer genauso einmal pro
+// Tag, landet aber immer auf einer von vier festen Uhrzeiten. Aus einem
+// beliebigen Zeitpunkt werden damit vier Toepfe. Ganz umsonst ist das nicht –
+// welcher Topf getroffen wird, sagt grob, ab wann jemand die App offen hat.
+// Bewusst so gewaehlt: mit nur einem Zeitpunkt faellt jeder heraus, dessen
+// Rechner dann gerade zu ist, und die Zahl waere eine Untergrenze statt eines
+// Istwerts.
 //
 // Keine Ereignisse fuer Timer, Berichte, Importe oder Ansichten. Es geht darum
 // zu sehen, ob und womit die App scheitert – nicht darum, Arbeit zu vermessen.
