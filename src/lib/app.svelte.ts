@@ -6,6 +6,7 @@ import { fmtClock, fmtDate, fmtDateHuman, noonTs, splitAtMidnight, startOfNextDa
 import { dayConflict, overlapConflict } from "./conflicts";
 import { planBackdate, planNeedsConfirm, type BackdatePlan } from "./backdate";
 import { errorText, logDebug, logError, logInfo, logWarn } from "./log";
+import { setErrorReportsEnabled } from "./analytics";
 import {
 	deleteYear,
 	listEntryMonths,
@@ -137,6 +138,9 @@ class AppState {
 				const firstRun = !(await this.#step("Einstellungen suchen", settingsFileExists));
 				this.activities = await this.#step("Aktivitäten laden", loadActivities);
 				this.settings = await this.#step("Einstellungen laden", loadSettings);
+				// So frueh wie moeglich: bis hierher haelt analytics.ts alles zurueck,
+				// was seit dem Start anfiel.
+				setErrorReportsEnabled(this.settings.errorReportsEnabled);
 				// Altlasten frueherer Versionen einmalig wegraeumen; darf den Start nie kippen.
 				await this.#step("Datenordner aufräumen", async () => {
 					try {
@@ -229,6 +233,7 @@ class AppState {
 	async reload(): Promise<void> {
 		this.activities = await loadActivities();
 		this.settings = await loadSettings();
+		setErrorReportsEnabled(this.settings.errorReportsEnabled);
 		for (const m of [this.currentMonth, prevMonthKey()]) {
 			this.entriesByMonth[m] = await loadEntries(m);
 		}
@@ -1312,6 +1317,9 @@ class AppState {
 	// ---------- Einstellungen ----------
 	async updateSettings(patch: Partial<Settings>): Promise<void> {
 		this.settings = { ...this.settings, ...patch };
+		// Vor dem Speichern: ein Abschalten soll sofort greifen, nicht erst, wenn
+		// das Schreiben durch ist.
+		if (patch.errorReportsEnabled !== undefined) setErrorReportsEnabled(patch.errorReportsEnabled);
 		await saveSettings($state.snapshot(this.settings) as Settings);
 		// Mit Werten: „E-Mail war leer" ist die Art Frage, die hinterher niemand
 		// mehr beantworten kann. Die Einstellungen sind harmlos – kein Passwort,
