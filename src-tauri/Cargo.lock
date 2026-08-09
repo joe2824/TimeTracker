@@ -4580,7 +4580,7 @@ dependencies = [
 
 [[package]]
 name = "timetracker"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "chrono",
  "serde",
