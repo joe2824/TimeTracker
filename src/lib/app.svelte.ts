@@ -840,6 +840,13 @@ class AppState {
 	 * exakt an der Mitternacht, an der das naechste beginnt. Zwei manuelle Eintraege,
 	 * die zufaellig aneinander stossen, erfuellen das nicht.
 	 *
+	 * Ein noch OFFENES Vorgaengerstueck zaehlt ebenso. Das Bindeglied ist sonst
+	 * `endTs`, und genau das fehlt, wenn die Teilung den Vorgaenger offen stehen
+	 * liess: der Lauf zerfiel dann in zwei vermeintlich eigenstaendige, und das
+	 * Folgestueck blieb beim Beenden mit einer frueheren Endzeit als Eintrag ueber
+	 * 00:00–00:00 zurueck. Ein offener Eintrag am Vortag, dessen Mitternacht genau
+	 * der Start hier ist, kann nichts anderes sein als die andere Haelfte.
+	 *
 	 * Gesucht wird nur in den geladenen Monaten – weiter zurueck reicht kein Lauf,
 	 * der noch offen ist.
 	 */
@@ -849,13 +856,19 @@ class AppState {
 		const seen = new Set([entry.id]);
 		for (;;) {
 			const cur = chain[0];
-			const prev = all.find(
+			const passend = all.filter(
 				(e) =>
 					!seen.has(e.id) &&
 					e.activityId === cur.activityId &&
-					e.endTs === cur.startTs &&
 					startOfNextDay(e.startTs) === cur.startTs
 			);
+			// Das exakt anschliessende Stueck gewinnt, ein offenes ist nur der
+			// Rueckfall. Beides in EINE Suche zu werfen machte das Ergebnis von der
+			// Reihenfolge in der Monatsdatei abhaengig: laege eine vergessene offene
+			// Zeile vor dem echten Vorgaenger, gewaenne sie – und der Lauf saehe je
+			// nach Dateireihenfolge anders aus.
+			const prev =
+				passend.find((e) => e.endTs === cur.startTs) ?? passend.find((e) => e.endTs === null);
 			if (!prev) return chain;
 			seen.add(prev.id);
 			chain.unshift(prev);
@@ -882,29 +895,56 @@ class AppState {
 				sekunden: offen.map((e) => Math.round((Math.max(e.startTs, endTs) - e.startTs) / 1000))
 			});
 		}
+		// Der ganze Lauf, nicht nur das letzte Tagesstueck: eine Endzeit vor
+		// Mitternacht muss die schon abgetrennten Stuecke mitnehmen.
+		//
+		// Alle Ketten VOR der ersten Aenderung bilden. Das Bindeglied ist `endTs`,
+		// und sobald das erste Stueck geschlossen ist, findet das naechste seinen
+		// Vorgaenger nicht mehr. Standen beide Stuecke eines geteilten Laufs offen,
+		// zerfiel er genau dadurch in zwei – und das Folgestueck blieb als
+		// 00:00–00:00 zurueck, statt mit dem Rest wegzufallen.
+		//
+		// Laengste Kette zuerst, und jedes Stueck nur einmal anfassen: standen
+		// mehrere Stuecke eines Laufs offen, liefert jedes seine eigene Kette, und
+		// die kuerzere ist ein Anfangsstueck der laengeren. Zweimal verarbeitet,
+		// zerlegte sie denselben Lauf ein zweites Mal ueber Mitternacht und legte
+		// den Folgetag doppelt an.
+		//
+		// Bewusst ueber die STUECKE und nicht ueber den Ketten-Anfang: zwei offene
+		// Fortsetzungen derselben Mitternacht (siehe die Idempotenz-Wache in
+		// #rolloverAtMidnight) haben denselben Anfang und dieselbe Laenge – nach
+		// Anfang abgeraeumt bliebe eine davon offen stehen, und „schliesst ALLE
+		// offenen Eintraege" waere gebrochen.
+		const chains = offen.map((open) => this.runChain(open)).sort((a, b) => b.length - a.length);
+		const erledigt = new Set<string>();
+
 		const months = new Set<string>();
-		for (const open of offen) {
-			// Der ganze Lauf, nicht nur das letzte Tagesstueck: eine Endzeit vor
-			// Mitternacht muss die schon abgetrennten Stuecke mitnehmen.
-			const chain = this.runChain(open);
+		for (const chain of chains) {
 			// Nie vor den Beginn des Laufs – sonst entstuende eine negative Dauer.
 			const end = Math.max(chain[0].startTs, endTs);
-			for (const piece of chain) {
+			for (let i = 0; i < chain.length; i++) {
+				const piece = chain[i];
+				if (erledigt.has(piece.id)) continue;
+				erledigt.add(piece.id);
+				// Ein Stueck endet spaetestens dort, wo das naechste des Laufs beginnt.
+				// Sonst zerlegte ein offen gebliebenes Vorgaengerstueck den Folgetag
+				// noch einmal – neben dem Stueck, das ihn schon abdeckt.
+				const bis = Math.min(end, chain[i + 1]?.startTs ?? end);
 				const m = monthKey(piece.startTs);
 				months.add(m);
 				// Stuecke komplett nach dem Ende gab es nie. Das erste bleibt, damit
 				// ein Lauf nicht spurlos verschwindet (dann eben mit Dauer 0).
 				if (piece.id !== chain[0].id && piece.startTs >= end) {
 					const list = this.entriesByMonth[m];
-					const i = list?.findIndex((x) => x.id === piece.id) ?? -1;
-					if (i >= 0) list.splice(i, 1);
+					const k = list?.findIndex((x) => x.id === piece.id) ?? -1;
+					if (k >= 0) list.splice(k, 1);
 					continue;
 				}
-				if (piece.endTs !== null && piece.endTs <= end) continue;
+				if (piece.endTs !== null && piece.endTs <= bis) continue;
 				// Ueber Mitternacht in Tagesstuecke zerlegen: sonst zaehlte die Zeit
 				// nach 00:00 zum Vortag – an einer Monatsgrenze sogar in der falschen
 				// Monatsdatei und damit im falschen Bericht.
-				const parts = splitAtMidnight(piece.startTs, Math.max(piece.startTs, end));
+				const parts = splitAtMidnight(piece.startTs, Math.max(piece.startTs, bis));
 				piece.endTs = parts[0].endTs;
 				for (const p of parts.slice(1)) {
 					const seg = await this.#addSegment(piece, p.startTs, p.endTs);
