@@ -143,6 +143,71 @@ describe("stop() – Lauf über mehrere Tage nachträglich beenden", () => {
 		expect(es[0].endTs).toBe(at(16, 9)); // Dauer 0 statt negativ
 	});
 
+	it("räumt das Folgestück auch dann weg, wenn beide Stücke offen stehen", async () => {
+		// Aus dem Protokoll: die Mitternachts-Teilung hat das Vorgaengerstueck offen
+		// stehen lassen, damit fehlte das Bindeglied `endTs`. Das Folgestueck galt
+		// als eigener Lauf, dessen Beginn schon hinter der Endzeit lag – und blieb
+		// als Eintrag ueber 00:00–00:00 zurueck.
+		const vortag = entry("t1", P1, at(16, 9), null);
+		const folge = entry("t2", P1, at(17, 0), null);
+		reset({ "2026-07": [vortag, folge] });
+		app.running = folge;
+
+		await app.stop(at(16, 19)); // "aufgehört habe ich gestern um 19 Uhr"
+
+		const es = onDisk("2026-07");
+		expect(es).toHaveLength(1);
+		expect(es[0].id).toBe("t1");
+		expect(es[0].endTs).toBe(at(16, 19));
+	});
+
+	it("erkennt den Lauf über ein offenes Vorgängerstück hinweg", async () => {
+		// Dieselbe Lage, aber die Endzeit liegt im Folgestueck: dann bleiben beide
+		// stehen – nur eben als ein Lauf.
+		const vortag = entry("t1", P1, at(16, 9), null);
+		const folge = entry("t2", P1, at(17, 0), null);
+		reset({ "2026-07": [vortag, folge] });
+		app.running = folge;
+
+		await app.stop(at(17, 8));
+
+		const es = onDisk("2026-07").sort((a, b) => a.startTs - b.startTs);
+		expect(es.map((e) => e.id)).toEqual(["t1", "t2"]);
+		expect(es[0].endTs).toBe(at(17, 0)); // an Mitternacht geschlossen
+		expect(es[1].endTs).toBe(at(17, 8));
+	});
+
+	it("schließt beide Fortsetzungen, wenn zwei an derselben Mitternacht offen stehen", async () => {
+		// Zwei Fenster haben denselben Mitternachts-Wechsel angelegt (die
+		// Idempotenz-Wache in #rolloverAtMidnight greift nur, wenn das andere
+		// Fenster schon geschrieben hat). Beide Ketten haben denselben Anfang und
+		// dieselbe Länge – es darf trotzdem keine offen zurückbleiben.
+		const vortag = entry("t1", P1, at(16, 9), at(17, 0));
+		const a = entry("t2a", P1, at(17, 0), null);
+		const b = entry("t2b", P1, at(17, 0), null);
+		reset({ "2026-07": [vortag, a, b] });
+		app.running = b;
+
+		await app.stop(at(17, 8));
+
+		const es = onDisk("2026-07");
+		expect(es.filter((e) => e.endTs === null)).toEqual([]);
+		expect(es.find((e) => e.id === "t2a")?.endTs).toBe(at(17, 8));
+		expect(es.find((e) => e.id === "t2b")?.endTs).toBe(at(17, 8));
+	});
+
+	it("nimmt den exakt anschließenden Vorgänger, nicht eine offen gebliebene Zeile", () => {
+		// Beide kämen als Vorgänger in Frage: gleiche Aktivität, Mitternacht des
+		// eigenen Tages ist der Start von t2. Ohne Vorrang für den exakten Treffer
+		// entschiede die Reihenfolge in der Monatsdatei, wie der Lauf aussieht.
+		const vergessen = entry("alt", P1, at(16, 7), null); // nach einem Absturz nie geschlossen
+		const echt = entry("t1", P1, at(16, 9), at(17, 0));
+		const folge = entry("t2", P1, at(17, 0), null);
+		reset({ "2026-07": [vergessen, echt, folge] });
+
+		expect(app.runChain(folge).map((e) => e.id)).toEqual(["t1", "t2"]);
+	});
+
 	it("fasst zwei zufällig aneinanderstoßende Einträge nicht zu einem Lauf zusammen", async () => {
 		// Manuell erfasst, kein Mitternachts-Stueck: der Vormittag bleibt stehen.
 		const vormittag = entry("v", P1, at(17, 8), at(17, 12));
