@@ -22,10 +22,21 @@ export const fsFaults = { renameThrows: false, existsThrows: false };
 /** Angelegte Ordner. "data" gibt es immer, den legt niemand extra an. */
 const dirs = new Set<string>(["data"]);
 
+/**
+ * Jeder Schreibvorgang in der Reihenfolge, in der er kam – auch die von
+ * Zwischendateien, die gleich wieder verschwinden.
+ *
+ * Ohne das war der Weg zum Ziel unsichtbar: eine temp-Datei, die kein echtes
+ * Dateisystem angenommen haette, fiel in keinem Test auf, weil am Ende nur die
+ * fertige Datei dastand.
+ */
+export const written: string[] = [];
+
 export function resetFakeFs(): void {
 	files.clear();
 	dirs.clear();
 	dirs.add("data");
+	written.length = 0;
 	fsFaults.renameThrows = false;
 	fsFaults.existsThrows = false;
 }
@@ -72,6 +83,7 @@ export const fakeFs = {
 	// `append` mitspielen: das Protokoll haengt jede Zeile an, ein ueberschreibender
 	// Fake haette genau den Fehler durchgewunken, den es zu vermeiden gilt.
 	writeTextFile: async (p: string, txt: string, opts?: { append?: boolean }) => {
+		written.push(p);
 		files.set(p, opts?.append ? (files.get(p) ?? "") + txt : txt);
 	}
 };
