@@ -47,7 +47,12 @@ async function writeJson(file: string, data: unknown): Promise<void> {
 	// Bevorzugt atomar: temp-Datei + rename (überschreibt das Ziel atomar).
 	// Falls rename nicht erlaubt/möglich ist, direkt schreiben – Speichern darf
 	// nie fehlschlagen, sonst bliebe z.B. ein gestarteter Timer ungespeichert.
-	const tmp = `${DIR}/.${file}.tmp`;
+	//
+	// OHNE fuehrenden Punkt: der Scope des fs-Plugins ($APPDATA/**) laesst keine
+	// versteckten Dateien zu. Mit ".settings.json.tmp" scheiterte JEDER Schreib-
+	// versuch mit "forbidden path", und jedes Speichern lief im Fallback unten –
+	// der atomare Weg war damit seit jeher tot, auf allen Plattformen.
+	const tmp = `${DIR}/${file}.tmp`;
 	try {
 		await writeTextFile(tmp, json, baseOpts);
 		await rename(tmp, target, {

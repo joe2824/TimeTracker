@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Entry } from "./types";
-import { fakeFs, files, fsFaults, resetFakeFs } from "./testing/fakeFs";
+import { fakeFs, files, fsFaults, resetFakeFs, written } from "./testing/fakeFs";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("./testing/fakeFs")).fakeFs);
 
@@ -31,6 +31,17 @@ describe("saveEntries", () => {
 	it("legt fuer einen leeren Monat gar keine Datei an", async () => {
 		await saveEntries("2026-07", []);
 		expect(files.has(file("2026-07"))).toBe(false);
+	});
+
+	it("schreibt die Zwischendatei sichtbar, nicht als Punktdatei", async () => {
+		// Der Scope des fs-Plugins ($APPDATA/**) laesst keine versteckten Dateien
+		// zu. Mit ".entries-….json.tmp" scheiterte JEDER Versuch mit "forbidden
+		// path" – die App schrieb daraufhin dauerhaft direkt, also ohne den Schutz,
+		// den dieser Weg geben soll. Zu sehen war das nur im Protokoll.
+		await saveEntries("2026-06", [entry("e1")]);
+		const versteckt = written.filter((p) => (p.split("/").pop() ?? "").startsWith("."));
+		expect(versteckt).toEqual([]);
+		expect(written).toContain("data/entries-2026-06.json.tmp");
 	});
 });
 
