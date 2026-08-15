@@ -22,7 +22,8 @@
 	import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 	import { checkForUpdate, updater } from "$lib/updater.svelte";
 	import { getVersion } from "@tauri-apps/api/app";
-	import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+	import { invoke } from "@tauri-apps/api/core";
+	import { errorText } from "$lib/log";
 	import { openUrl } from "@tauri-apps/plugin-opener";
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { acceleratorFromEvent, applyShortcuts } from "$lib/shortcuts";
@@ -61,19 +62,12 @@
 		}
 	}
 
+	/** Dev: Flyout ueber denselben Weg oeffnen wie ein Klick aufs Tray-Icon. */
 	async function showFlyout() {
 		try {
-			const w = await WebviewWindow.getByLabel("tray");
-			if (!w) {
-				toast.error("Flyout-Fenster nicht gefunden.");
-				return;
-			}
-			await w.show();
-			await w.center();
-			await w.setAlwaysOnTop(true);
-			await w.setFocus();
+			await invoke("show_flyout");
 		} catch (e) {
-			toast.error(`Flyout-Fehler: ${e}`, { duration: 60000 });
+			toast.error(`Flyout-Fehler: ${errorText(e)}`, { duration: 60000 });
 		}
 	}
 

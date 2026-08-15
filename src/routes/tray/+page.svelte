@@ -8,7 +8,8 @@
 	import * as ButtonGroup from "$lib/components/ui/button-group";
 	import { Input } from "$lib/components/ui/input";
 	import BackdateDialog from "$lib/components/BackdateDialog.svelte";
-	import { WebviewWindow, getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+	import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+	import { invoke } from "@tauri-apps/api/core";
 	import { emit, listen } from "@tauri-apps/api/event";
 	import { toast } from "svelte-sonner";
 	import SquareIcon from "@lucide/svelte/icons/square";
@@ -21,19 +22,8 @@
 
 	const win = getCurrentWebviewWindow();
 
-	// Schnellstart: Favoriten zuerst, dann zuletzt benutzte.
-	const quick = $derived.by(() => {
-		const out: { id: string; name: string; color?: string; favorite: boolean }[] = [];
-		const seen = new Set<string>();
-		const push = (a: { id: string; name: string; color?: string; favorite?: boolean }) => {
-			if (seen.has(a.id)) return;
-			seen.add(a.id);
-			out.push({ id: a.id, name: a.name, color: a.color, favorite: !!a.favorite });
-		};
-		for (const a of app.trackableActivities) if (a.favorite) push(a);
-		for (const a of app.recentActivities(8)) push(a);
-		return out.slice(0, 8);
-	});
+	// Schnellstart: Favoriten zuerst, dann zuletzt benutzte (Regel: app.quickActivities).
+	const quick = $derived(app.quickActivities(8));
 
 	// Offene Benachrichtigung im Hauptfenster? -> Hinweis-Badge an „App öffnen".
 	let attention = $state(false);
@@ -116,10 +106,9 @@
 		await emit("data-reload");
 	}
 	async function openMain() {
-		const main = await WebviewWindow.getByLabel("main");
-		await main?.show();
-		await main?.unminimize();
-		await main?.setFocus();
+		// Derselbe Weg wie „Öffnen" im Tray-Menue (show_main im Rust-Teil), statt
+		// das Fenster hier ein zweites Mal von Hand hervorzuholen.
+		await invoke("show_main_window");
 		await win.hide();
 	}
 </script>

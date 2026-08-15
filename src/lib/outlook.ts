@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { errorText, logError } from "./log";
 
 export interface CalendarEvent {
 	subject: string;
@@ -112,4 +113,19 @@ export function explainOutlookError(err: unknown, info?: OutlookInfo | null): st
 		}
 	}
 	return raw || "Outlook konnte nicht angesprochen werden.";
+}
+
+/**
+ * Einen fehlgeschlagenen Outlook-Aufruf protokollieren und die Meldung fuer den
+ * Bildschirm zurueckgeben.
+ *
+ * Vier Stellen (Bericht, Kalender-Import, Chef-Modus zweimal) taten dasselbe von
+ * Hand: Erkennung nachladen, mit `{ fehler, outlook }` protokollieren, Meldung
+ * bauen. Die Erkennung gehoert dabei ins Protokoll – die Meldung allein sagt
+ * spaeter nicht, WELCHES Outlook der Rechner ueberhaupt hat.
+ */
+export async function reportOutlookError(context: string, err: unknown): Promise<string> {
+	const info = await detectOutlook().catch(() => null);
+	logError(context, { fehler: errorText(err), outlook: info });
+	return explainOutlookError(err, info);
 }

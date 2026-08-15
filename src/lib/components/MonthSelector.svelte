@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
 	import { listEntryMonths } from "$lib/store";
-	import { monthLabel } from "$lib/time";
+	import { monthKey, monthLabel } from "$lib/time";
 	import { Button } from "$lib/components/ui/button";
 	import * as ButtonGroup from "$lib/components/ui/button-group";
 	import * as Select from "$lib/components/ui/select";
@@ -37,8 +37,7 @@
 	/** Einen Monat vor/zurück blättern – auch in (noch) leere Monate. */
 	function shiftMonth(delta: number) {
 		const [y, m] = month.split("-").map(Number);
-		const d = new Date(y, m - 1 + delta, 1);
-		month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+		month = monthKey(new Date(y, m - 1 + delta, 1).getTime());
 	}
 </script>
 
