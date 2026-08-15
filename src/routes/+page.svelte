@@ -123,6 +123,15 @@
 	 * damit erst beim naechsten Neustart des Rechners an.
 	 */
 	const UPDATE_CHECK_MS = 60 * 60 * 1000;
+	/**
+	 * Wartezeit der ersten Update-Suche, wenn die App versteckt startet.
+	 *
+	 * Beim Autostart faellt der Start in den Login, wo sich Windows, Virenscanner
+	 * und jedes andere Startprogramm um Platte und Netz streiten. Zeigen liesse
+	 * sich ein Fund dort ohnehin nicht: der Hinweis wartet auf ein sichtbares
+	 * Fenster (whenWindowVisible).
+	 */
+	const HIDDEN_UPDATE_DELAY_MS = 2 * 60 * 1000;
 	let updateTimer: ReturnType<typeof setInterval> | undefined;
 	/** Version, zu der schon ein Hinweis stand – sonst meldete jede Runde dieselbe. */
 	let announcedVersion: string | null = null;
@@ -212,6 +221,11 @@
 		// `??=`: `startup()` läuft beim „Erneut versuchen" im Ladebildschirm noch
 		// einmal, ein zweiter Timer suchte danach doppelt.
 		updateTimer ??= setInterval(() => void checkAndAnnounceUpdate(), UPDATE_CHECK_MS);
+		// Versteckt gestartet? Dann hat die Suche keine Eile (HIDDEN_UPDATE_DELAY_MS).
+		const sichtbar = await getCurrentWindow()
+			.isVisible()
+			.catch(() => true);
+		if (!sichtbar) await new Promise((r) => setTimeout(r, HIDDEN_UPDATE_DELAY_MS));
 		await checkAndAnnounceUpdate();
 	}
 
@@ -254,22 +268,11 @@
 	$effect(() => {
 		if (!app.loaded) return;
 
-		const quick: { id: string; name: string; favorite: boolean }[] = [];
-		const seen = new Set<string>();
-		const push = (id: string, name: string, favorite: boolean) => {
-			if (seen.has(id)) return;
-			seen.add(id);
-			quick.push({ id, name, favorite });
-		};
-		// Favoriten zuerst …
-		for (const a of app.trackableActivities) if (a.favorite) push(a.id, a.name, true);
-		// … dann zuletzt benutzte auffüllen.
-		for (const a of app.recentActivities(6)) push(a.id, a.name, !!a.favorite);
-
+		const quick = app
+			.quickActivities(6)
+			.map((a) => ({ id: a.id, name: a.name, favorite: !!a.favorite }));
 		const running = app.running ? app.activityName(app.running.activityId) : null;
-		void invoke("set_tray_state", { state: { running, activities: quick.slice(0, 6) } }).catch(
-			() => {}
-		);
+		void invoke("set_tray_state", { state: { running, activities: quick } }).catch(() => {});
 	});
 
 	// Chef-Modus abgeschaltet, während der Team-Tab offen war: sonst bliebe eine

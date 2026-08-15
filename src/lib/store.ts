@@ -12,6 +12,7 @@ import {
 	readTextFile,
 	remove,
 	rename,
+	stat,
 	writeTextFile
 } from "@tauri-apps/plugin-fs";
 import type { Activity, Entry, Settings } from "./types";
@@ -68,18 +69,28 @@ async function writeJson(file: string, data: unknown): Promise<void> {
 	}
 }
 
-/** "YYYY-MM" fuer einen Zeitstempel (Lokalzeit). */
-export function monthKey(ts: number): string {
-	const d = new Date(ts);
-	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-
 function entriesFile(month: string): string {
 	return `entries-${month}.json`;
 }
 
 const MONTH_FILE_RE = /^entries-(\d{4}-\d{2})\.json$/;
 const REPORT_FILE_RE = /^timereport-(\d{4}-\d{2})\.json$/;
+
+/**
+ * Dateien im Datenordner, deren Name auf `re` passt: [Dateiname, Monat].
+ *
+ * Monatsliste, Report-Liste, Aufraeumen und Jahr-Loeschen lasen dafuer vorher
+ * jede fuer sich das Verzeichnis und liefen mit derselben Schleife darueber.
+ */
+async function dataFiles(re: RegExp): Promise<[string, string][]> {
+	await ensureDir();
+	const hits: [string, string][] = [];
+	for (const e of await readDir(DIR, baseOpts)) {
+		const m = e.name?.match(re);
+		if (m) hits.push([e.name, m[1]]);
+	}
+	return hits;
+}
 
 // ---- Aktivitaeten ----
 export async function loadActivities(): Promise<Activity[]> {
@@ -156,30 +167,35 @@ export async function saveEntries(month: string, entries: Entry[]): Promise<void
  * jedem Speichern und darf nicht jedes Mal den ganzen Bestand einlesen.
  */
 export async function listEntryMonths(): Promise<string[]> {
-	await ensureDir();
-	const dir = await readDir(DIR, baseOpts);
-	const months: string[] = [];
-	for (const e of dir) {
-		const m = e.name?.match(MONTH_FILE_RE);
-		if (m) months.push(m[1]);
-	}
-	return months.sort().reverse();
+	return (await dataFiles(MONTH_FILE_RE)).map(([, month]) => month).sort().reverse();
 }
 
+/** Bis hierhin kann eine Monatsdatei leer sein ("[]"); ein Eintrag braucht ueber 150 Zeichen. */
+const EMPTY_MONTH_MAX_BYTES = 64;
+
 /**
- * Einmalig beim Start: leere "[]"-Monatsdateien entfernen, die fruehere Versionen
- * liegen liessen. Ohne das geisterten die Monate ohne Eintraege durch die Auswahl.
+ * Beim Start: leere "[]"-Monatsdateien entfernen, die fruehere Versionen liegen
+ * liessen. Ohne das geisterten die Monate ohne Eintraege durch die Auswahl.
+ *
+ * Gelesen wird nur, was klein genug ist, um leer zu sein. Vorher zog dieser
+ * Schritt bei JEDEM Start den kompletten Bestand durch JSON.parse – wachsend mit
+ * jedem Monat, der je existierte, und noch vor dem ersten Bild.
+ *
+ * Eine beschaedigte Datei ueber der Grenze faellt damit nicht mehr hier auf,
+ * sondern beim Laden ihres Monats – `loadEntries` legt sie dort ohnehin zur Seite.
  */
 export async function pruneEmptyMonthFiles(): Promise<string[]> {
-	await ensureDir();
-	const dir = await readDir(DIR, baseOpts);
 	const pruned: string[] = [];
-	for (const e of dir) {
-		const m = e.name?.match(MONTH_FILE_RE);
-		if (!m) continue;
-		if ((await loadEntries(m[1])).length === 0) {
-			await remove(`${DIR}/${e.name}`, baseOpts);
-			pruned.push(m[1]);
+	for (const [name, month] of await dataFiles(MONTH_FILE_RE)) {
+		// Metadaten statt Inhalt. Antwortet das Dateisystem nicht, bleibt die Datei
+		// liegen – geloescht wird nur, was nachweislich leer ist.
+		const bytes = await stat(`${DIR}/${name}`, baseOpts)
+			.then((info) => info.size)
+			.catch(() => Number.MAX_SAFE_INTEGER);
+		if (bytes > EMPTY_MONTH_MAX_BYTES) continue;
+		if ((await loadEntries(month)).length === 0) {
+			await remove(`${DIR}/${name}`, baseOpts);
+			pruned.push(month);
 		}
 	}
 	return pruned.sort();
@@ -223,14 +239,7 @@ export async function saveTimeReport(report: StoredTimeReport): Promise<void> {
  * und ihn wieder oeffnen.
  */
 export async function listTimeReportMonths(): Promise<string[]> {
-	await ensureDir();
-	const dir = await readDir(DIR, baseOpts);
-	const months: string[] = [];
-	for (const e of dir) {
-		const m = e.name?.match(REPORT_FILE_RE);
-		if (m) months.push(m[1]);
-	}
-	return months.sort();
+	return (await dataFiles(REPORT_FILE_RE)).map(([, month]) => month).sort();
 }
 
 export interface StoredYear {
@@ -263,17 +272,12 @@ export async function listEntryYears(): Promise<StoredYear[]> {
  * dass der Abgleich es danach weiter kennt.
  */
 export async function deleteYear(year: number): Promise<string[]> {
-	await ensureDir();
-	const deleted: string[] = [];
-	const dir = await readDir(DIR, baseOpts);
-	for (const e of dir) {
-		const m = e.name?.match(MONTH_FILE_RE);
-		if (m && m[1].startsWith(`${year}-`)) {
-			await remove(`${DIR}/${e.name}`, baseOpts);
-			deleted.push(m[1]);
-		} else if (e.name?.match(REPORT_FILE_RE)?.[1]?.startsWith(`${year}-`)) {
-			await remove(`${DIR}/${e.name}`, baseOpts);
-		}
-	}
+	const removeYear = async (re: RegExp) => {
+		const hits = (await dataFiles(re)).filter(([, month]) => month.startsWith(`${year}-`));
+		for (const [name] of hits) await remove(`${DIR}/${name}`, baseOpts);
+		return hits.map(([, month]) => month);
+	};
+	const deleted = await removeYear(MONTH_FILE_RE);
+	await removeYear(REPORT_FILE_RE);
 	return deleted.sort();
 }

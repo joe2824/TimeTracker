@@ -18,10 +18,12 @@
         "height": 740,
         "minWidth": 720,
         "minHeight": 560,
-        "dragDropEnabled": false
+        "dragDropEnabled": false,
+        "visible": false
       },
       {
         "label": "tray",
+        "create": false,
         "url": "/tray",
         "title": "TimeTracker Schnellzugriff",
         "width": 300,

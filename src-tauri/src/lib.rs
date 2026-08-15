@@ -156,10 +156,31 @@ fn handle_menu_event(app: &tauri::AppHandle, event: tauri::menu::MenuEvent) {
     }
 }
 
+/// Das Flyout-Fenster – vorhandenes zurueckgeben, sonst aus seinem Config-Block bauen.
+///
+/// Steht in tauri.conf.json auf `"create": false`: sonst entstand beim
+/// Prozessstart ein zweites WebView2 samt komplettem Frontend, das seinerseits
+/// alle Datendateien liest – beim Autostart parallel zum Hauptfenster, fuer ein
+/// Fenster, das die meisten Sitzungen nie zu sehen bekommen.
+#[cfg(desktop)]
+fn tray_window(app: &tauri::AppHandle) -> Option<tauri::WebviewWindow> {
+    if let Some(win) = app.get_webview_window("tray") {
+        return Some(win);
+    }
+    let config = app.config().app.windows.iter().find(|w| w.label == "tray")?.clone();
+    match tauri::WebviewWindowBuilder::from_config(app, &config).and_then(|b| b.build()) {
+        Ok(win) => Some(win),
+        Err(e) => {
+            log_line("ERROR", &format!("Flyout-Fenster nicht anlegbar: {e}"));
+            None
+        }
+    }
+}
+
 /// Positioniert das Flyout nahe der Klickposition (über dem Cursor) und zeigt es.
 #[cfg(desktop)]
 fn toggle_flyout(app: &tauri::AppHandle, click: tauri::PhysicalPosition<f64>) {
-    let Some(win) = app.get_webview_window("tray") else {
+    let Some(win) = tray_window(app) else {
         return;
     };
     if win.is_visible().unwrap_or(false) {
@@ -253,6 +274,12 @@ fn set_tray_state(app: tauri::AppHandle, state: TrayState) -> Result<(), String>
             }
         }
     }
+    // Gelegenheit, das Flyout-Fenster nachzuziehen: dieser Aufruf kommt aus dem
+    // Hauptfenster, sobald dessen Daten stehen. Das Fenster entsteht damit NACH
+    // dem Start statt mitten hinein, und der erste Klick aufs Tray-Icon muss
+    // trotzdem nicht darauf warten.
+    #[cfg(desktop)]
+    let _ = tray_window(&app);
     #[cfg(not(desktop))]
     let _ = (app, state);
     Ok(())
@@ -321,6 +348,30 @@ fn show_main(app: &tauri::AppHandle) {
         let _ = w.unminimize();
         let _ = w.set_focus();
     }
+}
+
+/// „App öffnen" aus dem Flyout – derselbe Weg wie „Öffnen" im Tray-Menue.
+///
+/// Das Flyout holte das Fenster vorher selbst hervor (show/unminimize/focus in
+/// JS). Zwei Wege zum selben Ziel, von denen einer beim naechsten Eingriff
+/// zurueckbleibt.
+#[tauri::command]
+fn show_main_window(app: tauri::AppHandle) {
+    show_main(&app);
+}
+
+/// Flyout oeffnen wie ein Klick aufs Tray-Icon – fuer den Dev-Knopf in den
+/// Einstellungen, der es sonst von Hand suchte und zeigte.
+#[tauri::command]
+fn show_flyout(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(desktop)]
+    {
+        let pos = app.cursor_position().map_err(|e| e.to_string())?;
+        toggle_flyout(&app, pos);
+    }
+    #[cfg(not(desktop))]
+    let _ = app;
+    Ok(())
 }
 
 /// Zweite Instanz abfangen, bevor Tauri irgendetwas aufbaut.
@@ -506,11 +557,15 @@ pub fn run() {
             {
                 setup_tray(app)?;
 
-                // Beim Autostart (Login) versteckt im Tray bleiben.
-                if std::env::args().any(|a| a == "--autostart-hidden") {
-                    if let Some(w) = app.get_webview_window("main") {
-                        let _ = w.hide();
-                    }
+                // Das Hauptfenster steht in tauri.conf.json auf `"visible": false`
+                // und wird erst hier gezeigt – beim Autostart (Login) gar nicht,
+                // dort bleibt die App im Tray.
+                //
+                // Vorher entstand es sichtbar und wurde gleich wieder versteckt:
+                // Windows baute und zeichnete beim Login also ein Fenster, das
+                // niemand sehen sollte, und es blitzte dabei kurz auf.
+                if !std::env::args().any(|a| a == "--autostart-hidden") {
+                    show_main(app.handle());
                 }
             }
             Ok(())
@@ -531,6 +586,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             set_tray_state,
+            show_main_window,
+            show_flyout,
             idle_seconds,
             set_tray_tooltip,
             set_error_reports_enabled,

@@ -1,13 +1,8 @@
 // Reine Statistik-Logik fuer die Auswertungs-Card: keine Svelte-/Tauri-Abhaengigkeit,
 // damit alles direkt testbar bleibt.
 import type { Entry } from "./types";
-import { durationSeconds, fmtDate, isWorkday, openEntryUntil } from "./time";
+import { durationSeconds, fmtDate, isWorkday, monthKey, openEntryUntil } from "./time";
 import { deductBreakFromDay } from "./breaks";
-
-/** "YYYY-MM" fuer ein lokales Datum. */
-function monthOf(d: Date): string {
-	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
 
 /**
  * Gearbeitete Stunden je Tag UND Aktivitaet: "YYYY-MM-DD" -> activityId -> Stunden.
@@ -84,7 +79,7 @@ export function targetHours(
 	const [y, m] = month.split("-").map(Number);
 	if (!y || !m) return 0;
 	const today = new Date(now);
-	const currentMonth = monthOf(today);
+	const currentMonth = monthKey(now);
 	if (month > currentMonth) return 0;
 
 	const daysInMonth = new Date(y, m, 0).getDate();

@@ -9,6 +9,7 @@
 // Report ist konfigurierbar, und eine zusaetzliche oder fehlende Spalte haette
 // sonst alles dahinter stillschweigend verschoben.
 import type { XlsxSheet } from "./xlsx";
+import { minToClock } from "./time";
 
 /** Ein gesetzter Verstoss-Hinweis aus dem Report. */
 export interface TimeReportFlag {
@@ -161,7 +162,7 @@ export function parseReportClock(raw: string): string | null {
 		const h = Number(hm[1]);
 		const m = Number(hm[2]);
 		if (h > 23 || m > 59) return null;
-		return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+		return minToClock(h * 60 + m);
 	}
 	const n = Number(t.replace(",", "."));
 	// Die 0 gilt als „nicht gestempelt", nicht als Mitternacht: als Uhrzeit gelesen
@@ -170,7 +171,7 @@ export function parseReportClock(raw: string): string | null {
 	if (!Number.isFinite(n) || n <= 0 || n >= 1) return null;
 	// Auf Minuten runden; 23:59:30 darf nicht auf 24:00 kippen.
 	const min = Math.min(1439, Math.round(n * 1440));
-	return `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
+	return minToClock(min);
 }
 
 /** Stundenzelle lesen. 0 bei leer oder unlesbar. */

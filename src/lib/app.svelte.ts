@@ -2,7 +2,16 @@
 import { toast } from "svelte-sonner";
 import type { Activity, Entry, EntrySource, Settings } from "./types";
 import { BUILTIN_ABSENCE, BUILTIN_OTHERS, defaultSettings } from "./types";
-import { fmtClock, fmtDate, fmtDateHuman, noonTs, splitAtMidnight, startOfNextDay } from "./time";
+import {
+	fmtClock,
+	fmtDate,
+	fmtDateHuman,
+	monthKey,
+	noonTs,
+	prevMonthKey,
+	splitAtMidnight,
+	startOfNextDay
+} from "./time";
 import { dayConflict, overlapConflict } from "./conflicts";
 import { planBackdate, planNeedsConfirm, type BackdatePlan } from "./backdate";
 import { errorText, logDebug, logError, logInfo, logWarn } from "./log";
@@ -13,7 +22,6 @@ import {
 	loadActivities,
 	loadEntries,
 	loadSettings,
-	monthKey,
 	pruneEmptyMonthFiles,
 	saveActivities,
 	saveEntries,
@@ -35,19 +43,6 @@ interface BlockedDay {
 	/** "YYYY-MM-DD" des betroffenen Tages. */
 	date: string;
 	activityName: string;
-}
-
-/**
- * Der Vormonat.
- *
- * Ueber den Monatsersten rechnen, nicht per setMonth() auf dem heutigen Datum:
- * am 31. rollt "31. Juni" auf den 1. Juli, `setMonth(-1)` lieferte dort also den
- * AKTUELLEN Monat. Folge waren ein nie geladener Vormonat und ein Bericht-Hinweis,
- * der ausgerechnet am Monatsletzten verschwand.
- */
-function prevMonthKey(now = Date.now()): string {
-	const d = new Date(now);
-	return monthKey(new Date(d.getFullYear(), d.getMonth() - 1, 1).getTime());
 }
 
 class AppState {
@@ -683,6 +678,24 @@ class AppState {
 			}
 		}
 		return result.slice(0, limit);
+	}
+
+	/**
+	 * Schnellstart-Liste: Favoriten zuerst, dann mit den zuletzt benutzten aufgefuellt.
+	 *
+	 * Tray-Menue und Flyout bauten sie vorher jedes fuer sich zusammen – zweimal
+	 * dieselbe Regel, die beim naechsten Eingriff auseinandergelaufen waere.
+	 */
+	quickActivities(limit: number): Activity[] {
+		const seen = new Set<string>();
+		const out: Activity[] = [];
+		const favoriten = this.trackableActivities.filter((a) => a.favorite);
+		for (const a of [...favoriten, ...this.recentActivities(limit)]) {
+			if (seen.has(a.id)) continue;
+			seen.add(a.id);
+			out.push(a);
+		}
+		return out.slice(0, limit);
 	}
 
 	/**
