@@ -1,5 +1,24 @@
 import type { Entry } from "./types";
 
+/** "YYYY-MM" fuer einen Zeitstempel (Lokalzeit). */
+export function monthKey(ts: number): string {
+	const d = new Date(ts);
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * Der Vormonat als "YYYY-MM".
+ *
+ * Ueber den Monatsersten rechnen, nicht per setMonth() auf dem heutigen Datum:
+ * am 31. rollt "31. Juni" auf den 1. Juli, `setMonth(-1)` lieferte dort also den
+ * AKTUELLEN Monat. Folge waren ein nie geladener Vormonat und ein Bericht-Hinweis,
+ * der ausgerechnet am Monatsletzten verschwand.
+ */
+export function prevMonthKey(now = Date.now()): string {
+	const d = new Date(now);
+	return monthKey(new Date(d.getFullYear(), d.getMonth() - 1, 1).getTime());
+}
+
 /** Dauer eines Eintrags in Sekunden (laufende Eintraege bis `now`). */
 export function durationSeconds(e: Entry, now = Date.now()): number {
 	const end = e.endTs ?? now;

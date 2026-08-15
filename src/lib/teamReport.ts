@@ -10,7 +10,7 @@
 // Die Auswertung der Stundentabellen lag in Commit 90f6aa1, falls der Zugriff
 // je freigegeben wird.
 import type { TeamMember } from "./types";
-import { fmtClock, fmtDate, monthLabel } from "./time";
+import { fmtClock, fmtDate, monthKey, monthLabel } from "./time";
 
 // ---------- Monat und Name aus dem Betreff ----------
 
@@ -138,7 +138,7 @@ function tokens(s: string): string[] {
 export function monthFromReceived(ts: number): string {
 	const d = new Date(ts);
 	if (d.getDate() <= 10) d.setMonth(d.getMonth() - 1, 1);
-	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+	return monthKey(d.getTime());
 }
 
 /**

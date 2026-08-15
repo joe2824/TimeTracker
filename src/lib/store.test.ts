@@ -123,6 +123,15 @@ describe("pruneEmptyMonthFiles", () => {
 		await pruneEmptyMonthFiles();
 		expect(files.has("data/settings.json")).toBe(true);
 	});
+
+	it("liest Dateien, die fuer 'leer' zu gross sind, gar nicht erst", async () => {
+		// Inhaltlich leer, aber weit ueber der Groessengrenze: so hat nie eine
+		// Version geschrieben. Die Datei bleibt liegen, statt dass jeder Start den
+		// gesamten Bestand einliest, nur um solche Faelle zu finden.
+		files.set(file("2026-06"), `[${" ".repeat(200)}]`);
+		expect(await pruneEmptyMonthFiles()).toEqual([]);
+		expect(files.has(file("2026-06"))).toBe(true);
+	});
 });
 
 describe("beschädigte Monatsdatei", () => {

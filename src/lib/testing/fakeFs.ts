@@ -49,6 +49,13 @@ export const fakeFs = {
 		[...files.keys()]
 			.filter((p) => p.startsWith(`${dir}/`))
 			.map((p) => ({ name: p.slice(dir.length + 1) })),
+	// Nur die Groesse: mehr fragt niemand ab (pruneEmptyMonthFiles sieht damit,
+	// ob eine Datei ueberhaupt leer sein kann, ohne sie zu lesen).
+	stat: async (p: string) => {
+		const txt = files.get(p);
+		if (txt === undefined) throw new Error(`ENOENT: ${p}`);
+		return { size: txt.length };
+	},
 	readTextFile: async (p: string) => {
 		const txt = files.get(p);
 		if (txt === undefined) throw new Error(`ENOENT: ${p}`);
