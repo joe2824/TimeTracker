@@ -29,14 +29,28 @@ static ERROR_REPORTS_ENABLED: std::sync::atomic::AtomicBool =
 /// es eine App-Instanz gibt, die den Pfad nennen koennte.
 const IDENTIFIER: &str = "com.jklein.timetracker";
 
-/// Protokollordner – derselbe, in den das Frontend schreibt (BaseDirectory::AppData).
-fn log_dir() -> Option<std::path::PathBuf> {
-    let base = std::env::var_os("APPDATA")
+/// Datenordner der App – derselbe, den das Frontend ueber BaseDirectory::AppData
+/// bekommt. Je Plattform ein anderer Ort; vorher galt der Linux-Pfad auch fuer
+/// macOS, dort schrieb der Rust-Teil sein Protokoll also woanders hin als das
+/// Frontend.
+fn app_data_dir() -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "windows")]
+    let base = std::env::var_os("APPDATA").map(std::path::PathBuf::from);
+    #[cfg(target_os = "macos")]
+    let base = std::env::var_os("HOME")
+        .map(|h| std::path::PathBuf::from(h).join("Library/Application Support"));
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let base = std::env::var_os("XDG_DATA_HOME")
         .map(std::path::PathBuf::from)
         .or_else(|| {
             std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/share"))
-        })?;
-    Some(base.join(IDENTIFIER).join("logs"))
+        });
+    Some(base?.join(IDENTIFIER))
+}
+
+/// Protokollordner – derselbe, in den das Frontend schreibt.
+fn log_dir() -> Option<std::path::PathBuf> {
+    Some(app_data_dir()?.join("logs"))
 }
 
 /// Eine Zeile an die heutige Protokolldatei anhaengen – im selben Format wie das
@@ -77,6 +91,68 @@ fn install_panic_logging() {
         log_line("ERROR", &format!("Absturz im Rust-Teil ({ort}): {info}"));
         previous(info);
     }));
+}
+
+/// Update-Manifest des stabilen Kanals. Steht auch in tauri.conf.json – hier,
+/// damit die Beta-Liste ihn als Rueckfall mitfuehren kann.
+///
+/// GitHub laesst `releases/latest` Vorabversionen aus: wer beim stabilen Kanal
+/// bleibt, bekommt also nie eine Beta zu sehen, egal wie viele es davon gibt.
+#[cfg(desktop)]
+const UPDATE_STABLE: &str =
+    "https://github.com/joe2824/timetracker/releases/latest/download/latest.json";
+
+/// Update-Manifest des Beta-Kanals: ein Release mit festem Tag `beta`, dessen
+/// Manifest jeder Build ueberschreibt – auch ein stabiler. Wer Betas anhat,
+/// bekommt damit immer den neuesten Stand und bleibt nicht auf einer Vorabversion
+/// sitzen, nur weil laengere Zeit keine neue Beta kam.
+#[cfg(desktop)]
+const UPDATE_BETA: &str = "https://github.com/joe2824/timetracker/releases/download/beta/latest.json";
+
+/// Steht `betaUpdates` in den Einstellungen auf true?
+///
+/// Bewusst die Datei selbst gelesen statt das Frontend zu fragen: die Endpunkte
+/// muessen stehen, BEVOR das Updater-Plugin seine Konfiguration liest, und da
+/// laeuft noch kein Fenster. Fehlt die Datei oder ist sie unlesbar, gilt der
+/// stabile Kanal.
+#[cfg(desktop)]
+fn beta_updates_enabled() -> bool {
+    let Some(path) = app_data_dir().map(|d| d.join("data").join("settings.json")) else {
+        return false;
+    };
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    serde_json::from_str::<serde_json::Value>(&text)
+        .ok()
+        .and_then(|v| v.get("betaUpdates").and_then(serde_json::Value::as_bool))
+        .unwrap_or(false)
+}
+
+/// Den Beta-Kanal in die Updater-Konfiguration eintragen, bevor das Plugin sie
+/// liest.
+///
+/// Der Weg ueber die Konfiguration und nicht ueber eigene Rust-Kommandos: die
+/// JS-Seite (`check()`) kann den Endpunkt nicht ueberschreiben, ihre
+/// `CheckOptions` kennen nur Header, Timeout, Proxy und Ziel. Damit bleibt der
+/// gesamte Update-Ablauf im Frontend unveraendert – der Preis ist, dass ein
+/// Kanalwechsel erst nach einem Neustart greift.
+///
+/// Stabil steht als zweiter Eintrag dahinter: antwortet das Beta-Manifest nicht
+/// (noch keine Beta veroeffentlicht), faellt der Updater darauf zurueck.
+#[cfg(desktop)]
+fn use_beta_channel(context: &mut tauri::Context) {
+    let Some(updater) = context.config_mut().plugins.0.get_mut("updater") else {
+        return;
+    };
+    let Some(obj) = updater.as_object_mut() else {
+        return;
+    };
+    obj.insert(
+        "endpoints".into(),
+        serde_json::json!([UPDATE_BETA, UPDATE_STABLE]),
+    );
+    log_line("INFO", "Update-Kanal: Beta");
 }
 
 #[derive(serde::Deserialize, Clone)]
@@ -494,6 +570,15 @@ pub fn run() {
     #[cfg(desktop)]
     let _rt_guard = rt.inner().enter();
 
+    // Die Konfiguration wird noch angefasst (Update-Kanal), bevor sie unten in
+    // .build() geht – ab da liest jedes Plugin seinen Teil daraus.
+    #[allow(unused_mut)]
+    let mut context = tauri::generate_context!();
+    #[cfg(desktop)]
+    if beta_updates_enabled() {
+        use_beta_channel(&mut context);
+    }
+
     let mut builder = tauri::Builder::default();
 
     // Desktop-Plugins direkt in der Builder-Kette registrieren (kanonisch),
@@ -599,7 +684,7 @@ pub fn run() {
         ])
         // .build() statt .run(): nur so kommt man an die Ereignisse der
         // Laufschleife heran (Start/Ende des Prozesses).
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while running tauri application")
         .run(|_handle, _event| {
             // Bewusst KEIN Ereignis zu Start und Ende: deren Zeitstempel waeren

@@ -40,12 +40,31 @@ jobs:
         with:
           fetch-depth: 0 # volle History + Tags für das Changelog
 
+      # Vorabversion? Erkennbar am Tag: v0.8.0-beta.1 vs. v0.8.0.
+      - name: Detect channel
+        id: channel
+        shell: bash
+        run: |
+          case "${{ github.ref_name }}" in
+            *-beta.*) echo "beta=true" >> "$GITHUB_OUTPUT" ;;
+            *)        echo "beta=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
       - name: Generate changelog
         id: changelog
         shell: bash
         run: |
           TAG="${{ github.ref_name }}"
-          PREV=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || echo "")
+          # Für ein stabiles Release den letzten STABILEN Tag als Startpunkt: sonst
+          # listete es nur, was seit der letzten Beta dazukam, und alles davor
+          # taucht in keinen Release-Notes je auf. Betas vergleichen gegen den
+          # direkten Vorgänger, egal welcher Kanal.
+          if [ "${{ steps.channel.outputs.beta }}" = "true" ]; then
+            MATCH=(--match 'v*')
+          else
+            MATCH=(--match 'v*' --exclude '*-beta.*')
+          fi
+          PREV=$(git describe --tags --abbrev=0 "${MATCH[@]}" "${TAG}^" 2>/dev/null || echo "")
           if [ -n "$PREV" ]; then RANGE="${PREV}..${TAG}"; else RANGE="${TAG}"; fi
           echo "Changelog-Bereich: ${RANGE:-<alle>}"
 
@@ -109,5 +128,34 @@ jobs:
           releaseName: 'TimeTracker ${{ github.ref_name }}'
           releaseBody: ${{ steps.changelog.outputs.body }}
           releaseDraft: false
-          prerelease: false
-          args: ${{ matrix.args }}
+          prerelease: ${{ steps.channel.outputs.beta == 'true' }}
+          # Betas nur als NSIS-Installer: WiX/MSI nimmt keine Vorabversionen an
+          # ("0.8.0-beta.1" ist keine gültige MSI-Version), der Build bräche sonst
+          # genau am Bundle-Schritt ab. Das Update-Artefakt (.nsis.zip + Signatur)
+          # entsteht trotzdem – es hängt an createUpdaterArtifacts, nicht am
+          # Bundle-Ziel; "updater" ist in Tauri v2 kein gültiges Ziel mehr.
+          args: ${{ steps.channel.outputs.beta == 'true' && '--bundles nsis' || matrix.args }}
+
+      # Das Manifest des Beta-Kanals liegt an einem Release mit festem Tag `beta`
+      # und wird bei JEDEM Build überschrieben – auch bei einem stabilen. So
+      # bekommt, wer Vorabversionen anhat, immer den neuesten Stand und bleibt
+      # nicht auf einer Beta sitzen, weil länger keine neue kam.
+      #
+      # Das Release selbst ist als Vorabversion markiert und taucht damit nie
+      # unter `releases/latest` auf, wo der stabile Kanal nachsieht.
+      - name: Update beta channel manifest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ github.ref_name }}"
+          gh release download "$TAG" --pattern latest.json --dir manifest --clobber
+          if ! gh release view beta >/dev/null 2>&1; then
+            gh release create beta \
+              --prerelease \
+              --title 'Beta-Kanal' \
+              --notes 'Update-Manifest des Beta-Kanals. Die Installer hängen am jeweiligen Release, nicht hier.'
+          fi
+          gh release upload beta manifest/latest.json --clobber
+          echo "Beta-Manifest zeigt jetzt auf ${TAG}."

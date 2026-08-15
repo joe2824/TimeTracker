@@ -120,6 +120,15 @@ export interface Settings {
 	 */
 	errorReportsEnabled: boolean;
 	/**
+	 * Vorabversionen beziehen (Beta-Kanal des Updaters).
+	 *
+	 * Gelesen wird das nicht nur hier, sondern auch vom Rust-Teil direkt aus der
+	 * settings.json: die Update-Endpunkte muessen stehen, bevor ueberhaupt ein
+	 * Fenster laeuft (siehe use_beta_channel in lib.rs). Ein Umschalten wirkt
+	 * deshalb erst nach einem Neustart.
+	 */
+	betaUpdates: boolean;
+	/**
 	 * Tag (YYYY-MM-DD), an dem zuletzt „aktiv" gemeldet wurde.
 	 *
 	 * Steht hier und nicht im Arbeitsspeicher, weil die Meldung genau einmal je
@@ -167,6 +176,7 @@ export const defaultSettings: Settings = {
 	teamSubjectFilter: DEFAULT_TEAM_SUBJECT_FILTER,
 	teamScanSubfolders: true,
 	errorReportsEnabled: true,
+	betaUpdates: false,
 	usageLastDay: ""
 };
 
