@@ -224,6 +224,36 @@ npm test               # Vitest (reine Logik: time.ts, report.ts)
 > Autostart und Tray-Verhalten funktionieren nur im installierten Release-Build, nicht im
 > Dev-Binary.
 
+### Releases
+
+```bash
+./scripts/release.sh          # stabile Version (fragt patch/minor/major)
+./scripts/release.sh --beta   # Vorabversion, z. B. 0.8.0-beta.1
+./scripts/release.sh 1.2.3    # feste Version
+```
+
+Unter Windows dasselbe mit `scripts\release.bat`. Das Skript hebt die Version in
+`package.json`, `tauri.conf.json` und `Cargo.toml`, committet, taggt und pusht; der Tag
+löst den Build in `.github/workflows/release.yml` aus.
+
+**Zwei Kanäle:**
+
+| | stabil | Beta |
+|---|---|---|
+| Tag | `v1.2.3` | `v1.2.3-beta.1` |
+| GitHub-Release | normal | als Vorabversion markiert |
+| Installer | NSIS + MSI | nur NSIS (MSI nimmt keine Vorabversionen) |
+| Update-Manifest | `releases/latest/download/latest.json` | `releases/download/beta/latest.json` |
+
+`releases/latest` lässt Vorabversionen aus – wer beim stabilen Kanal bleibt, sieht Betas
+also nie. Das Beta-Manifest hängt an einem Release mit festem Tag `beta` und wird von
+**jedem** Build überschrieben, auch von einem stabilen: wer Betas anhat, bekommt damit
+immer den neuesten Stand und bleibt nicht auf einer Vorabversion sitzen.
+
+Umgeschaltet wird in der App unter „Einstellungen → System → Vorabversionen (Beta)“. Der
+Kanal steht fest, sobald das Updater-Plugin beim Start seine Konfiguration gelesen hat –
+das Umschalten wirkt deshalb erst nach einem Neustart, den der Schalter direkt anbietet.
+
 ## Projektstruktur
 
 ```

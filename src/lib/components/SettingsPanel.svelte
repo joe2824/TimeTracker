@@ -22,7 +22,8 @@
 	import { checkForUpdate, updater } from "$lib/updater.svelte";
 	import { getVersion } from "@tauri-apps/api/app";
 	import { invoke } from "@tauri-apps/api/core";
-	import { errorText } from "$lib/log";
+	import { relaunch } from "@tauri-apps/plugin-process";
+	import { errorText, flushLog, logInfo } from "$lib/log";
 	import { openUrl } from "@tauri-apps/plugin-opener";
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { acceleratorFromEvent, applyShortcuts } from "$lib/shortcuts";
@@ -229,6 +230,31 @@
 			await ensureNotificationPermission();
 		}
 		savedTimes = Date.now();
+	}
+
+	/**
+	 * Umgeschalteter Update-Kanal, der noch nicht greift.
+	 *
+	 * Bleibt stehen, solange die Seite offen ist: der Neustart-Hinweis soll nicht
+	 * verschwinden, weil jemand anderswo etwas gespeichert hat.
+	 */
+	let channelChanged = $state(false);
+
+	async function saveBetaUpdates() {
+		await save(["betaUpdates"]);
+		savedSystem = Date.now();
+		channelChanged = true;
+		logInfo(`Update-Kanal umgestellt auf ${form.betaUpdates ? "Beta" : "stabil"}`);
+	}
+
+	/** Neu starten, damit der Rust-Teil die Endpunkte neu setzt. */
+	async function restartApp() {
+		try {
+			await flushLog();
+			await relaunch();
+		} catch (e) {
+			toast.error(`Neustart nicht möglich: ${errorText(e)}`, { duration: 60000 });
+		}
 	}
 
 	async function toggleAutostart(v: boolean) {
@@ -528,12 +554,30 @@
 		</Card.Header>
 		<Card.Content class="space-y-4">
 			<SettingToggle
-				id="form.autostart"
+				id="autostart"
 				title="Mit Windows starten"
 				description="App läuft im Hintergrund (Tray)."
 				bind:checked={form.autostart}
 				onCheckedChange={toggleAutostart}
 			/>
+			<SettingToggle
+				id="beta"
+				title="Vorabversionen (Beta)"
+				description="Neue Funktionen früher bekommen – dafür kann auch mal etwas klemmen. Aus heißt: nur fertige Versionen."
+				bind:checked={form.betaUpdates}
+				onCheckedChange={saveBetaUpdates}
+				class="border-t pt-3"
+			/>
+			{#if channelChanged}
+				<!-- Der Kanal steht fest, sobald das Updater-Plugin seine Konfiguration
+				     gelesen hat – das passiert beim Start, lange bevor dieser Schalter
+				     erreichbar ist. Ohne diesen Hinweis suchte die App weiter im alten
+				     Kanal, ohne dass erkennbar wäre, warum. -->
+				<div class="flex flex-wrap items-center gap-2 text-sm">
+					<span class="text-muted-foreground">Wirkt nach einem Neustart der App.</span>
+					<Button variant="outline" size="sm" onclick={restartApp}>Jetzt neu starten</Button>
+				</div>
+			{/if}
 			<Button variant="outline" onclick={checkUpdate} disabled={updater.checking}>
 				{updater.checking ? "Suche…" : "Nach Updates suchen"}
 			</Button>
