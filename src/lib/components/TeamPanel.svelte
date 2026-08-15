@@ -9,9 +9,8 @@
 	import { app } from "$lib/app.svelte";
 	import {
 		createOutlookDraft,
-		detectOutlook,
-		explainOutlookError,
 		readOutlookMails,
+		reportOutlookError,
 		type OutlookMail
 	} from "$lib/outlook";
 	import {
@@ -21,7 +20,7 @@
 		teamReminderSubject,
 		teamSummaryToCsv
 	} from "$lib/teamReport";
-	import { fmtClock, fmtDateHuman } from "$lib/time";
+	import { fmtClock, fmtDateHuman, prevMonthKey } from "$lib/time";
 	import { errorText, logError, logInfo } from "$lib/log";
 	import { Button } from "$lib/components/ui/button";
 	import { Badge } from "$lib/components/ui/badge";
@@ -36,19 +35,8 @@
 	import CheckIcon from "@lucide/svelte/icons/check";
 	import LoaderCircleIcon from "@lucide/svelte/icons/loader-circle";
 
-	/**
-	 * Vormonat – der Monat, den ein Vorgesetzter auswertet.
-	 *
-	 * Ueber den Monatsersten rechnen, nicht per setMonth() auf dem heutigen Datum:
-	 * am 31. rollt "31. Juni" auf den 1. Juli, der Vormonat waere dort der aktuelle.
-	 */
-	function lastMonth(): string {
-		const now = new Date();
-		const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-		return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-	}
-
-	let month = $state(lastMonth());
+	// Vormonat – der Monat, den ein Vorgesetzter auswertet.
+	let month = $state(prevMonthKey());
 	let loading = $state(false);
 	let scanned = $state<string | null>(null);
 	let mails = $state<OutlookMail[]>([]);
@@ -95,12 +83,8 @@
 				});
 			}
 		} catch (e) {
-			const info = await detectOutlook().catch(() => null);
-			logError("Chef-Modus: Posteingang konnte nicht gelesen werden", {
-				fehler: errorText(e),
-				outlook: info
-			});
-			toast.error(`Posteingang konnte nicht gelesen werden: ${explainOutlookError(e, info)}`);
+			const msg = await reportOutlookError("Chef-Modus: Posteingang konnte nicht gelesen werden", e);
+			toast.error(`Posteingang konnte nicht gelesen werden: ${msg}`);
 		} finally {
 			loading = false;
 		}
@@ -132,9 +116,7 @@
 			logInfo(`Chef-Modus: Erinnerung für ${month} erstellt`, { anzahl: reachableMissing.length });
 			toast.success("Outlook-Entwurf geöffnet. Bitte prüfen und senden.");
 		} catch (e) {
-			const info = await detectOutlook().catch(() => null);
-			logError("Chef-Modus: Erinnerung fehlgeschlagen", { fehler: errorText(e), outlook: info });
-			toast.error(explainOutlookError(e, info));
+			toast.error(await reportOutlookError("Chef-Modus: Erinnerung fehlgeschlagen", e));
 		} finally {
 			drafting = false;
 		}

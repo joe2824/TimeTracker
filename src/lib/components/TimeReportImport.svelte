@@ -32,7 +32,15 @@
 	} from "$lib/store";
 	import { BUILTIN_OTHERS } from "$lib/types";
 	import { errorText, logError, logInfo } from "$lib/log";
-	import { fmtDateHuman, fmtHoursClock, monthLabel, noonTs, startOfNextDay, toTs } from "$lib/time";
+	import {
+		fmtDateHuman,
+		fmtHoursClock,
+		minToClock,
+		monthLabel,
+		noonTs,
+		startOfNextDay,
+		toTs
+	} from "$lib/time";
 	import { Button } from "$lib/components/ui/button";
 	import { Badge } from "$lib/components/ui/badge";
 	import { Checkbox } from "$lib/components/ui/checkbox";
@@ -492,9 +500,7 @@
 	/** Zeitstempel fuer „Minute X dieses Tages"; 1440 ist Mitternacht des Folgetags. */
 	function tsAt(date: string, minutes: number): number {
 		if (minutes >= 1440) return startOfNextDay(noonTs(date));
-		const hh = String(Math.floor(minutes / 60)).padStart(2, "0");
-		const mm = String(minutes % 60).padStart(2, "0");
-		return toTs(date, `${hh}:${mm}`);
+		return toTs(date, minToClock(minutes));
 	}
 
 	async function apply() {
@@ -613,13 +619,7 @@
 
 	function planLabel(plan: FillPlan): string {
 		if (plan.kind === "absence") return plan.fraction === 0.5 ? "½ Tag" : "ganzer Tag";
-		return plan.blocks
-			.map((b) => `${clock(b.start)}–${clock(b.end)}`)
-			.join(", ");
-	}
-
-	function clock(minutes: number): string {
-		return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+		return plan.blocks.map((b) => `${minToClock(b.start)}–${minToClock(b.end)}`).join(", ");
 	}
 
 	/**
@@ -994,7 +994,7 @@
 																<Badge variant="secondary" class="font-normal">
 																	{app.activityName(part.id)}
 																	<span class="text-muted-foreground ml-1 font-mono text-[10px]">
-																		{part.blocks.map((b) => `${clock(b.start)}–${clock(b.end)}`).join(", ")}
+																		{part.blocks.map((b) => `${minToClock(b.start)}–${minToClock(b.end)}`).join(", ")}
 																	</span>
 																</Badge>
 															{/each}
@@ -1035,7 +1035,7 @@
 														<span class="text-xs text-amber-700 dark:text-amber-300">
 															+{fmtHoursClock(plan.extraHours)} h über die Stempelzeiten hinaus
 															<span class="text-muted-foreground font-mono">
-																({plan.extraBlocks.map((b) => `${clock(b.start)}–${clock(b.end)}`).join(", ")})
+																({plan.extraBlocks.map((b) => `${minToClock(b.start)}–${minToClock(b.end)}`).join(", ")})
 															</span>
 														</span>
 													</div>

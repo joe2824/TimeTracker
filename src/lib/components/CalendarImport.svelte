@@ -1,11 +1,6 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
-	import {
-		readOutlookCalendar,
-		detectOutlook,
-		explainOutlookError,
-		type CalendarEvent
-	} from "$lib/outlook";
+	import { readOutlookCalendar, reportOutlookError, type CalendarEvent } from "$lib/outlook";
 	import { allDayNoons, fmtDate, isWorkday } from "$lib/time";
 	import { activityOptions, guessActivity } from "$lib/calendarMap";
 	import { Button } from "$lib/components/ui/button";
@@ -109,8 +104,8 @@
 			);
 			loaded = true;
 		} catch (e) {
-			const info = await detectOutlook().catch(() => null);
-			toast.error(`Outlook-Kalender konnte nicht gelesen werden: ${explainOutlookError(e, info)}`);
+			const msg = await reportOutlookError("Outlook-Kalender konnte nicht gelesen werden", e);
+			toast.error(`Outlook-Kalender konnte nicht gelesen werden: ${msg}`);
 			active = false; // bei Fehler zurück zur Normalansicht
 		} finally {
 			loading = false;
