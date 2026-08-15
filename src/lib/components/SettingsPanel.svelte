@@ -8,8 +8,7 @@
 		devTriggerLongTimer,
 		devTriggerReportReminder
 	} from "$lib/watchers.svelte";
-	import { clockToMin, minToClock } from "$lib/time";
-	import { changedSettingKeys } from "$lib/settingsSync";
+	import { formFromSettings, patchFrom, syncForm } from "$lib/settingsSync";
 	import type { Settings } from "$lib/types";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
@@ -71,36 +70,21 @@
 		}
 	}
 
-	let bossEmail = $state(app.settings.bossEmail);
-	let senderName = $state(app.settings.senderName);
-	let rounding = $state(String(app.settings.rounding));
-	// Als Uhrzeit ("HH:MM") statt Dezimalstunden eingeben.
-	let hoursPerDay = $state(minToClock(app.settings.hoursPerDay * 60));
-	let workdays = $state([...app.settings.workdays]);
-	let breakDeduction = $state(app.settings.breakDeduction);
-	let subjectTpl = $state(app.settings.reportSubjectTemplate);
-	let statsEnabled = $state(app.settings.statsEnabled);
-	let errorReportsEnabled = $state(app.settings.errorReportsEnabled);
-	let times = $state<string[]>([...app.settings.reminderTimes]);
-	let reportReminder = $state(app.settings.reportReminderEnabled);
-	let reportTime = $state(app.settings.reportReminderTime);
-	let reportLead = $state(String(app.settings.reportReminderLeadDays));
-	let autostart = $state(app.settings.autostart);
-
-	// Chef-Modus. Die Teamliste ist eine Arbeitskopie: bearbeitet wird in den
-	// Feldern, gespeichert beim Verlassen des Feldes (wie ueberall auf dieser Seite).
-	let bossMode = $state(app.settings.bossMode);
-	let team = $state(app.settings.team.map((m) => ({ ...m })));
-	let teamSubjectFilter = $state(app.settings.teamSubjectFilter);
-	let teamScanSubfolders = $state(app.settings.teamScanSubfolders);
-
-	let idleMin = $state(String(app.settings.idleThresholdMin));
-	let maxHours = $state(String(app.settings.maxTimerHours));
-	let pomodoroEnabled = $state(app.settings.pomodoroEnabled);
-	let pomodoroMin = $state(String(app.settings.pomodoroMin));
-	let pomodoroBreakMin = $state(String(app.settings.pomodoroBreakMin));
-	let shortcutNotify = $state(app.settings.shortcutNotify);
+	/**
+	 * Arbeitskopie aller Einstellungen dieser Seite.
+	 *
+	 * Bearbeitet wird hier, gespeichert wird je Karte beim Verlassen des Feldes.
+	 * Zahlen und Stunden stehen als Text darin – umgerechnet wird erst beim
+	 * Speichern (settingsSync.ts), damit ein zum Neutippen geleertes Feld nicht
+	 * still als 0 gespeichert wird.
+	 */
+	let form = $state(formFromSettings(current()));
 	let recordingToggle = $state(false);
+
+	/** Der gespeicherte Stand als schlichte Kopie (ohne Svelte-Proxy). */
+	function current(): Settings {
+		return $state.snapshot(app.settings) as Settings;
+	}
 
 	/**
 	 * Zuletzt uebernommener Stand der Einstellungen.
@@ -109,7 +93,7 @@
 	 * ausloesen. Und eine Momentaufnahme statt der Referenz, sonst zeigte er beim
 	 * naechsten Lauf ohnehin schon die neuen Werte und faende nie einen Unterschied.
 	 */
-	let synced = $state.snapshot(app.settings) as Settings;
+	let synced = current();
 
 	/**
 	 * Die Felder oben sind Kopien vom Aufbau dieser Seite. Aendert etwas anderes die
@@ -122,50 +106,18 @@
 	 * Feldern da, waehrend der Assistent noch offen ist. Die dort eingetragene
 	 * Adresse der Vorgesetzten war damit beim ersten Klick in den Einstellungen
 	 * wieder weg.
+	 *
+	 * Gleiches gilt fuer die Teamliste: der Team-Tab nimmt gefundene Absender per
+	 * Klick auf: ohne diesen Abgleich stuende die neue Person zwar in der Datei,
+	 * hier aber nicht in der Liste – und das naechste Speichern dieser Karte haette
+	 * sie wieder entfernt.
 	 */
 	$effect(() => {
-		const s = $state.snapshot(app.settings) as Settings;
-		const changed = changedSettingKeys(synced, s);
-		synced = s;
-		if (changed.size === 0) return;
-		if (changed.has("bossEmail")) bossEmail = s.bossEmail;
-		if (changed.has("senderName")) senderName = s.senderName;
-		if (changed.has("reportSubjectTemplate")) subjectTpl = s.reportSubjectTemplate;
-		if (changed.has("statsEnabled")) statsEnabled = s.statsEnabled;
-		if (changed.has("errorReportsEnabled")) errorReportsEnabled = s.errorReportsEnabled;
-		if (changed.has("rounding")) rounding = String(s.rounding);
-		if (changed.has("hoursPerDay")) hoursPerDay = minToClock(s.hoursPerDay * 60);
-		if (changed.has("workdays")) workdays = [...s.workdays];
-		if (changed.has("breakDeduction")) breakDeduction = s.breakDeduction;
-		if (changed.has("reminderTimes")) times = [...s.reminderTimes];
-		if (changed.has("reportReminderEnabled")) reportReminder = s.reportReminderEnabled;
-		if (changed.has("reportReminderTime")) reportTime = s.reportReminderTime;
-		if (changed.has("reportReminderLeadDays")) reportLead = String(s.reportReminderLeadDays);
-		if (changed.has("autostart")) autostart = s.autostart;
-		if (changed.has("idleThresholdMin")) idleMin = String(s.idleThresholdMin);
-		if (changed.has("maxTimerHours")) maxHours = String(s.maxTimerHours);
-		if (changed.has("pomodoroEnabled")) pomodoroEnabled = s.pomodoroEnabled;
-		if (changed.has("pomodoroMin")) pomodoroMin = String(s.pomodoroMin);
-		if (changed.has("pomodoroBreakMin")) pomodoroBreakMin = String(s.pomodoroBreakMin);
-		if (changed.has("shortcutNotify")) shortcutNotify = s.shortcutNotify;
-		if (changed.has("bossMode")) bossMode = s.bossMode;
-		// Der Team-Tab nimmt gefundene Absender per Klick auf – ohne diesen Abgleich
-		// stuende die neue Person zwar in der Datei, hier aber nicht in der Liste,
-		// und das naechste Speichern dieser Karte haette sie wieder entfernt.
-		if (changed.has("team")) team = s.team.map((m) => ({ ...m }));
-		if (changed.has("teamSubjectFilter")) teamSubjectFilter = s.teamSubjectFilter;
-		if (changed.has("teamScanSubfolders")) teamScanSubfolders = s.teamScanSubfolders;
+		synced = syncForm(form, synced, current());
 	});
 
 	async function saveTracking() {
-		await app.updateSettings({
-			idleThresholdMin: Math.max(0, Number(idleMin) || 0),
-			maxTimerHours: Math.max(0, Number(maxHours) || 0),
-			pomodoroEnabled,
-			pomodoroMin: Math.max(1, Number(pomodoroMin) || 50),
-			pomodoroBreakMin: Math.max(0, Number(pomodoroBreakMin) || 0),
-			shortcutNotify
-		});
+		await save(TRACKING_KEYS);
 		savedTracking = Date.now();
 	}
 
@@ -196,7 +148,7 @@
 
 	onMount(async () => {
 		try {
-			autostart = await isEnabled();
+			form.autostart = await isEnabled();
 		} catch (e) {
 			toast.error(`Autostart-Status nicht lesbar: ${e}`, { duration: 60000 });
 		}
@@ -222,98 +174,72 @@
 	let savedSystem = $state(0);
 	let savedBoss = $state(0);
 
-	/**
-	 * Leeres Feld auf den gespeicherten Wert zuruecksetzen, sonst den getrimmten
-	 * nehmen. Liefert immer einen gueltigen Wert.
-	 *
-	 * Ohne Speichern-Button ist das Pflicht: `x || default` schriebe beim Leeren des
-	 * Feldes still den Default fort – wer eine Vorlage zum Neutippen leert, haette
-	 * sie damit auf den Standardtext gesetzt. Zurueckgesetzt wird nur das eine Feld;
-	 * die uebrigen der Card werden trotzdem gespeichert.
-	 */
-	function orStored(raw: string, stored: string): string {
-		return raw.trim() || stored;
+	// Welche Einstellungen zu welcher Card gehoeren. Die Umrechnung (getrimmt,
+	// begrenzt, Uhrzeit -> Stunden) samt Rueckfall auf den gespeicherten Wert bei
+	// geleertem Feld steckt in settingsSync.ts.
+	const REPORT_KEYS = ["bossEmail", "senderName", "reportSubjectTemplate", "statsEnabled"] as const;
+	const TIMES_KEYS = [
+		"reminderTimes",
+		"reportReminderEnabled",
+		"reportReminderTime",
+		"reportReminderLeadDays"
+	] as const;
+	const WORKTIME_KEYS = ["rounding", "hoursPerDay", "breakDeduction", "workdays"] as const;
+	const TRACKING_KEYS = [
+		"idleThresholdMin",
+		"maxTimerHours",
+		"pomodoroEnabled",
+		"pomodoroMin",
+		"pomodoroBreakMin",
+		"shortcutNotify"
+	] as const;
+	const BOSS_KEYS = ["bossMode", "team", "teamSubjectFilter", "teamScanSubfolders"] as const;
+
+	/** Die genannten Felder der Arbeitskopie speichern. */
+	async function save(keys: readonly (keyof Settings)[]): Promise<void> {
+		await app.updateSettings(patchFrom(form, keys, current()));
 	}
 
 	async function saveReport() {
-		subjectTpl = orStored(subjectTpl, app.settings.reportSubjectTemplate);
-		await app.updateSettings({
-			bossEmail: bossEmail.trim(),
-			senderName: senderName.trim(),
-			reportSubjectTemplate: subjectTpl,
-			statsEnabled
-		});
+		await save(REPORT_KEYS);
 		savedReport = Date.now();
 	}
 
 	async function saveErrorReports() {
-		await app.updateSettings({ errorReportsEnabled });
+		await save(["errorReportsEnabled"]);
 	}
 
 	async function saveBossMode() {
-		teamSubjectFilter = orStored(teamSubjectFilter, app.settings.teamSubjectFilter);
-		await app.updateSettings({
-			bossMode,
-			// Namenlose Zeilen entstehen beim Anlegen und wieder Verwerfen einer Zeile;
-			// sie wuerden sonst als leere Person in der Team-Uebersicht stehen.
-			team: team
-				.map((m) => ({ ...m, name: m.name.trim(), email: m.email.trim() }))
-				.filter((m) => m.name || m.email),
-			teamSubjectFilter,
-			teamScanSubfolders
-		});
+		await save(BOSS_KEYS);
 		savedBoss = Date.now();
 	}
 
 	async function saveWorktime() {
-		// Normalisieren statt aussteigen: ein leeres Stunden-Feld darf nicht das
-		// Speichern von Rundung und Arbeitstagen verhindern.
-		const min = clockToMin(hoursPerDay) ?? 0;
-		const valid = min > 0 ? min : app.settings.hoursPerDay * 60;
-		hoursPerDay = minToClock(valid);
-		await app.updateSettings({
-			rounding: Number(rounding),
-			hoursPerDay: valid / 60,
-			breakDeduction,
-			workdays: [...workdays].sort((a, b) => a - b)
-		});
+		await save(WORKTIME_KEYS);
 		savedWorktime = Date.now();
 	}
 
-	/** Fokusdauer uebernehmen; leeres Feld haette sonst still 50 fortgeschrieben. */
-	function commitPomodoroMin() {
-		pomodoroMin = orStored(pomodoroMin, String(app.settings.pomodoroMin));
-		void saveTracking();
-	}
-
 	async function saveTimes() {
-		reportTime = orStored(reportTime, app.settings.reportReminderTime);
-		const clean = times.map((t) => t.trim()).filter(Boolean);
-		await app.updateSettings({
-			reminderTimes: clean,
-			reportReminderEnabled: reportReminder,
-			reportReminderTime: reportTime,
-			// Auch nach oben begrenzen: max="10" am Feld haelt eine getippte 40 nicht
-			// auf, und ein zu grosser Vorlauf schiebt das Ziel in die Vergangenheit.
-			reportReminderLeadDays: Math.min(10, Math.max(0, Number(reportLead) || 0))
-		});
+		await save(TIMES_KEYS);
 		scheduleReminders();
 		scheduleReportReminder();
 		// Nur fragen, wenn ueberhaupt etwas benachrichtigen soll – beim Abschalten
 		// nach der Erlaubnis zu fragen waere verkehrt herum.
-		if (clean.length > 0 || reportReminder) await ensureNotificationPermission();
+		if (app.settings.reminderTimes.length > 0 || form.reportReminderEnabled) {
+			await ensureNotificationPermission();
+		}
 		savedTimes = Date.now();
 	}
 
 	async function toggleAutostart(v: boolean) {
-		// autostart ist via bind:checked bereits gesetzt; bei Fehler zuruecksetzen.
+		// form.autostart ist via bind:checked bereits gesetzt; bei Fehler zuruecksetzen.
 		try {
 			if (v) await enable();
 			else await disable();
 			await app.updateSettings({ autostart: v });
 			savedSystem = Date.now();
 		} catch (e) {
-			autostart = !v;
+			form.autostart = !v;
 			toast.error(`Autostart fehlgeschlagen: ${e}`, { duration: 60000 });
 		}
 	}
@@ -362,15 +288,15 @@
 		<Card.Content class="space-y-3">
 			<div class="space-y-1">
 				<Label for="boss">E-Mail der/des Vorgesetzten</Label>
-				<Input id="boss" type="email" bind:value={bossEmail} placeholder="name@firma.de" onchange={saveReport} />
+				<Input id="boss" type="email" bind:value={form.bossEmail} placeholder="name@firma.de" onchange={saveReport} />
 			</div>
 			<div class="space-y-1">
 				<Label for="sender">Dein Name (optional)</Label>
-				<Input id="sender" bind:value={senderName} onchange={saveReport} />
+				<Input id="sender" bind:value={form.senderName} onchange={saveReport} />
 			</div>
 			<div class="space-y-1">
 				<Label for="subj">Betreff-Vorlage</Label>
-				<Input id="subj" bind:value={subjectTpl} onchange={saveReport} />
+				<Input id="subj" bind:value={form.reportSubjectTemplate} onchange={saveReport} />
 				<p class="text-muted-foreground text-xs">
 					{"{month}"} = Monat, {"{name}"} = dein Name
 				</p>
@@ -379,7 +305,7 @@
 				id="stats"
 				title="Auswertung anzeigen"
 				description="Saldo, Stunden je Aktivität und Jahres-Heatmap im Tab „Bericht“. Nur für dich – die E-Mail bleibt unverändert."
-				bind:checked={statsEnabled}
+				bind:checked={form.statsEnabled}
 				onCheckedChange={() => saveReport()}
 				class="border-t pt-3"
 			/>
@@ -395,15 +321,15 @@
 			<p class="text-muted-foreground text-sm">
 				Zu diesen Uhrzeiten erinnert dich die App, deine Zeiten einzutragen.
 			</p>
-			{#each times as _, i (i)}
+			{#each form.reminderTimes as _, i (i)}
 				<div class="flex gap-2">
-					<Input type="time" bind:value={times[i]} onchange={saveTimes} />
+					<Input type="time" bind:value={form.reminderTimes[i]} onchange={saveTimes} />
 					<Button
 						variant="ghost"
 						size="icon"
 						title="Uhrzeit entfernen"
 						onclick={() => {
-							times = times.filter((_, j) => j !== i);
+							form.reminderTimes = form.reminderTimes.filter((_, j) => j !== i);
 							void saveTimes();
 						}}
 					>
@@ -416,7 +342,7 @@
 					variant="outline"
 					size="sm"
 					onclick={() => {
-						times = [...times, "14:00"];
+						form.reminderTimes = [...form.reminderTimes, "14:00"];
 						// Ohne Speichern-Button muss das Anlegen selbst persistieren – sonst
 						// stuende die neue Zeit nur im Fenster und waere beim Neustart weg.
 						void saveTimes();
@@ -431,10 +357,10 @@
 					id="reprem"
 					title="Monatlicher Bericht-Hinweis"
 					description="Am letzten Werktag erinnern, den Bericht zu senden."
-					bind:checked={reportReminder}
+					bind:checked={form.reportReminderEnabled}
 					onCheckedChange={() => saveTimes()}
 				/>
-				{#if reportReminder}
+				{#if form.reportReminderEnabled}
 					<SettingRow id="replead" title="Werktage vorher" description="0 = letzter Werktag.">
 						{#snippet control()}
 							<Input
@@ -443,14 +369,14 @@
 								min="0"
 								max="10"
 								class="w-24"
-								bind:value={reportLead}
+								bind:value={form.reportReminderLeadDays}
 								onchange={saveTimes}
 							/>
 						{/snippet}
 					</SettingRow>
 					<SettingRow id="reptime" title="Uhrzeit" description="Wann an diesem Tag erinnert wird.">
 						{#snippet control()}
-							<Input id="reptime" type="time" class="w-32" bind:value={reportTime} onchange={saveTimes} />
+							<Input id="reptime" type="time" class="w-32" bind:value={form.reportReminderTime} onchange={saveTimes} />
 						{/snippet}
 					</SettingRow>
 				{/if}
@@ -468,7 +394,7 @@
 		<Card.Content class="space-y-3">
 			<div class="space-y-1">
 				<Label>An welchen Tagen arbeitest du?</Label>
-				<WorkdayPicker bind:value={workdays} onchange={saveWorktime} />
+				<WorkdayPicker bind:value={form.workdays} onchange={saveWorktime} />
 				<p class="text-muted-foreground text-xs">
 					Nicht-Arbeitstage (z.&nbsp;B. Wochenende) werden beim Kalender-Import und bei
 					Abwesenheits-Zeiträumen übersprungen und tauchen nicht im Bericht auf.
@@ -481,21 +407,21 @@
 				class="border-t pt-3"
 			>
 				{#snippet control()}
-					<Input id="hpd" type="time" class="w-32" bind:value={hoursPerDay} onchange={saveWorktime} />
+					<Input id="hpd" type="time" class="w-32" bind:value={form.hoursPerDay} onchange={saveWorktime} />
 				{/snippet}
 			</SettingRow>
 			<SettingToggle
 				id="breakded"
 				title="Pause automatisch abziehen"
 				description="Ab 4 h Tagesarbeitszeit 15 Minuten, ab 6 h insgesamt 45 – wie LOGA es rechnet. Wirkt auf Tagessummen, Bericht und Auswertung; die erfassten Einträge bleiben unverändert."
-				bind:checked={breakDeduction}
+				bind:checked={form.breakDeduction}
 				onCheckedChange={() => saveWorktime()}
 				class="border-t pt-3"
 			/>
 			<SettingRow id="round" title="Rundung" description="Stunden je Aktivität im Bericht." class="border-t pt-3">
 				{#snippet control()}
-					<Select.Root type="single" bind:value={rounding} onValueChange={() => saveWorktime()}>
-						<Select.Trigger id="round" class="w-48">{ROUNDINGS[rounding] ?? rounding}</Select.Trigger>
+					<Select.Root type="single" bind:value={form.rounding} onValueChange={() => saveWorktime()}>
+						<Select.Trigger id="round" class="w-48">{ROUNDINGS[form.rounding] ?? form.rounding}</Select.Trigger>
 						<Select.Content>
 							{#each Object.entries(ROUNDINGS) as [v, label] (v)}
 								<Select.Item value={v} {label}>{label}</Select.Item>
@@ -523,7 +449,7 @@
 				description="Nach so vielen Minuten ohne Eingabe nachfragen. 0 = aus."
 			>
 				{#snippet control()}
-					<Input id="idle" type="number" min="0" class="w-24" bind:value={idleMin} onchange={saveTracking} />
+					<Input id="idle" type="number" min="0" class="w-24" bind:value={form.idleThresholdMin} onchange={saveTracking} />
 				{/snippet}
 			</SettingRow>
 
@@ -533,7 +459,7 @@
 				description="Warnen, wenn ein Timer länger als so viele Stunden läuft. 0 = aus."
 			>
 				{#snippet control()}
-					<Input id="maxh" type="number" min="0" class="w-24" bind:value={maxHours} onchange={saveTracking} />
+					<Input id="maxh" type="number" min="0" class="w-24" bind:value={form.maxTimerHours} onchange={saveTracking} />
 				{/snippet}
 			</SettingRow>
 
@@ -541,7 +467,7 @@
 				id="scnotify"
 				title="Hinweis bei Shortcut-Start/Stop"
 				description="Kurze Meldung, verschwindet selbst."
-				bind:checked={shortcutNotify}
+				bind:checked={form.shortcutNotify}
 				onCheckedChange={() => saveTracking()}
 			/>
 
@@ -549,18 +475,18 @@
 				id="pomo"
 				title="Pomodoro"
 				description="Fokus-/Pausen-Zyklus mit Hinweisen (optional)."
-				bind:checked={pomodoroEnabled}
+				bind:checked={form.pomodoroEnabled}
 				onCheckedChange={() => saveTracking()}
 			/>
-			{#if pomodoroEnabled}
+			{#if form.pomodoroEnabled}
 				<div class="grid grid-cols-2 gap-2">
 					<div class="space-y-1">
 						<Label for="pomomin">Fokus (Min)</Label>
-						<Input id="pomomin" type="number" min="1" bind:value={pomodoroMin} onchange={commitPomodoroMin} />
+						<Input id="pomomin" type="number" min="1" bind:value={form.pomodoroMin} onchange={saveTracking} />
 					</div>
 					<div class="space-y-1">
 						<Label for="pomobreak">Pause (Min, 0 = aus)</Label>
-						<Input id="pomobreak" type="number" min="0" bind:value={pomodoroBreakMin} onchange={saveTracking} />
+						<Input id="pomobreak" type="number" min="0" bind:value={form.pomodoroBreakMin} onchange={saveTracking} />
 					</div>
 				</div>
 			{/if}
@@ -602,10 +528,10 @@
 		</Card.Header>
 		<Card.Content class="space-y-4">
 			<SettingToggle
-				id="autostart"
+				id="form.autostart"
 				title="Mit Windows starten"
 				description="App läuft im Hintergrund (Tray)."
-				bind:checked={autostart}
+				bind:checked={form.autostart}
 				onCheckedChange={toggleAutostart}
 			/>
 			<Button variant="outline" onclick={checkUpdate} disabled={updater.checking}>
@@ -657,11 +583,11 @@
 				id="bossmode"
 				title="Chef-Modus"
 				description="Blendet den Tab „Team“ ein. Es wird ausschließlich gelesen – keine Mail wird verschoben oder markiert."
-				bind:checked={bossMode}
+				bind:checked={form.bossMode}
 				onCheckedChange={() => saveBossMode()}
 			/>
 
-			{#if bossMode}
+			{#if form.bossMode}
 				<div class="space-y-2 border-t pt-3">
 					<Label>Team</Label>
 					<p class="text-muted-foreground text-xs">
@@ -670,13 +596,13 @@
 					</p>
 					<!-- Nach id, nicht nach Index: beim Loeschen einer Zeile ruecken sonst
 					     alle folgenden Felder eine Position hoch und zeigen fremde Werte. -->
-					{#each team as m, i (m.id)}
+					{#each form.team as m, i (m.id)}
 						<div class="flex gap-2">
-							<Input placeholder="Name" bind:value={team[i].name} onchange={saveBossMode} />
+							<Input placeholder="Name" bind:value={form.team[i].name} onchange={saveBossMode} />
 							<Input
 								type="email"
 								placeholder="name@firma.de"
-								bind:value={team[i].email}
+								bind:value={form.team[i].email}
 								onchange={saveBossMode}
 							/>
 							<Button
@@ -684,7 +610,7 @@
 								size="icon"
 								title="Aus dem Team entfernen"
 								onclick={() => {
-									team = team.filter((_, j) => j !== i);
+									form.team = form.team.filter((_, j) => j !== i);
 									void saveBossMode();
 								}}
 							>
@@ -695,7 +621,7 @@
 					<Button
 						variant="outline"
 						size="sm"
-						onclick={() => (team = [...team, { id: crypto.randomUUID(), name: "", email: "" }])}
+						onclick={() => (form.team = [...form.team, { id: crypto.randomUUID(), name: "", email: "" }])}
 					>
 						<PlusIcon class="size-4" /> Mitarbeiter
 					</Button>
@@ -703,7 +629,7 @@
 
 				<div class="space-y-1 border-t pt-3">
 					<Label for="tsubj">Betreff enthält</Label>
-					<Input id="tsubj" bind:value={teamSubjectFilter} onchange={saveBossMode} />
+					<Input id="tsubj" bind:value={form.teamSubjectFilter} onchange={saveBossMode} />
 					<p class="text-muted-foreground text-xs">
 						Nur Mails mit diesem Text im Betreff werden gelesen. Standard ist der Anfang der
 						Betreff-Vorlage, die TimeTracker selbst verschickt.
@@ -714,7 +640,7 @@
 					id="tsubf"
 					title="Unterordner mitlesen"
 					description="Auch Unterordner des Posteingangs durchsuchen – für alle, die Berichte per Regel einsortieren lassen."
-					bind:checked={teamScanSubfolders}
+					bind:checked={form.teamScanSubfolders}
 					onCheckedChange={() => saveBossMode()}
 				/>
 			{/if}
@@ -728,7 +654,7 @@
 				id="errreports"
 				title="Anonyme Fehlermeldungen senden"
 				description="Hilft, Abstürze und Fehler zu finden, die nur auf anderen Rechnern auftreten."
-				bind:checked={errorReportsEnabled}
+				bind:checked={form.errorReportsEnabled}
 				onCheckedChange={() => saveErrorReports()}
 			/>
 
