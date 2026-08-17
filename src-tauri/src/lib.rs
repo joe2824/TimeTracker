@@ -240,6 +240,12 @@ fn handle_menu_event(app: &tauri::AppHandle, event: tauri::menu::MenuEvent) {
 /// Fenster, das die meisten Sitzungen nie zu sehen bekommen.
 #[cfg(desktop)]
 fn tray_window(app: &tauri::AppHandle) -> Option<tauri::WebviewWindow> {
+    // Ein Bauvorgang zur Zeit: zwei Anlaesse dicht hintereinander (erster
+    // set_tray_state und ein Klick aufs Tray-Icon) liefen sonst beide in den Bau,
+    // und der zweite scheiterte am schon vergebenen Label.
+    static BUILDING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = BUILDING.lock().unwrap_or_else(|e| e.into_inner());
+
     if let Some(win) = app.get_webview_window("tray") {
         return Some(win);
     }
@@ -253,37 +259,62 @@ fn tray_window(app: &tauri::AppHandle) -> Option<tauri::WebviewWindow> {
     }
 }
 
+/// Etwas mit dem Flyout-Fenster tun – auf einem eigenen Thread, und das Fenster
+/// bauen, falls es noch nicht steht.
+///
+/// Der Umweg ist Pflicht, nicht Geschmack: auf Windows blockiert
+/// `WebviewWindowBuilder::build()`, wenn der Bau vom Hauptthread aus angestossen
+/// wird. Tauri schreibt das an den Bauplan-Methoden dazu ("this function
+/// deadlocks when used in a synchronous command or event handlers"), und genau
+/// dort sassen alle unsere Aufrufer: synchrone Commands und der Tray-Handler
+/// laufen auf dem Hauptthread.
+///
+/// Der Preis war der ganze Prozess: der Hauptthread stand, das Fenster liess
+/// sich nicht mehr schliessen, das Tray-Icon wechselte seine Farbe nicht mehr
+/// und kein Aufruf aus dem Frontend kam mehr an – auch keine Protokollzeile.
+///
+/// Zeigen, Verstecken und Positionieren duerfen von hier aus laufen: die
+/// schicken dem Hauptthread nur eine Nachricht und warten nicht auf ihn.
+#[cfg(desktop)]
+fn with_tray_window(app: &tauri::AppHandle, f: impl FnOnce(tauri::WebviewWindow) + Send + 'static) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        if let Some(win) = tray_window(&app) {
+            f(win);
+        }
+    });
+}
+
 /// Positioniert das Flyout nahe der Klickposition (über dem Cursor) und zeigt es.
 #[cfg(desktop)]
 fn toggle_flyout(app: &tauri::AppHandle, click: tauri::PhysicalPosition<f64>) {
-    let Some(win) = tray_window(app) else {
-        return;
-    };
-    if win.is_visible().unwrap_or(false) {
-        let _ = win.hide();
-        return;
-    }
-    if let Ok(size) = win.outer_size() {
-        let mut x = click.x - size.width as f64 / 2.0;
-        let mut y = click.y - size.height as f64 - 8.0; // über dem Cursor (Taskleiste unten)
-        // grob auf den sichtbaren Bereich des Monitors klemmen
-        if let Ok(Some(monitor)) = win.current_monitor() {
-            let mp = monitor.position();
-            let ms = monitor.size();
-            let min_x = mp.x as f64;
-            let max_x = mp.x as f64 + ms.width as f64 - size.width as f64;
-            let min_y = mp.y as f64;
-            let max_y = mp.y as f64 + ms.height as f64 - size.height as f64;
-            x = x.clamp(min_x, max_x.max(min_x));
-            y = y.clamp(min_y, max_y.max(min_y));
-        } else {
-            x = x.max(0.0);
-            y = y.max(0.0);
+    with_tray_window(app, move |win| {
+        if win.is_visible().unwrap_or(false) {
+            let _ = win.hide();
+            return;
         }
-        let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
-    }
-    let _ = win.show();
-    let _ = win.set_focus();
+        if let Ok(size) = win.outer_size() {
+            let mut x = click.x - size.width as f64 / 2.0;
+            let mut y = click.y - size.height as f64 - 8.0; // über dem Cursor (Taskleiste unten)
+            // grob auf den sichtbaren Bereich des Monitors klemmen
+            if let Ok(Some(monitor)) = win.current_monitor() {
+                let mp = monitor.position();
+                let ms = monitor.size();
+                let min_x = mp.x as f64;
+                let max_x = mp.x as f64 + ms.width as f64 - size.width as f64;
+                let min_y = mp.y as f64;
+                let max_y = mp.y as f64 + ms.height as f64 - size.height as f64;
+                x = x.clamp(min_x, max_x.max(min_x));
+                y = y.clamp(min_y, max_y.max(min_y));
+            } else {
+                x = x.max(0.0);
+                y = y.max(0.0);
+            }
+            let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
+        }
+        let _ = win.show();
+        let _ = win.set_focus();
+    });
 }
 
 #[cfg(desktop)]
@@ -354,8 +385,11 @@ fn set_tray_state(app: tauri::AppHandle, state: TrayState) -> Result<(), String>
     // Hauptfenster, sobald dessen Daten stehen. Das Fenster entsteht damit NACH
     // dem Start statt mitten hinein, und der erste Klick aufs Tray-Icon muss
     // trotzdem nicht darauf warten.
+    //
+    // Der Bau laeuft nebenher (with_tray_window) – von hier aus, einem synchronen
+    // Command auf dem Hauptthread, wuerde er den Prozess anhalten.
     #[cfg(desktop)]
-    let _ = tray_window(&app);
+    with_tray_window(&app, |_| {});
     #[cfg(not(desktop))]
     let _ = (app, state);
     Ok(())
