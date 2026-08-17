@@ -40,7 +40,47 @@ async function readJson<T>(file: string, fallback: T): Promise<T> {
 	}
 }
 
-async function writeJson(file: string, data: unknown): Promise<void> {
+/**
+ * Je Datei ein Schreibvorgang zur Zeit; das jeweils letzte Versprechen haelt die
+ * Schlange.
+ *
+ * Ohne das teilen sich zwei gleichzeitige Speicherungen derselben Datei ihre
+ * Zwischendatei – und eine Reihenfolge davon endet mit dem AELTEREN Stand auf
+ * der Platte: A schreibt tmp, B ueberschreibt tmp, B benennt um, A findet sein
+ * tmp nicht mehr, faellt in den direkten Weg und schreibt seinen alten Stand
+ * ueber B. Die Aenderung von B lebte danach nur noch im Speicher, bis irgendwann
+ * das naechste Speichern kam. Gleichzeitig ist der Normalfall: die Schalter in
+ * den Einstellungen rufen ihr save() ohne await.
+ *
+ * Erst seit die Zwischendatei ohne fuehrenden Punkt geschrieben wird (der Scope
+ * des fs-Plugins liess versteckte Dateien nicht zu), greift der atomare Weg
+ * ueberhaupt – vorher lief jedes Speichern direkt und die Luecke blieb
+ * unsichtbar.
+ */
+const writeQueue = new Map<string, Promise<void>>();
+
+/**
+ * `op` erst laufen lassen, wenn der vorige Vorgang an dieser Datei fertig ist.
+ * Die Aufrufer merken davon nichts: sie bekommen ihr Versprechen wie zuvor.
+ */
+function queued(file: string, op: () => Promise<void>): Promise<void> {
+	const prev = writeQueue.get(file) ?? Promise.resolve();
+	// Ein gescheiterter Vorgaenger darf den naechsten nicht mitreissen: dessen
+	// Aufrufer hat seinen Fehler schon bekommen.
+	const next = prev.then(op, op);
+	writeQueue.set(file, next);
+	void next.catch(() => {}).then(() => {
+		// Nur wegraeumen, wenn seitdem nichts Neues angehaengt wurde.
+		if (writeQueue.get(file) === next) writeQueue.delete(file);
+	});
+	return next;
+}
+
+function writeJson(file: string, data: unknown): Promise<void> {
+	return queued(file, () => writeJsonNow(file, data));
+}
+
+async function writeJsonNow(file: string, data: unknown): Promise<void> {
 	await ensureDir();
 	const target = `${DIR}/${file}`;
 	const json = JSON.stringify(data, null, 2);
@@ -155,10 +195,15 @@ export async function loadEntries(month: string): Promise<Entry[]> {
 export async function saveEntries(month: string, entries: Entry[]): Promise<void> {
 	// Ein leerer Monat hinterlaesst keine Datei: sonst bliebe eine "[]"-Datei liegen
 	// und der Monat geisterte ohne Eintraege weiter durch die Monatsauswahl.
+	//
+	// Auch das Loeschen geht durch die Warteschlange: sonst raeumte es die Datei
+	// weg, waehrend ein Speichern desselben Monats noch laeuft – und der Monat
+	// stuende danach wieder da, mit dem Eintrag, den gerade jemand entfernt hat.
 	if (entries.length === 0) {
-		const path = `${DIR}/${entriesFile(month)}`;
-		if (await exists(path, baseOpts)) await remove(path, baseOpts);
-		return;
+		return queued(entriesFile(month), async () => {
+			const path = `${DIR}/${entriesFile(month)}`;
+			if (await exists(path, baseOpts)) await remove(path, baseOpts);
+		});
 	}
 	return writeJson(entriesFile(month), entries);
 }
