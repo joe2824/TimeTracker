@@ -20,6 +20,7 @@
 		splitBlocks,
 		type FillPlan,
 		type ReconcileDay,
+		type Interval,
 		type ReconcileStatus,
 		type Share,
 		type SplitMode
@@ -617,9 +618,25 @@
 		});
 	}
 
+	/**
+	 * Bloecke eines Vorschlags als Text: "08:00–12:00, 12:30–16:30".
+	 *
+	 * Die Tagesgrenze steht als "24:00" da, nicht als "00:00": minToClock()
+	 * rechnet modulo 24 h, und aus einem Block bis Mitternacht wurde damit in der
+	 * Vorschau "22:00–00:00" – gelesen als leerer oder rueckwaerts laufender
+	 * Zeitraum. Betroffen war nur der Text; gespeichert wird ueber tsAt(), das
+	 * Minute 1440 als Folgetag behandelt.
+	 *
+	 * Spaeter als 1440 endet kein Block: planFill() klemmt sein Fenster dort.
+	 */
+	function blockRanges(blocks: Interval[]): string {
+		const end = (min: number) => (min === 1440 ? "24:00" : minToClock(min));
+		return blocks.map((b) => `${minToClock(b.start)}–${end(b.end)}`).join(", ");
+	}
+
 	function planLabel(plan: FillPlan): string {
 		if (plan.kind === "absence") return plan.fraction === 0.5 ? "½ Tag" : "ganzer Tag";
-		return plan.blocks.map((b) => `${minToClock(b.start)}–${minToClock(b.end)}`).join(", ");
+		return blockRanges(plan.blocks);
 	}
 
 	/**
@@ -994,7 +1011,7 @@
 																<Badge variant="secondary" class="font-normal">
 																	{app.activityName(part.id)}
 																	<span class="text-muted-foreground ml-1 font-mono text-[10px]">
-																		{part.blocks.map((b) => `${minToClock(b.start)}–${minToClock(b.end)}`).join(", ")}
+																		{blockRanges(part.blocks)}
 																	</span>
 																</Badge>
 															{/each}
@@ -1035,7 +1052,7 @@
 														<span class="text-xs text-amber-700 dark:text-amber-300">
 															+{fmtHoursClock(plan.extraHours)} h über die Stempelzeiten hinaus
 															<span class="text-muted-foreground font-mono">
-																({plan.extraBlocks.map((b) => `${minToClock(b.start)}–${minToClock(b.end)}`).join(", ")})
+																({blockRanges(plan.extraBlocks)})
 															</span>
 														</span>
 													</div>
