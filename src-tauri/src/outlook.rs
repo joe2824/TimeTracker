@@ -1,3 +1,13 @@
+//! Outlook ueber ein PowerShell-Skript (COM), je Aufruf ein eigener Prozess.
+//!
+//! Alle Commands hier stehen auf `#[tauri::command(async)]`, obwohl keine
+//! Funktion `async` ist: ein synchrones Command laeuft bei Tauri auf dem
+//! Hauptthread, und dort wartet `output()` mitsamt der Oberflaeche auf
+//! PowerShell samt Outlook-Start. Beim Lesen eines Monats Mails steht die App
+//! dabei sekunden- bis minutenlang still – bis hin zu „Keine Rueckmeldung".
+//! Mit `(async)` gibt Tauri den Aufruf an seine Laufzeit ab; die Oberflaeche
+//! bleibt bedienbar, und der Ablauf im Frontend aendert sich nicht: `invoke()`
+//! liefert ohnehin ein Promise.
 use std::process::Command;
 use tauri::Manager;
 
@@ -42,7 +52,7 @@ fn powershell(script: &std::path::Path) -> Command {
 
 /// Erstellt einen Outlook-E-Mail-Entwurf (Empfaenger/Betreff/HTML-Body) und zeigt ihn an.
 /// Sendet nicht automatisch - der Nutzer prueft und klickt selbst auf Senden.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn create_outlook_draft(
     app: tauri::AppHandle,
     to: String,
@@ -71,7 +81,7 @@ pub fn create_outlook_draft(
 /// Meldet ohne COM-Aufruf, welche Outlook-Variante verfuegbar/aktiv ist.
 /// Wird vom Frontend genutzt, um bei fehlendem klassischem Outlook einen klaren
 /// Hinweis (statt eines kryptischen COM-Fehlers) und den mailto-Fallback anzubieten.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn detect_outlook(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     let script = ensure_script(&app)?;
     let output = powershell(&script)
@@ -93,7 +103,7 @@ pub fn detect_outlook(app: tauri::AppHandle) -> Result<serde_json::Value, String
 /// Monatsberichte des Teams.
 ///
 /// Liest nur - es wird nichts verschoben, markiert oder geloescht.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn read_outlook_mails(
     app: tauri::AppHandle,
     start: String,
@@ -131,7 +141,7 @@ pub fn read_outlook_mails(
 }
 
 /// Liest Kalendereintraege im Zeitraum [start, end] (ISO-Datum) und gibt sie als JSON-Array zurueck.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn read_outlook_calendar(
     app: tauri::AppHandle,
     start: String,
