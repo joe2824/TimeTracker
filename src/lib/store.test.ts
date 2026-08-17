@@ -43,6 +43,35 @@ describe("saveEntries", () => {
 		expect(versteckt).toEqual([]);
 		expect(written).toContain("data/entries-2026-06.json.tmp");
 	});
+
+	it("zwei gleichzeitige Speicherungen kommen sich nicht in die Quere", async () => {
+		// Gleichzeitig ist der Normalfall: die Schalter in den Einstellungen rufen
+		// ihr save() ohne await. Ohne Warteschlange teilen sich beide dieselbe
+		// Zwischendatei: die eine benennt sie um, der anderen fehlt sie dann, und
+		// die faellt in den direkten Weg – wo sie ihren Stand ueber den der ersten
+		// schreibt. Je nachdem, wer zuerst drankommt, bleibt der AELTERE stehen.
+		//
+		// Geprueft wird deshalb der Ausloeser, nicht nur der Ausgang: laeuft keine
+		// der beiden in den Ersatzweg, kann auch keine die andere ueberschreiben.
+		await Promise.all([
+			saveEntries("2026-06", [entry("alt")]),
+			saveEntries("2026-06", [entry("neu")])
+		]);
+		expect(written).toEqual(["data/entries-2026-06.json.tmp", "data/entries-2026-06.json.tmp"]);
+		expect((await loadEntries("2026-06")).map((e) => e.id)).toEqual(["neu"]);
+		// Und die Zwischendatei bleibt nicht liegen.
+		expect(files.has("data/entries-2026-06.json.tmp")).toBe(false);
+	});
+
+	it("das Leeren gewinnt gegen ein noch laufendes Speichern", async () => {
+		// Der letzte Eintrag eines Monats wird entfernt, waehrend das Speichern
+		// desselben Monats noch laeuft. Das Loeschen ist der kuerzere Weg und war
+		// deshalb zuerst fertig – die Speicherung legte die Datei danach wieder an,
+		// und der Monat stand mit dem Eintrag da, den gerade jemand entfernt hatte.
+		await saveEntries("2026-06", [entry("e1")]);
+		await Promise.all([saveEntries("2026-06", [entry("e2")]), saveEntries("2026-06", [])]);
+		expect(files.has(file("2026-06"))).toBe(false);
+	});
 });
 
 describe("listEntryMonths", () => {

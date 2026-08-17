@@ -20,10 +20,26 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 // in den Cache-Ordner geschrieben. So funktioniert es in Dev und im Bundle gleich.
 const OUTLOOK_PS1: &str = include_str!("../resources/outlook.ps1");
 
+/// Pfad zum ausgepackten Skript – geschrieben wird es einmal je Prozessstart.
+///
+/// Vorher legte es jeder Aufruf neu an. Seit die Commands nebenlaeufig laufen
+/// duerfen, faellt das einem gerade laufenden PowerShell in den Ruecken: der
+/// Chef-Modus liest minutenlang Mails, und ein Berichtsentwurf nebenher kuerzte
+/// ihm sein Skript unter den Fuessen weg. Einmal je Start genuegt auch – der
+/// Inhalt steckt fest in der EXE und aendert sich nur mit einer neuen Version.
+///
+/// Das Schreiben laeuft unter der Sperre: zwei erste Aufrufe gleichzeitig
+/// wuerden sich sonst gegenseitig in dieselbe Datei schreiben.
 fn ensure_script(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    static WRITTEN: std::sync::Mutex<bool> = std::sync::Mutex::new(false);
+
     let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?;
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join("outlook.ps1");
+    let mut written = WRITTEN.lock().unwrap_or_else(|e| e.into_inner());
+    if *written {
+        return Ok(path);
+    }
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     // MIT BOM schreiben: `powershell.exe` (Windows PowerShell 5.1) liest eine
     // .ps1 ohne BOM als ANSI, nicht als UTF-8. Aus "Outlook ist beschäftigt"
     // wurde damit "Outlook ist beschÃ¤ftigt" – und zwar genau in den Meldungen,
@@ -32,6 +48,7 @@ fn ensure_script(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     bytes.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
     bytes.extend_from_slice(OUTLOOK_PS1.as_bytes());
     std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
+    *written = true;
     Ok(path)
 }
 
@@ -61,7 +78,14 @@ pub fn create_outlook_draft(
 ) -> Result<String, String> {
     let script = ensure_script(&app)?;
     let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?;
-    let body_file = dir.join("draft-body.html");
+    // Eigene Datei je Aufruf: zwei Entwuerfe gleichzeitig (der Monatsbericht und
+    // eine Nachfrage aus dem Chef-Modus) schrieben sich sonst in dieselbe Datei,
+    // und der zweite Entwurf oeffnete sich mit dem Text des ersten.
+    static NR: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let body_file = dir.join(format!(
+        "draft-body-{}.html",
+        NR.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
     std::fs::write(&body_file, html_body).map_err(|e| e.to_string())?;
 
     let output = powershell(&script)
@@ -69,7 +93,12 @@ pub fn create_outlook_draft(
         .arg("-BodyFile")
         .arg(&body_file)
         .output()
-        .map_err(|e| format!("PowerShell konnte nicht gestartet werden: {e}"))?;
+        .map_err(|e| format!("PowerShell konnte nicht gestartet werden: {e}"));
+
+    // Das Skript hat den Text laengst gelesen; liegen bleiben soll er nicht, sonst
+    // sammelt der Cache-Ordner jeden je verschickten Bericht.
+    let _ = std::fs::remove_file(&body_file);
+    let output = output?;
 
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())

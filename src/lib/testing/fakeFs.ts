@@ -77,7 +77,13 @@ export const fakeFs = {
 	},
 	rename: async (from: string, to: string) => {
 		if (fsFaults.renameThrows) throw new Error("rename nicht moeglich");
-		files.set(to, files.get(from)!);
+		// Fehlt die Quelle, scheitert das echte rename – und der Aufrufer faellt in
+		// seinen Ersatzweg. Ein Fake, der hier still `undefined` ablegt, verdeckte
+		// genau das: zwei gleichzeitige Speicherungen derselben Datei nahmen sich
+		// ihre Zwischendatei gegenseitig weg, ohne dass ein Test es sah.
+		const txt = files.get(from);
+		if (txt === undefined) throw new Error(`ENOENT: ${from}`);
+		files.set(to, txt);
 		files.delete(from);
 	},
 	// `append` mitspielen: das Protokoll haengt jede Zeile an, ein ueberschreibender
