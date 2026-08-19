@@ -12,6 +12,7 @@
 	import { appDataDir, join } from "@tauri-apps/api/path";
 	import { revealItemInDir } from "@tauri-apps/plugin-opener";
 	import { Button } from "$lib/components/ui/button";
+	import { Badge } from "$lib/components/ui/badge";
 	import { scheduleReminders, scheduleReportReminder } from "$lib/reminders";
 	import { applyShortcuts } from "$lib/shortcuts";
 	import { startWatchers, stopWatchers, watchers } from "$lib/watchers.svelte";
@@ -41,6 +42,17 @@
 
 	let tab = $state("tracking");
 	let paletteOpen = $state(false);
+
+	/** Laufende Version, sobald der Start sie gelesen hat ("" bis dahin). */
+	let appVersion = $state("");
+	/**
+	 * Vorabversion? Alles mit Semver-Vorabteil zaehlt dazu ("0.8.1-beta.2").
+	 *
+	 * Wer den Beta-Kanal anhat, sieht sonst nicht, ob er gerade eine Vorabversion
+	 * laufen hat – die Version steht nur unten in den Einstellungen. Beim Melden
+	 * eines Fehlers ist genau das die erste Frage.
+	 */
+	const isBeta = $derived(appVersion.includes("-"));
 
 	// „Benachrichtigung" = einer der Aufmerksamkeits-Dialoge ist offen/fällig.
 	// Wird an das Tray-Flyout gemeldet, das dann ein Hinweis-Badge zeigt.
@@ -172,6 +184,7 @@
 		let version = "?";
 		try {
 			version = await getVersion();
+			appVersion = version;
 		} catch {
 			/* nicht-desktop */
 		}
@@ -336,14 +349,28 @@
 			class="bg-background/80 supports-backdrop-filter:bg-background/60 sticky top-0 z-30 border-b backdrop-blur"
 		>
 			<div class="mx-auto grid max-w-6xl grid-cols-[1fr_auto_1fr] items-center gap-x-6 px-6 py-2.5">
-				<button
-					type="button"
-					onclick={() => (tab = "tracking")}
-					class="cursor-pointer justify-self-start rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-					aria-label="Startseite"
-				>
-					<img src="/logo.svg" alt="TimeTracker" class="h-12 w-auto transition-transform hover:scale-105" />
-				</button>
+				<div class="flex items-center gap-2 justify-self-start">
+					<button
+						type="button"
+						onclick={() => (tab = "tracking")}
+						class="cursor-pointer rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+						aria-label="Startseite"
+					>
+						<!-- Wechselt mit, wie Tray- und Taskleisten-Icon: laufender Timer =
+						     Terrakotta. Nur hier in der Kopfzeile, nicht im Ladebildschirm –
+						     dort ist noch nichts geladen, was laufen koennte. -->
+						<img
+							src={app.running ? "/logo-running.svg" : "/logo.svg"}
+							alt="TimeTracker"
+							class="h-12 w-auto transition-transform hover:scale-105"
+						/>
+					</button>
+					{#if isBeta}
+						<!-- Neben dem Logo, nicht rechts bei den Statusanzeigen: das ist keine
+						     Meldung, die kommt und geht, sondern gilt fuer diese Installation. -->
+						<Badge variant="outline" title="Vorabversion {appVersion}">Beta</Badge>
+					{/if}
+				</div>
 
 				<Tabs.List variant="line" class="justify-self-center gap-2">
 					<Tabs.Trigger value="tracking"><TimerIcon />Tracking</Tabs.Trigger>
