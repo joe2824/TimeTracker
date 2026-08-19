@@ -325,7 +325,10 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
 
     // Links-Klick öffnet das Flyout-Fenster, Rechts-Klick das native Menü (Fallback).
     TrayIconBuilder::with_id("main")
-        .icon(app.default_window_icon().unwrap().clone())
+        // Dasselbe Bild wie im ruhenden Zustand von set_tray_state – nicht das
+        // Fenster-Icon: sonst wechselte das Tray beim ersten Timer die Groesse
+        // mit, weil beide Zustaende aus verschiedenen Quellen kaemen.
+        .icon(tray_icon(false))
         .tooltip("TimeTracker")
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -345,21 +348,82 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Erzeugt aus dem Standard-Icon eine „läuft"-Variante: der helle (fast weiße)
-/// Hintergrund wird rot, das Glyph bleibt. Gleiche Maße wie das Original.
+/// Das Tray-Icon in beiden Zustaenden und vier Groessen.
+///
+/// Zwei Zustaende, weil ruhend und laufend sich in Farbe UND Form unterscheiden
+/// sollen (salbeigruener Bogen gegen terrakottafarbenen Ring). Vorher entstand
+/// die „laeuft"-Variante daraus, dass jedes nahezu weisse Pixel des Icons rot
+/// eingefaerbt wurde – das haengt an einem Logo, dessen Flaeche zufaellig weiss
+/// ist.
+///
+/// Vier Groessen, weil Windows das Tray-Icon je nach Skalierung in 16, 20, 24
+/// oder 32 Pixeln zeichnet. Gibt man ihm ein grosses Bild und laesst es rechnen,
+/// landen die Striche zwischen den Pixelreihen und werden als graue Haelften
+/// gezeichnet – der sichtbare Unterschied zu den Nachbarn in der Leiste, die
+/// ihre kleinen Groessen mitliefern. Die Dateien entstehen aus der im 16er-Raster
+/// gezeichneten Vorlage (siehe scripts/icons.ps1).
+///
+/// include_image! bindet sie beim Uebersetzen ein (Feature "image-png"), zur
+/// Laufzeit muss also nichts davon auf der Platte liegen.
 #[cfg(desktop)]
-fn with_red_background(icon: &tauri::image::Image<'_>) -> tauri::image::Image<'static> {
-    let (w, h) = (icon.width(), icon.height());
-    let mut rgba = icon.rgba().to_vec();
-    for px in rgba.chunks_exact_mut(4) {
-        // Nur sichtbare, nahezu weiße Flächen einfärben (Glyph/Transparenz bleiben).
-        if px[3] > 0 && px[0] >= 230 && px[1] >= 230 && px[2] >= 230 {
-            px[0] = 0xDC;
-            px[1] = 0x26;
-            px[2] = 0x26;
+fn tray_icon(running: bool) -> tauri::image::Image<'static> {
+    // Groesse, in der das System das Icon zeichnet. Aendert sich nur mit der
+    // Skalierung, also faktisch nie waehrend des Betriebs.
+    #[cfg(windows)]
+    let px = {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSMICON};
+        match unsafe { GetSystemMetrics(SM_CXSMICON) } {
+            n if n > 0 => n as u32,
+            _ => 16,
         }
+    };
+    // macOS/Linux skalieren selbst und erwarten das grosse Bild.
+    #[cfg(not(windows))]
+    let px = 32;
+
+    match (running, px) {
+        (false, 0..=16) => tauri::include_image!("icons/tray/idle-16.png"),
+        (false, 17..=20) => tauri::include_image!("icons/tray/idle-20.png"),
+        (false, 21..=24) => tauri::include_image!("icons/tray/idle-24.png"),
+        (false, _) => tauri::include_image!("icons/tray/idle-32.png"),
+        (true, 0..=16) => tauri::include_image!("icons/tray/running-16.png"),
+        (true, 17..=20) => tauri::include_image!("icons/tray/running-20.png"),
+        (true, 21..=24) => tauri::include_image!("icons/tray/running-24.png"),
+        (true, _) => tauri::include_image!("icons/tray/running-32.png"),
     }
-    tauri::image::Image::new_owned(rgba, w, h)
+}
+
+/// Dasselbe fuer das Fenster – also fuer die Taskleiste.
+///
+/// Die Taskleiste zeigt das Icon des FENSTERS, nicht das des Trays; ohne eigenes
+/// Fenster-Icon nimmt Windows das der EXE, und das kennt nur einen Zustand. Ein
+/// laufender Timer war unten also nur im Tray zu sehen, nicht am Programm selbst.
+///
+/// Groessen nach SM_CXICON (32 bei 100 % Skalierung, 40/48/64 darueber) – aus
+/// demselben Grund wie beim Tray.
+#[cfg(desktop)]
+fn window_icon(running: bool) -> tauri::image::Image<'static> {
+    #[cfg(windows)]
+    let px = {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXICON};
+        match unsafe { GetSystemMetrics(SM_CXICON) } {
+            n if n > 0 => n as u32,
+            _ => 32,
+        }
+    };
+    #[cfg(not(windows))]
+    let px = 64;
+
+    match (running, px) {
+        (false, 0..=32) => tauri::include_image!("icons/window/idle-32.png"),
+        (false, 33..=40) => tauri::include_image!("icons/window/idle-40.png"),
+        (false, 41..=48) => tauri::include_image!("icons/window/idle-48.png"),
+        (false, _) => tauri::include_image!("icons/window/idle-64.png"),
+        (true, 0..=32) => tauri::include_image!("icons/window/running-32.png"),
+        (true, 33..=40) => tauri::include_image!("icons/window/running-40.png"),
+        (true, 41..=48) => tauri::include_image!("icons/window/running-48.png"),
+        (true, _) => tauri::include_image!("icons/window/running-64.png"),
+    }
 }
 
 /// Baut das Tray-Menue neu (laufender Timer + Schnellstart aus Favoriten/zuletzt benutzt).
@@ -370,14 +434,20 @@ fn set_tray_state(app: tauri::AppHandle, state: TrayState) -> Result<(), String>
         let menu = build_tray_menu(&app, &state).map_err(|e| e.to_string())?;
         tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
 
-        // Tray-Icon: bei laufendem Timer den (fast weißen) Hintergrund des
-        // Standard-Icons rot einfärben. So bleibt das Glyph und vor allem die
-        // volle Icon-Fläche/Größe erhalten (statt duenner Linienkunst, die kleiner wirkt).
-        if let Some(def) = app.default_window_icon() {
-            if state.running.is_some() {
-                let _ = tray.set_icon(Some(with_red_background(def)));
-            } else {
-                let _ = tray.set_icon(Some(def.clone()));
+        // Tray-Icon: laufender Timer = geschlossener Ring in Terrakotta.
+        let _ = tray.set_icon(Some(tray_icon(state.running.is_some())));
+    }
+
+    // Und dasselbe am Fenster, damit die Taskleiste den laufenden Timer ebenso
+    // zeigt wie das Tray. Beide Fenster: das Flyout steht zwar nicht in der
+    // Leiste (skipTaskbar), aber sein Icon taucht in Alt-Tab-Ersatzoberflaechen
+    // und Aufnahme-Dialogen auf.
+    #[cfg(desktop)]
+    {
+        let icon = window_icon(state.running.is_some());
+        for label in ["main", "tray"] {
+            if let Some(win) = app.get_webview_window(label) {
+                let _ = win.set_icon(icon.clone());
             }
         }
     }
