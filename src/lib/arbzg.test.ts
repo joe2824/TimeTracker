@@ -517,11 +517,11 @@ function naiveAverage(opts: {
 }
 
 /** Ein zufaelliges halbes Jahr: unterschiedlich lange Tage, Urlaub, freie Tage. */
-function scenario(seed: number): { entries: Entry[]; dataFrom: string } {
+function scenario(seed: number, until = UNTIL): { entries: Entry[]; dataFrom: string } {
 	const rand = rng(seed);
 	const entries: Entry[] = [];
-	const from = stepDate(UNTIL, -260);
-	for (let d = from; d <= UNTIL; d = stepDate(d, 1)) {
+	const from = stepDate(until, -260);
+	for (let d = from; d <= until; d = stepDate(d, 1)) {
 		const wd = weekdayOf(d);
 		const r = rand();
 		if (!MO_FR.includes(wd)) {
@@ -738,5 +738,103 @@ describe("Zeitsimulation", () => {
 			checked++;
 		}
 		expect(checked).toBeGreaterThan(3);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Kalender-Randfaelle.
+//
+// Die ganze Rechnung laeuft ueber Kalendertage: das Fenster ist 168 Tage lang,
+// die Achse wird mit stepDate() Tag fuer Tag aufgebaut, und der Nenner haengt am
+// Wochentag. Schaltjahr, Jahreswechsel und Sommerzeit sind damit genau die
+// Stellen, an denen ein Tag verloren gehen oder doppelt gezaehlt werden kann –
+// und zwar unauffaellig, weil das Ergebnis nur um Minuten danebenliegt.
+//
+// Der Pruefstein ist eine Invariante, die keinen Kalender braucht: 168 Tage sind
+// exakt 24 Wochen, also exakt 24-mal jeder Wochentag. Bei durchgaengiger
+// Erfassung ohne Abwesenheiten muss der Nenner deshalb IMMER 120 (Mo–Fr) bzw.
+// 144 (Mo–Sa) sein – ganz gleich, wo das Fenster liegt. Verrutscht irgendwo ein
+// Tag, faellt genau das auf.
+// ---------------------------------------------------------------------------
+
+/** Datum plus `days`, in UTC gerechnet – kennt keine Sommerzeit. */
+function utcShift(iso: string, days: number): string {
+	const [y, m, d] = iso.split("-").map(Number);
+	return new Date(Date.UTC(y, m - 1, d) + days * 86400000).toISOString().slice(0, 10);
+}
+
+describe("Kalender-Randfaelle", () => {
+	const STICHTAGE = [
+		["2025-01-01", "Neujahr"],
+		["2026-01-05", "kurz nach dem Jahreswechsel"],
+		["2024-03-05", "Fenster enthaelt den Schalttag 29.02.2024"],
+		["2024-04-15", "Fenster enthaelt Schalttag UND Zeitumstellung"],
+		["2026-04-02", "Fenster enthaelt die Umstellung auf Sommerzeit"],
+		["2026-11-02", "Fenster enthaelt die Rueckstellung auf Winterzeit"],
+		["2028-03-01", "Schaltjahr 2028"],
+		["2027-01-04", "Jahreswechsel 2026/27"]
+	] as const;
+
+	it("zaehlt in jedem 168-Tage-Fenster exakt 120 bzw. 144 Werktage", () => {
+		for (const [until, why] of STICHTAGE) {
+			const from = stepDate(until, -300);
+			const facts = dayFacts(series(from, until, 8), ABSENCE, { deductBreaks: false });
+			const opts = { until, dataFrom: from, workdays: MO_FR };
+			const strict = avgWindow(facts, "strict", opts);
+			expect(strict.budgetDays, `${until} (${why})`).toBe(120);
+			expect(avgWindow(facts, "legal", opts).budgetDays, `${until} (${why})`).toBe(144);
+			// Deckt die zweite Stelle mit Datumsarithmetik ab: weeksCovered rechnet
+			// ueber Millisekunden, und an der Zeitumstellung hat ein Tag 23 oder 25
+			// Stunden. 168 Tage muessen trotzdem 24 Wochen ergeben.
+			expect(strict.weeksCovered, `${until} (${why})`).toBe(24);
+		}
+	});
+
+	it("legt den Fensteranfang exakt 167 Tage zurueck", () => {
+		// Gegengerechnet in UTC: dort hat jeder Tag 86 400 000 ms, eine
+		// Zeitumstellung kann also nichts verschieben.
+		for (const [until, why] of STICHTAGE) {
+			const from = stepDate(until, -300);
+			const facts = dayFacts(series(from, until, 8), ABSENCE, { deductBreaks: false });
+			const w = avgWindow(facts, "strict", { until, dataFrom: from, workdays: MO_FR });
+			expect(w.from, `${until} (${why})`).toBe(utcShift(until, -167));
+		}
+	});
+
+	it("verbucht Stunden am Schalttag", () => {
+		const f = dayFacts([day("2024-02-29", 8)], ABSENCE, { deductBreaks: false });
+		expect(f.get("2024-02-29")?.hours).toBeCloseTo(8);
+		expect(f.get("2024-02-29")?.weekday).toBe(4); // Donnerstag
+		// Und der Tag danach ist der 1. Maerz, nicht der 30. Februar.
+		expect(stepDate("2024-02-29", 1)).toBe("2024-03-01");
+		expect(stepDate("2023-02-28", 1)).toBe("2023-03-01");
+	});
+
+	it("deckt in arbzgMonths auch Schaltjahr und Jahreswechsel ab", () => {
+		const m = arbzgMonths("2024-02-29");
+		expect(m).toHaveLength(12);
+		expect(m[0]).toBe("2023-03");
+		expect(m[11]).toBe("2024-02");
+	});
+
+	it("stimmt auch ueber Schalttag und Zeitumstellung mit der naiven Rechnung ueberein", () => {
+		// Derselbe Kreuzvergleich wie sonst, nur mit einem Stichtag, dessen Fenster
+		// den 29.02.2024 und die Umstellung vom 31.03.2024 enthaelt.
+		const until = "2024-04-15";
+		for (let seed = 200; seed <= 205; seed++) {
+			const { entries, dataFrom } = scenario(seed, until);
+			const facts = dayFacts(entries, ABSENCE, { deductBreaks: false });
+			const opts = { until, dataFrom, workdays: MO_FR };
+			const pace = currentPace(facts, opts);
+			for (const basis of ["legal", "strict"] as const) {
+				for (const p of forecast(facts, basis, { ...opts, pace }).points) {
+					const ref = naiveAverage({ facts, basis, end: p.date, until, dataFrom, workdays: MO_FR, pace });
+					expect(
+						Math.abs(p.average - (ref ?? 0)),
+						`seed ${seed}, ${basis}, ${p.date}`
+					).toBeLessThan(1e-9);
+				}
+			}
+		}
 	});
 });
