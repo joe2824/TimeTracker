@@ -10,6 +10,7 @@ import {
 	fmtHMS,
 	fmtHours,
 	fmtHoursClock,
+	keepSeconds,
 	isWorkday,
 	minToClock,
 	monthLabel,
@@ -447,5 +448,32 @@ describe("midnightSplitHint", () => {
 	it("schweigt, wenn eine Spanne exakt an Mitternacht endet", () => {
 		// Sonst warnte der letzte Eintrag des Tages vor einer Teilung, die nicht kommt.
 		expect(midnightSplitHint(toTs("2026-07-16", "22:00"), toTs("2026-07-17", "00:00"))).toBeNull();
+	});
+});
+
+describe("keepSeconds", () => {
+	const ts = (h: number, m: number, sec = 0) => new Date(2026, 7, 19, h, m, sec, 0).getTime();
+
+	it("gibt den gespeicherten Zeitpunkt zurueck, wenn die Minute gleich blieb", () => {
+		// Annas Fall: Timer-Wechsel um 14:00:22, im Dialog steht "14:00".
+		expect(keepSeconds(ts(14, 0, 0), ts(14, 0, 22))).toBe(ts(14, 0, 22));
+	});
+
+	it("nimmt den neuen Zeitpunkt, sobald die Minute sich aendert", () => {
+		expect(keepSeconds(ts(18, 26, 0), ts(14, 0, 22))).toBe(ts(18, 26, 0));
+	});
+
+	it("unterscheidet gleiche Uhrzeit an verschiedenen Tagen", () => {
+		const heute = ts(14, 0, 0);
+		const gestern = new Date(2026, 7, 18, 14, 0, 22, 0).getTime();
+		expect(keepSeconds(heute, gestern)).toBe(heute);
+	});
+
+	it("laesst einen neuen Eintrag (ohne Original) unberuehrt", () => {
+		expect(keepSeconds(ts(14, 0, 0), null)).toBe(ts(14, 0, 0));
+	});
+
+	it("reicht NaN durch, statt daran das Original zurueckzugeben", () => {
+		expect(keepSeconds(NaN, ts(14, 0, 22))).toBeNaN();
 	});
 });

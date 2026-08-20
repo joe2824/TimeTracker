@@ -472,6 +472,48 @@ describe("Rueckfrage bei Ganztags-Abwesenheit auf einem Folgetag", () => {
 	});
 });
 
+describe("Bearbeiten eines anstossenden Timer-Eintrags", () => {
+	// Der Eintrags-Dialog zeigt "HH:MM" und baut daraus wieder einen Zeitstempel.
+	// Timer-Eintraege stossen aber sekundengenau aneinander: ein Aktivitaetswechsel
+	// setzt das Ende des einen exakt auf den Start des naechsten.
+	const sec = (day: number, h: number, m: number, s: number) =>
+		new Date(2026, 6, day, h, m, s, 0).getTime();
+
+	/** 11:20:39–14:00:22, direkt gefolgt von 14:00:22–24:00 (Annas 19.08.). */
+	function paar() {
+		const vorher = entry("a", P1, sec(19, 11, 20, 39), sec(19, 14, 0, 22));
+		const danach = entry("b", P1, sec(19, 14, 0, 22), sec(20, 0, 0, 0));
+		reset({ "2026-07": [vorher, danach] });
+		return danach;
+	}
+
+	it("weist den auf :00 abgerundeten Start ab – der Fehler, den keepSeconds verhindert", async () => {
+		const danach = paar();
+		// Ohne keepSeconds baut der Dialog aus "14:00" die Sekunde 00 und ragt damit
+		// 22 Sekunden in den Vorgaenger.
+		const ok = await app.updateEntry(danach.startTs, {
+			...danach,
+			startTs: sec(19, 14, 0, 0),
+			endTs: sec(19, 18, 26, 0)
+		});
+		expect(ok).toBe(false);
+		expect(onDisk("2026-07").find((e) => e.id === "b")!.endTs).toBe(sec(20, 0, 0, 0));
+	});
+
+	it("nimmt den Start mit erhaltenen Sekunden an", async () => {
+		const danach = paar();
+		const ok = await app.updateEntry(danach.startTs, {
+			...danach,
+			startTs: sec(19, 14, 0, 22), // keepSeconds hat die 22 zurueckgegeben
+			endTs: sec(19, 18, 26, 0)
+		});
+		expect(ok).toBe(true);
+		const b = onDisk("2026-07").find((e) => e.id === "b")!;
+		expect(b.startTs).toBe(sec(19, 14, 0, 22));
+		expect(b.endTs).toBe(sec(19, 18, 26, 0));
+	});
+});
+
 describe("#reportConflict über Monatsgrenzen", () => {
 	it("erkennt eine Überschneidung, wenn der Kandidat über den Monatswechsel reicht", async () => {
 		// Vorher pruefte #reportConflict nur den Monat von candidate.startTs (Juli) –
