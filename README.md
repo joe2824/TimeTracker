@@ -93,10 +93,17 @@ einfach, sondern hat einen Verlauf: alte schwere Tage fallen hinten heraus, wäh
 hineinlaufen. Die Karte simuliert diesen Verlauf Tag für Tag und beantwortet drei Fragen:
 
 1. **Wo stehe ich?** Schnitt und Puffer im Fenster, das heute endet.
-2. **Wenn es so weitergeht?** Aus den letzten **12 Wochen** (umschaltbar auf 4 oder 8) wird ein
-   Tempo in Stunden je Arbeitstag abgeleitet und 26 Wochen weit fortgeschrieben. Zwölf, weil
-   vier Wochen schon bei zwei zufällig langen Wochen ausschlagen und hochgerechnet auf ein
-   halbes Jahr eine Warnung ergeben, die sich von selbst wieder erledigt.
+2. **Wenn es so weitergeht?** Aus den letzten **16 Wochen** — zwei Dritteln des
+   Ausgleichszeitraums, umschaltbar auf 4, 8 oder 12 — wird ein Tempo in Stunden je Arbeitstag
+   abgeleitet und 26 Wochen weit fortgeschrieben. Bewusst träge: der Umkehrpunkt liegt bei
+   normaler Arbeit Monate voraus, es ist also reichlich Zeit gegenzusteuern, und dann wäre ein
+   nervöser Maßstab der falsche. Vier Wochen schlagen schon bei zwei zufällig langen Wochen
+   aus, und wer diese Warnung zweimal gesehen hat, sieht die dritte nicht mehr an.
+
+   Die Kehrseite: je näher der Bezugszeitraum an die 24 Wochen rückt, desto mehr nähert sich
+   das Tempo dem Fensterschnitt selbst an — die Prognose wird flacher und sagt im Grenzfall nur
+   noch „so wie bisher bleibt es, wie es ist“. Wer den Verdacht hat, gerade laufe eine heiße
+   Phase, schaltet auf **4 Wochen** und sieht den ungeglätteten Stand.
 3. **Bis wann kann ich es noch drehen?** Der **Umkehrpunkt**: der späteste Tag, an dem man
    anfangen kann herunterzugehen und trotzdem unter der Grenze bleibt. Gerechnet wird der
    günstigste Fall — bis dahin im aktuellen Tempo, danach gar nichts mehr.

@@ -300,7 +300,7 @@
 				     nicht neben das Urteil. -->
 				<div class="flex items-center gap-1 text-xs">
 					<span class="text-muted-foreground mr-1">Prognose aus den letzten</span>
-					{#each [4, 8, 12] as w (w)}
+					{#each [4, 8, 12, 16] as w (w)}
 						<Button
 							variant={paceWeeks === w ? "secondary" : "ghost"}
 							size="sm"
