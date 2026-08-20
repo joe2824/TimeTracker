@@ -11,6 +11,7 @@
 		fmtDate,
 		fmtDateHuman,
 		fmtHoursClock,
+		keepSeconds,
 		midnightSplitHint,
 		minToClock,
 		noonTs,
@@ -109,6 +110,8 @@
 	interface Draft {
 		id: string | null;
 		originalStartTs: number;
+		/** Gespeichertes Ende, sekundengenau – Grundlage fuer `keepSeconds`. */
+		originalEndTs: number | null;
 		activityId: string;
 		date: string;
 		start: string;
@@ -297,6 +300,7 @@
 		return {
 			id: null,
 			originalStartTs: 0,
+			originalEndTs: null,
 			// Bewusst leer: der Nutzer wählt die Aktivität selbst (kein Default).
 			activityId: "",
 			date: fmtDate(now.getTime()),
@@ -418,6 +422,7 @@
 		draft = {
 			id: e.id,
 			originalStartTs: e.startTs,
+			originalEndTs: e.endTs,
 			activityId: e.activityId,
 			date: fmtDate(e.startTs),
 			start: fmtClock(e.startTs),
@@ -454,6 +459,12 @@
 			// Bis vor Von -> Folgetag. startOfNextDay statt +24 h: an DST-Tagen hat
 			// ein Tag 23 oder 25 Stunden.
 			if (endTs < startTs) endTs = toTs(fmtDate(startOfNextDay(startTs)), draft.end);
+			// Unangetastete Felder duerfen ihre Sekunden behalten – sonst ruecken sie
+			// auf :00 und stossen in den Nachbar-Eintrag (siehe `keepSeconds`).
+			if (draft.id) {
+				startTs = keepSeconds(startTs, draft.originalStartTs);
+				endTs = keepSeconds(endTs, draft.originalEndTs);
+			}
 		}
 		if (Number.isNaN(startTs) || Number.isNaN(endTs)) return;
 		// Von == Bis waere ein 0-Stunden-Eintrag: erfasst nichts, steht aber im Weg.

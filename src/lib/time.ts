@@ -88,6 +88,30 @@ export function toTs(date: string, time: string): number {
 }
 
 /**
+ * Einen minutengenau bearbeiteten Zeitpunkt auf den gespeicherten zurueckfuehren,
+ * solange die MINUTE dieselbe geblieben ist.
+ *
+ * Der Eintrags-Dialog zeigt "HH:MM" und baut daraus wieder einen Zeitstempel –
+ * die Sekunden fallen dabei weg. Timer-Eintraege haben aber welche: ein Wechsel
+ * setzt das Ende des einen exakt auf den Start des naechsten (…14:00:22). Wer
+ * so einen Eintrag anfasst, verschiebt seinen Start ungewollt auf 14:00:00 und
+ * ragt damit 22 Sekunden in den Vorgaenger – die Ueberschneidungs-Regel weist
+ * das Speichern ab, und zwar fuer ein Feld, das der Nutzer gar nicht angefasst
+ * hat. Betroffen ist jeder Eintrag, der an einen anderen anstoesst, also der
+ * Normalfall nach einem Aktivitaetswechsel.
+ *
+ * Der Preis ist ein bewusster: wer 14:00 tippt und exakt 14:00:00 meint, bekommt
+ * die alten 22 Sekunden zurueck. Das Feld kann diesen Unterschied ohnehin nicht
+ * ausdruecken.
+ *
+ * @param original der gespeicherte Zeitpunkt, oder null bei einem neuen Eintrag
+ */
+export function keepSeconds(ts: number, original: number | null): number {
+	if (original === null || Number.isNaN(ts)) return ts;
+	return Math.floor(ts / 60000) === Math.floor(original / 60000) ? original : ts;
+}
+
+/**
  * Epoch-ms fuer die Tagesmitte eines "YYYY-MM-DD".
  *
  * 12:00 statt 00:00, weil ein Tag an DST-Grenzen um Mitternacht auf den Vortag
