@@ -65,18 +65,21 @@ export const AVG_WINDOW_DAYS = 168;
 /**
  * Referenzzeitraum, aus dem das "aktuelle Tempo" abgeleitet wird.
  *
- * Zwoelf Wochen, nicht vier. Vier Wochen sind der empfindlichste Wert und
- * schlagen schon bei zwei zufaellig langen Wochen aus; hochgerechnet auf ein
- * halbes Jahr wird daraus eine Warnung, die sich von selbst wieder erledigt.
- * Bei einem Fenster von 24 Wochen ist die Haelfte davon der ehrlichere
- * Massstab – und wo der Umkehrpunkt liegt, entscheidet sich am dauerhaften
- * Tempo, nicht am letzten Monat.
+ * Zwei Drittel des Ausgleichszeitraums. Bewusst traege: der Umkehrpunkt liegt
+ * bei normaler Arbeit Monate voraus, es ist also reichlich Zeit gegenzusteuern,
+ * und dann waere ein nervoeser Massstab der falsche. Vier Wochen schlagen schon
+ * bei zwei zufaellig langen Wochen aus; auf ein halbes Jahr hochgerechnet wird
+ * daraus eine Warnung, die sich von selbst wieder erledigt – und wer die zweimal
+ * gesehen hat, sieht die dritte nicht mehr an.
  *
- * Der Preis: laeuft es tatsaechlich seit vier Wochen aus dem Ruder, meldet sich
- * der Check spaeter, als er koennte. Die Auswahl in der Karte laesst deshalb
- * auch 4 und 8 Wochen zu.
+ * Die Kehrseite, offen gesagt: je naeher der Bezugszeitraum an die 24 Wochen
+ * rueckt, desto mehr naehert sich das Tempo dem Fensterschnitt SELBST an. Die
+ * Prognose wird dadurch flacher und sagt im Grenzfall nur noch "so wie bisher
+ * bleibt es, wie es ist" – frueh warnen kann sie dann nicht mehr. Deshalb sind
+ * 4, 8 und 12 Wochen in der Karte weiterhin waehlbar; wer den Verdacht hat,
+ * gerade laufe eine heisse Phase, sieht dort den ungeglaetteten Stand.
  */
-export const DEFAULT_PACE_WEEKS = 12;
+export const DEFAULT_PACE_WEEKS = 16;
 /**
  * So viele Arbeitstage muss der Bezugszeitraum mindestens hergeben, sonst wird
  * auf das volle Ausgleichsfenster ausgewichen (siehe currentPace).
