@@ -178,7 +178,14 @@
 	// Welche Einstellungen zu welcher Card gehoeren. Die Umrechnung (getrimmt,
 	// begrenzt, Uhrzeit -> Stunden) samt Rueckfall auf den gespeicherten Wert bei
 	// geleertem Feld steckt in settingsSync.ts.
-	const REPORT_KEYS = ["bossEmail", "senderName", "reportSubjectTemplate", "statsEnabled"] as const;
+	const REPORT_KEYS = [
+		"bossEmail",
+		"senderName",
+		"reportSubjectTemplate",
+		"statsEnabled",
+		"arbzgEnabled",
+		"arbzgTrackingHint"
+	] as const;
 	const TIMES_KEYS = [
 		"reminderTimes",
 		"reportReminderEnabled",
@@ -334,6 +341,20 @@
 				bind:checked={form.statsEnabled}
 				onCheckedChange={() => saveReport()}
 				class="border-t pt-3"
+			/>
+			<SettingToggle
+				id="arbzg"
+				title="Arbeitszeit-Check anzeigen"
+				description="Schätzt nach dem Arbeitszeitgesetz, ob der 24-Wochen-Schnitt von 8 h zu reißen droht, und was sich am Tempo ändern müsste. Nur für dich – die E-Mail bleibt unverändert."
+				bind:checked={form.arbzgEnabled}
+				onCheckedChange={() => saveReport()}
+			/>
+			<SettingToggle
+				id="arbzghint"
+				title="Hinweis beim Tracking"
+				description="Zeigt oben auf der Tracking-Seite eine Zeile, wenn der 24-Wochen-Schnitt zu reißen droht. Schweigt, solange alles im grünen Bereich ist."
+				bind:checked={form.arbzgTrackingHint}
+				onCheckedChange={() => saveReport()}
 			/>
 		</Card.Content>
 	</Card.Root>

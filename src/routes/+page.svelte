@@ -71,6 +71,14 @@
 		tab = "entries";
 	}
 
+	// Ein Tag kann auch aus einer anderen Ansicht heraus gewuenscht werden (der
+	// Arbeitszeit-Check im Bericht verlinkt seine auffaelligen Tage). Der Wunsch
+	// allein wechselt den Tab nicht – das passiert hier, an der einzigen Stelle,
+	// die den Tab kennt.
+	$effect(() => {
+		if (entriesFocus.pendingDate) tab = "entries";
+	});
+
 	function onGlobalKey(e: KeyboardEvent) {
 		if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
 			e.preventDefault();
@@ -423,9 +431,10 @@
 			</div>
 		</header>
 
-		<div class="mx-auto w-full max-w-6xl px-6">
+		<!-- pb-12: die letzte Card soll nicht auf der Fensterkante aufsitzen. -->
+		<div class="mx-auto w-full max-w-6xl px-6 pb-12">
 			<Tabs.Content value="tracking" class="mt-0">
-				<TrackingPanel onShowEntries={showEntriesToday} />
+				<TrackingPanel onShowEntries={showEntriesToday} onShowReport={() => (tab = "report")} />
 			</Tabs.Content>
 			<Tabs.Content value="entries" class="mt-4">
 				<EntryEditor />

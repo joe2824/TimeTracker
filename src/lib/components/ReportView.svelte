@@ -8,6 +8,7 @@
 	import { Button } from "$lib/components/ui/button";
 	import MonthSelector from "$lib/components/MonthSelector.svelte";
 	import StatsCard from "$lib/components/StatsCard.svelte";
+	import ArbZgCard from "$lib/components/ArbZgCard.svelte";
 	import * as Card from "$lib/components/ui/card";
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { toast } from "svelte-sonner";
@@ -159,6 +160,10 @@
 
 	{#if app.settings.statsEnabled}
 		<StatsCard {month} {report} />
+	{/if}
+
+	{#if app.settings.arbzgEnabled}
+		<ArbZgCard {month} />
 	{/if}
 </div>
 

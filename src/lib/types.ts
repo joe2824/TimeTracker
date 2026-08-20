@@ -103,6 +103,22 @@ export interface Settings {
 	reportSentMonths: string[];
 	/** Auswertung (Saldo, Stunden je Aktivitaet, Jahres-Heatmap) im Bericht zeigen */
 	statsEnabled: boolean;
+	/**
+	 * Arbeitszeit-Check (ArbZG) im Bericht zeigen: Ausgleichszeitraum ueber 24
+	 * Wochen samt Prognose, dazu Tagesgrenzen, Ruhezeit und Sonntagsarbeit.
+	 *
+	 * Wie die Auswertung nur fuer den Nutzer – die Berichts-Mail bleibt davon
+	 * unberuehrt.
+	 */
+	arbzgEnabled: boolean;
+	/**
+	 * Kurzer Hinweis auf der Tracking-Seite, wenn der Arbeitszeit-Check anschlaegt.
+	 *
+	 * Unabhaengig von `arbzgEnabled`: die Card ist der ausfuehrliche Blick, den
+	 * man sucht, wenn man ihn sucht – der Hinweis ist der, den man nicht sucht.
+	 * Beides getrennt schaltbar, weil beides eine andere Frage beantwortet.
+	 */
+	arbzgTrackingHint: boolean;
 	/** Chef-Modus: Tab „Team" mit Auswertung der eingegangenen Berichts-Mails */
 	bossMode: boolean;
 	/** Team, von dem monatlich ein Bericht erwartet wird */
@@ -171,6 +187,8 @@ export const defaultSettings: Settings = {
 	reportReminderLeadDays: 0,
 	reportSentMonths: [],
 	statsEnabled: true,
+	arbzgEnabled: true,
+	arbzgTrackingHint: true,
 	bossMode: false,
 	team: [],
 	teamSubjectFilter: DEFAULT_TEAM_SUBJECT_FILTER,

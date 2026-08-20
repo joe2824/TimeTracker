@@ -8,9 +8,11 @@
 		fmtDateHuman,
 		fmtHMS,
 		fmtHoursClock,
-		midnightSplitHint
+		midnightSplitHint,
+		noonTs
 	} from "$lib/time";
 	import { breakDeduction } from "$lib/breaks";
+	import { arbzgMonths, checkArbZg, dataFromEntries, MIN_HINT_WEEKS } from "$lib/arbzg";
 	import { START_PRESETS, resolveStartTs, toStartArg } from "$lib/startTime";
 	import { Button } from "$lib/components/ui/button";
 	import * as ButtonGroup from "$lib/components/ui/button-group";
@@ -23,8 +25,14 @@
 	import ListIcon from "@lucide/svelte/icons/list";
 	import XIcon from "@lucide/svelte/icons/x";
 	import ActivityDot from "$lib/components/ActivityDot.svelte";
+	import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
+	import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
 
-	let { onShowEntries }: { onShowEntries?: () => void } = $props();
+	let {
+		onShowEntries,
+		onShowReport
+	}: { onShowEntries?: () => void; onShowReport?: () => void } = $props();
+
 
 	let onlyFavorites = $state(false);
 	const choices = $derived(
@@ -70,6 +78,55 @@
 			.sort((a, b) => b.startTs - a.startTs)
 	);
 
+	// ---- Arbeitszeit-Hinweis ----
+	// Stichtag ist `today` (siehe oben): aus `app.now`, aber formatiert. `app.now`
+	// tickt im Sekundentakt, die formatierte Fassung aendert sich nur um
+	// Mitternacht, und einen unveraenderten Wert gibt Svelte nicht weiter – die
+	// Rechnung laeuft also einmal am Tag und ueberlebt trotzdem den Tageswechsel.
+	const hintOn = $derived(app.settings.arbzgTrackingHint);
+	const hintMonths = $derived(hintOn ? arbzgMonths(today) : []);
+
+	$effect(() => {
+		for (const m of hintMonths) void app.ensureMonth(m);
+	});
+
+	const hintEntries = $derived(hintMonths.flatMap((m) => app.monthEntries(m)));
+
+	// Erst urteilen, wenn ALLE zwoelf Monate da sind. Waehrend des Ladens liefert
+	// `monthEntries` fuer noch nicht geladene Monate eine leere Liste – der
+	// Hinweis saehe beim Start also nur den laufenden Monat und meldete einem
+	// Vielarbeiter zuverlaessig ein rotes "Grenze bereits gerissen", das eine
+	// Sekunde spaeter wieder verschwindet.
+	const hintReady = $derived(hintMonths.every((m) => app.monthLoaded(m)));
+
+	const arbzgVerdict = $derived.by(() => {
+		if (!hintOn || !hintReady || hintEntries.length === 0) return null;
+		const r = checkArbZg(hintEntries, {
+			until: today,
+			dataFrom: dataFromEntries(hintEntries, today),
+			workdays: app.settings.workdays,
+			deductBreaks: app.settings.breakDeduction,
+			absenceIds: new Set(app.activities.filter((a) => a.isAbsence).map((a) => a.id)),
+			// Nicht `app.now`: sonst haengt die ganze Rechnung am Sekundentakt. Die
+			// laufende Stunde verschiebt einen 24-Wochen-Schnitt ohnehin nicht.
+			now: noonTs(today)
+		});
+		// Die Card darf ueber eine kurze Datenbasis rechnen, weil sie sie
+		// ausweist ("erst 16 von 24 Wochen") und weil man sie aufsucht. Ein
+		// Hinweis, der von selbst erscheint, darf das nicht: aus einem einzigen
+		// erfassten Monat wuerde sonst eine Warnung, die nur heisst, dass die
+		// uebrigen fuenf fehlen.
+		const w = r.windows.strict;
+		if (!w.complete && w.weeksCovered < MIN_HINT_WEEKS) return null;
+		const v = r.forecasts.strict.verdict;
+		// Nur wenn wirklich etwas zu tun ist – also wenn man spuerbar herunter
+		// muesste, um das Fenster zu halten. "Dicht an der Grenze" bleibt der Card
+		// vorbehalten: eine Dauerwarnung auf der meistgesehenen Seite liest nach
+		// einer Woche niemand mehr, und dann faellt auch die nicht mehr auf, die
+		// etwas von einem will.
+		return v.requiresAction ? v : null;
+	});
+
 	/**
 	 * Tagesbilanz: erfasst, Pausenabzug, Arbeitszeit.
 	 *
@@ -92,6 +149,34 @@
 </script>
 
 <div class="space-y-4">
+	{#if arbzgVerdict}
+		<!-- Eine Zeile, kein zweiter Bericht: die Zahlen stehen im Tab „Bericht".
+		     Verlinkt wird aber nur, wenn es die Karte dort auch gibt – beide
+		     Schalter sind unabhaengig, und ein Klick ins Leere ist schlimmer als
+		     kein Klick. -->
+		{#if app.settings.arbzgEnabled}
+			<button
+				class="hint flex w-full items-center gap-2 rounded-md border px-3 py-1.5 text-left text-xs"
+				class:hint-crit={arbzgVerdict.level === "crit"}
+				onclick={() => onShowReport?.()}
+			>
+				<TriangleAlertIcon class="size-3.5 shrink-0" />
+				<span class="font-medium">{arbzgVerdict.headline}</span>
+				<span class="text-muted-foreground truncate">· Arbeitszeit-Check</span>
+				<ChevronRightIcon class="ml-auto size-3.5 shrink-0 opacity-60" />
+			</button>
+		{:else}
+			<div
+				class="hint flex w-full items-center gap-2 rounded-md border px-3 py-1.5 text-xs"
+				class:hint-crit={arbzgVerdict.level === "crit"}
+			>
+				<TriangleAlertIcon class="size-3.5 shrink-0" />
+				<span class="font-medium">{arbzgVerdict.headline}</span>
+				<span class="text-muted-foreground truncate">· Arbeitszeit-Check</span>
+			</div>
+		{/if}
+	{/if}
+
 	<Card.Root>
 		<Card.Header>
 			<Card.Title>Aktueller Timer</Card.Title>
@@ -299,3 +384,24 @@
 		</Card.Content>
 	</Card.Root>
 </div>
+
+<style>
+	/* Gedeckt gehalten: der Hinweis steht ueber dem Timer und darf ihn nicht
+	   uebertoenen – er soll auffallen, wenn man hinsieht, nicht bevor. */
+	.hint {
+		border-color: color-mix(in oklab, #f59e0b 55%, transparent);
+		background: color-mix(in oklab, #f59e0b 7%, transparent);
+		color: #b45309;
+	}
+	.hint-crit {
+		border-color: color-mix(in oklab, var(--destructive) 50%, transparent);
+		background: color-mix(in oklab, var(--destructive) 6%, transparent);
+		color: var(--destructive);
+	}
+	:global(.dark) .hint {
+		color: #fbbf24;
+	}
+	:global(.dark) .hint-crit {
+		color: var(--destructive);
+	}
+</style>

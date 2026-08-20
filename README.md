@@ -43,6 +43,10 @@ Einstellungen → „Nach Updates suchen".
   LOGA es rechnet. Abschaltbar, siehe [Automatischer Pausenabzug](#automatischer-pausenabzug).
 - **Auswertung** – Soll/Ist-Saldo, Stunden je Aktivität und Jahres-Heatmap der gearbeiteten
   Tage. Rein lokal, kein Teil der E-Mail; in den Einstellungen abschaltbar.
+- **Arbeitszeit-Check** – schätzt nach dem Arbeitszeitgesetz, ob der 24-Wochen-Schnitt von 8 h
+  zu reißen droht und um wie viel man je Arbeitstag herunter müsste. Auf Wunsch mit kurzem
+  Hinweis auf der Tracking-Seite. Ebenfalls lokal und abschaltbar, siehe
+  [Arbeitszeit-Check](#arbeitszeit-check).
 - **Chef-Modus** (optional, in den Einstellungen einschaltbar und dauerhaft gespeichert) –
   Tab „Team“: prüft im Outlook-Posteingang, wer seinen Monatsbericht geschickt hat und wer
   nicht, exportiert die Liste als **CSV** und erstellt eine **Erinnerung an die Fehlenden** als
@@ -75,6 +79,112 @@ Wichtig dazu:
   Schalter lässt sich damit jederzeit zurücknehmen, ohne dass Zeiten verloren gehen.
 - Der Abzug wirkt auf Tagessummen, **Bericht** (und damit die E-Mail) und Auswertung. Die
   Verifikations-Zeile im Tab „Bericht" weist ihn getrennt aus.
+
+### Arbeitszeit-Check
+
+Standardmäßig aktiv, abschaltbar unter **Einstellungen → Bericht → „Arbeitszeit-Check
+anzeigen"**. Die Karte steht im Tab **Bericht** unter der Auswertung und geht **nicht** in die
+E-Mail.
+
+Im Mittelpunkt steht § 3 Abs. 1 Satz 2 ArbZG: Ein Tag darf bis zu **10 h** haben, im
+**Durchschnitt über 24 Wochen** aber höchstens **8 h werktäglich**. Das ist die Grenze, in die
+man hineinläuft, ohne es zu merken – und weil das Fenster **rollt**, steigt der Schnitt nicht
+einfach, sondern hat einen Verlauf: alte schwere Tage fallen hinten heraus, während vorne neue
+hineinlaufen. Die Karte simuliert diesen Verlauf Tag für Tag und beantwortet drei Fragen:
+
+1. **Wo stehe ich?** Schnitt und Puffer im Fenster, das heute endet.
+2. **Wenn es so weitergeht?** Aus den letzten 4 Wochen (umschaltbar auf 8 oder 12) wird ein
+   Tempo in Stunden je Arbeitstag abgeleitet und 26 Wochen weit fortgeschrieben.
+3. **Was müsste sich ändern?** Das höchste konstante Tempo, mit dem der Schnitt unter 8 h
+   bleibt, und wie weit das aktuelle darüber liegt — „das Fenster trägt höchstens 7:51 h, also
+   0:54 h weniger als bisher“.
+
+Die Kurve im Diagramm **steigt**, wenn das aktuelle Tempo über dem bisherigen Schnitt liegt:
+das rollende Fenster tauscht Woche für Woche ältere, kürzere Tage gegen Tage dieses Tempos.
+Bleibt es dabei, endet der Schnitt genau beim aktuellen Tempo. Das steht als Satz unter dem
+Diagramm, weil eine steigende Linie sonst wie ein Trend aussieht statt wie eine Folge der
+Annahme.
+
+#### Warum kein genaues Datum
+
+Nahe der Schwelle nähert sich die Kurve fast tangential. Ein Tempounterschied von einer
+Viertelstunde verschiebt den Überschreitungstag dann um Monate – bei 8:23 h ergibt dieselbe
+Datenlage „in 6 Wochen“, bei 8:05 h „in 15 Wochen“. Deshalb steht die Frist auf **Wochen
+gerundet und mit „etwa“** in der Überschrift, und der Satz darunter trägt die **nötige
+Reduktion**: die bewegt sich glatt mit dem Tempo und ist außerdem das Einzige, was sich tun
+lässt.
+
+Steht der Schnitt bereits **auf** der Grenze, entfällt die Frist ganz – sie ist abgelaufen.
+Dann heißt es „**Grenze erreicht**“, rot, mit der nötigen Reduktion im Detailtext.
+
+„Höchstens X h je Arbeitstag“ ist dabei ein **Tempo**, keine Tagesration: der Wert wird über
+Fenster ab vier Wochen Vorlauf bestimmt. In den ersten vier Wochen kann der Schnitt die Grenze
+deshalb streifen, obwohl man sich daran hält — diese Fenster sind von bereits gearbeiteten
+Stunden bestimmt. Über sechzig zufällig erzeugte Halbjahre gemessen lag die größte
+Überschreitung bei elf Minuten; ein Test deckelt sie bei einer Viertelstunde.
+
+Aus demselben Grund gilt eine Toleranz von drei Minuten je Werktag: streift der Schnitt die 8 h nur, meldet der
+Check „**Dicht an der Grenze**“ statt einer Frist, die schon ein einzelner langer Tag umwirft.
+
+**Farbe heißt Handlungsbedarf** — und sonst nichts. Gelb oder rot erscheint nur, wenn man
+spürbar herunter müsste, um das Fenster zu halten. „Dicht an der Grenze“ ist eine Beobachtung
+und bleibt deshalb neutral. Wo gewarnt wird, sagt die Zeile darunter zuerst, worauf sich die
+Warnung stützt: nebeneinander gelesen wirkten sonst eine gelbe Warnung und ein
+„gesetzlich unkritisch“ wie ein Widerspruch.
+
+#### Zwei Lesarten
+
+Gerechnet wird **8 h × Werktage**, und Werktage sind nach dem Gesetz **Mo–Sa**. 24 Wochen
+ergeben so 144 Werktage = 1152 h Budget; bei 7,5 h an fünf Tagen kommen davon rund 900 h
+zusammen. Die gesetzliche Grenze ist damit für eine normale Fünf-Tage-Woche **praktisch
+unerreichbar** – man müsste ein halbes Jahr lang 48 h/Woche arbeiten.
+
+Deshalb zeigt die Karte beides:
+
+- **gesetzlich (Mo–Sa)** – die Rechtslage, meist weit im Grünen.
+- **streng (nur deine Arbeitstage)** – 120 statt 144 Werktage. Keine Gesetzeslage, sondern der
+  **Frühwarnwert**; nur diese Zahl warnt früh genug, um noch etwas ändern zu können. Die
+  Empfehlung beruht auf ihr und sagt das auch.
+
+#### Hinweis beim Tracking
+
+Getrennt schaltbar unter **Einstellungen → Bericht → „Hinweis beim Tracking"** (standardmäßig
+an). Oben auf der Tracking-Seite erscheint dann **eine** Zeile, die in den Tab „Bericht“
+führt – aber nur, wenn tatsächlich etwas zu tun ist, also wenn man spürbar herunter müsste, um
+das Fenster zu halten. „Dicht an der Grenze“ bleibt der Karte vorbehalten: eine Dauerwarnung
+auf der meistgesehenen Seite liest nach einer Woche niemand mehr, und dann fällt auch die
+nicht mehr auf, die etwas will.
+
+Zwei weitere Bedingungen, damit der Hinweis nicht lügt: Er wartet, bis **alle zwölf Monate
+geladen** sind (währenddessen sähe er nur den laufenden Monat und meldete Vielarbeitern
+zuverlässig einen Fehlalarm), und er verlangt **mindestens acht Wochen** Erfassung. Die Karte
+darf über eine kürzere Basis rechnen, weil sie sie ausweist und weil man sie aufsucht — ein
+Hinweis, der von selbst erscheint, darf das nicht.
+
+#### Was sonst geprüft wird
+
+Unter der Prognose stehen die Tagesregeln: **> 10 h** (§ 3, die eine Grenze, die sich *nicht*
+über den Durchschnitt ausgleichen lässt), **Ruhezeit unter 11 h** zwischen Feierabend und
+nächstem Beginn (§ 5) und **Sonntagsarbeit** (§ 9). Ein Klick auf den Tag springt in die
+Einträge.
+
+#### Grenzen
+
+- Erfasst werden **Projektzeiten, keine Stempelzeiten**. Das Ergebnis ist eine Annahme, kein
+  Nachweis, und kein Rechtsrat – maßgeblich bleibt die Zeiterfassung des Arbeitgebers.
+- **Ruhepausen (§ 4)** werden nur geprüft, wenn der [automatische
+  Pausenabzug](#automatischer-pausenabzug) **abgeschaltet** ist. Ist er an, rechnet die App wie
+  LOGA und zieht die Pause ohnehin ab; ein Timer, der über die Mittagspause durchläuft, dürfte
+  dann keinen Verstoß auslösen. LOGAs Spalte „Verstoß Ruhepause" speist sich aus echten
+  Stempeln und lässt sich in diesem Modus **nicht** vorhersagen.
+- **Feiertage** kennt die App nicht. Ein gebuchter Feiertag ist eine Ganztags-Abwesenheit und
+  fällt damit aus der Rechnung; an einem *ungebuchten* Feiertag gearbeitete Zeit erkennt der
+  Check nicht als § 9-Fall.
+- **Abwesenheiten** fallen aus dem Nenner, nicht nur aus dem Zähler – ein Urlaubstag bringt kein
+  Acht-Stunden-Budget mit. Sonst ließe sich der Ausgleich schlicht erurlauben.
+- Reicht die Erfassung keine 24 Wochen zurück, weist die Karte das aus und rechnet über den
+  tatsächlich abgedeckten Zeitraum. Künftiger Urlaub ist nicht bekannt und wird als „keiner"
+  angenommen – die vorsichtige Seite.
 
 ## Zeitwächter-Abgleich
 
@@ -264,6 +374,7 @@ src/
     store.ts                   Datei-Persistenz (tauri-plugin-fs)
     time.ts / report.ts        reine Logik (getestet)
     breaks.ts                  automatischer Pausenabzug (getestet)
+    arbzg.ts                   Arbeitszeit-Check, 24-Wochen-Prognose (getestet)
     teamReport.ts              Chef-Modus: Abgabe-Kontrolle (getestet)
     xlsx.ts                    XLSX-Leser (ZIP + XML, ohne Paket; getestet)
     timeReport.ts              LOGA-Zeitwirtschaftsreport auswerten (getestet)
