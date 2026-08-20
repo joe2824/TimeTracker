@@ -685,10 +685,6 @@ export function forecast(
 	let crossing: Forecast["crossing"] = null;
 	let peak = { date: opts.until, average: at(axis.todayIndex, opts.pace) ?? 0 };
 	let maxPace: number | null = null;
-	let reliefDate: string | null = null;
-	// Nach Entlastung zu fragen ergibt nur Sinn, wenn das Fenster heute schon
-	// traegt, was es nicht tragen darf. Sonst waere die Antwort "ab heute".
-	const overToday = (at(axis.todayIndex, 0) ?? 0) > NORM_DAILY;
 
 	// Gezeichnet wird nur ruecklaeufig, soweit die Daten ein VOLLES Fenster
 	// hergeben. Ein Fenster, das zur Haelfte vor dem ersten erfassten Tag liegt,
@@ -730,10 +726,6 @@ export function forecast(
 
 		// Entlastung: ab wann traegt das Fenster wieder, selbst ohne jede weitere
 		// Stunde? Nur diese Frage bleibt, wenn maxPace ins Negative faellt.
-		if (overToday && reliefDate === null) {
-			const idle = at(i, 0);
-			if (idle !== null && idle <= NORM_DAILY) reliefDate = date;
-		}
 	}
 
 	/**
@@ -787,6 +779,29 @@ export function forecast(
 		while (i > axis.todayIndex && !isWorkday(noonTs(axis.dates[i]), opts.workdays)) i--;
 		easeOffDate = axis.dates[i];
 	}
+
+	/**
+	 * Ab wann traegt das Fenster wieder, selbst ohne jede weitere Stunde?
+	 *
+	 * Gefragt ist der Tag NACH der letzten Ueberschreitung, nicht der erste Tag
+	 * unterhalb der Grenze: der kann heute sein, waehrend der Schnitt in vier
+	 * Wochen noch einmal darueber geht, weil ein leerer Tag hinten aus dem
+	 * Fenster faellt.
+	 *
+	 * Gerechnet wird gegen dieselbe Schwelle wie das Urteil. Vorher stand hier
+	 * die nackte Acht: bei einem Schnitt zwischen 8:00 und 8:03 entstand dadurch
+	 * ein Datum, das keine Stufe je benutzte, und im Fall "nicht mehr
+	 * aufzuhalten" fehlte es umgekehrt genau dann, wenn der Schnitt heute noch
+	 * unter der Toleranz lag.
+	 */
+	const limit = NORM_DAILY + AVG_TOLERANCE;
+	let lastOver = -1;
+	for (let i = axis.todayIndex; i < axis.dates.length; i++) {
+		const idle = at(i, 0);
+		if (idle !== null && idle > limit) lastOver = i;
+	}
+	const reliefDate =
+		lastOver >= 0 && lastOver + 1 < axis.dates.length ? axis.dates[lastOver + 1] : null;
 
 	const paceDelta = maxPace === null ? null : maxPace - opts.pace;
 

@@ -662,6 +662,38 @@ describe("Zeitsimulation", () => {
 		expect(pace).toBeCloseTo(7.9, 1);
 	});
 
+	it("setzt das Entlastungsdatum hinter die LETZTE Ueberschreitung", () => {
+		// Nicht auf den ersten Tag unterhalb der Grenze: der kann heute sein,
+		// waehrend der Schnitt in vier Wochen noch einmal darueber geht, weil ein
+		// leerer Tag hinten aus dem Fenster faellt. Geprueft wird gegen die naive
+		// Rechnung ohne jede kuenftige Stunde.
+		const limit = NORM_DAILY + AVG_TOLERANCE;
+		let checked = 0;
+
+		for (let seed = 80; seed <= 159; seed++) {
+			const { entries, dataFrom } = scenario(seed);
+			const facts = dayFacts(entries, ABSENCE, { deductBreaks: false });
+			const opts = { until: UNTIL, dataFrom, workdays: MO_FR };
+			const f = forecast(facts, "strict", { ...opts, pace: 9.5 });
+			if (!f.reliefDate) continue;
+
+			// stopAfter = UNTIL heisst: kein einziger kuenftiger Tag wird gearbeitet.
+			const idleAt = (end: string) =>
+				naiveAverage({ facts, basis: "strict", end, until: UNTIL, dataFrom, workdays: MO_FR, pace: 9.5, stopAfter: UNTIL });
+
+			// Am Tag davor liegt die letzte Ueberschreitung ...
+			expect(idleAt(stepDate(f.reliefDate, -1))!, `seed ${seed}`).toBeGreaterThan(limit);
+			// ... und ab dem Entlastungsdatum kommt keine mehr.
+			let end = f.reliefDate;
+			for (let i = 0; end <= stepDate(UNTIL, 26 * 7); i++, end = stepDate(end, 1)) {
+				const v = idleAt(end);
+				if (v !== null) expect(v, `seed ${seed}, ${end}`).toBeLessThanOrEqual(limit);
+			}
+			checked++;
+		}
+		expect(checked).toBeGreaterThan(4);
+	});
+
 	it("bestimmt den Umkehrpunkt exakt – am naechsten Arbeitstag traegt es nicht mehr", () => {
 		// Der Umkehrpunkt ist per Halbierung gesucht, also genau die Art Zahl, die
 		// um eins danebenliegen kann, ohne dass es auffaellt. Geprueft wird er
