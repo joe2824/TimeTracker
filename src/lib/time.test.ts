@@ -22,7 +22,9 @@ import {
 	splitAtMidnight,
 	startOfNextDay,
 	stepDate,
-	toTs
+	toTs,
+	MINUTE_MS,
+	quantize
 } from "./time";
 
 describe("stepDate", () => {
@@ -475,5 +477,31 @@ describe("keepSeconds", () => {
 
 	it("reicht NaN durch, statt daran das Original zurueckzugeben", () => {
 		expect(keepSeconds(NaN, ts(14, 0, 22))).toBeNaN();
+	});
+});
+
+describe("quantize", () => {
+	it("rundet auf ganze Minuten ab", () => {
+		const t = new Date(2026, 5, 10, 14, 37, 42, 500).getTime();
+		const q = quantize(t, MINUTE_MS);
+		expect(new Date(q).getSeconds()).toBe(0);
+		expect(new Date(q).getMilliseconds()).toBe(0);
+		expect(new Date(q).getMinutes()).toBe(37);
+	});
+
+	it("liefert innerhalb derselben Minute denselben Wert", () => {
+		// Genau darauf beruht die Ersparnis: Svelte gibt einen unveraenderten
+		// Wert nicht weiter, die Rechnung dahinter laeuft also einmal je Minute.
+		const base = new Date(2026, 5, 10, 14, 37, 0).getTime();
+		const werte = new Set<number>();
+		for (let s = 0; s < 60; s++) werte.add(quantize(base + s * 1000, MINUTE_MS));
+		expect(werte.size).toBe(1);
+		// Die naechste Sekunde faellt in die naechste Minute.
+		expect(quantize(base + 60_000, MINUTE_MS)).toBeGreaterThan([...werte][0]);
+	});
+
+	it("rundet ab, nie auf – eine Rechnung darf nicht in die Zukunft greifen", () => {
+		const t = new Date(2026, 5, 10, 14, 37, 59, 999).getTime();
+		expect(quantize(t, MINUTE_MS)).toBeLessThanOrEqual(t);
 	});
 });
