@@ -549,6 +549,50 @@ function buildAxis(
 	};
 }
 
+/**
+ * Die Zeitachse samt allen Praefixsummen – einmal aufgebaut.
+ *
+ * Frueher baute jede Rechnung ihre eigene: zwei Fenster, ein bis zwei
+ * Tempo-Messungen, zwei Prognosen, also sechs Achsen je Durchlauf. Jede kostet
+ * ueber 500 Tage hinweg ein paar tausend Date-Objekte, und die Prognoseachse ist
+ * ohnehin die weiteste – sie enthaelt alle anderen als Ausschnitt. Es genuegt
+ * also, sie einmal zu bauen und mit Indexgrenzen zu arbeiten.
+ *
+ * Die Funktionen nehmen sie als optionalen letzten Parameter und bauen sich
+ * sonst selbst eine. So bleiben sie einzeln aufrufbar (und einzeln testbar),
+ * ohne dass der gemeinsame Weg sechsmal dasselbe tut.
+ */
+export interface Prepared {
+	dates: string[];
+	todayIndex: number;
+	/** Praefixsummen der Stunden. */
+	hours: number[];
+	/** Praefixsummen der Budgetanteile, je Lesart. */
+	budget: Record<AvgBasis, number[]>;
+	/** Praefixsummen der kuenftigen Arbeitstage. */
+	futureWorkday: number[];
+}
+
+export function prepare(
+	facts: Map<string, DayFacts>,
+	opts: { until: string; dataFrom: string; workdays: number[]; horizonWeeks?: number }
+): Prepared {
+	const horizonWeeks = opts.horizonWeeks ?? DEFAULT_HORIZON_WEEKS;
+	// Doppelt so weit zurueck wie das Fenster lang ist: ein Fenster, das VOR dem
+	// Stichtag endet, braucht seinerseits 168 Tage Vorlauf. Nur so laesst sich
+	// zeichnen, wo der Schnitt hergekommen ist.
+	const from = stepDate(opts.until, -(2 * AVG_WINDOW_DAYS - 1));
+	const horizonEnd = stepDate(opts.until, horizonWeeks * 7);
+	const axis = buildAxis(facts, from, opts.until, horizonEnd, opts);
+	return {
+		dates: axis.dates,
+		todayIndex: axis.todayIndex,
+		hours: prefix(axis.hours),
+		budget: { legal: prefix(axis.budget.legal), strict: prefix(axis.budget.strict) },
+		futureWorkday: prefix(axis.futureWorkday)
+	};
+}
+
 /** Prefix-Summen, damit ein Fenster in O(1) statt O(168) summiert wird. */
 function prefix(values: number[]): number[] {
 	const out = new Array<number>(values.length + 1).fill(0);
@@ -576,15 +620,14 @@ function range(pre: number[], lo: number, hi: number): number {
 export function avgWindow(
 	facts: Map<string, DayFacts>,
 	basis: AvgBasis,
-	opts: { until: string; dataFrom: string; workdays: number[] }
+	opts: { until: string; dataFrom: string; workdays: number[] },
+	pre: Prepared = prepare(facts, opts)
 ): AvgWindow {
 	const from = stepDate(opts.until, -(AVG_WINDOW_DAYS - 1));
-	const axis = buildAxis(facts, from, opts.until, opts.until, opts);
-	const h = prefix(axis.hours);
-	const b = prefix(axis.budget[basis]);
+	const lo = pre.todayIndex - (AVG_WINDOW_DAYS - 1);
 
-	const actualHours = range(h, 0, axis.todayIndex);
-	const budgetDays = range(b, 0, axis.todayIndex);
+	const actualHours = range(pre.hours, lo, pre.todayIndex);
+	const budgetDays = range(pre.budget[basis], lo, pre.todayIndex);
 	const budgetHours = budgetDays * NORM_DAILY;
 	const complete = opts.dataFrom <= from;
 	const coveredFrom = complete ? from : opts.dataFrom;
@@ -623,15 +666,15 @@ function daysBetween(a: string, b: string): number {
  */
 export function currentPace(
 	facts: Map<string, DayFacts>,
-	opts: { until: string; dataFrom: string; workdays: number[]; weeks?: number }
+	opts: { until: string; dataFrom: string; workdays: number[]; weeks?: number },
+	pre: Prepared = prepare(facts, opts)
 ): number {
 	const weeks = opts.weeks ?? DEFAULT_PACE_WEEKS;
 	const measure = (days: number): { hours: number; budget: number } => {
-		const from = stepDate(opts.until, -(days - 1));
-		const axis = buildAxis(facts, from, opts.until, opts.until, opts);
+		const lo = pre.todayIndex - (days - 1);
 		return {
-			hours: range(prefix(axis.hours), 0, axis.todayIndex),
-			budget: range(prefix(axis.budget.strict), 0, axis.todayIndex)
+			hours: range(pre.hours, lo, pre.todayIndex),
+			budget: range(pre.budget.strict, lo, pre.todayIndex)
 		};
 	};
 
@@ -668,18 +711,14 @@ export function forecast(
 		workdays: number[];
 		pace: number;
 		horizonWeeks?: number;
-	}
+	},
+	pre: Prepared = prepare(facts, opts)
 ): Forecast {
 	const horizonWeeks = opts.horizonWeeks ?? DEFAULT_HORIZON_WEEKS;
-	// Doppelt so weit zurueck wie das Fenster lang ist: ein Fenster, das VOR dem
-	// Stichtag endet, braucht seinerseits 168 Tage Vorlauf. Nur so laesst sich
-	// zeichnen, wo der Schnitt hergekommen ist.
-	const from = stepDate(opts.until, -(2 * AVG_WINDOW_DAYS - 1));
-	const horizonEnd = stepDate(opts.until, horizonWeeks * 7);
-	const axis = buildAxis(facts, from, opts.until, horizonEnd, opts);
-	const h = prefix(axis.hours);
-	const b = prefix(axis.budget[basis]);
-	const w = prefix(axis.futureWorkday);
+	const axis = pre;
+	const h = pre.hours;
+	const b = pre.budget[basis];
+	const w = pre.futureWorkday;
 
 	const at = (i: number, pace: number) => {
 		const lo = i - (AVG_WINDOW_DAYS - 1);
@@ -1034,7 +1073,9 @@ export function checkArbZg(entries: Entry[], opts: ArbZgOptions): ArbZgResult {
 	});
 
 	const base = { until: opts.until, dataFrom: opts.dataFrom, workdays: opts.workdays };
-	const pace = currentPace(facts, { ...base, weeks: opts.paceWeeks });
+	// Die Achse einmal – sie ist fuer alle fuenf folgenden Rechnungen dieselbe.
+	const pre = prepare(facts, { ...base, horizonWeeks: opts.horizonWeeks });
+	const pace = currentPace(facts, { ...base, weeks: opts.paceWeeks }, pre);
 
 	const findings = dayFindings(facts, {
 		from: opts.until.slice(0, 7) + "-01",
@@ -1048,14 +1089,14 @@ export function checkArbZg(entries: Entry[], opts: ArbZgOptions): ArbZgResult {
 	// weil die Liste nach Regel adressiert wird, war das ausserdem ein doppelter
 	// Schluessel. Sichtbar ist er da, wo er hingehoert: im Urteil ganz oben.
 	const windows = {
-		legal: avgWindow(facts, "legal", base),
-		strict: avgWindow(facts, "strict", base)
+		legal: avgWindow(facts, "legal", base, pre),
+		strict: avgWindow(facts, "strict", base, pre)
 	};
 
 	const forecastOpts = { ...base, pace, horizonWeeks: opts.horizonWeeks };
 	const forecasts = {
-		legal: forecast(facts, "legal", forecastOpts),
-		strict: forecast(facts, "strict", forecastOpts)
+		legal: forecast(facts, "legal", forecastOpts, pre),
+		strict: forecast(facts, "strict", forecastOpts, pre)
 	};
 
 	const counts: Record<ArbZgLevel, number> = { verstoss: 0, risiko: 0, hinweis: 0 };

@@ -480,10 +480,31 @@ class AppState {
 	}
 
 	// ---------- Eintraege ----------
+	/**
+	 * Laufende Ladevorgaenge je Monat.
+	 *
+	 * Ohne die Merkliste liest die App dieselbe Datei mehrfach gleichzeitig:
+	 * `ensureMonth` prueft VOR dem await, ob der Monat schon da ist, und beim
+	 * Start fragen drei Ansichten gleichzeitig nach ueberlappenden Zwoelfer-
+	 * Bloecken (Auswertung, Arbeitszeit-Check, Tracking-Hinweis). Jede kam
+	 * durch die Pruefung, bevor die erste fertig war.
+	 */
+	#loadingMonths = new Map<string, Promise<void>>();
+
 	async ensureMonth(month: string): Promise<void> {
-		if (!this.entriesByMonth[month]) {
-			this.entriesByMonth[month] = await loadEntries(month);
+		if (this.entriesByMonth[month]) return;
+		let pending = this.#loadingMonths.get(month);
+		if (!pending) {
+			pending = loadEntries(month)
+				.then((entries) => {
+					this.entriesByMonth[month] = entries;
+				})
+				.finally(() => {
+					this.#loadingMonths.delete(month);
+				});
+			this.#loadingMonths.set(month, pending);
 		}
+		return pending;
 	}
 
 	monthEntries(month: string): Entry[] {

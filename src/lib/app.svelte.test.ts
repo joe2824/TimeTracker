@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Activity, Entry } from "./types";
-import { files, fsFaults, resetFakeFs } from "./testing/fakeFs";
+import { fakeFs, files, fsFaults, resetFakeFs } from "./testing/fakeFs";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("./testing/fakeFs")).fakeFs);
 // Toasts sind hier Beiwerk; die Meldungen selbst prueft niemand.
@@ -630,5 +630,40 @@ describe("devSimulateStartFault() – Ladebildschirm vorführen", () => {
 		} finally {
 			vi.useRealTimers();
 		}
+	});
+});
+
+describe("ensureMonth", () => {
+	it("liest eine Datei auch bei gleichzeitigen Anfragen nur einmal", async () => {
+		// Beim Start fragen drei Ansichten gleichzeitig nach ueberlappenden
+		// Zwoelfer-Bloecken (Auswertung, Arbeitszeit-Check, Tracking-Hinweis).
+		// `ensureMonth` prueft VOR dem await, ob der Monat da ist – ohne
+		// Merkliste kaeme jede Anfrage durch, und dieselbe Datei wuerde vierfach
+		// gelesen.
+		reset();
+		files.set(monthFile("2026-03"), JSON.stringify([]));
+		const spy = vi.spyOn(fakeFs, "readTextFile");
+
+		await Promise.all([
+			app.ensureMonth("2026-03"),
+			app.ensureMonth("2026-03"),
+			app.ensureMonth("2026-03"),
+			app.ensureMonth("2026-03")
+		]);
+
+		const gelesen = spy.mock.calls.filter((c) => String(c[0]).includes("entries-2026-03")).length;
+		expect(gelesen).toBe(1);
+		spy.mockRestore();
+	});
+
+	it("laedt nach einem fehlgeschlagenen Versuch erneut", async () => {
+		// Die Merkliste darf den Monat nicht dauerhaft blockieren: schlaegt das
+		// Lesen fehl, muss der naechste Aufruf es wieder versuchen duerfen.
+		reset();
+		await app.ensureMonth("2026-04");
+		expect(app.monthLoaded("2026-04")).toBe(true);
+		app.entriesByMonth = {};
+		await app.ensureMonth("2026-04");
+		expect(app.monthLoaded("2026-04")).toBe(true);
 	});
 });
