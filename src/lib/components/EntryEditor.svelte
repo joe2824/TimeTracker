@@ -312,25 +312,25 @@
 		void app.ensureMonth(month);
 	});
 
-	/** Auf den aktuellen Monat wechseln und den heutigen Tag mittig in die Liste scrollen. */
-	async function jumpToToday() {
-		const today = fmtDate(Date.now());
-		const targetMonth = today.slice(0, 7);
+	/** Auf den Monat des Tages wechseln und ihn mittig in die Liste scrollen. */
+	async function jumpToDate(date: string) {
+		const targetMonth = date.slice(0, 7);
 		if (month !== targetMonth) {
 			month = targetMonth;
 			await app.ensureMonth(targetMonth);
 		}
 		await tick(); // Warten, bis die Tage neu gerendert sind.
 		document
-			.getElementById(`day-row-${today}`)
+			.getElementById(`day-row-${date}`)
 			?.scrollIntoView({ block: "center", behavior: "smooth" });
 	}
 
-	// Wunsch aus der Tracking-Ansicht konsumieren.
+	// Wunsch aus Tracking oder Arbeitszeit-Check konsumieren.
 	$effect(() => {
-		if (entriesFocus.pendingToday) {
-			entriesFocus.pendingToday = false;
-			void jumpToToday();
+		const date = entriesFocus.pendingDate;
+		if (date) {
+			entriesFocus.pendingDate = null;
+			void jumpToDate(date);
 		}
 	});
 

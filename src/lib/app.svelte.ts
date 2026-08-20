@@ -491,6 +491,18 @@ class AppState {
 	}
 
 	/**
+	 * Ist dieser Monat bereits geladen?
+	 *
+	 * `monthEntries` liefert fuer einen ungeladenen Monat eine leere Liste und
+	 * ist damit nicht von einem leeren Monat zu unterscheiden. Wer ueber mehrere
+	 * Monate rechnet, braucht den Unterschied: waehrend des Ladens saehe ein
+	 * halbes Jahr sonst aus wie ein halbes Jahr ohne Arbeit.
+	 */
+	monthLoaded(month: string): boolean {
+		return this.entriesByMonth[month] !== undefined;
+	}
+
+	/**
 	 * Alle Eintraege eines Jahres endgueltig loeschen.
 	 * Der Cache muss mit: sonst zeigte die App Eintraege weiter an, die es auf der
 	 * Platte nicht mehr gibt. Ein laufender Timer in dem Jahr wird vorher gestoppt.
