@@ -18,6 +18,7 @@
 	import * as Card from "$lib/components/ui/card";
 	import * as Chart from "$lib/components/ui/chart";
 	import * as Tooltip from "$lib/components/ui/tooltip";
+	import { Skeleton } from "$lib/components/ui/skeleton";
 	import { LineChart } from "layerchart";
 	import { scaleTime } from "d3-scale";
 	import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
@@ -54,6 +55,18 @@
 	$effect(() => {
 		for (const m of monthsNeeded) void app.ensureMonth(m);
 	});
+
+	/**
+	 * Sind alle zwoelf Monate da?
+	 *
+	 * `monthEntries` liefert fuer einen noch nicht geladenen Monat eine leere
+	 * Liste, die von einem leeren Monat nicht zu unterscheiden ist. Waehrend des
+	 * Ladens rechnete die Karte deshalb ueber einen Bruchteil der Daten und zeigte
+	 * ein Ergebnis, das eine Sekunde spaeter ein voellig anderes war – im
+	 * schlimmsten Fall sprang sie von "im gruenen Bereich" auf Rot. Lieber
+	 * gar nichts zeigen als kurz etwas Falsches.
+	 */
+	const ready = $derived(monthsNeeded.every((m) => app.monthLoaded(m)));
 
 	const absenceIds = $derived(new Set(app.activities.filter((a) => a.isAbsence).map((a) => a.id)));
 	const entries = $derived(monthsNeeded.flatMap((m) => app.monthEntries(m) as Entry[]));
@@ -180,6 +193,27 @@
 		</Card.Description>
 	</Card.Header>
 	<Card.Content class="space-y-8">
+		{#if !ready}
+			<!-- Platzhalter im Zuschnitt des fertigen Inhalts: Urteil, vier
+			     Kennzahlen, Verlauf. So springt beim Erscheinen nichts. -->
+			<div class="space-y-3">
+				<Skeleton class="h-20 w-full" />
+				<div class="flex flex-wrap gap-8">
+					{#each [0, 1, 2, 3, 4] as i (i)}
+						<div class="space-y-1.5">
+							<Skeleton class="h-3 w-24" />
+							<Skeleton class="h-7 w-20" />
+							<Skeleton class="h-3 w-16" />
+						</div>
+					{/each}
+				</div>
+				<Skeleton class="h-3 w-3/4" />
+			</div>
+			<div class="space-y-2">
+				<Skeleton class="h-4 w-40" />
+				<Skeleton class="h-[220px] w-full" />
+			</div>
+		{:else}
 		<!-- Das Urteil zuerst: die Frage lautet "muss ich etwas tun?", und die
 		     muss vor jeder Zahl beantwortet sein. -->
 		<div class="space-y-3">
@@ -420,6 +454,8 @@
 				</Tooltip.Provider>
 			{/if}
 		</div>
+
+		{/if}
 
 		<!-- Was diese Card nicht weiss. Gehoert hierher, nicht in die README. -->
 		<p class="text-muted-foreground border-t pt-3 text-xs">
