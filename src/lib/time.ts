@@ -74,6 +74,23 @@ export function fmtClock(ts: number): string {
 	return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
+/** Eine Minute in Millisekunden – Schrittweite fuer `quantize`. */
+export const MINUTE_MS = 60_000;
+
+/**
+ * Einen Zeitstempel auf ein Vielfaches von `stepMs` abrunden.
+ *
+ * Gedacht fuer Auswertungen, die an `app.now` haengen. Der tickt im
+ * Sekundentakt, damit die laufende Uhr laeuft – ein Jahresschnitt oder eine
+ * Heatmap aendert sich dadurch aber nicht sichtbar. Auf Minuten gerundet bleibt
+ * der Wert 59 von 60 Sekunden GLEICH, und einen unveraenderten Wert gibt Svelte
+ * nicht weiter: die dahinterliegende Rechnung laeuft dann einmal je Minute statt
+ * sechzigmal, samt allem, was daran haengt (Diagramme, Wochenraster).
+ */
+export function quantize(ts: number, stepMs: number): number {
+	return Math.floor(ts / stepMs) * stepMs;
+}
+
 /** Datum "YYYY-MM-DD" (lokal) eines Zeitstempels. */
 export function fmtDate(ts: number): string {
 	const d = new Date(ts);

@@ -11,7 +11,15 @@
 		type Forecast
 	} from "$lib/arbzg";
 	import { entriesFocus } from "$lib/entriesFocus.svelte";
-	import { fmtDate, fmtDateHuman, fmtHoursClock, monthLabel, noonTs } from "$lib/time";
+	import {
+		fmtDate,
+		fmtDateHuman,
+		fmtHoursClock,
+		MINUTE_MS,
+		monthLabel,
+		noonTs,
+		quantize
+	} from "$lib/time";
 	import type { Entry } from "$lib/types";
 	import { Badge } from "$lib/components/ui/badge";
 	import { Button } from "$lib/components/ui/button";
@@ -77,7 +85,12 @@
 	// Rechnung samt Kurve jede Sekunde neu aufbauen. Nur ein laufender Timer
 	// braucht ihn; sonst haben alle Eintraege ein Ende und lesen `now` gar nicht.
 	const runningToday = $derived(app.running !== null && fmtDate(app.running.startTs) === until);
-	const checkNow = $derived(runningToday ? app.now : noonTs(until));
+	// Auf Minuten gerundet. Ein Schnitt ueber 24 Wochen bewegt sich in einer
+	// Sekunde um nichts Sichtbares – ohne die Rundung liefen dayFacts, beide
+	// Fenster, beide Prognosen samt Umkehrpunkt-Suche und die komplette Kurve
+	// sechzigmal je Minute neu, nur weil ein Timer laeuft (gemessen: 4 ms je
+	// Durchlauf, dazu das Neuzeichnen des Diagramms).
+	const checkNow = $derived(runningToday ? quantize(app.now, MINUTE_MS) : noonTs(until));
 
 	const result = $derived(
 		checkArbZg(entries, {

@@ -2,10 +2,11 @@
 	import { app } from "$lib/app.svelte";
 	import type { MonthReport } from "$lib/report";
 	import { dayActivityHours, heatmapYear, sumPerDay, targetHours } from "$lib/stats";
-	import { fmtDateHuman, fmtHoursClock, monthLabel, noonTs } from "$lib/time";
+	import { fmtDateHuman, fmtHoursClock, MINUTE_MS, monthLabel, noonTs, quantize } from "$lib/time";
 	import type { Entry } from "$lib/types";
 	import * as Card from "$lib/components/ui/card";
 	import * as Chart from "$lib/components/ui/chart";
+	import { Skeleton } from "$lib/components/ui/skeleton";
 	import { BarChart } from "layerchart";
 	import { scaleBand } from "d3-scale";
 
@@ -32,6 +33,16 @@
 	);
 	const yearEntries = $derived(monthKeys.flatMap((m) => app.monthEntries(m) as Entry[]));
 
+	/**
+	 * Ist das ganze Jahr geladen?
+	 *
+	 * Saldo und Balken haengen nur am ausgewaehlten Monat und stehen sofort. Die
+	 * Heatmap braucht zwoelf Monate, und ein noch nicht geladener Monat ist von
+	 * einem leeren nicht zu unterscheiden – sie fuellte sich also sichtbar von
+	 * hinten nach vorn. Gewartet wird deshalb nur hier, nicht in der ganzen Karte.
+	 */
+	const yearReady = $derived(monthKeys.every((m) => app.monthLoaded(m)));
+
 	// `app.now` tickt im Sekundentakt. Nur ein laufender Timer IN DIESEM JAHR braucht
 	// ihn (seine Dauer waechst); sonst liefe die komplette Jahresauswertung – zwei
 	// Maps, das Wochenraster und ~370 keyed Spans – jede Sekunde neu. Abgeschlossene
@@ -39,7 +50,11 @@
 	const runningInYear = $derived(
 		app.running !== null && new Date(app.running.startTs).getFullYear() === year
 	);
-	const statsNow = $derived(runningInYear ? app.now : 0);
+	// Auf Minuten gerundet: `app.now` tickt im Sekundentakt, das Wochenraster
+	// eines Jahres aendert sich dadurch aber nicht sichtbar. Ohne die Rundung
+	// laufen Aufschluesselung, Summen, Raster und ~370 keyed Spans jede Sekunde
+	// neu, nur weil irgendwo ein Timer laeuft.
+	const statsNow = $derived(runningInYear ? quantize(app.now, MINUTE_MS) : 0);
 
 	// Einmal aufschluesseln, Summen daraus ableiten – nicht zweimal ueber alles laufen.
 	const detailByDay = $derived(dayActivityHours(yearEntries, absenceIds, statsNow, app.settings.breakDeduction));
@@ -206,6 +221,15 @@
 		<!-- Jahres-Heatmap: gearbeitete Stunden je Tag -->
 		<div class="space-y-2">
 			<h3 class="text-sm font-medium">Gearbeitet {year}</h3>
+			{#if !yearReady}
+				<!-- Platzhalter im Zuschnitt des Wochenrasters: sonst fuellt sich die
+				     Heatmap sichtbar von hinten nach vorn, waehrend die Monate
+				     nachladen. -->
+				<div class="space-y-1" style="margin-left:1.75rem;">
+					<Skeleton class="h-3 w-full max-w-160" />
+					<Skeleton class="h-22 w-full max-w-160" />
+				</div>
+			{:else}
 			<div class="overflow-x-auto pb-1">
 				<div class="w-max">
 					<!-- Eine Wochenspalte ist 11px breit + 3px Abstand = 14px Raster. -->
@@ -249,6 +273,7 @@
 					</div>
 				</div>
 			</div>
+			{/if}
 		</div>
 	</Card.Content>
 </Card.Root>
