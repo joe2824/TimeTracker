@@ -662,12 +662,14 @@ describe("Zeitsimulation", () => {
 		expect(pace).toBeCloseTo(7.9, 1);
 	});
 
-	it("bestimmt den Umkehrpunkt exakt – einen Tag spaeter traegt es nicht mehr", () => {
+	it("bestimmt den Umkehrpunkt exakt – am naechsten Arbeitstag traegt es nicht mehr", () => {
 		// Der Umkehrpunkt ist per Halbierung gesucht, also genau die Art Zahl, die
 		// um eins danebenliegen kann, ohne dass es auffaellt. Geprueft wird er
 		// deshalb gegen dieselbe naive Rechnung: bis zum Umkehrpunkt im aktuellen
-		// Tempo, danach nichts – dann muss der Hoechststand halten, und einen Tag
-		// spaeter darf er es nicht mehr.
+		// Tempo, danach nichts – dann muss der Hoechststand halten, und am
+		// naechsten ARBEITSTAG darf er es nicht mehr. Nicht am naechsten
+		// Kalendertag: ein Wochenende weiterzuarbeiten aendert nichts, dort haelt
+		// es also zwangslaeufig weiter.
 		const limit = NORM_DAILY + AVG_TOLERANCE;
 		let checked = 0;
 
@@ -690,10 +692,16 @@ describe("Zeitsimulation", () => {
 				return max;
 			};
 
+			// Der Umkehrpunkt selbst muss ein Arbeitstag sein – sonst ist die
+			// Ansage "bis dahin kannst du so weitermachen" nicht wahr.
+			expect(MO_FR.includes(weekdayOf(f.easeOffDate)), `seed ${seed}: kein Arbeitstag`).toBe(true);
 			expect(peakStopping(f.easeOffDate), `seed ${seed}: Umkehrpunkt traegt nicht`).toBeLessThanOrEqual(limit);
+
+			let next = stepDate(f.easeOffDate, 1);
+			while (!MO_FR.includes(weekdayOf(next))) next = stepDate(next, 1);
 			expect(
-				peakStopping(stepDate(f.easeOffDate, 1)),
-				`seed ${seed}: einen Tag spaeter traegt es noch – der Umkehrpunkt liegt zu frueh`
+				peakStopping(next),
+				`seed ${seed}: auch mit ${next} traegt es noch – der Umkehrpunkt liegt zu frueh`
 			).toBeGreaterThan(limit);
 			checked++;
 		}

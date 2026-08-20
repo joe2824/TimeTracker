@@ -775,7 +775,17 @@ export function forecast(
 			if (holds(mid)) lo = mid;
 			else hi = mid;
 		}
-		easeOffDate = axis.dates[Math.max(axis.todayIndex, lo)];
+		// Auf den letzten ARBEITSTAG zurueckgehen.
+		//
+		// Die Halbierung liefert den letzten Kalendertag, der noch traegt – und der
+		// faellt gern auf einen Sonntag, weil ein arbeitsfreier Tag am Ergebnis
+		// nichts aendert und deshalb genauso "haelt" wie der Freitag davor. Als
+		// Ansage taugt das nicht: "bis Sonntag kannst du so weitermachen" heisst
+		// in Wahrheit "bis Freitag". Gemeint ist der letzte Tag, an dem noch
+		// gearbeitet wird, also wird bis dorthin zurueckgegangen.
+		let i = Math.max(axis.todayIndex, lo);
+		while (i > axis.todayIndex && !isWorkday(noonTs(axis.dates[i]), opts.workdays)) i--;
+		easeOffDate = axis.dates[i];
 	}
 
 	const paceDelta = maxPace === null ? null : maxPace - opts.pace;
