@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from "svelte";
+	import { onMount, tick } from "svelte";
 	import { listen, emit } from "@tauri-apps/api/event";
 	import { getCurrentWindow } from "@tauri-apps/api/window";
 	import { invoke } from "@tauri-apps/api/core";
@@ -78,6 +78,19 @@
 	$effect(() => {
 		if (entriesFocus.pendingDate) tab = "entries";
 	});
+
+	/**
+	 * Aus dem Tracking-Hinweis in den Arbeitszeit-Check.
+	 *
+	 * Nur den Tab zu wechseln reicht nicht: die Karte steht unter Verifikation und
+	 * Auswertung, man landet also oben und muss suchen. Das `tick()` wartet, bis
+	 * der Tab-Inhalt sichtbar ist – vorher hat das Ziel keine Position.
+	 */
+	async function showArbZgCheck() {
+		tab = "report";
+		await tick();
+		document.getElementById("arbzg-check")?.scrollIntoView({ block: "start", behavior: "smooth" });
+	}
 
 	function onGlobalKey(e: KeyboardEvent) {
 		if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -434,7 +447,7 @@
 		<!-- pb-12: die letzte Card soll nicht auf der Fensterkante aufsitzen. -->
 		<div class="mx-auto w-full max-w-6xl px-6 pb-12">
 			<Tabs.Content value="tracking" class="mt-0">
-				<TrackingPanel onShowEntries={showEntriesToday} onShowReport={() => (tab = "report")} />
+				<TrackingPanel onShowEntries={showEntriesToday} onShowReport={showArbZgCheck} />
 			</Tabs.Content>
 			<Tabs.Content value="entries" class="mt-4">
 				<EntryEditor />
