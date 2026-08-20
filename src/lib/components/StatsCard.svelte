@@ -50,11 +50,12 @@
 	const runningInYear = $derived(
 		app.running !== null && new Date(app.running.startTs).getFullYear() === year
 	);
-	// Auf Minuten gerundet: `app.now` tickt im Sekundentakt, das Wochenraster
-	// eines Jahres aendert sich dadurch aber nicht sichtbar. Ohne die Rundung
+	// Auf fuenf Minuten gerundet: `app.now` tickt im Sekundentakt, ein Jahresraster
+	// aendert sich dadurch aber nicht sichtbar – eine Zelle deckt einen ganzen Tag
+	// ab, ihre Faerbung haengt an Quartilen des Jahresmaximums. Ohne die Rundung
 	// laufen Aufschluesselung, Summen, Raster und ~370 keyed Spans jede Sekunde
 	// neu, nur weil irgendwo ein Timer laeuft.
-	const statsNow = $derived(runningInYear ? quantize(app.now, MINUTE_MS) : 0);
+	const statsNow = $derived(runningInYear ? quantize(app.now, 5 * MINUTE_MS) : 0);
 
 	// Einmal aufschluesseln, Summen daraus ableiten – nicht zweimal ueber alles laufen.
 	const detailByDay = $derived(dayActivityHours(yearEntries, absenceIds, statsNow, app.settings.breakDeduction));
