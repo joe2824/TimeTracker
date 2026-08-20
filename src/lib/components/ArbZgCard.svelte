@@ -235,10 +235,15 @@
 						{#if strict.tooLate}
 							verstrichen
 						{:else if strict.easeOffDate}
-							{new Date(noonTs(strict.easeOffDate)).toLocaleDateString("de-DE", {
-								day: "2-digit",
-								month: "2-digit"
-							})}
+							<!-- Jahr nur, wenn es ein anderes ist: der Umkehrpunkt liegt oft
+							     Monate voraus und dann auch mal im naechsten Jahr, wo "22.02."
+							     nach uebermorgen aussaehe. -->
+							{new Date(noonTs(strict.easeOffDate)).toLocaleDateString(
+								"de-DE",
+								strict.easeOffDate.slice(0, 4) === until.slice(0, 4)
+									? { day: "2-digit", month: "2-digit" }
+									: { day: "2-digit", month: "2-digit", year: "2-digit" }
+							)}
 						{:else}
 							—
 						{/if}
