@@ -65,19 +65,17 @@
 				!watchers.reportReminderDismissed)
 	);
 
+	// Die einzige Stelle, die die Tabs kennt: wer einen Tag zeigen will (Tracking,
+	// Arbeitszeit-Check), meldet den Wunsch an entriesFocus an, und der ruft das
+	// hier auf. Bewusst ein Rueckruf und kein Effekt auf `pendingDate` – den
+	// Wunsch raeumt die Eintraege-Ansicht beim Lesen ab, ein zweiter Verbraucher
+	// haette das Nachsehen (siehe entriesFocus.svelte.ts).
+	entriesFocus.onShow(() => (tab = "entries"));
+
 	// Von der Tracking-Ansicht: zu den Einträgen wechseln und heute mittig zeigen.
 	function showEntriesToday() {
 		entriesFocus.requestToday();
-		tab = "entries";
 	}
-
-	// Ein Tag kann auch aus einer anderen Ansicht heraus gewuenscht werden (der
-	// Arbeitszeit-Check im Bericht verlinkt seine auffaelligen Tage). Der Wunsch
-	// allein wechselt den Tab nicht – das passiert hier, an der einzigen Stelle,
-	// die den Tab kennt.
-	$effect(() => {
-		if (entriesFocus.pendingDate) tab = "entries";
-	});
 
 	/**
 	 * Aus dem Tracking-Hinweis in den Arbeitszeit-Check.

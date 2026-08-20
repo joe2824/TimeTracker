@@ -32,6 +32,7 @@
 	import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
 	import InfoIcon from "@lucide/svelte/icons/info";
 	import CheckIcon from "@lucide/svelte/icons/check";
+	import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
 
 	interface Props {
 		/** ausgewaehlter Monat "YYYY-MM" */
@@ -433,10 +434,22 @@
 				<table class="w-full text-sm">
 					<tbody>
 						{#each byDay as d (d.date)}
-							<tr class="border-b last:border-0">
+							<!-- Die Zeile fuehrt in die Eintraege des Tages. Der Klick haengt am
+							     Datum und nicht an der ganzen Zeile: rechts stehen die Badges mit
+							     eigenen Tooltips, und ein Knopf im Knopf waere weder gueltiges
+							     HTML noch mit der Tastatur zu bedienen. Der Hover faerbt
+							     trotzdem die ganze Zeile, damit sie als anklickbar zu erkennen ist. -->
+							<tr class="hover:bg-muted/50 border-b last:border-0">
 								<td class="py-1 align-top">
-									<button class="hover:underline" onclick={() => openDay(d.date)}>
+									<button
+										class="group inline-flex cursor-pointer items-center gap-1 hover:underline"
+										title="Einträge dieses Tages anzeigen"
+										onclick={() => openDay(d.date)}
+									>
 										{fmtDateHuman(noonTs(d.date))}
+										<ChevronRightIcon
+											class="size-3.5 opacity-0 transition-opacity group-hover:opacity-60"
+										/>
 									</button>
 								</td>
 								<td class="py-1">
