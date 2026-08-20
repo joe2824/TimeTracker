@@ -838,3 +838,132 @@ describe("Kalender-Randfaelle", () => {
 		}
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Boesartige Eintraege.
+//
+// Die Zufallsszenarien oben erzeugen brave Tage: ein Block, sauber im
+// Arbeitstag. Was die Rechnung wirklich aergert, sind die Faelle, die im Alltag
+// entstehen und die niemand erzeugt, wenn er Testdaten "normal" baut.
+// ---------------------------------------------------------------------------
+
+describe("boesartige Eintraege", () => {
+	const opts = (dataFrom: string) => ({ until: UNTIL, dataFrom, workdays: MO_FR });
+
+	it("laesst eine Abwesenheit am Wochenende das Budget nicht mindern", () => {
+		// Urlaub am Samstag gibt es nicht. Der Bericht ignoriert Abwesenheiten an
+		// Nicht-Arbeitstagen ausdruecklich (report.ts); die gesetzliche Lesart
+		// zaehlt den Samstag aber als Werktag – ohne dieselbe Regel verschwaende
+		// ein versehentlich dorthin gebuchter Urlaubstag echtes Budget.
+		const sa = "2026-06-27"; // Samstag
+		expect(weekdayOf(sa)).toBe(6);
+		const from = stepDate(UNTIL, -200);
+		const plain = dayFacts(series(from, UNTIL, 7.5), ABSENCE, { deductBreaks: false });
+		const withAbs = dayFacts([...series(from, UNTIL, 7.5), absence(sa)], ABSENCE, { deductBreaks: false });
+
+		expect(avgWindow(withAbs, "legal", opts(from)).budgetDays).toBe(
+			avgWindow(plain, "legal", opts(from)).budgetDays
+		);
+		expect(avgWindow(withAbs, "strict", opts(from)).budgetDays).toBe(
+			avgWindow(plain, "strict", opts(from)).budgetDays
+		);
+	});
+
+	it("summiert ueberlappende Eintraege, sieht sie aber als EINEN Block", () => {
+		// Zwei Timer gleichzeitig laufen zu lassen ist verboten (conflicts.ts),
+		// kommt ueber Kalender-Import und Nachtrag trotzdem vor. Die Stunden
+		// addieren sich – aber fuer § 4 ist es durchgearbeitete Zeit, keine Pause.
+		const e = [entry("2026-06-10", "08:00", "12:00"), entry("2026-06-10", "10:00", "14:00")];
+		const d = dayFacts(e, ABSENCE, { deductBreaks: false }).get("2026-06-10")!;
+		expect(d.hours).toBeCloseTo(8);
+		expect(d.pauseMinutes).toBe(0);
+		expect(d.longestStretch).toBeCloseTo(6); // 08:00–14:00
+		expect(d.firstStart).toBe(toTs("2026-06-10", "08:00"));
+		expect(d.lastEnd).toBe(toTs("2026-06-10", "14:00"));
+	});
+
+	it("schlaegt einen Eintrag ueber Mitternacht seinem STARTTAG zu", () => {
+		// Die App teilt solche Spannen beim Anlegen (splitAtMidnight). Kommt doch
+		// eine durch, darf sie nicht zwei Tage gleichzeitig belasten – sonst
+		// zaehlte dieselbe Stunde zweimal im Fenster.
+		const e: Entry = {
+			id: "x",
+			activityId: "a",
+			startTs: toTs("2026-06-10", "22:00"),
+			endTs: toTs("2026-06-11", "02:00"),
+			note: "",
+			source: "manual"
+		};
+		const f = dayFacts([e], ABSENCE, { deductBreaks: false });
+		expect(f.get("2026-06-10")!.hours).toBeCloseTo(4);
+		expect(f.has("2026-06-11")).toBe(false);
+	});
+
+	it("kappt einen vergessenen laufenden Eintrag am Ende SEINES Tages", () => {
+		// Sonst waechst ein liegen gebliebener Timer bis heute weiter und sprengt
+		// den Schnitt eines halben Jahres.
+		const stale: Entry = {
+			id: "r",
+			activityId: "a",
+			startTs: toTs("2026-06-01", "08:00"),
+			endTs: null,
+			note: "",
+			source: "timer"
+		};
+		const f = dayFacts([stale], ABSENCE, { now: toTs(UNTIL, "10:00"), deductBreaks: false });
+		expect(f.get("2026-06-01")!.hours).toBeCloseTo(16); // 08:00 bis Mitternacht
+	});
+
+	it("kommt mit einem Fenster aus lauter Abwesenheit klar", () => {
+		// Nenner null – kein NaN, keine Division durch null, und vor allem kein
+		// "Schnitt 0:00 h, alles bestens".
+		const from = stepDate(UNTIL, -60);
+		const entries: Entry[] = [];
+		for (let d = from; d <= UNTIL; d = stepDate(d, 1)) {
+			if (MO_FR.includes(weekdayOf(d))) entries.push(absence(d));
+		}
+		const w = avgWindow(dayFacts(entries, ABSENCE, {}), "strict", opts(from));
+		expect(w.budgetDays).toBe(0);
+		expect(Number.isFinite(w.average)).toBe(true);
+		expect(w.average).toBe(0);
+		expect(Number.isFinite(w.bufferHours)).toBe(true);
+	});
+
+	it("hebt den Schnitt durch Sonntagsarbeit, ohne Budget dafuer zu geben", () => {
+		// Der Sonntag ist kein Werktag, seine Stunden zaehlen aber sehr wohl. Wer
+		// am Wochenende nacharbeitet, verbessert seine Lage also nicht – er
+		// verschlechtert sie. Das ist die vorsichtige Auslegung und muss so bleiben.
+		const from = stepDate(UNTIL, -60);
+		const werktags = series(from, UNTIL, 7);
+		const sonntags: Entry[] = [];
+		for (let d = from; d <= UNTIL; d = stepDate(d, 1)) {
+			if (weekdayOf(d) === 0) sonntags.push(day(d, 8));
+		}
+		const ohne = avgWindow(dayFacts(werktags, ABSENCE, { deductBreaks: false }), "strict", opts(from));
+		const mit = avgWindow(
+			dayFacts([...werktags, ...sonntags], ABSENCE, { deductBreaks: false }),
+			"strict",
+			opts(from)
+		);
+		expect(mit.budgetDays).toBe(ohne.budgetDays);
+		expect(mit.actualHours).toBeGreaterThan(ohne.actualHours);
+		expect(mit.average).toBeGreaterThan(ohne.average);
+	});
+
+	it("misst an der Zeitumstellung die echte Dauer, nicht die Wanduhr", () => {
+		// 29.03.2026, 02:00 -> 03:00: zwischen 01:00 und 04:00 liegen zwei
+		// Stunden, nicht drei. Gerechnet wird auf Zeitstempeln, also stimmt es –
+		// aber genau hier faellt es auf, wenn jemand auf Wanduhrzeiten umstellt.
+		const e = entry("2026-03-29", "01:00", "04:00");
+		const d = dayFacts([e], ABSENCE, { deductBreaks: false }).get("2026-03-29")!;
+		expect(d.hours).toBeCloseTo(2);
+	});
+
+	it("laesst einen Eintrag der Laenge null unbeschadet durch", () => {
+		const e = entry("2026-06-10", "09:00", "09:00");
+		const f = dayFacts([e], ABSENCE, { deductBreaks: false }).get("2026-06-10")!;
+		expect(f.hours).toBe(0);
+		expect(f.firstStart).toBeNull();
+		expect(f.pauseMinutes).toBe(null);
+	});
+});

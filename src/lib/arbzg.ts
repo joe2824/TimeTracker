@@ -526,7 +526,14 @@ function buildAxis(
 			strict.push(0);
 			continue;
 		}
-		const absence = future ? 0 : (f?.absenceFraction ?? 0);
+		// Abwesenheit zaehlt nur an ARBEITSTAGEN.
+		//
+		// Urlaub am Samstag gibt es nicht; report.ts ignoriert Abwesenheiten an
+		// Nicht-Arbeitstagen aus demselben Grund ausdruecklich. In der
+		// gesetzlichen Lesart ist der Samstag aber ein Werktag – ohne diese Regel
+		// hat ein versehentlich dorthin gebuchter Urlaubstag echtes Budget
+		// vernichtet und den Schnitt gehoben, ohne dass irgendwo Stunden dazukamen.
+		const absence = future || !isPlanWorkday ? 0 : (f?.absenceFraction ?? 0);
 		// Sonntag ist kein Werktag; gearbeitete Sonntagsstunden zaehlen trotzdem
 		// im Zaehler – die vorsichtige Seite.
 		legal.push(Math.max(0, (weekday === 0 ? 0 : 1) - absence));
