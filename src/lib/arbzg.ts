@@ -62,8 +62,21 @@ export const RISK_REST_HOURS = 11.5;
 export const AVG_TOLERANCE = 0.05;
 /** Ausgleichszeitraum: 24 Wochen (§ 3 Abs. 1 Satz 2). */
 export const AVG_WINDOW_DAYS = 168;
-/** Referenzzeitraum, aus dem das "aktuelle Tempo" abgeleitet wird. */
-export const DEFAULT_PACE_WEEKS = 4;
+/**
+ * Referenzzeitraum, aus dem das "aktuelle Tempo" abgeleitet wird.
+ *
+ * Zwoelf Wochen, nicht vier. Vier Wochen sind der empfindlichste Wert und
+ * schlagen schon bei zwei zufaellig langen Wochen aus; hochgerechnet auf ein
+ * halbes Jahr wird daraus eine Warnung, die sich von selbst wieder erledigt.
+ * Bei einem Fenster von 24 Wochen ist die Haelfte davon der ehrlichere
+ * Massstab – und wo der Umkehrpunkt liegt, entscheidet sich am dauerhaften
+ * Tempo, nicht am letzten Monat.
+ *
+ * Der Preis: laeuft es tatsaechlich seit vier Wochen aus dem Ruder, meldet sich
+ * der Check spaeter, als er koennte. Die Auswahl in der Karte laesst deshalb
+ * auch 4 und 8 Wochen zu.
+ */
+export const DEFAULT_PACE_WEEKS = 12;
 /**
  * So viele Arbeitstage muss der Bezugszeitraum mindestens hergeben, sonst wird
  * auf das volle Ausgleichsfenster ausgewichen (siehe currentPace).
@@ -100,6 +113,15 @@ export const MIN_FUTURE_WORKDAYS = 20;
  * fuenf Monate fehlen.
  */
 export const MIN_HINT_WEEKS = 8;
+/**
+ * So viele Tage vor dem Umkehrpunkt wird zum Handeln aufgefordert.
+ *
+ * Ueber der Grenze zu liegen ist fuer sich genommen kein Notfall: das Fenster
+ * rollt, und wer kuerzer tritt, holt es wieder ein. Dringend wird es erst, wenn
+ * Kuerzertreten nicht mehr reicht – und davor braucht man Vorlauf, nicht die
+ * Meldung selbst.
+ */
+export const EASE_OFF_LEAD_DAYS = 7;
 /** Wie weit die Prognose in die Zukunft rechnet. */
 export const DEFAULT_HORIZON_WEEKS = 26;
 /** Kuerzeste Unterbrechung, die nach § 4 Satz 2 als Pause zaehlt (Minuten). */
@@ -227,6 +249,20 @@ export interface Forecast {
 	 * wieder unter acht Stunden faellt.
 	 */
 	reliefDate: string | null;
+	/**
+	 * Der spaeteste Tag, an dem man anfangen kann herunterzugehen, ohne die
+	 * Grenze zu reissen – der Umkehrpunkt.
+	 *
+	 * Gerechnet wird der guenstigste Fall: bis zu diesem Tag im aktuellen Tempo,
+	 * danach gar nichts mehr. Wer spaeter anfaengt, bekommt den Schnitt im
+	 * Prognosezeitraum nicht mehr unter acht Stunden.
+	 *
+	 * Null, wenn es keinen braucht – dann traegt das Fenster das aktuelle Tempo
+	 * dauerhaft.
+	 */
+	easeOffDate: string | null;
+	/** Selbst ab sofort nichts mehr zu arbeiten wendet die Ueberschreitung nicht ab. */
+	tooLate: boolean;
 	/** Kurzurteil fuer den ersten Blick. */
 	verdict: Verdict;
 }
@@ -697,6 +733,48 @@ export function forecast(
 		}
 	}
 
+	/**
+	 * Der Schnitt eines Fensters, wenn nur bis `stopIndex` im aktuellen Tempo
+	 * gearbeitet wird und danach gar nicht mehr.
+	 *
+	 * Kein Neuaufbau der Summen noetig: `w` zaehlt die kuenftigen Arbeitstage,
+	 * und es genuegt, den Zaehlbereich am Aufhoertag abzuschneiden.
+	 */
+	const atWithStop = (i: number, stopIndex: number): number | null => {
+		const lo = i - (AVG_WINDOW_DAYS - 1);
+		const budget = range(b, lo, i);
+		if (budget <= 0) return null;
+		return (range(h, lo, i) + opts.pace * range(w, lo, Math.min(i, stopIndex))) / budget;
+	};
+
+	/** Hoechststand im Prognosezeitraum, wenn ab `stopIndex + 1` nichts mehr kommt. */
+	const peakWithStop = (stopIndex: number): number => {
+		let max = 0;
+		for (let i = axis.todayIndex; i < axis.dates.length; i++) {
+			const v = atWithStop(i, stopIndex);
+			if (v !== null && v > max) max = v;
+		}
+		return max;
+	};
+
+	// Je spaeter der Aufhoertag, desto mehr lange Tage im Fenster – der
+	// Hoechststand waechst also monoton mit `stopIndex`. Damit findet die
+	// Halbierung den letzten Tag, der noch traegt, in acht Schritten.
+	const holds = (stopIndex: number) => peakWithStop(stopIndex) <= NORM_DAILY + AVG_TOLERANCE;
+	const last = axis.dates.length - 1;
+	let easeOffDate: string | null = null;
+	const tooLate = !holds(axis.todayIndex - 1);
+	if (!tooLate && !holds(last)) {
+		let lo = axis.todayIndex - 1; // haelt
+		let hi = last; // haelt nicht
+		while (hi - lo > 1) {
+			const mid = Math.floor((lo + hi) / 2);
+			if (holds(mid)) lo = mid;
+			else hi = mid;
+		}
+		easeOffDate = axis.dates[Math.max(axis.todayIndex, lo)];
+	}
+
 	const paceDelta = maxPace === null ? null : maxPace - opts.pace;
 
 	return {
@@ -709,9 +787,13 @@ export function forecast(
 		maxPace,
 		paceDelta,
 		reliefDate,
+		easeOffDate,
+		tooLate,
 		verdict: makeVerdict({
 			until: opts.until,
 			pace: opts.pace,
+			easeOffDate,
+			tooLate,
 			currentAverage: at(axis.todayIndex, 0) ?? 0,
 			crossing,
 			peak,
@@ -725,15 +807,19 @@ export function forecast(
 /**
  * Aus der Rechnung ein Urteil machen.
  *
- * Drei Faelle, in dieser Reihenfolge: schon gerissen, laeuft absehbar hinein,
- * alles andere. Ein vierter sitzt dazwischen und ist der wichtigste fuer die
- * Glaubwuerdigkeit – die Kurve kommt der Grenze nahe, ohne dass man dafuer
- * nennenswert herunter muesste. Der bekommt Farbe, aber keinen Handlungsbedarf.
+ * Dringlichkeit bemisst sich an der UMKEHRBARKEIT, nicht daran, ob die Grenze
+ * gerade ueberschritten ist. Ein paar Minuten ueber acht Stunden sind kein
+ * Notfall – das Fenster rollt, und wer kuerzer tritt, holt es wieder ein. Ernst
+ * wird es, wenn Kuerzertreten nicht mehr reicht. Deshalb steuert der
+ * Umkehrpunkt die Stufen und nicht der aktuelle Schnitt: gewarnt wird eine Woche
+ * vorher, nicht monatelang davor.
  */
 function makeVerdict(f: {
 	until: string;
 	pace: number;
 	currentAverage: number;
+	easeOffDate: string | null;
+	tooLate: boolean;
 	crossing: Forecast["crossing"];
 	peak: { date: string; average: number };
 	maxPace: number | null;
@@ -742,9 +828,10 @@ function makeVerdict(f: {
 }): Verdict {
 	const de = (iso: string) => fmtDateHuman(noonTs(iso));
 	const h = (v: number) => `${fmtHoursClock(v)} h`;
+	const ceiling =
+		f.maxPace !== null && f.maxPace > 0 ? ` Nötig wären höchstens ${h(f.maxPace)} je Arbeitstag.` : "";
 
-	// Schon gerissen: die Prognose ist dann zweitrangig, es geht nur noch darum,
-	// wann das Fenster wieder traegt.
+	// Schon drueber – das ist keine Prognose mehr, sondern der Stand.
 	if (f.currentAverage > NORM_DAILY + AVG_TOLERANCE) {
 		return {
 			level: "crit",
@@ -756,60 +843,44 @@ function makeVerdict(f: {
 		};
 	}
 
-	// Nicht mehr durch weniger Arbeiten zu halten.
-	if (f.maxPace !== null && f.maxPace <= 0) {
+	// Der Umkehrpunkt ist bereits verstrichen.
+	if (f.tooLate) {
 		return {
 			level: "crit",
 			requiresAction: true,
-			headline: "Nicht mehr abwendbar",
+			headline: "Nicht mehr aufzuhalten",
 			detail: f.reliefDate
-				? `Selbst ohne weitere Stunden reißt der Schnitt; entlastet ist das Fenster erst am ${de(f.reliefDate)}.`
-				: "Selbst ohne weitere Stunden reißt der Schnitt im Prognosezeitraum."
+				? `Selbst wenn du ab sofort gar nicht mehr arbeitest, geht der Schnitt über ${h(NORM_DAILY)}; entlastet ist das Fenster erst am ${de(f.reliefDate)}.`
+				: `Selbst ohne jede weitere Stunde geht der Schnitt über ${h(NORM_DAILY)}.`
 		};
 	}
 
-	// Wie viel muesste man je Arbeitstag herunter?
-	const reduction = f.paceDelta === null ? 0 : -f.paceDelta;
+	if (f.easeOffDate) {
+		const days = Math.max(0, daysBetween(f.until, f.easeOffDate) - 1);
 
-	// Der Schnitt steht schon AUF der Grenze und es ist etwas zu tun. Eine Frist
-	// zu nennen waere hier falsch – sie ist abgelaufen. Frueher fiel dieser Fall
-	// in den Warn-Zweig: die Kacheln zeigten einen negativen Puffer in Rot, der
-	// Kasten darueber war gelb, und beides stand nebeneinander.
-	if (reduction >= AVG_TOLERANCE && f.currentAverage >= NORM_DAILY - AVG_TOLERANCE) {
-		return {
-			level: "crit",
-			requiresAction: true,
-			headline: "Grenze erreicht",
-			detail: `Der Schnitt liegt bei ${h(f.currentAverage)}. Dein Tempo von ${h(f.pace)} hebt ihn weiter – das Ausgleichsfenster trägt höchstens ${h(f.maxPace ?? 0)} je Arbeitstag, also ${h(reduction)} weniger.`
-		};
-	}
+		// Der Umkehrpunkt rueckt in Reichweite: jetzt ist etwas zu tun.
+		if (days <= EASE_OFF_LEAD_DAYS) {
+			return {
+				level: "crit",
+				requiresAction: true,
+				headline: days <= 1 ? "Jetzt gegensteuern" : `Gegensteuern in ${days} Tagen`,
+				detail:
+					`Bis ${de(f.easeOffDate)} kannst du dein Tempo von ${h(f.pace)} noch drehen. Wer später anfängt, bekommt den Schnitt im Prognosezeitraum nicht mehr unter ${h(NORM_DAILY)}.` +
+					ceiling
+			};
+		}
 
-	if (f.crossing && reduction >= AVG_TOLERANCE) {
-		// Die Ueberschrift sagt, WANN – das ist die Frage, die gestellt wird.
-		//
-		// Sie ist die unschaerfere der beiden Zahlen: nahe der Schwelle naehert
-		// sich die Kurve fast tangential, ein Tempounterschied von einer
-		// Viertelstunde verschiebt den Tag um Wochen. Deshalb auf Wochen gerundet
-		// und mit "etwa", und deshalb traegt der Detailtext die REDUKTION – die
-		// bewegt sich glatt mit dem Tempo und ist ausserdem das Einzige, was man
-		// tun kann. Steht der Schnitt bereits auf der Grenze, faellt dieser Zweig
-		// aus: dann gibt es keine Frist mehr, siehe oben.
-		const days = Math.max(0, daysBetween(f.until, f.crossing.date) - 1);
+		// Noch Zeit: eine Beobachtung, keine Aufforderung.
 		const weeks = Math.round(days / 7);
 		return {
 			level: "warn",
-			requiresAction: true,
-			headline:
-				days <= 14 ? `In ${days} Tagen über der Grenze` : `In etwa ${weeks} Wochen über der Grenze`,
-			detail:
-				f.maxPace !== null
-					? `Wenn du mit ${h(f.pace)} je Arbeitstag weitermachst. Das Ausgleichsfenster trägt höchstens ${h(f.maxPace)} – also ${h(reduction)} weniger als bisher.`
-					: `Wenn du mit ${h(f.pace)} je Arbeitstag weitermachst.`
+			requiresAction: false,
+			headline: days <= 14 ? `Umkehrpunkt in ${days} Tagen` : `Umkehrpunkt in etwa ${weeks} Wochen`,
+			detail: `Mit ${h(f.pace)} je Arbeitstag kannst du bis ${de(f.easeOffDate)} so weitermachen; bis dahin ist es umkehrbar.${ceiling}`
 		};
 	}
 
-	// Nahe dran, aber nichts zu tun: ein Datum zu nennen waere hier
-	// Scheingenauigkeit, denn schon ein halber Arbeitstag verschiebt es um Wochen.
+	// Kein Umkehrpunkt noetig – das Tempo traegt das Fenster dauerhaft.
 	if (f.peak.average > NORM_DAILY - AVG_TOLERANCE) {
 		return {
 			level: "warn",

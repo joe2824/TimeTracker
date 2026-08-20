@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	arbzgMonths,
+	AVG_TOLERANCE,
 	avgWindow,
 	checkArbZg,
 	dataFromEntries,
@@ -197,7 +198,7 @@ describe("avgWindow", () => {
 });
 
 describe("currentPace", () => {
-	it("mittelt ueber die Arbeitstage der letzten vier Wochen", () => {
+	it("mittelt ueber die Arbeitstage des Bezugszeitraums", () => {
 		const facts = dayFacts(series(HISTORY_FROM, UNTIL, 9), ABSENCE, { deductBreaks: false });
 		expect(currentPace(facts, base)).toBeCloseTo(9);
 	});
@@ -253,82 +254,47 @@ describe("forecast", () => {
 		expect(forecast(f, "strict", { ...base, pace: max + 0.25 }).crossing).not.toBeNull();
 	});
 
-	it("urteilt nach Stufen statt in Prosa", () => {
-		// Unter der Grenze und bleibend: gruen.
+	it("stuft nach Umkehrbarkeit, nicht nach Ueberschreitung", () => {
+		// Ueber der Grenze zu liegen ist fuer sich kein Notfall – das Fenster
+		// rollt, und wer kuerzer tritt, holt es wieder ein. Gestuft wird deshalb
+		// danach, ob es noch zu drehen ist.
 		expect(forecast(facts(7.5), "strict", { ...base, pace: 7.5 }).verdict.level).toBe("ok");
-		// Laeuft hinein, aber noch zu drehen: gelb, mit Frist in der Ueberschrift.
-		const warn = forecast(facts(7.5), "strict", { ...base, pace: 9.5 }).verdict;
-		expect(warn.level).toBe("warn");
-		expect(warn.requiresAction).toBe(true);
-		// Die Ueberschrift beantwortet "wann", der Detailtext "wie viel weniger".
-		expect(warn.headline).toMatch(/^In etwa \d+ Wochen über der Grenze$/);
-		expect(warn.detail).toContain("1:30 h weniger als bisher");
-		// Schon gerissen: rot, und die Ueberschrift sagt genau das.
-		const crit = forecast(facts(9), "strict", { ...base, pace: 9 }).verdict;
-		expect(crit.level).toBe("crit");
-		expect(crit.requiresAction).toBe(true);
-		expect(crit.headline).toBe("Grenze bereits gerissen");
+
+		// Laeuft hinein, aber der Umkehrpunkt ist weit: Beobachtung, kein Auftrag.
+		const early = forecast(facts(7.5), "strict", { ...base, pace: 9.5 }).verdict;
+		expect(early.level).toBe("warn");
+		expect(early.requiresAction).toBe(false);
+		expect(early.headline).toMatch(/^Umkehrpunkt in/);
+
+		// Umkehrpunkt in Reichweite: jetzt ist etwas zu tun.
+		const late = forecast(facts(8), "strict", { ...base, pace: 12 }).verdict;
+		expect(late.level).toBe("crit");
+		expect(late.requiresAction).toBe(true);
+		expect(late.headline).toBe("Jetzt gegensteuern");
+
+		// Schon drueber: kein Prognosefall mehr, sondern der Stand.
+		const over = forecast(facts(9), "strict", { ...base, pace: 9 }).verdict;
+		expect(over.level).toBe("crit");
+		expect(over.headline).toBe("Grenze bereits gerissen");
 	});
 
-	it("traegt die unschaerfere Zahl in der Ueberschrift, die stabile im Detail", () => {
-		// Die Frist ist die wacklige Groesse: nahe der Schwelle naehert sich die
-		// Kurve fast tangential, ein Tempounterschied von Minuten verschiebt sie um
-		// Wochen. Deshalb auf Wochen gerundet und mit "etwa". Die noetige Reduktion
-		// bewegt sich dagegen glatt mit dem Tempo – sie steht im Detailtext und ist
-		// das, was man tatsaechlich tun kann.
+	it("fordert erst kurz vor dem Umkehrpunkt zum Handeln auf", () => {
+		// Der Kern der Beschwerde: bei 8:00 Schnitt und negativem Puffer stand
+		// dauerhaft Rot, obwohl noch Wochen Zeit waren, es zu drehen.
+		const far = forecast(facts(7.5), "strict", { ...base, pace: 8.3 }).verdict;
+		expect(far.headline).toMatch(/Umkehrpunkt in etwa \d+ Wochen/);
+		expect(far.requiresAction).toBe(false);
+
+		const near = forecast(facts(8), "strict", { ...base, pace: 10 }).verdict;
+		expect(near.headline).toMatch(/^Gegensteuern in \d+ Tagen$/);
+		expect(near.requiresAction).toBe(true);
+	});
+
+	it("rueckt den Umkehrpunkt naeher, je hoeher das Tempo", () => {
 		const f = facts(7.5);
-		const a = forecast(f, "strict", { ...base, pace: 8.4 }).verdict;
-		const b = forecast(f, "strict", { ...base, pace: 8.2 }).verdict;
-		expect(a.headline).toMatch(/^In etwa \d+ Wochen über der Grenze$/);
-		expect(b.headline).toMatch(/^In etwa \d+ Wochen über der Grenze$/);
-		expect(a.detail).toContain("0:24 h weniger als bisher");
-		expect(b.detail).toContain("0:12 h weniger als bisher");
-	});
-
-	it("nennt keine Frist mehr, wenn der Schnitt schon auf der Grenze steht", () => {
-		// Vorher fiel dieser Fall in den Warn-Zweig: die Kacheln zeigten einen
-		// negativen Puffer in Rot, der Kasten darueber war gelb, und eine Frist
-		// wurde genannt, die laengst abgelaufen war.
-		const v = forecast(facts(8), "strict", { ...base, pace: 9 }).verdict;
-		expect(v.level).toBe("crit");
-		expect(v.requiresAction).toBe(true);
-		expect(v.headline).toBe("Grenze erreicht");
-		expect(v.detail).not.toMatch(/Wochen|etwa ab/);
-	});
-
-	it("nennt kein Datum, wenn die Kurve die Grenze nur streift", () => {
-		// Der Fall, der die Anzeige unglaubwuerdig machte: bei 8:01 Tempo kratzt
-		// der Schnitt die 8 h irgendwo, und das Datum sprang je nach Delle
-		// zwischen "in 6 Tagen" und "in 12 Wochen". Zu tun ist dabei nichts – zwei
-		// Minuten je Tag sind keine Handlungsanweisung.
-		const v = forecast(facts(7.5), "strict", { ...base, pace: 8.02 }).verdict;
-		expect(v.headline).toBe("Dicht an der Grenze");
-		expect(v.requiresAction).toBe(false);
-		// Gelb bleibt es trotzdem: die Card soll die Enge zeigen.
-		expect(v.level).toBe("warn");
-	});
-
-	it("meldet Handlungsbedarf erst ab einer spuerbaren Reduktion", () => {
-		// Knapp ueber der Toleranz muss es greifen, sonst waere die Schwelle eine
-		// Ausrede statt eines Filters.
-		const v = forecast(facts(7.5), "strict", { ...base, pace: 8.3 }).verdict;
-		expect(v.requiresAction).toBe(true);
-		expect(v.detail).toContain("0:18 h weniger als bisher");
-	});
-
-	it("laesst schwere Tage aus dem Fenster fallen", () => {
-		// Ein Block von vier schweren Wochen vor 22 Wochen: der Schnitt steht
-		// heute hoch und faellt, sobald der Block hinten herausrollt – ohne dass
-		// sich am Tempo irgendetwas aendert.
-		const entries = series(HISTORY_FROM, UNTIL, 7);
-		for (let d = stepDate(UNTIL, -154); d <= stepDate(UNTIL, -126); d = stepDate(d, 1)) {
-			if (MO_FR.includes(new Date(`${d}T12:00:00`).getDay())) entries.push(day(d, 3));
-		}
-		const f = forecast(dayFacts(entries, ABSENCE, { deductBreaks: false }), "strict", { ...base, pace: 7 });
-		const first = f.points[0].average;
-		const last = f.points[f.points.length - 1].average;
-		expect(last).toBeLessThan(first);
-		expect(last).toBeCloseTo(7, 1);
+		const slow = forecast(f, "strict", { ...base, pace: 8.3 }).easeOffDate!;
+		const fast = forecast(f, "strict", { ...base, pace: 9.5 }).easeOffDate!;
+		expect(fast < slow).toBe(true);
 	});
 
 	it("zeichnet die Vergangenheit nur so weit, wie ein volles Fenster reicht", () => {
@@ -530,6 +496,8 @@ function naiveAverage(opts: {
 	dataFrom: string;
 	workdays: number[];
 	pace: number;
+	/** Ab dem Tag DANACH wird nicht mehr gearbeitet. Ohne Angabe: durchgehend. */
+	stopAfter?: string;
 }): number | null {
 	let hours = 0;
 	let budget = 0;
@@ -542,7 +510,8 @@ function naiveAverage(opts: {
 		const isPlanWorkday = opts.workdays.includes(wd);
 		const absence = future ? 0 : (opts.facts.get(d)?.absenceFraction ?? 0);
 		budget += Math.max(0, (isWerktag ? 1 : 0) - absence);
-		hours += future ? (isPlanWorkday ? opts.pace : 0) : (opts.facts.get(d)?.hours ?? 0);
+		const worksToday = isPlanWorkday && (opts.stopAfter === undefined || d <= opts.stopAfter);
+		hours += future ? (worksToday ? opts.pace : 0) : (opts.facts.get(d)?.hours ?? 0);
 	}
 	return budget > 0 ? hours / budget : null;
 }
@@ -691,5 +660,43 @@ describe("Zeitsimulation", () => {
 		// Ohne Rueckfall waere hier 0 herausgekommen.
 		expect(pace).toBeGreaterThan(7);
 		expect(pace).toBeCloseTo(7.9, 1);
+	});
+
+	it("bestimmt den Umkehrpunkt exakt – einen Tag spaeter traegt es nicht mehr", () => {
+		// Der Umkehrpunkt ist per Halbierung gesucht, also genau die Art Zahl, die
+		// um eins danebenliegen kann, ohne dass es auffaellt. Geprueft wird er
+		// deshalb gegen dieselbe naive Rechnung: bis zum Umkehrpunkt im aktuellen
+		// Tempo, danach nichts – dann muss der Hoechststand halten, und einen Tag
+		// spaeter darf er es nicht mehr.
+		const limit = NORM_DAILY + AVG_TOLERANCE;
+		let checked = 0;
+
+		for (let seed = 60; seed <= 75; seed++) {
+			const { entries, dataFrom } = scenario(seed);
+			const facts = dayFacts(entries, ABSENCE, { deductBreaks: false });
+			const opts = { until: UNTIL, dataFrom, workdays: MO_FR };
+			// Ein Tempo deutlich ueber der Grenze erzwingt einen Umkehrpunkt.
+			const pace = 9.5;
+			const f = forecast(facts, "strict", { ...opts, pace });
+			if (!f.easeOffDate || f.tooLate) continue;
+
+			const peakStopping = (stopAfter: string) => {
+				let max = 0;
+				let end = UNTIL;
+				for (let i = 0; i <= 26 * 7; i++, end = stepDate(end, 1)) {
+					const v = naiveAverage({ facts, basis: "strict", end, until: UNTIL, dataFrom, workdays: MO_FR, pace, stopAfter });
+					if (v !== null && v > max) max = v;
+				}
+				return max;
+			};
+
+			expect(peakStopping(f.easeOffDate), `seed ${seed}: Umkehrpunkt traegt nicht`).toBeLessThanOrEqual(limit);
+			expect(
+				peakStopping(stepDate(f.easeOffDate, 1)),
+				`seed ${seed}: einen Tag spaeter traegt es noch – der Umkehrpunkt liegt zu frueh`
+			).toBeGreaterThan(limit);
+			checked++;
+		}
+		expect(checked).toBeGreaterThan(3);
 	});
 });

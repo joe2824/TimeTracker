@@ -93,11 +93,13 @@ einfach, sondern hat einen Verlauf: alte schwere Tage fallen hinten heraus, wäh
 hineinlaufen. Die Karte simuliert diesen Verlauf Tag für Tag und beantwortet drei Fragen:
 
 1. **Wo stehe ich?** Schnitt und Puffer im Fenster, das heute endet.
-2. **Wenn es so weitergeht?** Aus den letzten 4 Wochen (umschaltbar auf 8 oder 12) wird ein
-   Tempo in Stunden je Arbeitstag abgeleitet und 26 Wochen weit fortgeschrieben.
-3. **Was müsste sich ändern?** Das höchste konstante Tempo, mit dem der Schnitt unter 8 h
-   bleibt, und wie weit das aktuelle darüber liegt — „das Fenster trägt höchstens 7:51 h, also
-   0:54 h weniger als bisher“.
+2. **Wenn es so weitergeht?** Aus den letzten **12 Wochen** (umschaltbar auf 4 oder 8) wird ein
+   Tempo in Stunden je Arbeitstag abgeleitet und 26 Wochen weit fortgeschrieben. Zwölf, weil
+   vier Wochen schon bei zwei zufällig langen Wochen ausschlagen und hochgerechnet auf ein
+   halbes Jahr eine Warnung ergeben, die sich von selbst wieder erledigt.
+3. **Bis wann kann ich es noch drehen?** Der **Umkehrpunkt**: der späteste Tag, an dem man
+   anfangen kann herunterzugehen und trotzdem unter der Grenze bleibt. Gerechnet wird der
+   günstigste Fall — bis dahin im aktuellen Tempo, danach gar nichts mehr.
 
 Die Kurve im Diagramm **steigt**, wenn das aktuelle Tempo über dem bisherigen Schnitt liegt:
 das rollende Fenster tauscht Woche für Woche ältere, kürzere Tage gegen Tage dieses Tempos.
@@ -105,32 +107,37 @@ Bleibt es dabei, endet der Schnitt genau beim aktuellen Tempo. Das steht als Sat
 Diagramm, weil eine steigende Linie sonst wie ein Trend aussieht statt wie eine Folge der
 Annahme.
 
-#### Warum kein genaues Datum
+#### Wann gewarnt wird
 
-Nahe der Schwelle nähert sich die Kurve fast tangential. Ein Tempounterschied von einer
-Viertelstunde verschiebt den Überschreitungstag dann um Monate – bei 8:23 h ergibt dieselbe
-Datenlage „in 6 Wochen“, bei 8:05 h „in 15 Wochen“. Deshalb steht die Frist auf **Wochen
-gerundet und mit „etwa“** in der Überschrift, und der Satz darunter trägt die **nötige
-Reduktion**: die bewegt sich glatt mit dem Tempo und ist außerdem das Einzige, was sich tun
-lässt.
+Nicht danach, **ob** die Grenze überschritten ist, sondern danach, **ob es noch umkehrbar
+ist**. Ein paar Minuten über acht Stunden sind kein Notfall: das Fenster rollt, und wer kürzer
+tritt, holt es wieder ein. Ernst wird es erst, wenn Kürzertreten nicht mehr reicht. Die Stufen
+richten sich deshalb nach dem Umkehrpunkt:
 
-Steht der Schnitt bereits **auf** der Grenze, entfällt die Frist ganz – sie ist abgelaufen.
-Dann heißt es „**Grenze erreicht**“, rot, mit der nötigen Reduktion im Detailtext.
+| Lage | Anzeige |
+|---|---|
+| Kein Umkehrpunkt nötig, Kurve bleibt unter 8 h | „Im grünen Bereich“ · neutral |
+| Kurve streift die 8 h | „Dicht an der Grenze“ · neutral |
+| Umkehrpunkt weiter als eine Woche entfernt | „Umkehrpunkt in etwa X Wochen“ · neutral |
+| Umkehrpunkt in **≤ 7 Tagen** | „Gegensteuern in X Tagen“ · **rot** |
+| Umkehrpunkt verstrichen | „Nicht mehr aufzuhalten“ · **rot** |
+| Schnitt bereits über 8 h | „Grenze bereits gerissen“ · **rot** |
 
-„Höchstens X h je Arbeitstag“ ist dabei ein **Tempo**, keine Tagesration: der Wert wird über
-Fenster ab vier Wochen Vorlauf bestimmt. In den ersten vier Wochen kann der Schnitt die Grenze
-deshalb streifen, obwohl man sich daran hält — diese Fenster sind von bereits gearbeiteten
-Stunden bestimmt. Über sechzig zufällig erzeugte Halbjahre gemessen lag die größte
-Überschreitung bei elf Minuten; ein Test deckelt sie bei einer Viertelstunde.
+**Farbe heißt Handlungsbedarf** — und sonst nichts, auch bei den Kennzahlen darunter. Solange
+der Umkehrpunkt in der Ferne liegt, leuchtet auch ein Schnitt von 8:00 h nicht rot; er ist ja
+einzuholen. Wo gewarnt wird, sagt die Zeile darunter zuerst, worauf sich die Warnung stützt:
+nebeneinander gelesen wirkten sonst eine rote Warnung und ein „gesetzlich unkritisch“ wie ein
+Widerspruch.
 
-Aus demselben Grund gilt eine Toleranz von drei Minuten je Werktag: streift der Schnitt die 8 h nur, meldet der
-Check „**Dicht an der Grenze**“ statt einer Frist, die schon ein einzelner langer Tag umwirft.
+Fristen stehen auf **Wochen gerundet und mit „etwa“**. Nahe der Schwelle nähert sich die Kurve
+fast tangential; ein Tempounterschied von einer Viertelstunde verschiebt den Tag um Wochen.
+Aus demselben Grund gilt eine Toleranz von drei Minuten je Werktag.
 
-**Farbe heißt Handlungsbedarf** — und sonst nichts. Gelb oder rot erscheint nur, wenn man
-spürbar herunter müsste, um das Fenster zu halten. „Dicht an der Grenze“ ist eine Beobachtung
-und bleibt deshalb neutral. Wo gewarnt wird, sagt die Zeile darunter zuerst, worauf sich die
-Warnung stützt: nebeneinander gelesen wirkten sonst eine gelbe Warnung und ein
-„gesetzlich unkritisch“ wie ein Widerspruch.
+„Höchstens X h je Arbeitstag“ ist ein **Tempo**, keine Tagesration: der Wert wird über Fenster
+ab vier Wochen Vorlauf bestimmt. In den ersten vier Wochen kann der Schnitt die Grenze deshalb
+streifen, obwohl man sich daran hält — diese Fenster sind von bereits gearbeiteten Stunden
+bestimmt. Über sechzig zufällig erzeugte Halbjahre gemessen lag die größte Überschreitung bei
+elf Minuten; ein Test deckelt sie bei einer Viertelstunde.
 
 #### Zwei Lesarten
 
@@ -150,8 +157,8 @@ Deshalb zeigt die Karte beides:
 
 Getrennt schaltbar unter **Einstellungen → Bericht → „Hinweis beim Tracking"** (standardmäßig
 an). Oben auf der Tracking-Seite erscheint dann **eine** Zeile, die in den Tab „Bericht“
-führt – aber nur, wenn tatsächlich etwas zu tun ist, also wenn man spürbar herunter müsste, um
-das Fenster zu halten. „Dicht an der Grenze“ bleibt der Karte vorbehalten: eine Dauerwarnung
+führt und dort direkt zur Karte scrollt – aber nur, wenn tatsächlich etwas zu tun ist, also
+wenn der Umkehrpunkt in Reichweite ist. Alles davor bleibt der Karte vorbehalten: eine Dauerwarnung
 auf der meistgesehenen Seite liest nach einer Woche niemand mehr, und dann fällt auch die
 nicht mehr auf, die etwas will.
 

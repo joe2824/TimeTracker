@@ -2,9 +2,9 @@
 	import { app } from "$lib/app.svelte";
 	import {
 		arbzgMonths,
-		AVG_TOLERANCE,
 		checkArbZg,
 		dataFromEntries,
+		DEFAULT_PACE_WEEKS,
 		NORM_DAILY,
 		type ArbZgFinding,
 		type ArbZgLevel,
@@ -30,8 +30,8 @@
 	}
 	let { month }: Props = $props();
 
-	/** Referenzzeitraum fuer das angenommene Tempo. */
-	let paceWeeks = $state(4);
+	/** Referenzzeitraum fuer das angenommene Tempo (siehe DEFAULT_PACE_WEEKS). */
+	let paceWeeks = $state(DEFAULT_PACE_WEEKS);
 
 	/**
 	 * Stichtag: das Monatsende – aber nie in der Zukunft.
@@ -82,10 +82,11 @@
 	const legal = $derived(result.forecasts.legal);
 	const strictWindow = $derived(result.windows.strict);
 
-	// Dieselbe Schwelle wie im Urteil. Vorher faerbte die Kachel schon ab der
-	// nackten 8 rot, das Urteil erst ab 8:03 – bei einem Schnitt von exakt 8:00
-	// stand deshalb ein roter Puffer unter einem gelben Kasten.
-	const overLimit = $derived(strictWindow.average > NORM_DAILY + AVG_TOLERANCE);
+	// Rot bedeutet ueberall dasselbe: handeln. Ein Schnitt knapp ueber acht
+	// Stunden ist noch kein Notfall – solange der Umkehrpunkt in der Ferne liegt,
+	// laesst er sich durch Kuerzertreten einholen, und dann darf die Zahl auch
+	// nicht rot leuchten.
+	const alarm = $derived(strict.verdict.requiresAction);
 
 	// ---- Kurve ----
 	// Nur die STRENGE Linie ins Diagramm. Die gesetzliche liegt bei einer
@@ -170,7 +171,7 @@
 	</span>
 {/snippet}
 
-<Card.Root class="py-4">
+<Card.Root id="arbzg-check" class="scroll-mt-20 py-4">
 	<Card.Header>
 		<Card.Title>Arbeitszeit-Check</Card.Title>
 		<Card.Description>
@@ -211,14 +212,14 @@
 			<div class="flex flex-wrap gap-8">
 				<div>
 					<div class="text-muted-foreground text-xs">Schnitt · 24 Wochen</div>
-					<div class="text-2xl" class:text-destructive={overLimit}>
+					<div class="text-2xl" class:text-destructive={alarm}>
 						{fmtHoursClock(strictWindow.average)} h
 					</div>
 					<div class="text-muted-foreground text-xs">Grenze {fmtHoursClock(NORM_DAILY)} h</div>
 				</div>
 				<div>
 					<div class="text-muted-foreground text-xs">Puffer</div>
-					<div class="text-2xl" class:text-destructive={overLimit}>
+					<div class="text-2xl" class:text-destructive={alarm}>
 						{strictWindow.bufferHours >= 0 ? "+" : "−"}{fmtHoursClock(Math.abs(strictWindow.bufferHours))} h
 					</div>
 					<div class="text-muted-foreground text-xs">im Fenster</div>
@@ -227,6 +228,24 @@
 					<div class="text-muted-foreground text-xs">Dein Tempo</div>
 					<div class="text-2xl">{fmtHoursClock(result.pace)} h</div>
 					<div class="text-muted-foreground text-xs">je Arbeitstag</div>
+				</div>
+				<div>
+					<div class="text-muted-foreground text-xs">Umkehrpunkt</div>
+					<div class="text-2xl" class:text-destructive={alarm}>
+						{#if strict.tooLate}
+							verstrichen
+						{:else if strict.easeOffDate}
+							{new Date(noonTs(strict.easeOffDate)).toLocaleDateString("de-DE", {
+								day: "2-digit",
+								month: "2-digit"
+							})}
+						{:else}
+							—
+						{/if}
+					</div>
+					<div class="text-muted-foreground text-xs">
+						{strict.easeOffDate || strict.tooLate ? "letzter Tag zum Drehen" : "nicht nötig"}
+					</div>
 				</div>
 				<div>
 					<div class="text-muted-foreground text-xs">Höchstens</div>
