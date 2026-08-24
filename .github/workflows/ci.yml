@@ -29,3 +29,32 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  # Die Rust-Seite wurde bisher erst im Release-Build uebersetzt – ein Fehler in
+  # src-tauri fiel also erst auf, wenn der Tag schon stand.
+  #
+  # Auf windows-latest und nicht ubuntu: der riskanteste Rust-Code der App steht
+  # in #[cfg(windows)]-Bloecken (enforce_single_instance mit CreateMutexW/
+  # FindWindowW, die Icon-Groessen ueber GetSystemMetrics). Ein Linux-Runner
+  # schneidet genau die heraus und meldete gruen, ohne sie je gesehen zu haben.
+  # Dazu kommt, dass Tauri auf ubuntu erst eine Reihe von webkit2gtk-Paketen
+  # braucht – hier faellt der Schritt weg.
+  #
+  # Ohne `cargo fmt --check`: die Formatierung im Projekt ist von Hand gesetzt
+  # (kurze Ketten bleiben einzeilig), rustfmt wuerde sie umbrechen wollen.
+  rust:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Clippy
+        working-directory: src-tauri
+        run: cargo clippy --all-targets -- -D warnings

@@ -324,7 +324,17 @@ export async function listEntryYears(): Promise<StoredYear[]> {
 export async function deleteYear(year: number): Promise<string[]> {
 	const removeYear = async (re: RegExp) => {
 		const hits = (await dataFiles(re)).filter(([, month]) => month.startsWith(`${year}-`));
-		for (const [name] of hits) await remove(`${DIR}/${name}`, baseOpts);
+		// Durch die Warteschlange, aus demselben Grund wie das Loeschen eines leeren
+		// Monats in saveEntries: ein noch anstehendes Speichern derselben Datei legte
+		// sie sonst NACH dem Loeschen wieder an. Der Cache ist da schon geraeumt
+		// (deleteYearEntries), der Monat laege also unsichtbar auf der Platte – und
+		// stuende beim naechsten Start wieder in der Auswahl.
+		for (const [name] of hits) {
+			await queued(name, async () => {
+				const path = `${DIR}/${name}`;
+				if (await exists(path, baseOpts)) await remove(path, baseOpts);
+			});
+		}
 		return hits.map(([, month]) => month);
 	};
 	const deleted = await removeYear(MONTH_FILE_RE);

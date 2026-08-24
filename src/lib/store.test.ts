@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Entry } from "./types";
-import { fakeFs, files, fsFaults, resetFakeFs, written } from "./testing/fakeFs";
+import { blockWrites, fakeFs, files, fsFaults, resetFakeFs, written } from "./testing/fakeFs";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("./testing/fakeFs")).fakeFs);
 
@@ -138,6 +138,31 @@ describe("deleteYear", () => {
 		await saveEntries("2026-01", [entry("a")]);
 		expect(await deleteYear(2019)).toEqual([]);
 		expect(await listEntryMonths()).toEqual(["2026-01"]);
+	});
+
+	it("laesst ein noch laufendes Speichern die Datei nicht wieder anlegen", async () => {
+		// Der Fall: jemand loescht ein Jahr, waehrend ein Speichern desselben Monats
+		// noch unterwegs ist. Ging das Loeschen an der Warteschlange vorbei, schrieb
+		// der anstehende Vorgang die Datei NACH dem Loeschen neu – der Cache war da
+		// laengst geraeumt, der Monat lag also unsichtbar auf der Platte und stand
+		// beim naechsten Start wieder in der Auswahl.
+		await saveEntries("2026-01", [entry("a")]);
+
+		const freigeben = blockWrites();
+		const speichern = saveEntries("2026-01", [entry("a"), entry("b")]);
+		// Das Loeschen startet, waehrend oben nachweislich noch geschrieben wird.
+		const loeschen = deleteYear(2026);
+		// Erst laufen lassen, bis es an der Datei ist: alles am Fake-Dateisystem ist
+		// eine Microtask, ein Durchlauf der Warteschlange bringt das Loeschen also
+		// bis zu seinem remove. Ohne dieses Warten stuende es beim Freigeben noch
+		// beim Verzeichnis-Lesen – dann treffen die beiden gar nicht aufeinander und
+		// der Test wuerde auch ohne die Warteschlange gruen.
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		freigeben();
+		await Promise.all([speichern, loeschen]);
+
+		expect(files.has(file("2026-01"))).toBe(false);
+		expect(await listEntryMonths()).toEqual([]);
 	});
 });
 

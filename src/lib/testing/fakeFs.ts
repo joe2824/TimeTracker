@@ -32,7 +32,38 @@ const dirs = new Set<string>(["data"]);
  */
 export const written: string[] = [];
 
+/**
+ * Anhalten des naechsten Schreibvorgangs, bis der Test ihn freigibt.
+ *
+ * Ohne diese Sperre laesst sich eine Reihenfolge nicht pruefen: der Fake
+ * schreibt sofort, „waehrend noch geschrieben wird" waere im Test also nur eine
+ * Vermutung ueber Microtask-Reihenfolgen – und die trifft mal zu und mal nicht.
+ * Damit haengt gerade die Warteschlange in store.ts an einem Zufall.
+ */
+let writeGate: Promise<void> | null = null;
+let openGate: (() => void) | null = null;
+
+/**
+ * Alle Schreibvorgaenge anhalten. Liefert die Freigabe.
+ *
+ * Nach dem Aufruf haengt jedes writeTextFile, bis die Freigabe kommt – so laesst
+ * sich ein Vorgang nachweislich „noch offen" halten, waehrend ein zweiter startet.
+ */
+export function blockWrites(): () => void {
+	writeGate = new Promise<void>((resolve) => (openGate = resolve));
+	return releaseWrites;
+}
+
+function releaseWrites(): void {
+	openGate?.();
+	writeGate = null;
+	openGate = null;
+}
+
 export function resetFakeFs(): void {
+	// Zuerst: eine im Test vergessene Sperre liesse sonst jeden folgenden
+	// Schreibvorgang haengen, und die Suite bliebe ohne Fehlermeldung stehen.
+	releaseWrites();
 	files.clear();
 	dirs.clear();
 	dirs.add("data");
@@ -89,6 +120,7 @@ export const fakeFs = {
 	// `append` mitspielen: das Protokoll haengt jede Zeile an, ein ueberschreibender
 	// Fake haette genau den Fehler durchgewunken, den es zu vermeiden gilt.
 	writeTextFile: async (p: string, txt: string, opts?: { append?: boolean }) => {
+		if (writeGate) await writeGate;
 		written.push(p);
 		files.set(p, opts?.append ? (files.get(p) ?? "") + txt : txt);
 	}
