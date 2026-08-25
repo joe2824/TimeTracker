@@ -1,8 +1,10 @@
 # Ein Abbild, ein Prozess, ein Volume.
 #
-# Mehrstufig, damit die Bauwerkzeuge nicht im Ergebnis landen: das fertige Abbild
-# enthaelt Node, den gebauten Server und die Abhaengigkeiten fuer den Betrieb -
-# sonst nichts.
+# Es baut BEIDES: die Oberflaeche (PWA) und den Server. Ein Abbild, das nur den
+# halben Dienst enthaelt und den Rest von aussen erwartet, geht irgendwann
+# unbemerkt kaputt - dann laeuft der Server, aber die Anwendung fehlt.
+#
+# Mehrstufig, damit die Bauwerkzeuge nicht im Ergebnis landen.
 
 # ---------- Bauen ----------
 FROM node:22-alpine AS build
@@ -18,16 +20,22 @@ WORKDIR /app
 # statt Minuten.
 COPY package.json package-lock.json ./
 COPY server/package.json ./server/
-RUN npm ci --workspace server --include-workspace-root=false
+RUN npm ci
 
+# Die Oberflaeche - dieselbe Quelle wie fuer die Desktop-Anwendung, nur ein
+# anderes Ziel.
+COPY svelte.config.js vite.config.js tsconfig.json ./
+COPY src ./src
+COPY static ./static
+RUN BUILD_TARGET=web npx vite build
+
+# Der Server. Die gebaute Oberflaeche kommt in seinen static-Ordner, damit er
+# sie ausliefert.
 COPY server ./server
-# Die gebaute PWA gehoert mit ins Abbild: der Server liefert sie aus. Sie wird
-# VOR dem Docker-Bau erzeugt ("npm run pwa:bundle") und liegt dann in
-# server/static - deshalb kommt sie mit dem COPY oben schon mit.
-RUN npm --workspace server run build
+RUN cp -r build-web/. server/static/ && npm --workspace server run build
 
 # Die Abhaengigkeiten fuer den Betrieb noch einmal frisch, ohne die des Baus.
-RUN npm ci --workspace server --include-workspace-root=false --omit=dev
+RUN rm -rf node_modules && npm ci --workspace server --include-workspace-root=false --omit=dev
 
 # ---------- Betreiben ----------
 FROM node:22-alpine AS runtime
@@ -38,6 +46,7 @@ RUN addgroup -S tt && adduser -S tt -G tt
 
 WORKDIR /app
 COPY --from=build --chown=tt:tt /app/server/build ./build
+COPY --from=build --chown=tt:tt /app/server/static ./static
 COPY --from=build --chown=tt:tt /app/node_modules ./node_modules
 COPY --from=build --chown=tt:tt /app/server/package.json ./package.json
 
@@ -49,6 +58,7 @@ USER tt
 ENV NODE_ENV=production \
     PORT=3000 \
     DATA_DIR=/data \
+    CLIENT_DIR=/app/static \
     BODY_SIZE_LIMIT=2M
 
 EXPOSE 3000

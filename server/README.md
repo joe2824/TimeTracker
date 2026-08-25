@@ -35,9 +35,15 @@ auch HTTP.
 
 ```bash
 cp server/.env.example .env      # ausfüllen: ORIGIN, RP_ID, INVITE_CODES
-npm run pwa:bundle               # PWA bauen und in den Server legen
 docker compose up -d --build
 ```
+
+Das Abbild baut beides selbst — die Oberfläche und den Server. Es braucht keinen
+vorbereitenden Schritt; ein Abbild, das nur den halben Dienst enthält und den
+Rest von aussen erwartet, geht irgendwann unbemerkt kaputt.
+
+Für die Entwicklung ohne Docker legt `npm run pwa:bundle` die gebaute Oberfläche
+in `server/static`, sodass `npm run server:dev` sie ausliefert.
 
 Der Container lauscht auf `127.0.0.1:3000`. Davor gehört ein Reverse-Proxy, der
 TLS terminiert und weiterreicht — Caddy, Traefik oder nginx, was schon da ist.
