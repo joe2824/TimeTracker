@@ -12,6 +12,7 @@ import {
 } from "@simplewebauthn/server";
 import type {
 	AuthenticationResponseJSON,
+	AuthenticatorTransportFuture,
 	RegistrationResponseJSON
 } from "@simplewebauthn/server";
 import { eq } from "drizzle-orm";
@@ -65,6 +66,34 @@ export async function verifyRegistration(
 	});
 }
 
+/**
+ * Die Aufgabe fuer eine BESTAETIGUNG, nicht fuer eine Anmeldung.
+ *
+ * Unterschied zur Anmeldung ist eine einzige Zeile - und sie ist der ganze
+ * Punkt: `userVerification: "required"`. Der Authentifikator muss den Menschen
+ * pruefen, mit PIN oder Fingerabdruck. Ohne das genuegte der blosse Besitz des
+ * Geraets, und "bestaetigen" hiesse nur "der Schluessel lag hier herum".
+ *
+ * Fuer eine Aktion, nach der die Daten weg sind, ist das der Unterschied
+ * zwischen einer Rueckfrage und einer Sicherung.
+ */
+export async function confirmationOptions(db: Db, userId: string) {
+	const eigene = db.select().from(credentials).where(eq(credentials.userId, userId)).all();
+	return generateAuthenticationOptions({
+		rpID: RP_ID,
+		// Anders als bei der Anmeldung wird hier eingeschraenkt: es ist bereits
+		// bekannt, wer bestaetigt. Ein fremder Passkey darf gar nicht erst
+		// angeboten werden.
+		allowCredentials: eigene.map((c) => ({
+			id: c.id,
+			transports: c.transports
+				? (JSON.parse(c.transports) as AuthenticatorTransportFuture[])
+				: undefined
+		})),
+		userVerification: "required"
+	});
+}
+
 export async function authenticationOptions() {
 	return generateAuthenticationOptions({
 		rpID: RP_ID,
@@ -79,7 +108,15 @@ export async function authenticationOptions() {
 export async function verifyAuthentication(
 	db: Db,
 	response: AuthenticationResponseJSON,
-	expectedChallenge: string
+	expectedChallenge: string,
+	/**
+	 * Ob der Authentifikator den Menschen geprueft haben muss.
+	 *
+	 * Beim Anmelden nein - viele Passkeys koennen es nicht, und wer aussperrt,
+	 * gewinnt nichts. Beim Bestaetigen einer Loeschung ja: dort ist genau das die
+	 * Zusage, die abgegeben wird.
+	 */
+	requireUserVerification = false
 ) {
 	const cred = db.select().from(credentials).where(eq(credentials.id, response.id)).get();
 	if (!cred) return null;
@@ -95,7 +132,7 @@ export async function verifyAuthentication(
 			counter: cred.counter,
 			transports: cred.transports ? JSON.parse(cred.transports) : undefined
 		},
-		requireUserVerification: false
+		requireUserVerification
 	});
 	if (!result.verified) return null;
 

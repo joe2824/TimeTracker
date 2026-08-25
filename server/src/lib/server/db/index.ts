@@ -149,6 +149,17 @@ export function openDb(file: string): OpenedDb {
 	// der Schreibgeschwindigkeit ist eine Groessenordnung.
 	raw.pragma("synchronous = NORMAL");
 	raw.pragma("foreign_keys = ON");
+	// Geloeschte Inhalte mit Nullen ueberschreiben, statt die Seite nur als frei
+	// zu markieren.
+	//
+	// Ohne das bleibt ein aufgeloestes Konto als Chiffrat in der Datei stehen,
+	// bis die Seite zufaellig wiederverwendet wird - unlesbar zwar, aber
+	// vorhanden. "Die Daten sind geloescht" waere dann eine Aussage ueber eine
+	// Tabelle, nicht ueber die Platte.
+	//
+	// Der Preis ist ein Schreibvorgang mehr je geloeschter Seite. Bei unserer
+	// Last ist das nicht messbar; Loeschungen sind hier die Ausnahme.
+	raw.pragma("secure_delete = ON");
 	// Eine Sperre nicht sofort aufgeben, sondern kurz warten: sonst scheitert ein
 	// Schreibvorgang, nur weil gerade ein anderer laeuft.
 	raw.pragma("busy_timeout = 5000");

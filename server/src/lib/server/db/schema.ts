@@ -166,7 +166,7 @@ export const challenges = sqliteTable("challenges", {
 	challenge: text("challenge").notNull(),
 	/** Bei der Anmeldung bekannt, bei der Registrierung noch nicht. */
 	userId: text("user_id"),
-	purpose: text("purpose").$type<"register" | "login">().notNull(),
+	purpose: text("purpose").$type<"register" | "login" | "delete">().notNull(),
 	expiresAt: integer("expires_at").notNull()
 });
 

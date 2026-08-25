@@ -12,7 +12,8 @@ import { loadDevice, loadEntries, saveDevice, saveEntries } from "../store";
 import { loadActivities, saveActivities, loadSettings, saveSettings, listEntryMonths } from "../store";
 import { deviceId } from "./device";
 import { startTracking, stopTracking, pendingChanges, setChangeListener } from "./outbox";
-import { Api, ApiError } from "./api";
+import { Api, ApiError, type AccountInfo, type DeleteSummary } from "./api";
+import { detachLocalData } from "./detach";
 import { SyncEngine } from "./engine";
 import {
 	createPairingKeyPair,
@@ -29,6 +30,14 @@ import { protectSecret, unprotectSecret } from "../platform/secrets";
 import { isTauri } from "../platform/env";
 
 export type LinkState = "aus" | "verbindet" | "verbunden" | "fehler";
+
+/** Wie weit das Entkoppeln gehen soll - siehe `AccountState.unlink`. */
+export interface UnlinkOptions {
+	/** Den Zugang dieses Geraets auch beim Server beenden. */
+	revokeSelf?: boolean;
+	/** Das ganze Konto aufloesen, samt aller Serverdaten. */
+	deleteRemote?: boolean;
+}
 
 /** Wie es dem Abgleich gerade geht - genau das, was die Oberflaeche zeigt. */
 export type SyncPhase = "ruht" | "laeuft" | "offline" | "fehler";
@@ -429,12 +438,88 @@ class AccountState {
 	}
 
 	/**
+	 * Nachsehen, was am Konto haengt - vor allem, wie viele Geraete.
+	 *
+	 * Die Oberflaeche fragt das, bevor sie das Entkoppeln anbietet: bei genau
+	 * einem Geraet ist "loesen" und "aufloesen" dasselbe, bei mehreren nicht,
+	 * und dieser Unterschied gehoert vor die Entscheidung, nicht danach.
+	 */
+	async accountInfo(): Promise<AccountInfo | null> {
+		if (!this.#api) return null;
+		return this.#api.me();
+	}
+
+	/**
 	 * Die Verknuepfung loesen.
 	 *
-	 * Die lokalen Daten bleiben unangetastet: sie waren vor der Verknuepfung da
-	 * und sind danach immer noch da. Was geht, ist der Zugang zum Server.
+	 * Drei Abstufungen, weil "entkoppeln" drei verschiedene Dinge heissen kann:
+	 *
+	 *   nichts angegeben  - nur dieses Geraet vergisst das Konto. Der Zugang
+	 *                       bleibt gueltig; wer das Geraet hat, koppelt es
+	 *                       wieder. Fuer den Fall "ich will hier gerade nicht
+	 *                       abgleichen".
+	 *   revokeSelf        - der Zugang DIESES Geraets erlischt auch beim Server.
+	 *                       Das Konto und die anderen Geraete bleiben. Der
+	 *                       Normalfall beim Weggeben eines Rechners.
+	 *   deleteRemote      - das ganze Konto wird aufgeloest. Alles, was der
+	 *                       Server hat, verschwindet: Chiffrate, Passkeys,
+	 *                       verpackte Schluessel, alle Geraete. Auch die der
+	 *                       anderen.
+	 *
+	 * In JEDEM dieser Faelle bleiben die lokalen Daten vollstaendig erhalten.
+	 * Sie waren vor der Verknuepfung da und sind danach immer noch da; nur die
+	 * Herkunftsspuren des Abgleichs fallen weg. Der Server war nie ihre einzige
+	 * Kopie, und das ist der Punkt, an dem sich das beweist.
+	 *
+	 * Scheitert die Serverseite, bricht der Vorgang ab und lokal bleibt alles,
+	 * wie es war. Das ist wichtiger, als es aussieht: waere es andersherum,
+	 * haette jemand mit einem kurz nicht erreichbaren Server am Ende ein Geraet
+	 * ohne Zugang und Daten, die trotzdem noch beim Server liegen - und keine
+	 * Moeglichkeit mehr, sie loeschen zu lassen.
 	 */
-	async unlink(): Promise<void> {
+	async unlink(opts: UnlinkOptions = {}): Promise<DeleteSummary | null> {
+		let summe: DeleteSummary | null = null;
+
+		if (opts.deleteRemote || opts.revokeSelf) {
+			if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+			// Zuerst der Server, solange Zugang und Token noch stehen. Danach ist
+			// beides weg und der Vorgang liesse sich nicht mehr nachholen.
+			if (opts.deleteRemote) {
+				summe = await this.#api.deleteAccount(await this.#bestaetigung());
+			} else {
+				await this.#api.revokeDevice();
+			}
+		}
+
+		await this.#forgetLocally();
+		// Erst nachdem der Zugang wirklich weg ist: die Stempel abstreifen. Vorher
+		// waere ein Abbruch mittendrin der schlechteste aller Zustaende - Daten
+		// ohne Fassungsnummern, aber ein Konto, das sie noch erwartet.
+		const geloest = await detachLocalData();
+		logInfo("Verknüpfung gelöst", { ...opts, ...geloest });
+		return summe;
+	}
+
+	/**
+	 * Den Menschen bestaetigen lassen - mit dem Passkey, nicht mit einem Haken.
+	 *
+	 * Auf dem Desktop entfaellt das: dort weist sich die Anwendung mit dem
+	 * Geraete-Token aus, und einen Passkey kann sie gar nicht anbieten - der
+	 * Webview hat eine andere Herkunft als die Domain, an die Passkeys gebunden
+	 * sind. Der Server laesst das Token deshalb ausdruecklich genuegen.
+	 */
+	async #bestaetigung(): Promise<{ challengeId: string; response: unknown } | undefined> {
+		if (isTauri()) return undefined;
+		const { startAuthentication } = await import("@simplewebauthn/browser");
+		const { challengeId, options } = await this.#api!.confirmStart();
+		const response = await startAuthentication({
+			optionsJSON: options as Parameters<typeof startAuthentication>[0]["optionsJSON"]
+		});
+		return { challengeId, response };
+	}
+
+	/** Alles abstellen und die Kontodaten dieses Geraets vergessen. */
+	async #forgetLocally(): Promise<void> {
 		this.#closeStream();
 		if (this.#debounce) clearTimeout(this.#debounce);
 		if (this.#retry) clearTimeout(this.#retry);
@@ -454,7 +539,6 @@ class AccountState {
 		this.serverUrl = "";
 		this.name = "";
 		this.message = "";
-		logInfo("Verknüpfung gelöst");
 	}
 
 	/** Beim Schliessen des Fensters. */

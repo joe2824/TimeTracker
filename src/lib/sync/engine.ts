@@ -100,6 +100,20 @@ export class SyncEngine {
 	#running = false;
 	/** Kam waehrend eines Durchgangs eine Anforderung? Dann gleich noch einmal. */
 	#again = false;
+	/**
+	 * Datensaetze, die der Server nachweislich nicht kennt.
+	 *
+	 * Der Fall tritt auf, wenn die lokale Fassungsnummer von einem Konto stammt,
+	 * das es beim Server nicht mehr gibt - nach einem Aufloesen und erneutem
+	 * Koppeln, oder wenn der Server aus einer aelteren Sicherung wieder aufgesetzt
+	 * wurde. Der Server antwortet dann mit einem Konflikt gegen Fassung 0.
+	 *
+	 * Ohne diese Merkliste waere das eine Sackgasse: der Client zieht den
+	 * Serverstand, findet nichts, laesst seine alte Fassungsnummer stehen und
+	 * schickt sie erneut - fuenf Runden lang, dann gibt er auf. Die Daten blieben
+	 * lokal heil, kaemen aber nie beim Server an, und niemand saehe warum.
+	 */
+	#unbekanntBeimServer = new Set<string>();
 
 	constructor(opts: {
 		api: Api;
@@ -184,8 +198,19 @@ export class SyncEngine {
 			// geht in die naechste Runde - dann auf dem inzwischen bekannten Stand.
 			const angenommen = new Set(antwort.accepted.map((a) => a.id));
 			await clearChanges(stapel.filter((c) => angenommen.has(c.id)));
+			// Angekommen heisst: die Fassung stimmt wieder. Bliebe die Merkliste
+			// stehen, wuerde spaeter faelschlich mit 0 geschrieben und ein echter
+			// Konflikt ginge dabei unbemerkt verloren.
+			for (const id of angenommen) this.#unbekanntBeimServer.delete(id);
 
 			if (antwort.conflicts.length > 0) {
+				for (const k of antwort.conflicts) {
+					// Fassung 0 heisst: der Server hat diesen Datensatz gar nicht. Dann
+					// hilft kein Zusammenfuehren - es gibt nichts, womit. Die naechste
+					// Runde schreibt ihn als neu an.
+					if (k.current.rev === 0) this.#unbekanntBeimServer.add(k.id);
+					else this.#unbekanntBeimServer.delete(k.id);
+				}
 				// Die Konflikte aufloesen heisst: den Serverstand holen und
 				// zusammenfuehren. Danach steht die Aenderung auf der richtigen
 				// Fassung und kommt in der naechsten Runde durch.
@@ -248,12 +273,16 @@ export class SyncEngine {
 				bucket,
 				// Die Fassung aus der Outbox; nur wenn auch die fehlt, faellt es auf
 				// "gab es beim Server noch nie" zurueck.
-				baseRev: change.rev ?? item?.rev ?? 0,
+				baseRev: this.#unbekanntBeimServer.has(change.id) ? 0 : (change.rev ?? item?.rev ?? 0),
 				updatedAt: change.at,
 				deletedAt: change.at
 			};
 		}
-		const rev = item.rev ?? 0;
+		// Kennt der Server den Datensatz nicht, wird er als neu geschrieben - und
+		// zwar HIER, vor dem Versiegeln. Die Bindung des Chiffrats zeigt auf die
+		// Fassung, die daraus wird; nachtraeglich am fertigen Datensatz zu drehen
+		// wuerde sie falsch machen und das Oeffnen scheitern lassen.
+		const rev = this.#unbekanntBeimServer.has(item.id) ? 0 : (item.rev ?? 0);
 		const sealed = await sealRecord(this.#key, contentOf(item), {
 			id: item.id,
 			kind: change.kind,

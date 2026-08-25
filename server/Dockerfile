@@ -35,7 +35,16 @@ COPY server ./server
 RUN cp -r build-web/. server/static/ && npm --workspace server run build
 
 # Die Abhaengigkeiten fuer den Betrieb noch einmal frisch, ohne die des Baus.
-RUN rm -rf node_modules && npm ci --workspace server --include-workspace-root=false --omit=dev
+#
+# --ignore-scripts ist noetig, nicht Vorsicht: das Wurzelpaket hat ein
+# prepare-Skript, das "svelte-kit sync" ruft - und svelte-kit ist gerade als
+# Bauwerkzeug mit --omit=dev entfernt worden. Ohne das Auslassen scheitert der
+# Schritt an einem Werkzeug, das im fertigen Abbild ohnehin nichts zu suchen hat.
+#
+# better-sqlite3 braucht sein Skript aber wirklich: es ist eine native
+# Erweiterung und muss uebersetzt werden. Deshalb danach gezielt genau dieses
+# eine Paket bauen - der Grund, aus dem die Werkzeugkette oben installiert wurde.
+RUN rm -rf node_modules 	&& npm ci --workspace server --include-workspace-root=false --omit=dev --ignore-scripts 	&& npm rebuild better-sqlite3
 
 # ---------- Betreiben ----------
 FROM node:22-alpine AS runtime

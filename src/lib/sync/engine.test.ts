@@ -467,3 +467,112 @@ describe("Robustheit", () => {
 		expect(rechner.state.seq).toBe(server.seq);
 	});
 });
+
+describe("Der Server kennt den Bestand nicht mehr", () => {
+	// Die Lage nach einem aufgeloesten Konto oder einem aus aelterer Sicherung
+	// wieder aufgesetzten Server: lokal stehen Fassungsnummern, die beim Server
+	// niemand kennt. Er antwortet auf jede mit einem Konflikt gegen Fassung 0.
+	//
+	// Ohne Gegenmassnahme ist das eine stille Sackgasse - und zwar die
+	// unangenehmste Sorte: lokal ist alles heil, es kommt nur nie an.
+
+	it("schreibt die Daten neu an, statt fuer immer im Konflikt zu haengen", async () => {
+		const pc = new Geraet("pc");
+		await auf(pc, async (engine) => {
+			await store.saveEntries(MONAT, [eintrag("e1"), eintrag("e2")]);
+			await engine.sync();
+		});
+		expect(server.rows.size).toBe(2);
+
+		// Das Konto wird aufgeloest. Der Server hat nichts mehr - das Geraet weiss
+		// es noch nicht.
+		server.rows.clear();
+		server.seq = 0;
+
+		const ergebnis = await auf(pc, async (engine) => {
+			const liste = await store.loadEntries(MONAT);
+			liste[0] = { ...liste[0], note: "nach dem Neuaufsetzen" };
+			await store.saveEntries(MONAT, liste);
+			return engine.sync();
+		});
+
+		expect(ergebnis?.pushed).toBe(1);
+		expect(server.rows.has("e1")).toBe(true);
+		expect(server.rows.get("e1")?.rev).toBe(1);
+	});
+
+	it("haelt danach nichts mehr offen", async () => {
+		const pc = new Geraet("pc");
+		await auf(pc, async (engine) => {
+			await store.saveEntries(MONAT, [eintrag("e1")]);
+			await engine.sync();
+		});
+		server.rows.clear();
+		server.seq = 0;
+
+		const offen = await auf(pc, async (engine) => {
+			const liste = await store.loadEntries(MONAT);
+			await store.saveEntries(MONAT, [{ ...liste[0], note: "geaendert" }]);
+			await engine.sync();
+			return pendingChanges();
+		});
+		expect(offen).toHaveLength(0);
+	});
+
+	it("das neu angeschriebene Chiffrat laesst sich woanders oeffnen", async () => {
+		// Der Punkt, an dem es leicht schiefgeht: die Bindung des Chiffrats zeigt
+		// auf die Fassung, die daraus wird. Wird die Fassung auf 0 zurueckgesetzt,
+		// MUSS das vor dem Versiegeln passieren - sonst ist die Bindung falsch,
+		// und das Chiffrat laesst sich nirgends mehr oeffnen. Ein zweites Geraet
+		// ist der einzige ehrliche Beleg dafuer.
+		const pc = new Geraet("pc");
+		await auf(pc, async (engine) => {
+			await store.saveEntries(MONAT, [eintrag("e1", { note: "erste Fassung" })]);
+			await engine.sync();
+		});
+		server.rows.clear();
+		server.seq = 0;
+
+		await auf(pc, async (engine) => {
+			const liste = await store.loadEntries(MONAT);
+			await store.saveEntries(MONAT, [{ ...liste[0], note: "nach dem Neuanfang" }]);
+			await engine.sync();
+		});
+
+		const handy = new Geraet("handy");
+		await auf(handy, (engine) => engine.sync());
+		const gelesen = await eintraege(handy);
+		expect(gelesen).toHaveLength(1);
+		expect(gelesen[0].note).toBe("nach dem Neuanfang");
+	});
+
+	it("verwechselt einen echten Konflikt nicht damit", async () => {
+		// Die Merkliste darf nicht dazu fuehren, dass spaeter mit Fassung 0
+		// geschrieben wird, wo der Server sehr wohl etwas hat - das wuerde die
+		// Arbeit des anderen Geraets ueberschreiben, ohne sie gesehen zu haben.
+		const pc = new Geraet("pc");
+		const handy = new Geraet("handy");
+
+		await auf(pc, async (engine) => {
+			await store.saveEntries(MONAT, [eintrag("e1", { note: "vom PC" })]);
+			await engine.sync();
+		});
+		await auf(handy, (engine) => engine.sync());
+
+		// Beide aendern, ohne voneinander zu wissen.
+		await auf(handy, async (engine) => {
+			const liste = await store.loadEntries(MONAT);
+			await store.saveEntries(MONAT, [{ ...liste[0], note: "vom Handy", updatedAt: ts(15, 14) }]);
+			await engine.sync();
+		});
+		await auf(pc, async (engine) => {
+			const liste = await store.loadEntries(MONAT);
+			await store.saveEntries(MONAT, [{ ...liste[0], note: "spaeter vom PC", updatedAt: ts(15, 15) }]);
+			await engine.sync();
+		});
+
+		// Die Fassung ist ordentlich weitergezaehlt - nichts wurde ueberschrieben,
+		// ohne den Zwischenstand gesehen zu haben.
+		expect(server.rows.get("e1")?.rev).toBe(3);
+	});
+});

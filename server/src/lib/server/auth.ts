@@ -47,7 +47,7 @@ export function safeEqual(a: string, b: string): boolean {
 export function storeChallenge(
 	db: Db,
 	challenge: string,
-	purpose: "register" | "login",
+	purpose: "register" | "login" | "delete",
 	userId: string | null
 ): string {
 	const id = newSecret();
@@ -66,7 +66,7 @@ export function storeChallenge(
 export function takeChallenge(
 	db: Db,
 	id: string,
-	purpose: "register" | "login"
+	purpose: "register" | "login" | "delete"
 ): { challenge: string; userId: string | null } | null {
 	const row = db.select().from(challenges).where(eq(challenges.id, id)).get();
 	db.delete(challenges).where(eq(challenges.id, id)).run();

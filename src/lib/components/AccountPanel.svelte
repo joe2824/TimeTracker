@@ -97,9 +97,67 @@
 		}
 	}
 
-	async function loesen() {
-		await account.unlink();
-		toast.success("Verknüpfung gelöst. Die lokalen Daten sind unverändert.");
+	/**
+	 * Entkoppeln - in drei Stufen, weil das Wort drei Dinge heissen kann.
+	 *
+	 * In JEDER davon bleiben die erfassten Zeiten auf diesem Geraet vollstaendig
+	 * erhalten. Das ist keine Beruhigungsformel: der Server war nie ihre einzige
+	 * Kopie, und genau das laesst sich hier nachpruefen.
+	 */
+	let loesenOffen = $state(false);
+	let aufloesenOffen = $state(false);
+	/** Wie viele Geraete am Konto haengen - entscheidet, was das Aufloesen bedeutet. */
+	let geraeteAmKonto = $state<number | null>(null);
+
+	async function dialogOeffnen() {
+		loesenOffen = true;
+		geraeteAmKonto = null;
+		try {
+			const info = await account.accountInfo();
+			geraeteAmKonto = info ? info.devices.filter((d) => !d.revokedAt).length : null;
+		} catch {
+			// Nicht erreichbar - dann steht die Zahl eben nicht da. Das lokale Loesen
+			// muss trotzdem gehen: ein Server, der gerade weg ist, darf niemanden an
+			// sein Konto fesseln.
+			geraeteAmKonto = null;
+		}
+	}
+
+	async function loesen(opts: { revokeSelf?: boolean } = {}) {
+		laeuft = true;
+		try {
+			await account.unlink(opts);
+			loesenOffen = false;
+			toast.success(
+				opts.revokeSelf
+					? "Gerät vom Konto getrennt. Die erfassten Zeiten bleiben hier."
+					: "Verknüpfung gelöst. Die erfassten Zeiten bleiben hier."
+			);
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : "Lösen fehlgeschlagen");
+		} finally {
+			laeuft = false;
+		}
+	}
+
+	async function aufloesen() {
+		laeuft = true;
+		try {
+			const summe = await account.unlink({ deleteRemote: true });
+			aufloesenOffen = false;
+			loesenOffen = false;
+			toast.success(
+				summe
+					? `Konto aufgelöst. ${summe.records} Datensätze beim Server gelöscht. Die Zeiten bleiben hier.`
+					: "Konto aufgelöst. Die Zeiten bleiben hier."
+			);
+		} catch (e) {
+			// Wichtig: lokal ist dann NICHTS passiert. Sonst haette jemand ein Gerät
+			// ohne Zugang und Daten, die trotzdem noch beim Server liegen.
+			toast.error(e instanceof Error ? e.message : "Auflösen fehlgeschlagen");
+		} finally {
+			laeuft = false;
+		}
 	}
 
 	$effect(() => () => {
@@ -183,10 +241,99 @@
 			</div>
 
 			<div class="border-t pt-3">
-				<Button variant="outline" size="sm" onclick={loesen}>Verknüpfung lösen</Button>
-				<p class="text-muted-foreground mt-1 text-xs">
-					Die erfassten Zeiten bleiben auf diesem Gerät erhalten.
-				</p>
+				{#if !loesenOffen}
+					<Button variant="outline" size="sm" onclick={dialogOeffnen}>Entkoppeln…</Button>
+					<p class="text-muted-foreground mt-1 text-xs">
+						Die erfassten Zeiten bleiben auf diesem Gerät erhalten.
+					</p>
+				{:else}
+					<div class="space-y-3">
+						<p class="text-sm font-medium">Wie weit soll es gehen?</p>
+
+						<div class="space-y-1">
+							<Button variant="outline" size="sm" disabled={laeuft} onclick={() => loesen()}>
+								Nur hier vergessen
+							</Button>
+							<p class="text-muted-foreground text-xs">
+								Dieses Gerät gleicht nicht mehr ab. Der Zugang bleibt gültig – es lässt sich
+								jederzeit wieder koppeln.
+							</p>
+						</div>
+
+						<div class="space-y-1">
+							<Button
+								variant="outline"
+								size="sm"
+								disabled={laeuft}
+								onclick={() => loesen({ revokeSelf: true })}
+							>
+								Gerät vom Konto trennen
+							</Button>
+							<p class="text-muted-foreground text-xs">
+								Der Zugang dieses Geräts erlischt auch beim Server. Das Konto und alle anderen
+								Geräte bleiben.
+							</p>
+						</div>
+
+						<div class="space-y-1">
+							{#if !aufloesenOffen}
+								<Button
+									variant="destructive"
+									size="sm"
+									disabled={laeuft}
+									onclick={() => (aufloesenOffen = true)}
+								>
+									Konto auflösen
+								</Button>
+								<p class="text-muted-foreground text-xs">
+									Alles beim Server wird gelöscht – auch für
+									{#if geraeteAmKonto === null}
+										alle anderen Geräte.
+									{:else if geraeteAmKonto <= 1}
+										dieses eine Gerät.
+									{:else}
+										die {geraeteAmKonto} verknüpften Geräte.
+									{/if}
+									Die Zeiten auf diesem Rechner bleiben.
+								</p>
+							{:else}
+								<div class="border-destructive/40 space-y-2 rounded-md border p-3">
+									<p class="text-sm">
+										Das lässt sich nicht rückgängig machen. Alle verschlüsselten Datensätze,
+										Passkeys und Geräte dieses Kontos werden beim Server gelöscht.
+									</p>
+									<p class="text-muted-foreground text-xs">
+										Die erfassten Zeiten auf diesem Rechner bleiben vollständig erhalten – der
+										Server war nie ihre einzige Kopie.
+									</p>
+									<div class="flex gap-2">
+										<Button variant="destructive" size="sm" disabled={laeuft} onclick={aufloesen}>
+											{laeuft ? "Löscht…" : "Endgültig auflösen"}
+										</Button>
+										<Button
+											variant="ghost"
+											size="sm"
+											disabled={laeuft}
+											onclick={() => (aufloesenOffen = false)}
+										>
+											Zurück
+										</Button>
+									</div>
+								</div>
+							{/if}
+						</div>
+
+						<Button
+							variant="ghost"
+							size="sm"
+							disabled={laeuft}
+							onclick={() => {
+								loesenOffen = false;
+								aufloesenOffen = false;
+							}}>Abbrechen</Button
+						>
+					</div>
+				{/if}
 			</div>
 		{:else if warten}
 			<div class="space-y-2 border-t pt-3">

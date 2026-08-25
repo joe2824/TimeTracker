@@ -32,6 +32,23 @@ export const RP_ID = required("RP_ID", new URL(ORIGIN).hostname);
 /** Der Name, den der Anmeldedialog des Betriebssystems anzeigt. */
 export const RP_NAME = process.env.RP_NAME ?? "TimeTracker";
 
+/**
+ * Herkuenfte, von denen schreibende Anfragen angenommen werden.
+ *
+ * Leer heisst: nur ORIGIN. Mehrere braucht, wer die PWA und die Anwendung unter
+ * verschiedenen Namen erreichbar macht.
+ *
+ * Das ist die Absicherung dagegen, dass eine fremde Seite im Browser eines
+ * Angemeldeten schreibt. Sie greift nur dort - Anfragen mit Geraete-Token
+ * tragen ihren Ausweis selbst und haben keine Herkunft, die ein Server
+ * sinnvoll pruefen koennte.
+ */
+export const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? "")
+	.split(",")
+	.map((o) => o.trim().replace(/\/+$/, ""))
+	.filter(Boolean)
+	.concat(ORIGIN);
+
 export const DATA_DIR = process.env.DATA_DIR ?? "./data";
 export const DB_FILE = process.env.DB_FILE ?? `${DATA_DIR}/timetracker.db`;
 

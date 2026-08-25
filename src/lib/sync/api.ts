@@ -56,6 +56,15 @@ export interface AccountInfo {
 	devices: { id: string; label: string; lastSeenAt: number | null; revokedAt: number | null }[];
 }
 
+/** Was beim Aufloesen eines Kontos vom Server verschwunden ist. */
+export interface DeleteSummary {
+	ok: boolean;
+	records: number;
+	devices: number;
+	passkeys: number;
+	wraps: number;
+}
+
 /**
  * Ein Fehler vom Server, mit seinem Statuscode.
  *
@@ -244,10 +253,40 @@ export class Api {
 		return this.#call("/api/pair/claim", { method: "POST", body: JSON.stringify({ code }) });
 	}
 
-	revokeDevice(deviceId: string): Promise<{ ok: boolean }> {
+	/**
+	 * Ein Geraet loesen.
+	 *
+	 * Ohne Kennung loest sich dieses Geraet selbst - es kennt seine eigene ID
+	 * beim Server nicht, wohl aber der Server, der gerade das Token geprueft hat.
+	 */
+	revokeDevice(deviceId?: string): Promise<{ ok: boolean; deviceId: string }> {
 		return this.#call("/api/devices", {
 			method: "DELETE",
-			body: JSON.stringify({ deviceId })
+			body: JSON.stringify(deviceId ? { deviceId } : {})
+		});
+	}
+
+	/**
+	 * Eine Bestaetigung anfordern - eine WebAuthn-Aufgabe fuer diesen Passkey.
+	 *
+	 * Nur im Browser noetig. Wer sich mit einem Geraete-Token ausweist, hat den
+	 * Nachweis bereits erbracht; siehe `deleteAccount`.
+	 */
+	confirmStart(): Promise<{ challengeId: string; options: unknown }> {
+		return this.#call("/api/me/confirm", { method: "POST" });
+	}
+
+	/**
+	 * Das Konto aufloesen - alles, was der Server hat, verschwindet.
+	 *
+	 * Ueber ein Geraete-Token ohne Beigabe. Ueber eine Browser-Sitzung nur mit
+	 * einer frischen, vom Menschen bestaetigten WebAuthn-Antwort: ein Cookie
+	 * faehrt automatisch mit und beweist keine Zustimmung.
+	 */
+	deleteAccount(confirm?: { challengeId: string; response: unknown }): Promise<DeleteSummary> {
+		return this.#call<DeleteSummary>("/api/me", {
+			method: "DELETE",
+			body: JSON.stringify(confirm ?? {})
 		});
 	}
 
