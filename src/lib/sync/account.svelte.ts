@@ -101,14 +101,18 @@ class AccountState {
 	 */
 	async init(): Promise<void> {
 		const info = await loadDevice();
-		if (!info?.serverUrl || !info.token || !info.vaultKey) return;
+		// Ohne Adresse oder Schluessel gibt es nichts zu verbinden. Das Token darf
+		// fehlen: im Browser weist das Sitzungs-Cookie aus.
+		if (!info?.serverUrl || !info.vaultKey) return;
 
 		this.serverUrl = info.serverUrl;
 		this.name = info.accountName ?? "";
 		this.secretsProtected = info.protected ?? false;
 		this.state = "verbindet";
 		try {
-			const token = await unprotectSecret(info.token, info.protected ?? false);
+			const token = info.token
+				? await unprotectSecret(info.token, info.protected ?? false)
+				: null;
 			const rohschluessel = await unprotectSecret(info.vaultKey, info.protected ?? false);
 			this.#key = await importVaultKey(fromBase64(rohschluessel).buffer as ArrayBuffer);
 			this.#device = await deviceId();
@@ -125,7 +129,7 @@ class AccountState {
 		}
 	}
 
-	async #startEngine(url: string, token: string, seq: number): Promise<void> {
+	async #startEngine(url: string, token: string | null, seq: number): Promise<void> {
 		this.#api = new Api({ baseUrl: url, token });
 		this.#engine = new SyncEngine({
 			api: this.#api,
@@ -374,25 +378,45 @@ class AccountState {
 		return label;
 	}
 
+	/**
+	 * Nach Registrierung oder Anmeldung im Browser: die Verknuepfung uebernehmen.
+	 *
+	 * Ohne Geraete-Token - die Sitzung steckt im Cookie. Laeuft es ab, meldet der
+	 * Server 401 und die Oberflaeche fragt neu nach dem Passkey.
+	 */
+	async linkWithSession(url: string, key: CryptoKey, name: string): Promise<void> {
+		await this.#persistLink(url.replace(/\/+$/, ""), null, key, name);
+	}
+
 	// ---------- Verknuepfung ablegen und loesen ----------
 
-	async #persistLink(url: string, token: string, key: CryptoKey): Promise<void> {
+	async #persistLink(
+		url: string,
+		token: string | null,
+		key: CryptoKey,
+		name = ""
+	): Promise<void> {
 		this.#key = key;
 		this.#device = await deviceId();
 		const roh = toBase64(new Uint8Array(await exportVaultKey(key)));
 		const geschuetzterSchluessel = await protectSecret(roh);
-		const geschuetztesToken = await protectSecret(token);
+		// Im Browser gibt es kein Geraete-Token: dort weist das Sitzungs-Cookie
+		// aus. Der Tresorschluessel wird trotzdem abgelegt, damit die Anwendung
+		// nach einem Neuladen nicht wieder nach der Anmeldung fragen muss.
+		const geschuetztesToken = token ? await protectSecret(token) : null;
 
 		const info = (await loadDevice()) ?? { id: this.#device };
 		await saveDevice({
 			...info,
 			id: this.#device,
 			serverUrl: url,
-			token: geschuetztesToken.data,
+			token: geschuetztesToken?.data,
 			vaultKey: geschuetzterSchluessel.data,
-			protected: geschuetzterSchluessel.protected && geschuetztesToken.protected,
+			protected: geschuetzterSchluessel.protected && (geschuetztesToken?.protected ?? true),
+			accountName: name || info.accountName,
 			seq: 0
 		});
+		this.name = name || this.name;
 
 		this.serverUrl = url;
 		this.secretsProtected = geschuetzterSchluessel.protected;

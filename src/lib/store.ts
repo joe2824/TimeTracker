@@ -4,36 +4,23 @@
 //   data/settings.json            (global)
 //   data/entries-YYYY-MM.json     (eine Datei pro Monat)
 //   data/timereport-YYYY-MM.json  (eingelesener LOGA-Report, eine Datei pro Monat)
-import {
-	BaseDirectory,
-	exists,
-	mkdir,
-	readDir,
-	readTextFile,
-	remove,
-	rename,
-	stat,
-	writeTextFile
-} from "@tauri-apps/plugin-fs";
+import { storage } from "./platform/fs";
 import type { Activity, Entry, Settings } from "./types";
 import type { TimeReportDay } from "./timeReport";
 import { defaultSettings } from "./types";
 import { logError, logWarn } from "./log";
 
 const DIR = "data";
-const baseOpts = { baseDir: BaseDirectory.AppData } as const;
 
 async function ensureDir(): Promise<void> {
-	if (!(await exists(DIR, baseOpts))) {
-		await mkdir(DIR, { baseDir: BaseDirectory.AppData, recursive: true });
-	}
+	if (!(await storage.exists(DIR))) await storage.mkdir(DIR);
 }
 
 async function readJson<T>(file: string, fallback: T): Promise<T> {
 	const path = `${DIR}/${file}`;
-	if (!(await exists(path, baseOpts))) return fallback;
+	if (!(await storage.exists(path))) return fallback;
 	try {
-		const txt = await readTextFile(path, baseOpts);
+		const txt = await storage.readTextFile(path);
 		return txt.trim() ? (JSON.parse(txt) as T) : fallback;
 	} catch {
 		return fallback;
@@ -118,20 +105,17 @@ async function writeJsonNow(file: string, data: unknown): Promise<void> {
 	// der atomare Weg war damit seit jeher tot, auf allen Plattformen.
 	const tmp = `${DIR}/${file}.tmp`;
 	try {
-		await writeTextFile(tmp, json, baseOpts);
-		await rename(tmp, target, {
-			oldPathBaseDir: BaseDirectory.AppData,
-			newPathBaseDir: BaseDirectory.AppData
-		});
+		await storage.writeTextFile(tmp, json);
+		await storage.rename(tmp, target);
 	} catch (e) {
 		// Der unsichere Weg: ab hier kann ein Stromausfall eine halbe Datei
 		// hinterlassen. Wenn das dauerhaft passiert, steht der Grund im Protokoll.
 		logWarn(`${file}: atomares Schreiben nicht möglich, schreibe direkt`, e);
-		await writeTextFile(target, json, baseOpts);
+		await storage.writeTextFile(target, json);
 		// Die temp-Datei liegt sonst fuer immer im Datenordner – und zwar bei
 		// JEDEM Speichern erneut, solange rename scheitert.
 		try {
-			if (await exists(tmp, baseOpts)) await remove(tmp, baseOpts);
+			if (await storage.exists(tmp)) await storage.remove(tmp);
 		} catch {
 			/* Aufraeumen darf das Speichern nicht kippen */
 		}
@@ -154,7 +138,7 @@ const REPORT_FILE_RE = /^timereport-(\d{4}-\d{2})\.json$/;
 async function dataFiles(re: RegExp): Promise<[string, string][]> {
 	await ensureDir();
 	const hits: [string, string][] = [];
-	for (const e of await readDir(DIR, baseOpts)) {
+	for (const e of await storage.readDir(DIR)) {
 		const m = e.name?.match(re);
 		if (m) hits.push([e.name, m[1]]);
 	}
@@ -176,7 +160,7 @@ export async function saveActivities(activities: Activity[]): Promise<void> {
 // ---- Einstellungen ----
 /** Ob bereits eine settings.json existiert (false = erster Programmstart). */
 export async function settingsFileExists(): Promise<boolean> {
-	return exists(`${DIR}/settings.json`, baseOpts);
+	return storage.exists(`${DIR}/settings.json`);
 }
 export async function loadSettings(): Promise<Settings> {
 	const stored = await readJson<Partial<Settings>>("settings.json", {});
@@ -203,8 +187,8 @@ export async function saveSettings(settings: Settings): Promise<void> {
 export async function loadEntries(month: string): Promise<Entry[]> {
 	const file = entriesFile(month);
 	const path = `${DIR}/${file}`;
-	if (!(await exists(path, baseOpts))) return [];
-	const txt = await readTextFile(path, baseOpts);
+	if (!(await storage.exists(path))) return [];
+	const txt = await storage.readTextFile(path);
 	if (!txt.trim()) return [];
 	try {
 		return JSON.parse(txt) as Entry[];
@@ -214,10 +198,7 @@ export async function loadEntries(month: string): Promise<Entry[]> {
 		const quarantine = `${path}.beschaedigt-${Date.now()}`;
 		logError(`${file} ist beschädigt, abgelegt als ${quarantine}`, e);
 		try {
-			await rename(path, quarantine, {
-				oldPathBaseDir: BaseDirectory.AppData,
-				newPathBaseDir: BaseDirectory.AppData
-			});
+			await storage.rename(path, quarantine);
 		} catch (renameErr) {
 			logError("Beschädigte Datei konnte nicht abgelegt werden", renameErr);
 		}
@@ -238,7 +219,7 @@ export async function saveEntries(month: string, entries: Entry[]): Promise<void
 			// Auch das Leeren geht durch den Haken: sonst verschwaende ein
 			// geleerter Monat, ohne dass der Abgleich die Loeschungen je erfaehrt.
 			if (writeHook) await writeHook.entries(month, await readEntriesRaw(month), []);
-			if (await exists(path, baseOpts)) await remove(path, baseOpts);
+			if (await storage.exists(path)) await storage.remove(path);
 		});
 	}
 	if (!writeHook) return writeJson(file, entries);
@@ -291,12 +272,13 @@ export async function pruneEmptyMonthFiles(): Promise<string[]> {
 	for (const [name, month] of await dataFiles(MONTH_FILE_RE)) {
 		// Metadaten statt Inhalt. Antwortet das Dateisystem nicht, bleibt die Datei
 		// liegen – geloescht wird nur, was nachweislich leer ist.
-		const bytes = await stat(`${DIR}/${name}`, baseOpts)
+		const bytes = await storage
+			.stat(`${DIR}/${name}`)
 			.then((info) => info.size)
 			.catch(() => Number.MAX_SAFE_INTEGER);
 		if (bytes > EMPTY_MONTH_MAX_BYTES) continue;
 		if ((await loadEntries(month)).length === 0) {
-			await remove(`${DIR}/${name}`, baseOpts);
+			await storage.remove(`${DIR}/${name}`);
 			pruned.push(month);
 		}
 	}
@@ -427,7 +409,7 @@ export async function listEntryYears(): Promise<StoredYear[]> {
 export async function deleteYear(year: number): Promise<string[]> {
 	const removeYear = async (re: RegExp) => {
 		const hits = (await dataFiles(re)).filter(([, month]) => month.startsWith(`${year}-`));
-		for (const [name] of hits) await remove(`${DIR}/${name}`, baseOpts);
+		for (const [name] of hits) await storage.remove(`${DIR}/${name}`);
 		return hits.map(([, month]) => month);
 	};
 	const deleted = await removeYear(MONTH_FILE_RE);

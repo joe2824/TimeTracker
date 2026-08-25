@@ -16,6 +16,9 @@ vite.config.ts.timestamp-*
 *.xlsx
 !src/lib/testing/*.fixture.xlsx
 
+# Der Web-Bau der PWA (Ausgabe, gehoert nicht ins Verzeichnis)
+/build-web
+
 # Server
 server/build/
 server/.svelte-kit/

@@ -9,6 +9,8 @@
 	import { toast } from "svelte-sonner";
 	import { app } from "$lib/app.svelte";
 	import { account } from "$lib/sync/account.svelte";
+	import { isTauri } from "$lib/platform/env";
+	import WebOnboarding from "$lib/components/WebOnboarding.svelte";
 	import { errorText, logError, logFile, logInfo, logWarn, pruneOldLogs } from "$lib/log";
 	import { appDataDir, join } from "@tauri-apps/api/path";
 	import { revealItemInDir } from "@tauri-apps/plugin-opener";
@@ -42,6 +44,14 @@
 	import UpdateDialog from "$lib/components/UpdateDialog.svelte";
 
 	let tab = $state("tracking");
+
+	/**
+	 * Im Browser ohne Konto: erst anmelden.
+	 *
+	 * Auf dem Rechner nie - dort ist die Serveranbindung ein Zusatz, und wer sie
+	 * nicht will, soll nie einen Anmeldebildschirm sehen.
+	 */
+	const brauchtAnmeldung = $derived(!isTauri() && !account.linked);
 	let paletteOpen = $state(false);
 
 	/** Laufende Version, sobald der Start sie gelesen hat ("" bis dahin). */
@@ -366,6 +376,13 @@
 			{/if}
 		</div>
 	</div>
+{:else if brauchtAnmeldung}
+	<!--
+		Im Browser gibt es ohne Konto nichts zu zeigen - anders als auf dem
+		Rechner, wo die Daten ohnehin lokal liegen. Deshalb steht die Anmeldung
+		hier VOR der Oberflaeche und nicht in den Einstellungen.
+	-->
+	<WebOnboarding />
 {:else}
 	<Tabs.Root bind:value={tab}>
 		<header

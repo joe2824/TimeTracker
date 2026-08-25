@@ -147,6 +147,46 @@ export class Api {
 		return this.#call("/api/auth/logout", { method: "POST" });
 	}
 
+	// ---------- Registrierung und Anmeldung ----------
+	//
+	// Nur im Browser gebraucht: Passkeys sind an die Domain gebunden, und die
+	// Desktop-Anwendung hat keine. Sie koppelt sich stattdessen.
+
+	registerStart(
+		displayName: string,
+		invite?: string
+	): Promise<{ challengeId: string; userId: string; options: unknown }> {
+		return this.#call("/api/auth/register/start", {
+			method: "POST",
+			body: JSON.stringify({ displayName, invite })
+		});
+	}
+
+	registerFinish(body: {
+		challengeId: string;
+		displayName: string;
+		invite?: string;
+		email?: string;
+		hasPrf: boolean;
+		response: unknown;
+	}): Promise<{ userId: string; displayName: string }> {
+		return this.#call("/api/auth/register/finish", {
+			method: "POST",
+			body: JSON.stringify(body)
+		});
+	}
+
+	loginStart(): Promise<{ challengeId: string; options: unknown }> {
+		return this.#call("/api/auth/login/start", { method: "POST" });
+	}
+
+	loginFinish(body: {
+		challengeId: string;
+		response: unknown;
+	}): Promise<{ userId: string; displayName: string; credentialId: string }> {
+		return this.#call("/api/auth/login/finish", { method: "POST", body: JSON.stringify(body) });
+	}
+
 	// ---------- Abgleich ----------
 
 	pull(since: number, opts: { limit?: number; bucket?: string } = {}): Promise<PullPage> {

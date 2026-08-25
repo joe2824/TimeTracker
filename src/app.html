@@ -1,10 +1,21 @@
 <!doctype html>
-<html lang="en">
+<html lang="de">
   <head>
     <meta charset="utf-8" />
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Tauri + SvelteKit + Typescript App</title>
+    <link rel="apple-touch-icon" href="%sveltekit.assets%/icon-256.png" />
+    <!--
+      Das Manifest macht die Seite installierbar. In der Desktop-Anwendung ist es
+      wirkungslos - dort laedt nichts aus dem Netz und niemand installiert etwas.
+    -->
+    <link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <!--
+      viewport-fit=cover: auf dem Handy reicht die Oberflaeche sonst nicht bis in
+      die Ecken, und unter der Statusleiste bleibt ein heller Streifen stehen.
+    -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>TimeTracker</title>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">

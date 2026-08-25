@@ -1,0 +1,189 @@
+// Wo die Daten liegen.
+//
+// Auf dem Rechner sind es JSON-Dateien im App-Datenordner - so, wie es immer
+// war. Im Browser gibt es kein Dateisystem; dort liegt derselbe Bestand in
+// IndexedDB, unter demselben Namen als Schluessel.
+//
+// Der Zuschnitt kommt aus store.ts und ist absichtlich klein: eine flache Ablage
+// von Textdateien in EINEM Ordner. Alles, was store.ts braucht, laesst sich auf
+// einen Schluessel-Wert-Speicher abbilden - deshalb ist die Umsetzung im Browser
+// kurz und nicht die Nachbildung eines Dateisystems.
+//
+// Der Weg wird ausdruecklich gesetzt, nicht erraten. Eine Abfrage zur Laufzeit
+// haette die bestehenden Tests umgehaengt: die ersetzen das Tauri-Modul und
+// erwarten, dass es benutzt wird. Der Web-Bau ruft `useBrowserStorage()` beim
+// Start - eine Zeile, an einer Stelle, sichtbar.
+
+import {
+	BaseDirectory,
+	exists as fsExists,
+	mkdir as fsMkdir,
+	readDir as fsReadDir,
+	readTextFile as fsReadTextFile,
+	remove as fsRemove,
+	rename as fsRename,
+	stat as fsStat,
+	writeTextFile as fsWriteTextFile
+} from "@tauri-apps/plugin-fs";
+
+export { BaseDirectory };
+
+export interface DirEntry {
+	name: string;
+}
+
+export interface FileInfo {
+	size: number;
+}
+
+/**
+ * Was store.ts braucht - nicht mehr.
+ *
+ * Die Pfade sind immer "data/<name>"; die Ordnerebene existiert nur, weil das
+ * Dateisystem sie braucht. Im Browser ist sie Teil des Schluessels.
+ */
+export interface StorageBackend {
+	exists(path: string): Promise<boolean>;
+	mkdir(path: string): Promise<void>;
+	readDir(path: string): Promise<DirEntry[]>;
+	readTextFile(path: string): Promise<string>;
+	writeTextFile(path: string, contents: string): Promise<void>;
+	remove(path: string): Promise<void>;
+	rename(from: string, to: string): Promise<void>;
+	stat(path: string): Promise<FileInfo>;
+}
+
+// ---------- Rechner: das Dateisystem ----------
+
+const opts = { baseDir: BaseDirectory.AppData } as const;
+
+const tauriBackend: StorageBackend = {
+	exists: (p) => fsExists(p, opts),
+	mkdir: (p) => fsMkdir(p, { baseDir: BaseDirectory.AppData, recursive: true }),
+	readDir: async (p) => (await fsReadDir(p, opts)).map((e) => ({ name: e.name })),
+	readTextFile: (p) => fsReadTextFile(p, opts),
+	writeTextFile: (p, c) => fsWriteTextFile(p, c, opts),
+	remove: (p) => fsRemove(p, opts),
+	rename: (from, to) =>
+		fsRename(from, to, {
+			oldPathBaseDir: BaseDirectory.AppData,
+			newPathBaseDir: BaseDirectory.AppData
+		}),
+	stat: async (p) => ({ size: (await fsStat(p, opts)).size })
+};
+
+// ---------- Browser: IndexedDB ----------
+
+const DB_NAME = "timetracker";
+const STORE = "dateien";
+
+let dbPromise: Promise<IDBDatabase> | null = null;
+
+function openDb(): Promise<IDBDatabase> {
+	dbPromise ??= new Promise((resolve, reject) => {
+		const req = indexedDB.open(DB_NAME, 1);
+		req.onupgradeneeded = () => {
+			if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE);
+		};
+		req.onsuccess = () => resolve(req.result);
+		req.onerror = () => reject(req.error);
+	});
+	return dbPromise;
+}
+
+function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+	return openDb().then(
+		(db) =>
+			new Promise<T>((resolve, reject) => {
+				const t = db.transaction(STORE, mode);
+				const req = fn(t.objectStore(STORE));
+				req.onsuccess = () => resolve(req.result);
+				req.onerror = () => reject(req.error);
+			})
+	);
+}
+
+/**
+ * Ein Fehler, der sich anfuehlt wie ein fehlendes Dateisystem-Objekt.
+ *
+ * store.ts prueft an einer Stelle nicht auf Existenz, sondern faengt den Fehler.
+ * Ohne eine erkennbare Meldung sähe ein fehlender Eintrag dort aus wie ein
+ * kaputter - und eine kaputte Datei wird zur Seite gelegt statt ignoriert.
+ */
+class NotFound extends Error {
+	constructor(path: string) {
+		super(`Datei nicht gefunden: ${path}`);
+		this.name = "NotFound";
+	}
+}
+
+const browserBackend: StorageBackend = {
+	async exists(path) {
+		// `count` statt `get`: der Wert kann gross sein, und gebraucht wird nur die
+		// Antwort ja/nein.
+		return (await tx<number>("readonly", (s) => s.count(path))) > 0;
+	},
+
+	// Es gibt keine Ordner - der Pfad ist Teil des Schluessels. Nichts zu tun.
+	async mkdir() {},
+
+	async readDir(path) {
+		const prefix = path.endsWith("/") ? path : `${path}/`;
+		const keys = await tx<IDBValidKey[]>("readonly", (s) => s.getAllKeys());
+		return keys
+			.map(String)
+			.filter((k) => k.startsWith(prefix))
+			.map((k) => ({ name: k.slice(prefix.length) }))
+			// Nur die eigene Ebene, keine Unterordner - genau wie readDir es tut.
+			.filter((e) => !e.name.includes("/"));
+	},
+
+	async readTextFile(path) {
+		const v = await tx<string | undefined>("readonly", (s) => s.get(path));
+		if (v === undefined) throw new NotFound(path);
+		return v;
+	},
+
+	async writeTextFile(path, contents) {
+		await tx("readwrite", (s) => s.put(contents, path));
+	},
+
+	async remove(path) {
+		await tx("readwrite", (s) => s.delete(path));
+	},
+
+	async rename(from, to) {
+		const v = await tx<string | undefined>("readonly", (s) => s.get(from));
+		if (v === undefined) throw new NotFound(from);
+		await tx("readwrite", (s) => s.put(v, to));
+		await tx("readwrite", (s) => s.delete(from));
+	},
+
+	async stat(path) {
+		const v = await tx<string | undefined>("readonly", (s) => s.get(path));
+		if (v === undefined) throw new NotFound(path);
+		// Laenge in Bytes, nicht in Zeichen: store.ts entscheidet daran, ob eine
+		// Datei klein genug ist, um leer zu sein.
+		return { size: new TextEncoder().encode(v).length };
+	}
+};
+
+// ---------- Der eingestellte Weg ----------
+
+let backend: StorageBackend = tauriBackend;
+
+/** Im Browser: den Bestand in IndexedDB fuehren. Einmal beim Start rufen. */
+export function useBrowserStorage(): void {
+	backend = browserBackend;
+}
+
+export const storage: StorageBackend = {
+	exists: (p) => backend.exists(p),
+	mkdir: (p) => backend.mkdir(p),
+	readDir: (p) => backend.readDir(p),
+	readTextFile: (p) => backend.readTextFile(p),
+	writeTextFile: (p, c) => backend.writeTextFile(p, c),
+	remove: (p) => backend.remove(p),
+	rename: (a, b) => backend.rename(a, b),
+	stat: (p) => backend.stat(p)
+};
