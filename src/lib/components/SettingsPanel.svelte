@@ -35,6 +35,7 @@
 	import ShortcutKey from "$lib/components/ShortcutKey.svelte";
 	import SavedHint from "$lib/components/SavedHint.svelte";
 	import SettingRow from "$lib/components/SettingRow.svelte";
+	import AccountPanel from "$lib/components/AccountPanel.svelte";
 	import LogPanel from "$lib/components/LogPanel.svelte";
 
 	const REPO_URL = "https://github.com/joe2824/TimeTracker";
@@ -463,6 +464,8 @@
 
 		</Card.Content>
 	</Card.Root>
+
+	<AccountPanel />
 
 	<Card.Root>
 		<Card.Header>

@@ -357,6 +357,24 @@ export async function listTimeReportMonths(): Promise<string[]> {
 export interface DeviceInfo {
 	/** Zufaellige, dauerhafte Kennung dieses Geraets. */
 	id: string;
+	/** Adresse des Servers, z.B. "https://tracker.example.de". */
+	serverUrl?: string;
+	/** Das Geraete-Token, geschuetzt ueber das Betriebssystem (siehe secret.rs). */
+	token?: string;
+	/** Der Tresorschluessel, ebenso geschuetzt. */
+	vaultKey?: string;
+	/**
+	 * Ob Token und Schluessel wirklich vom Betriebssystem geschuetzt sind.
+	 *
+	 * Steht ausdruecklich dabei, statt es anzunehmen: ausserhalb von Windows
+	 * greift DPAPI nicht, und dann soll die Oberflaeche das sagen duerfen, statt
+	 * einen Schutz zu behaupten, den es nicht gibt.
+	 */
+	protected?: boolean;
+	/** Bis zu welchem Serverstand dieses Geraet alles kennt. */
+	seq?: number;
+	/** Anzeigename des Kontos - nur fuer die Oberflaeche. */
+	accountName?: string;
 }
 
 export async function loadDevice(): Promise<DeviceInfo | null> {

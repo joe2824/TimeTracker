@@ -8,6 +8,7 @@
 	import { getVersion } from "@tauri-apps/api/app";
 	import { toast } from "svelte-sonner";
 	import { app } from "$lib/app.svelte";
+	import { account } from "$lib/sync/account.svelte";
 	import { errorText, logError, logFile, logInfo, logWarn, pruneOldLogs } from "$lib/log";
 	import { appDataDir, join } from "@tauri-apps/api/path";
 	import { revealItemInDir } from "@tauri-apps/plugin-opener";
@@ -226,6 +227,9 @@
 					})
 				);
 			}
+			// Erst NACH dem Laden: der Abgleich schreibt in denselben Bestand, und
+			// ein nicht erreichbarer Server darf den Start nicht aufhalten.
+			void account.init();
 			scheduleReminders();
 			scheduleReportReminder();
 			void applyShortcuts();
@@ -482,4 +486,14 @@
 	<CommandPalette bind:open={paletteOpen} onNavigate={(t) => (tab = t)} />
 {/if}
 
-<svelte:window onkeydown={onGlobalKey} />
+<svelte:window
+	onkeydown={onGlobalKey}
+	onfocus={() => account.onVisible()}
+/>
+
+<!--
+	Der wichtigste Zeitpunkt fuer einen Abgleich: das Fenster kommt zurueck. Wer
+	den Rechner aufklappt, will den Stand von unterwegs sehen - nicht erst nach
+	dem naechsten Takt.
+-->
+<svelte:document onvisibilitychange={() => !document.hidden && account.onVisible()} />

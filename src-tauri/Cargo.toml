@@ -23,6 +23,10 @@ tauri-plugin-opener = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-dialog = "2"
+# Der Weg ins Netz fuehrt durch den Rust-Teil, nicht durch den Webview: ein
+# Webview hat eine Herkunft, die kein Server sinnvoll erlauben kann, und die
+# Herkunftspruefung des Browsers stuende jedem Abgleich im Weg.
+tauri-plugin-http = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Nur fuer den Zeitstempel im Absturz-Protokoll (steckte ohnehin schon als
@@ -36,6 +40,9 @@ windows-sys = { version = "0.60", features = [
     "Win32_Foundation",
     "Win32_System_Threading",
     "Win32_UI_WindowsAndMessaging",
+    # DPAPI: den Tresorschluessel an das Benutzerkonto binden, statt ihn im
+    # Klartext in den Datenordner zu legen (siehe secret.rs).
+    "Win32_Security_Cryptography",
 ] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]

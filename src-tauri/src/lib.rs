@@ -1,4 +1,5 @@
 mod outlook;
+mod secret;
 
 use tauri::{Emitter, Manager};
 #[cfg(desktop)]
@@ -741,6 +742,9 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
+        // Der Abgleich spricht ueber diesen Weg mit dem Server. Was erreichbar
+        // ist, steht im Scope der capabilities - nicht hier.
+        .plugin(tauri_plugin_http::init())
         .setup(|app| {
             #[cfg(desktop)]
             {
@@ -784,7 +788,9 @@ pub fn run() {
             outlook::create_outlook_draft,
             outlook::read_outlook_calendar,
             outlook::read_outlook_mails,
-            outlook::detect_outlook
+            outlook::detect_outlook,
+            secret::protect_secret,
+            secret::unprotect_secret
         ])
         // .build() statt .run(): nur so kommt man an die Ereignisse der
         // Laufschleife heran (Start/Ende des Prozesses).

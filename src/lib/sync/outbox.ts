@@ -118,10 +118,24 @@ async function persist(): Promise<void> {
 	}
 }
 
+/**
+ * Wer erfahren will, dass etwas zu tun ist.
+ *
+ * Ein Rueckruf statt eines direkten Aufrufs: die Outbox soll nichts vom
+ * Abgleich wissen. Andersherum waere es ein Kreis - der Abgleich schreibt ueber
+ * den Haken in die Outbox, und die riefe ihn wieder auf.
+ */
+let onChange: (() => void) | null = null;
+
+export function setChangeListener(fn: (() => void) | null): void {
+	onChange = fn;
+}
+
 async function note(changes: PendingChange[]): Promise<void> {
 	if (changes.length === 0) return;
 	pending = mergePending(pending, changes);
 	await persist();
+	onChange?.();
 }
 
 /**
@@ -201,6 +215,7 @@ const hook: WriteHook = {
 
 /** Nur fuer Tests: den Modulzustand vergessen. */
 export function resetOutboxForTests(): void {
+	onChange = null;
 	pending = [];
 	loaded = false;
 	deviceId = "";
