@@ -227,6 +227,38 @@
 		savedWorktime = Date.now();
 	}
 
+	/**
+	 * Alle bekannten Zeitzonen, die aktuelle immer dabei.
+	 *
+	 * `supportedValuesOf` fehlt in aelteren Laufzeiten; dann bleibt wenigstens die
+	 * gesetzte Zone waehlbar, statt dass die Liste leer ist und die Einstellung
+	 * sich stillschweigend auf die erste beste umstellt.
+	 */
+	const timeZones = $derived.by(() => {
+		let list: string[] = [];
+		try {
+			list = Intl.supportedValuesOf?.("timeZone") ?? [];
+		} catch {
+			list = [];
+		}
+		const current = app.settings.timeZone;
+		return list.includes(current) || !current ? list : [current, ...list];
+	});
+
+	/**
+	 * Die Zeitzone laeuft NICHT ueber das Formular-Zwischenmodell.
+	 *
+	 * Sie wirkt sofort auf jede Datumsrechnung der Oberflaeche – Monatsliste,
+	 * Tagesgruppen, Auswertung. Ein Zwischenstand, der erst beim Speichern greift,
+	 * zeigte dazwischen einen Bestand, den es so nicht gibt.
+	 */
+	async function saveTimeZone(tz: string) {
+		if (!tz || tz === app.settings.timeZone) return;
+		await app.updateSettings({ timeZone: tz });
+		app.entriesVersion++; // abgeleitete Listen haengen an Tagesgrenzen
+		savedWorktime = Date.now();
+	}
+
 	async function saveTimes() {
 		await save(TIMES_KEYS);
 		scheduleReminders();
@@ -447,6 +479,25 @@
 					Abwesenheits-Zeiträumen übersprungen und tauchen nicht im Bericht auf.
 				</p>
 			</div>
+			<SettingRow
+				id="tz"
+				title="Zeitzone"
+				description="Bestimmt, wo ein Arbeitstag anfängt und aufhört. Beim Wechsel rutschen bereits erfasste Einträge auf einen anderen Kalendertag."
+				class="border-t pt-3"
+			>
+				{#snippet control()}
+					<select
+						id="tz"
+						class="border-input bg-background ring-offset-background focus-visible:ring-ring h-9 w-56 rounded-md border px-3 py-1 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+						value={app.settings.timeZone}
+						onchange={(e) => saveTimeZone(e.currentTarget.value)}
+					>
+						{#each timeZones as tz (tz)}
+							<option value={tz}>{tz}</option>
+						{/each}
+					</select>
+				{/snippet}
+			</SettingRow>
 			<SettingRow
 				id="hpd"
 				title="Stunden / Arbeitstag"

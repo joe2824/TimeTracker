@@ -27,5 +27,17 @@ jobs:
       - name: Tests
         run: npm test
 
+      # Die Kontozeitzone haengt nicht an der des Geraets - das ist eine Zusage,
+      # keine Vermutung. Geprueft wird sie, indem dieselbe Suite unter Zonen
+      # laeuft, die weit weg liegen: +14, -11 und eine mit Viertelstunden-Versatz.
+      # Die Kontozone bleibt dabei Berlin (siehe src/lib/testing/pinZone.ts), das
+      # Ergebnis muss also unveraendert sein.
+      - name: Tests in fremden Zeitzonen
+        run: |
+          for tz in Pacific/Kiritimati Pacific/Midway Australia/Eucla; do
+            echo "--- $tz ---"
+            TZ=$tz npm test
+          done
+
       - name: Build
         run: npm run build
