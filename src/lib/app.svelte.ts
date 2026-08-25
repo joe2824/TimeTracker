@@ -10,8 +10,10 @@ import {
 	noonTs,
 	prevMonthKey,
 	splitAtMidnight,
-	startOfNextDay
+	startOfNextDay,
+	stepDate
 } from "./time";
+import { setAppTimeZone, systemTimeZone, weekdayOfDate } from "./tz";
 import { dayConflict, overlapConflict } from "./conflicts";
 import { planBackdate, planNeedsConfirm, type BackdatePlan } from "./backdate";
 import { errorText, logDebug, logError, logInfo, logWarn } from "./log";
@@ -133,6 +135,10 @@ class AppState {
 				const firstRun = !(await this.#step("Einstellungen suchen", settingsFileExists));
 				this.activities = await this.#step("Aktivitäten laden", loadActivities);
 				this.settings = await this.#step("Einstellungen laden", loadSettings);
+				// VOR jeder Datumsrechnung: currentMonth, prevMonthKey und
+				// #findRunning haengen alle an der Zeitzone. Stuende sie erst danach,
+				// laedt der Start an einer Tagesgrenze den falschen Monat.
+				await this.#step("Zeitzone bestimmen", () => this.#applyTimeZone());
 				// So frueh wie moeglich: bis hierher haelt analytics.ts alles zurueck,
 				// was seit dem Start anfiel.
 				setErrorReportsEnabled(this.settings.errorReportsEnabled);
@@ -228,6 +234,7 @@ class AppState {
 	async reload(): Promise<void> {
 		this.activities = await loadActivities();
 		this.settings = await loadSettings();
+		await this.#applyTimeZone();
 		setErrorReportsEnabled(this.settings.errorReportsEnabled);
 		for (const m of [this.currentMonth, prevMonthKey()]) {
 			this.entriesByMonth[m] = await loadEntries(m);
@@ -1320,22 +1327,23 @@ class AppState {
 	): Promise<{ added: number; skipped: number }> {
 		const abs = this.absenceActivity;
 		if (!abs) return { added: 0, skipped: 0 };
-		const start = new Date(noonTs(startDate));
-		const end = new Date(noonTs(endDate));
-		if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) {
+		if (Number.isNaN(noonTs(startDate)) || Number.isNaN(noonTs(endDate)) || endDate < startDate) {
 			return { added: 0, skipped: 0 };
 		}
 		let added = 0;
 		let skipped = 0;
-		for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+		// Ueber Kalendertage statt ueber einen Date-Cursor: der haengt an der Zone
+		// des Geraets, und an einer Sommerzeit-Grenze trifft +24 h den falschen Tag.
+		for (let date = startDate; date <= endDate; date = stepDate(date, 1)) {
 			// Nur reguläre Arbeitstage; Wochenenden/freie Tage nicht als Abwesenheit buchen.
-			if (!this.settings.workdays.includes(d.getDay())) continue;
+			if (!this.settings.workdays.includes(weekdayOfDate(date))) continue;
+			const noon = noonTs(date);
 			// Ganztags-Konflikt mit Projektzeit -> Tag still überspringen (kein Doppel-Toast).
-			if (fraction >= 1 && this.hasProjectEntry(d.getTime())) {
+			if (fraction >= 1 && this.hasProjectEntry(noon)) {
 				skipped++;
 				continue;
 			}
-			const e = await this.addEntry(abs.id, d.getTime(), d.getTime(), "", "manual", fraction);
+			const e = await this.addEntry(abs.id, noon, noon, "", "manual", fraction);
 			if (e) added++;
 			else skipped++;
 		}
@@ -1401,8 +1409,34 @@ class AppState {
 	}
 
 	// ---------- Einstellungen ----------
+	/**
+	 * Die Zeitzone des Kontos in Kraft setzen.
+	 *
+	 * Ist keine gespeichert (Bestandsdaten oder erster Start), wird die des
+	 * Geraets uebernommen und festgeschrieben – ab dann liegt sie fest und wandert
+	 * nicht mehr mit, wenn der Rechner die Zone wechselt. Genau das ist der Zweck:
+	 * der Arbeitstag soll sich nicht verschieben, nur weil jemand verreist.
+	 *
+	 * Eine unbekannte Kennung (Tippfehler, Datei von Hand bearbeitet) wird nicht
+	 * uebernommen; stattdessen greift die Geraetezone, damit die App nicht mit
+	 * kaputten Datumsangaben startet.
+	 */
+	async #applyTimeZone(): Promise<void> {
+		const stored = this.settings.timeZone;
+		if (stored && setAppTimeZone(stored)) return;
+		const fallback = systemTimeZone();
+		setAppTimeZone(fallback);
+		if (stored) logWarn(`Unbekannte Zeitzone „${stored}", nutze ${fallback}`);
+		this.settings = { ...this.settings, timeZone: fallback };
+		await saveSettings($state.snapshot(this.settings) as Settings);
+		logInfo("Zeitzone festgeschrieben", { zone: fallback });
+	}
+
 	async updateSettings(patch: Partial<Settings>): Promise<void> {
 		this.settings = { ...this.settings, ...patch };
+		// Sofort wirksam machen: alles Weitere in diesem Durchlauf rechnet sonst
+		// noch gegen die alte Zone.
+		if (patch.timeZone !== undefined) setAppTimeZone(patch.timeZone);
 		// Vor dem Speichern: ein Abschalten soll sofort greifen, nicht erst, wenn
 		// das Schreiben durch ist.
 		if (patch.errorReportsEnabled !== undefined) setErrorReportsEnabled(patch.errorReportsEnabled);

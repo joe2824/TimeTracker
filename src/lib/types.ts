@@ -145,6 +145,20 @@ export interface Settings {
 	 */
 	betaUpdates: boolean;
 	/**
+	 * Zeitzone des Kontos als IANA-Kennung, z.B. "Europe/Berlin".
+	 *
+	 * Gegen sie werden ALLE Tagesgrenzen gerechnet: Monatszuordnung, Tagessummen,
+	 * Mitternachts-Teilung, Bericht, Arbeitszeit-Check. Bewusst nicht die Zone des
+	 * Geraets – sonst landet derselbe Eintrag je nach Standort an einem anderen
+	 * Kalendertag, und zwei Geraete sehen verschiedene Arbeitstage.
+	 *
+	 * Leer = noch nie gesetzt; beim Start wird dann die Zone des Geraets
+	 * uebernommen. Ein spaeterer Wechsel verschiebt die Tageszuordnung bereits
+	 * erfasster Eintraege rueckwirkend – die Einstellung ist keine, die man
+	 * beilaeufig aendert.
+	 */
+	timeZone: string;
+	/**
 	 * Tag (YYYY-MM-DD), an dem zuletzt „aktiv" gemeldet wurde.
 	 *
 	 * Steht hier und nicht im Arbeitsspeicher, weil die Meldung genau einmal je
@@ -195,6 +209,7 @@ export const defaultSettings: Settings = {
 	teamScanSubfolders: true,
 	errorReportsEnabled: true,
 	betaUpdates: false,
+	timeZone: "",
 	usageLastDay: ""
 };
 

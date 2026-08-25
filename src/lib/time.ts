@@ -1,9 +1,14 @@
 import type { Entry } from "./types";
+import { addCalendarDays, appTimeZone, isoDate, wallStringToTs, zonedParts } from "./tz";
 
-/** "YYYY-MM" fuer einen Zeitstempel (Lokalzeit). */
+/**
+ * "YYYY-MM" fuer einen Zeitstempel – in der Zeitzone des Kontos, nicht der des
+ * Geraets. Welcher Monat ein Zeitstempel ist, muss auf jedem Geraet dieselbe
+ * Antwort haben, sonst landet derselbe Eintrag in zwei Monatsdateien.
+ */
 export function monthKey(ts: number): string {
-	const d = new Date(ts);
-	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+	const p = zonedParts(ts);
+	return `${p.year}-${String(p.month).padStart(2, "0")}`;
 }
 
 /**
@@ -15,8 +20,10 @@ export function monthKey(ts: number): string {
  * der ausgerechnet am Monatsletzten verschwand.
  */
 export function prevMonthKey(now = Date.now()): string {
-	const d = new Date(now);
-	return monthKey(new Date(d.getFullYear(), d.getMonth() - 1, 1).getTime());
+	const p = zonedParts(now);
+	const year = p.month === 1 ? p.year - 1 : p.year;
+	const month = p.month === 1 ? 12 : p.month - 1;
+	return `${year}-${String(month).padStart(2, "0")}`;
 }
 
 /** Dauer eines Eintrags in Sekunden (laufende Eintraege bis `now`). */
@@ -68,10 +75,10 @@ export function fmtHMS(totalSeconds: number): string {
 	return `${h}:${pad(m)}:${pad(sec)}`;
 }
 
-/** Lokale Uhrzeit "HH:MM" eines Zeitstempels. */
+/** Uhrzeit "HH:MM" eines Zeitstempels in der Zeitzone des Kontos. */
 export function fmtClock(ts: number): string {
-	const d = new Date(ts);
-	return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+	const p = zonedParts(ts);
+	return `${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}`;
 }
 
 /** Eine Minute in Millisekunden – Schrittweite fuer `quantize`. */
@@ -91,17 +98,18 @@ export function quantize(ts: number, stepMs: number): number {
 	return Math.floor(ts / stepMs) * stepMs;
 }
 
-/** Datum "YYYY-MM-DD" (lokal) eines Zeitstempels. */
+/** Datum "YYYY-MM-DD" eines Zeitstempels in der Zeitzone des Kontos. */
 export function fmtDate(ts: number): string {
-	const d = new Date(ts);
-	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+	const p = zonedParts(ts);
+	return isoDate(p.year, p.month, p.day);
 }
 
 /**
- * Epoch-ms fuer "YYYY-MM-DD" + "HH:MM" in Lokalzeit. NaN bei ungueltiger Eingabe.
+ * Epoch-ms fuer "YYYY-MM-DD" + "HH:MM" in der Zeitzone des Kontos. NaN bei
+ * ungueltiger Eingabe.
  */
 export function toTs(date: string, time: string): number {
-	return new Date(`${date}T${time}:00`).getTime();
+	return wallStringToTs(date, time);
 }
 
 /**
@@ -139,17 +147,24 @@ export function noonTs(date: string): number {
 	return toTs(date, "12:00");
 }
 
-/** Verschiebt ein "YYYY-MM-DD"-Datum um `delta` Tage – mit Monats-/Jahresübergang. */
+/** Mitternacht (Tagesbeginn) eines "YYYY-MM-DD" in der Zeitzone des Kontos. */
+export function startOfDay(date: string): number {
+	return wallStringToTs(date, "00:00");
+}
+
+/**
+ * Verschiebt ein "YYYY-MM-DD"-Datum um `delta` Tage – mit Monats-/Jahresübergang.
+ *
+ * Rein im Kalender gerechnet, nicht ueber Zeitstempel: eine Addition von 24
+ * Stunden trifft an einer Sommerzeit-Grenze den falschen Tag.
+ */
 export function stepDate(date: string, delta: number): string {
-	const d = new Date(noonTs(date));
-	if (Number.isNaN(d.getTime())) return date;
-	d.setDate(d.getDate() + delta);
-	return fmtDate(d.getTime());
+	return addCalendarDays(date, delta);
 }
 
 /** Ist der Tag von `ts` ein regulärer Arbeitstag? (workdays: Wochentagsnummern 0=So..6=Sa) */
 export function isWorkday(ts: number, workdays: number[]): boolean {
-	return workdays.includes(new Date(ts).getDay());
+	return workdays.includes(zonedParts(ts).weekday);
 }
 
 /**
@@ -159,19 +174,15 @@ export function isWorkday(ts: number, workdays: number[]): boolean {
  */
 export function allDayNoons(startTs: number, endExclusiveTs: number): number[] {
 	const out: number[] = [];
-	const day = new Date(startTs);
-	day.setHours(12, 0, 0, 0);
-	const endMidnight = new Date(endExclusiveTs);
-	endMidnight.setHours(0, 0, 0, 0);
-	while (day.getTime() < endMidnight.getTime()) {
-		out.push(day.getTime());
-		day.setDate(day.getDate() + 1);
+	let date = fmtDate(startTs);
+	const endDate = fmtDate(endExclusiveTs);
+	// Ueber die Kalendertage laufen, nicht ueber Zeitstempel: an einer
+	// Sommerzeit-Grenze traefe eine 24-Stunden-Addition den Tag daneben.
+	while (date < endDate) {
+		out.push(noonTs(date));
+		date = addCalendarDays(date, 1);
 	}
-	if (out.length === 0) {
-		const s = new Date(startTs);
-		s.setHours(12, 0, 0, 0);
-		out.push(s.getTime());
-	}
+	if (out.length === 0) out.push(noonTs(fmtDate(startTs)));
 	return out;
 }
 
@@ -277,13 +288,13 @@ export function durationHours(start: string, end: string): number {
 }
 
 /**
- * Mitternacht des Folgetags. setHours(24,…) statt +24h: an DST-Tagen hat ein Tag
- * 23 oder 25 Stunden, eine feste Addition traefe die Grenze dort nicht.
+ * Mitternacht des Folgetags, in der Zeitzone des Kontos.
+ *
+ * Ueber den Kalender gerechnet statt per +24h: an einem Umstellungstag hat ein
+ * Tag 23 oder 25 Stunden, eine feste Addition traefe die Grenze dort nicht.
  */
 export function startOfNextDay(ts: number): number {
-	const d = new Date(ts);
-	d.setHours(24, 0, 0, 0);
-	return d.getTime();
+	return startOfDay(addCalendarDays(fmtDate(ts), 1));
 }
 
 /**
@@ -328,6 +339,7 @@ export function midnightSplitHint(startTs: number, endTs: number): string | null
 /** Datum deutsch mit Wochentag, z.B. "Do., 16.07.2026" – fuer Meldungen und Tooltips. */
 export function fmtDateHuman(ts: number): string {
 	return new Date(ts).toLocaleDateString("de-DE", {
+		timeZone: appTimeZone(),
 		weekday: "short",
 		day: "2-digit",
 		month: "2-digit",
@@ -338,6 +350,11 @@ export function fmtDateHuman(ts: number): string {
 /** Monatsname deutsch, z.B. "Juni 2026" aus "2026-06". */
 export function monthLabel(monthKey: string): string {
 	const [y, m] = monthKey.split("-").map(Number);
-	const d = new Date(y, m - 1, 1);
-	return d.toLocaleDateString("de-DE", { month: "long", year: "numeric" });
+	// Ueber UTC bauen und in UTC formatieren: eine lokale Konstruktion des
+	// Monatsersten kann in westlichen Zonen auf den Vormonat kippen.
+	return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("de-DE", {
+		timeZone: "UTC",
+		month: "long",
+		year: "numeric"
+	});
 }

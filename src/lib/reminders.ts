@@ -5,6 +5,8 @@ import {
 } from "@tauri-apps/plugin-notification";
 import { app } from "./app.svelte";
 import { reportReminderDate } from "./report";
+import { fmtDate, stepDate, toTs } from "./time";
+import { wallToTs, zonedParts } from "./tz";
 
 let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -14,18 +16,27 @@ export async function ensureNotificationPermission(): Promise<boolean> {
 	return granted;
 }
 
-/** Millisekunden bis zur naechsten konfigurierten Erinnerungszeit. */
+/**
+ * Millisekunden bis zur naechsten konfigurierten Erinnerungszeit.
+ *
+ * Die Uhrzeit ist Wanduhrzeit der Kontozeitzone, nicht der des Geraets: eine
+ * Erinnerung um 14:00 soll im Arbeitskalender um 14:00 kommen, sonst verschoebe
+ * sie sich auf Reisen gegenueber allen anderen Zeiten der App.
+ */
 function nextReminderDelay(times: string[]): number | null {
 	if (!times.length) return null;
-	const now = new Date();
+	const now = Date.now();
+	const today = fmtDate(now);
 	let best = Infinity;
 	for (const t of times) {
 		const [h, m] = t.split(":").map(Number);
 		if (Number.isNaN(h) || Number.isNaN(m)) continue;
-		const d = new Date(now);
-		d.setHours(h, m, 0, 0);
-		if (d.getTime() <= now.getTime()) d.setDate(d.getDate() + 1);
-		best = Math.min(best, d.getTime() - now.getTime());
+		const clock = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+		// Ueber den Kalender auf morgen, nicht per +24 h: an einem
+		// Umstellungstag hat ein Tag 23 oder 25 Stunden.
+		let ts = toTs(today, clock);
+		if (ts <= now) ts = toTs(stepDate(today, 1), clock);
+		best = Math.min(best, ts - now);
 	}
 	return best === Infinity ? null : best;
 }
@@ -49,8 +60,12 @@ export function scheduleReportReminder(): void {
 	// Dauerfeuer.
 	let target = reportReminderDate(now, time, lead);
 	for (let i = 0; i < 24 && target.getTime() <= now.getTime(); i++) {
+		// Den Monatsersten ueber die Kalenderrechnung bilden: eine lokale
+		// Date-Konstruktion haengt an der Zone des Geraets.
+		const p = zonedParts(now.getTime());
+		const idx = p.year * 12 + (p.month - 1) + 1 + i;
 		target = reportReminderDate(
-			new Date(now.getFullYear(), now.getMonth() + 1 + i, 1),
+			new Date(wallToTs(Math.floor(idx / 12), (idx % 12) + 1, 1)),
 			time,
 			lead
 		);

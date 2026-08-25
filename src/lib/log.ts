@@ -13,6 +13,7 @@
 // lib.rs an genau dieselbe Tagesdatei an.
 import { BaseDirectory, exists, mkdir, readDir, readTextFile, remove, writeTextFile } from "@tauri-apps/plugin-fs";
 import { fmtDate } from "./time";
+import { zonedParts } from "./tz";
 import { redact, trackError } from "./analytics";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
@@ -61,11 +62,11 @@ function detailText(detail: unknown): string {
 	return errorText(detail);
 }
 
-/** "2026-07-28 13:45:02.123" in Lokalzeit – dieselbe Zone wie alle Anzeigen. */
+/** "2026-07-28 13:45:02.123" in der Zeitzone des Kontos – dieselbe wie alle Anzeigen. */
 function stamp(ts: number): string {
-	const d = new Date(ts);
+	const z = zonedParts(ts);
 	const p = (n: number, len = 2) => String(n).padStart(len, "0");
-	return `${fmtDate(ts)} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`;
+	return `${fmtDate(ts)} ${p(z.hour)}:${p(z.minute)}:${p(z.second)}.${p(ts % 1000, 3)}`;
 }
 
 /**

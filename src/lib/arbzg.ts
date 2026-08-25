@@ -32,11 +32,11 @@ import {
 	fmtDateHuman,
 	fmtHoursClock,
 	isWorkday,
-	monthKey,
 	noonTs,
 	openEntryUntil,
 	stepDate
 } from "./time";
+import { weekdayOfDate } from "./tz";
 
 /** Werktaegliche Regelarbeitszeit (§ 3 Abs. 1 Satz 1). */
 export const NORM_DAILY = 8;
@@ -342,7 +342,13 @@ export interface ArbZgResult {
 export function arbzgMonths(until: string): string[] {
 	const [y, m] = until.split("-").map(Number);
 	const out: string[] = [];
-	for (let i = 11; i >= 0; i--) out.push(monthKey(new Date(y, m - 1 - i, 1).getTime()));
+	// Ueber Monatszahlen rechnen, nicht ueber Zeitstempel: eine lokale
+	// Date-Konstruktion haengt an der Zone des Geraets und verschob den ersten
+	// Monat des Fensters je nach Standort um einen.
+	for (let i = 11; i >= 0; i--) {
+		const idx = (y * 12 + (m - 1)) - i;
+		out.push(`${Math.floor(idx / 12)}-${String((idx % 12) + 1).padStart(2, "0")}`);
+	}
 	return out;
 }
 
@@ -398,7 +404,7 @@ export function dayFacts(
 				firstStart: null,
 				lastEnd: null,
 				absenceFraction: 0,
-				weekday: new Date(noonTs(date)).getDay(),
+				weekday: weekdayOfDate(date),
 				pauseMinutes: null,
 				longestStretch: null
 			};
@@ -509,7 +515,7 @@ function buildAxis(
 
 	for (const date of dates) {
 		const noon = noonTs(date);
-		const weekday = new Date(noon).getDay();
+		const weekday = weekdayOfDate(date);
 		const isPlanWorkday = isWorkday(noon, opts.workdays);
 		const future = date > opts.until;
 		// Vor dem Beginn der Datenbasis traegt ein Tag NICHTS bei – weder Stunden

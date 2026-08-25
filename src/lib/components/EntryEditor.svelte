@@ -21,6 +21,7 @@
 		parseHours,
 		toTs
 	} from "$lib/time";
+	import { daysInMonth, weekdayOfDate, zonedParts } from "$lib/tz";
 	import type { Entry, EntrySource } from "$lib/types";
 	import { loadTimeReport, type StoredTimeReport } from "$lib/store";
 	import {
@@ -295,15 +296,14 @@
 	}
 
 	function emptyDraft(): Draft {
-		const now = new Date();
-		const hh = String(now.getHours()).padStart(2, "0");
+		const hh = String(zonedParts(Date.now()).hour).padStart(2, "0");
 		return {
 			id: null,
 			originalStartTs: 0,
 			originalEndTs: null,
 			// Bewusst leer: der Nutzer wählt die Aktivität selbst (kein Default).
 			activityId: "",
-			date: fmtDate(now.getTime()),
+			date: fmtDate(Date.now()),
 			start: `${hh}:00`,
 			end: `${hh}:00`,
 			fraction: 1,
@@ -341,7 +341,7 @@
 	// Alle Tage des Monats als Gitter.
 	const days = $derived.by(() => {
 		const [y, m] = month.split("-").map(Number);
-		const count = new Date(y, m, 0).getDate();
+		const count = daysInMonth(y, m);
 		const byDate = new Map<string, Entry[]>();
 		for (const e of app.monthEntries(month)) {
 			const d = fmtDate(e.startTs);
@@ -350,7 +350,7 @@
 		const list = [];
 		for (let d = 1; d <= count; d++) {
 			const date = `${month}-${String(d).padStart(2, "0")}`;
-			const wd = new Date(y, m - 1, d).getDay();
+			const wd = weekdayOfDate(date);
 			const entries = (byDate.get(date) ?? []).sort((a, b) => a.startTs - b.startTs);
 			// Projektzeit und Abwesenheit getrennt: die Pause geht nur von der
 			// gearbeiteten Zeit ab, nie von einem Urlaubstag.

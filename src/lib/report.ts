@@ -1,4 +1,5 @@
 import type { Activity, Entry } from "./types";
+import { addCalendarDays, daysInMonth, isoDate, wallToTs, weekdayOfDate, zonedParts } from "./tz";
 import { DEFAULT_SUBJECT } from "./types";
 import { deductBreakFromDay } from "./breaks";
 import {
@@ -232,17 +233,28 @@ export function reportReminderDate(d: Date, time: string, lead: number): Date {
 	const [rawH, rawM] = time.split(":").map(Number);
 	const h = Number.isFinite(rawH) ? rawH : 16;
 	const m = Number.isFinite(rawM) ? rawM : 0;
-	const day = new Date(d.getFullYear(), d.getMonth() + 1, 0); // letzter Tag des Monats
+	// Der Werktags-Rueckwaertslauf ist Kalenderarbeit und laeuft deshalb auf
+	// "YYYY-MM-DD" in der Zeitzone des Kontos. Erst ganz am Ende wird daraus ein
+	// Zeitpunkt – mit der Wanduhrzeit dieser Zone, nicht der des Geraets.
+	const p = zonedParts(d.getTime());
+	let day = isoDate(p.year, p.month, daysInMonth(p.year, p.month)); // letzter Tag des Monats
 	const stepBackToWeekday = () => {
-		while (day.getDay() === 0 || day.getDay() === 6) day.setDate(day.getDate() - 1);
+		while (weekdayOfDate(day) === 0 || weekdayOfDate(day) === 6) {
+			day = addCalendarDays(day, -1);
+		}
 	};
 	stepBackToWeekday();
 	// `lead` weitere Werktage zurückgehen.
 	for (let i = 0; i < Math.max(0, lead); i++) {
-		day.setDate(day.getDate() - 1);
+		day = addCalendarDays(day, -1);
 		stepBackToWeekday();
 	}
-	day.setHours(h, m, 0, 0);
-	return day;
+	return new Date(wallToTs(...isoParts(day), h, m, 0));
+}
+
+/** "YYYY-MM-DD" -> [Jahr, Monat, Tag] fuer `wallToTs`. */
+function isoParts(date: string): [number, number, number] {
+	const [y, m, d] = date.split("-").map(Number);
+	return [y, m, d];
 }
 

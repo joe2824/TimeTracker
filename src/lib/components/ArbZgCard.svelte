@@ -20,6 +20,7 @@
 		noonTs,
 		quantize
 	} from "$lib/time";
+	import { appTimeZone, wallToTs, zonedParts } from "$lib/tz";
 	import type { Entry } from "$lib/types";
 	import { Badge } from "$lib/components/ui/badge";
 	import { Button } from "$lib/components/ui/button";
@@ -148,18 +149,24 @@
 		if (chartData.length === 0) return out;
 		const first = chartData[0].ts;
 		const last = chartData[chartData.length - 1].ts;
-		const cursor = new Date(first.getFullYear(), first.getMonth(), 1);
-		if (cursor < first) cursor.setMonth(cursor.getMonth() + 1);
-		while (cursor <= last) {
-			out.push(new Date(cursor));
-			cursor.setMonth(cursor.getMonth() + 1);
-		}
+		// Monatsindex statt Date-Cursor: der Monatserste haengt sonst an der Zone
+		// des Geraets und die Marken saessen neben den Datenpunkten.
+		const p = zonedParts(first.getTime());
+		let idx = p.year * 12 + (p.month - 1);
+		const tickAt = (i: number) => new Date(wallToTs(Math.floor(i / 12), (i % 12) + 1, 1, 12));
+		if (tickAt(idx) < first) idx++;
+		for (let t = tickAt(idx); t <= last; t = tickAt(++idx)) out.push(t);
 		return out;
 	});
 
 	// Das Jahr nur im Januar – sonst steht es sechsmal da, wo es niemand braucht.
-	const tickLabel = (d: Date) =>
-		d.toLocaleDateString("de-DE", d.getMonth() === 0 ? { month: "short", year: "2-digit" } : { month: "short" });
+	const tickLabel = (d: Date) => {
+		const month = zonedParts(d.getTime()).month;
+		return d.toLocaleDateString("de-DE", {
+			timeZone: appTimeZone(),
+			...(month === 1 ? { month: "short", year: "2-digit" } : { month: "short" })
+		});
+	};
 
 	const chartConfig = {
 		schnitt: { label: "Schnitt", theme: { light: "#2a78d6", dark: "#6ea6ec" } },

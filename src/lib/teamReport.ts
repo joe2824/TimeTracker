@@ -10,7 +10,8 @@
 // Die Auswertung der Stundentabellen lag in Commit 90f6aa1, falls der Zugriff
 // je freigegeben wird.
 import type { TeamMember } from "./types";
-import { fmtClock, fmtDate, monthKey, monthLabel } from "./time";
+import { fmtClock, fmtDate, monthLabel } from "./time";
+import { isoDate, zonedParts } from "./tz";
 
 // ---------- Monat und Name aus dem Betreff ----------
 
@@ -136,9 +137,11 @@ function tokens(s: string): string[] {
  * Betreff ginge ohne diese Annahme gar nicht zuzuordnen.
  */
 export function monthFromReceived(ts: number): string {
-	const d = new Date(ts);
-	if (d.getDate() <= 10) d.setMonth(d.getMonth() - 1, 1);
-	return monthKey(d.getTime());
+	const p = zonedParts(ts);
+	if (p.day > 10) return `${p.year}-${String(p.month).padStart(2, "0")}`;
+	const year = p.month === 1 ? p.year - 1 : p.year;
+	const month = p.month === 1 ? 12 : p.month - 1;
+	return `${year}-${String(month).padStart(2, "0")}`;
 }
 
 /**
@@ -148,12 +151,11 @@ export function monthFromReceived(ts: number): string {
  */
 export function scanRange(month: string): { start: string; end: string } {
 	const [y, m] = month.split("-").map(Number);
-	const end = new Date(y, m, 20);
-	const pad = (n: number) => String(n).padStart(2, "0");
-	return {
-		start: `${month}-01`,
-		end: `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}`
-	};
+	// Der 20. des FOLGEmonats – reine Kalenderrechnung, damit der Jahreswechsel
+	// (Dezember -> Januar) ohne lokale Date-Konstruktion stimmt.
+	const year = m === 12 ? y + 1 : y;
+	const month2 = m === 12 ? 1 : m + 1;
+	return { start: `${month}-01`, end: isoDate(year, month2, 20) };
 }
 
 // ---------- Zusammenfassung ----------

@@ -5,6 +5,7 @@ import { app } from "./app.svelte";
 import { track } from "./analytics";
 import type { Settings } from "./types";
 import { fmtDate, fmtHMS } from "./time";
+import { zonedParts } from "./tz";
 import { ensureNotificationPermission } from "./reminders";
 import { sendNotification } from "@tauri-apps/plugin-notification";
 
@@ -81,9 +82,9 @@ let pinging = false;
  */
 async function dailyPing(s: Settings): Promise<void> {
 	if (pinging) return;
-	const now = new Date();
-	if (!PING_HOURS.includes(now.getHours())) return;
-	const heute = fmtDate(now.getTime());
+	const now = Date.now();
+	if (!PING_HOURS.includes(zonedParts(now).hour)) return;
+	const heute = fmtDate(now);
 	if (s.usageLastDay === heute) return;
 	pinging = true;
 	try {

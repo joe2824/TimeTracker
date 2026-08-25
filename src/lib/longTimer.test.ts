@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { checkEnd, suggestLongTimerEnd } from "./longTimer";
+import { wallToTs, zonedParts } from "./tz";
 
 const H = 3600 * 1000;
 const MIN = 60 * 1000;
 /** 19.08.2026, lokal */
-const D19 = new Date(2026, 7, 19, 0, 0, 0).getTime();
-const D20 = new Date(2026, 7, 20, 0, 0, 0).getTime();
+const D19 = wallToTs(2026, 8, 19, 0, 0, 0);
+const D20 = wallToTs(2026, 8, 20, 0, 0, 0);
 const at = (day: number, h: number, m = 0) => day + h * H + m * MIN;
 
 const BASE = { hoursPerDay: 7.5, deductBreaks: true };
@@ -32,7 +33,7 @@ describe("suggestLongTimerEnd", () => {
 			now: at(D20, 8, 36)
 		});
 		expect(ts).toBe(at(D19, 16, 42));
-		expect(new Date(ts).getDate()).toBe(19);
+		expect(zonedParts(ts).day).toBe(19);
 	});
 
 	it("faellt ohne Tagesbeginn auf den Laufbeginn zurueck", () => {

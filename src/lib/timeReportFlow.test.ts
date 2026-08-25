@@ -18,7 +18,7 @@ import {
 	splitBlocks,
 	type Share
 } from "./timeReconcile";
-import { noonTs, startOfNextDay, toTs } from "./time";
+import { fmtDate, noonTs, startOfNextDay, toTs } from "./time";
 import type { Entry } from "./types";
 
 const HPD = 7.5;
@@ -185,8 +185,7 @@ describe("Nachtrag und Stempelzeiten", () => {
 			const stamped = new Map(days.filter((d) => d.firstIn && d.lastOut).map((d) => [d.date, d]));
 			for (const e of entries) {
 				if (e.activityId === ABS) continue;
-				const date = new Date(e.startTs);
-				const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+				const key = fmtDate(e.startTs);
 				const day = stamped.get(key);
 				if (!day) continue;
 				expect(e.startTs).toBeGreaterThanOrEqual(toTs(key, day.firstIn!));

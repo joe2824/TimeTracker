@@ -3,6 +3,7 @@
 	import type { MonthReport } from "$lib/report";
 	import { dayActivityHours, heatmapYear, sumPerDay, targetHours } from "$lib/stats";
 	import { fmtDateHuman, fmtHoursClock, MINUTE_MS, monthLabel, noonTs, quantize } from "$lib/time";
+	import { zonedParts } from "$lib/tz";
 	import type { Entry } from "$lib/types";
 	import * as Card from "$lib/components/ui/card";
 	import * as Chart from "$lib/components/ui/chart";
@@ -48,7 +49,7 @@
 	// Maps, das Wochenraster und ~370 keyed Spans – jede Sekunde neu. Abgeschlossene
 	// Eintraege haben ein endTs und lesen `now` gar nicht, der Wert ist dann egal.
 	const runningInYear = $derived(
-		app.running !== null && new Date(app.running.startTs).getFullYear() === year
+		app.running !== null && zonedParts(app.running.startTs).year === year
 	);
 	// Auf fuenf Minuten gerundet: `app.now` tickt im Sekundentakt, ein Jahresraster
 	// aendert sich dadurch aber nicht sichtbar – eine Zelle deckt einen ganzen Tag

@@ -12,6 +12,7 @@ import {
 	NORM_DAILY
 } from "./arbzg";
 import { stepDate, toTs } from "./time";
+import { weekdayOfDate, zonedParts } from "./tz";
 import type { Entry } from "./types";
 
 const ABS = "abs";
@@ -32,8 +33,8 @@ function entry(date: string, from: string, to: string, activityId = "a"): Entry 
 
 /** Ein Eintrag ab 08:00 ueber `hours` Stunden. */
 function day(date: string, hours: number): Entry {
-	const end = new Date(toTs(date, "08:00") + hours * 3600000);
-	const clock = `${String(end.getHours()).padStart(2, "0")}:${String(end.getMinutes()).padStart(2, "0")}`;
+	const end = zonedParts(toTs(date, "08:00") + hours * 3600000);
+	const clock = `${String(end.hour).padStart(2, "0")}:${String(end.minute).padStart(2, "0")}`;
 	return entry(date, "08:00", clock);
 }
 
@@ -53,7 +54,7 @@ function absence(date: string, fraction = 1): Entry {
 function series(from: string, to: string, hours: number, workdays = MO_FR): Entry[] {
 	const out: Entry[] = [];
 	for (let d = from; d <= to; d = stepDate(d, 1)) {
-		if (workdays.includes(new Date(`${d}T12:00:00`).getDay())) out.push(day(d, hours));
+		if (workdays.includes(weekdayOfDate(d))) out.push(day(d, hours));
 	}
 	return out;
 }
@@ -185,7 +186,7 @@ describe("avgWindow", () => {
 
 	it("zaehlt Sonntagsstunden im Zaehler, gibt dafuer aber kein Budget", () => {
 		const sunday = "2026-06-28"; // Sonntag
-		expect(new Date(`${sunday}T12:00:00`).getDay()).toBe(0);
+		expect(weekdayOfDate(sunday)).toBe(0);
 		const plain = avgWindow(facts(), "strict", base);
 		const withSunday = avgWindow(
 			dayFacts([...series(HISTORY_FROM, UNTIL, 7.5), day(sunday, 6)], ABSENCE, { deductBreaks: false }),
@@ -207,7 +208,7 @@ describe("currentPace", () => {
 		// Die Frage ist "wie viel arbeite ich an einem Arbeitstag", nicht
 		// "wie viel arbeite ich im Kalender".
 		const entries = [...series(HISTORY_FROM, UNTIL, 9)].filter(
-			(e) => new Date(e.startTs) < new Date(`${stepDate(UNTIL, -10)}T00:00:00`) || new Date(e.startTs) > new Date(`${stepDate(UNTIL, -5)}T23:59:59`)
+			(e) => e.startTs < toTs(stepDate(UNTIL, -10), "00:00") || e.startTs > toTs(stepDate(UNTIL, -5), "23:59")
 		);
 		for (let d = stepDate(UNTIL, -10); d <= stepDate(UNTIL, -5); d = stepDate(d, 1)) {
 			entries.push(absence(d));
@@ -485,7 +486,7 @@ function rng(seed: number): () => number {
 	};
 }
 
-const weekdayOf = (date: string) => new Date(`${date}T12:00:00`).getDay();
+const weekdayOf = (date: string) => weekdayOfDate(date);
 
 /** Der Schnitt eines Fensters, naiv Tag fuer Tag. */
 function naiveAverage(opts: {

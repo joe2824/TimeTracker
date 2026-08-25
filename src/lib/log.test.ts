@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { files, fsFaults, resetFakeFs } from "./testing/fakeFs";
+import { wallToTs } from "./tz";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("./testing/fakeFs")).fakeFs);
 
@@ -111,7 +112,7 @@ describe("readLog", () => {
 
 describe("pruneOldLogs", () => {
 	it("loescht alte Tage und behaelt die jungen", async () => {
-		const now = new Date(2026, 6, 28, 12).getTime();
+		const now = wallToTs(2026, 7, 28, 12, 0, 0);
 		files.set("logs/2026-07-01.log", "alt");
 		files.set("logs/2026-07-13.log", "genau zu alt");
 		files.set("logs/2026-07-20.log", "gerade noch");
@@ -127,7 +128,7 @@ describe("pruneOldLogs", () => {
 		files.set("logs/notizen.txt", "kein Protokoll");
 		files.set("data/entries-2020-01.json", "[]");
 
-		await pruneOldLogs(1, new Date(2026, 6, 28).getTime());
+		await pruneOldLogs(1, wallToTs(2026, 7, 28, 0, 0, 0));
 
 		expect(files.has("logs/notizen.txt")).toBe(true);
 		expect(files.has("data/entries-2020-01.json")).toBe(true);

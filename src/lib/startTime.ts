@@ -1,4 +1,4 @@
-import { clockToMin } from "./time";
+import { clockToMin, fmtDate, minToClock, stepDate, toTs } from "./time";
 
 /** Presets für die Startzeit-Auswahl (Minuten in der Vergangenheit; 0 = jetzt). */
 export const START_PRESETS = [15, 30, 60] as const;
@@ -21,12 +21,14 @@ export function resolveStartTs(
 	if (customStart) {
 		const min = clockToMin(customStart);
 		if (min == null) return null;
-		const d = new Date(now);
-		d.setHours(Math.floor(min / 60), min % 60, 0, 0);
-		// Uhrzeit heute noch nicht erreicht -> gemeint ist gestern. setDate statt
-		// -24 h: an DST-Tagen hat ein Tag 23 oder 25 Stunden.
-		if (d.getTime() > now) d.setDate(d.getDate() - 1);
-		return d.getTime();
+		// In der Zeitzone des Kontos, nicht der des Geraets: der Startzeitpunkt
+		// wird zu einem Eintrag, und dessen Tag muss auf jedem Geraet derselbe sein.
+		const today = fmtDate(now);
+		let ts = toTs(today, minToClock(min));
+		// Uhrzeit heute noch nicht erreicht -> gemeint ist gestern. Ueber den
+		// Kalender statt -24 h: an einem Umstellungstag hat ein Tag 23 oder 25 Stunden.
+		if (ts > now) ts = toTs(stepDate(today, -1), minToClock(min));
+		return ts;
 	}
 	return now - presetMin * 60_000;
 }

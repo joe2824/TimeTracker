@@ -8,6 +8,7 @@ import type { TimeReportDay } from "./timeReport";
 import { breakHours, grossHours, hasStamps, isOpenDay } from "./timeReport";
 import { deductBreakFromHours, grossForNet } from "./breaks";
 import { entryHours, fmtDate, openEntryUntil, startOfNextDay } from "./time";
+import { zonedParts } from "./tz";
 
 /** Zeitspanne innerhalb eines Tages, in Minuten ab Mitternacht. */
 export interface Interval {
@@ -221,8 +222,8 @@ function clockMin(t: string): number {
  * genau diesen Tagen um eine Stunde versetzt in die Luecken.
  */
 function minutesOfDay(ts: number): number {
-	const d = new Date(ts);
-	return d.getHours() * 60 + d.getMinutes();
+	const p = zonedParts(ts);
+	return p.hour * 60 + p.minute;
 }
 
 /** Die von vorhandenen Eintraegen belegten Spannen eines Tages, zusammengefasst. */
