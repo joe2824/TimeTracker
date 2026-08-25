@@ -1,8 +1,4 @@
-import {
-	isPermissionGranted,
-	requestPermission,
-	sendNotification
-} from "@tauri-apps/plugin-notification";
+import { ensureNotificationPermission, notify } from "./platform/notify";
 import { app } from "./app.svelte";
 import { reportReminderDate } from "./report";
 import { fmtDate, stepDate, toTs } from "./time";
@@ -10,11 +6,10 @@ import { wallToTs, zonedParts } from "./tz";
 
 let timer: ReturnType<typeof setTimeout> | null = null;
 
-export async function ensureNotificationPermission(): Promise<boolean> {
-	let granted = await isPermissionGranted();
-	if (!granted) granted = (await requestPermission()) === "granted";
-	return granted;
-}
+// Die Erlaubnisfrage liegt in der Plattform-Schicht: im Browser haengt sie an
+// einer Nutzerhandlung, auf dem Rechner nicht. Hier wird sie nur durchgereicht,
+// damit die bisherigen Aufrufer unveraendert bleiben.
+export { ensureNotificationPermission };
 
 /**
  * Millisekunden bis zur naechsten konfigurierten Erinnerungszeit.
@@ -82,9 +77,10 @@ export function scheduleReportReminder(): void {
 			return;
 		}
 		if (await ensureNotificationPermission()) {
-			sendNotification({
+			await notify({
 				title: "TimeTracker – Bericht senden",
-				body: "Monatsende: Stundenbericht an die Vorgesetzten schicken nicht vergessen."
+				body: "Monatsende: Stundenbericht an die Vorgesetzten schicken nicht vergessen.",
+				tag: "bericht"
 			});
 		}
 		scheduleReportReminder();
@@ -104,9 +100,12 @@ export function scheduleReminders(): void {
 			const running = app.running
 				? `Aktuell läuft: ${app.activityName(app.running.activityId)}.`
 				: "Kein Timer läuft.";
-			sendNotification({
+			await notify({
 				title: "TimeTracker – Zeiten eintragen",
-				body: `Woran hast du gearbeitet? ${running}`
+				body: `Woran hast du gearbeitet? ${running}`,
+				// Eine wiederholte Erinnerung ersetzt die vorherige, statt sich auf dem
+				// Sperrbildschirm zu stapeln.
+				tag: "erinnerung"
 			});
 		}
 		scheduleReminders();

@@ -225,6 +225,21 @@
 		// false = Laden gescheitert; der Ladebildschirm zeigt Schritt und Meldung.
 		if (!(await app.init())) return;
 		try {
+			// Erst NACH dem Laden: der Abgleich schreibt in denselben Bestand, und
+			// ein nicht erreichbarer Server darf den Start nicht aufhalten.
+			void account.init();
+			scheduleReminders();
+			scheduleReportReminder();
+
+			// Alles Weitere gibt es nur in der Desktop-Huelle: Tray-Ereignisse,
+			// globale Hotkeys, Leerlauf-Erkennung, Autostart und die Update-Suche.
+			// Im Browser wuerde jeder dieser Aufrufe werfen - und zwar mitten in der
+			// Einrichtung, sodass danach auch nichts Harmloses mehr liefe.
+			//
+			// Das `return` verlaesst startup() ganz: die Update-Suche unten steht
+			// ausserhalb des try-Blocks und wuerde sonst trotzdem laufen.
+			if (!isTauri()) return;
+
 			if (unlisteners.length === 0) {
 				unlisteners.push(
 					await listen("tray-stop-timer", () => void app.stop()),
@@ -237,11 +252,6 @@
 					})
 				);
 			}
-			// Erst NACH dem Laden: der Abgleich schreibt in denselben Bestand, und
-			// ein nicht erreichbarer Server darf den Start nicht aufhalten.
-			void account.init();
-			scheduleReminders();
-			scheduleReportReminder();
 			void applyShortcuts();
 			startWatchers();
 
@@ -286,6 +296,7 @@
 			clearInterval(updateTimer);
 			updateTimer = undefined;
 			stopWatchers();
+			account.dispose();
 			app.dispose();
 		};
 	});
