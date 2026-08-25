@@ -24,3 +24,7 @@ server/build/
 server/.svelte-kit/
 server/data/
 server/.env
+server/*.db
+server/*.db-shm
+server/*.db-wal
+server/static/

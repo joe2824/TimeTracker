@@ -21,6 +21,9 @@ COPY server/package.json ./server/
 RUN npm ci --workspace server --include-workspace-root=false
 
 COPY server ./server
+# Die gebaute PWA gehoert mit ins Abbild: der Server liefert sie aus. Sie wird
+# VOR dem Docker-Bau erzeugt ("npm run pwa:bundle") und liegt dann in
+# server/static - deshalb kommt sie mit dem COPY oben schon mit.
 RUN npm --workspace server run build
 
 # Die Abhaengigkeiten fuer den Betrieb noch einmal frisch, ohne die des Baus.
