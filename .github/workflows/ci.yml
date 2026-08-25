@@ -41,3 +41,12 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      # Der Server ist ein eigener Workspace mit eigenen Tests. Der Bau muss vor
+      # den Tests laufen: der Durchstich in api.test.ts startet den GEBAUTEN
+      # Server und spricht ihn ueber echtes HTTP an.
+      - name: Server bauen
+        run: npm run server:build
+
+      - name: Server-Tests
+        run: npm run server:test

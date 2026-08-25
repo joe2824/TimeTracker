@@ -15,3 +15,9 @@ vite.config.ts.timestamp-*
 # anonymisierte Fassung unter src/lib/testing/ (Ausnahme unten).
 *.xlsx
 !src/lib/testing/*.fixture.xlsx
+
+# Server
+server/build/
+server/.svelte-kit/
+server/data/
+server/.env

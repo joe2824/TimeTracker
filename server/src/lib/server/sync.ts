@@ -1,0 +1,249 @@
+// Abholen und Ablegen versiegelter Datensaetze.
+//
+// Das ist die gesamte Fachlogik des Servers - und sie handelt ausschliesslich
+// von Reihenfolge und Kollisionen, nie von Inhalten. Der Server weiss nicht, ob
+// ein Datensatz ein Arbeitstag oder eine Aktivitaet ist; er weiss nur, dass
+// jemand ihn geaendert hat und welche Fassung derjenige vorher kannte.
+//
+// Bewusst ohne HTTP: so laesst sich das Zusammenspiel zweier Geraete pruefen,
+// ohne einen Server zu starten.
+import { and, asc, eq, gt, sql } from "drizzle-orm";
+import type { Db } from "./db";
+import { records, users } from "./db/schema";
+import { DEFAULT_PAGE, MAX_PAGE, MAX_RECORD_BYTES, MAX_RECORDS_PER_USER } from "./config";
+
+/** Ein Datensatz, wie ihn der Server ausliefert. */
+export interface StoredRecord {
+	id: string;
+	kind: string;
+	bucket: string | null;
+	seq: number;
+	rev: number;
+	updatedAt: number;
+	deviceId: string | null;
+	deletedAt: number | null;
+	/** Chiffrat, base64. Null bei einer Loeschung. */
+	payload: string | null;
+}
+
+/** Ein Datensatz, wie ihn ein Geraet ablegen will. */
+export interface IncomingRecord {
+	id: string;
+	kind: string;
+	bucket?: string | null;
+	/**
+	 * Die Fassung, die dieses Geraet zuletzt gesehen hat. 0 = "gibt es noch nicht".
+	 *
+	 * Der Server nimmt die Aenderung nur an, wenn seine eigene Fassung genau diese
+	 * ist. Sonst hat inzwischen jemand anderes geschrieben, und die Aenderung
+	 * wuerde dessen Arbeit ueberschreiben, ohne sie je gesehen zu haben.
+	 */
+	baseRev: number;
+	updatedAt: number;
+	deletedAt?: number | null;
+	payload?: string | null;
+}
+
+export interface PullResult {
+	records: StoredRecord[];
+	/** Der Stand, ab dem beim naechsten Mal weitergelesen wird. */
+	nextSeq: number;
+	/** Ob noch mehr da ist - der Aufrufer holt dann die naechste Seite. */
+	hasMore: boolean;
+}
+
+export interface PushConflict {
+	id: string;
+	/** Was auf dem Server steht. Der Client fuehrt zusammen und schickt erneut. */
+	current: StoredRecord;
+}
+
+export interface PushResult {
+	/** Ids, die uebernommen wurden - mit ihrer neuen Fassung. */
+	accepted: { id: string; rev: number; seq: number }[];
+	conflicts: PushConflict[];
+	/** Der hoechste vergebene Stand; damit weckt der Ereigniskanal die anderen. */
+	seq: number;
+}
+
+export class SyncError extends Error {
+	constructor(
+		message: string,
+		readonly status: number
+	) {
+		super(message);
+	}
+}
+
+const toStored = (r: typeof records.$inferSelect): StoredRecord => ({
+	id: r.id,
+	kind: r.kind,
+	bucket: r.bucket,
+	seq: r.seq,
+	rev: r.rev,
+	updatedAt: r.updatedAt,
+	deviceId: r.deviceId,
+	deletedAt: r.deletedAt,
+	payload: r.payload
+});
+
+/**
+ * Alles, was seit `since` dazugekommen ist - seitenweise.
+ *
+ * Die Seitengrenze ist nicht optional: ein Konto mit zehn Jahren Bestand haette
+ * sonst eine Antwort im zweistelligen Megabyte-Bereich, die Server und Geraet
+ * beide vollstaendig im Speicher halten muessten.
+ */
+export function pullRecords(
+	db: Db,
+	userId: string,
+	opts: { since?: number; limit?: number; bucket?: string } = {}
+): PullResult {
+	const limit = Math.min(Math.max(1, opts.limit ?? DEFAULT_PAGE), MAX_PAGE);
+	const since = Math.max(0, opts.since ?? 0);
+
+	const where = opts.bucket
+		? and(eq(records.userId, userId), eq(records.bucket, opts.bucket), gt(records.seq, since))
+		: and(eq(records.userId, userId), gt(records.seq, since));
+
+	// Eine Zeile mehr holen, als ausgeliefert wird: daran - und nur daran - laesst
+	// sich "es gibt noch mehr" erkennen, ohne ein zweites COUNT ueber die Tabelle.
+	const rows = db
+		.select()
+		.from(records)
+		.where(where)
+		.orderBy(asc(records.seq))
+		.limit(limit + 1)
+		.all();
+
+	const hasMore = rows.length > limit;
+	const page = hasMore ? rows.slice(0, limit) : rows;
+	return {
+		records: page.map(toStored),
+		nextSeq: page.length > 0 ? page[page.length - 1].seq : since,
+		hasMore
+	};
+}
+
+/**
+ * Geaenderte Datensaetze ablegen.
+ *
+ * Alles in einer Transaktion: entweder bekommen alle angenommenen Datensaetze
+ * ihre laufende Nummer, oder keiner. Ein halb geschriebener Stapel hinterliesse
+ * Luecken in der Reihenfolge, und ein Geraet, das genau dazwischen abholt, hielte
+ * den Rest fuer bereits gesehen.
+ */
+export function pushRecords(
+	db: Db,
+	userId: string,
+	deviceId: string | null,
+	incoming: IncomingRecord[]
+): PushResult {
+	for (const r of incoming) {
+		if (r.payload && r.payload.length > MAX_RECORD_BYTES) {
+			throw new SyncError(`Datensatz ${r.id} ist zu gross`, 413);
+		}
+		if (!r.id || !r.kind) throw new SyncError("Datensatz ohne id oder kind", 400);
+	}
+
+	return db.transaction((tx) => {
+		const user = tx.select().from(users).where(eq(users.id, userId)).get();
+		if (!user) throw new SyncError("Konto nicht gefunden", 404);
+
+		const accepted: PushResult["accepted"] = [];
+		const conflicts: PushConflict[] = [];
+		let seq = user.seqCounter;
+
+		const bestand = tx
+			.select({ n: sql<number>`count(*)` })
+			.from(records)
+			.where(eq(records.userId, userId))
+			.get();
+		let anzahl = bestand?.n ?? 0;
+
+		for (const r of incoming) {
+			const existing = tx
+				.select()
+				.from(records)
+				.where(and(eq(records.userId, userId), eq(records.id, r.id)))
+				.get();
+
+			// Die Fassung muss genau die sein, die das Geraet zuletzt gesehen hat.
+			// Sonst hat inzwischen ein anderes geschrieben - der Client fuehrt
+			// zusammen und versucht es erneut.
+			const serverRev = existing?.rev ?? 0;
+			if (serverRev !== r.baseRev) {
+				if (existing) conflicts.push({ id: r.id, current: toStored(existing) });
+				else conflicts.push({ id: r.id, current: leererStand(r) });
+				continue;
+			}
+
+			if (!existing) {
+				if (anzahl >= MAX_RECORDS_PER_USER) {
+					throw new SyncError("Das Konto hat sein Datensatz-Limit erreicht", 507);
+				}
+				anzahl++;
+			}
+
+			seq++;
+			const rev = serverRev + 1;
+			const zeile = {
+				userId,
+				id: r.id,
+				kind: r.kind,
+				bucket: r.bucket ?? null,
+				seq,
+				rev,
+				updatedAt: r.updatedAt,
+				deviceId,
+				deletedAt: r.deletedAt ?? null,
+				// Bei einer Loeschung faellt das Chiffrat weg. Was bleibt, ist der
+				// Grabstein: ohne ihn haelt ein Geraet, das die Loeschung verpasst hat,
+				// seinen alten Stand fuer gueltig und laedt ihn wieder hoch.
+				payload: r.deletedAt ? null : (r.payload ?? null)
+			};
+
+			if (existing) {
+				tx.update(records)
+					.set(zeile)
+					.where(and(eq(records.userId, userId), eq(records.id, r.id)))
+					.run();
+			} else {
+				tx.insert(records).values(zeile).run();
+			}
+			accepted.push({ id: r.id, rev, seq });
+		}
+
+		if (seq !== user.seqCounter) {
+			tx.update(users).set({ seqCounter: seq }).where(eq(users.id, userId)).run();
+		}
+		return { accepted, conflicts, seq };
+	});
+}
+
+/**
+ * Der "Stand" eines Datensatzes, den es auf dem Server gar nicht gibt.
+ *
+ * Kommt vor, wenn ein Geraet mit baseRev > 0 schreibt, der Datensatz beim Server
+ * aber fehlt - etwa nach einem wiederhergestellten Backup. Der Client sieht daran,
+ * dass er bei rev 0 neu anfangen muss, statt in eine Schleife aus abgelehnten
+ * Versuchen zu laufen.
+ */
+function leererStand(r: IncomingRecord): StoredRecord {
+	return {
+		id: r.id,
+		kind: r.kind,
+		bucket: r.bucket ?? null,
+		seq: 0,
+		rev: 0,
+		updatedAt: 0,
+		deviceId: null,
+		deletedAt: null,
+		payload: null
+	};
+}
+
+/** Der aktuelle Stand eines Kontos - was ein Geraet zum Aufsetzen braucht. */
+export function currentSeq(db: Db, userId: string): number {
+	return db.select().from(users).where(eq(users.id, userId)).get()?.seqCounter ?? 0;
+}
