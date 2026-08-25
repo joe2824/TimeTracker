@@ -80,6 +80,30 @@ function writeJson(file: string, data: unknown): Promise<void> {
 	return queued(file, () => writeJsonNow(file, data));
 }
 
+/**
+ * Der Abgleich klinkt sich hier ein, um jeden Schreibvorgang mitzubekommen.
+ *
+ * Der Haken laeuft INNERHALB der Warteschlange: er bekommt den Stand von der
+ * Platte und gibt zurueck, was tatsaechlich geschrieben wird. Damit sieht er
+ * jede Aenderung genau einmal und in der richtigen Reihenfolge – auch die des
+ * anderen Fensters, das sich dieselben Dateien teilt.
+ *
+ * Ohne verknuepftes Konto ist er null und dieses Modul verhaelt sich Zeile fuer
+ * Zeile wie zuvor. Das ist Absicht: die Serveranbindung ist ein Zusatz, kein
+ * Umbau des lokalen Betriebs.
+ */
+export interface WriteHook {
+	entries(month: string, before: Entry[], after: Entry[]): Promise<Entry[]>;
+	activities(before: Activity[], after: Activity[]): Promise<Activity[]>;
+	settings(before: Settings | null, after: Settings): Promise<Settings>;
+}
+
+let writeHook: WriteHook | null = null;
+
+export function setWriteHook(hook: WriteHook | null): void {
+	writeHook = hook;
+}
+
 async function writeJsonNow(file: string, data: unknown): Promise<void> {
 	await ensureDir();
 	const target = `${DIR}/${file}`;
@@ -142,7 +166,11 @@ export async function loadActivities(): Promise<Activity[]> {
 	return readJson<Activity[]>("activities.json", []);
 }
 export async function saveActivities(activities: Activity[]): Promise<void> {
-	return writeJson("activities.json", activities);
+	if (!writeHook) return writeJson("activities.json", activities);
+	return queued("activities.json", async () => {
+		const before = await readJson<Activity[]>("activities.json", []);
+		await writeJsonNow("activities.json", await writeHook!.activities(before, activities));
+	});
 }
 
 // ---- Einstellungen ----
@@ -155,7 +183,11 @@ export async function loadSettings(): Promise<Settings> {
 	return { ...defaultSettings, ...stored };
 }
 export async function saveSettings(settings: Settings): Promise<void> {
-	return writeJson("settings.json", settings);
+	if (!writeHook) return writeJson("settings.json", settings);
+	return queued("settings.json", async () => {
+		const before = await readJson<Settings | null>("settings.json", null);
+		await writeJsonNow("settings.json", await writeHook!.settings(before, settings));
+	});
 }
 
 // ---- Eintraege (pro Monat) ----
@@ -199,13 +231,33 @@ export async function saveEntries(month: string, entries: Entry[]): Promise<void
 	// Auch das Loeschen geht durch die Warteschlange: sonst raeumte es die Datei
 	// weg, waehrend ein Speichern desselben Monats noch laeuft – und der Monat
 	// stuende danach wieder da, mit dem Eintrag, den gerade jemand entfernt hat.
+	const file = entriesFile(month);
 	if (entries.length === 0) {
-		return queued(entriesFile(month), async () => {
-			const path = `${DIR}/${entriesFile(month)}`;
+		return queued(file, async () => {
+			const path = `${DIR}/${file}`;
+			// Auch das Leeren geht durch den Haken: sonst verschwaende ein
+			// geleerter Monat, ohne dass der Abgleich die Loeschungen je erfaehrt.
+			if (writeHook) await writeHook.entries(month, await readEntriesRaw(month), []);
 			if (await exists(path, baseOpts)) await remove(path, baseOpts);
 		});
 	}
-	return writeJson(entriesFile(month), entries);
+	if (!writeHook) return writeJson(file, entries);
+	return queued(file, async () => {
+		const before = await readEntriesRaw(month);
+		await writeJsonNow(file, await writeHook!.entries(month, before, entries));
+	});
+}
+
+/**
+ * Der Stand einer Monatsdatei ohne die Quarantaene-Behandlung von `loadEntries`.
+ *
+ * Der Haken braucht den Vergleichsstand INNERHALB der Warteschlange – und dort
+ * darf nichts umbenannt werden, waehrend gleich darauf geschrieben wird. Eine
+ * unlesbare Datei gilt hier als "kein Vorstand": das Speichern faellt dann auf
+ * den Fall "alles neu" zurueck und laedt lieber zu viel hoch als zu wenig.
+ */
+async function readEntriesRaw(month: string): Promise<Entry[]> {
+	return readJson<Entry[]>(entriesFile(month), []);
 }
 
 /**
@@ -290,6 +342,39 @@ export async function saveTimeReport(report: StoredTimeReport): Promise<void> {
  */
 export async function listTimeReportMonths(): Promise<string[]> {
 	return (await dataFiles(REPORT_FILE_RE)).map(([, month]) => month).sort();
+}
+
+// ---- Geraet und Abgleich ----
+
+/**
+ * Was dieses Geraet ueber sich und seine Verknuepfung weiss.
+ *
+ * Bewusst NICHT in settings.json: dort landet alles in jedem Backup und in jedem
+ * Fehlerbericht. Hier kommen spaeter das Geraete-Token und der verpackte
+ * Schluessel dazu – beides gehoert nicht in eine Datei, die man beilaeufig
+ * weitergibt.
+ */
+export interface DeviceInfo {
+	/** Zufaellige, dauerhafte Kennung dieses Geraets. */
+	id: string;
+}
+
+export async function loadDevice(): Promise<DeviceInfo | null> {
+	return readJson<DeviceInfo | null>("device.json", null);
+}
+
+export async function saveDevice(info: DeviceInfo): Promise<void> {
+	return writeJson("device.json", info);
+}
+
+/** Ausstehende Aenderungen. Der Inhalt steht in sync/outbox.ts. */
+export async function loadOutbox<T>(): Promise<T[]> {
+	const stored = await readJson<T[]>("outbox.json", []);
+	return Array.isArray(stored) ? stored : [];
+}
+
+export async function saveOutbox<T>(changes: T[]): Promise<void> {
+	return writeJson("outbox.json", changes);
 }
 
 export interface StoredYear {

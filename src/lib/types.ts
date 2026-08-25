@@ -1,4 +1,26 @@
-export interface Activity {
+/**
+ * Herkunfts- und Aenderungsspuren fuer den Abgleich mit dem Server.
+ *
+ * Alle drei Felder sind optional: ein Bestand aus einer Fassung ohne
+ * Serveranbindung hat sie nicht, und ohne verknuepftes Konto entstehen sie auch
+ * nicht neu. Fehlt `updatedAt`, gilt der Datensatz als "noch nie abgeglichen" –
+ * genau das braucht der erste Abgleich, um alles hochzuladen.
+ *
+ * Gesetzt werden sie an genau einer Stelle: beim Schreiben in store.ts, aus dem
+ * Vergleich mit dem Stand auf der Platte. Damit erfasst es JEDEN Schreibweg –
+ * auch die aus Sammel-Dialog, Urlaubszeitraum und LOGA-Nachtrag – und es kann
+ * keiner vergessen werden.
+ */
+export interface SyncMeta {
+	/** Letzte Aenderung als Epoch-ms der schreibenden Uhr. */
+	updatedAt?: number;
+	/** Zaehler, den der Server vergibt. Lokal nur weitergereicht. */
+	rev?: number;
+	/** Welches Geraet zuletzt geschrieben hat. */
+	deviceId?: string;
+}
+
+export interface Activity extends SyncMeta {
 	id: string;
 	name: string;
 	sortOrder: number;
@@ -32,7 +54,7 @@ export const ACTIVITY_COLORS = [
 /** Woher ein Eintrag stammt. "loga" = aus einem Zeitwirtschaftsreport nachgetragen. */
 export type EntrySource = "timer" | "manual" | "calendar" | "loga";
 
-export interface Entry {
+export interface Entry extends SyncMeta {
 	id: string;
 	activityId: string;
 	/** Start als Epoch-Millisekunden */

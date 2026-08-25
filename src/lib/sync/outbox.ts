@@ -1,0 +1,155 @@
+// Was noch nicht beim Server ist.
+//
+// Die Outbox merkt sich NUR, WAS sich geaendert hat – Art, Id und bei Eintraegen
+// der Monat – nie den Inhalt selbst. Den liest der Abgleich beim Hochladen aus
+// den Dateien, die ohnehin die Wahrheit sind.
+//
+// Das ist kein Sparen um des Sparens willen: eine Outbox mit Inhalten waere eine
+// zweite Kopie desselben Bestands, die auseinanderlaufen kann. Und sie stuende
+// unverschluesselt auf der Platte, waehrend beim Server nur Chiffrat liegt.
+//
+// Ein Eintrag zu viel in der Outbox ist harmlos – er fuehrt dazu, dass ein
+// unveraenderter Datensatz noch einmal hochgeladen wird. Ein fehlender waere ein
+// Datensatz, der stillschweigend nie ankommt. Im Zweifel also lieber zu viel.
+import type { Activity, Entry, Settings } from "../types";
+import type { WriteHook } from "../store";
+import { loadOutbox, saveOutbox, setWriteHook } from "../store";
+import { diffAndStamp } from "./stamp";
+import { logWarn } from "../log";
+
+export type RecordKind = "entry" | "activity" | "settings";
+
+/** Die Id des einen Einstellungs-Datensatzes – es gibt genau einen. */
+export const SETTINGS_ID = "settings";
+
+export interface PendingChange {
+	kind: RecordKind;
+	id: string;
+	/** Nur bei Eintraegen: in welcher Monatsdatei der Datensatz liegt bzw. lag. */
+	month?: string;
+	deleted: boolean;
+	/** Wann die Aenderung bemerkt wurde (Epoch-ms). */
+	at: number;
+}
+
+/** Schluessel, unter dem eine Aenderung eindeutig ist. */
+function keyOf(c: Pick<PendingChange, "kind" | "id">): string {
+	return `${c.kind}:${c.id}`;
+}
+
+/**
+ * Mehrere Aenderungen am selben Datensatz zu einer zusammenfassen.
+ *
+ * Wer einen Eintrag anlegt, bearbeitet und wieder loescht, hinterlaesst genau
+ * eine offene Aenderung: die Loeschung. Ohne das wuechse die Outbox mit jedem
+ * Tastendruck im Eintrags-Dialog.
+ */
+export function mergePending(existing: PendingChange[], incoming: PendingChange[]): PendingChange[] {
+	const byKey = new Map(existing.map((c) => [keyOf(c), c]));
+	for (const c of incoming) byKey.set(keyOf(c), c);
+	return [...byKey.values()];
+}
+
+let pending: PendingChange[] = [];
+let loaded = false;
+let deviceId = "";
+
+/** Ausstehende Aenderungen, aelteste zuerst. */
+export function pendingChanges(): PendingChange[] {
+	return [...pending].sort((a, b) => a.at - b.at);
+}
+
+/**
+ * Aenderungen als erledigt abhaken.
+ *
+ * Ueber Schluessel statt ueber Indizes: zwischen Hochladen und Abhaken kann eine
+ * neue Aenderung dazugekommen sein, und die darf nicht mit verschwinden.
+ */
+export async function clearChanges(done: Pick<PendingChange, "kind" | "id">[]): Promise<void> {
+	const keys = new Set(done.map(keyOf));
+	pending = pending.filter((c) => !keys.has(keyOf(c)));
+	await persist();
+}
+
+async function persist(): Promise<void> {
+	try {
+		await saveOutbox(pending);
+	} catch (e) {
+		// Der Verlust ist verkraftbar: beim naechsten Start wird der gesamte
+		// Bestand gegen den Server abgeglichen. Speichern darf daran nie scheitern.
+		logWarn("Outbox konnte nicht gespeichert werden", e);
+	}
+}
+
+async function note(changes: PendingChange[]): Promise<void> {
+	if (changes.length === 0) return;
+	pending = mergePending(pending, changes);
+	await persist();
+}
+
+/**
+ * Den Abgleich scharf schalten.
+ *
+ * Ab hier bekommt jeder Schreibvorgang Herkunftsspuren und landet in der Outbox.
+ * Vorher – und ohne verknuepftes Konto – passiert nichts davon.
+ */
+export async function startTracking(device: string): Promise<void> {
+	deviceId = device;
+	if (!loaded) {
+		try {
+			pending = await loadOutbox();
+		} catch (e) {
+			logWarn("Outbox nicht lesbar, beginne leer", e);
+			pending = [];
+		}
+		loaded = true;
+	}
+	setWriteHook(hook);
+}
+
+/** Den Abgleich abschalten – das Programm verhaelt sich danach wieder rein lokal. */
+export function stopTracking(): void {
+	setWriteHook(null);
+}
+
+const hook: WriteHook = {
+	async entries(month, before, after) {
+		const now = Date.now();
+		const { changes, stamped } = diffAndStamp(before, after, deviceId, now);
+		await note([
+			...changes.changed.map((e: Entry) => ({ kind: "entry" as const, id: e.id, month, deleted: false, at: now })),
+			...changes.deleted.map((id) => ({ kind: "entry" as const, id, month, deleted: true, at: now }))
+		]);
+		return stamped;
+	},
+
+	async activities(before, after) {
+		const now = Date.now();
+		const { changes, stamped } = diffAndStamp(before, after, deviceId, now);
+		await note([
+			...changes.changed.map((a: Activity) => ({ kind: "activity" as const, id: a.id, deleted: false, at: now })),
+			...changes.deleted.map((id) => ({ kind: "activity" as const, id, deleted: true, at: now }))
+		]);
+		return stamped;
+	},
+
+	async settings(before, after) {
+		const now = Date.now();
+		// Die Einstellungen sind EIN Datensatz, kein Bestand – deshalb ueber eine
+		// einelementige Liste mit fester Id statt ueber echte Identitaeten.
+		const wrap = (s: Settings | null) => (s ? [{ ...s, id: SETTINGS_ID }] : []);
+		const { changes, stamped } = diffAndStamp(wrap(before), wrap(after), deviceId, now);
+		await note(changes.changed.map(() => ({ kind: "settings" as const, id: SETTINGS_ID, deleted: false, at: now })));
+		// Die geliehene Id gehoert nicht in die Datei zurueck.
+		const { id: _id, ...rest } = stamped[0];
+		return rest as Settings;
+	}
+};
+
+/** Nur fuer Tests: den Modulzustand vergessen. */
+export function resetOutboxForTests(): void {
+	pending = [];
+	loaded = false;
+	deviceId = "";
+	setWriteHook(null);
+}
