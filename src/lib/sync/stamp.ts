@@ -21,8 +21,16 @@ export interface Identified extends SyncMeta {
 export interface Changes<T extends Identified> {
 	/** Neu hinzugekommen oder inhaltlich veraendert – mit frischem Stempel. */
 	changed: T[];
-	/** Ids, die es vorher gab und jetzt nicht mehr. */
-	deleted: string[];
+	/**
+	 * Was es vorher gab und jetzt nicht mehr - die Datensaetze selbst, nicht nur
+	 * ihre Ids.
+	 *
+	 * Der Grund ist ihre `rev`: der Server nimmt eine Loeschung nur an, wenn sie
+	 * auf seiner aktuellen Fassung aufsetzt. Sobald der Datensatz lokal weg ist,
+	 * ist diese Zahl nirgends mehr zu holen - sie muss hier mitgenommen werden,
+	 * sonst laesst sich nichts mehr loeschen, was jemals abgeglichen wurde.
+	 */
+	deleted: T[];
 }
 
 /**
@@ -103,7 +111,7 @@ export function diffAndStamp<T extends Identified>(
 		changed.push(next);
 	}
 
-	return { changes: { changed, deleted: [...byId.keys()] }, stamped };
+	return { changes: { changed, deleted: [...byId.values()] }, stamped };
 }
 
 /** Eintraege eines Monats vergleichen – dieselbe Rechnung, engerer Typ. */

@@ -51,9 +51,17 @@ describe("diffAndStamp", () => {
 		expect(stamped[0].deviceId).toBe(DEV);
 	});
 
-	it("meldet eine Loeschung", () => {
-		const { changes } = diffAndStamp([e("1"), e("2")], [e("2", { updatedAt: 1 })], DEV, NOW);
-		expect(changes.deleted).toEqual(["1"]);
+	it("meldet eine Loeschung samt der Fassung des Datensatzes", () => {
+		// Die Fassung muss mit: der Server nimmt eine Loeschung nur auf seinem
+		// aktuellen Stand an, und nach dem lokalen Loeschen ist sie sonst nirgends
+		// mehr zu holen.
+		const { changes } = diffAndStamp(
+			[e("1", { rev: 7 }), e("2")],
+			[e("2", { updatedAt: 1 })],
+			DEV,
+			NOW
+		);
+		expect(changes.deleted.map((d) => [d.id, d.rev])).toEqual([["1", 7]]);
 	});
 
 	it("stempelt beim zweiten Speichern nicht erneut", () => {
