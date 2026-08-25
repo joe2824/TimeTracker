@@ -135,6 +135,38 @@ und Stopp sind je *eine* Anfrage.
 
 ---
 
+## Entkoppeln und Löschen
+
+Drei Stufen, weil das Wort drei Dinge heißen kann. In **jeder** bleiben die
+erfassten Zeiten auf dem Gerät vollständig erhalten — der Server war nie ihre
+einzige Kopie.
+
+| Stufe | Was passiert | Wer darf |
+|---|---|---|
+| Nur hier vergessen | Das Gerät gleicht nicht mehr ab. Der Zugang bleibt gültig. | Niemand muss gefragt werden — es passiert nur lokal. |
+| Gerät trennen | Der Zugang dieses Geräts erlischt auch beim Server. Konto und andere Geräte bleiben. | Das Gerät selbst, über sein Token. |
+| Konto auflösen | Alles beim Server wird gelöscht: Chiffrate, Passkeys, verpackte Schlüssel, alle Geräte. | Über eine Browser-Sitzung nur mit frischer Passkey-Bestätigung samt Nutzerprüfung. Über ein Geräte-Token unmittelbar. |
+
+**Warum die Sitzung nicht genügt:** ein Cookie fährt bei jeder Anfrage
+automatisch mit. Es beweist, dass irgendwann jemand angemeldet war, nicht dass
+gerade jetzt jemand zustimmt. Ein Geräte-Token dagegen sind 256 Bit, die genau
+einmal bei der Kopplung über die Leitung gingen und in keinem Browser-Kontext
+liegen — wer es hat, hat das gekoppelte Gerät und damit ohnehin den
+Tresorschlüssel.
+
+**Was physisch verschwindet.** SQLite markiert gelöschte Seiten normalerweise
+nur als frei; der Inhalt bleibt in der Datei stehen, bis die Seite zufällig
+wiederverwendet wird. Deshalb läuft die Datenbank mit `secure_delete`, und nach
+dem Auflösen eines Kontos wird das Schreibprotokoll abgeschnitten. Nachgemessen:
+ein Chiffrat, das vorher einmal in der Datei zu finden war, ist danach nirgends
+mehr auffindbar.
+
+Was **nicht** mitgelöscht wird: der verbrauchte Einladungscode bleibt verbraucht
+— sonst ließen sich durch Löschen und Neuanlegen beliebig viele Konten damit
+verschaffen. Nur der Verweis auf den Menschen fällt weg.
+
+---
+
 ## Was der Betreiber sehen kann
 
 Ehrlich aufgezählt, weil "verschlüsselt" allein nichts sagt:
