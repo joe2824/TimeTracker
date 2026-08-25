@@ -2,8 +2,9 @@
 	import { app } from "$lib/app.svelte";
 	import { buildReport, reportSubject, reportToHtml, reportToText } from "$lib/report";
 	import { fmtHoursClock } from "$lib/time";
-	import { openUrl } from "@tauri-apps/plugin-opener";
+	import { openExternal } from "$lib/platform/open";
 	import { createOutlookDraft, mailtoFallback, reportOutlookError } from "$lib/outlook";
+	import { capabilities } from "$lib/platform/env";
 	import { logInfo } from "$lib/log";
 	import { Button } from "$lib/components/ui/button";
 	import MonthSelector from "$lib/components/MonthSelector.svelte";
@@ -58,7 +59,7 @@
 				action: {
 					label: "Mail öffnen",
 					onClick: () =>
-						openUrl(mailtoFallback(app.settings.bossEmail, subject, reportToText(report))).catch(
+						openExternal(mailtoFallback(app.settings.bossEmail, subject, reportToText(report))).catch(
 							(err) => toast.error(`Mailprogramm konnte nicht geöffnet werden: ${err}`)
 						)
 				}
@@ -115,10 +116,24 @@
 		<MonthSelector bind:month id="rmonth" />
 		<div class="flex flex-wrap gap-2">
 			<Button variant="outline" onclick={copyHtml}><CopyIcon class="size-4" /> HTML kopieren</Button>
-			<Button onclick={sendToOutlook} disabled={sending}>
-				<MailIcon class="size-4" />
-				{sending ? "Öffne Outlook…" : "Outlook-Entwurf erstellen"}
-			</Button>
+			<!--
+				Ohne Outlook bleibt der Weg ueber das Mailprogramm des Systems - den
+				gab es ohnehin schon als Rueckfall, wenn Outlook nicht mitspielt.
+			-->
+			{#if capabilities.outlook}
+				<Button onclick={sendToOutlook} disabled={sending}>
+					<MailIcon class="size-4" />
+					{sending ? "Öffne Outlook…" : "Outlook-Entwurf erstellen"}
+				</Button>
+			{:else}
+				<Button
+					onclick={() =>
+						openExternal(mailtoFallback(app.settings.bossEmail, subject, reportToText(report)))}
+				>
+					<MailIcon class="size-4" />
+					E-Mail vorbereiten
+				</Button>
+			{/if}
 		</div>
 	</div>
 

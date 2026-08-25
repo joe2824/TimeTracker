@@ -24,7 +24,7 @@
 	import { invoke } from "@tauri-apps/api/core";
 	import { relaunch } from "@tauri-apps/plugin-process";
 	import { errorText, flushLog, logInfo } from "$lib/log";
-	import { openUrl } from "@tauri-apps/plugin-opener";
+	import { openExternal } from "$lib/platform/open";
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { acceleratorFromEvent, applyShortcuts } from "$lib/shortcuts";
 	import Trash2Icon from "@lucide/svelte/icons/trash-2";
@@ -821,7 +821,7 @@
 				</div>
 			</div>
 			<div class="flex flex-wrap gap-2">
-				<Button variant="outline" size="sm" onclick={() => openUrl(REPO_URL)}>
+				<Button variant="outline" size="sm" onclick={() => openExternal(REPO_URL)}>
 					<ExternalLinkIcon class="size-4" /> GitHub
 				</Button>
 			</div>

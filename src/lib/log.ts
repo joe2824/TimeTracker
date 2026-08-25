@@ -11,7 +11,7 @@
 // Abhaengigkeit samt Rust-Bau einzuziehen, lohnt nicht. Was das Frontend nicht
 // sehen kann, ist ein Absturz des Rust-Teils; den haengt der Panic-Hook in
 // lib.rs an genau dieselbe Tagesdatei an.
-import { BaseDirectory, exists, mkdir, readDir, readTextFile, remove, writeTextFile } from "@tauri-apps/plugin-fs";
+import { storage } from "./platform/fs";
 import { fmtDate } from "./time";
 import { zonedParts } from "./tz";
 import { redact, trackError } from "./analytics";
@@ -19,7 +19,6 @@ import { redact, trackError } from "./analytics";
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
 const DIR = "logs";
-const baseOpts = { baseDir: BaseDirectory.AppData } as const;
 const FILE_RE = /^(\d{4}-\d{2}-\d{2})\.log$/;
 
 /** So viele Tage bleiben liegen; aeltere raeumt pruneOldLogs() beim Start weg. */
@@ -104,12 +103,10 @@ async function writePending(): Promise<void> {
 		// Einmal je Sitzung pruefen: das Protokoll schreibt oft, und jede Pruefung
 		// waere eine weitere Runde ueber die IPC-Bruecke.
 		if (!dirReady) {
-			if (!(await exists(DIR, baseOpts))) {
-				await mkdir(DIR, { baseDir: BaseDirectory.AppData, recursive: true });
-			}
+			if (!(await storage.exists(DIR))) await storage.mkdir(DIR);
 			dirReady = true;
 		}
-		await writeTextFile(logFile(), `${lines.join("\n")}\n`, { append: true, ...baseOpts });
+		await storage.appendTextFile(logFile(), `${lines.join("\n")}\n`);
 	} catch (e) {
 		// Verlorene Zeilen sind besser als eine App, die am Protokollieren scheitert.
 		// Deshalb auch kein erneuter Versuch: dann haenge das Protokoll im Kreis.
@@ -191,8 +188,8 @@ export function installErrorLogging(): () => void {
 /** Vorhandene Protokolldateien, neueste zuerst. */
 export async function listLogs(): Promise<string[]> {
 	try {
-		if (!(await exists(DIR, baseOpts))) return [];
-		const dir = await readDir(DIR, baseOpts);
+		if (!(await storage.exists(DIR))) return [];
+		const dir = await storage.readDir(DIR);
 		return dir
 			.map((e) => e.name ?? "")
 			.filter((n) => FILE_RE.test(n))
@@ -216,7 +213,7 @@ export async function readLog(maxLines = 300): Promise<string[]> {
 	const lines: string[] = [];
 	for (const name of names) {
 		try {
-			const txt = await readTextFile(`${DIR}/${name}`, baseOpts);
+			const txt = await storage.readTextFile(`${DIR}/${name}`);
 			lines.push(...txt.split("\n").filter((l) => l.trim()));
 		} catch (e) {
 			console.error(`Protokoll ${name} nicht lesbar`, e);
@@ -232,7 +229,7 @@ export async function clearLogs(): Promise<number> {
 	let removed = 0;
 	for (const name of names) {
 		try {
-			await remove(`${DIR}/${name}`, baseOpts);
+			await storage.remove(`${DIR}/${name}`);
 			removed++;
 		} catch (e) {
 			console.error(`Protokoll ${name} nicht loeschbar`, e);
@@ -255,7 +252,7 @@ export async function pruneOldLogs(keepDays = KEEP_DAYS, now = Date.now()): Prom
 		// Datumsnamen vergleichen sich als Text richtig (ISO-Reihenfolge).
 		if (!day || day >= cutoff) continue;
 		try {
-			await remove(`${DIR}/${name}`, baseOpts);
+			await storage.remove(`${DIR}/${name}`);
 			removed.push(name);
 		} catch (e) {
 			console.error(`Altes Protokoll ${name} nicht loeschbar`, e);

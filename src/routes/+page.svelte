@@ -9,11 +9,11 @@
 	import { toast } from "svelte-sonner";
 	import { app } from "$lib/app.svelte";
 	import { account } from "$lib/sync/account.svelte";
-	import { isTauri } from "$lib/platform/env";
+	import { capabilities, isTauri } from "$lib/platform/env";
 	import WebOnboarding from "$lib/components/WebOnboarding.svelte";
 	import { errorText, logError, logFile, logInfo, logWarn, pruneOldLogs } from "$lib/log";
 	import { appDataDir, join } from "@tauri-apps/api/path";
-	import { revealItemInDir } from "@tauri-apps/plugin-opener";
+	import { revealInFolder } from "$lib/platform/open";
 	import { Button } from "$lib/components/ui/button";
 	import { Badge } from "$lib/components/ui/badge";
 	import { scheduleReminders, scheduleReportReminder } from "$lib/reminders";
@@ -293,7 +293,7 @@
 	/** Protokollordner im Explorer zeigen – vom Fehlerbildschirm aus. */
 	async function openLogFolder() {
 		try {
-			await revealItemInDir(await join(await appDataDir(), logFile()));
+			await revealInFolder(await join(await appDataDir(), logFile()));
 		} catch (e) {
 			toast.error(`Ordner nicht zu öffnen: ${errorText(e)}`, { duration: 30000 });
 		}
@@ -419,7 +419,7 @@
 						<PencilLineIcon />Einträge
 					</Tabs.Trigger>
 					<Tabs.Trigger value="report"><ChartColumnIcon />Bericht</Tabs.Trigger>
-					{#if app.settings.bossMode}
+					{#if app.settings.bossMode && capabilities.outlook}
 						<Tabs.Trigger value="team"><UsersIcon />Team</Tabs.Trigger>
 					{/if}
 					<Tabs.Trigger value="activities"><LayersIcon />Aktivitäten</Tabs.Trigger>
@@ -476,7 +476,11 @@
 			</Tabs.Content>
 			<!-- Nur bei aktivem Chef-Modus einhaengen: bits-ui baut ALLE Tab-Inhalte
 			     sofort auf, ein blosses Ausblenden liesse das Panel mitlaufen. -->
-			{#if app.settings.bossMode}
+			<!--
+				Der Chef-Modus liest Berichts-Mails aus Outlook. Im Browser gibt es das
+				nicht, und ein leerer Tab waere schlechter als gar keiner.
+			-->
+			{#if app.settings.bossMode && capabilities.outlook}
 				<Tabs.Content value="team" class="mt-4">
 					<TeamPanel />
 				</Tabs.Content>

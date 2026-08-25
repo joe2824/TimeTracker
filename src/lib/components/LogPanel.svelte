@@ -8,7 +8,7 @@
 	import { Button } from "$lib/components/ui/button";
 	import * as Card from "$lib/components/ui/card";
 	import { appDataDir, join } from "@tauri-apps/api/path";
-	import { revealItemInDir } from "@tauri-apps/plugin-opener";
+	import { revealInFolder } from "$lib/platform/open";
 	import { toast } from "svelte-sonner";
 	import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
 	import FolderOpenIcon from "@lucide/svelte/icons/folder-open";
@@ -76,7 +76,7 @@
 		try {
 			// Auf die heutige Datei zeigen: der Explorer oeffnet dann den Ordner und
 			// markiert sie. Auf den Ordner selbst gezeigt landete man eine Ebene zu hoch.
-			await revealItemInDir(await join(await appDataDir(), logFile()));
+			await revealInFolder(await join(await appDataDir(), logFile()));
 		} catch (e) {
 			toast.error(`Ordner nicht zu öffnen: ${errorText(e)}`, { duration: 30000 });
 		}

@@ -48,6 +48,14 @@ export interface StorageBackend {
 	readDir(path: string): Promise<DirEntry[]>;
 	readTextFile(path: string): Promise<string>;
 	writeTextFile(path: string, contents: string): Promise<void>;
+	/**
+	 * Anhaengen statt ersetzen - fuer das Protokoll.
+	 *
+	 * Auf der Platte macht das Dateisystem es selbst. Im Browser wird gelesen,
+	 * ergaenzt und zurueckgeschrieben; bei Tagesdateien von wenigen Kilobyte ist
+	 * das der Aufwand nicht wert, den ein echter Anhaenge-Weg kosten wuerde.
+	 */
+	appendTextFile(path: string, contents: string): Promise<void>;
 	remove(path: string): Promise<void>;
 	rename(from: string, to: string): Promise<void>;
 	stat(path: string): Promise<FileInfo>;
@@ -63,6 +71,7 @@ const tauriBackend: StorageBackend = {
 	readDir: async (p) => (await fsReadDir(p, opts)).map((e) => ({ name: e.name })),
 	readTextFile: (p) => fsReadTextFile(p, opts),
 	writeTextFile: (p, c) => fsWriteTextFile(p, c, opts),
+	appendTextFile: (p, c) => fsWriteTextFile(p, c, { append: true, ...opts }),
 	remove: (p) => fsRemove(p, opts),
 	rename: (from, to) =>
 		fsRename(from, to, {
@@ -148,6 +157,11 @@ const browserBackend: StorageBackend = {
 		await tx("readwrite", (s) => s.put(contents, path));
 	},
 
+	async appendTextFile(path, contents) {
+		const alt = (await tx<string | undefined>("readonly", (s) => s.get(path))) ?? "";
+		await tx("readwrite", (s) => s.put(alt + contents, path));
+	},
+
 	async remove(path) {
 		await tx("readwrite", (s) => s.delete(path));
 	},
@@ -183,6 +197,7 @@ export const storage: StorageBackend = {
 	readDir: (p) => backend.readDir(p),
 	readTextFile: (p) => backend.readTextFile(p),
 	writeTextFile: (p, c) => backend.writeTextFile(p, c),
+	appendTextFile: (p, c) => backend.appendTextFile(p, c),
 	remove: (p) => backend.remove(p),
 	rename: (a, b) => backend.rename(a, b),
 	stat: (p) => backend.stat(p)
