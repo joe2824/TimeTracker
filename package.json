@@ -18,7 +18,8 @@
     "server:test": "npm --workspace server run test",
     "build:web": "cross-env BUILD_TARGET=web vite build",
     "dev:web": "cross-env BUILD_TARGET=web vite dev",
-    "pwa:bundle": "npm run build:web && node scripts/copy-pwa.mjs"
+    "pwa:bundle": "npm run build:web && node scripts/copy-pwa.mjs",
+    "server:check": "npm --workspace server run check"
   },
   "license": "MIT",
   "dependencies": {

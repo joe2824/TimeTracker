@@ -14,6 +14,7 @@ import { createDevice } from "./auth";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { IncomingMessage, ServerResponse } from "node:http";
 
 let base: string;
 let db: Db;
@@ -58,9 +59,21 @@ beforeAll(async () => {
 
 	// Den gebauten Server starten. Er liest DB_FILE aus der Umgebung und oeffnet
 	// dieselbe Datei - beide Seiten sehen damit denselben Bestand.
-	const { handler } = await import("../../../build/handler.js");
+	// Der GEBAUTE Server, nicht die Quellen: nur so ist geprueft, was spaeter
+	// wirklich laeuft - samt Adapter, Kompilat und Aufloesung der Abhaengigkeiten.
+	//
+	// Bewusst ohne Typen: das Kompilat hat keine, und ihm welche anzudichten
+	// hiesse, eine Zusage zu machen, die niemand einhaelt.
+	//
+	// Der Pfad wird zur LAUFZEIT gebildet: stuende er als Zeichenkette im Import,
+	// wuerde TypeScript das Kompilat mitpruefen - tausende Fehler in Code, den
+	// niemand geschrieben hat.
+	const handlerPfad = new URL("../../../build/handler.js", import.meta.url).href;
+	const built = (await import(/* @vite-ignore */ handlerPfad)) as {
+		handler: (req: IncomingMessage, res: ServerResponse, next: () => void) => void;
+	};
 	const { createServer } = await import("node:http");
-	const http = createServer(handler);
+	const http = createServer((req, res) => built.handler(req, res, () => {}));
 	await new Promise<void>((r) => http.listen(5199, r));
 	server = { close: () => http.close() };
 	base = "http://localhost:5199";

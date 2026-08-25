@@ -94,9 +94,24 @@ describe("Zeitraum-Kennung", () => {
 	it("verraet den Monat nicht", async () => {
 		const key = await createVaultKey();
 		const bucket = await bucketFor(key, "2026-07");
-		expect(bucket).not.toContain("2026");
-		expect(bucket).not.toContain("07");
+
+		// Auf "enthaelt nicht '07'" zu pruefen waere Unfug: in 32 zufaelligen
+		// Hex-Zeichen steht jede zweistellige Folge mit rund 11 Prozent
+		// Wahrscheinlichkeit irgendwo. Genau daran ist dieser Test einmal
+		// grundlos gescheitert.
+		//
+		// Die Eigenschaft, um die es geht, ist eine andere: aus der Kennung darf
+		// sich der Monat nicht ZURUECKRECHNEN lassen. Dafuer muss sie erstens
+		// nichts Erkennbares sein und zweitens bei einem benachbarten Monat
+		// voellig anders aussehen - nicht "um eins verschoben".
 		expect(bucket).toMatch(/^[0-9a-f]{32}$/);
+		expect(bucket).not.toBe("2026-07");
+
+		const nachbar = await bucketFor(key, "2026-08");
+		const gleicheStellen = [...bucket].filter((c, i) => c === nachbar[i]).length;
+		// Bei einer guten Streuung stimmt rund ein Sechzehntel der Stellen zufaellig
+		// ueberein. Die Haelfte waere ein Hinweis darauf, dass der Monat durchschlaegt.
+		expect(gleicheStellen).toBeLessThan(16);
 	});
 
 	it("ist bei zwei Konten verschieden, auch fuer denselben Monat", async () => {
@@ -140,11 +155,21 @@ describe("Wiederherstellungs-Phrase", () => {
 	it("erkennt ein vertipptes Wort an der Pruefsumme", () => {
 		const phrase = createRecoveryPhrase();
 		expect(isValidRecoveryPhrase(phrase)).toBe(true);
-		// Letztes Wort ersetzen: die Pruefsumme passt dann mit hoher
-		// Wahrscheinlichkeit nicht mehr.
+
+		// EIN Wort zu ersetzen und "faellt auf" zu erwarten waere ein Test, der
+		// gelegentlich grundlos rot ist: bei 24 Woertern hat BIP39 nur 8
+		// Pruefbits, ein falsches Wort passt also mit 1:256 zufaellig doch. Genau
+		// das ist hier einmal passiert.
+		//
+		// Geprueft wird deshalb die Eigenschaft, um die es geht: unter den
+		// moeglichen Ersetzungen des letzten Wortes muss die grosse Mehrheit
+		// auffallen. Trifft die Pruefsumme, faellt keine einzige auf.
 		const woerter = phrase.split(" ");
-		woerter[23] = woerter[23] === "zoo" ? "zone" : "zoo";
-		expect(isValidRecoveryPhrase(woerter.join(" "))).toBe(false);
+		const kandidaten = ["zoo", "zone", "zebra", "young", "youth", "wrong", "wrist", "write"];
+		const abgewiesen = kandidaten
+			.filter((w) => w !== woerter[23])
+			.filter((w) => !isValidRecoveryPhrase([...woerter.slice(0, 23), w].join(" ")));
+		expect(abgewiesen.length).toBeGreaterThanOrEqual(5);
 	});
 
 	it("weist Unsinn ab", () => {

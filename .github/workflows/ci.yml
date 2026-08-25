@@ -45,6 +45,16 @@ jobs:
       # Der Server ist ein eigener Workspace mit eigenen Tests. Der Bau muss vor
       # den Tests laufen: der Durchstich in api.test.ts startet den GEBAUTEN
       # Server und spricht ihn ueber echtes HTTP an.
+      # Die PWA aus derselben Quelle wie die Desktop-Anwendung. Bricht dieser
+      # Schritt, ist etwas eingezogen, das nur in der Desktop-Huelle laeuft.
+      - name: PWA bauen
+        run: npm run build:web
+
+      - name: Server pruefen
+        run: npm run server:check
+
+      # Der Bau MUSS vor den Server-Tests laufen: der Durchstich in api.test.ts
+      # startet den gebauten Server und spricht ihn ueber echtes HTTP an.
       - name: Server bauen
         run: npm run server:build
 
