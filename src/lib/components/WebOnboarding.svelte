@@ -19,7 +19,6 @@
 	// ausgeliefert. Sie steht trotzdem hier, damit klar ist, wohin die Daten gehen.
 	const serverUrl = typeof location !== "undefined" ? location.origin : "";
 
-	let name = $state("");
 	let invite = $state("");
 	let phrase = $state("");
 	let eingabe = $state("");
@@ -62,17 +61,11 @@
 	}
 
 	async function anlegen() {
-		if (!name.trim()) {
-			toast.error("Bitte einen Anzeigenamen angeben.");
-			return;
-		}
-		laeuft = true;
 		try {
-			const r = await register(serverUrl, name.trim(), { invite: invite.trim() || undefined });
+			const r = await register(serverUrl, { invite: invite.trim() || undefined });
 			schluessel = r.key;
 			phrase = r.recoveryPhrase!;
 			prfVorhanden = r.prfAvailable;
-			angemeldeterName = r.displayName;
 			schritt = "phrase";
 		} catch (e) {
 			toast.error(fehlertext(e, "Konto konnte nicht angelegt werden"));
@@ -83,7 +76,7 @@
 
 	async function phraseUebernehmen() {
 		if (!schluessel) return;
-		await account.linkWithSession(serverUrl, schluessel, angemeldeterName);
+		await account.linkWithSession(serverUrl, schluessel);
 		toast.success("Konto angelegt. Viel Erfolg!");
 	}
 
@@ -102,7 +95,7 @@
 			if (prfWert) {
 				await addPasskeyWrap(serverUrl, key, passkeyId, prfWert).catch(() => {});
 			}
-			await account.linkWithSession(serverUrl, key, angemeldeterName);
+			await account.linkWithSession(serverUrl, key);
 			toast.success("Entsperrt.");
 		} catch (e) {
 			toast.error(fehlertext(e, "Die Phrase passt nicht zu diesem Konto"));
@@ -203,8 +196,7 @@
 			<Card.Header>
 				<Card.Title>TimeTracker</Card.Title>
 				<Card.Description>
-					Zeiten erfassen – auch wenn der Rechner aus ist. Die Daten werden auf diesem Gerät
-					verschlüsselt; der Server kann sie nicht lesen.
+					Zeiten erfassen – auch wenn der Rechner aus ist.
 				</Card.Description>
 			</Card.Header>
 			<Card.Content class="space-y-4">
@@ -212,8 +204,6 @@
 
 				<div class="space-y-2 border-t pt-4">
 					<p class="text-sm font-medium">Neues Konto</p>
-					<Label for="n">Anzeigename</Label>
-					<Input id="n" bind:value={name} placeholder="dein Name" autocomplete="username" />
 					<Label for="inv" class="pt-2">Einladungscode</Label>
 					<Input id="inv" bind:value={invite} placeholder="falls erforderlich" />
 					<Button variant="outline" class="mt-2 w-full" disabled={laeuft} onclick={anlegen}>
@@ -248,9 +238,6 @@
 						<Button variant="outline" class="w-full" disabled={laeuft} onclick={koppelnStarten}>
 							Dieses Gerät koppeln
 						</Button>
-						<p class="text-muted-foreground text-xs">
-							Für Konten ohne Passkey – etwa, wenn du am Rechner angefangen hast.
-						</p>
 					{/if}
 				</div>
 
@@ -291,10 +278,6 @@
 						>
 							Abbrechen
 						</Button>
-						<p class="text-muted-foreground text-xs">
-							Die Wörter verlassen dieses Gerät nicht. Der Server bekommt nur eine Kennung,
-							aus der sich nichts zurückrechnen lässt.
-						</p>
 					{/if}
 				</div>
 			</Card.Content>
