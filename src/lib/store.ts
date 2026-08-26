@@ -407,12 +407,18 @@ export async function listEntryYears(): Promise<StoredYear[]> {
  * dass der Abgleich es danach weiter kennt.
  */
 export async function deleteYear(year: number): Promise<string[]> {
-	const removeYear = async (re: RegExp) => {
-		const hits = (await dataFiles(re)).filter(([, month]) => month.startsWith(`${year}-`));
-		for (const [name] of hits) await storage.remove(`${DIR}/${name}`);
-		return hits.map(([, month]) => month);
-	};
-	const deleted = await removeYear(MONTH_FILE_RE);
-	await removeYear(REPORT_FILE_RE);
-	return deleted.sort();
+	const desJahres = async (re: RegExp) =>
+		(await dataFiles(re)).filter(([, month]) => month.startsWith(`${year}-`));
+
+	// Die Monate gehen ueber saveEntries(month, []) und NICHT ueber ein direktes
+	// storage.remove(): nur so laeuft die Loeschung durch den Haken und landet in
+	// der Outbox. Vorher raeumte dieser Weg an ihm vorbei – der naechste Abgleich
+	// fand die Monate beim Server unveraendert vor und lud das ganze Jahr wieder
+	// herunter. Ein geloeschtes Jahr, das von selbst zurueckkommt.
+	const monate = (await desJahres(MONTH_FILE_RE)).map(([, month]) => month);
+	for (const month of monate) await saveEntries(month, []);
+
+	// Die eingelesenen LOGA-Reports gleicht niemand ab; sie duerfen direkt weg.
+	for (const [name] of await desJahres(REPORT_FILE_RE)) await storage.remove(`${DIR}/${name}`);
+	return monate.sort();
 }

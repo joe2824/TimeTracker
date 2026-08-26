@@ -116,13 +116,23 @@ export function zonedParts(ts: number, tz = currentZone): ZonedParts {
 /**
  * Der Abstand der Zone zu UTC an diesem Zeitpunkt, in Millisekunden.
  *
- * Gepuffert je angefangener Stunde: Sommerzeit-Wechsel liegen auf vollen
- * Stunden, die Puffer-Grenze ist damit exakt und nicht nur ungefaehr. Ohne den
- * Puffer laeuft `formatToParts` in Auswertungen ueber ein ganzes Jahr
+ * Gepuffert je angefangener Viertelstunde. Die Puffer-Grenze muss auf jeden
+ * moeglichen Umstellungszeitpunkt fallen, sonst puffert sie ueber ihn hinweg und
+ * gibt fuer die halbe Stunde danach noch den alten Abstand aus.
+ *
+ * Volle Stunden reichten dafuer NICHT: die Umstellung liegt auf einer vollen
+ * ORTS-Zeit, und Zonen mit halbem oder viertelstuendigem Abstand zu UTC wechseln
+ * damit mitten in einer UTC-Stunde - Australia/Adelaide und Australia/Lord_Howe
+ * um :30, Pacific/Chatham um :45. Dort war `wallToTs` rund um den Wechsel um bis
+ * zu eine Stunde daneben, und zwar still.
+ *
+ * Ohne den Puffer laeuft `formatToParts` in Auswertungen ueber ein ganzes Jahr
  * zehntausendfach.
  */
+const CACHE_BUCKET_MS = 900_000;
+
 function zoneOffsetMs(ts: number, tz = currentZone): number {
-	const key = `${tz}|${Math.floor(ts / 3_600_000)}`;
+	const key = `${tz}|${Math.floor(ts / CACHE_BUCKET_MS)}`;
 	const hit = offsetCache.get(key);
 	if (hit !== undefined) return hit;
 	const p = zonedParts(ts, tz);

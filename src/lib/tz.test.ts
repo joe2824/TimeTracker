@@ -158,3 +158,33 @@ describe("Unabhaengigkeit von der Geraetezone", () => {
 		expect(Number.isNaN(wallStringToTs("2026-06-10", "08:99"))).toBe(true);
 	});
 });
+
+describe("Sommerzeit in einer Zone mit halbstuendigem Abstand", () => {
+	// Australia/Adelaide steht auf +9:30 und wechselt auf +10:30. Die Umstellung
+	// faellt damit MITTEN in eine UTC-Stunde: 02:00 Ortszeit sind 16:30 UTC.
+	//
+	// Genau daran scheiterte der Puffer, solange er je voller Stunde griff - er
+	// pufferte ueber den Wechsel hinweg und gab fuer den Rest der Stunde noch den
+	// alten Abstand aus. Wer davor einmal gerechnet hatte, bekam danach eine
+	// Uhrzeit, die eine Stunde daneben lag. Ohne Fehler, ohne Hinweis.
+	const TZ = "Australia/Adelaide";
+
+	it("trifft die Zeit nach dem Wechsel, auch wenn davor schon gerechnet wurde", () => {
+		inZone(TZ, () => {
+			// Erst eine Uhrzeit VOR dem Wechsel - sie fuellt den Puffer.
+			expect(wallToTs(2026, 10, 4, 1, 40, 0, TZ)).toBe(Date.UTC(2026, 9, 3, 16, 10));
+			// Und dann eine danach, in derselben UTC-Stunde.
+			expect(wallToTs(2026, 10, 4, 3, 15, 0, TZ)).toBe(Date.UTC(2026, 9, 3, 16, 45));
+		});
+	});
+
+	it("laesst die uebersprungene Zeit nach vorn fallen, wie in Berlin auch", () => {
+		inZone(TZ, () => {
+			// 02:15 gab es an diesem Tag nicht - die Uhr sprang von 02:00 auf 03:00.
+			const ts = wallToTs(2026, 10, 4, 2, 15, 0, TZ);
+			const teile = zonedParts(ts, TZ);
+			expect([teile.month, teile.day]).toEqual([10, 4]);
+			expect([teile.hour, teile.minute]).toEqual([3, 15]);
+		});
+	});
+});

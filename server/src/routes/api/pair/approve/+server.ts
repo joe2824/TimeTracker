@@ -10,6 +10,7 @@ import { eq } from "drizzle-orm";
 import { createDevice } from "$lib/server/auth";
 import { MAX_RECORD_BYTES } from "$lib/server/config";
 import type { Db } from "$lib/server/db";
+import { normalisiereCode } from "$lib/server/pairing";
 
 /** Den offenen Vorgang zu einem Code holen - oder nichts. */
 function offenerVorgang(db: Db, code: string) {
@@ -20,7 +21,7 @@ function offenerVorgang(db: Db, code: string) {
 
 export const GET: RequestHandler = ({ locals, url }) => {
 	if (!locals.userId) error(401, "Nicht angemeldet");
-	const row = offenerVorgang(locals.db, String(url.searchParams.get("code") ?? "").toUpperCase());
+	const row = offenerVorgang(locals.db, normalisiereCode(url.searchParams.get("code")));
 	if (!row) error(404, "Code unbekannt oder abgelaufen");
 	// Nur was zum Verpacken gebraucht wird.
 	return json({ publicKey: row.publicKey, label: row.label });
@@ -29,7 +30,7 @@ export const GET: RequestHandler = ({ locals, url }) => {
 export const POST: RequestHandler = async ({ locals, request }) => {
 	if (!locals.userId) error(401, "Nicht angemeldet");
 	const body = await request.json().catch(() => null);
-	const code = String(body?.code ?? "").toUpperCase();
+	const code = normalisiereCode(body?.code);
 	const wrappedKey = String(body?.wrappedKey ?? "");
 	if (!wrappedKey || wrappedKey.length > MAX_RECORD_BYTES) {
 		error(400, "Paket fehlt oder ist zu groß");

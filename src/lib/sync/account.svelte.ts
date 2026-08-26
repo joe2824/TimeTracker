@@ -19,9 +19,12 @@ import {
 	createPairingKeyPair,
 	createVaultKey,
 	exportPairingPublicKey,
+	checkedPairingKey,
 	exportVaultKey,
 	fromBase64,
 	importVaultKey,
+	normalizePairingCode,
+	pairingCode,
 	toBase64,
 	unwrapForDevice,
 	type KeyWrap
@@ -90,6 +93,14 @@ class AccountState {
 	 * um den Bereich zu zeigen - erlaubt wird ohnehin auf dem Server.
 	 */
 	isAdmin = $state<boolean>(false);
+	/**
+	 * Weist sich dieses Geraet mit einem eigenen Token aus - oder mit einem Cookie?
+	 *
+	 * Der Unterschied entscheidet, was ueberhaupt angeboten werden darf: eine
+	 * Browser-Sitzung IST kein Geraet beim Server. "Vom Konto trennen" hat dort
+	 * nichts zu loesen, und der Server weist es folgerichtig ab.
+	 */
+	hasDeviceToken = $state<boolean>(false);
 
 	#api: Api | null = null;
 	#engine: SyncEngine | null = null;
@@ -134,6 +145,7 @@ class AccountState {
 			const rohschluessel = await unprotectSecret(info.vaultKey, info.protected ?? false);
 			this.#key = await importVaultKey(fromBase64(rohschluessel).buffer as ArrayBuffer);
 			this.#device = await deviceId();
+			this.hasDeviceToken = token !== null;
 			await this.#startEngine(info.serverUrl, token, info.seq ?? 0);
 			this.state = "verbunden";
 			logInfo("Konto verknüpft", { server: info.serverUrl });
@@ -332,8 +344,23 @@ class AccountState {
 		const url = serverUrl.replace(/\/+$/, "");
 		const api = new Api({ baseUrl: url, fetchFn: platformFetch });
 		const pair = await createPairingKeyPair();
-		const publicKey = toBase64(await exportPairingPublicKey(pair));
-		const { code } = await api.pairStart(publicKey, label);
+		const roh = await exportPairingPublicKey(pair);
+		const publicKey = toBase64(roh);
+
+		// Der Code wird HIER gerechnet, aus dem eigenen oeffentlichen Schluessel -
+		// er ist dessen Abdruck (siehe pairingCode). Der Server bekommt ihn nur
+		// mitgeteilt und legt den Vorgang darunter ab.
+		const code = await pairingCode(roh);
+		const antwort = await api.pairStart(publicKey, label, code);
+
+		// Und was er zurueckgibt, muss dasselbe sein. Ein Server, der einen anderen
+		// Code herausgibt, brauchte ihn nur, um ihn auf den Bildschirm zu bekommen:
+		// der Mensch traegt ihn drueben ein, drueben liegt dann ein Schluessel, der
+		// zu DIESEM Code passt - und das waere nicht mehr unserer.
+		if (antwort.code !== code) {
+			throw new Error("Der Server hat einen anderen Kopplungscode zurückgegeben.");
+		}
+
 		this.#pairing = { pair, code, url };
 		return code;
 	}
@@ -389,13 +416,29 @@ class AccountState {
 	 * Geraets verpackt und beim Server abgelegt. Der sieht dabei nur Chiffrat -
 	 * er verwahrt das Paket, oeffnen kann es nur das Geraet, das den Code
 	 * angezeigt hat.
+	 *
+	 * Die entscheidende Zeile ist die Nachrechnung: der Schluessel kommt vom
+	 * SERVER, und geprueft wird er gegen die zwoelf Zeichen, die ein Mensch von
+	 * einem Bildschirm abgelesen hat. Das ist die einzige Strecke dieses Vorgangs,
+	 * die nicht ueber den Server laeuft - und deshalb die einzige, an der sich ein
+	 * getauschter Schluessel ueberhaupt bemerken laesst.
 	 */
 	async approvePairing(code: string): Promise<string> {
 		if (!this.#api || !this.#key) throw new Error("Dieses Gerät ist nicht verknüpft");
-		const { publicKey, label } = await this.#api.pairLookup(code);
+		const getippt = normalizePairingCode(code);
+		const { publicKey, label } = await this.#api.pairLookup(getippt);
+
+		// Wirft, wenn unter diesem Code ein anderer Schluessel liegt als der, dessen
+		// Abdruck er ist. Dann wird NICHTS verpackt: wer immer den Schluessel
+		// hinterlegt hat, bekaeme sonst den Tresorschluessel.
+		const roh = await checkedPairingKey(getippt, publicKey).catch((e) => {
+			logWarn("Kopplung abgebrochen: hinterlegter Schlüssel passt nicht zum Code");
+			throw e;
+		});
+
 		const { wrapForDevice } = await import("../crypto/vault");
-		const wrap = await wrapForDevice(this.#key, fromBase64(publicKey));
-		await this.#api.pairApprove(code, JSON.stringify(serializeWrap(wrap)));
+		const wrap = await wrapForDevice(this.#key, roh);
+		await this.#api.pairApprove(getippt, JSON.stringify(serializeWrap(wrap)));
 		logInfo("Gerät gekoppelt", { label });
 		return label;
 	}
@@ -442,6 +485,7 @@ class AccountState {
 
 		this.serverUrl = url;
 		this.secretsProtected = geschuetzterSchluessel.protected;
+		this.hasDeviceToken = token !== null;
 		this.state = "verbunden";
 		await this.#startEngine(url, token, 0);
 		// Der erste Abgleich laedt den gesamten lokalen Bestand hoch. Ohne
@@ -575,6 +619,7 @@ class AccountState {
 		this.name = "";
 		this.message = "";
 		this.isAdmin = false;
+		this.hasDeviceToken = false;
 	}
 
 	/** Beim Schliessen des Fensters. */

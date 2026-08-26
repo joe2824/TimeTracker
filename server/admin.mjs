@@ -28,6 +28,9 @@ const neuerCode = () =>
 
 const datum = (ms) => (ms ? new Date(ms).toISOString().slice(0, 16).replace("T", " ") : "–");
 
+/** Die Platzhalter von LIKE entwerten - ein "%" in der Suche traefe sonst alles. */
+const escapeLike = (s) => s.replace(/[\\%_]/g, "\\$&");
+
 /**
  * Ein Konto finden - ueber die Kennung, ihren Anfang, oder den Anzeigenamen.
  *
@@ -35,6 +38,12 @@ const datum = (ms) => (ms ? new Date(ms).toISOString().slice(0, 16).replace("T",
  * UUID tippt niemand ab. Der Name ist tippbar, aber nicht eindeutig - es koennen
  * zwei Anna sein. Der Anfang der Kennung ist beides, sobald man ihn aus der
  * Liste abgelesen hat.
+ *
+ * Name und Praefix werden BEIDE gefragt und die Treffer zusammengelegt - nicht
+ * der Praefix zuerst, mit Abbruch beim ersten Treffer. Der Unterschied ist kein
+ * Geschmack: eine Kennung besteht aus Hex-Ziffern, und ein Anzeigename kann
+ * zufaellig genauso aussehen ("Abba", "Cafe", "Dead"). "ernenne Abba" machte so
+ * ein fremdes Konto zum Verwalter, und der Aufrufer las die Erfolgsmeldung.
  *
  * Treffen mehrere zu, wird NICHTS getan und die Auswahl aufgelistet. Den
  * Falschen zum Verwalter zu machen, weil zwei Leute gleich heissen, waere ein
@@ -44,15 +53,19 @@ function findeKonto(suche) {
 	const genau = db.prepare("SELECT * FROM users WHERE id = ?").get(suche);
 	if (genau) return { treffer: [genau] };
 
-	// Der Anfang der Kennung. Ab vier Zeichen, sonst trifft es zu leicht mehrere.
-	if (suche.length >= 4) {
-		const nachPraefix = db.prepare("SELECT * FROM users WHERE id LIKE ?").all(`${suche}%`);
-		if (nachPraefix.length > 0) return { treffer: nachPraefix };
-	}
+	const nachName = db.prepare("SELECT * FROM users WHERE lower(display_name) = lower(?)").all(suche);
 
-	return {
-		treffer: db.prepare("SELECT * FROM users WHERE lower(display_name) = lower(?)").all(suche)
-	};
+	// Der Anfang der Kennung. Ab vier Zeichen, sonst trifft es zu leicht mehrere.
+	const nachPraefix =
+		suche.length >= 4
+			? db
+					.prepare("SELECT * FROM users WHERE id LIKE ? ESCAPE '\\'")
+					.all(`${escapeLike(suche)}%`)
+			: [];
+
+	const treffer = [...nachName];
+	for (const k of nachPraefix) if (!treffer.some((t) => t.id === k.id)) treffer.push(k);
+	return { treffer };
 }
 
 /**

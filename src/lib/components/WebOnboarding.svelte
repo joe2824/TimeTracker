@@ -15,7 +15,7 @@
 	import * as Card from "$lib/components/ui/card";
 	import { toast } from "svelte-sonner";
 	import { account } from "$lib/sync/account.svelte";
-	import { login, register, unlockWithPhrase } from "$lib/sync/enroll";
+	import { addPasskeyWrap, login, register, unlockWithPhrase } from "$lib/sync/enroll";
 	import { isValidRecoveryPhrase } from "$lib/crypto/vault";
 
 	type Schritt = "start" | "phrase" | "entsperren";
@@ -35,12 +35,21 @@
 	let prfVorhanden = $state(false);
 	let angemeldeterName = $state("");
 	let schluessel: CryptoKey | null = null;
+	/**
+	 * Was die Anmeldung an PRF hergab - fuer den Fall, dass gleich die Phrase
+	 * gebraucht wird. Danach kann eine PRF-Verpackung nachgelegt werden, und die
+	 * naechste Anmeldung kommt ohne die 24 Wörter aus.
+	 */
+	let prfWert: ArrayBuffer | null = null;
+	let passkeyId = "";
 
 	async function anmelden() {
 		laeuft = true;
 		try {
 			const r = await login(serverUrl);
 			angemeldeterName = r.displayName;
+			prfWert = r.prf;
+			passkeyId = r.credentialId;
 			if (r.key) {
 				await account.linkWithSession(serverUrl, r.key, r.displayName);
 				toast.success(`Willkommen zurück, ${r.displayName}.`);
@@ -95,6 +104,16 @@
 		laeuft = true;
 		try {
 			const key = await unlockWithPhrase(serverUrl, eingabe);
+			// Kann der Passkey PRF, fehlte aber die passende Verpackung: jetzt eine
+			// anlegen. Ohne das verlangte dieses Gerät die 24 Wörter bei JEDER
+			// Anmeldung erneut - obwohl der Passkey den Tresor allein öffnen könnte.
+			//
+			// Nebenher und ohne Meldung: es gibt nichts zu entscheiden, und ein
+			// Fehlschlag darf die geglückte Entsperrung nicht in eine Fehlermeldung
+			// verwandeln. Dann bleibt es eben beim bisherigen Weg.
+			if (prfWert) {
+				await addPasskeyWrap(serverUrl, key, passkeyId, prfWert).catch(() => {});
+			}
 			await account.linkWithSession(serverUrl, key, angemeldeterName);
 			toast.success("Entsperrt.");
 		} catch (e) {

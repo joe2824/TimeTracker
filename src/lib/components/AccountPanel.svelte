@@ -11,6 +11,7 @@
 	import SettingRow from "$lib/components/SettingRow.svelte";
 	import { toast } from "svelte-sonner";
 	import { account } from "$lib/sync/account.svelte";
+	import { formatPairingCode, isPairingCode, normalizePairingCode } from "$lib/crypto/vault";
 	import { fmtDateHuman, fmtClock } from "$lib/time";
 	import { capabilities } from "$lib/platform/env";
 
@@ -80,9 +81,11 @@
 	}
 
 	async function bestaetigen() {
-		const c = fremderCode.trim().toUpperCase();
-		if (c.length !== 8) {
-			toast.error("Ein Kopplungscode hat acht Zeichen.");
+		// Bindestriche und Leerzeichen fallen weg: der Code wird angezeigt wie
+		// "ABCD-EFGH-JKLM", und wer ihn so abtippt, soll nicht scheitern.
+		const c = normalizePairingCode(fremderCode);
+		if (!isPairingCode(c)) {
+			toast.error("Ein Kopplungscode hat zwölf Zeichen.");
 			return;
 		}
 		laeuft = true;
@@ -232,9 +235,9 @@
 					<Input
 						id="fremdcode"
 						bind:value={fremderCode}
-						placeholder="ABCD2345"
-						maxlength={8}
-						class="w-40 font-mono tracking-widest uppercase"
+						placeholder="ABCD-EFGH-JKLM"
+						maxlength={14}
+						class="w-52 font-mono tracking-wider uppercase"
 					/>
 					<Button onclick={bestaetigen} disabled={laeuft}>Bestätigen</Button>
 				</div>
@@ -260,20 +263,29 @@
 							</p>
 						</div>
 
-						<div class="space-y-1">
-							<Button
-								variant="outline"
-								size="sm"
-								disabled={laeuft}
-								onclick={() => loesen({ revokeSelf: true })}
-							>
-								Gerät vom Konto trennen
-							</Button>
-							<p class="text-muted-foreground text-xs">
-								Der Zugang dieses Geräts erlischt auch beim Server. Das Konto und alle anderen
-								Geräte bleiben.
-							</p>
-						</div>
+						<!--
+							Nur mit eigenem Geraete-Token. Eine Browser-Sitzung weist sich mit
+							einem Cookie aus und IST kein Geraet beim Server - sie hat dort
+							nichts zu loesen, und der Server lehnt es mit 400 ab. Die
+							Schaltflaeche konnte also nur fehlschlagen. Wer die Sitzung
+							beenden will, meldet sich ab.
+						-->
+						{#if account.hasDeviceToken}
+							<div class="space-y-1">
+								<Button
+									variant="outline"
+									size="sm"
+									disabled={laeuft}
+									onclick={() => loesen({ revokeSelf: true })}
+								>
+									Gerät vom Konto trennen
+								</Button>
+								<p class="text-muted-foreground text-xs">
+									Der Zugang dieses Geräts erlischt auch beim Server. Das Konto und alle anderen
+									Geräte bleiben.
+								</p>
+							</div>
+						{/if}
 
 						<div class="space-y-1">
 							{#if !aufloesenOffen}
@@ -338,7 +350,7 @@
 		{:else if warten}
 			<div class="space-y-2 border-t pt-3">
 				<p class="text-sm">Diesen Code auf einem bereits verknüpften Gerät eintragen:</p>
-				<p class="font-mono text-3xl tracking-[0.3em]">{code}</p>
+				<p class="font-mono text-2xl tracking-[0.2em]">{formatPairingCode(code)}</p>
 				<p class="text-muted-foreground text-xs">
 					Der Code gilt zehn Minuten. Wird gewartet, bis jemand bestätigt hat…
 				</p>

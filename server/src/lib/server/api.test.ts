@@ -253,15 +253,23 @@ describe("Verpackungen", () => {
 });
 
 describe("Kopplung", () => {
+	// Der Code ist auf dem GERAET der Abdruck des oeffentlichen Schluessels
+	// (src/lib/crypto/vault.ts). Hier steht ein fester, wohlgeformter Wert: der
+	// Server rechnet die Bindung bewusst nicht nach - er ist in diesem Angriff
+	// selbst der Angreifer, und seine eigene Pruefung bewiese niemandem etwas.
+	// Was er prueft, ist die Form. Nachgerechnet wird drueben, in vault.test.ts.
+	const CODE = "ABCDEFGHJKLM";
+	const CODE2 = "NPQRSTUVWXYZ";
+
 	it("laeuft vom Code bis zum Token durch", async () => {
 		// Schritt 1 auf dem neuen Geraet - ohne Anmeldung.
 		const start = await (
 			await api(null, "/api/pair/start", {
 				method: "POST",
-				body: JSON.stringify({ publicKey: "b2VmZmVudGxpY2g=", label: "Handy" })
+				body: JSON.stringify({ publicKey: "b2VmZmVudGxpY2g=", label: "Handy", code: CODE })
 			})
 		).json();
-		expect(start.code).toMatch(/^[A-HJ-NP-Z2-9]{8}$/);
+		expect(start.code).toBe(CODE);
 
 		// Noch nichts abzuholen.
 		const frueh = await (
@@ -300,7 +308,7 @@ describe("Kopplung", () => {
 		const start = await (
 			await api(null, "/api/pair/start", {
 				method: "POST",
-				body: JSON.stringify({ publicKey: "cHVi", label: "Handy" })
+				body: JSON.stringify({ publicKey: "cHVi", label: "Handy", code: CODE })
 			})
 		).json();
 		await api(annaToken, "/api/pair/approve", {
@@ -316,7 +324,7 @@ describe("Kopplung", () => {
 		const start = await (
 			await api(null, "/api/pair/start", {
 				method: "POST",
-				body: JSON.stringify({ publicKey: "cHVi", label: "Handy" })
+				body: JSON.stringify({ publicKey: "cHVi", label: "Handy", code: CODE2 })
 			})
 		).json();
 		const body = JSON.stringify({ code: start.code, wrappedKey: "cGFrZXQ=" });
@@ -325,15 +333,56 @@ describe("Kopplung", () => {
 	});
 
 	it("weist einen unbekannten Code ab", async () => {
-		expect((await api(annaToken, "/api/pair/approve?code=XXXXXXXX")).status).toBe(404);
+		expect((await api(annaToken, "/api/pair/approve?code=XXXXXXXXXXXX")).status).toBe(404);
 	});
 
 	it("verlangt fuer das Bestaetigen eine Anmeldung", async () => {
 		const r = await api(null, "/api/pair/approve", {
 			method: "POST",
-			body: JSON.stringify({ code: "XXXXXXXX", wrappedKey: "eA==" })
+			body: JSON.stringify({ code: "XXXXXXXXXXXX", wrappedKey: "eA==" })
 		});
 		expect(r.status).toBe(401);
+	});
+
+	it("laesst einen laufenden Vorgang nicht von aussen ueberschreiben", async () => {
+		// Ein unangemeldeter Aufruf darf einem fremden, laufenden Vorgang nicht
+		// dazwischenfahren - sonst laege unter einem Code, den jemand gerade
+		// abliest, ploetzlich ein anderer Schluessel.
+		const code = "MMMMNNNNPPPP";
+		await api(null, "/api/pair/start", {
+			method: "POST",
+			body: JSON.stringify({ publicKey: "ZWNodA==", label: "Echt", code })
+		});
+
+		const fremd = await api(null, "/api/pair/start", {
+			method: "POST",
+			body: JSON.stringify({ publicKey: "ZmFsc2No", label: "Untergeschoben", code })
+		});
+		expect(fremd.status).toBe(409);
+
+		// Und der echte Schluessel steht noch da.
+		const gesehen = await (await api(annaToken, `/api/pair/approve?code=${code}`)).json();
+		expect(gesehen.publicKey).toBe("ZWNodA==");
+	});
+
+	it("nimmt denselben Vorgang noch einmal an, ohne das Paket zu verlieren", async () => {
+		// Derselbe Schluessel ergibt denselben Code: ein zweiter Anlauf desselben
+		// Geraets landet zwangslaeufig auf demselben Vorgang.
+		const code = "RRRRSSSSTTTT";
+		const body = JSON.stringify({ publicKey: "d2llZGVy", label: "Handy", code });
+		expect((await api(null, "/api/pair/start", { method: "POST", body })).status).toBe(200);
+		await api(annaToken, "/api/pair/approve", {
+			method: "POST",
+			body: JSON.stringify({ code, wrappedKey: "cGFrZXQ=" })
+		});
+		expect((await api(null, "/api/pair/start", { method: "POST", body })).status).toBe(200);
+
+		// Das hinterlegte Paket hat den zweiten Anlauf ueberlebt.
+		const claim = await (
+			await api(null, "/api/pair/claim", { method: "POST", body: JSON.stringify({ code }) })
+		).json();
+		expect(claim.pending).toBe(false);
+		expect(claim.wrappedKey).toBe("cGFrZXQ=");
 	});
 });
 
@@ -574,6 +623,59 @@ describe("Geraet loesen", () => {
 		// stiller Erfolg, haette der Aufrufer den Eindruck, etwas sei passiert.
 		const res = await api(null, "/api/devices", { method: "DELETE", body: "{}" });
 		expect(res.status).toBe(401);
+	});
+});
+
+// ACHTUNG, Reihenfolge: dieser Block muss VOR den Tests stehen, die die Bremse
+// leerlaufen lassen. Ihr Zustand lebt im Serverprozess und laesst sich von aussen
+// nicht zuruecksetzen - ein leergeratener Eimer wuerde hier sonst als Fehler
+// erscheinen, obwohl nichts kaputt ist.
+describe("Warten beim Koppeln", () => {
+	it("bremst das Warten nicht aus", async () => {
+		// Die Oberflaeche fragt im Zwei-Sekunden-Takt nach, ob jemand bestaetigt
+		// hat, und ein Kopplungscode gilt zehn Minuten. Das sind bis zu
+		// dreihundert Anfragen fuer einen voellig normalen Vorgang.
+		//
+		// Eine Bremse, die alle zaehlt, macht nach vierzig Sekunden zu - waehrend
+		// der Mensch noch den Code abtippt. Genau das war der erste Anlauf.
+		// Der Code ist der Abdruck des oeffentlichen Schluessels und kommt vom
+		// Geraet - hier von Hand, in der Form, die der Server erwartet.
+		//
+		// Ein eigener Wert, nicht der aus "Kopplung": beide Bloecke teilen sich
+		// einen Datenbestand, und ein Code ist dort der Primaerschluessel. Derselbe
+		// Wert zweimal haengt nur so lange nicht, wie der andere Block seinen
+		// Vorgang vorher abholt - also genau bis jemand die Reihenfolge aendert.
+		const code = "WWWWXXXXYYYY";
+		const gestartet = await api(null, "/api/pair/start", {
+			method: "POST",
+			body: JSON.stringify({ publicKey: "AAAA", label: "Wartendes Gerät", code })
+		});
+		expect(gestartet.status).toBe(200);
+
+		for (let i = 0; i < 60; i++) {
+			const res = await api(null, "/api/pair/claim", {
+				method: "POST",
+				body: JSON.stringify({ code })
+			});
+			expect(res.status, `Anfrage ${i + 1}`).toBe(200);
+			expect((await res.json()).pending).toBe(true);
+		}
+	});
+
+	it("bremst das Raten weiterhin", async () => {
+		// Ein Fehlgriff ist ein Fehlgriff - egal wie oft jemand es versucht.
+		let gebremst = false;
+		for (let i = 0; i < 40; i++) {
+			const res = await api(null, "/api/pair/claim", {
+				method: "POST",
+				body: JSON.stringify({ code: `RATEVERSUCH${i}` })
+			});
+			if (res.status === 429) {
+				gebremst = true;
+				break;
+			}
+		}
+		expect(gebremst).toBe(true);
 	});
 });
 

@@ -260,10 +260,18 @@ export class Api {
 
 	// ---------- Kopplung ----------
 
-	pairStart(publicKey: string, label: string): Promise<{ code: string; expiresAt: number }> {
+	/**
+	 * Der Code wird MITGESCHICKT, nicht abgeholt: er ist der Abdruck des
+	 * oeffentlichen Schluessels und entsteht auf dem Geraet (siehe pairingCode).
+	 */
+	pairStart(
+		publicKey: string,
+		label: string,
+		code: string
+	): Promise<{ code: string; expiresAt: number }> {
 		return this.#call("/api/pair/start", {
 			method: "POST",
-			body: JSON.stringify({ publicKey, label })
+			body: JSON.stringify({ publicKey, label, code })
 		});
 	}
 

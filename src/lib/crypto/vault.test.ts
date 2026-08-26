@@ -1,16 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
 	bucketFor,
+	checkedPairingKey,
 	createPairingKeyPair,
 	createRecoveryPhrase,
 	createVaultKey,
 	exportPairingPublicKey,
 	exportVaultKey,
+	formatPairingCode,
 	fromBase64,
 	fromHex,
 	importVaultKey,
+	isPairingCode,
 	isValidRecoveryPhrase,
+	normalizePairingCode,
 	normalizePhrase,
+	pairingCode,
 	openRecord,
 	sealRecord,
 	toBase64,
@@ -290,5 +295,113 @@ describe("Kodierung", () => {
 		const key = await createVaultKey();
 		const wieder = await importVaultKey(await exportVaultKey(key));
 		expect(await sameKey(wieder, key)).toBe(true);
+	});
+});
+
+describe("Der Kopplungscode", () => {
+	const schluessel = async () => exportPairingPublicKey(await createPairingKeyPair());
+
+	it("rechnet, was eine unabhaengige Umsetzung auch rechnet", async () => {
+		// Ein fester Vektor, nachgerechnet mit einer eigenen Umsetzung ausserhalb
+		// dieses Programms: SHA-256 ueber die Bytes 0..64, davon die obersten 60 Bit
+		// zu zwoelf Stellen a fuenf Bit.
+		//
+		// Der Vektor steht hier, weil die Bit-Schieberei in pairingCode aussieht,
+		// als koenne man sie "aufraeumen". Wer sie dabei um ein Bit verschiebt,
+		// bekommt weiterhin huebsche Codes - nur eben andere, und die Kopplung
+		// zwischen zwei Fassungen des Programms schluege fehl, ohne dass jemand
+		// saehe warum.
+		const probe = new Uint8Array(65).map((_, i) => i);
+		expect(await pairingCode(probe)).toBe("KR8U3C5RD5YH");
+	});
+
+	it("ist der Abdruck des Schluessels, nicht Zufall", async () => {
+		const pub = await schluessel();
+		expect(await pairingCode(pub)).toBe(await pairingCode(pub));
+	});
+
+	it("hat zwoelf Stellen aus dem Alphabet ohne I, O, 0 und 1", async () => {
+		for (let i = 0; i < 20; i++) {
+			const code = await pairingCode(await schluessel());
+			expect(code).toMatch(/^[A-HJ-NP-Z2-9]{12}$/);
+			expect(isPairingCode(code)).toBe(true);
+		}
+	});
+
+	it("ist fuer zwei Schluessel ein anderer", async () => {
+		// Die Eigenschaft, auf der alles beruht: ein untergeschobener Schluessel
+		// ergibt nicht denselben Code.
+		const codes = new Set<string>();
+		for (let i = 0; i < 30; i++) codes.add(await pairingCode(await schluessel()));
+		expect(codes.size).toBe(30);
+	});
+
+	it("aendert sich, wenn sich ein einziges Byte aendert", async () => {
+		const pub = await schluessel();
+		const verbogen = new Uint8Array(pub);
+		verbogen[20] ^= 1;
+		expect(await pairingCode(verbogen)).not.toBe(await pairingCode(pub));
+	});
+
+	it("wird angezeigt, wie er sich abtippen laesst", async () => {
+		const code = await pairingCode(await schluessel());
+		const angezeigt = formatPairingCode(code);
+		expect(angezeigt).toMatch(/^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/);
+		// Mit Bindestrichen abgetippt, mit Leerzeichen, in Kleinbuchstaben: immer
+		// derselbe Code.
+		expect(normalizePairingCode(angezeigt)).toBe(code);
+		expect(normalizePairingCode(angezeigt.toLowerCase())).toBe(code);
+		expect(normalizePairingCode(angezeigt.replace(/-/g, " "))).toBe(code);
+	});
+});
+
+describe("checkedPairingKey", () => {
+	it("gibt den Schluessel heraus, der zum Code gehoert", async () => {
+		const pub = await exportPairingPublicKey(await createPairingKeyPair());
+		const code = await pairingCode(pub);
+		expect(await checkedPairingKey(code, toBase64(pub))).toEqual(pub);
+		// Auch so, wie ein Mensch ihn abtippt.
+		expect(await checkedPairingKey(formatPairingCode(code), toBase64(pub))).toEqual(pub);
+	});
+
+	it("weist einen untergeschobenen Schluessel ab", async () => {
+		// GENAU der Angriff, gegen den die Bindung da ist: das neue Geraet
+		// hinterlegt seinen Schluessel und zeigt dessen Code an. Wer den Server
+		// beherrscht, tauscht den hinterlegten Schluessel gegen einen eigenen -
+		// und bekaeme vom bestaetigenden Geraet den Tresorschluessel dagegen
+		// verpackt. Danach koennte er jeden Datensatz des Kontos lesen.
+		//
+		// Der Code auf dem Bildschirm gehoert aber weiterhin zum ECHTEN Schluessel.
+		const echt = await exportPairingPublicKey(await createPairingKeyPair());
+		const angreifer = await exportPairingPublicKey(await createPairingKeyPair());
+		const abgelesen = await pairingCode(echt);
+
+		await expect(checkedPairingKey(abgelesen, toBase64(angreifer))).rejects.toThrow(
+			/passt nicht zu diesem Code/
+		);
+	});
+
+	it("weist auch einen verbogenen Schluessel ab", async () => {
+		// Nicht nur ein ganz anderer Schluessel: ein einziges gekipptes Bit reicht.
+		const echt = await exportPairingPublicKey(await createPairingKeyPair());
+		const code = await pairingCode(echt);
+		const verbogen = new Uint8Array(echt);
+		verbogen[5] ^= 0x80;
+		await expect(checkedPairingKey(code, toBase64(verbogen))).rejects.toThrow();
+	});
+
+	it("der geprüfte Schluessel oeffnet das Paket wirklich", async () => {
+		// Ende zu Ende: was checkedPairingKey durchlaesst, ist der Schluessel, mit
+		// dem das neue Geraet sein Paket auch aufbekommt.
+		const paar = await createPairingKeyPair();
+		const pub = await exportPairingPublicKey(paar);
+		const code = await pairingCode(pub);
+
+		const tresor = await createVaultKey();
+		const geprueft = await checkedPairingKey(code, toBase64(pub));
+		const paket = await wrapForDevice(tresor, geprueft);
+
+		const wieder = await unwrapForDevice(paket, paar.privateKey);
+		expect(await sameKey(wieder, tresor)).toBe(true);
 	});
 });

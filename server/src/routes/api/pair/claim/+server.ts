@@ -7,10 +7,11 @@ import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { pairings } from "$lib/server/db/schema";
 import { eq } from "drizzle-orm";
+import { normalisiereCode } from "$lib/server/pairing";
 
 export const POST: RequestHandler = async ({ locals, request }) => {
 	const body = await request.json().catch(() => null);
-	const code = String(body?.code ?? "").toUpperCase();
+	const code = normalisiereCode(body?.code);
 
 	const row = locals.db.select().from(pairings).where(eq(pairings.code, code)).get();
 	if (!row || row.expiresAt < Date.now()) error(404, "Code unbekannt oder abgelaufen");

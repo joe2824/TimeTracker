@@ -181,6 +181,21 @@ const eintrag = (id: string, over: Partial<Entry> = {}): Entry => ({
 	...over
 });
 
+/**
+ * Warten, bis die Uhr weiterspringt.
+ *
+ * Wer entscheidet, welche von zwei Aenderungen gilt, vergleicht `updatedAt` -
+ * und bei Gleichstand die Geraetekennung. Fallen zwei Handlungen im Test in
+ * dieselbe Millisekunde, entscheidet also das Alphabet statt der Reihenfolge,
+ * und derselbe Test faellt mal so und mal so aus. Wo unten "danach" gemeint ist,
+ * steht deshalb das hier - es kostet eine Millisekunde und kann nicht
+ * durchrutschen.
+ */
+async function danach(): Promise<void> {
+	const jetzt = Date.now();
+	while (Date.now() === jetzt) await new Promise((r) => setTimeout(r, 1));
+}
+
 /** Was auf einem Geraet in einem Monat liegt. */
 async function eintraege(g: Geraet, monat = MONAT): Promise<Entry[]> {
 	return auf(g, () => store.loadEntries(monat));
@@ -279,6 +294,7 @@ describe("Zwei Geraete", () => {
 		// Das Handy loescht. Der Vergleich beim Schreiben erkennt die Loeschung
 		// samt der Fassung, die der Eintrag zuletzt hatte - genau die braucht der
 		// Server, um sie anzunehmen.
+		await danach();
 		const geloescht = await auf(handy, async (engine) => {
 			await store.saveEntries(MONAT, []);
 			expect(pendingChanges()).toEqual([
@@ -298,7 +314,8 @@ describe("Zwei Geraete", () => {
 		const rechner = new Geraet("rechner");
 		await auf(rechner, (engine) => engine.sync());
 
-		// Der Rechner aendert - auf dem Stand, den er kennt.
+		// Der Rechner aendert - auf dem Stand, den er kennt, und nachweislich spaeter.
+		await danach();
 		await auf(rechner, async (engine) => {
 			const seiner = (await store.loadEntries(MONAT))[0];
 			await store.saveEntries(MONAT, [{ ...seiner, note: "rechner" }]);
@@ -358,6 +375,184 @@ describe("Zwei Geraete", () => {
 		const s = await auf(rechner, () => store.loadSettings());
 		expect(s.hoursPerDay).toBe(8);
 		expect((s as unknown as { id?: string }).id).toBeUndefined();
+	});
+});
+
+/** Ein Zeitstempel im Folgemonat - fuer alles, was ueber die Monatsgrenze geht. */
+const tsAug = (tag: number, stunde: number) => Date.UTC(2026, 7, tag, stunde) + 2 * 3600_000;
+
+/**
+ * Eine Loeschung beim Server nachstellen, ohne ein Geraet dafuer zu bemuehen.
+ *
+ * Ein Grabstein ist eine Zeile ohne Chiffrat; mehr braucht es nicht. So laesst
+ * sich eine Loeschung MITTEN in den Betrieb eines Geraets legen statt nur
+ * zwischen zwei seiner Sitzungen - und genau darauf kommt es unten an.
+ *
+ * Der Zeitstempel liegt bewusst in der Zukunft: die Loeschung soll den Wettstreit
+ * eindeutig gewinnen und nicht daran haengen, ob zwei Aufrufe von Date.now() in
+ * dieselbe Millisekunde fielen.
+ */
+function grabstein(id: string, rev: number): void {
+	server.seq++;
+	const alt = server.rows.get(id);
+	const wann = Date.now() + 60_000;
+	server.rows.set(id, {
+		id,
+		kind: "entry",
+		bucket: alt?.bucket ?? null,
+		seq: server.seq,
+		rev,
+		updatedAt: wann,
+		deviceId: "handy",
+		deletedAt: wann,
+		payload: null
+	});
+}
+
+describe("Ueber Monatsgrenzen hinweg", () => {
+	it("verschiebt einen umdatierten Eintrag, statt ihn zu verdoppeln", async () => {
+		// Der Weg, den updateEntry geht, wenn jemand das Datum ueber den
+		// Monatswechsel zieht: der alte Monat wird ohne ihn gespeichert, der neue
+		// mit ihm. In der Outbox bleibt davon EINE Aenderung stehen (die spaetere
+		// gewinnt), der Server sieht also nie eine Loeschung - das andere Geraet
+		// muss den Umzug am neuen Startzeitpunkt selbst erkennen.
+		const handy = new Geraet("handy");
+		await auf(handy, async (engine) => {
+			await store.saveEntries(MONAT, [eintrag("e1")]);
+			return engine.sync();
+		});
+		const rechner = new Geraet("rechner");
+		await auf(rechner, (engine) => engine.sync());
+		expect(await eintraege(rechner, MONAT)).toHaveLength(1);
+
+		await auf(handy, async (engine) => {
+			const seiner = (await store.loadEntries(MONAT))[0];
+			await store.saveEntries(MONAT, []);
+			await store.saveEntries("2026-08", [
+				{ ...seiner, startTs: tsAug(3, 9), endTs: tsAug(3, 12) }
+			]);
+			return engine.sync();
+		});
+
+		await auf(rechner, (engine) => engine.sync());
+		expect((await eintraege(rechner, "2026-08")).map((e) => e.id)).toEqual(["e1"]);
+		// Und NICHT zusaetzlich im alten Monat: sonst zaehlte dieselbe Stunde zweimal.
+		expect(await eintraege(rechner, MONAT)).toEqual([]);
+	});
+
+	it("laesst hoechstens einen Timer laufen, auch ueber zwei Monate", async () => {
+		// Am Monatsende am Handy gestartet, im naechsten Monat am Rechner noch
+		// einmal. Zwei laufende Timer in zwei Dateien - monatsweise betrachtet stand
+		// in jeder genau einer, und beide zaehlten weiter.
+		const handy = new Geraet("handy");
+		await auf(handy, async (engine) => {
+			await store.saveEntries(MONAT, [eintrag("h1", { startTs: ts(30, 10), endTs: null })]);
+			return engine.sync();
+		});
+
+		const rechner = new Geraet("rechner");
+		await auf(rechner, async (engine) => {
+			await store.saveEntries("2026-08", [eintrag("r1", { startTs: tsAug(2, 10), endTs: null })]);
+			return engine.sync();
+		});
+
+		const juli = await eintraege(rechner, MONAT);
+		const august = await eintraege(rechner, "2026-08");
+		const offen = [...juli, ...august].filter((e) => e.endTs === null);
+		expect(offen.map((e) => e.id)).toEqual(["r1"]);
+		// Der Lauf vom Handy ist nicht weg, sondern beendet - dort steckt echte Zeit.
+		expect(juli.find((e) => e.id === "h1")!.endTs).toBe(tsAug(2, 10));
+	});
+
+	it("findet den Monat eines Grabsteins, den es beim Start noch nicht gab", async () => {
+		// Ein Programm, das laeuft und laeuft. Die Monatsliste darf ihm nicht
+		// einfrieren: sonst faende die Loeschung ihren Monat nicht, wuerde still
+		// verworfen - und `seq` liefe trotzdem weiter. Endgueltig verloren.
+		const handy = new Geraet("handy");
+		await auf(handy, async (engine) => {
+			await store.saveEntries(MONAT, [eintrag("e1")]);
+			return engine.sync();
+		});
+		// Ein Grabstein fuer etwas, das der Rechner nie hatte. Er ist der Grund,
+		// weshalb die Monatsliste im ersten Durchgang ueberhaupt gezogen wird - zu
+		// einem Zeitpunkt, an dem es noch keine Monatsdatei gibt.
+		grabstein("nie-gesehen", 1);
+
+		const rechner = new Geraet("rechner");
+		await auf(rechner, async (engine) => {
+			await engine.sync();
+			expect(await store.loadEntries(MONAT)).toHaveLength(1);
+
+			grabstein("e1", 2);
+			await engine.sync();
+			expect(await store.loadEntries(MONAT)).toEqual([]);
+		});
+	});
+
+	it("ein geloeschtes Jahr kommt beim naechsten Durchgang nicht zurueck", async () => {
+		const handy = new Geraet("handy");
+		await auf(handy, async (engine) => {
+			await store.saveEntries("2025-03", [
+				eintrag("alt", { startTs: Date.UTC(2025, 2, 4, 9), endTs: Date.UTC(2025, 2, 4, 12) })
+			]);
+			return engine.sync();
+		});
+		const rechner = new Geraet("rechner");
+		await auf(rechner, (engine) => engine.sync());
+		expect(await eintraege(rechner, "2025-03")).toHaveLength(1);
+
+		await auf(handy, async (engine) => {
+			expect(await store.deleteYear(2025)).toEqual(["2025-03"]);
+			// Das Loeschen muss durch den Haken gegangen sein, sonst weiss der
+			// Abgleich nichts davon.
+			expect(pendingChanges()).toEqual([
+				expect.objectContaining({ kind: "entry", id: "alt", deleted: true })
+			]);
+			return engine.sync();
+		});
+
+		// Der naechste Durchgang holt es nicht wieder herunter ...
+		await auf(handy, (engine) => engine.sync());
+		expect(await eintraege(handy, "2025-03")).toEqual([]);
+		// ... und das andere Geraet raeumt mit auf.
+		await auf(rechner, (engine) => engine.sync());
+		expect(await eintraege(rechner, "2025-03")).toEqual([]);
+	});
+});
+
+describe("Was der Mensch erfahren muss", () => {
+	it("zaehlt eine unterlegene eigene Aenderung auch beim Konflikt-Aufloesen", async () => {
+		// Der haeufigste Weg in einen verlorenen Eigenstand fuehrt genau hier
+		// entlang: die eigene Aenderung stoesst auf einen Konflikt, und beim
+		// Aufloesen gewinnt der Server. Bliebe die Zahl dort liegen, stuende am Ende
+		// "abgeglichen" da - ohne ein Wort darueber, dass etwas ueberschrieben wurde.
+		const handy = new Geraet("handy");
+		await auf(handy, async (engine) => {
+			await store.saveEntries(MONAT, [eintrag("e1", { note: "handy" })]);
+			return engine.sync();
+		});
+		const rechner = new Geraet("rechner");
+		await auf(rechner, (engine) => engine.sync());
+
+		// Das Handy aendert und laedt hoch - und zwar nachweislich spaeter, damit
+		// der Wettstreit nicht an einer Millisekunde haengt.
+		await auf(handy, async (engine) => {
+			const seiner = (await store.loadEntries(MONAT))[0];
+			await store.saveEntries(MONAT, [{ ...seiner, note: "handy zwei" }]);
+			return engine.sync();
+		});
+		const zeile = server.rows.get("e1")!;
+		server.rows.set("e1", { ...zeile, updatedAt: Date.now() + 60_000 });
+
+		// Der Rechner aendert auf seinem alten Stand und laeuft in den Konflikt.
+		const ergebnis = await auf(rechner, async (engine) => {
+			const seiner = (await store.loadEntries(MONAT))[0];
+			await store.saveEntries(MONAT, [{ ...seiner, note: "rechner" }]);
+			return engine.sync();
+		});
+
+		expect(ergebnis!.lostEdits).toBe(1);
+		expect((await eintraege(rechner))[0].note).toBe("handy zwei");
 	});
 });
 

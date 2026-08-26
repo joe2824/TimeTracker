@@ -157,6 +157,19 @@ export interface LoginResult {
 	key: CryptoKey | null;
 	/** Ob eine Phrasen-Verpackung vorliegt, mit der entsperrt werden kann. */
 	canUnlockWithPhrase: boolean;
+	/**
+	 * Was der Authentifikator ueber PRF ausgegeben hat, samt der Kennung des
+	 * benutzten Passkeys. Null, wenn er PRF nicht kann.
+	 *
+	 * Reist mit, damit der Aufrufer nach einem Entsperren ueber die Phrase eine
+	 * PRF-Verpackung nachlegen kann - siehe `addPasskeyWrap`. Beides ist in
+	 * diesem Moment noch da und spaeter nicht mehr zu bekommen: der Wert faellt
+	 * nur bei einer Anmeldung an, und eine zweite dafuer waere ein zweiter
+	 * Passkey-Dialog fuer etwas, das niemand angefordert hat.
+	 */
+	prf: ArrayBuffer | null;
+	/** Die Kennung des benutzten Passkeys - an ihr haengt die PRF-Verpackung. */
+	credentialId: string;
 }
 
 /**
@@ -195,7 +208,9 @@ export async function login(baseUrl: string): Promise<LoginResult> {
 		userId: konto.userId,
 		displayName: konto.displayName,
 		key,
-		canUnlockWithPhrase: wraps.some((w) => w.kind === "recovery")
+		canUnlockWithPhrase: wraps.some((w) => w.kind === "recovery"),
+		prf,
+		credentialId: response.id
 	};
 }
 
@@ -214,6 +229,11 @@ export async function unlockWithPhrase(baseUrl: string, phrase: string): Promise
  * Damit oeffnet der Passkey den Tresor beim naechsten Mal allein. Passiert
  * stillschweigend im Hintergrund - es gibt nichts zu entscheiden, und ein
  * Dialog dafuer waere reine Stoerung.
+ *
+ * Aufgerufen wird das nach dem Entsperren ueber die Phrase (WebOnboarding).
+ * Ohne diesen Aufruf blieb es bei der Absicht: ein Geraet, dessen Passkey PRF
+ * kann, dessen Verpackung aber fehlt oder nicht mehr passt, verlangte bei JEDER
+ * Anmeldung erneut die 24 Woerter - genau das, was hier verhindert werden soll.
  */
 export async function addPasskeyWrap(
 	baseUrl: string,

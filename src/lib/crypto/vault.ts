@@ -321,6 +321,111 @@ async function kekFromEcdh(
 	);
 }
 
+// ---------- Der Kopplungscode ----------
+
+/**
+ * Die Zeichen, aus denen ein Kopplungscode besteht.
+ *
+ * Ohne I, O, 0 und 1: die werden beim Abschreiben verwechselt, und dieser Code
+ * wird abgeschrieben. 32 Zeichen sind genau 5 Bit je Stelle.
+ */
+const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+/**
+ * Zwoelf Stellen, also 60 Bit.
+ *
+ * Nicht die Laenge eines Geheimnisses, sondern die eines Abdrucks: der Code wird
+ * unten aus dem oeffentlichen Schluessel GERECHNET. Wer ihn faelschen will, muss
+ * ein zweites Schluesselpaar finden, dessen Abdruck genauso anfaengt - und dafuer
+ * sind 60 Bit die Huerde. Bei den frueheren acht Stellen waeren es 40 gewesen;
+ * das faellt auf einer Grafikkarte in Minuten, und die Kopplung steht zehn.
+ */
+const CODE_LENGTH = 12;
+
+/**
+ * Der Kopplungscode zu einem oeffentlichen Schluessel.
+ *
+ * DAS ist die Bindung, an der die ganze Kopplung haengt. Vorher wuerfelte der
+ * SERVER den Code, und er hatte mit dem Schluessel nichts zu tun. Damit war die
+ * einzige Strecke, die ein Mensch prueft - die zwoelf Zeichen von einem Bildschirm
+ * zum anderen - nicht an das Schluesselmaterial gebunden: ein Server, der den
+ * hinterlegten oeffentlichen Schluessel gegen einen eigenen tauschte, bekam vom
+ * entsperrten Geraet den Tresorschluessel gegen SEINEN Schluessel verpackt. Er
+ * konnte ihn oeffnen, danach gegen den echten Schluessel neu verpacken und
+ * zurueckschreiben; die Kopplung lief durch, niemand sah etwas, und die Zusage
+ * "der Server sieht nur Chiffrat" war ab da nicht mehr wahr.
+ *
+ * Jetzt IST der Code der Abdruck des Schluessels. Ein getauschter Schluessel
+ * ergibt einen anderen Code als den, der auf dem Bildschirm stand - und beide
+ * Seiten rechnen nach (siehe startPairing und approvePairing).
+ *
+ * Gerechnet wird auf den Geraeten, nicht auf dem Server: er ist hier der
+ * Angreifer, und eine Pruefung, die er selbst ausfuehrt, beweist nichts.
+ */
+export async function pairingCode(publicKey: Uint8Array): Promise<string> {
+	const abdruck = new Uint8Array(
+		await crypto.subtle.digest("SHA-256", publicKey as BufferSource)
+	);
+	let out = "";
+	for (let i = 0; i < CODE_LENGTH; i++) {
+		// Fuenf Bit je Stelle, fortlaufend aus dem Abdruck gelesen. Zwei Bytes auf
+		// einmal, weil eine Stelle ueber eine Byte-Grenze reichen kann.
+		const bit = i * 5;
+		const byte = bit >> 3;
+		const versatz = bit & 7;
+		const fenster = (abdruck[byte] << 8) | abdruck[byte + 1];
+		out += CODE_ALPHABET[(fenster >> (11 - versatz)) & 31];
+	}
+	return out;
+}
+
+/**
+ * Was jemand getippt hat auf die Form bringen, in der gerechnet wird.
+ *
+ * Grossschreibung, und alles weg, was nicht zum Alphabet gehoert - vor allem die
+ * Bindestriche aus der Anzeige. Wer sie mittippt, soll nicht scheitern; wer sie
+ * weglaesst, ebenso wenig.
+ */
+export function normalizePairingCode(input: string): string {
+	return [...input.toUpperCase()].filter((c) => CODE_ALPHABET.includes(c)).join("");
+}
+
+/** Ob eine Zeichenkette ueberhaupt die Form eines Codes hat. */
+export function isPairingCode(code: string): boolean {
+	return code.length === CODE_LENGTH && [...code].every((c) => CODE_ALPHABET.includes(c));
+}
+
+/**
+ * Der hinterlegte Schluessel - aber nur, wenn er zu diesem Code gehoert.
+ *
+ * Die eine Pruefung, an der der ganze Kopplungsvorgang haengt, und deshalb hat
+ * sie einen eigenen Namen statt in einer Methode zu stecken.
+ *
+ * Der Schluessel kommt vom SERVER. Der Code kommt von einem Menschen, der ihn
+ * von einem anderen Bildschirm abgelesen hat - das ist die einzige Strecke
+ * dieses Vorgangs, die nicht ueber den Server laeuft. Nur weil der Code der
+ * Abdruck des Schluessels ist, laesst sich das eine gegen das andere halten;
+ * und nur deshalb faellt auf, wenn der Server einen anderen Schluessel
+ * unterschiebt als den, dessen Code auf dem Bildschirm stand.
+ *
+ * Wirft, statt etwas zurueckzugeben, das der Aufrufer pruefen koennte: hier
+ * weiterzumachen hiesse, den Tresorschluessel gegen einen fremden zu verpacken.
+ */
+export async function checkedPairingKey(code: string, publicKeyBase64: string): Promise<Uint8Array> {
+	const roh = fromBase64(publicKeyBase64);
+	if ((await pairingCode(roh)) !== normalizePairingCode(code)) {
+		throw new Error(
+			"Der hinterlegte Schlüssel passt nicht zu diesem Code. Die Kopplung wurde abgebrochen – bitte auf dem neuen Gerät einen neuen Code anzeigen lassen."
+		);
+	}
+	return roh;
+}
+
+/** Fuer die Anzeige: Vierergruppen, wie beim Einladungscode. */
+export function formatPairingCode(code: string): string {
+	return (code.match(/.{1,4}/g) ?? [code]).join("-");
+}
+
 /** Auf dem entsperrten Geraet: den Tresorschluessel fuer das neue Geraet verpacken. */
 export async function wrapForDevice(
 	vaultKey: CryptoKey,

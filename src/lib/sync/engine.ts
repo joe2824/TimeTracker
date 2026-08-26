@@ -168,15 +168,24 @@ export class SyncEngine {
 	}
 
 	async #round(): Promise<SyncOutcome> {
-		const pushed = await this.#pushAll();
-		const { pulled, lostEdits } = await this.#pullAll();
-		return { pushed, pulled, lostEdits, seq: this.#state.seq };
+		// Die Monatsliste gilt je Durchgang - siehe #knownMonths.
+		this.#months = null;
+		const hoch = await this.#pushAll();
+		const runter = await this.#pullAll();
+		return {
+			pushed: hoch.pushed,
+			pulled: hoch.pulled + runter.pulled,
+			lostEdits: hoch.lostEdits + runter.lostEdits,
+			seq: this.#state.seq
+		};
 	}
 
 	// ---------- Hochladen ----------
 
-	async #pushAll(): Promise<number> {
+	async #pushAll(): Promise<{ pushed: number; pulled: number; lostEdits: number }> {
 		let gesamt = 0;
+		let pulled = 0;
+		let lostEdits = 0;
 		for (let runde = 0; runde < MAX_ROUNDS; runde++) {
 			const offen = pendingChanges();
 			if (offen.length === 0) break;
@@ -214,12 +223,20 @@ export class SyncEngine {
 				// Die Konflikte aufloesen heisst: den Serverstand holen und
 				// zusammenfuehren. Danach steht die Aenderung auf der richtigen
 				// Fassung und kommt in der naechsten Runde durch.
-				await this.#pullAll();
+				//
+				// Das Ergebnis zaehlt mit. Genau hier verliert am ehesten jemand
+				// etwas: seine Aenderung stiess auf einen Konflikt, und beim
+				// Aufloesen gewann der Server. Ging die Zahl hier verloren, stand
+				// am Ende "abgeglichen" da - und niemand erfuhr, dass die eigene,
+				// noch nicht hochgeladene Aenderung dabei ueberschrieben wurde.
+				const aufgeloest = await this.#pullAll();
+				pulled += aufgeloest.pulled;
+				lostEdits += aufgeloest.lostEdits;
 				continue;
 			}
 			if (stapel.length === offen.length) break;
 		}
-		return gesamt;
+		return { pushed: gesamt, pulled, lostEdits };
 	}
 
 	async #toOutgoing(changes: PendingChange[]): Promise<OutgoingRecord[]> {
@@ -348,9 +365,20 @@ export class SyncEngine {
 		if (records.length === 0) return 0;
 		let lost = 0;
 
-		// Entschluesseln, um zu erfahren, in welchen Monat ein Datensatz gehoert -
-		// der Server weiss das nicht, und die Kennung daneben ist verschleiert.
-		const nachMonat = new Map<string, { remote: Entry; deleted: boolean }[]>();
+		// Die angefassten Monate, je Monat eine Karte nach Id. Einmal von der Platte,
+		// danach nur noch im Speicher - denn ein Eintrag kann beim Zusammenfuehren
+		// den Monat WECHSELN, und dann sind zwei Monatsdateien gleichzeitig in Arbeit.
+		const geladen = new Map<string, Map<string, Entry>>();
+		const beruehrt = new Set<string>();
+		const monatVon = async (m: string) => {
+			let karte = geladen.get(m);
+			if (!karte) {
+				karte = new Map((await this.#store.entriesOfMonth(m)).map((e) => [e.id, e]));
+				geladen.set(m, karte);
+			}
+			return karte;
+		};
+
 		for (const r of records) {
 			const entschluesselt = await this.#open<Entry>(r);
 			if (entschluesselt === undefined) continue;
@@ -361,51 +389,101 @@ export class SyncEngine {
 				rev: r.rev,
 				deviceId: r.deviceId ?? undefined
 			};
-			// Bei einem Grabstein gibt es keinen Inhalt - der Monat muss dann aus dem
-			// lokalen Bestand kommen. Kennen wir ihn nicht, ist die Loeschung ohnehin
-			// gegenstandslos.
-			const monat = r.deletedAt ? await this.#findMonth(r.id) : monthKey(eintrag.startTs);
-			if (!monat) continue;
-			const liste = nachMonat.get(monat) ?? [];
-			liste.push({ remote: eintrag, deleted: r.deletedAt !== null });
-			nachMonat.set(monat, liste);
+			const geloescht = r.deletedAt !== null;
+
+			// Zwei verschiedene Monate, und sie auseinanderzuhalten ist der Punkt:
+			// `alt` ist, wo der Eintrag HEUTE lokal liegt, `ziel`, wo er nach dieser
+			// Aenderung hingehoert. Wer einen Eintrag ueber eine Monatsgrenze schiebt,
+			// hatte ihn sonst auf dem anderen Geraet zweimal - neu im Zielmonat, alt
+			// im Ausgangsmonat, und dort raeumte ihn nie jemand weg.
+			//
+			// Ein Grabstein hat keinen Inhalt und damit keinen eigenen Monat; fuer ihn
+			// bleibt nur die Suche im Bestand.
+			const ziel = geloescht ? null : monthKey(eintrag.startTs);
+			// Der Normalfall ist "liegt schon dort, wo er hingehoert" - dann kostet die
+			// Frage nichts. Erst wenn er da nicht steht, wird der Bestand durchgesehen.
+			const alt =
+				ziel && (await monatVon(ziel)).has(r.id)
+					? ziel
+					: await this.#findMonth(r.id, geladen, monatVon);
+
+			// Kennen wir den Eintrag gar nicht, ist eine Loeschung gegenstandslos.
+			const wohin = ziel ?? alt;
+			if (!wohin) continue;
+
+			const ergebnis = mergeRecord(
+				{
+					// Verglichen wird mit dem lokalen Stand, wo immer er liegt. Gegen den
+					// leeren Zielmonat zu vergleichen hiesse: "kennen wir nicht, nimm den
+					// Serverstand" - und eine eigene, juengere Aenderung fiele lautlos weg.
+					local: alt ? (await monatVon(alt)).get(r.id) : undefined,
+					remote: geloescht ? { ...eintrag, deletedAt: eintrag.updatedAt } : eintrag,
+					localPending: offen.has(`entry:${r.id}`)
+				},
+				(v) => (v as Entry & { deletedAt?: number }).deletedAt !== undefined
+			);
+			if (ergebnis.lostLocalEdit) lost++;
+			if (!ergebnis.changed) continue;
+
+			if (alt && alt !== wohin) {
+				(await monatVon(alt)).delete(r.id);
+				beruehrt.add(alt);
+			}
+			const karte = await monatVon(wohin);
+			if (ergebnis.value === null) karte.delete(r.id);
+			else karte.set(r.id, ergebnis.value);
+			beruehrt.add(wohin);
 		}
 
-		for (const [monat, eingehend] of nachMonat) {
-			const lokal = await this.#store.entriesOfMonth(monat);
-			const byId = new Map(lokal.map((e) => [e.id, e]));
-			let veraendert = false;
+		if (beruehrt.size === 0) return lost;
+		await this.#closeSurplusOpen(geladen, beruehrt, monatVon);
 
-			for (const { remote, deleted } of eingehend) {
-				const ergebnis = mergeRecord(
-					{
-						local: byId.get(remote.id),
-						remote: deleted ? { ...remote, deletedAt: remote.updatedAt } : remote,
-						localPending: offen.has(`entry:${remote.id}`)
-					},
-					(v) => (v as Entry & { deletedAt?: number }).deletedAt !== undefined
-				);
-				if (ergebnis.lostLocalEdit) lost++;
-				if (!ergebnis.changed) continue;
-				veraendert = true;
-				if (ergebnis.value === null) byId.delete(remote.id);
-				else byId.set(remote.id, ergebnis.value);
-			}
-
-			if (!veraendert) continue;
-			let liste = [...byId.values()].sort((a, b) => a.startTs - b.startTs);
-
-			// Die eine Regel, die der Abgleich neu einfuehrt: hoechstens ein offener
-			// Eintrag. Zwei Geraete halten sonst je einen, und beide zaehlen weiter.
-			const zuSchliessen = resolveOpenEntries(liste);
-			if (zuSchliessen.length > 0) {
-				const fix = new Map(zuSchliessen.map((e) => [e.id, e]));
-				liste = liste.map((e) => fix.get(e.id) ?? e);
-				logInfo("Mehrere laufende Timer zusammengeführt", { geschlossen: zuSchliessen.length });
-			}
+		for (const monat of beruehrt) {
+			const liste = [...geladen.get(monat)!.values()].sort((a, b) => a.startTs - b.startTs);
 			await this.#store.saveEntries(monat, liste);
+			// Ein Monat, den wir gerade selbst angelegt haben, steht in keiner
+			// Verzeichnisliste, die vor diesem Durchgang gezogen wurde.
+			this.#merkeMonat(monat);
 		}
 		return lost;
+	}
+
+	/**
+	 * Die eine Regel, die der Abgleich neu einfuehrt: hoechstens EIN offener
+	 * Eintrag - und zwar ueber alle Monate hinweg.
+	 *
+	 * Monatsweise genuegte nicht: wer am 31. um 23:50 startet und am anderen Geraet
+	 * am 1. um 00:10 noch einmal, haelt zwei laufende Timer in zwei Dateien, und
+	 * beide zaehlen weiter. Selten - aber genau der Fall, fuer den die Regel da ist.
+	 *
+	 * Die uebrigen Monate werden nur angefasst, wenn ueberhaupt etwas Offenes
+	 * dabei ist. Sonst laege bei jedem Durchgang der gesamte Bestand auf dem Tisch.
+	 */
+	async #closeSurplusOpen(
+		geladen: Map<string, Map<string, Entry>>,
+		beruehrt: Set<string>,
+		monatVon: (m: string) => Promise<Map<string, Entry>>
+	): Promise<void> {
+		const offenDabei = [...beruehrt].some((m) =>
+			[...geladen.get(m)!.values()].some((e) => e.endTs === null)
+		);
+		if (!offenDabei) return;
+
+		for (const monat of await this.#knownMonths()) await monatVon(monat);
+
+		const alle: Entry[] = [];
+		for (const karte of geladen.values()) alle.push(...karte.values());
+		const zuSchliessen = resolveOpenEntries(alle);
+		if (zuSchliessen.length === 0) return;
+
+		for (const e of zuSchliessen) {
+			for (const [monat, karte] of geladen) {
+				if (!karte.has(e.id)) continue;
+				karte.set(e.id, e);
+				beruehrt.add(monat);
+			}
+		}
+		logInfo("Mehrere laufende Timer zusammengeführt", { geschlossen: zuSchliessen.length });
 	}
 
 	async #applyActivities(records: ServerRecord[], offen: Set<string>): Promise<number> {
@@ -489,20 +567,39 @@ export class SyncEngine {
 	}
 
 	/** In welchem Monat liegt ein Eintrag, den wir nur ueber seine Id kennen? */
-	async #findMonth(id: string): Promise<string | null> {
+	async #findMonth(
+		id: string,
+		geladen: Map<string, Map<string, Entry>>,
+		monatVon: (m: string) => Promise<Map<string, Entry>>
+	): Promise<string | null> {
+		// Zuerst, was schon auf dem Tisch liegt: ein Monat, den dieser Stapel selbst
+		// angelegt hat, steht in keiner Verzeichnisliste.
+		for (const [monat, karte] of geladen) if (karte.has(id)) return monat;
 		for (const monat of await this.#knownMonths()) {
-			const liste = await this.#store.entriesOfMonth(monat);
-			if (liste.some((e) => e.id === id)) return monat;
+			if ((await monatVon(monat)).has(id)) return monat;
 		}
 		return null;
 	}
 
 	#months: string[] | null = null;
+
+	/**
+	 * Die Monate mit Eintraegen - gepuffert je Durchgang, nicht auf Lebenszeit.
+	 *
+	 * Der Unterschied ist keine Feinheit: ein Programm, das laeuft und laeuft,
+	 * saehe sonst nie einen Monat, der nach dem Start dazukam. Ein Grabstein fuer
+	 * einen Eintrag dort faende seinen Monat nicht und wuerde still verworfen -
+	 * waehrend `seq` trotzdem weiterlaeuft. Die Loeschung waere damit endgueltig
+	 * verloren, nicht bloss verspaetet.
+	 */
 	async #knownMonths(): Promise<string[]> {
-		// Innerhalb eines Durchgangs reicht eine Liste; sie aendert sich hoechstens
-		// durch uns selbst, und dann kennen wir den Monat ohnehin.
 		this.#months ??= await this.#monthLister();
 		return this.#months;
+	}
+
+	/** Einen gerade selbst geschriebenen Monat in die Liste dieses Durchgangs nehmen. */
+	#merkeMonat(monat: string): void {
+		if (this.#months && !this.#months.includes(monat)) this.#months.push(monat);
 	}
 
 	#monthLister: () => Promise<string[]> = async () => [];
