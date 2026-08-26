@@ -18,6 +18,7 @@ export const GET: RequestHandler = ({ locals }) => {
 		userId: user.id,
 		displayName: user.displayName,
 		email: user.email,
+		isAdmin: user.isAdmin,
 		seq: currentSeq(locals.db, user.id),
 		// Nur die Art der Verpackungen, nie ihr Inhalt - der geht ueber /api/wraps
 		// und ist auch dort undurchsichtig.

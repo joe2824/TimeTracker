@@ -52,6 +52,35 @@ setInterval(() => {
 }, 3600_000).unref();
 
 /**
+ * Kommt diese Anfrage von der Seite, die dieser Server selbst ausliefert?
+ *
+ * Verglichen wird der Origin-Kopf mit dem Host, an den die Anfrage GING - nicht
+ * mit ORIGIN aus der Umgebung. Das ist der Unterschied, an dem der erste Anlauf
+ * scheiterte: `event.url` baut adapter-node aus ORIGIN zusammen, es steht also
+ * immer dasselbe darin, egal ueber welchen Namen jemand hereinkam. Damit war
+ * jeder ausgesperrt, der den Dienst nicht exakt so aufrief wie ORIGIN es sagt -
+ * ueber 127.0.0.1 statt localhost, ueber den Rechnernamen, ueber die Adresse im
+ * Heimnetz.
+ *
+ * Warum das trotzdem schuetzt: beide Koepfe setzt der Browser, nicht die Seite.
+ * Eine fremde Seite bekommt ihren eigenen Namen in `origin` eingetragen und kann
+ * daran nichts aendern - sie stimmt dann nicht mit dem Host ueberein, an den die
+ * Anfrage geht. Genau das soll abgewiesen werden.
+ */
+function istEigeneHerkunft(herkunft: string, headers: Headers): boolean {
+	// Hinter einem Reverse-Proxy steht der echte Name in der weitergereichten
+	// Kopfzeile; ohne Proxy im gewoehnlichen Host.
+	const host = headers.get("x-forwarded-host") ?? headers.get("host");
+	if (!host) return false;
+	try {
+		return new URL(herkunft).host === host;
+	} catch {
+		// Ein Origin, der keine Adresse ist, ist keine eigene Herkunft.
+		return false;
+	}
+}
+
+/**
  * Die Adresse des Aufrufers - oder ein Ersatz.
  *
  * `getClientAddress()` WIRFT, wenn ADDRESS_HEADER gesetzt ist und der Header
@@ -95,13 +124,26 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// als JSON - die Pruefung gehoert deshalb ausdruecklich hierher und nicht in
 	// das Vertrauen darauf, dass ein Browser schon einen Vorabruf schickt.
 	//
+	// Verglichen wird gegen die Adresse, unter der die Anfrage TATSAECHLICH
+	// hereinkam - nicht nur gegen eine feste Liste. Das ist der Unterschied
+	// zwischen "wehrt fremde Seiten ab" und "wehrt jeden ab, der den Dienst unter
+	// einem anderen Namen erreicht": derselbe Container ist ueber localhost,
+	// 127.0.0.1, den Rechnernamen und die Adresse im Heimnetz erreichbar, und
+	// unter jedem dieser Namen ist eine Anfrage von der eigenen Seite dieselbe
+	// Seite. Eine fremde Seite kann den Origin-Kopf nicht faelschen; darauf
+	// beruht der Schutz, nicht auf der Liste.
+	//
+	// ALLOWED_ORIGINS bleibt fuer den Fall, dass die Anwendung unter einem
+	// anderen Namen ausgeliefert wird als dem, unter dem der Server sich sieht.
+	//
 	// Anfragen mit Geraete-Token sind ausgenommen: sie tragen ihren Ausweis
 	// selbst und kommen aus einer Anwendung, deren Herkunft kein Server sinnvoll
 	// erlauben kann.
 	if (SCHREIBEND.has(event.request.method) && pfad.startsWith("/api/")) {
 		const herkunft = event.request.headers.get("origin");
 		const mitToken = event.request.headers.get("authorization")?.startsWith("Bearer ");
-		if (herkunft && !mitToken && !ALLOWED_ORIGINS.includes(herkunft)) {
+		const eigene = herkunft !== null && istEigeneHerkunft(herkunft, event.request.headers);
+		if (herkunft && !mitToken && !eigene && !ALLOWED_ORIGINS.includes(herkunft)) {
 			return new Response(JSON.stringify({ message: "Herkunft nicht erlaubt" }), {
 				status: 403,
 				headers: { "content-type": "application/json" }

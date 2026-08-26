@@ -70,13 +70,54 @@ unbrauchbar. Caddy und Traefik machen das von selbst richtig.
 | `ORIGIN` | Vollständige Adresse, z. B. `https://tracker.example.de`. WebAuthn prüft sie exakt. |
 | `RP_ID` | Hostname ohne Schema und Port. **Nicht mehr änderbar** — siehe oben. |
 | `RP_NAME` | Was der Anmeldedialog des Betriebssystems anzeigt. |
-| `INVITE_CODES` | Codes durch Komma getrennt. Solange hier etwas steht, ist die Registrierung geschlossen. |
+| `INVITE_CODES` | Türklinke für den ersten Menschen. Mehrfach benutzbar, ohne Frist, ohne Spur. Sobald es einen Verwalter gibt, gehört sie geleert. |
+| `REGISTRATION_OPEN` | `true` öffnet den Dienst für jeden, der die Adresse kennt. Voreinstellung `false`. |
 | `ALLOWED_ORIGINS` | Herkünfte für schreibende Anfragen. Leer = nur `ORIGIN`. |
 | `DATA_DIR` | Wohin die Datenbank kommt. Im Container `/data`. |
 
-**Eine leere `INVITE_CODES`-Zeile öffnet den Dienst für jeden, der die Adresse
-kennt.** Das ist eine bewusste Entscheidung und bringt Betreiberpflichten mit
-sich: Impressum, Datenschutzerklärung, Löschkonzept.
+**Eine leere `INVITE_CODES`-Zeile öffnet den Dienst NICHT.** Das war einmal so
+und war ein Konstruktionsfehler: ausgerechnet der sorgfältigere Schritt — die
+Türklinke entfernen und Einladungen einzeln vergeben — hätte die Tür
+aufgemacht. Geöffnet wird nur über `REGISTRATION_OPEN=true`, und das bringt
+Betreiberpflichten mit sich: Impressum, Datenschutzerklärung, Löschkonzept.
+
+---
+
+## Verwalter und Einladungen
+
+Ein Verwalter darf **Einladungen vergeben — sonst nichts.** Insbesondere kann er
+keine fremden Daten lesen; das kann der Server selbst nicht. Die Rolle regelt,
+wer hereindarf, nicht wer etwas sieht.
+
+Den ersten Verwalter gibt es nur im Container. Das ist die Henne-und-Ei-Frage
+jeder Rechteverwaltung, und sie wird dort beantwortet, wo ohnehin nur hinkommt,
+wer den Server betreibt:
+
+```bash
+# 1. Container starten, im Browser mit einem Code aus INVITE_CODES registrieren
+# 2. Nachsehen, wer da ist:
+docker compose exec timetracker node admin.mjs liste
+
+# 3. Ernennen — über den Anzeigenamen oder die Kennung:
+docker compose exec timetracker node admin.mjs ernenne "Anna"
+
+# 4. INVITE_CODES in der .env leeren und neu starten
+```
+
+Danach vergibt der Verwalter Einladungen in den Einstellungen unter „Konto".
+Jeder ausgestellte Code gilt **genau einmal**, hat einen Aussteller, auf Wunsch
+eine Frist und eine Notiz, wofür er gedacht war — und lässt sich zurückziehen,
+solange ihn niemand benutzt hat.
+
+Weitere Befehle:
+
+```bash
+docker compose exec timetracker node admin.mjs entziehe "Anna"
+docker compose exec timetracker node admin.mjs einladung "für den Kollegen" --tage 14
+```
+
+Der letzte ist der Notausgang: Einladungen lassen sich auch ohne Oberfläche
+ausstellen, falls gerade kein Verwalter erreichbar ist.
 
 ---
 

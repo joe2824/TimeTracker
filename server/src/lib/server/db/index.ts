@@ -112,7 +112,13 @@ const MIGRATIONS: string[] = [
 		created_at INTEGER NOT NULL,
 		expires_at INTEGER NOT NULL
 	)`,
-	`CREATE INDEX IF NOT EXISTS pairings_user ON pairings(user_id)`
+	`CREATE INDEX IF NOT EXISTS pairings_user ON pairings(user_id)`,
+	// Ab hier: nur angehaengt, nie dazwischen. Jeder Schritt laeuft genau einmal.
+	`ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE invites ADD COLUMN created_by TEXT`,
+	`ALTER TABLE invites ADD COLUMN note TEXT`,
+	`ALTER TABLE invites ADD COLUMN expires_at INTEGER`,
+	`ALTER TABLE invites ADD COLUMN revoked_at INTEGER`
 ];
 
 export type Db = ReturnType<typeof drizzle<typeof schema>>;

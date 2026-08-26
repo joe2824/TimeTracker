@@ -656,3 +656,229 @@ describe("Ohne Reverse-Proxy davor", () => {
 		expect(res.status).not.toBe(500);
 	});
 });
+
+describe("Herkunft unter verschiedenen Namen", () => {
+	// Derselbe Container ist ueber localhost, 127.0.0.1, den Rechnernamen und die
+	// Adresse im Heimnetz erreichbar. Unter jedem dieser Namen ist eine Anfrage
+	// von der eigenen Seite dieselbe Seite - und muss durchkommen. Sonst kann
+	// sich niemand registrieren, der die Adresse anders tippt als ORIGIN.
+	it("laesst die eigene Adresse durch, auch wenn sie nicht ORIGIN ist", async () => {
+		const sitzung = createSession(db, ANNA);
+		const res = await fetch(`${base}/api/sync`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				// Genau die Adresse, unter der diese Anfrage hereinkommt.
+				origin: base,
+				cookie: `tt_session=${sitzung}`
+			},
+			body: JSON.stringify({ records: [rec("x")] })
+		});
+		expect(res.status).toBe(200);
+	});
+
+	it("weist eine wirklich fremde Seite weiterhin ab", async () => {
+		const sitzung = createSession(db, ANNA);
+		const res = await fetch(`${base}/api/sync`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				origin: "https://boeswillig.example",
+				cookie: `tt_session=${sitzung}`
+			},
+			body: JSON.stringify({ records: [rec("x")] })
+		});
+		expect(res.status).toBe(403);
+	});
+});
+
+describe("Verwaltung", () => {
+	function zumVerwalter(id: string) {
+		db.$client.prepare("UPDATE users SET is_admin = 1 WHERE id = ?").run(id);
+	}
+
+	it("weist einen gewoehnlichen Angemeldeten ab", async () => {
+		expect((await api(annaToken, "/api/admin/invites")).status).toBe(403);
+		const post = await api(annaToken, "/api/admin/invites", { method: "POST", body: "{}" });
+		expect(post.status).toBe(403);
+	});
+
+	it("weist ohne Anmeldung ab", async () => {
+		expect((await api(null, "/api/admin/invites")).status).toBe(401);
+	});
+
+	it("laesst einen Verwalter ausstellen und ansehen", async () => {
+		zumVerwalter(ANNA);
+		const res = await api(annaToken, "/api/admin/invites", {
+			method: "POST",
+			body: JSON.stringify({ note: "für Bodo", gueltigTage: 7 })
+		});
+		expect(res.status).toBe(201);
+		const code = (await res.json()).code as string;
+		// Vier Gruppen zu vier Zeichen - vorlesbar, ohne verwechselbare Zeichen.
+		expect(code).toMatch(/^[A-HJ-NP-Z2-9]{4}(-[A-HJ-NP-Z2-9]{4}){3}$/);
+
+		const liste = await (await api(annaToken, "/api/admin/invites")).json();
+		expect(liste.invites.some((i: { code: string }) => i.code === code)).toBe(true);
+	});
+
+	it("der ausgestellte Code oeffnet die Registrierung genau einmal", async () => {
+		zumVerwalter(ANNA);
+		const { code } = await (
+			await api(annaToken, "/api/admin/invites", { method: "POST", body: "{}" })
+		).json();
+
+		const erste = await api(null, "/api/auth/register/start", {
+			method: "POST",
+			body: JSON.stringify({ displayName: "Neuling", invite: code })
+		});
+		expect(erste.status).toBe(200);
+
+		// Entwertet wird erst beim Anlegen des Kontos - ein abgebrochener Versuch
+		// darf die Einladung nicht verbrauchen.
+		db.$client.prepare("UPDATE invites SET used_at = ?, used_by = ? WHERE code = ?").run(
+			Date.now(),
+			"irgendwer",
+			code
+		);
+		const zweite = await api(null, "/api/auth/register/start", {
+			method: "POST",
+			body: JSON.stringify({ displayName: "Noch einer", invite: code })
+		});
+		expect(zweite.status).toBe(403);
+	});
+
+	it("ein zurueckgezogener Code gilt nicht mehr", async () => {
+		zumVerwalter(ANNA);
+		const { code } = await (
+			await api(annaToken, "/api/admin/invites", { method: "POST", body: "{}" })
+		).json();
+
+		const weg = await api(annaToken, "/api/admin/invites", {
+			method: "DELETE",
+			body: JSON.stringify({ code })
+		});
+		expect(weg.status).toBe(200);
+
+		const versuch = await api(null, "/api/auth/register/start", {
+			method: "POST",
+			body: JSON.stringify({ displayName: "Zu spät", invite: code })
+		});
+		expect(versuch.status).toBe(403);
+	});
+
+	it("ein abgelaufener Code gilt nicht mehr", async () => {
+		zumVerwalter(ANNA);
+		const { code } = await (
+			await api(annaToken, "/api/admin/invites", { method: "POST", body: "{}" })
+		).json();
+		db.$client
+			.prepare("UPDATE invites SET expires_at = ? WHERE code = ?")
+			.run(Date.now() - 1000, code);
+
+		const versuch = await api(null, "/api/auth/register/start", {
+			method: "POST",
+			body: JSON.stringify({ displayName: "Zu spät", invite: code })
+		});
+		expect(versuch.status).toBe(403);
+	});
+
+	it("meldet die Rolle in /api/me", async () => {
+		expect((await (await api(annaToken, "/api/me")).json()).isAdmin).toBe(false);
+		zumVerwalter(ANNA);
+		expect((await (await api(annaToken, "/api/me")).json()).isAdmin).toBe(true);
+	});
+
+	it("ein Verwalter kommt trotzdem nicht an fremde Daten", async () => {
+		zumVerwalter(ANNA);
+		await api(bodoToken, "/api/sync", {
+			method: "POST",
+			body: JSON.stringify({ records: [rec("b1")] })
+		});
+		// Die Rolle regelt, wer hereindarf - nicht, wer etwas sieht. Auch als
+		// Verwalter sieht Anna ausschliesslich ihr eigenes Konto.
+		const seite = await (await api(annaToken, "/api/sync?since=0")).json();
+		expect(seite.records).toHaveLength(0);
+		expect((await (await api(annaToken, "/api/me")).json()).userId).toBe(ANNA);
+	});
+});
+
+/**
+ * Eine Anfrage mit selbst gesetzter Host-Kopfzeile.
+ *
+ * `fetch` erlaubt das nicht - `host` gehoert zu den Koepfen, die der Client
+ * nicht bestimmen darf, und undici setzt ihn auf die Zieladresse. Fuer die
+ * Herkunftspruefung ist aber genau dieser Kopf der Vergleichspunkt.
+ */
+async function roheAnfrage(headers: Record<string, string>): Promise<number> {
+	const { request } = await import("node:http");
+	const rumpf = JSON.stringify({ records: [rec("roh")] });
+	return new Promise<number>((auf, ab) => {
+		const req = request(
+			{
+				hostname: "127.0.0.1",
+				port: 5199,
+				path: "/api/sync",
+				method: "POST",
+				headers: { "content-type": "application/json", "content-length": rumpf.length, ...headers }
+			},
+			(res) => {
+				res.resume();
+				res.on("end", () => auf(res.statusCode ?? 0));
+			}
+		);
+		req.on("error", ab);
+		req.end(rumpf);
+	});
+}
+
+describe("Herkunft unter einem fremden Namen", () => {
+	// ORIGIN sagt "localhost:5199". Jemand erreicht den Dienst aber ueber den
+	// Rechnernamen im Heimnetz - und ist damit trotzdem auf der eigenen Seite.
+	//
+	// Der erste Anlauf verglich gegen event.url, und das baut adapter-node aus
+	// ORIGIN zusammen. Damit war jeder ausgesperrt, der die Adresse anders tippte
+	// als ORIGIN sie nennt.
+	it("laesst durch, wenn Origin und Host zueinander passen", async () => {
+		const sitzung = createSession(db, ANNA);
+		// Mit `fetch` geht das nicht: die Host-Kopfzeile ist geschuetzt und wird
+		// immer auf die tatsaechliche Zieladresse gesetzt. Genau die soll hier aber
+		// eine andere sein - also von Hand.
+		const res = await roheAnfrage({
+			host: "tracker.fritz.box",
+			origin: "http://tracker.fritz.box",
+			cookie: `tt_session=${sitzung}`
+		});
+		expect(res).toBe(200);
+	});
+
+	it("weist ab, wenn Origin nicht zum Host passt", async () => {
+		const sitzung = createSession(db, ANNA);
+		const res = await fetch(`${base}/api/sync`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				host: "tracker.fritz.box",
+				origin: "https://boeswillig.example",
+				cookie: `tt_session=${sitzung}`
+			},
+			body: JSON.stringify({ records: [rec("x")] })
+		});
+		expect(res.status).toBe(403);
+	});
+
+	it("beruecksichtigt die weitergereichte Kopfzeile hinter einem Proxy", async () => {
+		const sitzung = createSession(db, ANNA);
+		const res = await fetch(`${base}/api/sync`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				"x-forwarded-host": "tracker.example.de",
+				origin: "https://tracker.example.de",
+				cookie: `tt_session=${sitzung}`
+			},
+			body: JSON.stringify({ records: [rec("x")] })
+		});
+		expect(res.status).toBe(200);
+	});
+});

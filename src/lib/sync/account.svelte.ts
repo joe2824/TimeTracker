@@ -12,7 +12,7 @@ import { loadDevice, loadEntries, saveDevice, saveEntries } from "../store";
 import { loadActivities, saveActivities, loadSettings, saveSettings, listEntryMonths } from "../store";
 import { deviceId } from "./device";
 import { startTracking, stopTracking, pendingChanges, setChangeListener } from "./outbox";
-import { Api, ApiError, type AccountInfo, type DeleteSummary } from "./api";
+import { Api, ApiError, type AccountInfo, type DeleteSummary, type Invite } from "./api";
 import { detachLocalData } from "./detach";
 import { SyncEngine } from "./engine";
 import {
@@ -81,6 +81,14 @@ class AccountState {
 	secretsProtected = $state<boolean>(false);
 	/** Wie viele eigene Aenderungen beim Zusammenfuehren unterlegen sind. */
 	lostEdits = $state<number>(0);
+	/**
+	 * Darf dieses Konto Einladungen vergeben?
+	 *
+	 * Wird beim Verbinden vom Server geholt, nicht lokal gemerkt: eine Rolle, die
+	 * das Geraet selbst behauptet, waere keine. Die Oberflaeche benutzt das nur,
+	 * um den Bereich zu zeigen - erlaubt wird ohnehin auf dem Server.
+	 */
+	isAdmin = $state<boolean>(false);
 
 	#api: Api | null = null;
 	#engine: SyncEngine | null = null;
@@ -128,6 +136,10 @@ class AccountState {
 			await this.#startEngine(info.serverUrl, token, info.seq ?? 0);
 			this.state = "verbunden";
 			logInfo("Konto verknüpft", { server: info.serverUrl });
+			// Nebenher: die Rolle steht erst fest, wenn der Server geantwortet hat.
+			// Ein Fehlschlag darf den Start nicht aufhalten - dann fehlt eben der
+			// Verwaltungsbereich, bis der naechste Abgleich laeuft.
+			void this.accountInfo().catch(() => {});
 			void this.syncSoon(0);
 		} catch (e) {
 			// Der haeufigste Grund: die Datei stammt von einem anderen
@@ -446,7 +458,29 @@ class AccountState {
 	 */
 	async accountInfo(): Promise<AccountInfo | null> {
 		if (!this.#api) return null;
-		return this.#api.me();
+		const info = await this.#api.me();
+		this.isAdmin = info.isAdmin;
+		return info;
+	}
+
+	// ---------- Verwaltung ----------
+	//
+	// Nur fuer Verwalter, und der Server entscheidet das - nicht dieses Modul.
+	// Hier steht bloss der Draht dorthin.
+
+	async invites(): Promise<Invite[]> {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		return (await this.#api.invites()).invites;
+	}
+
+	async createInvite(opts: { note?: string; gueltigTage?: number } = {}): Promise<Invite> {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		return this.#api.createInvite(opts);
+	}
+
+	async revokeInvite(code: string): Promise<void> {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		await this.#api.revokeInvite(code);
 	}
 
 	/**
@@ -539,6 +573,7 @@ class AccountState {
 		this.serverUrl = "";
 		this.name = "";
 		this.message = "";
+		this.isAdmin = false;
 	}
 
 	/** Beim Schliessen des Fensters. */

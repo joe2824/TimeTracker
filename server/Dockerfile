@@ -58,6 +58,10 @@ COPY --from=build --chown=tt:tt /app/server/build ./build
 COPY --from=build --chown=tt:tt /app/server/static ./static
 COPY --from=build --chown=tt:tt /app/node_modules ./node_modules
 COPY --from=build --chown=tt:tt /app/server/package.json ./package.json
+# Die Verwaltung von der Kommandozeile. Sie gehoert ins Abbild, nicht daneben:
+# der erste Verwalter laesst sich nur hier ernennen, und wer den Container hat,
+# soll das koennen, ohne erst etwas hineinzukopieren.
+COPY --from=build --chown=tt:tt /app/server/admin.mjs ./admin.mjs
 
 RUN mkdir -p /data && chown tt:tt /data
 VOLUME ["/data"]

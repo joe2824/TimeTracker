@@ -46,10 +46,22 @@ export interface PushAnswer {
 	seq: number;
 }
 
+export interface Invite {
+	code: string;
+	createdAt: number;
+	note: string | null;
+	expiresAt: number | null;
+	usedAt: number | null;
+	usedBy: string | null;
+	revokedAt: number | null;
+}
+
 export interface AccountInfo {
 	userId: string;
 	displayName: string;
 	email: string | null;
+	/** Darf Einladungen vergeben - mehr nicht. */
+	isAdmin: boolean;
 	seq: number;
 	wrapKinds: string[];
 	passkeys: { id: string; hasPrf: boolean; createdAt: number; lastUsedAt: number | null }[];
@@ -222,6 +234,27 @@ export class Api {
 		return this.#call("/api/wraps", {
 			method: "POST",
 			body: JSON.stringify({ kind, payload, credentialId })
+		});
+	}
+
+	// ---------- Verwaltung ----------
+	//
+	// Nur fuer Verwalter. Was sie koennen, ist bewusst schmal: Einladungen. Auf
+	// fremde Daten kommt auch ein Verwalter nicht - der Server selbst kann sie
+	// nicht lesen.
+
+	invites(): Promise<{ invites: Invite[] }> {
+		return this.#call("/api/admin/invites");
+	}
+
+	createInvite(opts: { note?: string; gueltigTage?: number } = {}): Promise<Invite> {
+		return this.#call("/api/admin/invites", { method: "POST", body: JSON.stringify(opts) });
+	}
+
+	revokeInvite(code: string): Promise<{ ok: boolean }> {
+		return this.#call("/api/admin/invites", {
+			method: "DELETE",
+			body: JSON.stringify({ code })
 		});
 	}
 

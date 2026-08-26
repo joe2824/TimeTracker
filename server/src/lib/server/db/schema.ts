@@ -39,7 +39,19 @@ export const users = sqliteTable("users", {
 	email: text("email"),
 	createdAt: integer("created_at").notNull(),
 	/** Laufende Nummer der Datensaetze dieses Kontos. Siehe `records.seq`. */
-	seqCounter: integer("seq_counter").notNull().default(0)
+	seqCounter: integer("seq_counter").notNull().default(0),
+	/**
+	 * Darf Einladungen vergeben.
+	 *
+	 * Mehr nicht - und ausdruecklich NICHT: fremde Daten lesen. Das kann auch ein
+	 * Verwalter nicht, weil der Server es selbst nicht kann. Die Rolle regelt, wer
+	 * hereindarf, nicht wer etwas sieht.
+	 *
+	 * Der erste Verwalter wird im Container gesetzt (siehe admin.mjs). Bewusst
+	 * kein "der erste Angemeldete wird es automatisch": bei einem Dienst, der
+	 * spaeter offen laufen soll, waere das ein Wettrennen.
+	 */
+	isAdmin: integer("is_admin", { mode: "boolean" }).notNull().default(false)
 });
 
 /** Ein Passkey. Ein Konto kann beliebig viele haben - je Geraet einen. */
@@ -180,7 +192,15 @@ export const invites = sqliteTable("invites", {
 	code: text("code").primaryKey(),
 	createdAt: integer("created_at").notNull(),
 	usedAt: integer("used_at"),
-	usedBy: text("used_by")
+	usedBy: text("used_by"),
+	/** Wer ihn ausgestellt hat. Null = aus der Umgebung, nicht aus der Tabelle. */
+	createdBy: text("created_by"),
+	/** Wofuer er gedacht war - eine Notiz fuer den Verwalter, sonst nichts. */
+	note: text("note"),
+	/** Ab wann er nicht mehr gilt. Null = unbegrenzt. */
+	expiresAt: integer("expires_at"),
+	/** Zurueckgezogen, ohne die Zeile zu loeschen - sonst waere die Spur weg. */
+	revokedAt: integer("revoked_at")
 });
 
 /**

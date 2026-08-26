@@ -3,9 +3,8 @@ import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { verifyRegistration, createUser, storeCredential } from "$lib/server/webauthn";
 import { createSession, takeChallenge } from "$lib/server/auth";
-import { INVITE_CODES, REGISTRATION_OPEN } from "$lib/server/config";
-import { invites } from "$lib/server/db/schema";
-import { and, eq, isNull } from "drizzle-orm";
+import { REGISTRATION_OPEN } from "$lib/server/config";
+import { entwerteCode, gueltigerCode } from "$lib/server/invites";
 import { setSessionCookie } from "$lib/server/session";
 
 export const POST: RequestHandler = async ({ locals, request, cookies }) => {
@@ -23,16 +22,11 @@ export const POST: RequestHandler = async ({ locals, request, cookies }) => {
 	}
 
 	const code = String(body?.invite ?? "").trim();
-	if (!REGISTRATION_OPEN && !INVITE_CODES.includes(code)) {
-		// Ein Code aus der Tabelle gilt genau einmal. Die Entwertung passiert hier
-		// und nicht beim Anfordern der Aufgabe: ein abgebrochener Versuch soll ihn
-		// nicht verbrauchen.
-		const r = locals.db
-			.update(invites)
-			.set({ usedAt: Date.now(), usedBy: taken.userId })
-			.where(and(eq(invites.code, code), isNull(invites.usedAt)))
-			.run();
-		if (r.changes === 0) error(403, "Einladungscode ungültig");
+	// Erst pruefen, entwertet wird unten IN der Transaktion. Andersherum waere die
+	// Einladung verbraucht, wenn das Anlegen danach scheitert - und niemand haette
+	// ein Konto dafuer.
+	if (!REGISTRATION_OPEN && !gueltigerCode(locals.db, code)) {
+		error(403, "Einladungscode ungültig");
 	}
 
 	const email = body?.email ? String(body.email).trim().toLowerCase() : null;
@@ -42,6 +36,9 @@ export const POST: RequestHandler = async ({ locals, request, cookies }) => {
 	// Verpackung ein Tresor ohne Schluessel.
 	locals.db.transaction((tx) => {
 		createUser(tx, taken.userId!, displayName, email);
+		// Ein Code aus der Tabelle gilt genau einmal. Hier drin, damit "Konto
+		// entstanden" und "Einladung verbraucht" nicht auseinanderfallen koennen.
+		if (!REGISTRATION_OPEN) entwerteCode(tx, code, taken.userId!);
 		storeCredential(
 			tx,
 			taken.userId!,

@@ -139,7 +139,7 @@
 				<div class="space-y-2 border-t pt-4">
 					<p class="text-sm font-medium">Neues Konto</p>
 					<Label for="n">Anzeigename</Label>
-					<Input id="n" bind:value={name} placeholder="z. B. Anna" autocomplete="username" />
+					<Input id="n" bind:value={name} placeholder="dein Name" autocomplete="username" />
 					<Label for="inv" class="pt-2">Einladungscode</Label>
 					<Input id="inv" bind:value={invite} placeholder="falls erforderlich" />
 					<Button variant="outline" class="mt-2 w-full" disabled={laeuft} onclick={anlegen}>

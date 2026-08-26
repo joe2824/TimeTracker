@@ -25,9 +25,13 @@ services:
       RP_NAME: ${RP_NAME:-TimeTracker}
       # Herkuenfte, von denen schreibende Anfragen angenommen werden.
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-${ORIGIN}}
-      # Solange hier etwas steht, ist die Registrierung geschlossen. Leer =
-      # offen fuer jeden - eine bewusste Entscheidung, keine Nachlaessigkeit.
+      # Die Tuerklinke fuer den ersten Menschen. Mehrfach benutzbar, ohne Frist.
+      # Sobald es einen Verwalter gibt, gehoert sie geleert - dann vergibt der
+      # Einladungen einzeln, und jede ist nachvollziehbar.
       INVITE_CODES: ${INVITE_CODES:-}
+      # Darf sich jeder registrieren? Voreinstellung nein. Eine leere
+      # INVITE_CODES-Zeile oeffnet den Dienst ausdruecklich NICHT.
+      REGISTRATION_OPEN: ${REGISTRATION_OPEN:-false}
       DATA_DIR: /data
       # Hinter einem Reverse-Proxy: die echte Adresse des Aufrufers steht in den
       # weitergereichten Kopfzeilen, nicht in der Verbindung.

@@ -64,7 +64,19 @@ export const INVITE_CODES = (process.env.INVITE_CODES ?? "")
 	.map((c) => c.trim())
 	.filter(Boolean);
 
-export const REGISTRATION_OPEN = INVITE_CODES.length === 0;
+/**
+ * Ob sich jeder registrieren darf, der die Adresse kennt.
+ *
+ * Ein EIGENER Schalter, und das ist keine Kleinigkeit: frueher stand hier
+ * `INVITE_CODES.length === 0`. Damit war der Dienst in dem Moment offen, in dem
+ * jemand die Codes aus der Umgebung nahm - also genau dann, wenn er von der
+ * Tuerklinke auf einzeln vergebene Einladungen umstellte. Der sorgfaeltigere
+ * Schritt haette den Dienst geoeffnet.
+ *
+ * Jetzt heisst geschlossen geschlossen, bis es ausdruecklich anders dasteht.
+ * Voreinstellung ist zu.
+ */
+export const REGISTRATION_OPEN = /^(1|true|ja|yes)$/i.test(process.env.REGISTRATION_OPEN ?? "");
 
 // ---------- Grenzen ----------
 //
