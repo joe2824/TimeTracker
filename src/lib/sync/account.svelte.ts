@@ -220,6 +220,13 @@ class AccountState {
 			}
 			// Der Bestand kann sich geaendert haben - die Ansichten haengen daran.
 			await app.reload();
+			// Kam beim ersten Abgleich etwas an, war dieses Geraet nie leer - es
+			// wusste es nur noch nicht. Der Willkommensbildschirm hat sich damit
+			// erledigt, und zwar bevor jemand ihn ausfuellt und dabei die echten
+			// Einstellungen ueberschreibt.
+			if (ergebnis && ergebnis.pulled > 0 && app.showOnboarding) {
+				app.dismissOnboarding();
+			}
 		} catch (e) {
 			this.#onSyncError(e);
 		}

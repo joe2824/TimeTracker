@@ -1458,6 +1458,24 @@ class AppState {
 		this.showOnboarding = false;
 	}
 
+	/**
+	 * Den Willkommensbildschirm weglegen, OHNE etwas zu schreiben.
+	 *
+	 * Fuer den Fall, dass die Daten woanders liegen: wer gerade ein Konto angelegt
+	 * hat und gleich seinen Rechner koppeln will, hat schon Einstellungen - sie
+	 * sind bloss noch nicht hier. Wuerde er den Willkommensbildschirm
+	 * durchlaufen, entstuenden frische Einstellungen mit frischem Zeitstempel,
+	 * und beim Zusammenfuehren gewaennen ausgerechnet die leeren gegen die
+	 * echten.
+	 *
+	 * Deshalb wird hier nichts gespeichert. Kommt gleich der erste Abgleich,
+	 * bringt er die richtigen mit; bleibt er aus, ist der Bildschirm beim
+	 * naechsten Start wieder da - was dann auch stimmt.
+	 */
+	dismissOnboarding(): void {
+		this.showOnboarding = false;
+	}
+
 	/** Willkommensbildschirm erneut oeffnen (Dev-Re-Trigger). */
 	openOnboarding(): void {
 		this.showOnboarding = true;

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
+	import { account } from "$lib/sync/account.svelte";
 	import { clockToMin } from "$lib/time";
 	import { scheduleReminders } from "$lib/reminders";
 	import { logInfo, logWarn } from "$lib/log";
@@ -258,14 +259,30 @@
 		</div>
 
 		<!-- Kein „Überspringen“: wer den Assistenten wegklickt, sieht nie, was sich
-		     überhaupt einstellen lässt. Jeder Schritt lässt sich leer bestätigen. -->
-		<div class="flex items-center justify-end gap-2">
-			{#if step > 0}
-				<Button variant="outline" onclick={back} disabled={saving}>Zurück</Button>
+		     überhaupt einstellen lässt. Jeder Schritt lässt sich leer bestätigen.
+
+		     EINE Ausnahme, und zwar keine der Bequemlichkeit: wer gerade ein Konto
+		     angelegt hat und gleich ein Gerät koppeln will, HAT seine Einstellungen
+		     schon – sie sind bloß noch nicht hier. Ausgefüllt entstünden frische
+		     mit frischem Zeitstempel, und beim Zusammenführen gewännen die leeren
+		     gegen die echten. Deshalb steht der Weg daran vorbei nur dort, wo
+		     dieser Fall überhaupt eintreten kann. -->
+		<div class="flex items-center justify-between gap-2">
+			{#if account.linked}
+				<Button variant="ghost" onclick={() => app.dismissOnboarding()} disabled={saving}>
+					Meine Daten liegen auf einem anderen Gerät
+				</Button>
+			{:else}
+				<span></span>
 			{/if}
-			<Button onclick={next} disabled={saving}>
-				{step < STEPS - 1 ? "Weiter" : saving ? "Speichere…" : "Los geht's"}
-			</Button>
+			<div class="flex items-center gap-2">
+				{#if step > 0}
+					<Button variant="outline" onclick={back} disabled={saving}>Zurück</Button>
+				{/if}
+				<Button onclick={next} disabled={saving}>
+					{step < STEPS - 1 ? "Weiter" : saving ? "Speichere…" : "Los geht's"}
+				</Button>
+			</div>
 		</div>
 	</div>
 </div>
