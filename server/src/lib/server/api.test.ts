@@ -1118,10 +1118,18 @@ describe("Konto von einem Geraet aus anlegen", () => {
 		return code;
 	}
 
-	it("verlangt einen Namen", async () => {
+	it("verlangt eine Einladung", async () => {
 		const res = await api(null, "/api/auth/device", {
 			method: "POST",
 			body: JSON.stringify({ label: "Rechner" })
+		});
+		expect(res.status).toBe(403);
+	});
+
+	it("weist einen masslosen Namen ab", async () => {
+		const res = await api(null, "/api/auth/device", {
+			method: "POST",
+			body: JSON.stringify({ displayName: "x".repeat(200), label: "R", invite: einladung() })
 		});
 		expect(res.status).toBe(400);
 	});
@@ -1179,5 +1187,61 @@ describe("Konto von einem Geraet aus anlegen", () => {
 		// Ohne sie waere das Konto an genau dieses eine Geraet gebunden.
 		const { wraps } = await (await api(deviceToken, "/api/wraps")).json();
 		expect(wraps.map((w: { kind: string }) => w.kind)).toContain("recovery");
+	});
+});
+
+describe("Herkunft ohne Sitzung", () => {
+	// Der Fall, der beim ersten Anlauf durchfiel: die Desktop-Anwendung legt ein
+	// Konto an. Sie hat noch kein Token - das bekommt sie ja gerade erst - und
+	// schickt trotzdem eine Herkunft mit, weil ein Fenster nun einmal eine hat.
+	//
+	// Sie abzuweisen schuetzte niemanden: ohne Cookie faehrt kein Ausweis
+	// automatisch mit, und ohne Ausweis ist nichts zu erschleichen.
+	it("laesst eine Anfrage ohne Cookie durch, egal woher sie kommt", async () => {
+		db.$client.prepare("INSERT INTO invites (code, created_at) VALUES (?, ?)").run("HERK-TEST", Date.now());
+		const res = await api(null, "/api/auth/device", {
+			method: "POST",
+			headers: { origin: "http://tauri.localhost" },
+			body: JSON.stringify({ displayName: "Vom Rechner", label: "Rechner", invite: "HERK-TEST" })
+		});
+		expect(res.status).toBe(200);
+	});
+
+	it("weist eine fremde Seite MIT Sitzung weiterhin ab", async () => {
+		// Hier faehrt der Ausweis automatisch mit - und genau darum geht es.
+		const sitzung = createSession(db, ANNA);
+		const res = await fetch(`${base}/api/sync`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				origin: "https://boeswillig.example",
+				cookie: `tt_session=${sitzung}`
+			},
+			body: JSON.stringify({ records: [rec("x")] })
+		});
+		expect(res.status).toBe(403);
+	});
+});
+
+describe("Anlegen ohne Namen", () => {
+	it("kommt ohne Anzeigename aus", async () => {
+		// Der Name steht nur im Anmeldedialog des Betriebssystems, und den sieht
+		// dieses Konto nie - es hat keinen Passkey. Danach zu fragen waere eine
+		// Zeile im Formular, die niemandem etwas bringt.
+		db.$client
+			.prepare("INSERT INTO invites (code, created_at) VALUES (?, ?)")
+			.run("OHNE-NAME", Date.now());
+		const res = await api(null, "/api/auth/device", {
+			method: "POST",
+			body: JSON.stringify({ label: "Rechner", invite: "OHNE-NAME" })
+		});
+		expect(res.status).toBe(200);
+		const { userId, displayName, deviceToken } = await res.json();
+		// Ohne Namen steht die Kennung da - haesslich und ehrlich.
+		expect(displayName).toBe(userId);
+
+		// Und das Konto ist sofort brauchbar.
+		const ich = await (await api(deviceToken, "/api/me")).json();
+		expect(ich.devices[0].label).toBe("Rechner");
 	});
 });

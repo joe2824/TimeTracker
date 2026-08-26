@@ -30,16 +30,27 @@ import { createUser } from "$lib/server/webauthn";
 export const POST: RequestHandler = async ({ locals, request }) => {
 	const body = await request.json().catch(() => null);
 
-	const displayName = String(body?.displayName ?? "").trim();
-	if (!displayName || displayName.length > 64) error(400, "Anzeigename fehlt oder ist zu lang");
-
 	const label = String(body?.label ?? "Dieser Rechner").trim().slice(0, 64);
+	const userId = crypto.randomUUID();
+
+	// Ein Name ist NICHT noetig.
+	//
+	// Wozu er da ist: der Anmeldedialog des Betriebssystems zeigt ihn, wenn
+	// jemand einen Passkey anlegt. Dieses Konto hat keinen - es entsteht ja
+	// gerade auf einem Geraet, das gar keinen anbieten kann. Nach etwas zu
+	// fragen, das an dieser Stelle niemanden interessiert und niemand sieht, ist
+	// eine Zeile im Formular zu viel.
+	//
+	// Fehlt er, steht die Kennung da. Das ist haesslich und ehrlich; wer spaeter
+	// im Browser einen Passkey anlegt, kann ihn dort setzen.
+	const gewuenscht = String(body?.displayName ?? "").trim();
+	if (gewuenscht.length > 64) error(400, "Anzeigename ist zu lang");
+	const displayName = gewuenscht || userId;
 	const code = String(body?.invite ?? "").trim();
 	if (!REGISTRATION_OPEN && !gueltigerCode(locals.db, code)) {
 		error(403, "Einladungscode ungültig");
 	}
 
-	const userId = crypto.randomUUID();
 	const email = body?.email ? String(body.email).trim().toLowerCase() : null;
 
 	// Konto und Geraet gehoeren zusammen: entweder entsteht beides, oder nichts.

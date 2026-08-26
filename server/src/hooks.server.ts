@@ -168,33 +168,34 @@ export const handle: Handle = async ({ event, resolve }) => {
 		}
 	}
 
-	// Herkunft pruefen, wo geschrieben wird.
+	// Herkunft pruefen - aber nur, wo sie ueberhaupt etwas schuetzt.
 	//
-	// SvelteKit prueft von sich aus nur die Inhaltsarten, die ein HTML-Formular
-	// abschicken kann. Unsere Endpunkte lesen den Rumpf aber unabhaengig davon
-	// als JSON - die Pruefung gehoert deshalb ausdruecklich hierher und nicht in
-	// das Vertrauen darauf, dass ein Browser schon einen Vorabruf schickt.
+	// Wovor: eine fremde Seite im Browser schickt eine Anfrage an unseren Server,
+	// und das Sitzungs-Cookie des Angemeldeten faehrt automatisch mit. Er hat
+	// nichts getan und nichts gesehen; geschrieben wurde trotzdem in seinem Namen.
 	//
-	// Verglichen wird gegen die Adresse, unter der die Anfrage TATSAECHLICH
-	// hereinkam - nicht nur gegen eine feste Liste. Das ist der Unterschied
-	// zwischen "wehrt fremde Seiten ab" und "wehrt jeden ab, der den Dienst unter
-	// einem anderen Namen erreicht": derselbe Container ist ueber localhost,
-	// 127.0.0.1, den Rechnernamen und die Adresse im Heimnetz erreichbar, und
-	// unter jedem dieser Namen ist eine Anfrage von der eigenen Seite dieselbe
-	// Seite. Eine fremde Seite kann den Origin-Kopf nicht faelschen; darauf
-	// beruht der Schutz, nicht auf der Liste.
+	// Daran haengt die ganze Pruefung - am AUTOMATISCH mitfahrenden Ausweis. Wo
+	// kein Cookie mitkommt, gibt es nichts zu missbrauchen: ein Geraete-Token
+	// muss ausdruecklich gesetzt werden, und wer es hat, braucht keine fremde
+	// Seite. Eine Anfrage ohne beides ist anonym und kann nichts erschleichen,
+	// was ihr nicht ohnehin offensteht.
 	//
-	// ALLOWED_ORIGINS bleibt fuer den Fall, dass die Anwendung unter einem
-	// anderen Namen ausgeliefert wird als dem, unter dem der Server sich sieht.
+	// Der erste Anlauf pruefte jede schreibende Anfrage und nahm nur die mit
+	// Token aus. Das ging schief bei der einen, die beides nicht hat: dem Anlegen
+	// eines Kontos aus der Desktop-Anwendung heraus. Sie schickt
+	// `Origin: http://tauri.localhost` - ein Fenster hat nun einmal eine Herkunft -
+	// und wurde mit "Herkunft nicht erlaubt" abgewiesen, bevor sie ueberhaupt
+	// beginnen konnte.
 	//
-	// Anfragen mit Geraete-Token sind ausgenommen: sie tragen ihren Ausweis
-	// selbst und kommen aus einer Anwendung, deren Herkunft kein Server sinnvoll
-	// erlauben kann.
-	if (SCHREIBEND.has(event.request.method) && pfad.startsWith("/api/")) {
+	// Verglichen wird gegen den Host, an den die Anfrage ging, nicht gegen ORIGIN
+	// aus der Umgebung: derselbe Dienst ist ueber localhost, 127.0.0.1, den
+	// Rechnernamen und die Adresse im Heimnetz erreichbar, und unter jedem dieser
+	// Namen ist die eigene Seite dieselbe Seite.
+	const mitCookie = event.cookies.get(SESSION_COOKIE) !== undefined;
+	if (mitCookie && SCHREIBEND.has(event.request.method) && pfad.startsWith("/api/")) {
 		const herkunft = event.request.headers.get("origin");
-		const mitToken = event.request.headers.get("authorization")?.startsWith("Bearer ");
 		const eigene = herkunft !== null && istEigeneHerkunft(herkunft, event.request.headers);
-		if (herkunft && !mitToken && !eigene && !ALLOWED_ORIGINS.includes(herkunft)) {
+		if (herkunft && !eigene && !ALLOWED_ORIGINS.includes(herkunft)) {
 			return new Response(JSON.stringify({ message: "Herkunft nicht erlaubt" }), {
 				status: 403,
 				headers: { "content-type": "application/json" }

@@ -16,10 +16,8 @@
 	import { capabilities } from "$lib/platform/env";
 
 	let serverUrl = $state("");
-	let geraetename = $state("");
 	let code = $state("");
 	let fremderCode = $state("");
-	let kontoName = $state("");
 	let einladung = $state("");
 	/** Die Phrase, genau einmal - danach nie wieder. */
 	let phrase = $state("");
@@ -53,7 +51,7 @@
 		}
 		laeuft = true;
 		try {
-			code = await account.startPairing(url, geraetename.trim() || vorschlagName());
+			code = await account.startPairing(url, vorschlagName());
 			warten = true;
 			// Nachsehen, ob jemand bestaetigt hat. Kein Kanal: der Vorgang dauert
 			// Sekunden, und jemand sieht dabei zu.
@@ -144,18 +142,17 @@
 			toast.error("Bitte die Adresse des Servers angeben.");
 			return;
 		}
-		if (!kontoName.trim()) {
-			toast.error("Bitte einen Namen angeben.");
-			return;
-		}
 		laeuft = true;
 		try {
-			phrase = await account.createAccount(
-				url,
-				kontoName.trim(),
-				geraetename.trim() || vorschlagName(),
-				{ invite: einladung.trim() || undefined }
-			);
+			// Kein Name, weder fuer das Konto noch fuer das Geraet.
+			//
+			// Das Konto bekommt seine Kennung; sie steht ohnehin nur im
+			// Anmeldedialog des Betriebssystems, den dieses Konto nie sieht - es hat
+			// keinen Passkey. Das Geraet bekommt einen Namen aus der Plattform, der
+			// in der Geraeteliste wiedererkennbar ist, ohne dass jemand ihn tippt.
+			phrase = await account.createAccount(url, "", vorschlagName(), {
+				invite: einladung.trim() || undefined
+			});
 			phraseBestaetigt = false;
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Konto konnte nicht angelegt werden");
@@ -253,7 +250,6 @@
 					disabled={!phraseBestaetigt}
 					onclick={() => {
 						phrase = "";
-						kontoName = "";
 						einladung = "";
 						toast.success("Konto angelegt. Deine Zeiten werden jetzt hochgeladen.");
 					}}
@@ -446,8 +442,6 @@
 			<div class="space-y-2 border-t pt-3">
 				<Label for="srv">Adresse des Servers</Label>
 				<Input id="srv" bind:value={serverUrl} placeholder="https://tracker.example.de" />
-				<Label for="gname" class="pt-2">Name dieses Geräts</Label>
-				<Input id="gname" bind:value={geraetename} placeholder={vorschlagName()} />
 
 				<!-- Zwei Wege, und die Reihenfolge ist Absicht.
 
@@ -456,9 +450,7 @@
 				     zurückzukommen, ist genau verkehrt herum – deshalb steht das
 				     Anlegen oben und das Koppeln darunter. -->
 				<div class="space-y-2 pt-3">
-					<Label for="kontoname">Dein Name</Label>
-					<Input id="kontoname" bind:value={kontoName} placeholder="wie du heißt" />
-					<Label for="invite" class="pt-1">Einladungscode</Label>
+					<Label for="invite">Einladungscode</Label>
 					<Input id="invite" bind:value={einladung} placeholder="ABCD-EFGH-JKLM-NPQR" class="font-mono" />
 					<Button onclick={kontoAnlegen} disabled={laeuft} class="mt-1">
 						{laeuft ? "Legt an…" : "Konto anlegen und verknüpfen"}

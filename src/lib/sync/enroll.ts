@@ -259,6 +259,7 @@ export async function addPasskeyWrap(
  */
 export async function registerFromDevice(
 	baseUrl: string,
+	/** Leer lassen: dann steht die Kennung des Kontos da. Siehe /api/auth/device. */
 	displayName: string,
 	label: string,
 	opts: { invite?: string; email?: string } = {}
