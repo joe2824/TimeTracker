@@ -132,6 +132,52 @@
 		return e instanceof Error ? e.message : standard;
 	}
 
+	// ---------- Der Browser koppelt sich wie ein neues Geraet ----------
+
+	let kopplungscode = $state("");
+	let poll: ReturnType<typeof setInterval> | null = null;
+
+	async function koppelnStarten() {
+		laeuft = true;
+		try {
+			kopplungscode = await account.startPairing(serverUrl, "Browser");
+			// Alle zwei Sekunden nachsehen. Der Server bremst das nicht aus - gezaehlt
+			// werden dort nur Fehlgriffe, nicht das Warten.
+			poll = setInterval(pruefen, 2000);
+		} catch (e) {
+			toast.error(fehlertext(e, "Kopplung konnte nicht begonnen werden"));
+		} finally {
+			laeuft = false;
+		}
+	}
+
+	async function pruefen() {
+		try {
+			if (await account.checkPairing()) {
+				koppelnAufraeumen();
+				toast.success("Gerät gekoppelt. Leg jetzt einen Passkey an, dann geht es künftig schneller.");
+			}
+		} catch (e) {
+			koppelnAufraeumen();
+			toast.error(fehlertext(e, "Kopplung fehlgeschlagen"));
+		}
+	}
+
+	function koppelnAbbrechen() {
+		account.cancelPairing();
+		koppelnAufraeumen();
+	}
+
+	function koppelnAufraeumen() {
+		if (poll) clearInterval(poll);
+		poll = null;
+		kopplungscode = "";
+	}
+
+	$effect(() => () => {
+		if (poll) clearInterval(poll);
+	});
+
 	async function kopieren() {
 		try {
 			await navigator.clipboard.writeText(phrase);
@@ -168,6 +214,35 @@
 						Kein Passwort, keine E-Mail-Pflicht. Es wird ein Passkey auf diesem Gerät
 						angelegt.
 					</p>
+				</div>
+
+				<!-- Der dritte Weg, und ohne ihn waere einer der anderen eine Sackgasse.
+
+				     Ein Konto, das aus der Desktop-Anwendung heraus angelegt wurde, hat
+				     keinen Passkey - die Anwendung hat keine Domain und kann keinen
+				     anbieten. Im Browser käme man da mit "Mit Passkey anmelden" nie
+				     hinein.
+
+				     Also koppelt sich der Browser wie jedes andere neue Gerät: Code
+				     anzeigen, am Rechner bestätigen. Danach lässt sich hier ein Passkey
+				     anlegen, und ab dann geht auch der bequeme Weg. -->
+				<div class="space-y-2 border-t pt-4">
+					<p class="text-sm font-medium">Oder: zu einem Konto dazu, das es schon gibt</p>
+					{#if kopplungscode}
+						<p class="font-mono text-2xl tracking-[0.2em]">{kopplungscode}</p>
+						<p class="text-muted-foreground text-xs">
+							Diesen Code am Rechner unter „Konto &amp; Synchronisation“ bestätigen. Er gilt
+							zehn Minuten.
+						</p>
+						<Button variant="ghost" size="sm" onclick={koppelnAbbrechen}>Abbrechen</Button>
+					{:else}
+						<Button variant="outline" class="w-full" disabled={laeuft} onclick={koppelnStarten}>
+							Dieses Gerät koppeln
+						</Button>
+						<p class="text-muted-foreground text-xs">
+							Für Konten ohne Passkey – etwa, wenn du am Rechner angefangen hast.
+						</p>
+					{/if}
 				</div>
 			</Card.Content>
 		</Card.Root>

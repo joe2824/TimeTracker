@@ -335,6 +335,32 @@ class AccountState {
 		this.#stopHeartbeat();
 	}
 
+	// ---------- Konto von hier aus anlegen ----------
+
+	/**
+	 * Ein neues Konto anlegen - von diesem Geraet aus, ohne Umweg ueber den Browser.
+	 *
+	 * Danach ist dieses Geraet verknuepft und der erste Abgleich laedt den
+	 * gesamten lokalen Bestand hoch. Genau das ist der Sinn: die Daten liegen
+	 * hier, nicht dort.
+	 *
+	 * Gibt die Wiederherstellungs-Phrase zurueck. Sie ist der EINZIGE Weg zurueck,
+	 * solange kein zweites Geraet gekoppelt und kein Passkey angelegt ist - der
+	 * Aufrufer muss sie zeigen und sich bestaetigen lassen, bevor er weitermacht.
+	 */
+	async createAccount(
+		serverUrl: string,
+		displayName: string,
+		label: string,
+		opts: { invite?: string; email?: string } = {}
+	): Promise<string> {
+		const url = serverUrl.replace(/\/+$/, "");
+		const { registerFromDevice } = await import("./enroll");
+		const r = await registerFromDevice(url, displayName, label, opts);
+		await this.#persistLink(url, r.deviceToken, r.key, r.displayName);
+		return r.recoveryPhrase;
+	}
+
 	// ---------- Koppeln: dieses Geraet ist neu ----------
 
 	/**

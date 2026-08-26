@@ -1107,3 +1107,77 @@ describe("Passkeys verwalten", () => {
 		expect(res.status).toBe(403);
 	});
 });
+
+describe("Konto von einem Geraet aus anlegen", () => {
+	/** Die Registrierung ist geschlossen - also braucht jeder Versuch eine Einladung. */
+	function einladung(): string {
+		const code = `TEST-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+		db.$client
+			.prepare("INSERT INTO invites (code, created_at) VALUES (?, ?)")
+			.run(code, Date.now());
+		return code;
+	}
+
+	it("verlangt einen Namen", async () => {
+		const res = await api(null, "/api/auth/device", {
+			method: "POST",
+			body: JSON.stringify({ label: "Rechner" })
+		});
+		expect(res.status).toBe(400);
+	});
+
+	it("legt Konto und Geraet in einem Zug an", async () => {
+		const res = await api(null, "/api/auth/device", {
+			method: "POST",
+			body: JSON.stringify({ displayName: "Neuling", label: "Neulings Rechner", invite: einladung() })
+		});
+		expect(res.status).toBe(200);
+		const { userId, deviceToken } = await res.json();
+		expect(deviceToken).toBeTruthy();
+
+		// Das Token traegt sofort - ohne das waere das Konto unerreichbar, denn
+		// einen Passkey gibt es hier nicht.
+		const ich = await (await api(deviceToken, "/api/me")).json();
+		expect(ich.userId).toBe(userId);
+		expect(ich.displayName).toBe("Neuling");
+		expect(ich.passkeys).toHaveLength(0);
+		expect(ich.devices).toHaveLength(1);
+	});
+
+	it("kann sofort abgleichen", async () => {
+		// Der eigentliche Zweck: die Daten liegen auf diesem Rechner und sollen
+		// hoch. Ein Konto, das erst noch einen Passkey braucht, waere ein Umweg.
+		const { deviceToken } = await (
+			await api(null, "/api/auth/device", {
+				method: "POST",
+				body: JSON.stringify({ displayName: "Neuling", label: "Rechner", invite: einladung() })
+			})
+		).json();
+
+		const hoch = await api(deviceToken, "/api/sync", {
+			method: "POST",
+			body: JSON.stringify({ records: [rec("e1"), rec("e2")] })
+		});
+		expect(hoch.status).toBe(200);
+		expect((await hoch.json()).accepted).toHaveLength(2);
+	});
+
+	it("nimmt die Verpackung der Phrase an", async () => {
+		const { deviceToken } = await (
+			await api(null, "/api/auth/device", {
+				method: "POST",
+				body: JSON.stringify({ displayName: "Neuling", label: "Rechner", invite: einladung() })
+			})
+		).json();
+
+		const res = await api(deviceToken, "/api/wraps", {
+			method: "POST",
+			body: JSON.stringify({ kind: "recovery", payload: "verpackt" })
+		});
+		expect(res.status).toBe(200);
+
+		// Ohne sie waere das Konto an genau dieses eine Geraet gebunden.
+		const { wraps } = await (await api(deviceToken, "/api/wraps")).json();
+		expect(wraps.map((w: { kind: string }) => w.kind)).toContain("recovery");
+	});
+});

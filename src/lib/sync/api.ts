@@ -207,6 +207,22 @@ export class Api {
 		});
 	}
 
+	/**
+	 * Ein Konto von diesem Geraet aus anlegen - ohne Passkey.
+	 *
+	 * Der Weg fuer die Desktop-Anwendung: sie hat keine Domain und kann deshalb
+	 * keinen Passkey anbieten. Sie bekommt stattdessen ein Geraete-Token; ein
+	 * Passkey kommt spaeter im Browser dazu, nachdem der sich gekoppelt hat.
+	 */
+	registerDevice(body: {
+		displayName: string;
+		label: string;
+		invite?: string;
+		email?: string;
+	}): Promise<{ userId: string; displayName: string; deviceId: string; deviceToken: string }> {
+		return this.#call("/api/auth/device", { method: "POST", body: JSON.stringify(body) });
+	}
+
 	loginStart(): Promise<{ challengeId: string; options: unknown }> {
 		return this.#call("/api/auth/login/start", { method: "POST" });
 	}

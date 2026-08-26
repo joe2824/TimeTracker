@@ -19,6 +19,11 @@
 	let geraetename = $state("");
 	let code = $state("");
 	let fremderCode = $state("");
+	let kontoName = $state("");
+	let einladung = $state("");
+	/** Die Phrase, genau einmal - danach nie wieder. */
+	let phrase = $state("");
+	let phraseBestaetigt = $state(false);
 	let laeuft = $state(false);
 	/** Warten auf die Bestaetigung des anderen Geraets. */
 	let warten = $state(false);
@@ -126,6 +131,39 @@
 		}
 	}
 
+	/**
+	 * Ein Konto von hier aus anlegen.
+	 *
+	 * Danach wird die Phrase gezeigt, und zwar bevor irgendetwas anderes passiert:
+	 * dieses Konto hat noch keinen Passkey und kein zweites Gerät, also haengt
+	 * alles an diesen 24 Woertern.
+	 */
+	async function kontoAnlegen() {
+		const url = serverUrl.trim();
+		if (!url) {
+			toast.error("Bitte die Adresse des Servers angeben.");
+			return;
+		}
+		if (!kontoName.trim()) {
+			toast.error("Bitte einen Namen angeben.");
+			return;
+		}
+		laeuft = true;
+		try {
+			phrase = await account.createAccount(
+				url,
+				kontoName.trim(),
+				geraetename.trim() || vorschlagName(),
+				{ invite: einladung.trim() || undefined }
+			);
+			phraseBestaetigt = false;
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : "Konto konnte nicht angelegt werden");
+		} finally {
+			laeuft = false;
+		}
+	}
+
 	async function loesen(opts: { revokeSelf?: boolean } = {}) {
 		laeuft = true;
 		try {
@@ -177,6 +215,54 @@
 	</Card.Header>
 
 	<Card.Content class="space-y-4">
+		{#if phrase}
+			<!-- Vor allem anderen.
+
+			     Dieses Konto hat noch keinen Passkey und kein zweites Gerät. Es hängt
+			     an diesen 24 Wörtern - geht der Rechner kaputt, bevor irgendetwas
+			     dazugekommen ist, sind sie der einzige Weg zu den Daten. Auch der
+			     Betreiber kann dann nicht helfen; er kann nichts entschlüsseln.
+
+			     Deshalb keine Schaltfläche zum Wegklicken, sondern ein Häkchen, das
+			     man setzen muss. -->
+			<div class="border-primary/40 space-y-3 rounded-md border p-4">
+				<div>
+					<p class="font-medium">Deine Wiederherstellungs-Phrase</p>
+					<p class="text-muted-foreground text-sm">
+						Schreib sie auf. Sie wird genau einmal gezeigt und lässt sich nicht noch einmal
+						anzeigen.
+					</p>
+				</div>
+
+				<p class="bg-muted rounded-md p-3 font-mono text-sm leading-relaxed select-all">
+					{phrase}
+				</p>
+
+				<p class="text-muted-foreground text-xs">
+					Solange kein zweites Gerät gekoppelt und kein Passkey angelegt ist, sind diese
+					Wörter der einzige Weg zu deinen Zeiten. Ein Passwort-Manager oder ein Zettel im
+					Ordner sind beide besser als der Bildschirm, auf dem sie gerade stehen.
+				</p>
+
+				<label class="flex items-start gap-2 text-sm">
+					<input type="checkbox" bind:checked={phraseBestaetigt} class="mt-1" />
+					<span>Ich habe die Phrase gesichert.</span>
+				</label>
+
+				<Button
+					disabled={!phraseBestaetigt}
+					onclick={() => {
+						phrase = "";
+						kontoName = "";
+						einladung = "";
+						toast.success("Konto angelegt. Deine Zeiten werden jetzt hochgeladen.");
+					}}
+				>
+					Weiter
+				</Button>
+			</div>
+		{/if}
+
 		<SettingRow title="Status" description={account.linked ? account.serverUrl : "Zeiten nur auf diesem Gerät."}>
 			{#snippet control()}
 				<span class="text-sm font-medium {zustand.ton}">{zustand.text}</span>
@@ -362,13 +448,37 @@
 				<Input id="srv" bind:value={serverUrl} placeholder="https://tracker.example.de" />
 				<Label for="gname" class="pt-2">Name dieses Geräts</Label>
 				<Input id="gname" bind:value={geraetename} placeholder={vorschlagName()} />
-				<Button onclick={koppelnStarten} disabled={laeuft} class="mt-2">
-					Kopplungscode anzeigen
-				</Button>
-				<p class="text-muted-foreground text-xs">
-					Es braucht ein bestehendes Konto und ein Gerät, das darauf schon Zugriff hat. Beim
-					ersten Gerät wird das Konto im Browser angelegt.
-				</p>
+
+				<!-- Zwei Wege, und die Reihenfolge ist Absicht.
+
+				     Wer hier sitzt, hat seine Daten auf DIESEM Rechner. Ihn zuerst in
+				     den Browser zu schicken, ein leeres Konto anzulegen und dann
+				     zurückzukommen, ist genau verkehrt herum – deshalb steht das
+				     Anlegen oben und das Koppeln darunter. -->
+				<div class="space-y-2 pt-3">
+					<Label for="kontoname">Dein Name</Label>
+					<Input id="kontoname" bind:value={kontoName} placeholder="wie du heißt" />
+					<Label for="invite" class="pt-1">Einladungscode</Label>
+					<Input id="invite" bind:value={einladung} placeholder="ABCD-EFGH-JKLM-NPQR" class="font-mono" />
+					<Button onclick={kontoAnlegen} disabled={laeuft} class="mt-1">
+						{laeuft ? "Legt an…" : "Konto anlegen und verknüpfen"}
+					</Button>
+					<p class="text-muted-foreground text-xs">
+						Legt ein neues Konto an und lädt die Zeiten von diesem Rechner hoch. Du bekommst
+						eine Wiederherstellungs-Phrase – sie ist zunächst der einzige Weg zurück.
+					</p>
+				</div>
+
+				<div class="space-y-2 border-t pt-3">
+					<p class="text-sm font-medium">Oder: zu einem Konto dazu, das es schon gibt</p>
+					<Button variant="outline" onclick={koppelnStarten} disabled={laeuft}>
+						Kopplungscode anzeigen
+					</Button>
+					<p class="text-muted-foreground text-xs">
+						Dafür braucht es ein Gerät, das auf dieses Konto schon Zugriff hat – es bestätigt
+						den Code.
+					</p>
+				</div>
 			</div>
 		{/if}
 	</Card.Content>

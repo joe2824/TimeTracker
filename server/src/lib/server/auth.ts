@@ -8,7 +8,7 @@
 // darunter arbeitet nur noch mit dieser einen Antwort.
 import { and, eq, isNull, lt } from "drizzle-orm";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import type { Db } from "./db";
+import type { Db, DbLike } from "./db";
 import { challenges, devices, sessions, users } from "./db/schema";
 import { CHALLENGE_TTL_MS, SESSION_TTL_MS } from "./config";
 
@@ -116,7 +116,11 @@ export interface DeviceAuth {
  * Das Token wird genau einmal zurueckgegeben - danach steht nur noch sein Hash
  * in der Datenbank und niemand kann es mehr nachlesen, auch der Betreiber nicht.
  */
-export function createDevice(db: Db, userId: string, label: string): { id: string; token: string } {
+export function createDevice(
+	db: DbLike,
+	userId: string,
+	label: string
+): { id: string; token: string } {
 	const id = crypto.randomUUID();
 	const token = newSecret();
 	db.insert(devices)

@@ -246,6 +246,59 @@ export async function addPasskeyWrap(
 }
 
 /**
+ * Ein Konto von diesem Geraet aus anlegen - ohne Passkey.
+ *
+ * Der Weg fuer die Desktop-Anwendung. Sie hat keine Domain und kann deshalb
+ * keinen Passkey anbieten; sie bekommt ein Geraete-Token und legt die
+ * Wiederherstellungs-Phrase als einzige Verpackung ab.
+ *
+ * Das ist ausdruecklich ein Konto mit EINEM Weg zurueck. Solange kein zweites
+ * Geraet gekoppelt und kein Passkey angelegt ist, haengt alles an diesen 24
+ * Woertern - deshalb gibt diese Funktion sie zurueck und die Oberflaeche zeigt
+ * sie, bevor irgendetwas anderes passiert.
+ */
+export async function registerFromDevice(
+	baseUrl: string,
+	displayName: string,
+	label: string,
+	opts: { invite?: string; email?: string } = {}
+): Promise<{
+	userId: string;
+	displayName: string;
+	deviceToken: string;
+	key: CryptoKey;
+	recoveryPhrase: string;
+}> {
+	const api = new Api({ baseUrl, fetchFn: platformFetch });
+	const angelegt = await api.registerDevice({
+		displayName,
+		label,
+		invite: opts.invite,
+		email: opts.email
+	});
+
+	// Ab hier weist sich dieses Geraet mit seinem Token aus - vorher gab es
+	// nichts, womit.
+	api.setToken(angelegt.deviceToken);
+
+	const key = await createVaultKey();
+	const recoveryPhrase = createRecoveryPhrase();
+	// Die Phrase zuerst: sie ist der einzige Weg zurueck, und ein Konto, dessen
+	// Verpackung nicht abgelegt werden konnte, ist ein Konto ohne Zugriff auf die
+	// eigenen Daten. Scheitert das hier, scheitert das Anlegen sichtbar - statt
+	// still ein unbrauchbares Konto zu hinterlassen.
+	await api.putWrap("recovery", serialize(await wrapWithPhrase(key, recoveryPhrase)));
+
+	return {
+		userId: angelegt.userId,
+		displayName: angelegt.displayName,
+		deviceToken: angelegt.deviceToken,
+		key,
+		recoveryPhrase
+	};
+}
+
+/**
  * Einen WEITEREN Passkey an ein bestehendes Konto haengen.
  *
  * Zwei Dinge passieren, und beide muessen passieren:

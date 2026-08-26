@@ -18,6 +18,7 @@
 	import * as Select from "$lib/components/ui/select";
 	import * as Card from "$lib/components/ui/card";
 	import { toast } from "svelte-sonner";
+	import { capabilities } from "$lib/platform/env";
 	import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 	import { checkForUpdate, updater } from "$lib/updater.svelte";
 	import { getVersion } from "@tauri-apps/api/app";
@@ -151,10 +152,17 @@
 	}
 
 	onMount(async () => {
-		try {
-			form.autostart = await isEnabled();
-		} catch (e) {
-			toast.error(`Autostart-Status nicht lesbar: ${e}`, { duration: 60000 });
+		// Nur wo es das ueberhaupt gibt. Im Browser ist das Autostart-Plugin nicht
+		// geladen, und der Aufruf scheiterte an einem `invoke`, das dort nicht
+		// existiert - mit einer Fehlermeldung, die eine Minute lang im Bild stand
+		// und nach einem kaputten Programm aussah. Es fehlt aber nichts; die
+		// Funktion gibt es im Browser schlicht nicht.
+		if (capabilities.autostart) {
+			try {
+				form.autostart = await isEnabled();
+			} catch (e) {
+				toast.error(`Autostart-Status nicht lesbar: ${e}`, { duration: 60000 });
+			}
 		}
 		try {
 			appVersion = await getVersion();
@@ -403,15 +411,18 @@
 						<!-- Ein Rhythmus wie bei den Schaltern darunter: Titel links, Feld rechts.
 						     Vorher ein 2er-Grid mit überlangen Labels („… (Min, 0 = aus)“) – die
 						     Hinweise stehen jetzt in der Erklärungszeile, wo sie hingehören. -->
-						<SettingRow
-							id="idle"
-							title="Leerlauf nachfragen ab"
-							description="Nach so vielen Minuten ohne Eingabe nachfragen. 0 = aus."
-						>
-							{#snippet control()}
-								<Input id="idle" type="number" min="0" class="w-24" bind:value={form.idleThresholdMin} onchange={saveTracking} />
-							{/snippet}
-						</SettingRow>
+						<!-- Braucht die Leerlauf-Erkennung des Systems - im Browser gibt es die nicht. -->
+						{#if capabilities.idleDetection}
+							<SettingRow
+								id="idle"
+								title="Leerlauf nachfragen ab"
+								description="Nach so vielen Minuten ohne Eingabe nachfragen. 0 = aus."
+							>
+								{#snippet control()}
+									<Input id="idle" type="number" min="0" class="w-24" bind:value={form.idleThresholdMin} onchange={saveTracking} />
+								{/snippet}
+							</SettingRow>
+						{/if}
 
 						<SettingRow
 							id="maxh"
@@ -423,13 +434,16 @@
 							{/snippet}
 						</SettingRow>
 
-						<SettingToggle
-							id="scnotify"
-							title="Hinweis bei Shortcut-Start/Stop"
-							description="Kurze Meldung, verschwindet selbst."
-							bind:checked={form.shortcutNotify}
-							onCheckedChange={() => saveTracking()}
-						/>
+						<!-- Ohne globalen Hotkey gibt es auch nichts zu melden. -->
+						{#if capabilities.globalShortcuts}
+							<SettingToggle
+								id="scnotify"
+								title="Hinweis bei Shortcut-Start/Stop"
+								description="Kurze Meldung, verschwindet selbst."
+								bind:checked={form.shortcutNotify}
+								onCheckedChange={() => saveTracking()}
+							/>
+						{/if}
 
 						<SettingToggle
 							id="pomo"
@@ -451,32 +465,36 @@
 							</div>
 						{/if}
 
-						<SettingRow
-							title="Globaler Start/Stop-Hotkey"
-							description="Startet/stoppt den zuletzt benutzten Timer – auch wenn die App im Hintergrund ist."
-						>
-							{#snippet control()}
-								<div class="flex items-center gap-1">
-									{#if recordingToggle}
-										<span class="text-muted-foreground text-sm italic">Taste drücken… (Esc=Abbruch)</span>
-									{:else if app.settings.toggleShortcut}
-										<ShortcutKey
-											shortcut={app.settings.toggleShortcut}
-											onclick={() => (recordingToggle = true)}
-										/>
-										<Button variant="ghost" size="icon-sm" onclick={clearToggle} title="Entfernen">
-											<XIcon />
-										</Button>
-									{:else}
-										<!-- Festlegen ist eine Aktion, keine Taste – also ein normaler Button
-										     statt der Keycap-Optik, die es vorher trug. -->
-										<Button variant="outline" size="sm" onclick={() => (recordingToggle = true)}>
-											Festlegen…
-										</Button>
-									{/if}
-								</div>
-							{/snippet}
-						</SettingRow>
+						<!-- Ein Tastenkuerzel, das auch dann greift, wenn das Fenster nicht vorn ist,
+						     kann nur das Betriebssystem vergeben. Der Browser darf das nicht. -->
+						{#if capabilities.globalShortcuts}
+							<SettingRow
+								title="Globaler Start/Stop-Hotkey"
+								description="Startet/stoppt den zuletzt benutzten Timer – auch wenn die App im Hintergrund ist."
+							>
+								{#snippet control()}
+									<div class="flex items-center gap-1">
+										{#if recordingToggle}
+											<span class="text-muted-foreground text-sm italic">Taste drücken… (Esc=Abbruch)</span>
+										{:else if app.settings.toggleShortcut}
+											<ShortcutKey
+												shortcut={app.settings.toggleShortcut}
+												onclick={() => (recordingToggle = true)}
+											/>
+											<Button variant="ghost" size="icon-sm" onclick={clearToggle} title="Entfernen">
+												<XIcon />
+											</Button>
+										{:else}
+											<!-- Festlegen ist eine Aktion, keine Taste – also ein normaler Button
+											     statt der Keycap-Optik, die es vorher trug. -->
+											<Button variant="outline" size="sm" onclick={() => (recordingToggle = true)}>
+												Festlegen…
+											</Button>
+										{/if}
+									</div>
+								{/snippet}
+							</SettingRow>
+						{/if}
 
 					</Card.Content>
 				</Card.Root>
@@ -592,82 +610,86 @@
 						/>
 					</Card.Content>
 				</Card.Root>
-				<Card.Root>
-					<Card.Header>
-						<Card.Title>Chef-Modus</Card.Title>
-						<Card.Description>
-							Prüft im Outlook-Posteingang, wer seinen Monatsbericht geschickt hat und wer nicht.
-						</Card.Description>
-						<Card.Action><SavedHint at={savedBoss} /></Card.Action>
-					</Card.Header>
-					<Card.Content class="space-y-3">
-						<SettingToggle
-							id="bossmode"
-							title="Chef-Modus"
-							description="Blendet den Tab „Team“ ein. Es wird ausschließlich gelesen – keine Mail wird verschoben oder markiert."
-							bind:checked={form.bossMode}
-							onCheckedChange={() => saveBossMode()}
-						/>
-
-						{#if form.bossMode}
-							<div class="space-y-2 border-t pt-3">
-								<Label>Team</Label>
-								<p class="text-muted-foreground text-xs">
-									Von wem monatlich ein Bericht erwartet wird. Die Zuordnung läuft über die E-Mail-Adresse
-									– fehlt jemand hier, taucht sein Bericht trotzdem auf, nur eben ohne „fehlt“-Abgleich.
-								</p>
-								<!-- Nach id, nicht nach Index: beim Loeschen einer Zeile ruecken sonst
-								     alle folgenden Felder eine Position hoch und zeigen fremde Werte. -->
-								{#each form.team as m, i (m.id)}
-									<div class="flex gap-2">
-										<Input placeholder="Name" bind:value={form.team[i].name} onchange={saveBossMode} />
-										<Input
-											type="email"
-											placeholder="name@firma.de"
-											bind:value={form.team[i].email}
-											onchange={saveBossMode}
-										/>
-										<Button
-											variant="ghost"
-											size="icon"
-											title="Aus dem Team entfernen"
-											onclick={() => {
-												form.team = form.team.filter((_, j) => j !== i);
-												void saveBossMode();
-											}}
-										>
-											<Trash2Icon class="size-4" />
-										</Button>
-									</div>
-								{/each}
-								<Button
-									variant="outline"
-									size="sm"
-									onclick={() => (form.team = [...form.team, { id: crypto.randomUUID(), name: "", email: "" }])}
-								>
-									<PlusIcon class="size-4" /> Mitarbeiter
-								</Button>
-							</div>
-
-							<div class="space-y-1 border-t pt-3">
-								<Label for="tsubj">Betreff enthält</Label>
-								<Input id="tsubj" bind:value={form.teamSubjectFilter} onchange={saveBossMode} />
-								<p class="text-muted-foreground text-xs">
-									Nur Mails mit diesem Text im Betreff werden gelesen. Standard ist der Anfang der
-									Betreff-Vorlage, die TimeTracker selbst verschickt.
-								</p>
-							</div>
-
+				<!-- Liest den Outlook-Posteingang ueber COM. Im Browser gibt es das nicht,
+				     und nachbauen laesst es sich auch nicht. -->
+				{#if capabilities.outlook}
+					<Card.Root>
+						<Card.Header>
+							<Card.Title>Chef-Modus</Card.Title>
+							<Card.Description>
+								Prüft im Outlook-Posteingang, wer seinen Monatsbericht geschickt hat und wer nicht.
+							</Card.Description>
+							<Card.Action><SavedHint at={savedBoss} /></Card.Action>
+						</Card.Header>
+						<Card.Content class="space-y-3">
 							<SettingToggle
-								id="tsubf"
-								title="Unterordner mitlesen"
-								description="Auch Unterordner des Posteingangs durchsuchen – für alle, die Berichte per Regel einsortieren lassen."
-								bind:checked={form.teamScanSubfolders}
+								id="bossmode"
+								title="Chef-Modus"
+								description="Blendet den Tab „Team“ ein. Es wird ausschließlich gelesen – keine Mail wird verschoben oder markiert."
+								bind:checked={form.bossMode}
 								onCheckedChange={() => saveBossMode()}
 							/>
-						{/if}
-					</Card.Content>
-				</Card.Root>
+
+							{#if form.bossMode}
+								<div class="space-y-2 border-t pt-3">
+									<Label>Team</Label>
+									<p class="text-muted-foreground text-xs">
+										Von wem monatlich ein Bericht erwartet wird. Die Zuordnung läuft über die E-Mail-Adresse
+										– fehlt jemand hier, taucht sein Bericht trotzdem auf, nur eben ohne „fehlt“-Abgleich.
+									</p>
+									<!-- Nach id, nicht nach Index: beim Loeschen einer Zeile ruecken sonst
+									     alle folgenden Felder eine Position hoch und zeigen fremde Werte. -->
+									{#each form.team as m, i (m.id)}
+										<div class="flex gap-2">
+											<Input placeholder="Name" bind:value={form.team[i].name} onchange={saveBossMode} />
+											<Input
+												type="email"
+												placeholder="name@firma.de"
+												bind:value={form.team[i].email}
+												onchange={saveBossMode}
+											/>
+											<Button
+												variant="ghost"
+												size="icon"
+												title="Aus dem Team entfernen"
+												onclick={() => {
+													form.team = form.team.filter((_, j) => j !== i);
+													void saveBossMode();
+												}}
+											>
+												<Trash2Icon class="size-4" />
+											</Button>
+										</div>
+									{/each}
+									<Button
+										variant="outline"
+										size="sm"
+										onclick={() => (form.team = [...form.team, { id: crypto.randomUUID(), name: "", email: "" }])}
+									>
+										<PlusIcon class="size-4" /> Mitarbeiter
+									</Button>
+								</div>
+
+								<div class="space-y-1 border-t pt-3">
+									<Label for="tsubj">Betreff enthält</Label>
+									<Input id="tsubj" bind:value={form.teamSubjectFilter} onchange={saveBossMode} />
+									<p class="text-muted-foreground text-xs">
+										Nur Mails mit diesem Text im Betreff werden gelesen. Standard ist der Anfang der
+										Betreff-Vorlage, die TimeTracker selbst verschickt.
+									</p>
+								</div>
+
+								<SettingToggle
+									id="tsubf"
+									title="Unterordner mitlesen"
+									description="Auch Unterordner des Posteingangs durchsuchen – für alle, die Berichte per Regel einsortieren lassen."
+									bind:checked={form.teamScanSubfolders}
+									onCheckedChange={() => saveBossMode()}
+								/>
+							{/if}
+						</Card.Content>
+					</Card.Root>
+				{/if}
 		{:else if bereich === "erinnerungen"}
 				<Card.Root>
 					<Card.Header>
@@ -746,42 +768,50 @@
 				<PasskeyPanel />
 				<AdminPanel />
 		{:else if bereich === "system"}
-				<Card.Root>
-					<Card.Header>
-						<Card.Title>System</Card.Title>
-						<Card.Action><SavedHint at={savedSystem} /></Card.Action>
-					</Card.Header>
-					<Card.Content class="space-y-4">
-						<SettingToggle
-							id="autostart"
-							title="Mit Windows starten"
-							description="App läuft im Hintergrund (Tray)."
-							bind:checked={form.autostart}
-							onCheckedChange={toggleAutostart}
-						/>
-						<SettingToggle
-							id="beta"
-							title="Vorabversionen (Beta)"
-							description="Neue Funktionen früher bekommen – dafür kann auch mal etwas klemmen. Aus heißt: nur fertige Versionen."
-							bind:checked={form.betaUpdates}
-							onCheckedChange={saveBetaUpdates}
-							class="border-t pt-3"
-						/>
-						{#if channelChanged}
-							<!-- Der Kanal steht fest, sobald das Updater-Plugin seine Konfiguration
-							     gelesen hat – das passiert beim Start, lange bevor dieser Schalter
-							     erreichbar ist. Ohne diesen Hinweis suchte die App weiter im alten
-							     Kanal, ohne dass erkennbar wäre, warum. -->
-							<div class="flex flex-wrap items-center gap-2 text-sm">
-								<span class="text-muted-foreground">Wirkt nach einem Neustart der App.</span>
-								<Button variant="outline" size="sm" onclick={restartApp}>Jetzt neu starten</Button>
-							</div>
-						{/if}
-						<Button variant="outline" onclick={checkUpdate} disabled={updater.checking}>
-							{updater.checking ? "Suche…" : "Nach Updates suchen"}
-						</Button>
-					</Card.Content>
-				</Card.Root>
+				<!-- Im Browser bleibt von dieser Karte nichts uebrig: Autostart und Updater
+				     sind alles, was darin steht. Eine leere Karte ist keine Auskunft. -->
+				{#if capabilities.autostart || capabilities.updater}
+					<Card.Root>
+						<Card.Header>
+							<Card.Title>System</Card.Title>
+							<Card.Action><SavedHint at={savedSystem} /></Card.Action>
+						</Card.Header>
+						<Card.Content class="space-y-4">
+							<!-- Nur auf dem Rechner: im Browser gibt es keinen Autostart. Einen
+							     Schalter zu zeigen, der nichts tut, ist schlimmer als keiner. -->
+							{#if capabilities.autostart}
+								<SettingToggle
+									id="autostart"
+									title="Mit Windows starten"
+									description="App läuft im Hintergrund (Tray)."
+									bind:checked={form.autostart}
+									onCheckedChange={toggleAutostart}
+								/>
+							{/if}
+							<SettingToggle
+								id="beta"
+								title="Vorabversionen (Beta)"
+								description="Neue Funktionen früher bekommen – dafür kann auch mal etwas klemmen. Aus heißt: nur fertige Versionen."
+								bind:checked={form.betaUpdates}
+								onCheckedChange={saveBetaUpdates}
+								class="border-t pt-3"
+							/>
+							{#if channelChanged}
+								<!-- Der Kanal steht fest, sobald das Updater-Plugin seine Konfiguration
+								     gelesen hat – das passiert beim Start, lange bevor dieser Schalter
+								     erreichbar ist. Ohne diesen Hinweis suchte die App weiter im alten
+								     Kanal, ohne dass erkennbar wäre, warum. -->
+								<div class="flex flex-wrap items-center gap-2 text-sm">
+									<span class="text-muted-foreground">Wirkt nach einem Neustart der App.</span>
+									<Button variant="outline" size="sm" onclick={restartApp}>Jetzt neu starten</Button>
+								</div>
+							{/if}
+							<Button variant="outline" onclick={checkUpdate} disabled={updater.checking}>
+								{updater.checking ? "Suche…" : "Nach Updates suchen"}
+							</Button>
+						</Card.Content>
+					</Card.Root>
+				{/if}
 				<Card.Root>
 					<Card.Header>
 						<Card.Title>Daten</Card.Title>
