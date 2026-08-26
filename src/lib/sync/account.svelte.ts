@@ -361,6 +361,21 @@ class AccountState {
 		return r.recoveryPhrase;
 	}
 
+	/**
+	 * Ein Konto allein mit der Wiederherstellungs-Phrase zurueckholen.
+	 *
+	 * Der Weg fuer den Tag, an dem sonst nichts mehr da ist. Danach ist dieses
+	 * Geraet verknuepft, und der erste Abgleich holt den gesamten Bestand vom
+	 * Server - das ist ja der Punkt: die Daten sind noch da, nur der Zugang war
+	 * weg.
+	 */
+	async recoverWithPhrase(serverUrl: string, phrase: string, label: string): Promise<void> {
+		const url = serverUrl.replace(/\/+$/, "");
+		const { recoverWithPhrase } = await import("./enroll");
+		const r = await recoverWithPhrase(url, phrase, label);
+		await this.#persistLink(url, r.deviceToken, r.key, r.displayName);
+	}
+
 	// ---------- Koppeln: dieses Geraet ist neu ----------
 
 	/**

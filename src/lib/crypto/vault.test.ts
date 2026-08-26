@@ -15,18 +15,20 @@ import {
 	isValidRecoveryPhrase,
 	normalizePairingCode,
 	normalizePhrase,
-	pairingCode,
 	openRecord,
+	pairingCode,
+	recoveryLookupId,
 	sealRecord,
 	toBase64,
 	toHex,
+	type RecordBinding,
 	unwrapForDevice,
 	unwrapWithPhrase,
 	unwrapWithPrf,
+	vaultProof,
 	wrapForDevice,
 	wrapWithPhrase,
-	wrapWithPrf,
-	type RecordBinding
+	wrapWithPrf
 } from "./vault";
 
 const BINDING: RecordBinding = { id: "eintrag-1", kind: "entry", rev: 3 };
@@ -403,5 +405,85 @@ describe("checkedPairingKey", () => {
 
 		const wieder = await unwrapForDevice(paket, paar.privateKey);
 		expect(await sameKey(wieder, tresor)).toBe(true);
+	});
+});
+
+describe("Wiederherstellung ueber die Phrase", () => {
+	it("dieselbe Phrase ergibt dieselbe Kennung", async () => {
+		const p = createRecoveryPhrase();
+		expect(await recoveryLookupId(p)).toBe(await recoveryLookupId(p));
+	});
+
+	it("verschiedene Phrasen ergeben verschiedene Kennungen", async () => {
+		const a = await recoveryLookupId(createRecoveryPhrase());
+		const b = await recoveryLookupId(createRecoveryPhrase());
+		expect(a).not.toBe(b);
+	});
+
+	it("ist gegen Schreibweise unempfindlich", async () => {
+		// Wer abschreibt, tippt Grossbuchstaben und doppelte Leerzeichen. Daran
+		// darf eine Wiederherstellung nicht scheitern.
+		const p = createRecoveryPhrase();
+		const zerzaust = `  ${p.toUpperCase().replace(/ /g, "   ")}  `;
+		expect(await recoveryLookupId(zerzaust)).toBe(await recoveryLookupId(p));
+	});
+
+	it("verraet die Phrase nicht", async () => {
+		const p = createRecoveryPhrase();
+		const id = await recoveryLookupId(p);
+		// Kein Wort der Phrase darf in der Kennung auftauchen.
+		for (const wort of p.split(" ")) {
+			expect(id).not.toContain(wort);
+		}
+		expect(id).toMatch(/^[0-9a-f]{64}$/);
+	});
+
+	it("die Kennung oeffnet die Verpackung NICHT", async () => {
+		// Der Punkt, an dem alles haengt: Kennung und Schluessel entstehen aus
+		// derselben Phrase, aber ueber getrennte Wege. Waeren es dieselben Bytes,
+		// gaebe der Server mit der Kennung den Schluessel heraus.
+		const key = await createVaultKey();
+		const p = createRecoveryPhrase();
+		const wrap = await wrapWithPhrase(key, p);
+		const id = await recoveryLookupId(p);
+		await expect(unwrapWithPhrase(wrap, id)).rejects.toThrow();
+	});
+
+	it("der Nachweis ist an den Tresorschluessel gebunden", async () => {
+		const a = await createVaultKey();
+		const b = await createVaultKey();
+		expect(await vaultProof(a)).toBe(await vaultProof(a));
+		expect(await vaultProof(a)).not.toBe(await vaultProof(b));
+	});
+
+	it("der Nachweis gibt den Schluessel nicht her", async () => {
+		const key = await createVaultKey();
+		const roh = new Uint8Array(await exportVaultKey(key));
+		const beweis = await vaultProof(key);
+		// Der Schluessel selbst darf im Nachweis nicht auftauchen.
+		const hex = [...roh].map((b) => b.toString(16).padStart(2, "0")).join("");
+		expect(beweis).not.toBe(hex);
+		expect(beweis).not.toContain(hex.slice(0, 16));
+	});
+
+	it("der ganze Weg: Phrase rein, Tresorschluessel raus", async () => {
+		const key = await createVaultKey();
+		const p = createRecoveryPhrase();
+		const wrap = await wrapWithPhrase(key, p);
+
+		// Was der Server hat: Kennung, Nachweis, Chiffrat.
+		const id = await recoveryLookupId(p);
+		const beweis = await vaultProof(key);
+
+		// Was auf dem neuen Geraet passiert: Kennung rechnen, Verpackung holen,
+		// oeffnen, Nachweis rechnen.
+		expect(await recoveryLookupId(p)).toBe(id);
+		const zurueck = await unwrapWithPhrase(wrap, p);
+		expect(await vaultProof(zurueck)).toBe(beweis);
+
+		// Und der Schluessel ist wirklich derselbe.
+		expect(new Uint8Array(await exportVaultKey(zurueck))).toEqual(
+			new Uint8Array(await exportVaultKey(key))
+		);
 	});
 });

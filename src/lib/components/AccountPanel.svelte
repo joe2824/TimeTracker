@@ -21,6 +21,8 @@
 	let einladung = $state("");
 	/** Die Phrase, genau einmal - danach nie wieder. */
 	let phrase = $state("");
+	let phraseEingabeOffen = $state(false);
+	let phraseEingabe = $state("");
 	let phraseBestaetigt = $state(false);
 	let laeuft = $state(false);
 	/** Warten auf die Bestaetigung des anderen Geraets. */
@@ -156,6 +158,26 @@
 			phraseBestaetigt = false;
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Konto konnte nicht angelegt werden");
+		} finally {
+			laeuft = false;
+		}
+	}
+
+	/** Das Konto allein mit den 24 Woertern zurueckholen. */
+	async function zurueckholen() {
+		const url = serverUrl.trim();
+		if (!url) {
+			toast.error("Bitte die Adresse des Servers angeben.");
+			return;
+		}
+		laeuft = true;
+		try {
+			await account.recoverWithPhrase(url, phraseEingabe, vorschlagName());
+			phraseEingabeOffen = false;
+			phraseEingabe = "";
+			toast.success("Konto zurückgeholt. Die Daten kommen jetzt vom Server.");
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : "Zurückholen fehlgeschlagen");
 		} finally {
 			laeuft = false;
 		}
@@ -470,6 +492,48 @@
 						Dafür braucht es ein Gerät, das auf dieses Konto schon Zugriff hat – es bestätigt
 						den Code.
 					</p>
+				</div>
+
+				<!-- Der Weg für den Tag, an dem sonst nichts mehr da ist.
+
+				     Ohne ihn wären die 24 Wörter ein Versprechen, das niemand einlösen
+				     kann: sie öffnen zwar die Verpackung, aber an die Verpackung käme
+				     man nicht heran - dafür müsste man angemeldet sein. -->
+				<div class="space-y-2 border-t pt-3">
+					{#if !phraseEingabeOffen}
+						<Button variant="ghost" size="sm" onclick={() => (phraseEingabeOffen = true)}>
+							Mit Wiederherstellungs-Phrase zurückholen
+						</Button>
+						<p class="text-muted-foreground text-xs">
+							Wenn kein Gerät mehr da ist, das bestätigen könnte.
+						</p>
+					{:else}
+						<Label for="wphrase">Die 24 Wörter</Label>
+						<textarea
+							id="wphrase"
+							bind:value={phraseEingabe}
+							rows="3"
+							class="border-input bg-background w-full rounded-md border p-2 font-mono text-sm"
+							placeholder="wort eins wort zwei wort drei …"
+						></textarea>
+						<div class="flex gap-2">
+							<Button onclick={zurueckholen} disabled={laeuft}>
+								{laeuft ? "Sucht…" : "Konto zurückholen"}
+							</Button>
+							<Button
+								variant="ghost"
+								disabled={laeuft}
+								onclick={() => {
+									phraseEingabeOffen = false;
+									phraseEingabe = "";
+								}}>Abbrechen</Button
+							>
+						</div>
+						<p class="text-muted-foreground text-xs">
+							Die Wörter verlassen dieses Gerät nicht. Der Server bekommt nur eine Kennung,
+							aus der sich nichts zurückrechnen lässt.
+						</p>
+					{/if}
 				</div>
 			</div>
 		{/if}

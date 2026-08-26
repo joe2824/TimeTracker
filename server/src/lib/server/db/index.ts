@@ -119,7 +119,12 @@ const MIGRATIONS: string[] = [
 	`ALTER TABLE invites ADD COLUMN note TEXT`,
 	`ALTER TABLE invites ADD COLUMN expires_at INTEGER`,
 	`ALTER TABLE invites ADD COLUMN revoked_at INTEGER`,
-	`ALTER TABLE credentials ADD COLUMN label TEXT`
+	`ALTER TABLE credentials ADD COLUMN label TEXT`,
+	`ALTER TABLE users ADD COLUMN recovery_id TEXT`,
+	`ALTER TABLE users ADD COLUMN vault_proof TEXT`,
+	// Eindeutig: zwei Konten mit derselben Kennung waeren zwei Konten mit
+	// derselben Phrase - das kann nicht sein und darf nicht entstehen.
+	`CREATE UNIQUE INDEX IF NOT EXISTS users_recovery ON users(recovery_id) WHERE recovery_id IS NOT NULL`
 ];
 
 export type Db = ReturnType<typeof drizzle<typeof schema>>;

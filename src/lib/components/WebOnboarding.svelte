@@ -132,6 +132,25 @@
 		return e instanceof Error ? e.message : standard;
 	}
 
+	// ---------- Mit der Phrase zurueckholen ----------
+
+	let phraseOffen = $state(false);
+	let phraseEingabe = $state("");
+
+	async function zurueckholen() {
+		laeuft = true;
+		try {
+			await account.recoverWithPhrase(serverUrl, phraseEingabe, "Browser");
+			phraseOffen = false;
+			phraseEingabe = "";
+			toast.success("Konto zurückgeholt. Leg jetzt einen Passkey an, dann geht es künftig schneller.");
+		} catch (e) {
+			toast.error(fehlertext(e, "Zurückholen fehlgeschlagen"));
+		} finally {
+			laeuft = false;
+		}
+	}
+
 	// ---------- Der Browser koppelt sich wie ein neues Geraet ----------
 
 	let kopplungscode = $state("");
@@ -241,6 +260,39 @@
 						</Button>
 						<p class="text-muted-foreground text-xs">
 							Für Konten ohne Passkey – etwa, wenn du am Rechner angefangen hast.
+						</p>
+					{/if}
+				</div>
+
+				<!-- Und der Weg für den Tag, an dem gar nichts mehr da ist. -->
+				<div class="space-y-2 border-t pt-4">
+					{#if !phraseOffen}
+						<Button
+							variant="ghost"
+							size="sm"
+							class="w-full"
+							onclick={() => (phraseOffen = true)}
+						>
+							Mit Wiederherstellungs-Phrase zurückholen
+						</Button>
+					{:else}
+						<Label for="wph">Die 24 Wörter</Label>
+						<textarea
+							id="wph"
+							bind:value={phraseEingabe}
+							rows="3"
+							class="border-input bg-background w-full rounded-md border p-2 font-mono text-sm"
+							placeholder="wort eins wort zwei wort drei …"
+						></textarea>
+						<Button class="w-full" disabled={laeuft} onclick={zurueckholen}>
+							{laeuft ? "Sucht…" : "Konto zurückholen"}
+						</Button>
+						<Button variant="ghost" size="sm" class="w-full" onclick={() => (phraseOffen = false)}>
+							Abbrechen
+						</Button>
+						<p class="text-muted-foreground text-xs">
+							Die Wörter verlassen dieses Gerät nicht. Der Server bekommt nur eine Kennung,
+							aus der sich nichts zurückrechnen lässt.
 						</p>
 					{/if}
 				</div>

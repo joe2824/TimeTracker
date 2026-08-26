@@ -1245,3 +1245,106 @@ describe("Anlegen ohne Namen", () => {
 		expect(ich.devices[0].label).toBe("Rechner");
 	});
 });
+
+describe("Wiederherstellung mit der Phrase", () => {
+	/** Ein Konto mit hinterlegter Kennung und Nachweis - wie nach dem Anlegen. */
+	function kontoMitPhrase(id: string, recoveryId: string, proof: string) {
+		db.$client
+			.prepare("UPDATE users SET recovery_id = ?, vault_proof = ? WHERE id = ?")
+			.run(recoveryId, proof, id);
+		db.$client
+			.prepare(
+				"INSERT INTO key_wraps (id, user_id, kind, payload, created_at) VALUES (?,?,'recovery',?,?)"
+			)
+			.run(crypto.randomUUID(), id, "verpacktes-chiffrat", Date.now());
+	}
+
+	it("gibt die Verpackung zu einer bekannten Kennung heraus", async () => {
+		kontoMitPhrase(ANNA, "kennung-anna", "beweis-anna");
+		const res = await api(null, "/api/auth/recover", {
+			method: "POST",
+			body: JSON.stringify({ recoveryId: "kennung-anna" })
+		});
+		expect(res.status).toBe(200);
+		expect((await res.json()).wrap).toBe("verpacktes-chiffrat");
+	});
+
+	it("verraet nicht, ob es ein Konto gibt", async () => {
+		// Dieselbe Meldung fuer "kenne ich nicht" und "hat keine Verpackung" -
+		// sonst laesst sich durchprobieren, welche Konten existieren.
+		const res = await api(null, "/api/auth/recover", {
+			method: "POST",
+			body: JSON.stringify({ recoveryId: "gibt-es-nicht" })
+		});
+		expect(res.status).toBe(404);
+	});
+
+	it("gibt OHNE Nachweis kein Geraete-Token", async () => {
+		// Der Kern: wer die Kennung aus einer gestohlenen Datenbank abliest,
+		// bekommt die Verpackung - die er nicht oeffnen kann - und sonst nichts.
+		// Ein Token bekaeme er Zugriff auf alle Chiffrate und koennte sie loeschen.
+		kontoMitPhrase(ANNA, "kennung-anna", "beweis-anna");
+		const res = await api(null, "/api/auth/recover", {
+			method: "POST",
+			body: JSON.stringify({ recoveryId: "kennung-anna" })
+		});
+		const antwort = await res.json();
+		expect(antwort.deviceToken).toBeUndefined();
+		expect(antwort.wrap).toBeTruthy();
+	});
+
+	it("weist einen falschen Nachweis ab", async () => {
+		kontoMitPhrase(ANNA, "kennung-anna", "beweis-anna");
+		const res = await api(null, "/api/auth/recover", {
+			method: "POST",
+			body: JSON.stringify({ recoveryId: "kennung-anna", proof: "erfunden", label: "Neu" })
+		});
+		expect(res.status).toBe(401);
+	});
+
+	it("meldet mit richtigem Nachweis ein Geraet an", async () => {
+		kontoMitPhrase(ANNA, "kennung-anna", "beweis-anna");
+		const res = await api(null, "/api/auth/recover", {
+			method: "POST",
+			body: JSON.stringify({
+				recoveryId: "kennung-anna",
+				proof: "beweis-anna",
+				label: "Neuer Rechner"
+			})
+		});
+		expect(res.status).toBe(200);
+		const { userId, deviceToken } = await res.json();
+		expect(userId).toBe(ANNA);
+
+		// Und das Token traegt sofort - die Daten sind ja noch da, nur der Zugang
+		// war weg.
+		const ich = await (await api(deviceToken, "/api/me")).json();
+		expect(ich.userId).toBe(ANNA);
+		expect(ich.devices.some((d: { label: string }) => d.label === "Neuer Rechner")).toBe(true);
+	});
+
+	it("fuehrt nicht zu einem fremden Konto", async () => {
+		kontoMitPhrase(ANNA, "kennung-anna", "beweis-anna");
+		kontoMitPhrase(BODO, "kennung-bodo", "beweis-bodo");
+		const res = await api(null, "/api/auth/recover", {
+			method: "POST",
+			body: JSON.stringify({ recoveryId: "kennung-anna", proof: "beweis-bodo", label: "X" })
+		});
+		expect(res.status).toBe(401);
+	});
+
+	it("sagt es, wenn der Weg fuer dieses Konto nicht eingerichtet ist", async () => {
+		// Konten aus der Zeit vor diesem Weg haben keinen hinterlegten Nachweis.
+		db.$client.prepare("UPDATE users SET recovery_id = ? WHERE id = ?").run("alt-anna", ANNA);
+		db.$client
+			.prepare(
+				"INSERT INTO key_wraps (id, user_id, kind, payload, created_at) VALUES (?,?,'recovery',?,?)"
+			)
+			.run(crypto.randomUUID(), ANNA, "chiffrat", Date.now());
+		const res = await api(null, "/api/auth/recover", {
+			method: "POST",
+			body: JSON.stringify({ recoveryId: "alt-anna", proof: "irgendwas", label: "X" })
+		});
+		expect(res.status).toBe(409);
+	});
+});

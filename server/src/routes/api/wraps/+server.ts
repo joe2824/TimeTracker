@@ -5,7 +5,7 @@
 // Passkey oder den privaten Geraeteschluessel hat.
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
-import { keyWraps } from "$lib/server/db/schema";
+import { keyWraps, users } from "$lib/server/db/schema";
 import { and, eq } from "drizzle-orm";
 import { MAX_RECORD_BYTES } from "$lib/server/config";
 
@@ -41,6 +41,27 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			.run();
 	}
 	if (kind === "recovery") {
+		// Kennung und Nachweis gehoeren zu DIESER Verpackung: wer eine neue Phrase
+		// erzeugt, macht die alte ungueltig, und beide muessen mitwandern. Sonst
+		// zeigte die Kennung auf ein Konto, dessen Verpackung inzwischen eine
+		// andere Phrase hat - und die Wiederherstellung liefe ins Leere.
+		const recoveryId = body?.recoveryId ? String(body.recoveryId) : null;
+		const vaultProof = body?.vaultProof ? String(body.vaultProof) : null;
+		if (recoveryId || vaultProof) {
+			const fremd = recoveryId
+				? locals.db.select().from(users).where(eq(users.recoveryId, recoveryId)).get()
+				: undefined;
+			// Zwei Konten mit derselben Kennung waeren zwei Konten mit derselben
+			// Phrase. Das kann nicht sein - und wenn doch, gehoert es abgewiesen,
+			// nicht stillschweigend ueberschrieben.
+			if (fremd && fremd.id !== locals.userId) error(409, "Diese Phrase ist bereits vergeben");
+			locals.db
+				.update(users)
+				.set({ recoveryId, vaultProof })
+				.where(eq(users.id, locals.userId))
+				.run();
+		}
+
 		// Auch von der Phrase gibt es genau eine: wer eine neue erzeugt, macht die
 		// alte damit ungueltig. Alles andere waere eine stille Hintertuer.
 		locals.db

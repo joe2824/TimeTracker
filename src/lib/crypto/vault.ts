@@ -142,6 +142,64 @@ export async function bucketFor(key: CryptoKey, month: string): Promise<string> 
 	return toHex(new Uint8Array(sig).slice(0, 16));
 }
 
+/**
+ * Die Kennung, unter der ein Konto seine Phrasen-Verpackung findet.
+ *
+ * Das Problem, das sie loest: wer nur noch die 24 Woerter hat - Rechner kaputt,
+ * kein zweites Geraet, kein Passkey - muss beim Server nach seiner Verpackung
+ * fragen koennen. Dafuer braucht es einen Namen fuer das Konto, und der darf
+ * nicht die Phrase selbst sein.
+ *
+ * Also ein Hash ueber die Phrase, mit eigenem Verwendungszweck. Er verraet sie
+ * nicht: aus 256 Bit Entropie laesst sich nichts zurueckrechnen, und wer ihn
+ * kennt, bekommt bloss ein Chiffrat, das er ohne die Woerter nicht oeffnet.
+ *
+ * WICHTIG ist die Trennung der Zwecke: diese Kennung und der Schluessel, mit dem
+ * die Verpackung zugeht, entstehen aus derselben Phrase, aber ueber verschiedene
+ * Wege. Waeren es dieselben Bytes, gaebe der Server mit der Kennung den
+ * Schluessel heraus - und die Verschluesselung waere ein Theater.
+ */
+export async function recoveryLookupId(phrase: string): Promise<string> {
+	const norm = normalizePhrase(phrase);
+	const base = await crypto.subtle.importKey("raw", enc.encode(norm), "HKDF", false, [
+		"deriveBits"
+	]);
+	const bits = await crypto.subtle.deriveBits(
+		{
+			name: "HKDF",
+			hash: "SHA-256",
+			salt: enc.encode("timetracker-recovery-lookup-v1"),
+			info: enc.encode("lookup")
+		},
+		base,
+		256
+	);
+	return toHex(new Uint8Array(bits));
+}
+
+/**
+ * Ein Nachweis, dass jemand den Tresorschluessel wirklich hat.
+ *
+ * Wozu: die Kennung oben sagt nur, WELCHES Konto gemeint ist. Wer sie erraet
+ * oder aus einer gestohlenen Datenbank abliest, duerfte damit noch lange kein
+ * Geraet anmelden - er bekaeme sonst Zugriff auf alle Chiffrate und koennte sie
+ * loeschen, ohne je etwas entschluesselt zu haben.
+ *
+ * Deshalb dieser zweite Schritt: der Client oeffnet die Verpackung, hat damit
+ * den Tresorschluessel, und rechnet daraus einen festen Wert. Der Server hat
+ * denselben Wert beim Anlegen bekommen und vergleicht. Er lernt daraus nichts -
+ * ein HMAC gibt seinen Schluessel nicht her - aber er weiss: da hat jemand
+ * wirklich aufgeschlossen.
+ */
+export async function vaultProof(key: CryptoKey): Promise<string> {
+	const raw = await crypto.subtle.exportKey("raw", key);
+	const mac = await crypto.subtle.importKey("raw", raw, { name: "HMAC", hash: "SHA-256" }, false, [
+		"sign"
+	]);
+	const sig = await crypto.subtle.sign("HMAC", mac, enc.encode("vault-proof-v1"));
+	return toHex(new Uint8Array(sig));
+}
+
 // ---------- Verpackungen ----------
 
 export type WrapKind = "recovery" | "passkey" | "device";

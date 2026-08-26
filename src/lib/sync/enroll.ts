@@ -20,9 +20,12 @@ import {
 	createVaultKey,
 	fromBase64,
 	importVaultKey,
+	isValidRecoveryPhrase,
+	recoveryLookupId,
 	toBase64,
 	unwrapWithPhrase,
 	unwrapWithPrf,
+	vaultProof,
 	wrapWithPhrase,
 	wrapWithPrf,
 	type KeyWrap
@@ -136,7 +139,10 @@ export async function register(
 	// Ab hier ist die Sitzung offen und die Verpackungen koennen abgelegt werden.
 	const key = await createVaultKey();
 	const recoveryPhrase = createRecoveryPhrase();
-	await api.putWrap("recovery", serialize(await wrapWithPhrase(key, recoveryPhrase)));
+	await api.putWrap("recovery", serialize(await wrapWithPhrase(key, recoveryPhrase)), undefined, {
+		recoveryId: await recoveryLookupId(recoveryPhrase),
+		vaultProof: await vaultProof(key)
+	});
 	if (prf) {
 		await api.putWrap("passkey", serialize(await wrapWithPrf(key, prf)), response.id);
 	}
@@ -246,6 +252,49 @@ export async function addPasskeyWrap(
 }
 
 /**
+ * Ein Konto allein mit der Wiederherstellungs-Phrase zurueckholen.
+ *
+ * Der Weg fuer den Tag, an dem sonst nichts mehr da ist: Rechner kaputt, kein
+ * zweites Geraet, kein Passkey. In der Hand sind 24 Woerter.
+ *
+ * Zwei Schritte, und der zweite ist der Grund fuer beide: erst die Verpackung
+ * holen (die Kennung sagt nur, WELCHES Konto gemeint ist), dann oeffnen, dann
+ * nachweisen, dass es gelungen ist. Erst danach gibt es ein Geraete-Token.
+ * Ohne diesen Nachweis genuegte die Kennung - und wer sie aus einer gestohlenen
+ * Datenbank abliest, koennte die Chiffrate loeschen, ohne je etwas
+ * entschluesselt zu haben.
+ */
+export async function recoverWithPhrase(
+	baseUrl: string,
+	phrase: string,
+	label: string
+): Promise<{ userId: string; displayName: string; deviceToken: string; key: CryptoKey }> {
+	if (!isValidRecoveryPhrase(phrase)) {
+		throw new Error("Das sind nicht 24 gültige Wörter – bitte noch einmal prüfen.");
+	}
+	const api = new Api({ baseUrl, fetchFn: platformFetch });
+	const recoveryId = await recoveryLookupId(phrase);
+
+	const { wrap } = await api.recoverWrap(recoveryId);
+	// Hier faellt die Entscheidung: passen die Woerter nicht, geht das Chiffrat
+	// nicht auf. Der Server hat damit nichts zu tun und erfaehrt es auch nicht.
+	const key = await unwrapWithPhrase(deserialize(wrap), phrase);
+
+	const angemeldet = await api.recoverDevice({
+		recoveryId,
+		proof: await vaultProof(key),
+		label
+	});
+
+	return {
+		userId: angemeldet.userId,
+		displayName: angemeldet.displayName,
+		deviceToken: angemeldet.deviceToken,
+		key
+	};
+}
+
+/**
  * Ein Konto von diesem Geraet aus anlegen - ohne Passkey.
  *
  * Der Weg fuer die Desktop-Anwendung. Sie hat keine Domain und kann deshalb
@@ -288,7 +337,10 @@ export async function registerFromDevice(
 	// Verpackung nicht abgelegt werden konnte, ist ein Konto ohne Zugriff auf die
 	// eigenen Daten. Scheitert das hier, scheitert das Anlegen sichtbar - statt
 	// still ein unbrauchbares Konto zu hinterlassen.
-	await api.putWrap("recovery", serialize(await wrapWithPhrase(key, recoveryPhrase)));
+	await api.putWrap("recovery", serialize(await wrapWithPhrase(key, recoveryPhrase)), undefined, {
+		recoveryId: await recoveryLookupId(recoveryPhrase),
+		vaultProof: await vaultProof(key)
+	});
 
 	return {
 		userId: angelegt.userId,

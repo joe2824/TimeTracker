@@ -51,7 +51,26 @@ export const users = sqliteTable("users", {
 	 * kein "der erste Angemeldete wird es automatisch": bei einem Dienst, der
 	 * spaeter offen laufen soll, waere das ein Wettrennen.
 	 */
-	isAdmin: integer("is_admin", { mode: "boolean" }).notNull().default(false)
+	isAdmin: integer("is_admin", { mode: "boolean" }).notNull().default(false),
+	/**
+	 * Unter welcher Kennung dieses Konto seine Phrasen-Verpackung findet.
+	 *
+	 * Ein Hash ueber die Wiederherstellungs-Phrase (siehe recoveryLookupId in
+	 * src/lib/crypto/vault.ts). Er verraet sie nicht und oeffnet nichts - er sagt
+	 * nur, WELCHES Konto gemeint ist, wenn jemand mit nichts als den 24 Woertern
+	 * dasteht.
+	 */
+	recoveryId: text("recovery_id"),
+	/**
+	 * Der Nachweis, dass jemand den Tresorschluessel wirklich hat.
+	 *
+	 * HMAC ueber einen festen Text mit dem Tresorschluessel. Der Server kennt den
+	 * Schluessel nicht und lernt ihn hieraus auch nicht - er kann aber pruefen, ob
+	 * jemand die Verpackung tatsaechlich geoeffnet hat, bevor er ein Geraet
+	 * anmeldet. Ohne das genuegte die Kennung oben, und wer sie aus einer
+	 * gestohlenen Datenbank abliest, bekaeme Zugriff auf alle Chiffrate.
+	 */
+	vaultProof: text("vault_proof")
 });
 
 /** Ein Passkey. Ein Konto kann beliebig viele haben - je Geraet einen. */

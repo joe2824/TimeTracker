@@ -256,11 +256,34 @@ export class Api {
 		return this.#call("/api/wraps");
 	}
 
-	putWrap(kind: KeyWrap["kind"], payload: string, credentialId?: string): Promise<{ id: string }> {
+	putWrap(
+		kind: KeyWrap["kind"],
+		payload: string,
+		credentialId?: string,
+		/** Nur bei "recovery": Kennung und Nachweis fuer den Weg zurueck. */
+		recovery?: { recoveryId: string; vaultProof: string }
+	): Promise<{ id: string }> {
 		return this.#call("/api/wraps", {
 			method: "POST",
-			body: JSON.stringify({ kind, payload, credentialId })
+			body: JSON.stringify({ kind, payload, credentialId, ...recovery })
 		});
+	}
+
+	/** Schritt 1: die Verpackung zu einer Phrase holen. */
+	recoverWrap(recoveryId: string): Promise<{ wrap: string }> {
+		return this.#call("/api/auth/recover", {
+			method: "POST",
+			body: JSON.stringify({ recoveryId })
+		});
+	}
+
+	/** Schritt 2: nachweisen, dass sie sich oeffnen liess - und ein Geraet anmelden. */
+	recoverDevice(body: {
+		recoveryId: string;
+		proof: string;
+		label: string;
+	}): Promise<{ userId: string; displayName: string; deviceId: string; deviceToken: string }> {
+		return this.#call("/api/auth/recover", { method: "POST", body: JSON.stringify(body) });
 	}
 
 	// ---------- Passkeys ----------
