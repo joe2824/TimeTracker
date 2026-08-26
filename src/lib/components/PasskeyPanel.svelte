@@ -1,6 +1,7 @@
 <script lang="ts">
 	// Passkeys verwalten.
 	import * as Card from "$lib/components/ui/card";
+	import * as Dialog from "$lib/components/ui/dialog";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
@@ -9,6 +10,7 @@
 	import type { Passkey } from "$lib/sync/api";
 	import { fmtDateHuman } from "$lib/time";
 	import { isTauri } from "$lib/platform/env";
+	import { openExternal } from "$lib/platform/open";
 
 	let liste = $state<Passkey[]>([]);
 	let geladen = $state(false);
@@ -56,9 +58,15 @@
 		}
 	}
 
-	async function entfernen(p: Passkey) {
+	/** Welcher soll weg? Gesetzt heisst: die Rueckfrage steht offen. */
+	let entfernt = $state<Passkey | null>(null);
+
+	async function entfernenBestaetigt() {
+		const p = entfernt;
+		if (!p) return;
 		try {
 			await account.removePasskey(p.id);
+			entfernt = null;
 			await laden();
 			toast.success("Passkey entfernt.");
 		} catch (e) {
@@ -78,10 +86,21 @@
 
 	/** Wie viele koennen den Tresor allein oeffnen? Daran haengt die Warnung. */
 	const mitPrf = $derived(liste.filter((p) => p.hasPrf).length);
+
+	/** Gekoppelt wird in der Konto-Karte; angelegt wird der Passkey im Browser. */
+
+	async function imBrowserOeffnen() {
+		try {
+			await openExternal(account.serverUrl);
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : "Browser konnte nicht geöffnet werden");
+		}
+	}
+
 </script>
 
 {#if account.linked}
-	<Card.Root>
+	<Card.Root class="lg:col-span-2">
 		<Card.Header>
 			<Card.Title>Passkeys</Card.Title>
 			<Card.Description>
@@ -148,7 +167,7 @@
 										Umbenennen
 									</Button>
 									{#if liste.length > 1}
-										<Button variant="ghost" size="sm" onclick={() => entfernen(p)}>Entfernen</Button>
+										<Button variant="ghost" size="sm" onclick={() => (entfernt = p)}>Entfernen</Button>
 									{/if}
 								</div>
 							{/if}
@@ -165,12 +184,14 @@
 				{/if}
 
 				{#if isTauri()}
-					<div class="border-t pt-3">
+					<div class="space-y-2 border-t pt-3">
 						<p class="text-muted-foreground text-sm">
-							Ein Passkey hängt an der Adresse des Servers – die Desktop-Anwendung hat keine.
-							Anlegen und Entfernen geht deshalb nur im Browser. Ein weiterer <em>Rechner</em>
-							kommt über die Kopplung dazu, nicht über einen Passkey.
+							Passkeys hängen an der Adresse des Servers – die Desktop-Anwendung hat keine.
+							Angelegt wird einer im Browser, sobald du ihn dort gekoppelt hast.
 						</p>
+						<Button variant="outline" size="sm" onclick={imBrowserOeffnen} disabled={!account.serverUrl}>
+							Im Browser öffnen
+						</Button>
 					</div>
 				{:else}
 					<div class="space-y-2 border-t pt-3">
@@ -191,3 +212,19 @@
 		</Card.Content>
 	</Card.Root>
 {/if}
+
+<Dialog.Root open={entfernt !== null} onOpenChange={(o) => !o && (entfernt = null)}>
+	<Dialog.Content>
+		<Dialog.Header>
+			<Dialog.Title>„{entfernt?.label ?? 'Unbenannt'}" entfernen?</Dialog.Title>
+			<Dialog.Description>
+				Dieser Weg ins Konto fällt damit weg. Der Passkey selbst bleibt auf dem Gerät liegen,
+				öffnet hier aber nichts mehr – zurückholen lässt er sich nur, indem du ihn neu anlegst.
+			</Dialog.Description>
+		</Dialog.Header>
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (entfernt = null)}>Abbrechen</Button>
+			<Button variant="destructive" onclick={entfernenBestaetigt}>Entfernen</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

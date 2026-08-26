@@ -10,17 +10,23 @@
 	import { app } from "$lib/app.svelte";
 	import { account } from "$lib/sync/account.svelte";
 	import { capabilities, isTauri } from "$lib/platform/env";
+	import type { DataChanged } from "$lib/platform/windows";
+	import { onPairLink } from "$lib/platform/deeplink";
 	import WebOnboarding from "$lib/components/WebOnboarding.svelte";
+	import { onboardingOffen } from "$lib/onboarding.svelte";
+	import PasskeyNudge from "$lib/components/PasskeyNudge.svelte";
 	import { errorText, logError, logFile, logInfo, logWarn, pruneOldLogs } from "$lib/log";
 	import { appDataDir, join } from "@tauri-apps/api/path";
 	import { revealInFolder } from "$lib/platform/open";
 	import { Button } from "$lib/components/ui/button";
+	import * as Dialog from "$lib/components/ui/dialog";
 	import { Badge } from "$lib/components/ui/badge";
 	import { scheduleReminders, scheduleReportReminder } from "$lib/reminders";
 	import { applyShortcuts } from "$lib/shortcuts";
 	import { startWatchers, stopWatchers, watchers } from "$lib/watchers.svelte";
 	import { entriesFocus } from "$lib/entriesFocus.svelte";
 	import * as Tabs from "$lib/components/ui/tabs";
+	import SyncHint from "$lib/components/SyncHint.svelte";
 	import TimerIcon from "@lucide/svelte/icons/timer";
 	import PencilLineIcon from "@lucide/svelte/icons/pencil-line";
 	import ChartColumnIcon from "@lucide/svelte/icons/chart-column";
@@ -28,6 +34,7 @@
 	import UsersIcon from "@lucide/svelte/icons/users";
 	import SettingsIcon from "@lucide/svelte/icons/settings";
 	import CircleArrowUpIcon from "@lucide/svelte/icons/circle-arrow-up";
+	import LogOutIcon from "@lucide/svelte/icons/log-out";
 	import TrackingPanel from "$lib/components/TrackingPanel.svelte";
 	import EntryEditor from "$lib/components/EntryEditor.svelte";
 	import ReportView from "$lib/components/ReportView.svelte";
@@ -46,7 +53,10 @@
 	let tab = $state("tracking");
 
 	/** Im Browser ohne Konto: erst anmelden. */
-	const brauchtAnmeldung = $derived(!isTauri() && !account.linked);
+	// Das Onboarding bleibt auch nach dem Verknuepfen stehen, solange es noch
+	// einen Schritt zu zeigen hat - sonst waere es weg, bevor jemand sagen konnte,
+	// ob er seine App noch dazuholen will.
+	const brauchtAnmeldung = $derived(!isTauri() && (!account.linked || onboardingOffen.wert));
 	let paletteOpen = $state(false);
 
 	/** Laufende Version, sobald der Start sie gelesen hat ("" bis dahin). */
@@ -71,6 +81,55 @@
 	// Wunsch raeumt die Eintraege-Ansicht beim Lesen ab, ein zweiter Verbraucher
 	// haette das Nachsehen (siehe entriesFocus.svelte.ts).
 	entriesFocus.onShow(() => (tab = "entries"));
+
+	// Abmelden gehoert dorthin, wo man es sucht: oben rechts, nicht in einer Karte
+	// tief in den Einstellungen. Nur im Browser - auf dem Rechner ist der Zugang
+	// ein Geraete-Token, das ueber "Entkoppeln" geloest wird.
+	//
+	// Ohne Rueckfrage: die Sitzung ist mit einem Passkey in Sekunden zurueck.
+	// AUSSER es gibt keinen - dann ist die Abmeldung eine Einbahnstrasse, und
+	// zurueck kaeme man nur ueber die 24 Woerter.
+	let ohnePasskey = $state(false);
+	let legtAn = $state(false);
+
+	async function abmeldenKlick() {
+		try {
+			if ((await account.passkeys()).length === 0) {
+				ohnePasskey = true;
+				return;
+			}
+		} catch {
+			// Server nicht erreichbar: dann laesst sich nicht sagen, ob ein Passkey
+			// da ist. Lieber einmal zu viel fragen als jemanden aussperren.
+			ohnePasskey = true;
+			return;
+		}
+		await abmelden();
+	}
+
+	async function abmelden() {
+		ohnePasskey = false;
+		try {
+			await account.logout();
+			toast.success("Abgemeldet.");
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : "Abmelden fehlgeschlagen");
+		}
+	}
+
+	/** Direkt aus dem Hinweis heraus einen anlegen - der Weg ist ja der Punkt. */
+	async function passkeyAnlegen() {
+		legtAn = true;
+		try {
+			await account.addPasskey("Dieser Browser");
+			ohnePasskey = false;
+			toast.success("Passkey angelegt. Damit kommst du jederzeit wieder hinein.");
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : "Passkey konnte nicht angelegt werden");
+		} finally {
+			legtAn = false;
+		}
+	}
 
 	// Von der Tracking-Ansicht: zu den Einträgen wechseln und heute mittig zeigen.
 	function showEntriesToday() {
@@ -190,7 +249,21 @@
 					await listen("tray-stop-timer", () => void app.stop()),
 					await listen<string>("tray-start-activity", (e) => void app.startActivity(e.payload)),
 					// Flyout-Fenster hat Daten geändert -> neu laden.
-					await listen("data-reload", () => void app.reload()),
+					// Ein Klick auf "In der App öffnen" im Browser landet hier.
+					await onPairLink((code) => {
+						account.pairCodeFromLink = code;
+						tab = "settings";
+						toast.info("Kopplungscode übernommen – bitte bestätigen.");
+					}),
+					await listen<DataChanged>("data-reload", (e) => {
+						// Der eigene Ruf ginge sonst im Kreis: syncNow meldet nach jedem
+						// Zulauf, und die Nachlese unten stiesse den naechsten an.
+						if (e.payload?.from === "main") return;
+						void app.reload();
+						// Das Tray schreibt ohne Haken - erst hier wird daraus etwas,
+						// das den Server erreicht.
+						void account.nachlese();
+					}),
 					// Tray-Flyout wurde geöffnet und fragt den aktuellen Hinweis-Status ab.
 					await listen("tray-request-attention", () => {
 						void emit("main-attention", { active: attention }).catch(() => {});
@@ -315,10 +388,17 @@
 					<Button variant="outline" onclick={openLogFolder}>Protokoll öffnen</Button>
 				</div>
 			{:else}
-				<p class="text-muted-foreground text-sm">
-					{app.initStep ? `${app.initStep}…` : "Lädt…"}
-				</p>
-				{#if waiting >= 8}
+				<!-- Im Browser bleibt es still: dort dauert der Start Millisekunden, und
+				     "Einstellungen suchen…" waere ein Aufblitzen, das nur Unruhe stiftet.
+				     Auf dem Rechner ist es die Auskunft, an der man erkennt, woran es
+				     haengt - dort steht sie sofort. Zieht es sich hier doch, sagt der
+				     Block darunter Bescheid. -->
+				{#if isTauri()}
+					<p class="text-muted-foreground text-sm">
+						{app.initStep ? `${app.initStep}…` : "Lädt…"}
+					</p>
+				{/if}
+				{#if waiting >= (isTauri() ? 8 : 3)}
 					<div class="space-y-2">
 						<p class="text-muted-foreground text-xs">
 							Das dauert ungewöhnlich lange ({waiting}&nbsp;s bei „{app.initStep ?? "Start"}").
@@ -341,8 +421,16 @@
 		<header
 			class="bg-background/80 supports-backdrop-filter:bg-background/60 sticky top-0 z-30 border-b backdrop-blur"
 		>
-			<div class="mx-auto grid max-w-6xl grid-cols-[1fr_auto_1fr] items-center gap-x-6 px-6 py-2.5">
-				<div class="flex items-center gap-2 justify-self-start">
+			<!-- Auf schmalen Displays zwei Reihen: oben Logo und Status, darunter die
+			     Navigation ueber die volle Breite. Drei Spalten nebeneinander gehen
+			     sich dort nicht aus - die Tabs wurden auf ein paar Pixel gequetscht.
+			     Jedes Feld steht ausdruecklich im Raster: bei automatischer Verteilung
+			     richtet sich die Reihenfolge nach dem Dokument, und dort liegen die
+			     Tabs zwischen Logo und Status. -->
+			<div
+				class="mx-auto grid max-w-6xl grid-cols-[auto_1fr] items-center gap-x-6 gap-y-1 px-4 py-2 sm:px-6 sm:py-2.5 lg:grid-cols-[1fr_auto_1fr]"
+			>
+				<div class="col-start-1 row-start-1 flex items-center gap-2 justify-self-start">
 					<button
 						type="button"
 						onclick={() => (tab = "tracking")}
@@ -355,7 +443,7 @@
 						<img
 							src={app.running ? "/logo-running.svg" : "/logo.svg"}
 							alt="TimeTracker"
-							class="h-12 w-auto transition-transform hover:scale-105"
+							class="h-9 w-auto transition-transform hover:scale-105 sm:h-12"
 						/>
 					</button>
 					{#if isBeta}
@@ -365,22 +453,44 @@
 					{/if}
 				</div>
 
-				<Tabs.List variant="line" class="justify-self-center gap-2">
-					<Tabs.Trigger value="tracking"><TimerIcon />Tracking</Tabs.Trigger>
-					<!-- Wie „Einträge anzeigen“ aus dem Tracking: auf heute springen. -->
-					<Tabs.Trigger value="entries" onclick={() => entriesFocus.requestToday()}>
-						<PencilLineIcon />Einträge
+				<!-- Schmal: eigene Reihe, waagerecht scrollbar statt umbrechend, und die
+				     Beschriftung weicht dem Symbol. Ein Tab, der nicht mehr passt,
+				     verschwindet damit nicht - man scrollt zu ihm. -->
+				<Tabs.List
+					variant="line"
+					class="scrollbar-lose col-span-2 col-start-1 row-start-2 w-full justify-start gap-1 overflow-x-auto lg:col-span-1 lg:col-start-2 lg:row-start-1 lg:w-auto lg:justify-self-center lg:gap-2"
+				>
+					<Tabs.Trigger value="tracking" title="Tracking">
+						<TimerIcon /><span class="hidden sm:inline">Tracking</span>
 					</Tabs.Trigger>
-					<Tabs.Trigger value="report"><ChartColumnIcon />Bericht</Tabs.Trigger>
+					<!-- Wie „Einträge anzeigen“ aus dem Tracking: auf heute springen. -->
+					<Tabs.Trigger
+						value="entries"
+						title="Einträge"
+						onclick={() => entriesFocus.requestToday()}
+					>
+						<PencilLineIcon /><span class="hidden sm:inline">Einträge</span>
+					</Tabs.Trigger>
+					<Tabs.Trigger value="report" title="Bericht">
+						<ChartColumnIcon /><span class="hidden sm:inline">Bericht</span>
+					</Tabs.Trigger>
 					{#if app.settings.bossMode && capabilities.outlook}
-						<Tabs.Trigger value="team"><UsersIcon />Team</Tabs.Trigger>
+						<Tabs.Trigger value="team" title="Team">
+							<UsersIcon /><span class="hidden sm:inline">Team</span>
+						</Tabs.Trigger>
 					{/if}
-					<Tabs.Trigger value="activities"><LayersIcon />Aktivitäten</Tabs.Trigger>
-					<Tabs.Trigger value="settings"><SettingsIcon />Einstellungen</Tabs.Trigger>
+					<Tabs.Trigger value="activities" title="Aktivitäten">
+						<LayersIcon /><span class="hidden sm:inline">Aktivitäten</span>
+					</Tabs.Trigger>
+					<Tabs.Trigger value="settings" title="Einstellungen">
+						<SettingsIcon /><span class="hidden sm:inline">Einstellungen</span>
+					</Tabs.Trigger>
 				</Tabs.List>
 
 				<!-- reservierte rechte Spalte: Pill verschiebt die Tabs nicht mehr -->
-				<div class="flex items-center gap-2 justify-self-end">
+				<div
+					class="col-start-2 row-start-1 flex items-center gap-2 justify-self-end lg:col-start-3"
+				>
 					<!-- Bleibt stehen, solange das Update aussteht: der Hinweis-Toast beim
 					     Start ist beim Autostart nicht zu sehen und danach weg. -->
 					{#if updater.pending}
@@ -412,12 +522,28 @@
 							<span class="truncate">{app.activityName(app.running.activityId)}</span>
 						</span>
 					{/if}
+					<!-- Nach dem laufenden Timer: der Abgleich ist meist nur ein Punkt und
+					     stoert am Rand niemanden. -->
+					<SyncHint />
+					{#if account.linked && !capabilities.tray}
+						<button
+							type="button"
+							onclick={abmeldenKlick}
+							title="Abmelden"
+							aria-label="Abmelden"
+							class="text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-ring/50 inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors outline-none focus-visible:ring-2"
+						>
+							<LogOutIcon class="size-4.5" />
+						</button>
+					{/if}
 				</div>
 			</div>
 		</header>
 
+		<PasskeyNudge />
+
 		<!-- pb-12: die letzte Card soll nicht auf der Fensterkante aufsitzen. -->
-		<div class="mx-auto w-full max-w-6xl px-6 pb-12">
+		<div class="mx-auto w-full max-w-6xl px-4 pb-12 sm:px-6">
 			<Tabs.Content value="tracking" class="mt-0">
 				<TrackingPanel onShowEntries={showEntriesToday} onShowReport={showArbZgCheck} />
 			</Tabs.Content>
@@ -471,3 +597,22 @@
 	dem naechsten Takt.
 -->
 <svelte:document onvisibilitychange={() => !document.hidden && account.onVisible()} />
+
+<Dialog.Root open={ohnePasskey} onOpenChange={(o) => (ohnePasskey = o)}>
+	<Dialog.Content>
+		<Dialog.Header>
+			<Dialog.Title>Achtung: kein Passkey an diesem Konto</Dialog.Title>
+			<Dialog.Description>
+				Meldest du dich jetzt ab, kommst du nur noch über die 24 Wörter der
+				Wiederherstellungs-Phrase zurück – oder indem du dieses Gerät neu koppelst.
+				Ein Passkey ist in zehn Sekunden angelegt.
+			</Dialog.Description>
+		</Dialog.Header>
+		<Dialog.Footer>
+			<Button variant="ghost" disabled={legtAn} onclick={abmelden}>Trotzdem abmelden</Button>
+			<Button disabled={legtAn} onclick={passkeyAnlegen}>
+				{legtAn ? "Warte auf Bestätigung…" : "Passkey anlegen"}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

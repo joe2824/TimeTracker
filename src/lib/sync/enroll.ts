@@ -64,14 +64,42 @@ async function oeffneMitPhrase(payload: string, phrase: string): Promise<CryptoK
  */
 const PRF_INPUT = new TextEncoder().encode("timetracker-vault-v1");
 
-/** Was ein Authentifikator zurueckgab, sofern er PRF kann. */
-function prfOf(response: RegistrationResponseJSON | AuthenticationResponseJSON): ArrayBuffer | null {
-	const ext = response.clientExtensionResults as {
-		prf?: { enabled?: boolean; results?: { first?: ArrayBuffer | Uint8Array } };
-	};
-	const first = ext?.prf?.results?.first;
+/**
+ * Die PRF-Ausgabe in Rohbytes - egal, in welcher Gestalt sie ankommt.
+ *
+ * `clientExtensionResults` ist eine untypisierte Browser-Schnittstelle: je nach
+ * Browser und Bibliothek liegt der Wert als ArrayBuffer, als Ansicht darauf, als
+ * base64 oder als durchnummeriertes Objekt vor. Ungeprueft weitergereicht endet
+ * das in "Key data must be a BufferSource" - einer Meldung, die nichts darueber
+ * sagt, welcher der Werte gemeint ist.
+ */
+export function prfBytes(first: unknown): Uint8Array | null {
 	if (!first) return null;
-	return first instanceof Uint8Array ? (first.buffer as ArrayBuffer) : first;
+	if (first instanceof ArrayBuffer) return new Uint8Array(first);
+	if (ArrayBuffer.isView(first)) {
+		// Auf den Ausschnitt beziehen, nicht auf den ganzen Puffer dahinter: sonst
+		// stimmt der Schluessel bei jeder Ansicht mit Versatz nicht mehr.
+		const v = first as ArrayBufferView;
+		return new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
+	}
+	if (typeof first === "string") return fromBase64(first.replace(/-/g, "+").replace(/_/g, "/"));
+	if (typeof first === "object") {
+		// Ein ArrayBuffer, der durch structuredClone oder JSON gegangen ist, kommt
+		// als {"0":12,"1":250,...} zurueck - oder als leeres Objekt, dann ist er weg.
+		const werte = Object.values(first as Record<string, unknown>);
+		if (werte.length > 0 && werte.every((w) => typeof w === "number")) {
+			return Uint8Array.from(werte as number[]);
+		}
+	}
+	throw new Error("Der Passkey lieferte einen PRF-Wert in unbekannter Form.");
+}
+
+/** Was ein Authentifikator zurueckgab, sofern er PRF kann. */
+function prfOf(response: RegistrationResponseJSON | AuthenticationResponseJSON): Uint8Array | null {
+	const ext = response.clientExtensionResults as {
+		prf?: { enabled?: boolean; results?: { first?: unknown } };
+	};
+	return prfBytes(ext?.prf?.results?.first);
 }
 
 /** Die PRF-Eingabe an die Optionen haengen. */
@@ -147,7 +175,7 @@ export interface LoginResult {
 	/** Ob eine Phrasen-Verpackung vorliegt, mit der entsperrt werden kann. */
 	canUnlockWithPhrase: boolean;
 	/** Was der Authentifikator ueber PRF ausgegeben hat. Null, wenn er es nicht kann. */
-	prf: ArrayBuffer | null;
+	prf: Uint8Array | null;
 	/** Die Kennung des benutzten Passkeys - an ihr haengt die PRF-Verpackung. */
 	credentialId: string;
 }
@@ -201,7 +229,7 @@ export async function addPasskeyWrap(
 	baseUrl: string,
 	key: CryptoKey,
 	credentialId: string,
-	prf: ArrayBuffer
+	prf: BufferSource
 ): Promise<void> {
 	const api = new Api({ baseUrl, fetchFn: platformFetch });
 	await api.putWrap("passkey", serialize(await wrapWithPrf(key, prf)), credentialId);
@@ -292,11 +320,13 @@ export async function registerFromDevice(
  *   2. Tresorschluessel gegen ihn verpacken - damit oeffnet er die Daten.
  */
 export async function addPasskey(
-	baseUrl: string,
+	api: Api,
 	key: CryptoKey,
 	label: string
 ): Promise<{ id: string; label: string | null; prfAvailable: boolean }> {
-	const api = new Api({ baseUrl, fetchFn: platformFetch });
+	// Die Api des Kontos, keine frisch gebaute: nach einer Anmeldung mit der
+	// Phrase weist dieses Geraet sich mit seinem Token aus, nicht mit einem
+	// Cookie. Eine Api ohne Token liefe dort in "Nicht angemeldet".
 	const { challengeId, options } = await api.addPasskeyStart();
 
 	const response = await startRegistration({

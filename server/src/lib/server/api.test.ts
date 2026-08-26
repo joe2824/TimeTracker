@@ -59,6 +59,8 @@ beforeAll(async () => {
 	process.env.ALLOWED_ORIGINS = "http://localhost:5199";
 	// Damit jeder Test seinen eigenen Bremseimer bekommen kann - siehe `apiVon`.
 	process.env.ADDRESS_HEADER = "x-echte-adresse";
+	// Kurz halten: sonst haengt jeder Wartetest 25 Sekunden.
+	process.env.SYNC_WAIT_MS = "800";
 
 	db = openDb(dbFile).db;
 
@@ -440,6 +442,61 @@ describe("Ereigniskanal", () => {
 
 	it("verlangt eine Anmeldung", async () => {
 		expect((await fetch(`${base}/api/sync/stream`)).status).toBe(401);
+	});
+});
+
+describe("Warteschleife statt Ereigniskanal", () => {
+	it("kommt sofort zurueck, wenn der Server schon weiter ist", async () => {
+		await api(annaToken, "/api/sync", {
+			method: "POST",
+			body: JSON.stringify({ records: [rec("e1")] })
+		});
+
+		const begonnen = Date.now();
+		const antwort = await api(annaToken, "/api/sync/wait?since=0");
+		const daten = await antwort.json();
+
+		expect(antwort.status).toBe(200);
+		expect(daten.changed).toBe(true);
+		expect(daten.seq).toBeGreaterThan(0);
+		// Nicht gewartet: sonst verpasst ein Client jede Aenderung, die zwischen
+		// seinem Abgleich und dieser Anfrage passiert ist.
+		expect(Date.now() - begonnen).toBeLessThan(1000);
+	});
+
+	it("haelt offen und antwortet, sobald geschrieben wird", async () => {
+		const stand = await (await api(annaToken, "/api/sync/wait?since=0")).json().catch(() => null);
+		const seit = stand?.seq ?? 0;
+
+		const wartet = api(annaToken, `/api/sync/wait?since=${seit}`);
+		// Erst schreiben, wenn die Anfrage wirklich haengt - sonst faengt sie der
+		// Schnellweg oben ab und der Test prueft nichts.
+		await new Promise((r) => setTimeout(r, 150));
+		await api(annaToken, "/api/sync", {
+			method: "POST",
+			body: JSON.stringify({ records: [rec("e2")] })
+		});
+
+		const daten = await (await wartet).json();
+		expect(daten.changed).toBe(true);
+		expect(daten.seq).toBeGreaterThan(seit);
+	});
+
+	it("weckt nicht bei der Aenderung eines fremden Kontos", async () => {
+		const seit = (await (await api(bodoToken, "/api/sync/wait?since=0")).json()).seq;
+		const wartet = api(bodoToken, `/api/sync/wait?since=${seit}`);
+		await new Promise((r) => setTimeout(r, 150));
+		await api(annaToken, "/api/sync", {
+			method: "POST",
+			body: JSON.stringify({ records: [rec("annas")] })
+		});
+
+		// Sie kommt nach Ablauf der Wartezeit zurueck - aber ohne Aenderung.
+		expect((await (await wartet).json()).changed).toBe(false);
+	});
+
+	it("verlangt eine Anmeldung", async () => {
+		expect((await fetch(`${base}/api/sync/wait?since=0`)).status).toBe(401);
 	});
 });
 

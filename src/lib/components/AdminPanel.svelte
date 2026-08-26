@@ -8,6 +8,10 @@
 	import { account } from "$lib/sync/account.svelte";
 	import type { Invite } from "$lib/sync/api";
 	import { fmtDateHuman } from "$lib/time";
+	import { inviteLink } from "$lib/invite";
+	import LinkIcon from "@lucide/svelte/icons/link";
+	import CopyIcon from "@lucide/svelte/icons/copy";
+	import CheckIcon from "@lucide/svelte/icons/check";
 
 	let liste = $state<Invite[]>([]);
 	let geladen = $state(false);
@@ -16,6 +20,29 @@
 	let tage = $state("");
 	/** Der zuletzt ausgestellte Code - gross, zum Abschreiben oder Vorlesen. */
 	let frisch = $state("");
+	let linkKopiert = $state(false);
+	let codeKopiert = $state(false);
+
+	/** In die Zwischenablage, mit sichtbarer Rueckmeldung am Knopf. */
+	async function inDieAblage(text: string, melden: (an: boolean) => void) {
+		try {
+			await navigator.clipboard.writeText(text);
+			melden(true);
+			setTimeout(() => melden(false), 2000);
+		} catch {
+			toast.error("Kopieren nicht möglich – bitte von Hand markieren.");
+		}
+	}
+
+	// Die eigene Adresse: im Browser ist sie der Server, in der Anwendung steht
+	// sie in der Verknuepfung.
+	const basis = $derived(
+		account.serverUrl || (typeof location !== "undefined" ? location.origin : "")
+	);
+
+	const linkKopieren = (code: string) =>
+		inDieAblage(inviteLink(basis, code), (an) => (linkKopiert = an));
+	const codeKopieren = (code: string) => inDieAblage(code, (an) => (codeKopiert = an));
 
 	async function laden() {
 		try {
@@ -77,7 +104,7 @@
 </script>
 
 {#if account.isAdmin}
-	<Card.Root>
+	<Card.Root class="lg:col-span-2">
 		<Card.Header>
 			<Card.Title>Verwaltung</Card.Title>
 			<Card.Description>
@@ -87,9 +114,29 @@
 
 		<Card.Content class="space-y-4">
 			{#if frisch}
-				<div class="bg-muted space-y-1 rounded-md p-3">
+				<div class="bg-muted space-y-2 rounded-md p-3">
 					<p class="text-sm">Neue Einladung – gilt genau einmal:</p>
 					<p class="font-mono text-xl tracking-wider select-all">{frisch}</p>
+
+					<!-- Der Link nimmt dem Empfaenger zwei Schritte ab: den Code abtippen
+					     und die Adresse des Servers erfragen. -->
+					<div class="flex flex-wrap items-center gap-2">
+						<Button variant="outline" size="sm" onclick={() => linkKopieren(frisch)}>
+							{#if linkKopiert}
+								<CheckIcon class="size-4" /> Link kopiert
+							{:else}
+								<LinkIcon class="size-4" /> Einladungslink kopieren
+							{/if}
+						</Button>
+						<Button variant="ghost" size="sm" onclick={() => codeKopieren(frisch)}>
+							{#if codeKopiert}
+								<CheckIcon class="size-4" /> Code kopiert
+							{:else}
+								<CopyIcon class="size-4" /> Nur den Code
+							{/if}
+						</Button>
+					</div>
+
 					<p class="text-muted-foreground text-xs">
 						Weitergeben und dann vergessen. Sie taucht unten in der Liste wieder auf.
 					</p>

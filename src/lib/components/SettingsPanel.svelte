@@ -18,7 +18,7 @@
 	import * as Select from "$lib/components/ui/select";
 	import * as Card from "$lib/components/ui/card";
 	import { toast } from "svelte-sonner";
-	import { capabilities } from "$lib/platform/env";
+	import { capabilities, isTauri } from "$lib/platform/env";
 	import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 	import { checkForUpdate, updater } from "$lib/updater.svelte";
 	import { getVersion } from "@tauri-apps/api/app";
@@ -277,6 +277,24 @@
 			form.autostart = !v;
 			toast.error(`Autostart fehlgeschlagen: ${e}`, { duration: 60000 });
 		}
+	}
+
+	// ---- Benachrichtigungen im Browser ----
+	//
+	// Der Browser fragt nur auf eine Nutzerhandlung hin - ein Knopf ist also nicht
+	// Zierde, sondern die einzige Stelle, an der sich das ueberhaupt erlauben laesst.
+	let meldeRecht = $state<NotificationPermission | "unbekannt">("unbekannt");
+
+	$effect(() => {
+		if (isTauri() || typeof Notification === "undefined") return;
+		meldeRecht = Notification.permission;
+	});
+
+	async function meldungenErlauben() {
+		const ok = await ensureNotificationPermission();
+		meldeRecht = typeof Notification === "undefined" ? "denied" : Notification.permission;
+		if (ok) toast.success("Benachrichtigungen sind jetzt erlaubt.");
+		else toast.error("Der Browser hat die Erlaubnis nicht gegeben.");
 	}
 
 	// ---- Daten: ganze Jahre loeschen ----
@@ -653,6 +671,36 @@
 						<p class="text-muted-foreground text-sm">
 							Zu diesen Uhrzeiten erinnert dich die App, deine Zeiten einzutragen.
 						</p>
+
+						{#if !isTauri()}
+							<!-- Im Browser haengt JEDE Meldung an der Erlaubnis fuer diesen Tab -
+							     Erinnerungen wie Auto-Stopp-Warnung. Ohne sie stellt der Browser
+							     stillschweigend nichts zu, und die Uhrzeiten unten sehen aus, als
+							     wuerden sie funktionieren. -->
+							{#if meldeRecht === "granted"}
+								<p class="text-muted-foreground flex items-center gap-1.5 text-xs">
+									<span class="size-1.5 rounded-full bg-emerald-500"></span>
+									Benachrichtigungen sind für diesen Browser erlaubt.
+								</p>
+							{:else if meldeRecht === "denied"}
+								<div class="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
+									<p class="font-medium">Benachrichtigungen sind blockiert.</p>
+									<p class="text-muted-foreground mt-1 text-xs">
+										Ohne sie kommt hier nichts an – weder Erinnerungen noch die
+										Auto-Stopp-Warnung. Das lässt sich nur in den Einstellungen des
+										Browsers wieder erlauben (Schloss-Symbol neben der Adresse).
+									</p>
+								</div>
+							{:else}
+								<div class="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
+									<p class="font-medium">Benachrichtigungen sind noch nicht erlaubt.</p>
+									<p class="text-muted-foreground mt-1 mb-2 text-xs">
+										Solange nicht, bleiben Erinnerungen und die Auto-Stopp-Warnung stumm.
+									</p>
+									<Button size="sm" onclick={meldungenErlauben}>Benachrichtigungen erlauben</Button>
+								</div>
+							{/if}
+						{/if}
 						{#each form.reminderTimes as _, i (i)}
 							<div class="flex gap-2">
 								<Input type="time" bind:value={form.reminderTimes[i]} onchange={saveTimes} />
@@ -765,11 +813,18 @@
 						</Card.Content>
 					</Card.Root>
 				{/if}
+				<!-- Nur auf dem Rechner. Im Browser liegt der Bestand in dessen Ablage und
+				     ist nicht "der Datenordner"; vor allem aber loescht das hier NUR lokal -
+				     beim Server bleibt alles stehen und kaeme beim naechsten Abgleich zum
+				     Teil zurueck. Wer serverseitig loeschen will, loest das Konto auf. -->
+				{#if isTauri()}
 				<Card.Root>
 					<Card.Header>
-						<Card.Title>Daten</Card.Title>
+						<Card.Title>Daten auf diesem Gerät</Card.Title>
 						<Card.Description>
-							Erfasste Zeiten bleiben liegen, bis du sie löschst. Es wird nichts automatisch entfernt.
+							Löscht nur hier. Bei einem verknüpften Konto bleiben die Zeiten auf dem Server
+							und kommen beim nächsten Abgleich zurück – dort löschst du über
+							<strong>Konto auflösen</strong>.
 						</Card.Description>
 					</Card.Header>
 					<Card.Content class="space-y-3">
@@ -794,6 +849,7 @@
 						{/if}
 					</Card.Content>
 				</Card.Root>
+				{/if}
 		{:else if bereich === "ueber"}
 				<Card.Root>
 					<Card.Header><Card.Title>Datenschutz</Card.Title></Card.Header>

@@ -47,6 +47,13 @@
         "https://github.com/joe2824/timetracker/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM2ODNGRUJBRkMxRkE2ODYKUldTR3BoLzh1djZETmxyVmRvb3Vyek1Lcks3RWNtMTg4WXJxbTd2LzFZRzBNQWErejAyYUYxMFgK"
+    },
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "timetracker"
+        ]
+      }
     }
   },
   "bundle": {

@@ -1,8 +1,17 @@
 // Was noch nicht beim Server ist. Gemerkt wird NUR, WAS sich geaendert hat - Art, Id,
 // bei Eintraegen der Monat - nie der Inhalt selbst.
-import type { Activity, Entry, Settings } from "../types";
+import type { Activity, Entry, Settings, SyncMeta } from "../types";
 import type { WriteHook } from "../store";
-import { loadOutbox, saveOutbox, setWriteHook } from "../store";
+import {
+	listEntryMonths,
+	loadActivities,
+	loadEntries,
+	loadOutbox,
+	loadSettings,
+	saveOutbox,
+	setWriteHook,
+	settingsFileExists
+} from "../store";
 import { diffAndStamp } from "./stamp";
 import { logWarn } from "../log";
 
@@ -101,6 +110,35 @@ export async function startTracking(device: string): Promise<void> {
 		loaded = true;
 	}
 	setWriteHook(hook);
+}
+
+/**
+ * Alles vormerken, was der Server noch nicht hat.
+ *
+ * Erkennbar am fehlenden Stempel: was einmal abgeglichen war, traegt `rev`.
+ * Fuer den ersten Abgleich nach dem Verknuepfen - davor lief kein Schreib-Haken,
+ * der vorhandene Bestand ginge sonst nie hoch.
+ */
+export async function merkeUngestempeltes(): Promise<void> {
+	const now = Date.now();
+	const changes: PendingChange[] = [];
+
+	for (const month of await listEntryMonths()) {
+		for (const e of await loadEntries(month)) {
+			if (e.rev === undefined) changes.push({ kind: "entry", id: e.id, month, deleted: false, at: now });
+		}
+	}
+	for (const a of await loadActivities()) {
+		if (a.rev === undefined) changes.push({ kind: "activity", id: a.id, deleted: false, at: now });
+	}
+	// Nur wenn dieses Geraet ueberhaupt schon Einstellungen hat - sonst entstuende
+	// aus blossen Voreinstellungen ein Datensatz.
+	if (await settingsFileExists()) {
+		const s = (await loadSettings()) as Settings & SyncMeta;
+		if (s.rev === undefined) changes.push({ kind: "settings", id: SETTINGS_ID, deleted: false, at: now });
+	}
+
+	await note(changes);
 }
 
 /** Den Abgleich abschalten – das Programm verhaelt sich danach wieder rein lokal. */

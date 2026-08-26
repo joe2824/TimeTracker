@@ -348,6 +348,43 @@ npm test               # Vitest (reine Logik: time.ts, report.ts)
 > Autostart und Tray-Verhalten funktionieren nur im installierten Release-Build, nicht im
 > Dev-Binary.
 
+### Der Server im Container
+
+Das Abbild baut die GitHub-Action `.github/workflows/docker.yml` bei jedem
+Versions-Tag und legt es in der GitHub-Registry ab — für `linux/amd64` und
+`linux/arm64`, damit es auch auf einem Raspberry Pi läuft. `:latest` bekommen nur
+stabile Versionen, nie eine Beta.
+
+```bash
+docker pull ghcr.io/joe2824/timetracker-server:latest
+```
+
+Selbst bauen und starten geht weiterhin mit der `docker-compose.yml` im Wurzelverzeichnis:
+`.env` anlegen (Vorlage: `server/.env.example`), dann `docker compose up -d --build`.
+Den ersten Verwalter ernennt man danach im Container:
+
+```bash
+docker compose exec timetracker node admin.mjs liste
+docker compose exec timetracker node admin.mjs ernenne "<Name oder Kennung>"
+```
+
+### Einen Server voreinstellen
+
+`DEFAULT_SERVER` trägt beim Bauen eine Serveradresse fest in die Anwendung ein.
+Wer sie startet, muss dann nichts mehr eintippen — und findet unter der Adresse einen
+kleinen Link, um doch einen eigenen Server zu nehmen.
+
+```bash
+DEFAULT_SERVER=https://tracker.example.de npm run tauri build
+```
+
+Im Entwicklungsmodus (`npm run tauri dev`, `npm run dev`) steht ohne Zutun
+`http://localhost:3000` drin — der Server aus der `docker-compose.yml`.
+
+In der GitHub-Action kommt der Wert aus der Repository-Variable `DEFAULT_SERVER`
+(Settings → Secrets and variables → Actions → Variables). Kein Secret: die Adresse
+steht ohnehin in jedem Build. Ist sie nicht gesetzt, fragt die Anwendung wie bisher.
+
 ### Releases
 
 ```bash

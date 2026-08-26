@@ -89,6 +89,8 @@ export const DEFAULT_PAGE = 500;
 export const MAX_PAGE = 2000;
 /** Gleichzeitige Ereignis-Verbindungen je Konto. */
 export const MAX_STREAMS_PER_USER = 8;
+/** Wie lange die Warteschleife eine Anfrage offen haelt. */
+export const SYNC_WAIT_MS = Number(process.env.SYNC_WAIT_MS ?? 25_000);
 
 /** Lebensdauer einer Browser-Sitzung. */
 export const SESSION_TTL_MS = 30 * 24 * 3600 * 1000;

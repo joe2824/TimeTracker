@@ -1,6 +1,7 @@
 //! Geheimnisse so ablegen, dass eine kopierte Datei nichts wert ist.
 
 use serde::Serialize;
+use zeroize::Zeroize;
 
 /// Was aus dem Schutz herauskam - und ob er ueberhaupt griff.
 #[derive(Serialize)]
@@ -94,9 +95,55 @@ mod imp {
     }
 }
 
-/// Ausserhalb von Windows bewusst keine eigene Bastelloesung: Verschluesselung mit
-/// dem Schluessel daneben schuetzt vor nichts. `protected` sagt es dem Aufrufer.
-#[cfg(not(windows))]
+/// Ausserhalb von Windows der Schluesselbund des Systems: Keychain unter macOS,
+/// Secret Service unter Linux.
+///
+/// Anders als DPAPI gibt ein Schluesselbund nichts zurueck, was man ablegen
+/// koennte - er verwahrt selbst. Deshalb wandert der Wert dorthin, und in die
+/// Datei kommt nur die Kennung, unter der er dort liegt. Eine kopierte Datei ist
+/// damit genauso wertlos wie unter Windows.
+///
+/// Schlaegt es fehl (Linux ohne laufenden Secret Service, verweigerte Keychain),
+/// gibt es `None` - der Aufrufer legt dann im Klartext ab und sagt es ehrlich.
+#[cfg(all(not(windows), any(target_os = "macos", target_os = "linux")))]
+mod imp {
+    /// Unter diesem Namen taucht der Eintrag im Schluesselbund auf.
+    const DIENST: &str = "TimeTracker";
+
+    /// Eine Kennung, die es noch nicht gibt. Aus der Systemzeit und Zufall.
+    fn neue_kennung() -> String {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let zeit = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        // Die Adresse einer frischen Allokation als zweite Quelle - sie
+        // unterscheidet zwei Aufrufe in derselben Nanosekunde.
+        let streu = Box::into_raw(Box::new(0u8)) as usize;
+        let s = format!("{zeit:x}-{streu:x}");
+        unsafe { drop(Box::from_raw(streu as *mut u8)) };
+        s
+    }
+
+    pub fn protect(plain: &[u8]) -> Option<Vec<u8>> {
+        let kennung = neue_kennung();
+        let eintrag = keyring::Entry::new(DIENST, &kennung).ok()?;
+        eintrag.set_secret(plain).ok()?;
+        Some(kennung.into_bytes())
+    }
+
+    pub fn unprotect(sealed: &[u8]) -> Option<Vec<u8>> {
+        let kennung = std::str::from_utf8(sealed).ok()?;
+        let eintrag = keyring::Entry::new(DIENST, kennung).ok()?;
+        eintrag.get_secret().ok()
+    }
+}
+
+/// Alles Uebrige (BSD, unbekannte Ziele): kein Schutz, und das wird gesagt.
+///
+/// Bewusst keine eigene Bastelloesung - eine Verschluesselung mit dem Schluessel
+/// daneben schuetzt vor nichts und taeuscht Sicherheit vor.
+#[cfg(all(not(windows), not(any(target_os = "macos", target_os = "linux"))))]
 mod imp {
     pub fn protect(_plain: &[u8]) -> Option<Vec<u8>> {
         None
@@ -161,17 +208,25 @@ fn b64_decode(text: &str) -> Option<Vec<u8>> {
 /// Das Feld `protected` ist kein Beiwerk: die Oberflaeche sagt dem Nutzer
 /// damit die Wahrheit, statt einen Schutz zu behaupten, den es nicht gibt.
 #[tauri::command]
-pub fn protect_secret(plain: String) -> Protected {
-    match imp::protect(plain.as_bytes()) {
-        Some(sealed) => Protected {
-            data: b64_encode(&sealed),
-            protected: true,
-        },
+pub fn protect_secret(mut plain: String) -> Protected {
+    let ergebnis = match imp::protect(plain.as_bytes()) {
+        Some(mut sealed) => {
+            let data = b64_encode(&sealed);
+            sealed.zeroize();
+            Protected {
+                data,
+                protected: true,
+            }
+        }
         None => Protected {
             data: b64_encode(plain.as_bytes()),
             protected: false,
         },
-    }
+    };
+    // Die Kopie, die ueber die Bruecke kam, wird hier nicht mehr gebraucht.
+    // Ohne das bliebe sie bis zur naechsten Wiederverwendung im Speicher stehen.
+    plain.zeroize();
+    ergebnis
 }
 
 /// Einen geschuetzten Wert wieder oeffnen.
@@ -180,13 +235,17 @@ pub fn protect_secret(plain: String) -> Protected {
 /// eigenen Datei und muss nicht raten.
 #[tauri::command]
 pub fn unprotect_secret(data: String, protected: bool) -> Result<String, String> {
-    let raw = b64_decode(&data).ok_or_else(|| "Ungültige Ablage".to_string())?;
+    let mut raw = b64_decode(&data).ok_or_else(|| "Ungültige Ablage".to_string())?;
     let plain = if protected {
-        imp::unprotect(&raw).ok_or_else(|| {
+        let geoeffnet = imp::unprotect(&raw).ok_or_else(|| {
             // Der haeufigste Grund: die Datei stammt von einem anderen
             // Benutzerkonto oder einem anderen Rechner. Genau so soll es sein.
             "Wert lässt sich auf diesem Benutzerkonto nicht entschlüsseln".to_string()
-        })?
+        });
+        // Die Kennung bzw. der Blob wird nicht mehr gebraucht - auch dann nicht,
+        // wenn das Oeffnen scheiterte.
+        raw.zeroize();
+        geoeffnet?
     } else {
         raw
     };

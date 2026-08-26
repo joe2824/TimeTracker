@@ -116,6 +116,26 @@ describe("store.ts auf der Browser-Ablage", () => {
 		expect(await store.listEntryMonths()).toEqual([]);
 	});
 
+	it("kennt einen Ordner an dem, was darin liegt", async () => {
+		// Es gibt keine Ordner - der Pfad ist Teil des Schluessels. Wer trotzdem
+		// erst auf den Ordner prueft (log.ts tut es), bekam sonst immer "nein" und
+		// damit einen leeren Bestand.
+		expect(await storage.exists("kiste")).toBe(false);
+		await storage.writeTextFile("kiste/inhalt.txt", "etwas\n");
+		expect(await storage.exists("kiste")).toBe(true);
+		expect(await storage.exists("kiste/")).toBe(true);
+		// Ein Praefix, der auf halber Strecke passt, ist noch kein Ordner.
+		expect(await storage.exists("kist")).toBe(false);
+	});
+
+	it("findet die Protokolle im Browser wieder", async () => {
+		const log = await import("../log");
+		log.logWarn("etwas ging schief");
+		await log.flushLog();
+		expect(await log.listLogs()).toHaveLength(1);
+		expect((await log.readLog()).join("\n")).toContain("etwas ging schief");
+	});
+
 	it("legt eine beschaedigte Datei zur Seite, statt sie fuer leer zu halten", async () => {
 		const store = await import("../store");
 		await storage.writeTextFile("data/entries-2026-08.json", "{kaputt");

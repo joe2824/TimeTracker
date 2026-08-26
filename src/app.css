@@ -157,6 +157,21 @@
 	}
 }
 
+/*
+ * Waagerecht scrollen, ohne den Balken zu zeigen.
+ *
+ * Fuer die Navigation auf schmalen Displays: dort passen nicht alle Tabs
+ * nebeneinander, und ein Balken unter der Kopfzeile sieht aus wie ein Fehler.
+ * Gescrollt wird trotzdem - mit Finger, Rad oder Tastatur.
+ */
+@utility scrollbar-lose {
+	scrollbar-width: none;
+	-ms-overflow-style: none;
+	&::-webkit-scrollbar {
+		display: none;
+	}
+}
+
 /* Indeterminater Ladebalken (z. B. beim Laden aus Outlook). */
 @keyframes indeterminate {
 	0% {

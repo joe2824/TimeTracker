@@ -102,7 +102,14 @@ const browserBackend: StorageBackend = {
 	async exists(path) {
 		// `count` statt `get`: der Wert kann gross sein, und gebraucht wird nur die
 		// Antwort ja/nein.
-		return (await tx<number>("readonly", (s) => s.count(path))) > 0;
+		if ((await tx<number>("readonly", (s) => s.count(path))) > 0) return true;
+		// Es gibt keine Ordner, der Pfad ist Teil des Schluessels - "logs" allein
+		// steht also nie da. Wer nach einem Ordner fragt, meint trotzdem "liegt da
+		// etwas drin?", und genau das beantwortet die Praefixsuche. Ohne sie sieht
+		// jeder Aufrufer, der erst auf den Ordner prueft, einen leeren Bestand.
+		const prefix = path.endsWith("/") ? path : `${path}/`;
+		const keys = await tx<IDBValidKey[]>("readonly", (s) => s.getAllKeys());
+		return keys.some((k) => String(k).startsWith(prefix));
 	},
 
 	// Es gibt keine Ordner - der Pfad ist Teil des Schluessels. Nichts zu tun.

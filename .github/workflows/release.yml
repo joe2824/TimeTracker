@@ -123,6 +123,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           APTABASE_KEY: ${{ secrets.APTABASE_KEY }}
+          # Der Server, der in der fertigen Anwendung schon eingetragen ist.
+          # Repository-Variable, kein Secret: die Adresse steht ohnehin in jedem
+          # Build. Leer lassen heisst, dass die Anwendung danach fragt.
+          DEFAULT_SERVER: ${{ vars.DEFAULT_SERVER }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'TimeTracker ${{ github.ref_name }}'

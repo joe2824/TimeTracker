@@ -572,7 +572,13 @@ pub fn run() {
     #[cfg(desktop)]
     {
         builder = builder
-            .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+                // Ein Deeplink startet unter Windows eine ZWEITE Instanz und
+                // uebergibt die Adresse als Argument. Ohne diese Zeile kaeme das
+                // Fenster nach vorn, aber der Code bliebe liegen.
+                if let Some(url) = args.iter().find(|a| a.starts_with("timetracker://")) {
+                    let _ = app.emit("deep-link", url.clone());
+                }
                 show_main(app);
             }))
             .plugin(tauri_plugin_autostart::init(
@@ -582,6 +588,10 @@ pub fn run() {
             .plugin(tauri_plugin_updater::Builder::new().build())
             .plugin(tauri_plugin_global_shortcut::Builder::new().build())
             .plugin(tauri_plugin_process::init())
+            // Kopplung per Link. Der Browser zeigt einen "timetracker://pair/CODE",
+            // ein Klick holt die Anwendung nach vorn und reicht die Adresse ans
+            // Frontend weiter - dort steht der Code dann im Feld.
+            .plugin(tauri_plugin_deep_link::init())
             // Immer registrieren, auch ohne Key: sonst liefe jeder track_event()
             // aus dem Frontend in "plugin aptabase not found". Ohne Key ist der
             // Client abgeschaltet und es geht nichts ins Netz.

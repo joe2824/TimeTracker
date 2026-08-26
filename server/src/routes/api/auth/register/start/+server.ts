@@ -8,8 +8,10 @@ import { gueltigerCode } from "$lib/server/invites";
 
 export const POST: RequestHandler = async ({ locals, request }) => {
 	const body = await request.json().catch(() => null);
+	// Leer ist erlaubt - wie in /api/auth/device. Dann steht spaeter die Kennung
+	// des Kontos da, und im Passkey-Verwalter der Name der Anwendung.
 	const displayName = String(body?.displayName ?? "").trim();
-	if (!displayName || displayName.length > 64) error(400, "Anzeigename fehlt oder ist zu lang");
+	if (displayName.length > 64) error(400, "Anzeigename ist zu lang");
 
 	// Geschlossener Betrieb: der Code wird hier nur GEPRUEFT, nicht entwertet.
 	// Entwertet wird er erst, wenn das Konto wirklich entsteht - sonst verbraucht

@@ -1,22 +1,33 @@
 <script lang="ts">
 	// Konto & Synchronisation.
 	import * as Card from "$lib/components/ui/card";
+	import * as Dialog from "$lib/components/ui/dialog";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
 	import SettingRow from "$lib/components/SettingRow.svelte";
+	import PairingCode from "$lib/components/PairingCode.svelte";
 	import { toast } from "svelte-sonner";
 	import { account } from "$lib/sync/account.svelte";
-	import { formatPairingCode, isPairingCode, normalizePairingCode } from "$lib/crypto/vault";
-	import { fmtDateHuman, fmtClock } from "$lib/time";
+	import { ApiError } from "$lib/sync/api";
+	import { app } from "$lib/app.svelte";
+	import { isPairingCode, normalizePairingCode } from "$lib/crypto/vault";
+	import { fmtDateHuman } from "$lib/time";
 	import { capabilities } from "$lib/platform/env";
 	import { errorText } from "$lib/log";
+	import { DEFAULT_SERVER } from "$lib/defaults";
+	import { anlegenLink } from "$lib/invite";
+	import { openExternal } from "$lib/platform/open";
 
 	/** Text zu einem geworfenen Wert, sonst der eigene Standard. */
 	const fehlertext = (e: unknown, standard: string) =>
 		e instanceof Error ? errorText(e) : standard;
 
-	let serverUrl = $state("");
+	// Steht beim Bauen ein Server fest, ist er die Vorgabe - sonst bleibt das Feld
+	// leer wie bisher.
+	let serverUrl = $state(DEFAULT_SERVER);
+	/** Hat jemand die Vorgabe ausdruecklich verlassen? */
+	let eigenerServer = $state(false);
 	let code = $state("");
 	let fremderCode = $state("");
 	let einladung = $state("");
@@ -30,20 +41,49 @@
 	let warten = $state(false);
 	let poll: ReturnType<typeof setInterval> | null = null;
 
+	/** Ein Punkt und ein Wort - mehr will hier niemand wissen. */
 	const zustand = $derived.by(() => {
-		if (account.state === "aus") return { text: "Nicht verknüpft", ton: "text-muted-foreground" };
-		if (account.state === "verbindet") return { text: "Verbinde…", ton: "text-muted-foreground" };
-		if (account.state === "fehler") return { text: account.message, ton: "text-destructive" };
-		if (account.phase === "offline") return { text: "Offline – Änderungen warten", ton: "text-amber-600" };
-		if (account.phase === "laeuft") return { text: "Gleicht ab…", ton: "text-muted-foreground" };
-		if (account.phase === "fehler") return { text: account.message, ton: "text-destructive" };
-		return { text: "Verknüpft", ton: "text-emerald-600" };
+		if (account.state === "aus")
+			return { text: "Nicht verknüpft", punkt: "bg-muted-foreground" };
+		if (account.state === "verbindet") return { text: "Verbinde…", punkt: "bg-muted-foreground" };
+		if (account.state === "fehler") return { text: "Getrennt", punkt: "bg-destructive" };
+		if (account.phase === "offline") return { text: "Server nicht erreichbar", punkt: "bg-amber-500" };
+		if (account.phase === "fehler") return { text: "Server nicht erreichbar", punkt: "bg-destructive" };
+		if (account.phase === "laeuft") return { text: "Gleicht ab…", punkt: "bg-emerald-500" };
+		return { text: "Verbunden", punkt: "bg-emerald-500" };
 	});
 
 	function vorschlagName(): string {
 		// Ein Name, den man in der Geraeteliste wiedererkennt, ohne ihn zu tippen.
 		const p = navigator.platform || "Gerät";
 		return capabilities.tray ? `Rechner (${p})` : `Browser (${p})`;
+	}
+
+	/**
+	 * Der ganze Vorgang mit einem Knopf.
+	 *
+	 * Erst den eigenen Kopplungscode holen, dann den Browser direkt beim Anlegen
+	 * oeffnen - mit dem Code im Link. Der Browser bestaetigt ihn nach dem Anlegen
+	 * selbst, und die Abfrage hier unten merkt es. Ohne das muesste jemand nach
+	 * dem Anlegen zurueckkommen und zwoelf Zeichen abtippen.
+	 */
+	async function losgehen() {
+		const url = serverUrl.trim();
+		if (!url) {
+			toast.error("Bitte die Adresse des Servers angeben.");
+			return;
+		}
+		laeuft = true;
+		try {
+			code = await account.startPairing(url, vorschlagName());
+			warten = true;
+			poll = setInterval(pruefen, 2000);
+			await openExternal(anlegenLink(url, code));
+		} catch (e) {
+			toast.error(fehlertext(e, "Konnte nicht beginnen"));
+		} finally {
+			laeuft = false;
+		}
 	}
 
 	async function koppelnStarten() {
@@ -106,6 +146,43 @@
 		}
 	}
 
+	// ---------- Verknuepfte Geraete ----------
+
+	type Geraet = { id: string; label: string; lastSeenAt: number | null; revokedAt: number | null };
+	let geraete = $state<Geraet[]>([]);
+	let geraeteGeladen = $state(false);
+
+	async function geraeteLaden() {
+		try {
+			const info = await account.accountInfo();
+			geraete = info ? info.devices.filter((d) => !d.revokedAt) : [];
+		} catch (e) {
+			toast.error(fehlertext(e, "Geräte nicht abrufbar"));
+		} finally {
+			geraeteGeladen = true;
+		}
+	}
+
+	$effect(() => {
+		if (account.linked && !geraeteGeladen) void geraeteLaden();
+	});
+
+	/** Welches Geraet soll weg? Gesetzt heisst: die Rueckfrage steht offen. */
+	let trenntGeraet = $state<Geraet | null>(null);
+
+	async function trennenBestaetigt() {
+		const g = trenntGeraet;
+		if (!g) return;
+		try {
+			await account.revokeDevice(g.id);
+			trenntGeraet = null;
+			await geraeteLaden();
+			toast.success(`„${g.label}" ist getrennt.`);
+		} catch (e) {
+			toast.error(fehlertext(e, "Trennen fehlgeschlagen"));
+		}
+	}
+
 	/** Entkoppeln - in drei Stufen, weil das Wort drei Dinge heissen kann. */
 	let loesenOffen = $state(false);
 	let aufloesenOffen = $state(false);
@@ -126,8 +203,11 @@
 		}
 	}
 
-	/** Ein Konto von hier aus anlegen. */
-	async function kontoAnlegen() {
+	/** Steht die Frage nach dem Einladungscode offen? */
+	let inviteOffen = $state(false);
+
+	/** Ein Konto von hier aus anlegen - Code erst, wenn der Server ihn verlangt. */
+	async function kontoAnlegen(code = "") {
 		const url = serverUrl.trim();
 		if (!url) {
 			toast.error("Bitte die Adresse des Servers angeben.");
@@ -135,12 +215,22 @@
 		}
 		laeuft = true;
 		try {
-			// Kein Name, weder fuer das Konto noch fuer das Geraet.
-			phrase = await account.createAccount(url, "", vorschlagName(), {
-				invite: einladung.trim() || undefined
+			// Der Name aus dem Willkommensbildschirm, falls jemand einen eingetragen
+			// hat - ein zweites Feld dafuer waere dieselbe Frage ein zweites Mal.
+			// Leer ist erlaubt: dann setzt der Server die Kontokennung ein.
+			phrase = await account.createAccount(url, app.settings.senderName.trim(), vorschlagName(), {
+				invite: code.trim() || undefined
 			});
+			einladung = "";
+			inviteOffen = false;
 			phraseBestaetigt = false;
 		} catch (e) {
+			if (e instanceof ApiError && e.status === 403) {
+				// Beim ersten Mal ist das keine Fehlermeldung, sondern eine Frage.
+				if (code.trim()) toast.error("Dieser Einladungscode gilt nicht.");
+				inviteOffen = true;
+				return;
+			}
 			toast.error(fehlertext(e, "Konto konnte nicht angelegt werden"));
 		} finally {
 			laeuft = false;
@@ -204,12 +294,20 @@
 		}
 	}
 
+	// Kam ein Code ueber einen Link herein, gehoert er ins Feld - und danach weg,
+	// damit er beim naechsten Aufbau der Karte nicht wieder auftaucht.
+	$effect(() => {
+		if (!account.pairCodeFromLink) return;
+		fremderCode = account.pairCodeFromLink;
+		account.pairCodeFromLink = "";
+	});
+
 	$effect(() => () => {
 		if (poll) clearInterval(poll);
 	});
 </script>
 
-<Card.Root>
+<Card.Root class="lg:col-span-2">
 	<Card.Header>
 		<Card.Title>Konto & Synchronisation</Card.Title>
 		<Card.Description>
@@ -232,19 +330,13 @@
 				<div>
 					<p class="font-medium">Deine Wiederherstellungs-Phrase</p>
 					<p class="text-muted-foreground text-sm">
-						Schreib sie auf. Sie wird genau einmal gezeigt und lässt sich nicht noch einmal
-						anzeigen.
+						Wird genau einmal gezeigt. Solange kein Passkey und kein zweites Gerät da ist,
+						sind diese Wörter der einzige Weg zu deinen Zeiten.
 					</p>
 				</div>
 
 				<p class="bg-muted rounded-md p-3 font-mono text-sm leading-relaxed select-all">
 					{phrase}
-				</p>
-
-				<p class="text-muted-foreground text-xs">
-					Solange kein zweites Gerät gekoppelt und kein Passkey angelegt ist, sind diese
-					Wörter der einzige Weg zu deinen Zeiten. Ein Passwort-Manager oder ein Zettel im
-					Ordner sind beide besser als der Bildschirm, auf dem sie gerade stehen.
 				</p>
 
 				<label class="flex items-start gap-2 text-sm">
@@ -265,33 +357,28 @@
 			</div>
 		{/if}
 
-		<SettingRow title="Status" description={account.linked ? account.serverUrl : "Zeiten nur auf diesem Gerät."}>
-			{#snippet control()}
-				<span class="text-sm font-medium {zustand.ton}">{zustand.text}</span>
-			{/snippet}
-		</SettingRow>
+		<!-- Eine Zeile statt zweier Bloecke. Interessant ist nur: haengt das Gerät an
+		     einem Konto, und kommt es gerade dran? Wie lange der letzte Abgleich her
+		     ist, steht oben in der Kopfzeile - dort sieht man es beilaeufig. -->
+		<div class="flex flex-wrap items-center justify-between gap-2">
+			<div class="flex items-center gap-2 text-sm">
+				<span class="size-2 shrink-0 rounded-full {zustand.punkt}"></span>
+				<span class="font-medium">{zustand.text}</span>
+				{#if account.linked && account.serverUrl}
+					<span class="text-muted-foreground truncate">· {account.serverUrl}</span>
+				{/if}
+			</div>
+			{#if account.linked}
+				<Button variant="ghost" size="sm" onclick={() => account.syncNow()}>Jetzt abgleichen</Button>
+			{/if}
+		</div>
 
 		{#if account.linked}
-			<SettingRow
-				title="Letzter Abgleich"
-				description={account.pending > 0
-					? `${account.pending} Änderung${account.pending === 1 ? "" : "en"} noch nicht übertragen.`
-					: "Alles übertragen."}
-				class="border-t pt-3"
-			>
-				{#snippet control()}
-					<div class="flex items-center gap-2">
-						<span class="text-muted-foreground text-sm">
-							{#if account.lastSync}
-								{fmtClock(account.lastSync)}
-							{:else}
-								–
-							{/if}
-						</span>
-						<Button variant="outline" size="sm" onclick={() => account.syncNow()}>Jetzt</Button>
-					</div>
-				{/snippet}
-			</SettingRow>
+			{#if account.pending > 0}
+				<p class="text-muted-foreground text-xs">
+					{account.pending} Änderung{account.pending === 1 ? "" : "en"} noch nicht übertragen.
+				</p>
+			{/if}
 
 			{#if !account.secretsProtected}
 				<!--
@@ -300,9 +387,8 @@
 					entscheiden; wer es nicht weiß, kann es nicht.
 				-->
 				<p class="text-muted-foreground border-t pt-3 text-xs">
-					Schlüssel und Zugang liegen auf diesem Gerät <strong>ungeschützt</strong> im
-					Datenordner – das Betriebssystem bietet hier keine Ablage dafür. Behandle den Ordner
-					entsprechend.
+					Schlüssel und Zugang liegen hier <strong>ungeschützt</strong> im Datenordner – das
+					Betriebssystem bietet keine geschützte Ablage.
 				</p>
 			{/if}
 
@@ -313,12 +399,44 @@
 				</p>
 			{/if}
 
+			{#if geraeteGeladen && geraete.length > 0}
+				<div class="space-y-1 border-t pt-3">
+					<p class="text-sm font-medium">Verknüpfte Geräte</p>
+					{#each geraete as g (g.id)}
+						<div class="flex items-center justify-between gap-2 border-b py-2 text-sm last:border-0">
+							<div class="min-w-0">
+								<p class="truncate font-medium">
+									{g.label}
+									{#if g.id === account.thisDeviceId}
+										<span class="text-muted-foreground font-normal"> · dieses Gerät</span>
+									{/if}
+								</p>
+								<p class="text-muted-foreground text-xs">
+									{g.lastSeenAt ? `zuletzt ${fmtDateHuman(g.lastSeenAt)}` : "noch nie verbunden"}
+								</p>
+							</div>
+							{#if g.id !== account.thisDeviceId}
+								<!-- Das eigene Geraet nicht: dafuer gibt es „Entkoppeln“, das auch
+								     lokal aufraeumt. Hier waere es ein Zugang, der sich selbst zusperrt. -->
+								<Button variant="ghost" size="sm" onclick={() => (trenntGeraet = g)}>Trennen</Button>
+							{/if}
+						</div>
+					{/each}
+				</div>
+			{/if}
+
 			<div class="space-y-2 border-t pt-3">
 				<Label for="fremdcode">Weiteres Gerät verknüpfen</Label>
 				<p class="text-muted-foreground text-xs">
-					Auf dem neuen Gerät den Kopplungscode anzeigen lassen und hier eintragen. Der
-					Schlüssel wird dabei für dieses eine Gerät verpackt – der Server sieht ihn nie.
+					Code vom neuen Gerät hier eintragen.
 				</p>
+				{#if capabilities.tray && account.serverUrl}
+					<!-- Nur auf dem Rechner: im Browser sitzt man schon dort, wo der Code
+					     entsteht - der Knopf zeigte dann auf die eigene Seite. -->
+					<Button variant="outline" size="sm" onclick={() => openExternal(account.serverUrl)}>
+						Im Browser öffnen
+					</Button>
+				{/if}
 				<div class="flex gap-2">
 					<Input
 						id="fremdcode"
@@ -334,8 +452,12 @@
 			<div class="border-t pt-3">
 				{#if !loesenOffen}
 					<Button variant="outline" size="sm" onclick={dialogOeffnen}>Entkoppeln…</Button>
+					<!-- "hier" allein war zweideutig: es klang wie eine Aussage ueber alle
+					     Daten, auch die beim Server. Was dort passiert, entscheidet erst
+					     die Wahl im Dialog. -->
 					<p class="text-muted-foreground mt-1 text-xs">
-						Die erfassten Zeiten bleiben auf diesem Gerät erhalten.
+						Die Zeiten auf diesem Gerät bleiben in jedem Fall. Was beim Server passiert,
+						wählst du gleich.
 					</p>
 				{:else}
 					<div class="space-y-3">
@@ -346,8 +468,7 @@
 								Nur hier vergessen
 							</Button>
 							<p class="text-muted-foreground text-xs">
-								Dieses Gerät gleicht nicht mehr ab. Der Zugang bleibt gültig – es lässt sich
-								jederzeit wieder koppeln.
+								Kein Abgleich mehr. Wieder koppeln geht jederzeit.
 							</p>
 						</div>
 
@@ -394,7 +515,7 @@
 									{:else}
 										die {geraeteAmKonto} verknüpften Geräte.
 									{/if}
-									Die Zeiten auf diesem Rechner bleiben.
+									Die Datensätze dort werden gelöscht; die Zeiten auf diesem Gerät bleiben.
 								</p>
 							{:else}
 								<div class="border-destructive/40 space-y-2 rounded-md border p-3">
@@ -436,45 +557,70 @@
 				{/if}
 			</div>
 		{:else if warten}
-			<div class="space-y-2 border-t pt-3">
-				<p class="text-sm">Diesen Code auf einem bereits verknüpften Gerät eintragen:</p>
-				<p class="font-mono text-2xl tracking-[0.2em]">{formatPairingCode(code)}</p>
-				<p class="text-muted-foreground text-xs">
-					Der Code gilt zehn Minuten. Wird gewartet, bis jemand bestätigt hat…
-				</p>
-				<Button variant="outline" size="sm" onclick={abbrechen}>Abbrechen</Button>
+			<div class="border-t pt-3">
+				<PairingCode {code} onCancel={abbrechen} />
 			</div>
 		{:else}
 			<div class="space-y-2 border-t pt-3">
-				<Label for="srv">Adresse des Servers</Label>
-				<Input id="srv" bind:value={serverUrl} placeholder="https://tracker.example.de" />
+				{#if DEFAULT_SERVER && !eigenerServer}
+					<!-- Steht beim Bauen ein Server fest, ist das fuer fast alle die
+					     richtige Antwort. Sie als Frage zu stellen kostet nur einen
+					     Schritt - wer einen eigenen hat, findet den Link darunter. -->
+					<p class="text-sm">
+						Server: <span class="font-medium">{DEFAULT_SERVER}</span>
+					</p>
+					<button
+						type="button"
+						class="text-muted-foreground hover:text-foreground text-xs underline underline-offset-2"
+						onclick={() => (eigenerServer = true)}
+					>
+						Eigenen Server verwenden
+					</button>
+				{:else}
+					<Label for="srv">Adresse des Servers</Label>
+					<Input id="srv" bind:value={serverUrl} placeholder="https://tracker.example.de" />
+					{#if DEFAULT_SERVER}
+						<button
+							type="button"
+							class="text-muted-foreground hover:text-foreground text-xs underline underline-offset-2"
+							onclick={() => {
+								eigenerServer = false;
+								serverUrl = DEFAULT_SERVER;
+							}}
+						>
+							Zurück zu {DEFAULT_SERVER}
+						</button>
+					{/if}
+				{/if}
 
-				<!-- Zwei Wege, und die Reihenfolge ist Absicht.
+				<!-- Ein Konto entsteht im Browser, nicht hier.
 
-				     Wer hier sitzt, hat seine Daten auf DIESEM Rechner. Ihn zuerst in
-				     den Browser zu schicken, ein leeres Konto anzulegen und dann
-				     zurückzukommen, ist genau verkehrt herum – deshalb steht das
-				     Anlegen oben und das Koppeln darunter. -->
+				     Ein Passkey haengt an der Domain des Servers; die Anwendung hat
+				     keine und kann deshalb keinen anlegen. Ein von hier aus angelegtes
+				     Konto haette dauerhaft KEINEN Passkey - der Browser kaeme nie
+				     anders hinein als ueber eine Kopplung, und der einzige Weg zurueck
+				     waeren die 24 Woerter.
+
+				     Also andersherum: im Browser anlegen (Einladungscode, Passkey),
+				     danach dieses Geraet dazukoppeln. Die Zeiten von hier gehen beim
+				     ersten Abgleich trotzdem hoch - darum kuemmert sich die Nachlese. -->
 				<div class="space-y-2 pt-3">
-					<Label for="invite">Einladungscode</Label>
-					<Input id="invite" bind:value={einladung} placeholder="ABCD-EFGH-JKLM-NPQR" class="font-mono" />
-					<Button onclick={kontoAnlegen} disabled={laeuft} class="mt-1">
-						{laeuft ? "Legt an…" : "Konto anlegen und verknüpfen"}
+					<Button disabled={laeuft || !serverUrl.trim()} onclick={losgehen}>
+						{laeuft ? "Öffnet…" : "Konto anlegen und verknüpfen"}
 					</Button>
 					<p class="text-muted-foreground text-xs">
-						Legt ein neues Konto an und lädt die Zeiten von diesem Rechner hoch. Du bekommst
-						eine Wiederherstellungs-Phrase – sie ist zunächst der einzige Weg zurück.
+						Öffnet den Browser direkt beim Anlegen. Sobald das Konto steht, ist dieser
+						Rechner verknüpft – ohne dass du etwas abtippst.
 					</p>
 				</div>
 
 				<div class="space-y-2 border-t pt-3">
-					<p class="text-sm font-medium">Oder: zu einem Konto dazu, das es schon gibt</p>
+					<p class="text-sm font-medium">Konto gibt es schon?</p>
 					<Button variant="outline" onclick={koppelnStarten} disabled={laeuft}>
 						Kopplungscode anzeigen
 					</Button>
 					<p class="text-muted-foreground text-xs">
-						Dafür braucht es ein Gerät, das auf dieses Konto schon Zugriff hat – es bestätigt
-						den Code.
+						Den Code auf einem Gerät bestätigen, das schon an dem Konto hängt.
 					</p>
 				</div>
 
@@ -523,3 +669,43 @@
 		{/if}
 	</Card.Content>
 </Card.Root>
+
+<Dialog.Root open={trenntGeraet !== null} onOpenChange={(o) => !o && (trenntGeraet = null)}>
+	<Dialog.Content>
+		<Dialog.Header>
+			<Dialog.Title>„{trenntGeraet?.label}" trennen?</Dialog.Title>
+			<Dialog.Description>
+				Das Gerät kommt danach nicht mehr an dieses Konto. Was dort erfasst wurde, bleibt auf
+				diesem Gerät und beim Server – nur der Zugang ist weg. Zurück geht es über eine neue
+				Kopplung.
+			</Dialog.Description>
+		</Dialog.Header>
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (trenntGeraet = null)}>Abbrechen</Button>
+			<Button variant="destructive" onclick={trennenBestaetigt}>Trennen</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root open={inviteOffen} onOpenChange={(o) => (inviteOffen = o)}>
+	<Dialog.Content class="sm:max-w-sm">
+		<Dialog.Header>
+			<Dialog.Title>Einladungscode</Dialog.Title>
+			<Dialog.Description>
+				Dieser Server nimmt keine offenen Registrierungen an.
+			</Dialog.Description>
+		</Dialog.Header>
+		<Input
+			bind:value={einladung}
+			placeholder="ABCD-EFGH-JKLM-NPQR"
+			class="font-mono tracking-wider uppercase"
+			onkeydown={(e) => e.key === "Enter" && kontoAnlegen(einladung)}
+		/>
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (inviteOffen = false)}>Abbrechen</Button>
+			<Button disabled={laeuft || !einladung.trim()} onclick={() => kontoAnlegen(einladung)}>
+				{laeuft ? "Legt an…" : "Konto anlegen"}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

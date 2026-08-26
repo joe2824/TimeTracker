@@ -376,4 +376,14 @@ export class Api {
 	streamUrl(): string {
 		return `${this.#baseUrl}/api/sync/stream`;
 	}
+
+	/**
+	 * Warten, bis der Server ueber `since` hinaus ist - fuer Clients ohne
+	 * EventSource. Kommt nach etwa 25 Sekunden auch ohne Aenderung zurueck.
+	 */
+	waitForChange(since: number, signal?: AbortSignal): Promise<{ seq: number; changed: boolean }> {
+		return this.#call<{ seq: number; changed: boolean }>(`/api/sync/wait?since=${since}`, {
+			signal
+		});
+	}
 }

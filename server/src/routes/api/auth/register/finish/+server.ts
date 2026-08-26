@@ -13,8 +13,10 @@ export const POST: RequestHandler = async ({ locals, request, cookies }) => {
 	const taken = takeChallenge(locals.db, challengeId, "register");
 	if (!taken?.userId) error(400, "Aufgabe abgelaufen – bitte erneut versuchen");
 
-	const displayName = String(body?.displayName ?? "").trim();
-	if (!displayName) error(400, "Anzeigename fehlt");
+	const gewuenscht = String(body?.displayName ?? "").trim();
+	if (gewuenscht.length > 64) error(400, "Anzeigename ist zu lang");
+	// Ohne Namen die Kennung - dieselbe Regel wie beim Anlegen vom Geraet aus.
+	const displayName = gewuenscht || taken.userId;
 
 	const verification = await verifyRegistration(body?.response, taken.challenge);
 	if (!verification.verified || !verification.registrationInfo) {

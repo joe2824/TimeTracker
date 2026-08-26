@@ -11,6 +11,7 @@
 	import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 	import { invoke } from "@tauri-apps/api/core";
 	import { emit, listen } from "@tauri-apps/api/event";
+	import { notifyDataChanged, type DataChanged } from "$lib/platform/windows";
 	import { toast } from "svelte-sonner";
 	import SquareIcon from "@lucide/svelte/icons/square";
 	import PlayIcon from "@lucide/svelte/icons/play";
@@ -57,10 +58,17 @@
 			"main-attention",
 			(e) => (attention = !!e.payload?.active)
 		);
+		// Das Hauptfenster meldet, wenn der Abgleich etwas mitgebracht hat. Ohne
+		// das zeigt ein offenes Flyout den Stand von seinem letzten Einblenden.
+		const unDaten = listen<DataChanged>("data-reload", (e) => {
+			if (e.payload?.from === "tray") return;
+			void refresh();
+		});
 		return () => {
 			clearInterval(tick);
 			void un.then((f) => f());
 			void unAtt.then((f) => f());
+			void unDaten.then((f) => f());
 		};
 	});
 
@@ -98,12 +106,12 @@
 		// Nach dem Start zurück auf "jetzt", damit der Offset nicht am nächsten Start klebt.
 		presetMin = 0;
 		customStart = "";
-		await emit("data-reload"); // Hauptfenster aktualisieren + Tray-Menü/Icon
+		await notifyDataChanged(); // Hauptfenster aktualisieren + Tray-Menü/Icon
 		// Flyout bleibt offen; schließt erst bei Fokusverlust.
 	}
 	async function stop() {
 		await app.stop();
-		await emit("data-reload");
+		await notifyDataChanged();
 	}
 	async function openMain() {
 		// Derselbe Weg wie „Öffnen" im Tray-Menue (show_main im Rust-Teil), statt
@@ -250,6 +258,6 @@
 	onapplied={() => {
 		presetMin = 0;
 		customStart = "";
-		void emit("data-reload");
+		void notifyDataChanged();
 	}}
 />

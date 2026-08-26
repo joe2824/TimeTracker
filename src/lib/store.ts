@@ -286,6 +286,55 @@ export interface DeviceInfo {
 	seq?: number;
 	/** Anzeigename des Kontos - nur fuer die Oberflaeche. */
 	accountName?: string;
+	/**
+	 * Welches Konto hier haengt - der Nachweis aus seinem Tresorschluessel.
+	 *
+	 * Zwei Konten haben verschiedene Schluessel, also verschiedene Nachweise.
+	 * Damit laesst sich ein Kontowechsel erkennen, ohne die Kontokennung selbst
+	 * abzulegen.
+	 */
+	kontoKennung?: string;
+	/**
+	 * Wem der lokale Bestand gehoert.
+	 *
+	 * Weicht das von `kontoKennung` ab, stammen die Daten aus einem ANDEREN
+	 * Konto - dann duerfen sie nicht in das jetzige hochgeladen werden. Fehlt der
+	 * Wert, hat dieses Geraet noch nie ein Konto gesehen: der Bestand ist dann
+	 * der eigene und gehoert hoch.
+	 */
+	bestandGehoertZu?: string;
+}
+
+/**
+ * Alles loeschen, was zu einem Konto gehoert - Eintraege, Aktivitaeten, Outbox.
+ *
+ * Fuer den Browser: dort ist der Bestand nur eine Kopie des Servers. Bleibt er
+ * beim Kontowechsel liegen, sieht der naechste Mensch die Zeiten des vorigen -
+ * und schlimmer: sie wandern beim naechsten Abgleich in SEIN Konto.
+ *
+ * Die Einstellungen bleiben: sie sind eine Eigenschaft dieses Geraets, kein
+ * Inhalt des Kontos.
+ */
+export async function clearAccountData(): Promise<void> {
+	for (const monat of await listEntryMonths()) {
+		const pfad = `${DIR}/${entriesFile(monat)}`;
+		if (await storage.exists(pfad)) await storage.remove(pfad);
+	}
+	for (const datei of ["activities.json", "outbox.json"]) {
+		const pfad = `${DIR}/${datei}`;
+		if (await storage.exists(pfad)) await storage.remove(pfad);
+	}
+}
+
+/**
+ * Die Merkliste leeren - was darin steht, gehoert dem vorigen Konto.
+ *
+ * Getrennt von `clearAccountData`, weil sie auch dort weg muss, wo die Zeiten
+ * bleiben sollen: der Abgleich liest die Outbox und fragt dabei keinen Stempel.
+ */
+export async function clearOutbox(): Promise<void> {
+	const pfad = `${DIR}/outbox.json`;
+	if (await storage.exists(pfad)) await storage.remove(pfad);
 }
 
 export async function loadDevice(): Promise<DeviceInfo | null> {

@@ -18,13 +18,30 @@ import { RP_ID, RP_NAME, WEBAUTHN_ORIGINS } from "./config";
 /** Die PRF-Erweiterung anfordern. */
 const PRF_EXTENSION = { prf: {} } as unknown as AuthenticationExtensionsClientInputs;
 
+/**
+ * Was der Passkey-Verwalter spaeter anzeigt.
+ *
+ * Ein Konto aus der Desktop-Anwendung traegt keinen Namen - dort steht dann die
+ * Kennung, und im Schluesselbund liest man eine nackte UUID. Stattdessen der
+ * Name der Anwendung und die Adresse, unter der sie laeuft.
+ *
+ * Der Wert wird beim Anlegen in den Passkey geschrieben und aendert sich danach
+ * nicht mehr, auch wenn das Konto spaeter einen Namen bekommt.
+ */
+export function passkeyLabel(displayName: string, userId: string): string {
+	const menschlich = displayName.trim();
+	const hatNamen = menschlich !== "" && menschlich !== userId;
+	return hatNamen ? `${menschlich} · ${RP_ID}` : `${RP_NAME} · ${RP_ID}`;
+}
+
 export async function registrationOptions(displayName: string, userId: string) {
+	const label = passkeyLabel(displayName, userId);
 	return generateRegistrationOptions({
 		rpName: RP_NAME,
 		rpID: RP_ID,
 		userID: new TextEncoder().encode(userId),
-		userName: displayName,
-		userDisplayName: displayName,
+		userName: label,
+		userDisplayName: label,
 		// Der Passkey soll auf dem Geraet bleiben und dort auffindbar sein - nur
 		// dann kann man sich ohne Benutzernamen anmelden.
 		authenticatorSelection: { residentKey: "required", userVerification: "preferred" },

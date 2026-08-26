@@ -79,13 +79,25 @@ export function redact(text: string): string {
 		.slice(0, MAX_LEN);
 }
 
+/**
+ * Woher die Meldung kommt.
+ *
+ * Steht an JEDEM Ereignis, damit sich Desktop und Web spaeter auseinanderhalten
+ * lassen. Heute sendet nur der Desktop - der Browser hat keinen Weg zu Aptabase
+ * (siehe `inTauri`), und ohne diese Angabe waere hinterher nicht zu sehen, ob
+ * das an fehlenden Nutzern lag oder am fehlenden Weg.
+ */
+function herkunft(): "desktop" | "web" {
+	return inTauri() ? "desktop" : "web";
+}
+
 /** Ein Ereignis melden – ohne Schalter. Wirft nie. */
 export function track(name: string, props?: TrackProps): Promise<void> {
 	if (broken || !inTauri()) return Promise.resolve();
 	return (async () => {
 		try {
 			const { invoke } = await import("@tauri-apps/api/core");
-			await invoke(COMMAND, { name, props });
+			await invoke(COMMAND, { name, props: { ...props, art: herkunft() } });
 		} catch {
 			// Bewusst NICHT ins Protokoll: eine fehlgeschlagene Zaehlung ist kein
 			// Vorfall – und da hier auch der Fehlerweg selbst laeuft, drehte sich

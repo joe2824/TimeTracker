@@ -203,7 +203,7 @@ export async function unwrapWithPhrase(wrap: KeyWrap, phrase: string): Promise<C
 // ---------- Verpackung aus einem Passkey (PRF) ----------
 
 /** Den Verpackungs-Schluessel aus der PRF-Erweiterung eines Passkeys ableiten. */
-export async function kekFromPrf(prfOutput: ArrayBuffer, salt: Uint8Array): Promise<CryptoKey> {
+export async function kekFromPrf(prfOutput: BufferSource, salt: Uint8Array): Promise<CryptoKey> {
 	const base = await crypto.subtle.importKey("raw", prfOutput, "HKDF", false, ["deriveKey"]);
 	return crypto.subtle.deriveKey(
 		{
@@ -219,12 +219,12 @@ export async function kekFromPrf(prfOutput: ArrayBuffer, salt: Uint8Array): Prom
 	);
 }
 
-export async function wrapWithPrf(vaultKey: CryptoKey, prfOutput: ArrayBuffer): Promise<KeyWrap> {
+export async function wrapWithPrf(vaultKey: CryptoKey, prfOutput: BufferSource): Promise<KeyWrap> {
 	const salt = crypto.getRandomValues(new Uint8Array(16));
 	return wrapWith(await kekFromPrf(prfOutput, salt), vaultKey, salt, "passkey");
 }
 
-export async function unwrapWithPrf(wrap: KeyWrap, prfOutput: ArrayBuffer): Promise<CryptoKey> {
+export async function unwrapWithPrf(wrap: KeyWrap, prfOutput: BufferSource): Promise<CryptoKey> {
 	return unwrapWith(await kekFromPrf(prfOutput, wrap.salt), wrap);
 }
 

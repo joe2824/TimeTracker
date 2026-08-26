@@ -25,6 +25,7 @@
     "autostart:default",
     "updater:default",
     "process:default",
+    "deep-link:default",
     "global-shortcut:allow-register",
     "global-shortcut:allow-unregister",
     "global-shortcut:allow-unregister-all",

@@ -1,10 +1,23 @@
 // Das Konto, wie die Oberflaeche es sieht.
 import { app } from "../app.svelte";
 import { logError, logInfo, logWarn } from "../log";
-import { loadDevice, loadEntries, saveDevice, saveEntries } from "../store";
+import {
+	clearAccountData,
+	clearOutbox,
+	loadDevice,
+	loadEntries,
+	saveDevice,
+	saveEntries
+} from "../store";
 import { loadActivities, saveActivities, loadSettings, saveSettings, listEntryMonths } from "../store";
 import { deviceId } from "./device";
-import { startTracking, stopTracking, pendingChanges, setChangeListener } from "./outbox";
+import {
+	startTracking,
+	stopTracking,
+	pendingChanges,
+	setChangeListener,
+	merkeUngestempeltes
+} from "./outbox";
 import { Api, ApiError, type AccountInfo, type DeleteSummary, type Invite, type Passkey } from "./api";
 import { detachLocalData } from "./detach";
 import { SyncEngine } from "./engine";
@@ -20,11 +33,13 @@ import {
 	pairingCode,
 	toBase64,
 	unwrapForDevice,
+	vaultProof,
 	type KeyWrap
 } from "../crypto/vault";
 import { protectSecret, unprotectSecret } from "../platform/secrets";
 import { isTauri } from "../platform/env";
 import { platformFetch } from "../platform/http";
+import { notifyDataChanged } from "../platform/windows";
 
 export type LinkState = "aus" | "verbindet" | "verbunden" | "fehler";
 
@@ -39,8 +54,13 @@ export interface UnlinkOptions {
 /** Wie es dem Abgleich gerade geht - genau das, was die Oberflaeche zeigt. */
 export type SyncPhase = "ruht" | "laeuft" | "offline" | "fehler";
 
-/** Wie lange nach einer Aenderung gewartet wird, bevor hochgeladen wird. */
-const DEBOUNCE_MS = 1500;
+/**
+ * Wie lange nach einer Aenderung gewartet wird, bevor hochgeladen wird.
+ *
+ * Kurz genug, dass ein Timer-Start sofort drueben ist; lang genug, dass Tippen
+ * in einer Notiz nicht jede Taste einzeln hochlaedt.
+ */
+const DEBOUNCE_MS = 400;
 
 /** Abstand zwischen zwei Verbindungsversuchen, wachsend. */
 const RETRY_MS = [5_000, 15_000, 60_000, 300_000];
@@ -65,6 +85,14 @@ class AccountState {
 	isAdmin = $state<boolean>(false);
 	/** Weist sich dieses Geraet mit einem eigenen Token aus - oder mit einem Cookie? */
 	hasDeviceToken = $state<boolean>(false);
+	/**
+	 * Ein Kopplungscode, der ueber einen "timetracker://"-Link hereinkam.
+	 *
+	 * Liegt hier und nicht in der Karte: der Link trifft das Fenster, die Karte
+	 * ist zu dem Zeitpunkt vielleicht gar nicht aufgebaut. Wer ihn abholt, raeumt
+	 * ihn weg.
+	 */
+	pairCodeFromLink = $state<string>("");
 
 	#api: Api | null = null;
 	#engine: SyncEngine | null = null;
@@ -75,6 +103,8 @@ class AccountState {
 	#retryStep = 0;
 	#device = "";
 	#heartbeat: ReturnType<typeof setInterval> | null = null;
+	/** Laeuft eine Weckruf-Schleife? Der Abbruch beendet auch die offene Anfrage. */
+	#warten: AbortController | null = null;
 
 	get linked(): boolean {
 		return this.state === "verbunden";
@@ -112,7 +142,7 @@ class AccountState {
 			// Ein Fehlschlag darf den Start nicht aufhalten - dann fehlt eben der
 			// Verwaltungsbereich, bis der naechste Abgleich laeuft.
 			void this.accountInfo().catch(() => {});
-			void this.syncSoon(0);
+			void this.abgleichMitNachlese();
 		} catch (e) {
 			// Der haeufigste Grund: die Datei stammt von einem anderen
 			// Benutzerkonto. Dann ist die Verknuepfung hier nichts mehr wert.
@@ -158,6 +188,49 @@ class AccountState {
 		this.#debounce = setTimeout(() => void this.syncNow(), delay);
 	}
 
+	/**
+	 * Abgleichen und dabei nachsehen, ob etwas nie hochgeladen wurde.
+	 *
+	 * Der Schreib-Haken sieht nur, was waehrend seiner Laufzeit geschrieben wird.
+	 * Was vor dem Verknuepfen entstand oder mit einer verlorenen Outbox unterging,
+	 * traegt keinen Stempel und faende sonst nie den Weg zum Server.
+	 *
+	 * Erst holen, dann vormerken: der frische Zeitstempel des ungestempelten
+	 * Bestands gewaenne sonst jeden Vergleich und ueberschriebe das Konto.
+	 */
+	async abgleichMitNachlese(): Promise<void> {
+		await this.syncNow();
+		if (await this.#bestandIstUnserer()) await merkeUngestempeltes();
+		await this.syncNow();
+	}
+
+	/**
+	 * Gehoert der ungestempelte Bestand zu DIESEM Konto?
+	 *
+	 * Nach einem Kontowechsel auf dem Rechner liegen hier die Zeiten des vorigen
+	 * Kontos. Sie bleiben - aber sie gehen nicht hoch. Ohne diese Frage haette
+	 * jedes neue Konto den Bestand des vorigen geerbt.
+	 */
+	async #bestandIstUnserer(): Promise<boolean> {
+		const info = await loadDevice();
+		if (!info?.bestandGehoertZu || !info.kontoKennung) return true;
+		return info.bestandGehoertZu === info.kontoKennung;
+	}
+
+	/**
+	 * Ein anderes Fenster hat geschrieben - nachsehen und hochladen.
+	 *
+	 * Das Tray-Fenster hat einen eigenen Webview und damit einen eigenen
+	 * Modulzustand; der Schreib-Haken laeuft dort nicht. Was es schreibt, traegt
+	 * deshalb keinen Stempel und stuende ohne diesen Schritt nur lokal da.
+	 */
+	async nachlese(): Promise<void> {
+		if (!this.linked) return;
+		if (!(await this.#bestandIstUnserer())) return;
+		await merkeUngestempeltes();
+		this.syncSoon(0);
+	}
+
 	async syncNow(): Promise<void> {
 		if (!this.#engine || this.state !== "verbunden") return;
 		this.phase = "laeuft";
@@ -174,6 +247,9 @@ class AccountState {
 			}
 			// Der Bestand kann sich geaendert haben - die Ansichten haengen daran.
 			await app.reload();
+			// Und das Tray-Fenster liest dieselben Dateien, bekommt davon aber
+			// nichts mit: es haelt seinen eigenen Zustand.
+			if (ergebnis && ergebnis.pulled > 0) void notifyDataChanged();
 			// Kam beim ersten Abgleich etwas an, war dieses Geraet nie leer - es
 			// wusste es nur noch nicht. Der Willkommensbildschirm hat sich damit
 			// erledigt, und zwar bevor jemand ihn ausfuellt und dabei die echten
@@ -222,8 +298,11 @@ class AccountState {
 		this.#closeStream();
 		if (typeof EventSource === "undefined" || !this.#api) return;
 
+		// In der Desktop-Anwendung geht kein EventSource: sie weist sich mit einem
+		// Token aus, und EventSource kann keine Kopfzeilen setzen. Stattdessen eine
+		// Anfrage, die der Server offen haelt, bis sich etwas tut.
 		if (isTauri()) {
-			this.#startHeartbeat();
+			void this.#warteschleife();
 			return;
 		}
 
@@ -247,6 +326,41 @@ class AccountState {
 		}
 	}
 
+	/**
+	 * Die Warteschleife: fragen, warten lassen, abgleichen, von vorn.
+	 *
+	 * Der Server haelt jede Anfrage bis zu 25 Sekunden offen und antwortet, sobald
+	 * ein anderes Geraet geschrieben hat. Damit ist die Desktop-Anwendung genauso
+	 * schnell wie der Browser mit seinem Stream, ohne dass ein Token in eine
+	 * Adresse wandern muesste.
+	 */
+	async #warteschleife(): Promise<void> {
+		const abbruch = new AbortController();
+		this.#warten = abbruch;
+		// Der langsame Takt bleibt als Netz darunter: faellt die Schleife aus,
+		// laeuft der Abgleich trotzdem weiter.
+		this.#startHeartbeat();
+
+		let fehler = 0;
+		while (this.#warten === abbruch && this.state === "verbunden") {
+			try {
+				const stand = (await loadDevice())?.seq ?? 0;
+				const antwort = await this.#api!.waitForChange(stand, abbruch.signal);
+				if (this.#warten !== abbruch) return;
+				fehler = 0;
+				if (antwort.changed) this.syncSoon(100);
+			} catch (e) {
+				if (abbruch.signal.aborted) return;
+				// Nach einem Fehlschlag wachsend warten, sonst haemmert eine
+				// abgerissene Verbindung gegen den Server.
+				fehler++;
+				const pause = RETRY_MS[Math.min(fehler - 1, RETRY_MS.length - 1)];
+				logWarn("Weckruf-Schleife unterbrochen", e);
+				await new Promise((r) => setTimeout(r, pause));
+			}
+		}
+	}
+
 	/** Der langsame Takt fuer alles, was keinen Kanal hat. */
 	#startHeartbeat(): void {
 		this.#stopHeartbeat();
@@ -266,6 +380,8 @@ class AccountState {
 	#closeStream(): void {
 		this.#stream?.close();
 		this.#stream = null;
+		this.#warten?.abort();
+		this.#warten = null;
 		this.#stopHeartbeat();
 	}
 
@@ -405,6 +521,34 @@ class AccountState {
 		const geschuetztesToken = token ? await protectSecret(token) : null;
 
 		const info = (await loadDevice()) ?? { id: this.#device };
+
+		// Wessen Konto ist das? Zwei Konten haben verschiedene Tresorschluessel,
+		// also verschiedene Nachweise.
+		const kennung = await vaultProof(key);
+		const wechsel = Boolean(info.kontoKennung && info.kontoKennung !== kennung);
+
+		// Im Browser gibt es keinen Bestand ohne Konto - man kommt ohne Anmeldung
+		// gar nicht hinein. Was hier liegt, ist die Kopie IRGENDEINES Kontos. Laesst
+		// sich nicht beweisen, dass es dieses ist, kommt es weg; der Server hat es.
+		// Auf dem Rechner sind die Zeiten die Sache des Menschen: sie bleiben, gehen
+		// aber nicht hoch (siehe bestandGehoertZu).
+		const fremdeKopie = !isTauri() && info.kontoKennung !== kennung;
+		if (fremdeKopie) {
+			await clearAccountData();
+			logInfo("Kontowechsel: lokale Kopie des vorigen Kontos entfernt");
+		}
+
+		// Die Merkliste gehoert IMMER dem vorigen Konto - auf beiden Plattformen.
+		// Ohne diese Zeile lud sie der naechste Abgleich in das neue Konto, ganz
+		// ohne Nachlese: `#pushAll` liest die Outbox, nicht den Stempel. Genau
+		// daran ist der erste Anlauf dieser Absicherung gescheitert.
+		if (wechsel || fremdeKopie) await clearOutbox();
+
+		// Wem der Bestand gehoert: nach einem Wechsel weiterhin dem alten Konto
+		// (dann bleibt er hier liegen), sonst diesem. Wer noch nie ein Konto hatte,
+		// dessen Bestand ist der eigene und gehoert hoch.
+		const bestandGehoertZu = wechsel && isTauri() ? info.bestandGehoertZu : kennung;
+
 		await saveDevice({
 			...info,
 			id: this.#device,
@@ -413,6 +557,8 @@ class AccountState {
 			vaultKey: geschuetzterSchluessel.data,
 			protected: geschuetzterSchluessel.protected && (geschuetztesToken?.protected ?? true),
 			accountName: name || info.accountName,
+			kontoKennung: kennung,
+			bestandGehoertZu,
 			seq: 0
 		});
 		this.name = name || this.name;
@@ -422,10 +568,7 @@ class AccountState {
 		this.hasDeviceToken = token !== null;
 		this.state = "verbunden";
 		await this.#startEngine(url, token, 0);
-		// Der erste Abgleich laedt den gesamten lokalen Bestand hoch. Ohne
-		// verknuepftes Konto ist nichts gestempelt, also gilt alles als neu - genau
-		// das ist gewollt.
-		void this.syncNow();
+		void this.abgleichMitNachlese();
 	}
 
 	/** Nachsehen, was am Konto haengt - vor allem, wie viele Geraete. */
@@ -449,9 +592,22 @@ class AccountState {
 	/** Einen weiteren Passkey anlegen. */
 	async addPasskey(label: string): Promise<{ prfAvailable: boolean }> {
 		if (!this.#key) throw new Error("Das Konto ist nicht entsperrt");
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
 		const { addPasskey } = await import("./enroll");
-		const ergebnis = await addPasskey(this.serverUrl, this.#key, label);
+		const ergebnis = await addPasskey(this.#api, this.#key, label);
 		return { prfAvailable: ergebnis.prfAvailable };
+	}
+
+	/** Die Kennung dieses Geraets - damit die Liste das eigene erkennt. */
+	get thisDeviceId(): string {
+		return this.#device;
+	}
+
+	/** Ein anderes Geraet vom Konto trennen. Es kommt danach nicht mehr hinein. */
+	async revokeDevice(id: string): Promise<void> {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		if (id === this.#device) throw new Error("Das ist dieses Gerät – dafür gibt es „Entkoppeln“.");
+		await this.#api.revokeDevice(id);
 	}
 
 	async renamePasskey(id: string, label: string): Promise<void> {
@@ -485,6 +641,27 @@ class AccountState {
 	}
 
 	/** Die Verknuepfung loesen. */
+	/**
+	 * Abmelden: die Sitzung beim Server beenden und die Verknuepfung hier vergessen.
+	 *
+	 * Die erfassten Zeiten bleiben liegen - abmelden ist kein Loeschen. Der Passkey
+	 * bleibt am Konto, die naechste Anmeldung geht damit wieder auf.
+	 */
+	async logout(): Promise<void> {
+		try {
+			await this.#api?.logout();
+		} catch (e) {
+			// Eine abgelaufene Sitzung laesst sich nicht noch einmal beenden. Lokal
+			// vergessen muss trotzdem gehen, sonst sitzt jemand an einem fremden
+			// Rechner fest, an dem er sich gerade abmelden wollte.
+			logWarn("Abmelden beim Server fehlgeschlagen", e);
+		}
+		await this.unlink();
+		// Im Browser war der Bestand nur eine Kopie des Servers. Bliebe er liegen,
+		// sieht der naechste Mensch an diesem Rechner die Zeiten des vorigen.
+		if (!isTauri()) await clearAccountData();
+	}
+
 	async unlink(opts: UnlinkOptions = {}): Promise<DeleteSummary | null> {
 		let summe: DeleteSummary | null = null;
 

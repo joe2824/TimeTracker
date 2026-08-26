@@ -9,6 +9,7 @@
 	import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
 	import FolderOpenIcon from "@lucide/svelte/icons/folder-open";
 	import Trash2Icon from "@lucide/svelte/icons/trash-2";
+	import { isTauri } from "$lib/platform/env";
 
 	/** Mehr als das liest ohnehin niemand am Bildschirm; die Datei hat alles. */
 	const SHOWN_LINES = 200;
@@ -86,9 +87,14 @@
 	<Card.Header>
 		<Card.Title>Protokoll</Card.Title>
 		<Card.Description>
-			Für die Fehlersuche: die App schreibt Ereignisse und Fehler in eine Datei je Tag
-			(<code class="text-xs">{LOG_DIR}/</code> im App-Datenordner, {KEEP_DAYS} Tage). Bei einem
-			Problem hilft es, die Datei mitzuschicken.
+			Für die Fehlersuche: Ereignisse und Fehler, eine Datei je Tag, {KEEP_DAYS} Tage lang.
+			{#if isTauri()}
+				Sie liegen unter <code class="text-xs">{LOG_DIR}/</code> im App-Datenordner – bei einem
+				Problem hilft es, die Datei mitzuschicken.
+			{:else}
+				Im Browser liegen sie in dessen eigener Ablage; zum Mitschicken den Text hier unten
+				kopieren.
+			{/if}
 		</Card.Description>
 	</Card.Header>
 	<Card.Content class="space-y-3">
@@ -104,9 +110,13 @@
 			>
 				Nur Warnungen & Fehler
 			</Button>
-			<Button variant="outline" size="sm" onclick={openFolder}>
-				<FolderOpenIcon class="size-4" /> Ordner öffnen
-			</Button>
+			{#if isTauri()}
+				<!-- Im Browser gibt es keinen Ordner: das Protokoll liegt in der
+				     Ablage des Browsers, nicht als Datei. -->
+				<Button variant="outline" size="sm" onclick={openFolder}>
+					<FolderOpenIcon class="size-4" /> Ordner öffnen
+				</Button>
+			{/if}
 			<Button variant="outline" size="sm" onclick={clearAll}>
 				<Trash2Icon class="size-4" /> Leeren
 			</Button>
