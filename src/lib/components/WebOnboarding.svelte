@@ -399,7 +399,7 @@
 
 				<!-- Die zwei selteneren Wege, klein. Beide setzen ein Konto voraus, das
 				     es schon gibt - gross angeboten waeren sie fuer Neue eine Sackgasse. -->
-				<div class="text-muted-foreground flex flex-wrap items-center justify-center gap-x-1 text-xs">
+				<div class="text-muted-foreground border-t pt-4 flex flex-wrap items-center justify-center gap-x-1 text-xs">
 					<button
 						type="button"
 						class="hover:text-foreground underline underline-offset-2"
@@ -419,7 +419,7 @@
 				</div>
 				{/if}
 
-				<div class="text-muted-foreground space-y-2 border-t pt-4 text-center text-xs">
+				<div class="text-muted-foreground space-y-2 text-center text-xs">
 					{#if kopplungscode}
 						<!-- Steht ein Code, gehoert er nach vorn: jemand tippt ihn gerade ab. -->
 						<PairingCode code={kopplungscode} onCancel={koppelnAbbrechen} />
