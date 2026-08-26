@@ -29,19 +29,50 @@ const neuerCode = () =>
 const datum = (ms) => (ms ? new Date(ms).toISOString().slice(0, 16).replace("T", " ") : "–");
 
 /**
- * Ein Konto finden - ueber die Kennung oder den Anzeigenamen.
+ * Ein Konto finden - ueber die Kennung, ihren Anfang, oder den Anzeigenamen.
  *
- * Der Name ist nicht eindeutig; treffen mehrere zu, wird nichts getan und die
- * Auswahl aufgelistet. Den Falschen zum Verwalter zu machen, weil zwei Leute
- * gleich heissen, waere ein stiller Fehler.
+ * Drei Wege, weil keiner allein reicht: die Kennung ist eindeutig, aber eine
+ * UUID tippt niemand ab. Der Name ist tippbar, aber nicht eindeutig - es koennen
+ * zwei Anna sein. Der Anfang der Kennung ist beides, sobald man ihn aus der
+ * Liste abgelesen hat.
+ *
+ * Treffen mehrere zu, wird NICHTS getan und die Auswahl aufgelistet. Den
+ * Falschen zum Verwalter zu machen, weil zwei Leute gleich heissen, waere ein
+ * stiller Fehler - und der Betroffene merkte es nie.
  */
 function findeKonto(suche) {
 	const genau = db.prepare("SELECT * FROM users WHERE id = ?").get(suche);
 	if (genau) return { treffer: [genau] };
-	const treffer = db
-		.prepare("SELECT * FROM users WHERE lower(display_name) = lower(?)")
-		.all(suche);
-	return { treffer };
+
+	// Der Anfang der Kennung. Ab vier Zeichen, sonst trifft es zu leicht mehrere.
+	if (suche.length >= 4) {
+		const nachPraefix = db.prepare("SELECT * FROM users WHERE id LIKE ?").all(`${suche}%`);
+		if (nachPraefix.length > 0) return { treffer: nachPraefix };
+	}
+
+	return {
+		treffer: db.prepare("SELECT * FROM users WHERE lower(display_name) = lower(?)").all(suche)
+	};
+}
+
+/**
+ * Woran man zwei gleichnamige Konten auseinanderhaelt.
+ *
+ * Wann angelegt, wie viele Geraete, wann zuletzt gesehen. Das eigene erkennt man
+ * am Geraet, das man selbst gerade benutzt - und am Zeitpunkt, zu dem man sich
+ * angemeldet hat.
+ */
+function merkmale(id) {
+	const geraete = db
+		.prepare("SELECT label, last_seen_at FROM devices WHERE user_id = ? AND revoked_at IS NULL")
+		.all(id);
+	const datensaetze = db.prepare("SELECT count(*) n FROM records WHERE user_id = ?").get(id).n;
+	const zuletzt = geraete.reduce((m, g) => Math.max(m, g.last_seen_at ?? 0), 0);
+	return {
+		geraete: geraete.map((g) => g.label).join(", ") || "keine",
+		datensaetze,
+		zuletzt
+	};
 }
 
 function liste() {
@@ -55,8 +86,12 @@ function liste() {
 	}
 	console.log("\nKonten:\n");
 	for (const k of konten) {
+		const m = merkmale(k.id);
 		console.log(
-			`  ${k.is_admin ? "[Verwalter]" : "[         ]"}  ${k.display_name.padEnd(24)}  ${k.id}  seit ${datum(k.created_at)}`
+			`  ${k.is_admin ? "[Verwalter]" : "[         ]"}  ${k.display_name.padEnd(20)}  ${k.id}`
+		);
+		console.log(
+			`                 seit ${datum(k.created_at)}   Geräte: ${m.geraete}   Datensätze: ${m.datensaetze}`
 		);
 	}
 
@@ -90,8 +125,24 @@ function setzeRolle(suche, wert) {
 		process.exit(1);
 	}
 	if (treffer.length > 1) {
-		console.error(`Mehrdeutig – ${treffer.length} Konten heißen so. Bitte die Kennung nehmen:`);
-		for (const t of treffer) console.error(`  ${t.id}  ${t.display_name}`);
+		console.error("");
+		console.error(`Mehrdeutig – ${treffer.length} Konten passen auf "${suche}".`);
+		console.error("");
+		console.error("Welches gemeint ist, sagt am ehesten das Gerät oder der Zeitpunkt:");
+		console.error("");
+		for (const t of treffer) {
+			const m = merkmale(t.id);
+			console.error(`  ${t.display_name}`);
+			console.error(`    Kennung     ${t.id}`);
+			console.error(`    angelegt    ${datum(t.created_at)}`);
+			console.error(`    Geräte      ${m.geraete}`);
+			console.error(`    zuletzt     ${m.zuletzt ? datum(m.zuletzt) : "nie verbunden"}`);
+			console.error(`    Datensätze  ${m.datensaetze}`);
+			console.error("");
+		}
+		// Der Anfang der Kennung genuegt - die ganze UUID tippt niemand ab.
+		console.error(`Dann z. B.:  node admin.mjs ernenne ${treffer[0].id.slice(0, 8)}`);
+		console.error("");
 		process.exit(1);
 	}
 	const k = treffer[0];
@@ -142,8 +193,12 @@ switch (befehl) {
 Verwaltung des TimeTracker-Servers.
 
   node admin.mjs liste                     Konten und Einladungen zeigen
-  node admin.mjs ernenne <id-oder-name>    Zum Verwalter machen
-  node admin.mjs entziehe <id-oder-name>   Verwalterrolle nehmen
+  node admin.mjs ernenne <wen>             Zum Verwalter machen
+  node admin.mjs entziehe <wen>            Verwalterrolle nehmen
+
+  <wen> ist die Kennung, ihr Anfang (ab vier Zeichen) oder der Anzeigename.
+  Heissen zwei Leute gleich, passiert nichts - dann zeigt die Meldung, woran
+  sie sich unterscheiden, und man nimmt den Anfang der Kennung.
   node admin.mjs einladung [notiz] [--tage 14]   Einen Code ausstellen
 
 Ein Verwalter darf Einladungen vergeben – sonst nichts. Fremde Daten lesen kann

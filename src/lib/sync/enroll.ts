@@ -28,6 +28,7 @@ import {
 	type KeyWrap
 } from "../crypto/vault";
 import { Api, ApiError } from "./api";
+import { platformFetch } from "../platform/http";
 
 /** Was der Server unter einer Verpackung versteht: JSON mit base64-Feldern. */
 function serialize(wrap: KeyWrap): string {
@@ -115,7 +116,7 @@ export async function register(
 	displayName: string,
 	opts: { invite?: string; email?: string } = {}
 ): Promise<EnrollResult> {
-	const api = new Api({ baseUrl });
+	const api = new Api({ baseUrl, fetchFn: platformFetch });
 
 	const start = await api.registerStart(displayName, opts.invite);
 	const response = await startRegistration({
@@ -167,7 +168,7 @@ export interface LoginResult {
  * auf Geraeten ohne PRF.
  */
 export async function login(baseUrl: string): Promise<LoginResult> {
-	const api = new Api({ baseUrl });
+	const api = new Api({ baseUrl, fetchFn: platformFetch });
 	const start = await api.loginStart();
 	const response = await startAuthentication({
 		optionsJSON: withPrf(start.options as PublicKeyCredentialRequestOptionsJSON)
@@ -200,7 +201,7 @@ export async function login(baseUrl: string): Promise<LoginResult> {
 
 /** Den Tresor mit der Wiederherstellungs-Phrase oeffnen. */
 export async function unlockWithPhrase(baseUrl: string, phrase: string): Promise<CryptoKey> {
-	const api = new Api({ baseUrl });
+	const api = new Api({ baseUrl, fetchFn: platformFetch });
 	const { wraps } = await api.wraps();
 	const wrap = wraps.find((w) => w.kind === "recovery");
 	if (!wrap) throw new Error("Für dieses Konto ist keine Wiederherstellungs-Phrase hinterlegt.");
@@ -220,7 +221,7 @@ export async function addPasskeyWrap(
 	credentialId: string,
 	prf: ArrayBuffer
 ): Promise<void> {
-	const api = new Api({ baseUrl });
+	const api = new Api({ baseUrl, fetchFn: platformFetch });
 	await api.putWrap("passkey", serialize(await wrapWithPrf(key, prf)), credentialId);
 }
 

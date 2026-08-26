@@ -28,6 +28,7 @@ import {
 } from "../crypto/vault";
 import { protectSecret, unprotectSecret } from "../platform/secrets";
 import { isTauri } from "../platform/env";
+import { platformFetch } from "../platform/http";
 
 export type LinkState = "aus" | "verbindet" | "verbunden" | "fehler";
 
@@ -151,7 +152,7 @@ class AccountState {
 	}
 
 	async #startEngine(url: string, token: string | null, seq: number): Promise<void> {
-		this.#api = new Api({ baseUrl: url, token });
+		this.#api = new Api({ baseUrl: url, token, fetchFn: platformFetch });
 		this.#engine = new SyncEngine({
 			api: this.#api,
 			key: this.#key!,
@@ -329,7 +330,7 @@ class AccountState {
 
 	async startPairing(serverUrl: string, label: string): Promise<string> {
 		const url = serverUrl.replace(/\/+$/, "");
-		const api = new Api({ baseUrl: url });
+		const api = new Api({ baseUrl: url, fetchFn: platformFetch });
 		const pair = await createPairingKeyPair();
 		const publicKey = toBase64(await exportPairingPublicKey(pair));
 		const { code } = await api.pairStart(publicKey, label);
@@ -347,7 +348,7 @@ class AccountState {
 	async checkPairing(): Promise<boolean> {
 		if (!this.#pairing) return false;
 		const { pair, code, url } = this.#pairing;
-		const api = new Api({ baseUrl: url });
+		const api = new Api({ baseUrl: url, fetchFn: platformFetch });
 		const antwort = await api.pairClaim(code);
 		if (antwort.pending) return false;
 
