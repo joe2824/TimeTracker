@@ -56,6 +56,20 @@ export function nimmVersuch(
 }
 
 /**
+ * Nachsehen, ob gesperrt ist - ohne einen Versuch zu verbrauchen.
+ *
+ * Gebraucht dort, wo erst die ANTWORT sagt, ob es ein Versuch war: beim Abfragen
+ * eines Kopplungsvorgangs zaehlt nur der Fehlgriff. Wer wartet, fragt denselben
+ * Code immer wieder ab und darf davon nicht ausgebremst werden.
+ */
+export function istGesperrt(schluessel: string, opts: LimitOptions, jetzt = Date.now()): boolean {
+	const b = eimer.get(schluessel);
+	if (!b) return false;
+	const rate = opts.perMinute / 60_000;
+	return Math.min(opts.burst, b.tokens + (jetzt - b.last) * rate) < 1;
+}
+
+/**
  * Volle Eimer wegwerfen.
  *
  * Ohne das waechst die Karte mit jeder je gesehenen Adresse weiter. Ein voller
@@ -78,8 +92,20 @@ export function resetLimitsForTests(): void {
 // Grosszuegig genug, dass ein Mensch sie nie bemerkt, und eng genug, dass Raten
 // keinen Sinn ergibt.
 
-/** Kopplung abfragen: der Code wird abgetippt, ein paar Fehlversuche sind normal. */
-export const LIMIT_PAIR_CLAIM: LimitOptions = { burst: 20, perMinute: 20 };
+/**
+ * Kopplung abfragen - gezaehlt werden nur FEHLGRIFFE.
+ *
+ * Das ist der Unterschied, an dem der erste Anlauf scheiterte: die Oberflaeche
+ * fragt im Zwei-Sekunden-Takt nach, ob jemand bestaetigt hat. Das sind dreissig
+ * Anfragen je Minute fuer einen voellig normalen Vorgang. Eine Bremse, die alle
+ * zaehlt, haette nach vierzig Sekunden zugemacht - waehrend der Mensch noch den
+ * Code abtippt.
+ *
+ * Wer wartet, fragt seinen EIGENEN Code ab und bekommt "noch nicht bestaetigt".
+ * Wer raet, trifft nichts. Nur das zaehlt hier, und dafuer sind zehn Fehlgriffe
+ * je Minute reichlich.
+ */
+export const LIMIT_PAIR_CLAIM: LimitOptions = { burst: 15, perMinute: 10 };
 /** Kopplung beginnen: legt eine Zeile an, ist also teurer als eine Abfrage. */
 export const LIMIT_PAIR_START: LimitOptions = { burst: 10, perMinute: 5 };
 /** Anmelden und Registrieren. */

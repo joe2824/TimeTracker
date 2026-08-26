@@ -49,6 +49,63 @@ export const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? "")
 	.filter(Boolean)
 	.concat(ORIGIN);
 
+/**
+ * Gehoert diese Adresse zu unserer Passkey-Kennung?
+ *
+ * Der Browser laesst einen Passkey nur zu, wenn die Adresse, auf der er benutzt
+ * wird, unter der RP-Kennung liegt: gleiche Domain oder eine Unterdomain davon.
+ * `tracker.example.de` und `app.example.de` gehen beide, wenn RP_ID
+ * `example.de` ist. `localhost` und `example.de` gehen NIE zusammen - sie haben
+ * keine gemeinsame Domain, und daran ist nichts zu machen.
+ */
+/**
+ * Kann diese Kennung ueberhaupt eine Passkey-Kennung sein?
+ *
+ * IP-Adressen koennen es NICHT - WebAuthn verlangt einen Domainnamen, und der
+ * Browser weist eine IP mit "127.0.0.1 is an invalid domain" ab. Das ist keine
+ * Einstellung, an der sich drehen laesst; es steht so in der Norm.
+ *
+ * `localhost` ist die eine Ausnahme, die auch ohne HTTPS geht - fuer die
+ * Entwicklung ausdruecklich vorgesehen. Wer denselben Rechner ueber 127.0.0.1
+ * aufruft, ist fuer den Browser trotzdem woanders und bekommt keinen Passkey.
+ */
+export function istGueltigeKennung(rpId: string): boolean {
+	if (rpId === "localhost") return true;
+	// IPv4, IPv6 und alles, was keinen Punkt hat, scheidet aus.
+	if (/^\d{1,3}(\.\d{1,3}){3}$/.test(rpId)) return false;
+	if (rpId.includes(":")) return false;
+	return rpId.includes(".");
+}
+
+function passtZurKennung(origin: string, rpId: string): boolean {
+	let host: string;
+	try {
+		host = new URL(origin).hostname;
+	} catch {
+		return false;
+	}
+	return host === rpId || host.endsWith(`.${rpId}`);
+}
+
+/**
+ * Die Adressen, auf denen Passkeys gelten sollen.
+ *
+ * Mehrere sind moeglich - aber nur solche, die unter derselben RP-Kennung
+ * liegen. Was nicht passt, fliegt hier raus und wird beim Start gemeldet: sonst
+ * scheiterte spaeter eine Anmeldung mit einer Fehlermeldung des Browsers, die
+ * niemand mit dieser Einstellung in Verbindung bringt.
+ *
+ * Zugreifen darf so eine Adresse trotzdem (siehe ALLOWED_ORIGINS) - nur
+ * Passkeys funktionieren dort nicht. Das ist kein Widerspruch: ein Geraet mit
+ * Token braucht keinen Passkey.
+ */
+export const WEBAUTHN_ORIGINS = istGueltigeKennung(RP_ID)
+	? ALLOWED_ORIGINS.filter((o) => passtZurKennung(o, RP_ID))
+	: [];
+
+/** Adressen, die zwar zugreifen duerfen, aber keine Passkeys tragen koennen. */
+export const ORIGINS_OHNE_PASSKEY = ALLOWED_ORIGINS.filter((o) => !passtZurKennung(o, RP_ID));
+
 export const DATA_DIR = process.env.DATA_DIR ?? "./data";
 export const DB_FILE = process.env.DB_FILE ?? `${DATA_DIR}/timetracker.db`;
 

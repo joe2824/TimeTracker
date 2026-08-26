@@ -18,7 +18,7 @@ import type {
 import { eq } from "drizzle-orm";
 import type { Db, DbLike } from "./db";
 import { credentials, users } from "./db/schema";
-import { ORIGIN, RP_ID, RP_NAME } from "./config";
+import { RP_ID, RP_NAME, WEBAUTHN_ORIGINS } from "./config";
 
 /**
  * Die PRF-Erweiterung anfordern.
@@ -60,7 +60,9 @@ export async function verifyRegistration(
 	return verifyRegistrationResponse({
 		response,
 		expectedChallenge,
-		expectedOrigin: ORIGIN,
+		// Mehrere Adressen sind erlaubt, solange alle unter derselben Kennung
+		// liegen - die Auswahl trifft config.ts, nicht diese Stelle.
+		expectedOrigin: WEBAUTHN_ORIGINS,
 		expectedRPID: RP_ID,
 		requireUserVerification: false
 	});
@@ -124,7 +126,7 @@ export async function verifyAuthentication(
 	const result = await verifyAuthenticationResponse({
 		response,
 		expectedChallenge,
-		expectedOrigin: ORIGIN,
+		expectedOrigin: WEBAUTHN_ORIGINS,
 		expectedRPID: RP_ID,
 		credential: {
 			id: cred.id,

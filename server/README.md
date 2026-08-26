@@ -72,7 +72,7 @@ unbrauchbar. Caddy und Traefik machen das von selbst richtig.
 | `RP_NAME` | Was der Anmeldedialog des Betriebssystems anzeigt. |
 | `INVITE_CODES` | Türklinke für den ersten Menschen. Mehrfach benutzbar, ohne Frist, ohne Spur. Sobald es einen Verwalter gibt, gehört sie geleert. |
 | `REGISTRATION_OPEN` | `true` öffnet den Dienst für jeden, der die Adresse kennt. Voreinstellung `false`. |
-| `ALLOWED_ORIGINS` | Herkünfte für schreibende Anfragen. Leer = nur `ORIGIN`. |
+| `ALLOWED_ORIGINS` | Weitere Adressen, unter denen der Dienst erreichbar ist. Komma-getrennt. Siehe unten. |
 | `DATA_DIR` | Wohin die Datenbank kommt. Im Container `/data`. |
 
 **Eine leere `INVITE_CODES`-Zeile öffnet den Dienst NICHT.** Das war einmal so
@@ -80,6 +80,62 @@ und war ein Konstruktionsfehler: ausgerechnet der sorgfältigere Schritt — die
 Türklinke entfernen und Einladungen einzeln vergeben — hätte die Tür
 aufgemacht. Geöffnet wird nur über `REGISTRATION_OPEN=true`, und das bringt
 Betreiberpflichten mit sich: Impressum, Datenschutzerklärung, Löschkonzept.
+
+---
+
+## Mehrere Adressen
+
+Ja, das geht — mit einer Einschränkung, und die kommt nicht von dieser Software,
+sondern vom Browser.
+
+Ein Passkey hängt nicht an der **Adresse**, sondern an der **RP-Kennung**
+(`RP_ID`). Der Browser lässt ihn nur zu, wenn die Adresse unter dieser Kennung
+liegt: gleiche Domain oder eine Unterdomain davon.
+
+Mit `RP_ID=example.de`:
+
+| Adresse | Passkey |
+|---|---|
+| `https://example.de` | ja |
+| `https://tracker.example.de` | ja |
+| `https://app.example.de` | ja — **derselbe** Passkey wie oben |
+| `https://tracker.example.com` | nein, andere Domain |
+| `http://localhost:3000` | nein |
+| `https://boesexample.de` | nein (endet zwar auf `example.de`, ist aber eine andere Domain) |
+
+```
+ORIGIN=https://tracker.example.de
+RP_ID=example.de
+ALLOWED_ORIGINS=https://app.example.de,https://zeit.example.de
+```
+
+**Deshalb die Kennung eher weit fassen.** `RP_ID=example.de` statt
+`RP_ID=tracker.example.de` kostet nichts und lässt später eine zweite Adresse
+zu. Umgekehrt geht es nicht: eine einmal vergebene Kennung lässt sich nicht
+nachträglich erweitern, ohne alle Passkeys zu entwerten. Der Preis ist, dass der
+Passkey dann für alle Unterdomains gilt — bei einer Domain, die einem selbst
+gehört, ist das in Ordnung.
+
+**Was nicht geht: `localhost` und die echte Domain gleichzeitig.** Sie haben
+keine gemeinsame Domain. Wer lokal entwickelt und produktiv fährt, hat auf
+beiden Seiten getrennte Konten und Passkeys. Für die Entwicklung ist das
+richtig so.
+
+Adressen, die nicht unter der Kennung liegen, dürfen trotzdem **zugreifen** —
+nur Passkeys funktionieren dort nicht. Ein gekoppeltes Gerät weist sich mit
+seinem Token aus und braucht keinen. Der Server sagt das beim Start:
+
+```
+Achtung: 1 Adresse(n) liegen nicht unter RP_ID="example.de":
+  http://localhost:3000
+Dort funktionieren keine Passkeys. Zugreifen darf man trotzdem -
+ein gekoppeltes Gerät weist sich mit seinem Token aus.
+```
+
+Für Passkeys über **wirklich verschiedene** Domains hinweg gibt es seit 2024
+„Related Origin Requests" — eine Datei unter `/.well-known/webauthn`, die
+verwandte Adressen aufzählt. Chrome und Safari können das, Firefox noch nicht.
+Hier ist es nicht eingebaut; wer es braucht, sagt Bescheid.
 
 ---
 

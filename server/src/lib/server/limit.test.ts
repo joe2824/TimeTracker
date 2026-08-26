@@ -1,6 +1,6 @@
 // Die Bremse - als Rechnung, ohne Server.
 import { beforeEach, describe, expect, it } from "vitest";
-import { nimmVersuch, raeumeLimits, resetLimitsForTests } from "./limit";
+import { istGesperrt, nimmVersuch, raeumeLimits, resetLimitsForTests } from "./limit";
 
 const SATZ = { burst: 5, perMinute: 60 };
 
@@ -53,5 +53,27 @@ describe("Token-Eimer", () => {
 		// Direkt danach aufraeumen: beide sind zu jung, beide bleiben.
 		raeumeLimits(3_600_001);
 		expect(nimmVersuch("erschoepft", SATZ, 3_600_001).erlaubt).toBe(false);
+	});
+});
+
+describe("Nachsehen ohne zu verbrauchen", () => {
+	it("meldet nicht gesperrt, solange noch etwas drin ist", () => {
+		nimmVersuch("x", SATZ, 1000);
+		expect(istGesperrt("x", SATZ, 1000)).toBe(false);
+	});
+
+	it("verbraucht selbst nichts", () => {
+		// Der Punkt: wer wartet, fragt oft nach. Duerfte das Nachsehen selbst
+		// zaehlen, waere die Bremse genau fuer den gedacht, den sie nicht treffen
+		// soll.
+		for (let i = 0; i < 100; i++) istGesperrt("y", SATZ, 1000);
+		for (let i = 0; i < 5; i++) expect(nimmVersuch("y", SATZ, 1000).erlaubt).toBe(true);
+	});
+
+	it("meldet gesperrt, wenn der Eimer leer ist", () => {
+		for (let i = 0; i < 5; i++) nimmVersuch("z", SATZ, 1000);
+		expect(istGesperrt("z", SATZ, 1000)).toBe(true);
+		// Und gibt wieder frei, sobald nachgeflossen ist.
+		expect(istGesperrt("z", SATZ, 2000)).toBe(false);
 	});
 });
