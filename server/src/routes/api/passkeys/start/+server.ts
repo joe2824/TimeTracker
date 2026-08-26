@@ -1,13 +1,4 @@
 // Einen WEITEREN Passkey anlegen - fuer ein Konto, das es schon gibt.
-//
-// Nicht zu verwechseln mit /api/auth/register: das legt ein Konto AN. Hier ist
-// eines vorhanden, jemand ist angemeldet, und es kommt ein zweiter Weg hinein
-// dazu.
-//
-// Wofuer: der Rechner wird getauscht, das Handy geht verloren, der Passkey liegt
-// auf einem Stick, den man verlegt. Ein Konto mit genau einem Passkey haengt an
-// genau einem Gegenstand - und die Wiederherstellungs-Phrase ist der Weg, den
-// man genau dann nicht zur Hand hat.
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { registrationOptions } from "$lib/server/webauthn";

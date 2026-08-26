@@ -1,9 +1,4 @@
 // Die Betriebseinstellungen, alle aus der Umgebung.
-//
-// Absichtlich an einer Stelle und mit sprechenden Fehlern: die haeufigste
-// Ursache dafuer, dass Passkeys "einfach nicht gehen", ist eine RP_ID, die nicht
-// zur Adresse passt. Das soll beim Start auffallen und nicht erst, wenn sich
-// jemand nicht anmelden kann.
 
 function required(name: string, fallback?: string): string {
 	const v = process.env[name] ?? fallback;
@@ -20,29 +15,13 @@ export const ORIGIN = required("ORIGIN", "http://localhost:5173");
 /**
  * Die Kennung, an die Passkeys gebunden sind - der Hostname ohne Schema und
  * Port.
- *
- * ACHTUNG: Passkeys ueberleben keinen Wechsel. Wird der Dienst spaeter auf eine
- * andere Domain umgezogen, sind ALLE registrierten Passkeys wertlos und jeder
- * muss sich ueber die Wiederherstellungs-Phrase neu einrichten. Deshalb von
- * Anfang an die endgueltige Domain nehmen, auch solange der Container nur im
- * Heimnetz erreichbar ist.
  */
 export const RP_ID = required("RP_ID", new URL(ORIGIN).hostname);
 
 /** Der Name, den der Anmeldedialog des Betriebssystems anzeigt. */
 export const RP_NAME = process.env.RP_NAME ?? "TimeTracker";
 
-/**
- * Herkuenfte, von denen schreibende Anfragen angenommen werden.
- *
- * Leer heisst: nur ORIGIN. Mehrere braucht, wer die PWA und die Anwendung unter
- * verschiedenen Namen erreichbar macht.
- *
- * Das ist die Absicherung dagegen, dass eine fremde Seite im Browser eines
- * Angemeldeten schreibt. Sie greift nur dort - Anfragen mit Geraete-Token
- * tragen ihren Ausweis selbst und haben keine Herkunft, die ein Server
- * sinnvoll pruefen koennte.
- */
+/** Herkuenfte, von denen schreibende Anfragen angenommen werden. */
 export const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? "")
 	.split(",")
 	.map((o) => o.trim().replace(/\/+$/, ""))
@@ -50,24 +29,10 @@ export const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? "")
 	.concat(ORIGIN);
 
 /**
- * Gehoert diese Adresse zu unserer Passkey-Kennung?
- *
- * Der Browser laesst einen Passkey nur zu, wenn die Adresse, auf der er benutzt
- * wird, unter der RP-Kennung liegt: gleiche Domain oder eine Unterdomain davon.
- * `tracker.example.de` und `app.example.de` gehen beide, wenn RP_ID
- * `example.de` ist. `localhost` und `example.de` gehen NIE zusammen - sie haben
- * keine gemeinsame Domain, und daran ist nichts zu machen.
- */
-/**
  * Kann diese Kennung ueberhaupt eine Passkey-Kennung sein?
  *
- * IP-Adressen koennen es NICHT - WebAuthn verlangt einen Domainnamen, und der
- * Browser weist eine IP mit "127.0.0.1 is an invalid domain" ab. Das ist keine
- * Einstellung, an der sich drehen laesst; es steht so in der Norm.
- *
- * `localhost` ist die eine Ausnahme, die auch ohne HTTPS geht - fuer die
- * Entwicklung ausdruecklich vorgesehen. Wer denselben Rechner ueber 127.0.0.1
- * aufruft, ist fuer den Browser trotzdem woanders und bekommt keinen Passkey.
+ * IP-Adressen NICHT - WebAuthn verlangt einen Domainnamen. `localhost` ist die
+ * Ausnahme, die auch ohne HTTPS geht; 127.0.0.1 ist fuer den Browser woanders.
  */
 export function istGueltigeKennung(rpId: string): boolean {
 	if (rpId === "localhost") return true;
@@ -77,6 +42,7 @@ export function istGueltigeKennung(rpId: string): boolean {
 	return rpId.includes(".");
 }
 
+/** Gehoert diese Adresse zu unserer Passkey-Kennung - gleiche Domain oder Unterdomain? */
 function passtZurKennung(origin: string, rpId: string): boolean {
 	let host: string;
 	try {
@@ -87,18 +53,7 @@ function passtZurKennung(origin: string, rpId: string): boolean {
 	return host === rpId || host.endsWith(`.${rpId}`);
 }
 
-/**
- * Die Adressen, auf denen Passkeys gelten sollen.
- *
- * Mehrere sind moeglich - aber nur solche, die unter derselben RP-Kennung
- * liegen. Was nicht passt, fliegt hier raus und wird beim Start gemeldet: sonst
- * scheiterte spaeter eine Anmeldung mit einer Fehlermeldung des Browsers, die
- * niemand mit dieser Einstellung in Verbindung bringt.
- *
- * Zugreifen darf so eine Adresse trotzdem (siehe ALLOWED_ORIGINS) - nur
- * Passkeys funktionieren dort nicht. Das ist kein Widerspruch: ein Geraet mit
- * Token braucht keinen Passkey.
- */
+/** Die Adressen, auf denen Passkeys gelten sollen. */
 export const WEBAUTHN_ORIGINS = istGueltigeKennung(RP_ID)
 	? ALLOWED_ORIGINS.filter((o) => passtZurKennung(o, RP_ID))
 	: [];
@@ -109,30 +64,13 @@ export const ORIGINS_OHNE_PASSKEY = ALLOWED_ORIGINS.filter((o) => !passtZurKennu
 export const DATA_DIR = process.env.DATA_DIR ?? "./data";
 export const DB_FILE = process.env.DB_FILE ?? `${DATA_DIR}/timetracker.db`;
 
-/**
- * Einladungscodes, durch Komma getrennt.
- *
- * Solange hier etwas steht, ist die Registrierung geschlossen. Leer heisst
- * offen - das ist eine bewusste Entscheidung und keine, in die man
- * hineinrutschen sollte.
- */
+/** Einladungscodes, durch Komma getrennt. */
 export const INVITE_CODES = (process.env.INVITE_CODES ?? "")
 	.split(",")
 	.map((c) => c.trim())
 	.filter(Boolean);
 
-/**
- * Ob sich jeder registrieren darf, der die Adresse kennt.
- *
- * Ein EIGENER Schalter, und das ist keine Kleinigkeit: frueher stand hier
- * `INVITE_CODES.length === 0`. Damit war der Dienst in dem Moment offen, in dem
- * jemand die Codes aus der Umgebung nahm - also genau dann, wenn er von der
- * Tuerklinke auf einzeln vergebene Einladungen umstellte. Der sorgfaeltigere
- * Schritt haette den Dienst geoeffnet.
- *
- * Jetzt heisst geschlossen geschlossen, bis es ausdruecklich anders dasteht.
- * Voreinstellung ist zu.
- */
+/** Ob sich jeder registrieren darf, der die Adresse kennt. */
 export const REGISTRATION_OPEN = /^(1|true|ja|yes)$/i.test(process.env.REGISTRATION_OPEN ?? "");
 
 // ---------- Grenzen ----------

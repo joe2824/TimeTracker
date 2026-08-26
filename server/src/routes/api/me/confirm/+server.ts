@@ -3,9 +3,6 @@
 // Der Ablauf ist derselbe wie beim Anmelden, mit zwei Unterschieden:
 //   - die Aufgabe ist an DIESES Konto gebunden, nicht an "irgendwer"
 //   - der Authentifikator muss den Menschen pruefen (PIN, Fingerabdruck)
-//
-// Damit steht am Ende nicht "eine Sitzung war offen", sondern "der Mensch mit
-// dem Passkey hat gerade eben zugestimmt".
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { confirmationOptions } from "$lib/server/webauthn";

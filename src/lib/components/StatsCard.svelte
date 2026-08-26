@@ -34,14 +34,7 @@
 	);
 	const yearEntries = $derived(monthKeys.flatMap((m) => app.monthEntries(m) as Entry[]));
 
-	/**
-	 * Ist das ganze Jahr geladen?
-	 *
-	 * Saldo und Balken haengen nur am ausgewaehlten Monat und stehen sofort. Die
-	 * Heatmap braucht zwoelf Monate, und ein noch nicht geladener Monat ist von
-	 * einem leeren nicht zu unterscheiden – sie fuellte sich also sichtbar von
-	 * hinten nach vorn. Gewartet wird deshalb nur hier, nicht in der ganzen Karte.
-	 */
+	/** Ist das ganze Jahr geladen? */
 	const yearReady = $derived(monthKeys.every((m) => app.monthLoaded(m)));
 
 	// `app.now` tickt im Sekundentakt. Nur ein laufender Timer IN DIESEM JAHR braucht

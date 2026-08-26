@@ -1,15 +1,8 @@
 // Verwaltung von der Kommandozeile - im Container.
 //
-// Wofuer das da ist: irgendwer muss der erste Verwalter sein, und niemand kann
-// ihn ueber die Oberflaeche dazu machen - es gibt ja noch keinen, der es
-// duerfte. Das ist die Henne-und-Ei-Frage jeder Rechteverwaltung, und sie wird
-// hier beantwortet, wo ohnehin nur hinkommt, wer den Server betreibt.
-//
-// Bewusst NICHT als Endpunkt mit einem geheimen Schluessel: ein Endpunkt, der
-// Rechte vergeben kann, ist dauerhaft im Netz erreichbar. Dieses Skript ist es
+// Bewusst kein Endpunkt: der waere dauerhaft im Netz erreichbar, dieses Skript
 // nur, solange jemand es aufruft.
 //
-// Aufruf:
 //   docker compose exec timetracker node admin.mjs liste
 //   docker compose exec timetracker node admin.mjs ernenne <id-oder-name>
 //   docker compose exec timetracker node admin.mjs entziehe <id-oder-name>
@@ -31,24 +24,7 @@ const datum = (ms) => (ms ? new Date(ms).toISOString().slice(0, 16).replace("T",
 /** Die Platzhalter von LIKE entwerten - ein "%" in der Suche traefe sonst alles. */
 const escapeLike = (s) => s.replace(/[\\%_]/g, "\\$&");
 
-/**
- * Ein Konto finden - ueber die Kennung, ihren Anfang, oder den Anzeigenamen.
- *
- * Drei Wege, weil keiner allein reicht: die Kennung ist eindeutig, aber eine
- * UUID tippt niemand ab. Der Name ist tippbar, aber nicht eindeutig - es koennen
- * zwei Anna sein. Der Anfang der Kennung ist beides, sobald man ihn aus der
- * Liste abgelesen hat.
- *
- * Name und Praefix werden BEIDE gefragt und die Treffer zusammengelegt - nicht
- * der Praefix zuerst, mit Abbruch beim ersten Treffer. Der Unterschied ist kein
- * Geschmack: eine Kennung besteht aus Hex-Ziffern, und ein Anzeigename kann
- * zufaellig genauso aussehen ("Abba", "Cafe", "Dead"). "ernenne Abba" machte so
- * ein fremdes Konto zum Verwalter, und der Aufrufer las die Erfolgsmeldung.
- *
- * Treffen mehrere zu, wird NICHTS getan und die Auswahl aufgelistet. Den
- * Falschen zum Verwalter zu machen, weil zwei Leute gleich heissen, waere ein
- * stiller Fehler - und der Betroffene merkte es nie.
- */
+/** Ein Konto finden - ueber die Kennung, ihren Anfang, oder den Anzeigenamen. */
 function findeKonto(suche) {
 	const genau = db.prepare("SELECT * FROM users WHERE id = ?").get(suche);
 	if (genau) return { treffer: [genau] };
@@ -68,13 +44,7 @@ function findeKonto(suche) {
 	return { treffer };
 }
 
-/**
- * Woran man zwei gleichnamige Konten auseinanderhaelt.
- *
- * Wann angelegt, wie viele Geraete, wann zuletzt gesehen. Das eigene erkennt man
- * am Geraet, das man selbst gerade benutzt - und am Zeitpunkt, zu dem man sich
- * angemeldet hat.
- */
+/** Woran man zwei gleichnamige Konten auseinanderhaelt. */
 function merkmale(id) {
 	const geraete = db
 		.prepare("SELECT label, last_seen_at FROM devices WHERE user_id = ? AND revoked_at IS NULL")
@@ -208,11 +178,11 @@ Verwaltung des TimeTracker-Servers.
   node admin.mjs liste                     Konten und Einladungen zeigen
   node admin.mjs ernenne <wen>             Zum Verwalter machen
   node admin.mjs entziehe <wen>            Verwalterrolle nehmen
+  node admin.mjs einladung [notiz] [--tage 14]   Einen Code ausstellen
 
   <wen> ist die Kennung, ihr Anfang (ab vier Zeichen) oder der Anzeigename.
   Heissen zwei Leute gleich, passiert nichts - dann zeigt die Meldung, woran
   sie sich unterscheiden, und man nimmt den Anfang der Kennung.
-  node admin.mjs einladung [notiz] [--tage 14]   Einen Code ausstellen
 
 Ein Verwalter darf Einladungen vergeben – sonst nichts. Fremde Daten lesen kann
 auch er nicht: der Server selbst kann es nicht.

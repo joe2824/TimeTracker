@@ -1,10 +1,4 @@
 // Update-Suche und -Installation als gemeinsamer Zustand.
-//
-// Liegt bewusst NICHT in der Einstellungs-Seite: den Hinweis "Update verfügbar"
-// zeigt der Start als Toast, den Dialog braucht aber auch die Einstellungs-Seite.
-// Solange beide ihr eigenes `pending` hielten, konnte der Toast-Knopf nur den
-// Tab wechseln – dort musste man die Suche von Hand wiederholen, um überhaupt an
-// den Installieren-Knopf zu kommen. Ein Zustand, ein Dialog, ein Knopf.
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { toast } from "svelte-sonner";
@@ -24,24 +18,11 @@ class UpdaterState {
 }
 export const updater = new UpdaterState();
 
-/**
- * Ob die letzte stille Suche schon gescheitert ist.
- *
- * Die Suche läuft stündlich weiter. Ohne diese Wache schriebe eine Woche ohne
- * Netz stündlich dieselbe Warnung ins Protokoll – und ausgerechnet die Ansicht
- * „nur Probleme" filtert auf WARN/ERROR, wäre also mit genau dem Rauschen
- * gefüllt, das sie herausfiltern soll.
- */
+/** Ob die letzte stille Suche schon gescheitert ist. */
 let silentFailureLogged = false;
 
 /**
  * Nach einem Update suchen.
- *
- * `silent`: nur merken und protokollieren, nichts anzeigen – für den Start und
- * die stündliche Suche im Hintergrund, die ihren Hinweis selbst setzen. Ohne
- * Netz ist das ausdrücklich KEIN Fall für den Benutzer: er hat die Suche nicht
- * angestoßen, und dass gerade kein Netz da ist, weiß er selbst. Sonst meldet
- * die Funktion selbst, was sie fand.
  *
  * @returns true = ein Update liegt bereit
  */

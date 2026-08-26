@@ -1,28 +1,9 @@
-/**
- * Zeitzonen-Grundrechnung.
- *
- * Bis hierher rechnete alles mit den lokalen Date-Methoden, der Arbeitstag war
- * also implizit der des Geraets. Sobald dieselben Daten von zwei Geraeten kommen
- * (Handy auf Reisen, Rechner daheim), zerfaellt das: derselbe Zeitstempel landet
- * je nach Geraet an einem anderen Kalendertag, und damit in einer anderen
- * Monatsdatei, einer anderen Tagessumme und einem anderen Bericht.
- *
- * Deshalb gibt es genau EINE Zeitzone je Konto (`Settings.timeZone`), gegen die
- * alle Tagesgrenzen gerechnet werden. Dieses Modul ist ihre einzige Quelle.
- *
- * Die Zeitstempel selbst bleiben unveraendert Epoch-Millisekunden, also UTC –
- * gerechnet wird nur die Frage "welcher Kalendertag ist das".
- */
+/** Zeitzonen-Grundrechnung. */
 
 /** Die Zeitzone, wenn keine gesetzt ist oder die gesetzte unbrauchbar wurde. */
 const FALLBACK_ZONE = "UTC";
 
-/**
- * Die Zeitzone des Geraets. Vorbelegung beim ersten Start.
- *
- * Faellt auf UTC zurueck, wenn die Laufzeit keine liefert – lieber eine
- * nachvollziehbare feste Zone als eine, die von Start zu Start wechselt.
- */
+/** Die Zeitzone des Geraets. Vorbelegung beim ersten Start. */
 export function systemTimeZone(): string {
 	try {
 		return Intl.DateTimeFormat().resolvedOptions().timeZone || FALLBACK_ZONE;
@@ -113,22 +94,7 @@ export function zonedParts(ts: number, tz = currentZone): ZonedParts {
 	return { year, month, day, hour: get("hour"), minute: get("minute"), second: get("second"), weekday };
 }
 
-/**
- * Der Abstand der Zone zu UTC an diesem Zeitpunkt, in Millisekunden.
- *
- * Gepuffert je angefangener Viertelstunde. Die Puffer-Grenze muss auf jeden
- * moeglichen Umstellungszeitpunkt fallen, sonst puffert sie ueber ihn hinweg und
- * gibt fuer die halbe Stunde danach noch den alten Abstand aus.
- *
- * Volle Stunden reichten dafuer NICHT: die Umstellung liegt auf einer vollen
- * ORTS-Zeit, und Zonen mit halbem oder viertelstuendigem Abstand zu UTC wechseln
- * damit mitten in einer UTC-Stunde - Australia/Adelaide und Australia/Lord_Howe
- * um :30, Pacific/Chatham um :45. Dort war `wallToTs` rund um den Wechsel um bis
- * zu eine Stunde daneben, und zwar still.
- *
- * Ohne den Puffer laeuft `formatToParts` in Auswertungen ueber ein ganzes Jahr
- * zehntausendfach.
- */
+/** Der Abstand der Zone zu UTC an diesem Zeitpunkt, in Millisekunden. */
 const CACHE_BUCKET_MS = 900_000;
 
 function zoneOffsetMs(ts: number, tz = currentZone): number {
@@ -149,15 +115,12 @@ const offsetCache = new Map<string, number>();
 /**
  * Der Zeitstempel zu einer Wanduhr-Angabe in der gegebenen Zone.
  *
- * Zweistufig, weil der Abstand zu UTC selbst vom Ergebnis abhaengt: der erste
- * Versuch nimmt den Abstand am geratenen Zeitpunkt, der zweite prueft ihn am
- * tatsaechlich getroffenen. Ohne das laege jede Angabe rund um eine
- * Sommerzeit-Umstellung eine Stunde daneben.
- *
  * Sonderfaelle der Umstellung:
  *  - Die uebersprungene Stunde im Fruehjahr gibt es nicht; sie faellt nach vorn
  *    auf den ersten existierenden Zeitpunkt.
  *  - Die doppelte Stunde im Herbst gibt es zweimal; genommen wird die erste.
+ *  - Gerechnet wird in Minuten, nicht in vollen Stunden: Adelaide (:30) und
+ *    Chatham (:45) wechseln mitten in einer UTC-Stunde.
  */
 export function wallToTs(
 	year: number,
@@ -210,12 +173,7 @@ export function wallStringToTs(date: string, time: string, tz = currentZone): nu
 	);
 }
 
-/**
- * Ein Kalenderdatum um Tage verschieben – rein im Kalender, ohne Zeitzone.
- *
- * Bewusst nicht ueber Zeitstempel: eine Addition von 24 Stunden trifft an einer
- * Sommerzeit-Grenze den falschen Tag, die Kalenderrechnung nie.
- */
+/** Ein Kalenderdatum um Tage verschieben – rein im Kalender, ohne Zeitzone. */
 export function addCalendarDays(date: string, delta: number): string {
 	const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date.trim());
 	if (!m) return date;

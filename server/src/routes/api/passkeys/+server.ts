@@ -41,18 +41,7 @@ export const PATCH: RequestHandler = async ({ locals, request }) => {
 	return json({ ok: true, label });
 };
 
-/**
- * Einen Passkey entfernen.
- *
- * Mit einer Grenze, die nicht verhandelbar ist: der LETZTE geht nicht. Ohne
- * Passkey gibt es keinen Weg mehr in das Konto - die Wiederherstellungs-Phrase
- * entsperrt die DATEN, aber sie meldet niemanden an. Wer den letzten loeschte,
- * haette ein Konto, in das niemand mehr hineinkommt, und der Betreiber koennte
- * auch nicht helfen: er kann nichts entschluesseln.
- *
- * Wer wirklich alles loswerden will, loest das Konto auf (DELETE /api/me). Das
- * ist derselbe Verlust, aber ausgesprochen.
- */
+/** Einen Passkey entfernen. */
 export const DELETE: RequestHandler = async ({ locals, request }) => {
 	if (!locals.userId) error(401, "Nicht angemeldet");
 	const body = await request.json().catch(() => null);

@@ -44,15 +44,7 @@
 	/** Referenzzeitraum fuer das angenommene Tempo (siehe DEFAULT_PACE_WEEKS). */
 	let paceWeeks = $state(DEFAULT_PACE_WEEKS);
 
-	/**
-	 * Stichtag: das Monatsende – aber nie in der Zukunft.
-	 *
-	 * Die Monatsauswahl kennt keine obere Grenze. Ohne die Deckelung liegen bei
-	 * einem kuenftigen Monat alle Tage von heute bis dahin als Werktage mit null
-	 * Stunden im Fenster; aus zehn Stunden am Tag wird dann ein Schnitt von 6:20
-	 * und aus "Grenze bereits gerissen" ein "im gruenen Bereich". Je weiter man
-	 * nach vorn blaettert, desto beruhigender die Auskunft – genau verkehrt herum.
-	 */
+	/** Stichtag: das Monatsende – aber nie in der Zukunft. */
 	const until = $derived.by(() => {
 		const today = fmtDate(Date.now());
 		const [y, m] = month.split("-").map(Number);
@@ -66,16 +58,7 @@
 		for (const m of monthsNeeded) void app.ensureMonth(m);
 	});
 
-	/**
-	 * Sind alle zwoelf Monate da?
-	 *
-	 * `monthEntries` liefert fuer einen noch nicht geladenen Monat eine leere
-	 * Liste, die von einem leeren Monat nicht zu unterscheiden ist. Waehrend des
-	 * Ladens rechnete die Karte deshalb ueber einen Bruchteil der Daten und zeigte
-	 * ein Ergebnis, das eine Sekunde spaeter ein voellig anderes war – im
-	 * schlimmsten Fall sprang sie von "im gruenen Bereich" auf Rot. Lieber
-	 * gar nichts zeigen als kurz etwas Falsches.
-	 */
+	/** Sind alle zwoelf Monate da? */
 	const ready = $derived(monthsNeeded.every((m) => app.monthLoaded(m)));
 
 	const absenceIds = $derived(new Set(app.activities.filter((a) => a.isAbsence).map((a) => a.id)));
@@ -136,14 +119,7 @@
 		return [Math.min(...values) - 0.25, Math.max(...values) + 0.25];
 	});
 
-	/**
-	 * Monatserste als Achsenmarken.
-	 *
-	 * Weder automatisch noch als Anzahl: bei einer Marke je Datenpunkt stand
-	 * derselbe Monat fuenfmal nebeneinander, bei einer gedeckelten Anzahl blieben
-	 * zwei Beschriftungen fuer ein halbes Jahr uebrig. Ein Monatsraster ist das,
-	 * was hier gelesen wird.
-	 */
+	/** Monatserste als Achsenmarken. */
 	const monthTicks = $derived.by(() => {
 		const out: Date[] = [];
 		if (chartData.length === 0) return out;

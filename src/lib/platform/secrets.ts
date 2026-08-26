@@ -1,13 +1,5 @@
-// Geheimnisse ablegen - so gut, wie die Umgebung es hergibt.
-//
-// Auf dem Rechner uebernimmt das Betriebssystem (DPAPI, siehe
-// src-tauri/src/secret.rs): der Wert ist an das Benutzerkonto gebunden, eine
-// kopierte Datei nuetzt niemandem.
-//
-// Im Browser gibt es dafuer nichts. Kein Schutz ist dort besser als ein
-// selbstgebauter mit dem Schluessel daneben - der schuetzt vor nichts und
-// taeuscht Sicherheit vor. Deshalb sagt `protected` die Wahrheit, statt sie zu
-// beschoenigen, und die Oberflaeche kann es dem Nutzer sagen.
+// Geheimnisse ablegen - so gut, wie die Umgebung es hergibt. Im Browser gar nicht:
+// ein selbstgebauter Schutz mit dem Schluessel daneben taeuscht Sicherheit vor.
 import { isTauri } from "./env";
 
 export interface ProtectedSecret {

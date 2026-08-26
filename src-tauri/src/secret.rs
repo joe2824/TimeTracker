@@ -1,19 +1,4 @@
 //! Geheimnisse so ablegen, dass eine kopierte Datei nichts wert ist.
-//!
-//! Der Tresorschluessel und das Geraete-Token muessen die Sitzung ueberdauern -
-//! sonst muesste man sich bei jedem Start neu koppeln. Sie gehoeren aber nicht
-//! im Klartext in eine JSON-Datei: der Datenordner landet in Sicherungen, in
-//! Cloud-Ordnern und gelegentlich in einem Fehlerbericht.
-//!
-//! Windows bietet dafuer DPAPI: verschluesseln mit einem Schluessel, den das
-//! Betriebssystem aus dem Benutzerkonto ableitet. Ein Angreifer braucht dann
-//! nicht die Datei, sondern das angemeldete Benutzerkonto - was ein ganz
-//! anderer Aufwand ist.
-//!
-//! Ausserhalb von Windows gibt es hier bewusst keine eigene Bastelloesung: eine
-//! selbstgebaute Verschluesselung mit einem Schluessel, der daneben liegt,
-//! schuetzt vor nichts und taeuscht Sicherheit vor. Dort wird unveraendert
-//! durchgereicht, und der Aufrufer erfaehrt es.
 
 use serde::Serialize;
 
@@ -34,10 +19,6 @@ mod imp {
     };
 
     /// Ein Puffer, der sich selbst wieder freigibt.
-    ///
-    /// DPAPI gibt Speicher zurueck, den der Aufrufer freigeben muss. Ohne diese
-    /// Huelle waere jeder fruehe Ausstieg ein Leck - und es wird bei jedem Start
-    /// und jedem Koppeln aufgerufen.
     struct Blob(CRYPT_INTEGER_BLOB);
 
     impl Blob {
@@ -113,6 +94,8 @@ mod imp {
     }
 }
 
+/// Ausserhalb von Windows bewusst keine eigene Bastelloesung: Verschluesselung mit
+/// dem Schluessel daneben schuetzt vor nichts. `protected` sagt es dem Aufrufer.
 #[cfg(not(windows))]
 mod imp {
     pub fn protect(_plain: &[u8]) -> Option<Vec<u8>> {

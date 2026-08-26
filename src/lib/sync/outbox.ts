@@ -1,16 +1,5 @@
-// Was noch nicht beim Server ist.
-//
-// Die Outbox merkt sich NUR, WAS sich geaendert hat – Art, Id und bei Eintraegen
-// der Monat – nie den Inhalt selbst. Den liest der Abgleich beim Hochladen aus
-// den Dateien, die ohnehin die Wahrheit sind.
-//
-// Das ist kein Sparen um des Sparens willen: eine Outbox mit Inhalten waere eine
-// zweite Kopie desselben Bestands, die auseinanderlaufen kann. Und sie stuende
-// unverschluesselt auf der Platte, waehrend beim Server nur Chiffrat liegt.
-//
-// Ein Eintrag zu viel in der Outbox ist harmlos – er fuehrt dazu, dass ein
-// unveraenderter Datensatz noch einmal hochgeladen wird. Ein fehlender waere ein
-// Datensatz, der stillschweigend nie ankommt. Im Zweifel also lieber zu viel.
+// Was noch nicht beim Server ist. Gemerkt wird NUR, WAS sich geaendert hat - Art, Id,
+// bei Eintraegen der Monat - nie der Inhalt selbst.
 import type { Activity, Entry, Settings } from "../types";
 import type { WriteHook } from "../store";
 import { loadOutbox, saveOutbox, setWriteHook } from "../store";
@@ -28,13 +17,7 @@ export interface PendingChange {
 	/** Nur bei Eintraegen: in welcher Monatsdatei der Datensatz liegt bzw. lag. */
 	month?: string;
 	deleted: boolean;
-	/**
-	 * Bei einer Loeschung: die Fassung, die der Datensatz zuletzt hatte.
-	 *
-	 * Ohne sie kaeme die Loeschung beim Server nie durch - er nimmt sie nur auf
-	 * seiner aktuellen Fassung an, und die ist nach dem lokalen Loeschen nirgends
-	 * mehr abzulesen.
-	 */
+	/** Bei einer Loeschung: die Fassung, die der Datensatz zuletzt hatte. */
 	rev?: number;
 	/** Wann die Aenderung bemerkt wurde (Epoch-ms). */
 	at: number;
@@ -45,13 +28,7 @@ function keyOf(c: Pick<PendingChange, "kind" | "id">): string {
 	return `${c.kind}:${c.id}`;
 }
 
-/**
- * Mehrere Aenderungen am selben Datensatz zu einer zusammenfassen.
- *
- * Wer einen Eintrag anlegt, bearbeitet und wieder loescht, hinterlaesst genau
- * eine offene Aenderung: die Loeschung. Ohne das wuechse die Outbox mit jedem
- * Tastendruck im Eintrags-Dialog.
- */
+/** Mehrere Aenderungen am selben Datensatz zu einer zusammenfassen. */
 export function mergePending(existing: PendingChange[], incoming: PendingChange[]): PendingChange[] {
 	const byKey = new Map(existing.map((c) => [keyOf(c), c]));
 	for (const c of incoming) byKey.set(keyOf(c), c);
@@ -62,26 +39,10 @@ let pending: PendingChange[] = [];
 let loaded = false;
 let deviceId = "";
 
-/**
- * Waehrend der Abgleich Fremdes einspielt, wird nichts vorgemerkt.
- *
- * Ohne das frisst sich der Abgleich selbst: der Haken sieht das Einspielen wie
- * jede andere Aenderung, merkt sie vor, und der naechste Durchgang laedt sie
- * wieder hoch - wo sie als veraltet abgewiesen wird, weil der Server inzwischen
- * weiter ist. Das Ergebnis ist ein Geraet, das dauerhaft dieselben Datensaetze
- * im Kreis schickt und dabei staendig Konflikte meldet.
- *
- * Ein Zaehler statt eines Schalters: das Einspielen ruft geschachtelt.
- */
+/** Waehrend der Abgleich Fremdes einspielt, wird nichts vorgemerkt. */
 let suppressed = 0;
 
-/**
- * Etwas schreiben, ohne es vorzumerken.
- *
- * Nur fuer das Einspielen von Serverdaten. Die Herkunftsspuren kommen dabei vom
- * Server und werden unveraendert durchgereicht - neu zu stempeln waere falsch,
- * es ist ja nicht die Aenderung dieses Geraets.
- */
+/** Etwas schreiben, ohne es vorzumerken. */
 export async function applyingRemote<T>(fn: () => Promise<T>): Promise<T> {
 	suppressed++;
 	try {
@@ -96,12 +57,7 @@ export function pendingChanges(): PendingChange[] {
 	return [...pending].sort((a, b) => a.at - b.at);
 }
 
-/**
- * Aenderungen als erledigt abhaken.
- *
- * Ueber Schluessel statt ueber Indizes: zwischen Hochladen und Abhaken kann eine
- * neue Aenderung dazugekommen sein, und die darf nicht mit verschwinden.
- */
+/** Aenderungen als erledigt abhaken - ueber Schluessel, damit inzwischen Dazugekommenes bleibt. */
 export async function clearChanges(done: Pick<PendingChange, "kind" | "id">[]): Promise<void> {
 	const keys = new Set(done.map(keyOf));
 	pending = pending.filter((c) => !keys.has(keyOf(c)));
@@ -118,13 +74,7 @@ async function persist(): Promise<void> {
 	}
 }
 
-/**
- * Wer erfahren will, dass etwas zu tun ist.
- *
- * Ein Rueckruf statt eines direkten Aufrufs: die Outbox soll nichts vom
- * Abgleich wissen. Andersherum waere es ein Kreis - der Abgleich schreibt ueber
- * den Haken in die Outbox, und die riefe ihn wieder auf.
- */
+/** Wer erfahren will, dass etwas zu tun ist. */
 let onChange: (() => void) | null = null;
 
 export function setChangeListener(fn: (() => void) | null): void {
@@ -138,12 +88,7 @@ async function note(changes: PendingChange[]): Promise<void> {
 	onChange?.();
 }
 
-/**
- * Den Abgleich scharf schalten.
- *
- * Ab hier bekommt jeder Schreibvorgang Herkunftsspuren und landet in der Outbox.
- * Vorher – und ohne verknuepftes Konto – passiert nichts davon.
- */
+/** Den Abgleich scharf schalten. */
 export async function startTracking(device: string): Promise<void> {
 	deviceId = device;
 	if (!loaded) {

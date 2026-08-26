@@ -1,12 +1,4 @@
 // Kopplung, Schritt 1 - auf dem NEUEN Geraet.
-//
-// Es erzeugt ein fluechtiges Schluesselpaar und hinterlegt den oeffentlichen
-// Teil unter einem kurzen Code. Der Code ist der ABDRUCK dieses Schluessels und
-// entsteht auf dem Geraet - siehe unten, daran haengt die Sicherheit des ganzen
-// Vorgangs. Diesen Code liest der Mensch ab und tippt ihn auf einem bereits
-// entsperrten Geraet ein.
-//
-// Ausdruecklich OHNE Anmeldung: das neue Geraet hat ja noch keine.
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { pairings } from "$lib/server/db/schema";
@@ -15,20 +7,8 @@ import { eq } from "drizzle-orm";
 import { istPairingCode, normalisiereCode } from "$lib/server/pairing";
 
 /**
- * Der Code kommt vom Geraet, nicht von hier.
- *
- * Frueher wuerfelte ihn dieser Endpunkt. Das war die Luecke: ein gewuerfelter
- * Code hat mit dem hinterlegten oeffentlichen Schluessel nichts zu tun, und damit
- * war die einzige Strecke, die ein Mensch prueft, nicht an den Schluessel
- * gebunden. Wer diesen Server beherrschte, konnte den Schluessel gegen einen
- * eigenen tauschen und bekam vom bestaetigenden Geraet den Tresorschluessel
- * dagegen verpackt.
- *
- * Jetzt ist der Code der Abdruck des Schluessels (SHA-256, zwoelf Stellen zu je
- * fuenf Bit). Nachgerechnet wird auf den GERAETEN, auf beiden Seiten - hier
- * ausdruecklich nicht: in diesem Angriff ist der Server der Angreifer, und eine
- * Pruefung, die er selbst ausfuehrt, beweist niemandem etwas. Was hier steht,
- * haelt bloss die Tabelle sauber.
+ * Der Code kommt vom Geraet, nicht von hier - er ist der Abdruck des oeffentlichen
+ * Schluessels. Nachgerechnet wird auf den GERAETEN, nie hier.
  */
 export const POST: RequestHandler = async ({ locals, request }) => {
 	const body = await request.json().catch(() => null);

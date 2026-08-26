@@ -1,13 +1,4 @@
 //! Outlook ueber ein PowerShell-Skript (COM), je Aufruf ein eigener Prozess.
-//!
-//! Alle Commands hier stehen auf `#[tauri::command(async)]`, obwohl keine
-//! Funktion `async` ist: ein synchrones Command laeuft bei Tauri auf dem
-//! Hauptthread, und dort wartet `output()` mitsamt der Oberflaeche auf
-//! PowerShell samt Outlook-Start. Beim Lesen eines Monats Mails steht die App
-//! dabei sekunden- bis minutenlang still – bis hin zu „Keine Rueckmeldung".
-//! Mit `(async)` gibt Tauri den Aufruf an seine Laufzeit ab; die Oberflaeche
-//! bleibt bedienbar, und der Ablauf im Frontend aendert sich nicht: `invoke()`
-//! liefert ohnehin ein Promise.
 use std::process::Command;
 use tauri::Manager;
 
@@ -21,15 +12,6 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const OUTLOOK_PS1: &str = include_str!("../resources/outlook.ps1");
 
 /// Pfad zum ausgepackten Skript – geschrieben wird es einmal je Prozessstart.
-///
-/// Vorher legte es jeder Aufruf neu an. Seit die Commands nebenlaeufig laufen
-/// duerfen, faellt das einem gerade laufenden PowerShell in den Ruecken: der
-/// Chef-Modus liest minutenlang Mails, und ein Berichtsentwurf nebenher kuerzte
-/// ihm sein Skript unter den Fuessen weg. Einmal je Start genuegt auch – der
-/// Inhalt steckt fest in der EXE und aendert sich nur mit einer neuen Version.
-///
-/// Das Schreiben laeuft unter der Sperre: zwei erste Aufrufe gleichzeitig
-/// wuerden sich sonst gegenseitig in dieselbe Datei schreiben.
 fn ensure_script(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     static WRITTEN: std::sync::Mutex<bool> = std::sync::Mutex::new(false);
 
@@ -130,8 +112,6 @@ pub fn detect_outlook(app: tauri::AppHandle) -> Result<serde_json::Value, String
 /// Liest Mails des Posteingangs im Zeitraum [start, end] (ISO-Datum), gefiltert
 /// auf einen Betreff-Teilstring. Fuer den Chef-Modus: die eingegangenen
 /// Monatsberichte des Teams.
-///
-/// Liest nur - es wird nichts verschoben, markiert oder geloescht.
 #[tauri::command(async)]
 pub fn read_outlook_mails(
     app: tauri::AppHandle,

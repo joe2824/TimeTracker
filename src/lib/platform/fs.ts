@@ -1,18 +1,7 @@
 // Wo die Daten liegen.
 //
-// Auf dem Rechner sind es JSON-Dateien im App-Datenordner - so, wie es immer
-// war. Im Browser gibt es kein Dateisystem; dort liegt derselbe Bestand in
-// IndexedDB, unter demselben Namen als Schluessel.
-//
-// Der Zuschnitt kommt aus store.ts und ist absichtlich klein: eine flache Ablage
-// von Textdateien in EINEM Ordner. Alles, was store.ts braucht, laesst sich auf
-// einen Schluessel-Wert-Speicher abbilden - deshalb ist die Umsetzung im Browser
-// kurz und nicht die Nachbildung eines Dateisystems.
-//
-// Der Weg wird ausdruecklich gesetzt, nicht erraten. Eine Abfrage zur Laufzeit
-// haette die bestehenden Tests umgehaengt: die ersetzen das Tauri-Modul und
-// erwarten, dass es benutzt wird. Der Web-Bau ruft `useBrowserStorage()` beim
-// Start - eine Zeile, an einer Stelle, sichtbar.
+// store.ts unterscheidet "Datei fehlt" von "Datei ist kaputt" - die Ablage muss den
+// Unterschied durchreichen, sonst gehen Daten still verloren.
 
 import {
 	BaseDirectory,
@@ -36,25 +25,14 @@ export interface FileInfo {
 	size: number;
 }
 
-/**
- * Was store.ts braucht - nicht mehr.
- *
- * Die Pfade sind immer "data/<name>"; die Ordnerebene existiert nur, weil das
- * Dateisystem sie braucht. Im Browser ist sie Teil des Schluessels.
- */
+/** Was store.ts braucht - nicht mehr. */
 export interface StorageBackend {
 	exists(path: string): Promise<boolean>;
 	mkdir(path: string): Promise<void>;
 	readDir(path: string): Promise<DirEntry[]>;
 	readTextFile(path: string): Promise<string>;
 	writeTextFile(path: string, contents: string): Promise<void>;
-	/**
-	 * Anhaengen statt ersetzen - fuer das Protokoll.
-	 *
-	 * Auf der Platte macht das Dateisystem es selbst. Im Browser wird gelesen,
-	 * ergaenzt und zurueckgeschrieben; bei Tagesdateien von wenigen Kilobyte ist
-	 * das der Aufwand nicht wert, den ein echter Anhaenge-Weg kosten wuerde.
-	 */
+	/** Anhaengen statt ersetzen - fuer das Protokoll. */
 	appendTextFile(path: string, contents: string): Promise<void>;
 	remove(path: string): Promise<void>;
 	rename(from: string, to: string): Promise<void>;
@@ -112,13 +90,7 @@ function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T
 	);
 }
 
-/**
- * Ein Fehler, der sich anfuehlt wie ein fehlendes Dateisystem-Objekt.
- *
- * store.ts prueft an einer Stelle nicht auf Existenz, sondern faengt den Fehler.
- * Ohne eine erkennbare Meldung sähe ein fehlender Eintrag dort aus wie ein
- * kaputter - und eine kaputte Datei wird zur Seite gelegt statt ignoriert.
- */
+/** Ein Fehler, der sich anfuehlt wie ein fehlendes Dateisystem-Objekt. */
 class NotFound extends Error {
 	constructor(path: string) {
 		super(`Datei nicht gefunden: ${path}`);

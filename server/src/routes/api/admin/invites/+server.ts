@@ -1,8 +1,4 @@
 // Einladungen verwalten - nur fuer Verwalter.
-//
-// Was ein Verwalter kann, ist bewusst schmal: Einladungen ausstellen, ansehen,
-// zurueckziehen. Er kann KEINE fremden Daten lesen - das kann der Server selbst
-// nicht. Die Rolle regelt, wer hereindarf, nicht wer etwas sieht.
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { erstelleInvite, istVerwalter, listeInvites, zieheInviteZurueck } from "$lib/server/invites";

@@ -1,8 +1,7 @@
 // Der "Timer läuft noch"-Dialog: welches Ende vorgeschlagen wird und was als
 // Eingabe durchgeht.
 //
-// Reine Logik, damit der heikle Teil testbar bleibt: der Vorschlag entscheidet,
-// was ein Nutzer wegklickt, ohne hinzusehen.
+// Über Nacht ist "jetzt" NIE der Vorschlag - aufgehört wurde am Starttag.
 import { grossForNet } from "./breaks";
 import { fmtDate, startOfNextDay } from "./time";
 
@@ -26,20 +25,6 @@ export interface SuggestOptions {
 /**
  * Das vorgeschlagene Ende für einen lange laufenden Timer.
  *
- * Läuft er noch am selben Tag, ist "jetzt" richtig: der Nutzer sitzt davor und
- * hört gerade auf.
- *
- * Über Nacht ist "jetzt" dagegen NIE die Antwort. Der Timer lief weiter, weil
- * niemand da war – aufgehört wurde am STARTTAG, und der Dialog erscheint erst
- * am Morgen danach. Ein auf "jetzt" vorbelegtes Feld schreibt dann die ganze
- * Nacht plus den halben Vormittag auf das Projekt, und zwar genau dann, wenn
- * jemand nur schnell bestätigt.
- *
- * Geschätzt wird über den Arbeitstag: Tagesbeginn + Soll-Anwesenheit. Das ist
- * die einzige Zahl, die wir über den Feierabend haben, und sie liegt immer am
- * richtigen TAG – die Minuten korrigiert der Nutzer, den Tag hätte er
- * übersehen.
- *
  * @returns Zeitstempel, minutengenau, innerhalb von (Laufbeginn, jetzt]
  */
 export function suggestLongTimerEnd(opts: SuggestOptions): number {
@@ -62,15 +47,7 @@ export function suggestLongTimerEnd(opts: SuggestOptions): number {
 /** Warum eine eingegebene Endzeit nicht übernommen werden kann. */
 export type EndError = "invalid" | "before-start" | "future";
 
-/**
- * Prüft die eingegebene Endzeit.
- *
- * Bewusst als Fehler und nicht als stille Korrektur: `resolveLongTimer` klemmt
- * einen Wert außerhalb der Spanne auf "jetzt" fest. Wer im datetime-local-Feld
- * nur die UHRZEIT tippt und das Datum stehen lässt, landet damit auf HEUTE
- * 18:26 – in der Zukunft – und bekommt kommentarlos 08:36 gebucht. Der Dialog
- * sagt "Ende 18:26", die Datei sagt etwas anderes.
- */
+/** Prüft die eingegebene Endzeit. */
 export function checkEnd(ts: number, runStartTs: number, now: number): EndError | null {
 	if (!Number.isFinite(ts)) return "invalid";
 	if (ts <= runStartTs) return "before-start";

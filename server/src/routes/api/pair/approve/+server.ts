@@ -1,8 +1,4 @@
 // Kopplung, Schritt 2 - auf dem BEREITS ENTSPERRTEN Geraet.
-//
-// Es liest den Code, holt den oeffentlichen Schluessel des neuen Geraets,
-// verpackt den Tresorschluessel dagegen (das passiert im Client) und legt das
-// Paket hier ab. Der Server sieht dabei nur Chiffrat.
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { pairings } from "$lib/server/db/schema";

@@ -463,19 +463,6 @@ describe("checkArbZg", () => {
 
 // ---------------------------------------------------------------------------
 // Die Zeitsimulation gegen eine unabhaengige Referenzrechnung.
-//
-// Die eingesetzte Fassung summiert ueber Praefixsummen: ein Fenster kostet zwei
-// Subtraktionen statt 168 Additionen. Genau dort sitzen die Fehler, die keiner
-// sieht – ein Tag zu weit links, ein Tag zu weit rechts, ein Budget doppelt
-// gezaehlt. Beispieltests fangen so etwas nur zufaellig, weil sie meist glatte
-// Zahlen benutzen, bei denen sich ein Versatz aufhebt.
-//
-// Die Referenz unten ist bewusst NICHT aus der Implementierung abgeleitet,
-// sondern aus den dokumentierten Regeln neu aufgeschrieben: Fenster von 168
-// Tagen, Tage vor Beginn der Datenbasis tragen nichts, Werktag je nach Lesart,
-// Abwesenheit mindert das Budget, kuenftige Arbeitstage bekommen das
-// angenommene Tempo.
-// ---------------------------------------------------------------------------
 
 /** Deterministischer Zufall – ein fehlschlagender Lauf muss reproduzierbar sein. */
 function rng(seed: number): () => number {
@@ -592,9 +579,6 @@ describe("Zeitsimulation", () => {
 		//    gearbeiteten Stunden bestimmt, und eine Tempoempfehlung kann daran
 		//    wenig aendern. Aber sie darf nicht beliebig danebenliegen: eine
 		//    Viertelstunde ist die Grenze.
-		//
-		// Ohne den zweiten Teil waere der erste eine Ausrede – dann duerfte maxPace
-		// beliebig zu hoch liegen, solange der Schaden nur frueh genug eintritt.
 		const soonEnough = stepDate(UNTIL, 28);
 		const NEAR_TERM_SLACK = 0.25;
 		let checkedNearTerm = 0;
@@ -744,19 +728,6 @@ describe("Zeitsimulation", () => {
 
 // ---------------------------------------------------------------------------
 // Kalender-Randfaelle.
-//
-// Die ganze Rechnung laeuft ueber Kalendertage: das Fenster ist 168 Tage lang,
-// die Achse wird mit stepDate() Tag fuer Tag aufgebaut, und der Nenner haengt am
-// Wochentag. Schaltjahr, Jahreswechsel und Sommerzeit sind damit genau die
-// Stellen, an denen ein Tag verloren gehen oder doppelt gezaehlt werden kann –
-// und zwar unauffaellig, weil das Ergebnis nur um Minuten danebenliegt.
-//
-// Der Pruefstein ist eine Invariante, die keinen Kalender braucht: 168 Tage sind
-// exakt 24 Wochen, also exakt 24-mal jeder Wochentag. Bei durchgaengiger
-// Erfassung ohne Abwesenheiten muss der Nenner deshalb IMMER 120 (Mo–Fr) bzw.
-// 144 (Mo–Sa) sein – ganz gleich, wo das Fenster liegt. Verrutscht irgendwo ein
-// Tag, faellt genau das auf.
-// ---------------------------------------------------------------------------
 
 /** Datum plus `days`, in UTC gerechnet – kennt keine Sommerzeit. */
 function utcShift(iso: string, days: number): string {
@@ -842,11 +813,6 @@ describe("Kalender-Randfaelle", () => {
 
 // ---------------------------------------------------------------------------
 // Boesartige Eintraege.
-//
-// Die Zufallsszenarien oben erzeugen brave Tage: ein Block, sauber im
-// Arbeitstag. Was die Rechnung wirklich aergert, sind die Faelle, die im Alltag
-// entstehen und die niemand erzeugt, wenn er Testdaten "normal" baut.
-// ---------------------------------------------------------------------------
 
 describe("boesartige Eintraege", () => {
 	const opts = (dataFrom: string) => ({ until: UNTIL, dataFrom, workdays: MO_FR });

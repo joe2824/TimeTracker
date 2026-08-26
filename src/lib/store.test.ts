@@ -50,9 +50,6 @@ describe("saveEntries", () => {
 		// Zwischendatei: die eine benennt sie um, der anderen fehlt sie dann, und
 		// die faellt in den direkten Weg – wo sie ihren Stand ueber den der ersten
 		// schreibt. Je nachdem, wer zuerst drankommt, bleibt der AELTERE stehen.
-		//
-		// Geprueft wird deshalb der Ausloeser, nicht nur der Ausgang: laeuft keine
-		// der beiden in den Ersatzweg, kann auch keine die andere ueberschreiben.
 		await Promise.all([
 			saveEntries("2026-06", [entry("alt")]),
 			saveEntries("2026-06", [entry("neu")])

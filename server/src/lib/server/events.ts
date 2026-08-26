@@ -1,14 +1,4 @@
 // Wecken, wenn sich etwas geaendert hat.
-//
-// Der Kanal traegt absichtlich keine Daten, sondern nur "es gibt Neues ab
-// Nummer N". Wer geweckt wird, holt sich das Delta ueber den normalen Weg. Das
-// haelt den Kanal winzig und erspart es, Chiffrate zweimal zu verschicken.
-//
-// Bewusst hinter einer schmalen Schnittstelle (publish/subscribe): solange genau
-// eine Instanz laeuft, genuegt ein Ereignis-Verteiler im Prozess - null Bytes
-// Zusatzaufwand, kein zweiter Container. Sobald eine zweite Instanz danebensteht,
-// wird genau dieses Modul gegen Redis-Pub/Sub getauscht, ohne dass ein Endpunkt
-// sich aendert.
 import { MAX_STREAMS_PER_USER } from "./config";
 
 export interface ChangeEvent {

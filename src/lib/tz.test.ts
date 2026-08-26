@@ -162,11 +162,6 @@ describe("Unabhaengigkeit von der Geraetezone", () => {
 describe("Sommerzeit in einer Zone mit halbstuendigem Abstand", () => {
 	// Australia/Adelaide steht auf +9:30 und wechselt auf +10:30. Die Umstellung
 	// faellt damit MITTEN in eine UTC-Stunde: 02:00 Ortszeit sind 16:30 UTC.
-	//
-	// Genau daran scheiterte der Puffer, solange er je voller Stunde griff - er
-	// pufferte ueber den Wechsel hinweg und gab fuer den Rest der Stunde noch den
-	// alten Abstand aus. Wer davor einmal gerechnet hatte, bekam danach eine
-	// Uhrzeit, die eine Stunde daneben lag. Ohne Fehler, ohne Hinweis.
 	const TZ = "Australia/Adelaide";
 
 	it("trifft die Zeit nach dem Wechsel, auch wenn davor schon gerechnet wurde", () => {

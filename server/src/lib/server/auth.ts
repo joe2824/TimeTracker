@@ -3,23 +3,13 @@
 // Zwei Wege fuehren zu einem Konto:
 //   - Browser: Passkey -> Sitzungs-Cookie
 //   - Desktop: einmalige Kopplung -> langlebiges Geraete-Token
-//
-// Beide landen bei derselben Frage: welchem Konto gehoert diese Anfrage. Alles
-// darunter arbeitet nur noch mit dieser einen Antwort.
 import { and, eq, isNull, lt } from "drizzle-orm";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { Db, DbLike } from "./db";
 import { challenges, devices, sessions, users } from "./db/schema";
 import { CHALLENGE_TTL_MS, SESSION_TTL_MS } from "./config";
 
-/**
- * Geheimnisse werden nur als Hash abgelegt.
- *
- * Wer den Datenbestand in die Haende bekommt, hat damit keine gueltigen Token -
- * derselbe Grund, aus dem niemand Passwoerter im Klartext speichert. SHA-256
- * genuegt hier, anders als bei Passwoertern: die Werte sind 256 Bit Zufall, es
- * gibt nichts zu erraten.
- */
+/** Geheimnisse werden nur als Hash abgelegt. */
 export function hashSecret(secret: string): string {
 	return createHash("sha256").update(secret).digest("hex");
 }
@@ -37,13 +27,7 @@ export function safeEqual(a: string, b: string): boolean {
 
 // ---------- WebAuthn-Aufgaben ----------
 
-/**
- * Eine Aufgabe hinterlegen.
- *
- * In der Datenbank statt im Prozessgedaechtnis: damit spaeter eine zweite
- * Instanz danebenlaufen kann, ohne dass Anmeldungen scheitern, die zufaellig auf
- * der anderen begonnen haben.
- */
+/** Eine Aufgabe hinterlegen. */
 export function storeChallenge(
 	db: Db,
 	challenge: string,
@@ -57,12 +41,7 @@ export function storeChallenge(
 	return id;
 }
 
-/**
- * Eine Aufgabe einloesen - genau einmal.
- *
- * Das Loeschen ist der Punkt: eine Aufgabe, die zweimal gilt, laesst sich
- * wiederverwenden.
- */
+/** Eine Aufgabe einloesen - genau einmal. */
 export function takeChallenge(
 	db: Db,
 	id: string,
@@ -110,12 +89,7 @@ export interface DeviceAuth {
 	deviceId: string;
 }
 
-/**
- * Ein Geraet anlegen und sein Token ausgeben.
- *
- * Das Token wird genau einmal zurueckgegeben - danach steht nur noch sein Hash
- * in der Datenbank und niemand kann es mehr nachlesen, auch der Betreiber nicht.
- */
+/** Ein Geraet anlegen und sein Token ausgeben. */
 export function createDevice(
 	db: DbLike,
 	userId: string,
@@ -136,13 +110,7 @@ export function deviceFromToken(db: Db, token: string): DeviceAuth | null {
 	return { userId: row.userId, deviceId: row.id };
 }
 
-/**
- * Ein Geraet widerrufen.
- *
- * Die Zeile bleibt stehen: sie sagt, dass es das Geraet gab und wann es
- * ausgeschlossen wurde. Ohne diese Spur waere ein Widerruf von einem "hat es nie
- * gegeben" nicht zu unterscheiden.
- */
+/** Ein Geraet widerrufen. */
 export function revokeDevice(db: Db, userId: string, deviceId: string): boolean {
 	const r = db
 		.update(devices)
@@ -154,13 +122,7 @@ export function revokeDevice(db: Db, userId: string, deviceId: string): boolean 
 
 // ---------- Aufraeumen ----------
 
-/**
- * Abgelaufenes wegraeumen.
- *
- * Laeuft beim Start und danach stuendlich. Ohne das wuechse die
- * Aufgaben-Tabelle mit jedem abgebrochenen Anmeldeversuch weiter - langsam, aber
- * unbegrenzt.
- */
+/** Abgelaufenes wegraeumen. */
 export function cleanupExpired(db: Db): void {
 	const jetzt = Date.now();
 	db.delete(challenges).where(lt(challenges.expiresAt, jetzt)).run();

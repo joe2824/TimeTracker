@@ -1,75 +1,27 @@
 // Das Schema des Servers.
 //
-// Es faellt auf, wie wenig hier steht - und das ist der Punkt. Weil der Server
-// nichts entschluesseln kann, gibt es keine Eintraege, keine Aktivitaeten, keine
-// Stunden und keine Auswertung. Es gibt Konten, ihre Anmeldeverfahren, und einen
-// Haufen versiegelter Datensaetze mit gerade so viel Klartext, wie das Abgleichen
-// selbst braucht.
-//
-// Was im Klartext steht und warum:
-//   userId    - ohne Zuordnung kein Mehrbenutzerbetrieb
-//   kind      - der Client muss wissen, was er zu entschluesseln versucht
-//   bucket    - verschleierter Monat, damit gezielt nachgeladen werden kann
-//   seq       - die Reihenfolge, ueber die abgeglichen wird
-//   rev       - damit zwei Geraete sich nicht gegenseitig ueberschreiben
-//   updatedAt - fuer die Zusammenfuehrung auf dem Client
-//   deviceId  - damit ein Geraet seine eigenen Aenderungen wiedererkennt
-//
-// NICHT im Klartext: welcher Monat, welche Aktivitaet, wie lange, welche Notiz,
-// wie viele Stunden. Und kein Zeitstempel eines Eintrags.
+// Im Klartext steht nur, was das Abgleichen selbst braucht: userId, kind, bucket
+// (verschleierter Monat), seq, rev, updatedAt, deviceId. NICHT im Klartext: welcher
+// Monat, welche Aktivitaet, wie lange, welche Notiz - und kein Zeitstempel.
 import { blob, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
-/**
- * Ein Konto.
- *
- * Kein Name, kein Pflicht-Postfach: zur Anmeldung reicht ein Passkey. Das
- * Anzeigefeld ist frei waehlbar und dient nur dazu, im Anmeldedialog des
- * Betriebssystems etwas Sinnvolles stehen zu haben.
- */
+/** Ein Konto. Kein Name, kein Pflicht-Postfach - zur Anmeldung reicht ein Passkey. */
 export const users = sqliteTable("users", {
 	id: text("id").primaryKey(),
 	displayName: text("display_name").notNull(),
-	/**
-	 * Freiwillig und nur fuer den Zugang, nie fuer die Daten.
-	 *
-	 * Ein Magic-Link stellt den KONTOzugang wieder her - einen neuen Passkey
-	 * anlegen. Entschluesseln laesst sich damit nichts: dafuer braucht es
-	 * weiterhin die Phrase oder ein entsperrtes Geraet.
-	 */
+	/** Freiwillig und nur fuer den Zugang, nie fuer die Daten. */
 	email: text("email"),
 	createdAt: integer("created_at").notNull(),
 	/** Laufende Nummer der Datensaetze dieses Kontos. Siehe `records.seq`. */
 	seqCounter: integer("seq_counter").notNull().default(0),
 	/**
-	 * Darf Einladungen vergeben.
-	 *
-	 * Mehr nicht - und ausdruecklich NICHT: fremde Daten lesen. Das kann auch ein
-	 * Verwalter nicht, weil der Server es selbst nicht kann. Die Rolle regelt, wer
-	 * hereindarf, nicht wer etwas sieht.
-	 *
-	 * Der erste Verwalter wird im Container gesetzt (siehe admin.mjs). Bewusst
-	 * kein "der erste Angemeldete wird es automatisch": bei einem Dienst, der
-	 * spaeter offen laufen soll, waere das ein Wettrennen.
+	 * Darf Einladungen vergeben - mehr nicht, insbesondere keine fremden Daten
+	 * lesen (das kann auch der Server selbst nicht).
 	 */
 	isAdmin: integer("is_admin", { mode: "boolean" }).notNull().default(false),
-	/**
-	 * Unter welcher Kennung dieses Konto seine Phrasen-Verpackung findet.
-	 *
-	 * Ein Hash ueber die Wiederherstellungs-Phrase (siehe recoveryLookupId in
-	 * src/lib/crypto/vault.ts). Er verraet sie nicht und oeffnet nichts - er sagt
-	 * nur, WELCHES Konto gemeint ist, wenn jemand mit nichts als den 24 Woertern
-	 * dasteht.
-	 */
+	/** Unter welcher Kennung dieses Konto seine Phrasen-Verpackung findet. */
 	recoveryId: text("recovery_id"),
-	/**
-	 * Der Nachweis, dass jemand den Tresorschluessel wirklich hat.
-	 *
-	 * HMAC ueber einen festen Text mit dem Tresorschluessel. Der Server kennt den
-	 * Schluessel nicht und lernt ihn hieraus auch nicht - er kann aber pruefen, ob
-	 * jemand die Verpackung tatsaechlich geoeffnet hat, bevor er ein Geraet
-	 * anmeldet. Ohne das genuegte die Kennung oben, und wer sie aus einer
-	 * gestohlenen Datenbank abliest, bekaeme Zugriff auf alle Chiffrate.
-	 */
+	/** Der Nachweis, dass jemand den Tresorschluessel wirklich hat - abgelegt nur als Hash. */
 	vaultProof: text("vault_proof")
 });
 
@@ -86,13 +38,7 @@ export const credentials = sqliteTable(
 		transports: text("transports"),
 		/** Ob dieser Authentifikator die PRF-Erweiterung kann - fuer die Anzeige. */
 		hasPrf: integer("has_prf", { mode: "boolean" }).notNull().default(false),
-		/**
-		 * Wie der Mensch diesen Passkey nennt - "Laptop", "Handy", "Stick".
-		 *
-		 * Ohne das steht in der Liste eine base64-Kennung, und niemand weiss, welche
-		 * davon der alte Rechner war, den er gerade entsorgt hat. Genau dann braucht
-		 * man die Liste aber.
-		 */
+		/** Wie der Mensch diesen Passkey nennt - "Laptop", "Handy", "Stick". */
 		label: text("label"),
 		createdAt: integer("created_at").notNull(),
 		lastUsedAt: integer("last_used_at")
@@ -100,13 +46,7 @@ export const credentials = sqliteTable(
 	(t) => [index("credentials_user").on(t.userId)]
 );
 
-/**
- * Die verpackten Tresorschluessel.
- *
- * Fuer den Server sind das undurchsichtige Bytes. Er verwahrt sie nur, damit ein
- * neues Geraet sie abholen kann - entpacken kann sie ausschliesslich, wer die
- * Phrase, den Passkey oder den privaten Geraeteschluessel hat.
- */
+/** Die verpackten Tresorschluessel - fuer den Server undurchsichtige Bytes. */
 export const keyWraps = sqliteTable(
 	"key_wraps",
 	{
@@ -141,18 +81,7 @@ export const devices = sqliteTable(
 	(t) => [index("devices_user").on(t.userId), uniqueIndex("devices_token").on(t.tokenHash)]
 );
 
-/**
- * Ein versiegelter Datensatz.
- *
- * `seq` ist die laufende Nummer INNERHALB eines Kontos, nicht ueber alle: sonst
- * verriete der Abstand zweier Nummern, wie viel andere Konten dazwischen
- * geschrieben haben. Sie steigt bei jeder Aenderung und ist der Anker des
- * Abgleichs - "gib mir alles ab Nummer N".
- *
- * `rev` steigt je Datensatz. Wer mit einer veralteten rev schreibt, wird
- * abgewiesen: so kann ein Geraet die Aenderung eines anderen nicht
- * ueberschreiben, ohne sie gesehen zu haben.
- */
+/** Ein versiegelter Datensatz. */
 export const records = sqliteTable(
 	"records",
 	{
@@ -193,13 +122,7 @@ export const sessions = sqliteTable(
 	(t) => [index("sessions_user").on(t.userId)]
 );
 
-/**
- * Ein laufender WebAuthn-Vorgang.
- *
- * Die Aufgabe muss zwischen "start" und "finish" irgendwo liegen und darf nur
- * einmal gelten. In der Datenbank statt im Prozessgedaechtnis, damit spaeter
- * eine zweite Instanz danebenlaufen kann, ohne dass Anmeldungen scheitern.
- */
+/** Ein laufender WebAuthn-Vorgang. */
 export const challenges = sqliteTable("challenges", {
 	id: text("id").primaryKey(),
 	challenge: text("challenge").notNull(),
@@ -209,12 +132,7 @@ export const challenges = sqliteTable("challenges", {
 	expiresAt: integer("expires_at").notNull()
 });
 
-/**
- * Einladungscodes.
- *
- * Solange es welche gibt, ist die Registrierung geschlossen. Genau so faengt
- * der Dienst an: mehrbenutzerfaehig gebaut, aber nicht offen.
- */
+/** Einladungscodes. */
 export const invites = sqliteTable("invites", {
 	code: text("code").primaryKey(),
 	createdAt: integer("created_at").notNull(),
@@ -230,23 +148,12 @@ export const invites = sqliteTable("invites", {
 	revokedAt: integer("revoked_at")
 });
 
-/**
- * Ein Kopplungsvorgang: hier liegt kurzzeitig das Paket fuer ein neues Geraet.
- *
- * Der Server sieht dabei nur Chiffrat. Das Paket ist kurzlebig und wird nach dem
- * Abholen geloescht - ein liegen gebliebenes Paket waere ein Angriffsziel ohne
- * jeden Nutzen.
- */
+/** Ein Kopplungsvorgang: hier liegt kurzzeitig das Paket fuer ein neues Geraet. */
 export const pairings = sqliteTable(
 	"pairings",
 	{
 		code: text("code").primaryKey(),
-		/**
-		 * Erst gesetzt, wenn ein entsperrtes Geraet den Vorgang bestaetigt hat.
-		 *
-		 * Bewusst ohne Fremdschluessel: der Vorgang beginnt auf dem NEUEN Geraet,
-		 * also bevor ueberhaupt feststeht, zu welchem Konto er gehoeren wird.
-		 */
+		/** Erst gesetzt, wenn ein entsperrtes Geraet den Vorgang bestaetigt hat. */
 		userId: text("user_id"),
 		/** Oeffentlicher Schluessel des neuen Geraets, base64. */
 		publicKey: text("public_key").notNull(),

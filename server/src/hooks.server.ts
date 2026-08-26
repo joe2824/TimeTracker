@@ -1,9 +1,5 @@
 // Was vor jeder Anfrage passiert: Datenbank bereitstellen und feststellen, wem
 // die Anfrage gehoert.
-//
-// Ab hier arbeitet jeder Endpunkt nur noch mit `locals.userId` - und schraenkt
-// JEDE Abfrage darauf ein. Das ist die gesamte Mandantentrennung, und sie ist
-// deshalb so knapp, weil sie an genau einer Stelle passiert.
 import type { Handle } from "@sveltejs/kit";
 import { openDb } from "$lib/server/db";
 import { cleanupExpired, deviceFromToken, userFromSession } from "$lib/server/auth";
@@ -13,6 +9,7 @@ import {
 	LIMIT_AUTH,
 	LIMIT_PAIR_CLAIM,
 	LIMIT_PAIR_START,
+	LIMIT_RECOVER,
 	istGesperrt,
 	nimmVersuch,
 	raeumeLimits,
@@ -26,22 +23,13 @@ import {
 	WEBAUTHN_ORIGINS
 } from "$lib/server/config";
 
-/**
- * Die Bremse - fuer alles, was ohne Anmeldung erreichbar ist.
- *
- * Hier zentral und nicht in den Routen: eine Liste, die man beim Anlegen eines
- * Endpunkts uebersieht, ist schlimmer als keine, weil sie den Eindruck erweckt,
- * es sei geregelt.
- *
- * Was NICHT drinsteht, braucht keine Bremse: alles Uebrige verlangt eine
- * Anmeldung, und wer eine hat, kann sich ohnehin nichts erschleichen, was ihm
- * nicht gehoert.
- */
+/** Die Bremse - fuer alles, was ohne Anmeldung erreichbar ist. */
 const BREMSEN: [string, LimitOptions][] = [
 	["/api/pair/claim", LIMIT_PAIR_CLAIM],
 	["/api/pair/start", LIMIT_PAIR_START],
 	["/api/auth/login", LIMIT_AUTH],
-	["/api/auth/register", LIMIT_AUTH]
+	["/api/auth/register", LIMIT_AUTH],
+	["/api/auth/recover", LIMIT_RECOVER]
 ];
 
 const { db } = openDb(DB_FILE);
@@ -50,11 +38,6 @@ const { db } = openDb(DB_FILE);
 const SCHREIBEND = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 // Beim Start sagen, was mit den Adressen ist.
-//
-// Die haeufigste Ursache dafuer, dass Passkeys "einfach nicht gehen", ist eine
-// Adresse, die nicht unter der RP-Kennung liegt. Der Browser meldet das mit
-// einem Text, den niemand mit dieser Einstellung in Verbindung bringt - also
-// gehoert es hierher, wo es beim Hochfahren ins Auge faellt.
 if (ORIGINS_OHNE_PASSKEY.length > 0) {
 	console.warn("");
 	console.warn(
@@ -94,22 +77,7 @@ setInterval(() => {
 	raeumeLimits();
 }, 3600_000).unref();
 
-/**
- * Kommt diese Anfrage von der Seite, die dieser Server selbst ausliefert?
- *
- * Verglichen wird der Origin-Kopf mit dem Host, an den die Anfrage GING - nicht
- * mit ORIGIN aus der Umgebung. Das ist der Unterschied, an dem der erste Anlauf
- * scheiterte: `event.url` baut adapter-node aus ORIGIN zusammen, es steht also
- * immer dasselbe darin, egal ueber welchen Namen jemand hereinkam. Damit war
- * jeder ausgesperrt, der den Dienst nicht exakt so aufrief wie ORIGIN es sagt -
- * ueber 127.0.0.1 statt localhost, ueber den Rechnernamen, ueber die Adresse im
- * Heimnetz.
- *
- * Warum das trotzdem schuetzt: beide Koepfe setzt der Browser, nicht die Seite.
- * Eine fremde Seite bekommt ihren eigenen Namen in `origin` eingetragen und kann
- * daran nichts aendern - sie stimmt dann nicht mit dem Host ueberein, an den die
- * Anfrage geht. Genau das soll abgewiesen werden.
- */
+/** Kommt diese Anfrage von der Seite, die dieser Server selbst ausliefert? */
 function istEigeneHerkunft(herkunft: string, headers: Headers): boolean {
 	// Hinter einem Reverse-Proxy steht der echte Name in der weitergereichten
 	// Kopfzeile; ohne Proxy im gewoehnlichen Host.
@@ -123,19 +91,7 @@ function istEigeneHerkunft(herkunft: string, headers: Headers): boolean {
 	}
 }
 
-/**
- * Die Adresse des Aufrufers - oder ein Ersatz.
- *
- * `getClientAddress()` WIRFT, wenn ADDRESS_HEADER gesetzt ist und der Header
- * fehlt. Genau das ist der Fall, wenn jemand den Container direkt anspricht
- * statt ueber den Reverse-Proxy - beim ersten Ausprobieren also fast immer.
- *
- * Ungefangen legt das jeden gebremsten Endpunkt lahm: Registrierung und
- * Kopplung antworten dann mit einem Serverfehler, und niemand kaeme auf die
- * Ursache. Der Ersatzschluessel bedeutet, dass sich alle Aufrufer ohne Header
- * einen Eimer teilen - hinter dem Proxy, fuer den die Einstellung gedacht ist,
- * tritt das nie ein.
- */
+/** Die Adresse des Aufrufers - oder ein Ersatz. */
 function herkunftsAdresse(event: Parameters<Handle>[0]["event"]): string {
 	try {
 		return event.getClientAddress();
@@ -151,9 +107,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// kommt, bremst den Angreifer nicht, sondern nur den Server.
 	const bremse = BREMSEN.find(([p]) => pfad.startsWith(p));
 	const bremsSchluessel = bremse ? `${bremse[0]}|${herkunftsAdresse(event)}` : "";
-	// Beim Abfragen eines Kopplungsvorgangs zaehlen nur Fehlgriffe - das
-	// entscheidet erst die Antwort. Hier wird deshalb nur nachgesehen, ob schon
-	// gesperrt ist; gezaehlt wird unten.
+	// Beim Abfragen eines Kopplungsvorgangs zaehlen nur Fehlgriffe, und das
+	// entscheidet erst die Antwort - hier nur nachsehen, gezaehlt wird unten.
 	const nurFehlgriffe = pfad.startsWith("/api/pair/claim");
 
 	if (bremse) {
@@ -168,29 +123,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 		}
 	}
 
-	// Herkunft pruefen - aber nur, wo sie ueberhaupt etwas schuetzt.
-	//
-	// Wovor: eine fremde Seite im Browser schickt eine Anfrage an unseren Server,
-	// und das Sitzungs-Cookie des Angemeldeten faehrt automatisch mit. Er hat
-	// nichts getan und nichts gesehen; geschrieben wurde trotzdem in seinem Namen.
-	//
-	// Daran haengt die ganze Pruefung - am AUTOMATISCH mitfahrenden Ausweis. Wo
-	// kein Cookie mitkommt, gibt es nichts zu missbrauchen: ein Geraete-Token
-	// muss ausdruecklich gesetzt werden, und wer es hat, braucht keine fremde
-	// Seite. Eine Anfrage ohne beides ist anonym und kann nichts erschleichen,
-	// was ihr nicht ohnehin offensteht.
-	//
-	// Der erste Anlauf pruefte jede schreibende Anfrage und nahm nur die mit
-	// Token aus. Das ging schief bei der einen, die beides nicht hat: dem Anlegen
-	// eines Kontos aus der Desktop-Anwendung heraus. Sie schickt
-	// `Origin: http://tauri.localhost` - ein Fenster hat nun einmal eine Herkunft -
-	// und wurde mit "Herkunft nicht erlaubt" abgewiesen, bevor sie ueberhaupt
-	// beginnen konnte.
-	//
-	// Verglichen wird gegen den Host, an den die Anfrage ging, nicht gegen ORIGIN
-	// aus der Umgebung: derselbe Dienst ist ueber localhost, 127.0.0.1, den
-	// Rechnernamen und die Adresse im Heimnetz erreichbar, und unter jedem dieser
-	// Namen ist die eigene Seite dieselbe Seite.
+	// CSRF-Schutz - nur fuer Anfragen MIT Sitzungs-Cookie: nur der faehrt automatisch
+	// mit. Ein Geraete-Token wird gesetzt, eine Anfrage ohne beides ist anonym.
 	const mitCookie = event.cookies.get(SESSION_COOKIE) !== undefined;
 	if (mitCookie && SCHREIBEND.has(event.request.method) && pfad.startsWith("/api/")) {
 		const herkunft = event.request.headers.get("origin");
@@ -207,8 +141,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.userId = null;
 	event.locals.deviceId = null;
 
-	// Das Geraete-Token zuerst: der Desktop schickt kein Cookie, und ein
-	// mitgeschicktes Token ist die ausdruecklichere Angabe.
+	// Das Token zuerst: es ist die ausdruecklichere Angabe als ein Cookie.
 	const auth = event.request.headers.get("authorization");
 	if (auth?.startsWith("Bearer ")) {
 		const device = deviceFromToken(db, auth.slice(7));
@@ -225,9 +158,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	const antwort = await resolve(event);
 
-	// Erst jetzt steht fest, ob es ein Fehlgriff war. 404 heisst: den Code gibt es
-	// nicht - also entweder vertippt oder geraten. Alles andere ist ein Mensch,
-	// der auf eine Bestaetigung wartet, und der wird nicht ausgebremst.
+	// Erst jetzt steht fest, ob es ein Fehlgriff war: 404 heisst vertippt oder
+	// geraten, alles andere ist ein Mensch, der auf die Bestaetigung wartet.
 	if (bremse && nurFehlgriffe && antwort.status === 404) {
 		nimmVersuch(bremsSchluessel, bremse[1]);
 	}

@@ -64,14 +64,7 @@
 	let report = $state<StoredTimeReport | null>(null);
 	const absenceIds = $derived(new Set(app.activities.filter((a) => a.isAbsence).map((a) => a.id)));
 
-	/**
-	 * Der Abgleich dieses Monats, Tag fuer Tag.
-	 *
-	 * Bewusst ueber `reconcile` statt mit einer eigenen Differenz: die Karte
-	 * „Zeitwächter-Report" rechnet damit, und zwei Rechnungen fuer denselben Tag
-	 * saehen frueher oder spaeter verschieden aus – Pausenabzug, Abwesenheiten und
-	 * angefangene Tage stecken alle da drin.
-	 */
+	/** Der Abgleich dieses Monats, Tag fuer Tag. */
 	const reportByDate = $derived.by(() => {
 		const out = new Map<string, ReconcileDay>();
 		if (!report) return out;
@@ -129,14 +122,7 @@
 	let startText = $state(""); // Roh-Eingabe Von, erst beim Verlassen normalisiert
 	let endText = $state(""); // Roh-Eingabe Bis
 	const draftIsAbsence = $derived(app.isAbsenceId(draft.activityId));
-	/**
-	 * Warnung beim Öffnen: der gespeicherte Eintrag passt nicht in Datum + Von/Bis.
-	 *
-	 * Der Dialog kennt nur EIN Datum und zwei Uhrzeiten. Ein Eintrag über mehrere
-	 * Tage (vergessener Timer) sah darin völlig unauffällig aus – 09:00–17:00 –,
-	 * während die Liste daneben 73 Stunden zeigte und der Bericht sie übernahm.
-	 * Lieber sagen, was wirklich gespeichert ist.
-	 */
+	/** Warnung beim Öffnen: der gespeicherte Eintrag passt nicht in Datum + Von/Bis. */
 	let spanNote = $state<string | null>(null);
 
 	/**
@@ -164,10 +150,6 @@
 	/**
 	 * Was der Zeitwächter zum Tag des Entwurfs sagt – und auf welche Dauer dieser
 	 * eine Eintrag gesetzt werden müsste, damit der Tag zu LOGA passt.
-	 *
-	 * Gerechnet wird über die ANDEREN Einträge des Tages, nicht über die aktuelle
-	 * Abweichung. Nur so stimmt die Zahl auch dann noch, wenn im Dialog schon an
-	 * den Zeiten gedreht wurde – und ein zweiter Klick verdoppelt nichts.
 	 */
 	const dayAdjust = $derived.by(() => {
 		if (draftIsAbsence) return null;
@@ -249,13 +231,7 @@
 		const h = durationHours(draft.start, draft.end);
 		dur = h ? String(Math.round(h * 100) / 100).replace(".", ",") : "";
 	}
-	/**
-	 * Bis aus Von + Stunden-Eingabe ableiten. Akzeptiert "7,5" und "7:30".
-	 *
-	 * Ueber 24 h wird abgelehnt statt gerechnet: minToClock rechnet modulo 24 h,
-	 * aus "30" wuerde sonst still ein Ende 6 h nach dem Start – die Eingabe kaeme
-	 * als 6-Stunden-Eintrag zurueck, ohne Fehler.
-	 */
+	/** Bis aus Von + Stunden-Eingabe ableiten. Akzeptiert "7,5" und "7:30". */
 	function applyDur() {
 		const h = parseHours(dur);
 		const a = clockToMin(draft.start);

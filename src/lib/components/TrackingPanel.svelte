@@ -127,13 +127,7 @@
 		return v.requiresAction ? v : null;
 	});
 
-	/**
-	 * Tagesbilanz: erfasst, Pausenabzug, Arbeitszeit.
-	 *
-	 * Tickt ueber app.now mit, solange ein Timer laeuft – und damit auch der
-	 * Abzug: er setzt beim Ueberschreiten von 4 bzw. 6 Stunden ein, und genau
-	 * dann will man sehen, dass die Arbeitszeit gerade um 15 Minuten springt.
-	 */
+	/** Tagesbilanz: erfasst, Pausenabzug, Arbeitszeit. */
 	const todaySum = $derived.by(() => {
 		let worked = 0;
 		let absent = 0;

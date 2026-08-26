@@ -1,13 +1,10 @@
 // Die verpackten Tresorschluessel.
-//
-// Fuer den Server sind das undurchsichtige Bytes. Er verwahrt sie, damit ein
-// Geraet sie abholen kann - oeffnen kann sie nur, wer die Phrase, den passenden
-// Passkey oder den privaten Geraeteschluessel hat.
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { keyWraps, users } from "$lib/server/db/schema";
 import { and, eq } from "drizzle-orm";
 import { MAX_RECORD_BYTES } from "$lib/server/config";
+import { hashSecret } from "$lib/server/auth";
 
 export const GET: RequestHandler = ({ locals }) => {
 	if (!locals.userId) error(401, "Nicht angemeldet");
@@ -23,6 +20,7 @@ export const GET: RequestHandler = ({ locals }) => {
 
 export const POST: RequestHandler = async ({ locals, request }) => {
 	if (!locals.userId) error(401, "Nicht angemeldet");
+	const userId = locals.userId;
 	const body = await request.json().catch(() => null);
 	const kind = String(body?.kind ?? "");
 	const payload = String(body?.payload ?? "");
@@ -32,55 +30,58 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	}
 
 	const credentialId = body?.credentialId ? String(body.credentialId) : null;
-	// Je Passkey genau eine Verpackung: eine zweite waere ein zweiter Weg zu
-	// demselben Schluessel, den niemand mehr ueberblickt.
-	if (kind === "passkey" && credentialId) {
-		locals.db
-			.delete(keyWraps)
-			.where(and(eq(keyWraps.userId, locals.userId), eq(keyWraps.credentialId, credentialId)))
-			.run();
-	}
-	if (kind === "recovery") {
-		// Kennung und Nachweis gehoeren zu DIESER Verpackung: wer eine neue Phrase
-		// erzeugt, macht die alte ungueltig, und beide muessen mitwandern. Sonst
-		// zeigte die Kennung auf ein Konto, dessen Verpackung inzwischen eine
-		// andere Phrase hat - und die Wiederherstellung liefe ins Leere.
-		const recoveryId = body?.recoveryId ? String(body.recoveryId) : null;
-		const vaultProof = body?.vaultProof ? String(body.vaultProof) : null;
-		if (recoveryId || vaultProof) {
-			const fremd = recoveryId
-				? locals.db.select().from(users).where(eq(users.recoveryId, recoveryId)).get()
-				: undefined;
-			// Zwei Konten mit derselben Kennung waeren zwei Konten mit derselben
-			// Phrase. Das kann nicht sein - und wenn doch, gehoert es abgewiesen,
-			// nicht stillschweigend ueberschrieben.
-			if (fremd && fremd.id !== locals.userId) error(409, "Diese Phrase ist bereits vergeben");
-			locals.db
-				.update(users)
-				.set({ recoveryId, vaultProof })
-				.where(eq(users.id, locals.userId))
-				.run();
-		}
+	const recoveryId = body?.recoveryId ? String(body.recoveryId) : null;
+	const vaultProof = body?.vaultProof ? String(body.vaultProof) : null;
 
-		// Auch von der Phrase gibt es genau eine: wer eine neue erzeugt, macht die
-		// alte damit ungueltig. Alles andere waere eine stille Hintertuer.
-		locals.db
-			.delete(keyWraps)
-			.where(and(eq(keyWraps.userId, locals.userId), eq(keyWraps.kind, "recovery")))
-			.run();
+	// Beides oder keins: eines allein wuerde das andere ueberschreiben, und ein
+	// Konto mit nur einem der beiden ist ueber die Phrase nicht mehr erreichbar.
+	if (kind === "recovery" && Boolean(recoveryId) !== Boolean(vaultProof)) {
+		error(400, "Kennung und Nachweis gehören zusammen");
 	}
 
 	const id = crypto.randomUUID();
-	locals.db
-		.insert(keyWraps)
-		.values({
-			id,
-			userId: locals.userId,
-			kind: kind as "recovery" | "passkey" | "device",
-			credentialId,
-			payload,
-			createdAt: Date.now()
-		})
-		.run();
+
+	// Alles in EINER Transaktion: bei "recovery" haengen drei Schreibvorgaenge
+	// aneinander, und ein Abbruch dazwischen liesse die Kennung ins Leere zeigen.
+	locals.db.transaction((tx) => {
+		// Je Passkey genau eine Verpackung - eine zweite waere ein zweiter Weg zum
+		// selben Schluessel.
+		if (kind === "passkey" && credentialId) {
+			tx.delete(keyWraps)
+				.where(and(eq(keyWraps.userId, userId), eq(keyWraps.credentialId, credentialId)))
+				.run();
+		}
+
+		if (kind === "recovery") {
+			// Kennung und Nachweis gehoeren zu DIESER Verpackung und wandern mit ihr.
+			if (recoveryId && vaultProof) {
+				// Dieselbe Kennung bei zwei Konten hiesse dieselbe Phrase bei zweien.
+				const fremd = tx.select().from(users).where(eq(users.recoveryId, recoveryId)).get();
+				if (fremd && fremd.id !== userId) error(409, "Diese Phrase ist bereits vergeben");
+				// Der Nachweis nur als Hash: siehe schema.ts und hashSecret.
+				tx.update(users)
+					.set({ recoveryId, vaultProof: hashSecret(vaultProof) })
+					.where(eq(users.id, userId))
+					.run();
+			}
+
+			// Genau eine Phrase je Konto: eine neue macht die alte ungueltig.
+			tx.delete(keyWraps)
+				.where(and(eq(keyWraps.userId, userId), eq(keyWraps.kind, "recovery")))
+				.run();
+		}
+
+		tx.insert(keyWraps)
+			.values({
+				id,
+				userId,
+				kind: kind as "recovery" | "passkey" | "device",
+				credentialId,
+				payload,
+				createdAt: Date.now()
+			})
+			.run();
+	});
+
 	return json({ id });
 };

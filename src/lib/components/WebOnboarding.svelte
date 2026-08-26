@@ -1,14 +1,5 @@
 <script lang="ts">
 	// Der erste Bildschirm im Browser: anmelden oder Konto anlegen.
-	//
-	// Er steht vor allem anderen, weil es ohne Konto im Browser nichts zu zeigen
-	// gibt - anders als auf dem Rechner, wo die Daten ohnehin lokal liegen.
-	//
-	// Der wichtigste Teil ist nicht die Anmeldung, sondern der Bildschirm mit der
-	// Wiederherstellungs-Phrase. Sie wird genau EINMAL angezeigt, und wer sie
-	// wegklickt, ohne sie zu sichern, hat bei Verlust aller Geräte keinen Weg
-	// mehr zu seinen Daten. Deshalb ist dieser Schritt nicht überspringbar und
-	// verlangt eine Bestätigung, die man nicht versehentlich gibt.
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
@@ -17,6 +8,7 @@
 	import { account } from "$lib/sync/account.svelte";
 	import { addPasskeyWrap, login, register, unlockWithPhrase } from "$lib/sync/enroll";
 	import { isValidRecoveryPhrase } from "$lib/crypto/vault";
+	import { errorText } from "$lib/log";
 
 	type Schritt = "start" | "phrase" | "entsperren";
 
@@ -107,10 +99,6 @@
 			// Kann der Passkey PRF, fehlte aber die passende Verpackung: jetzt eine
 			// anlegen. Ohne das verlangte dieses Gerät die 24 Wörter bei JEDER
 			// Anmeldung erneut - obwohl der Passkey den Tresor allein öffnen könnte.
-			//
-			// Nebenher und ohne Meldung: es gibt nichts zu entscheiden, und ein
-			// Fehlschlag darf die geglückte Entsperrung nicht in eine Fehlermeldung
-			// verwandeln. Dann bleibt es eben beim bisherigen Weg.
 			if (prfWert) {
 				await addPasskeyWrap(serverUrl, key, passkeyId, prfWert).catch(() => {});
 			}
@@ -129,7 +117,9 @@
 		if (e instanceof Error && /NotAllowed|abort/i.test(e.name + e.message)) {
 			return "Abgebrochen.";
 		}
-		return e instanceof Error ? e.message : standard;
+		// `errorText` und nicht `e.message`: WebCrypto wirft beim Entsperren einen
+		// OperationError, dessen Meldung in Chromium-Laufzeiten LEER ist.
+		return e instanceof Error ? errorText(e) : standard;
 	}
 
 	// ---------- Mit der Phrase zurueckholen ----------
@@ -287,7 +277,18 @@
 						<Button class="w-full" disabled={laeuft} onclick={zurueckholen}>
 							{laeuft ? "Sucht…" : "Konto zurückholen"}
 						</Button>
-						<Button variant="ghost" size="sm" class="w-full" onclick={() => (phraseOffen = false)}>
+						<Button
+							variant="ghost"
+							size="sm"
+							class="w-full"
+							disabled={laeuft}
+							onclick={() => {
+								phraseOffen = false;
+								// Mitnehmen, nicht bloss ausblenden: sonst stehen die Woerter beim
+								// naechsten Aufklappen wieder sichtbar im Feld.
+								phraseEingabe = "";
+							}}
+						>
 							Abbrechen
 						</Button>
 						<p class="text-muted-foreground text-xs">

@@ -1,30 +1,11 @@
 // Die Datenbank: eine SQLite-Datei im selben Prozess.
-//
-// Warum nicht Postgres: der einzige heisse Pfad ist ein Bereichsscan ueber
-// (user_id, seq). Keine Verknuepfungen, keine Aggregate, keine Volltextsuche -
-// der Server KANN nichts rechnen, er sieht nur Chiffrate. Fuer dieses Muster ist
-// SQLite im Prozess schneller als alles, was ueber einen Socket geht, und es
-// kostet keinen zweiten Container.
-//
-// Der Engpass waere der einzelne Schreiber (WAL laesst genau einen zu). Da die
-// Schreibvorgaenge winzig sind und Mikrosekunden dauern, traegt das hunderte
-// gleichzeitig aktive Konten. Gewechselt wird, wenn SQLITE_BUSY messbar in den
-// Logs auftaucht oder mehr als eine Instanz laufen muss - beides zusammen mit
-// Redis fuer das Weiterreichen der Ereignisse.
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import * as schema from "./schema";
 
-/**
- * Die Schema-Schritte, in ihrer Reihenfolge.
- *
- * Bewusst als Liste von SQL-Anweisungen im Programm statt als Dateien neben dem
- * Abbild: das Docker-Abbild bleibt eine Datei, und ein Start kann nicht daran
- * scheitern, dass ein Migrationsordner fehlt. Jeder Schritt laeuft genau einmal;
- * angehaengt wird nur unten, nie dazwischen.
- */
+/** Die Schema-Schritte, in ihrer Reihenfolge. */
 const MIGRATIONS: string[] = [
 	`CREATE TABLE IF NOT EXISTS users (
 		id TEXT PRIMARY KEY,
@@ -129,14 +110,7 @@ const MIGRATIONS: string[] = [
 
 export type Db = ReturnType<typeof drizzle<typeof schema>>;
 
-/**
- * Die Datenbank ODER eine laufende Transaktion.
- *
- * Drizzle gibt dem Rueckruf einer Transaktion einen eigenen Typ. Funktionen, die
- * in beiden Zusammenhaengen laufen sollen - und das sollen fast alle - nehmen
- * deshalb diesen hier. Ohne das muesste jeder Aufrufer casten, und ein Cast ist
- * genau die Stelle, an der spaeter ein echter Fehler durchrutscht.
- */
+/** Die Datenbank ODER eine laufende Transaktion. */
 export type DbLike = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 export interface OpenedDb {
@@ -144,12 +118,7 @@ export interface OpenedDb {
 	raw: Database.Database;
 }
 
-/**
- * Die Datenbank oeffnen und auf den aktuellen Stand bringen.
- *
- * `:memory:` ist ausdruecklich erlaubt - die Tests laufen damit, ohne eine Datei
- * anzufassen.
- */
+/** Die Datenbank oeffnen und auf den aktuellen Stand bringen. */
 export function openDb(file: string): OpenedDb {
 	if (file !== ":memory:") mkdirSync(dirname(file), { recursive: true });
 	const raw = new Database(file);
@@ -163,14 +132,6 @@ export function openDb(file: string): OpenedDb {
 	raw.pragma("foreign_keys = ON");
 	// Geloeschte Inhalte mit Nullen ueberschreiben, statt die Seite nur als frei
 	// zu markieren.
-	//
-	// Ohne das bleibt ein aufgeloestes Konto als Chiffrat in der Datei stehen,
-	// bis die Seite zufaellig wiederverwendet wird - unlesbar zwar, aber
-	// vorhanden. "Die Daten sind geloescht" waere dann eine Aussage ueber eine
-	// Tabelle, nicht ueber die Platte.
-	//
-	// Der Preis ist ein Schreibvorgang mehr je geloeschter Seite. Bei unserer
-	// Last ist das nicht messbar; Loeschungen sind hier die Ausnahme.
 	raw.pragma("secure_delete = ON");
 	// Eine Sperre nicht sofort aufgeben, sondern kurz warten: sonst scheitert ein
 	// Schreibvorgang, nur weil gerade ein anderer laeuft.

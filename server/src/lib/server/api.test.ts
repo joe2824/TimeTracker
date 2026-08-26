@@ -1,16 +1,8 @@
 // Durchstich durch die Endpunkte - gegen einen echten Server, ueber echtes HTTP.
-//
-// Die Einzeltests in sync.test.ts pruefen die Rechnung. Hier geht es um das,
-// was nur an der Aussenkante schiefgehen kann: greift die Anmeldung wirklich,
-// sieht ein fremdes Konto wirklich nichts, weckt der Ereigniskanal wirklich.
-//
-// Passkeys lassen sich ohne Authentifikator nicht durchspielen. Die Konten
-// entstehen deshalb direkt in der Datenbank, und die Anfragen weisen sich mit
-// einem Geraete-Token aus - genau so, wie es der Desktop tut.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { openDb, type Db } from "./db";
 import { users } from "./db/schema";
-import { createDevice, createSession } from "./auth";
+import { createDevice, createSession, hashSecret } from "./auth";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -38,6 +30,16 @@ function api(token: string | null, path: string, init: RequestInit = {}) {
 	});
 }
 
+/** Anfrage aus einer eigenen Adresse - so verbraucht kein Test den Vorrat des naechsten. */
+let adressZaehler = 0;
+function apiVon(token: string | null, path: string, init: RequestInit = {}) {
+	adressZaehler++;
+	return api(token, path, {
+		...init,
+		headers: { "x-echte-adresse": `10.0.0.${adressZaehler}`, ...(init.headers ?? {}) }
+	});
+}
+
 const rec = (id: string, over: Record<string, unknown> = {}) => ({
 	id,
 	kind: "entry",
@@ -55,6 +57,8 @@ beforeAll(async () => {
 	process.env.ORIGIN = "http://localhost:5199";
 	process.env.RP_ID = "localhost";
 	process.env.ALLOWED_ORIGINS = "http://localhost:5199";
+	// Damit jeder Test seinen eigenen Bremseimer bekommen kann - siehe `apiVon`.
+	process.env.ADDRESS_HEADER = "x-echte-adresse";
 
 	db = openDb(dbFile).db;
 
@@ -62,13 +66,6 @@ beforeAll(async () => {
 	// dieselbe Datei - beide Seiten sehen damit denselben Bestand.
 	// Der GEBAUTE Server, nicht die Quellen: nur so ist geprueft, was spaeter
 	// wirklich laeuft - samt Adapter, Kompilat und Aufloesung der Abhaengigkeiten.
-	//
-	// Bewusst ohne Typen: das Kompilat hat keine, und ihm welche anzudichten
-	// hiesse, eine Zusage zu machen, die niemand einhaelt.
-	//
-	// Der Pfad wird zur LAUFZEIT gebildet: stuende er als Zeichenkette im Import,
-	// wuerde TypeScript das Kompilat mitpruefen - tausende Fehler in Code, den
-	// niemand geschrieben hat.
 	const handlerPfad = new URL("../../../build/handler.js", import.meta.url).href;
 	const built = (await import(/* @vite-ignore */ handlerPfad)) as {
 		handler: (req: IncomingMessage, res: ServerResponse, next: () => void) => void;
@@ -635,16 +632,6 @@ describe("Warten beim Koppeln", () => {
 		// Die Oberflaeche fragt im Zwei-Sekunden-Takt nach, ob jemand bestaetigt
 		// hat, und ein Kopplungscode gilt zehn Minuten. Das sind bis zu
 		// dreihundert Anfragen fuer einen voellig normalen Vorgang.
-		//
-		// Eine Bremse, die alle zaehlt, macht nach vierzig Sekunden zu - waehrend
-		// der Mensch noch den Code abtippt. Genau das war der erste Anlauf.
-		// Der Code ist der Abdruck des oeffentlichen Schluessels und kommt vom
-		// Geraet - hier von Hand, in der Form, die der Server erwartet.
-		//
-		// Ein eigener Wert, nicht der aus "Kopplung": beide Bloecke teilen sich
-		// einen Datenbestand, und ein Code ist dort der Primaerschluessel. Derselbe
-		// Wert zweimal haengt nur so lange nicht, wie der andere Block seinen
-		// Vorgang vorher abholt - also genau bis jemand die Reihenfolge aendert.
 		const code = "WWWWXXXXYYYY";
 		const gestartet = await api(null, "/api/pair/start", {
 			method: "POST",
@@ -905,13 +892,7 @@ describe("Verwaltung", () => {
 	});
 });
 
-/**
- * Eine Anfrage mit selbst gesetzter Host-Kopfzeile.
- *
- * `fetch` erlaubt das nicht - `host` gehoert zu den Koepfen, die der Client
- * nicht bestimmen darf, und undici setzt ihn auf die Zieladresse. Fuer die
- * Herkunftspruefung ist aber genau dieser Kopf der Vergleichspunkt.
- */
+/** Eine Anfrage mit selbst gesetzter Host-Kopfzeile. */
 async function roheAnfrage(headers: Record<string, string>): Promise<number> {
 	const { request } = await import("node:http");
 	const rumpf = JSON.stringify({ records: [rec("roh")] });
@@ -937,10 +918,6 @@ async function roheAnfrage(headers: Record<string, string>): Promise<number> {
 describe("Herkunft unter einem fremden Namen", () => {
 	// ORIGIN sagt "localhost:5199". Jemand erreicht den Dienst aber ueber den
 	// Rechnernamen im Heimnetz - und ist damit trotzdem auf der eigenen Seite.
-	//
-	// Der erste Anlauf verglich gegen event.url, und das baut adapter-node aus
-	// ORIGIN zusammen. Damit war jeder ausgesperrt, der die Adresse anders tippte
-	// als ORIGIN sie nennt.
 	it("laesst durch, wenn Origin und Host zueinander passen", async () => {
 		const sitzung = createSession(db, ANNA);
 		// Mit `fetch` geht das nicht: die Host-Kopfzeile ist geschuetzt und wird
@@ -1194,9 +1171,6 @@ describe("Herkunft ohne Sitzung", () => {
 	// Der Fall, der beim ersten Anlauf durchfiel: die Desktop-Anwendung legt ein
 	// Konto an. Sie hat noch kein Token - das bekommt sie ja gerade erst - und
 	// schickt trotzdem eine Herkunft mit, weil ein Fenster nun einmal eine hat.
-	//
-	// Sie abzuweisen schuetzte niemanden: ohne Cookie faehrt kein Ausweis
-	// automatisch mit, und ohne Ausweis ist nichts zu erschleichen.
 	it("laesst eine Anfrage ohne Cookie durch, egal woher sie kommt", async () => {
 		db.$client.prepare("INSERT INTO invites (code, created_at) VALUES (?, ?)").run("HERK-TEST", Date.now());
 		const res = await api(null, "/api/auth/device", {
@@ -1247,21 +1221,32 @@ describe("Anlegen ohne Namen", () => {
 });
 
 describe("Wiederherstellung mit der Phrase", () => {
-	/** Ein Konto mit hinterlegter Kennung und Nachweis - wie nach dem Anlegen. */
-	function kontoMitPhrase(id: string, recoveryId: string, proof: string) {
-		db.$client
-			.prepare("UPDATE users SET recovery_id = ?, vault_proof = ? WHERE id = ?")
-			.run(recoveryId, proof, id);
-		db.$client
-			.prepare(
-				"INSERT INTO key_wraps (id, user_id, kind, payload, created_at) VALUES (?,?,'recovery',?,?)"
-			)
-			.run(crypto.randomUUID(), id, "verpacktes-chiffrat", Date.now());
+	/** Kennung und Nachweis hinterlegen - genau so, wie die Anwendung es tut. */
+	function legeAb(token: string, felder: Record<string, unknown>) {
+		return api(token, "/api/wraps", {
+			method: "POST",
+			body: JSON.stringify({ kind: "recovery", payload: "verpacktes-chiffrat", ...felder })
+		});
+	}
+
+	function konto(id: string) {
+		return db.$client.prepare("SELECT recovery_id, vault_proof FROM users WHERE id = ?").get(id) as {
+			recovery_id: string | null;
+			vault_proof: string | null;
+		};
+	}
+
+	function zaehleWraps(id: string) {
+		return (
+			db.$client
+				.prepare("SELECT count(*) AS n FROM key_wraps WHERE user_id = ?")
+				.get(id) as { n: number }
+		).n;
 	}
 
 	it("gibt die Verpackung zu einer bekannten Kennung heraus", async () => {
-		kontoMitPhrase(ANNA, "kennung-anna", "beweis-anna");
-		const res = await api(null, "/api/auth/recover", {
+		await legeAb(annaToken, { recoveryId: "kennung-anna", vaultProof: "beweis-anna" });
+		const res = await apiVon(null, "/api/auth/recover", {
 			method: "POST",
 			body: JSON.stringify({ recoveryId: "kennung-anna" })
 		});
@@ -1272,7 +1257,7 @@ describe("Wiederherstellung mit der Phrase", () => {
 	it("verraet nicht, ob es ein Konto gibt", async () => {
 		// Dieselbe Meldung fuer "kenne ich nicht" und "hat keine Verpackung" -
 		// sonst laesst sich durchprobieren, welche Konten existieren.
-		const res = await api(null, "/api/auth/recover", {
+		const res = await apiVon(null, "/api/auth/recover", {
 			method: "POST",
 			body: JSON.stringify({ recoveryId: "gibt-es-nicht" })
 		});
@@ -1282,9 +1267,8 @@ describe("Wiederherstellung mit der Phrase", () => {
 	it("gibt OHNE Nachweis kein Geraete-Token", async () => {
 		// Der Kern: wer die Kennung aus einer gestohlenen Datenbank abliest,
 		// bekommt die Verpackung - die er nicht oeffnen kann - und sonst nichts.
-		// Ein Token bekaeme er Zugriff auf alle Chiffrate und koennte sie loeschen.
-		kontoMitPhrase(ANNA, "kennung-anna", "beweis-anna");
-		const res = await api(null, "/api/auth/recover", {
+		await legeAb(annaToken, { recoveryId: "kennung-anna", vaultProof: "beweis-anna" });
+		const res = await apiVon(null, "/api/auth/recover", {
 			method: "POST",
 			body: JSON.stringify({ recoveryId: "kennung-anna" })
 		});
@@ -1294,8 +1278,8 @@ describe("Wiederherstellung mit der Phrase", () => {
 	});
 
 	it("weist einen falschen Nachweis ab", async () => {
-		kontoMitPhrase(ANNA, "kennung-anna", "beweis-anna");
-		const res = await api(null, "/api/auth/recover", {
+		await legeAb(annaToken, { recoveryId: "kennung-anna", vaultProof: "beweis-anna" });
+		const res = await apiVon(null, "/api/auth/recover", {
 			method: "POST",
 			body: JSON.stringify({ recoveryId: "kennung-anna", proof: "erfunden", label: "Neu" })
 		});
@@ -1303,8 +1287,8 @@ describe("Wiederherstellung mit der Phrase", () => {
 	});
 
 	it("meldet mit richtigem Nachweis ein Geraet an", async () => {
-		kontoMitPhrase(ANNA, "kennung-anna", "beweis-anna");
-		const res = await api(null, "/api/auth/recover", {
+		await legeAb(annaToken, { recoveryId: "kennung-anna", vaultProof: "beweis-anna" });
+		const res = await apiVon(null, "/api/auth/recover", {
 			method: "POST",
 			body: JSON.stringify({
 				recoveryId: "kennung-anna",
@@ -1324,27 +1308,62 @@ describe("Wiederherstellung mit der Phrase", () => {
 	});
 
 	it("fuehrt nicht zu einem fremden Konto", async () => {
-		kontoMitPhrase(ANNA, "kennung-anna", "beweis-anna");
-		kontoMitPhrase(BODO, "kennung-bodo", "beweis-bodo");
-		const res = await api(null, "/api/auth/recover", {
+		await legeAb(annaToken, { recoveryId: "kennung-anna", vaultProof: "beweis-anna" });
+		await legeAb(bodoToken, { recoveryId: "kennung-bodo", vaultProof: "beweis-bodo" });
+		const res = await apiVon(null, "/api/auth/recover", {
 			method: "POST",
 			body: JSON.stringify({ recoveryId: "kennung-anna", proof: "beweis-bodo", label: "X" })
 		});
 		expect(res.status).toBe(401);
 	});
 
-	it("sagt es, wenn der Weg fuer dieses Konto nicht eingerichtet ist", async () => {
-		// Konten aus der Zeit vor diesem Weg haben keinen hinterlegten Nachweis.
-		db.$client.prepare("UPDATE users SET recovery_id = ? WHERE id = ?").run("alt-anna", ANNA);
-		db.$client
-			.prepare(
-				"INSERT INTO key_wraps (id, user_id, kind, payload, created_at) VALUES (?,?,'recovery',?,?)"
-			)
-			.run(crypto.randomUUID(), ANNA, "chiffrat", Date.now());
-		const res = await api(null, "/api/auth/recover", {
-			method: "POST",
-			body: JSON.stringify({ recoveryId: "alt-anna", proof: "irgendwas", label: "X" })
-		});
+	it("legt den Nachweis nur als Hash ab", async () => {
+		// Sonst genuegte ein Datenbankabzug: abschreiben, zurueckschicken, Token.
+		await legeAb(annaToken, { recoveryId: "kennung-anna", vaultProof: "beweis" });
+		expect(konto(ANNA).vault_proof).toBe(hashSecret("beweis"));
+	});
+
+	it("nimmt Kennung und Nachweis nur zusammen an", async () => {
+		// Eines allein wuerde das andere ueberschreiben.
+		await legeAb(annaToken, { recoveryId: "kennung-anna", vaultProof: "beweis" });
+		expect((await legeAb(annaToken, { recoveryId: "andere-kennung" })).status).toBe(400);
+		expect((await legeAb(annaToken, { vaultProof: "anderer-beweis" })).status).toBe(400);
+		expect(konto(ANNA)).toEqual({ recovery_id: "kennung-anna", vault_proof: hashSecret("beweis") });
+	});
+
+	it("weist eine bereits vergebene Kennung ab - und schreibt dabei nichts", async () => {
+		await legeAb(annaToken, { recoveryId: "kennung-anna", vaultProof: "beweis-anna" });
+		const res = await legeAb(bodoToken, { recoveryId: "kennung-anna", vaultProof: "beweis-bodo" });
 		expect(res.status).toBe(409);
+		// Der Abbruch nimmt alles mit: keine halbe Zeile, keine Verpackung.
+		expect(konto(BODO)).toEqual({ recovery_id: null, vault_proof: null });
+		expect(zaehleWraps(BODO)).toBe(0);
+	});
+
+	it("laesst eine neue Phrase die alte ersetzen", async () => {
+		await legeAb(annaToken, { recoveryId: "kennung-alt", vaultProof: "beweis-alt" });
+		await legeAb(annaToken, { recoveryId: "kennung-neu", vaultProof: "beweis-neu" });
+		expect(zaehleWraps(ANNA)).toBe(1);
+		const alt = await apiVon(null, "/api/auth/recover", {
+			method: "POST",
+			body: JSON.stringify({ recoveryId: "kennung-alt" })
+		});
+		expect(alt.status).toBe(404);
+	});
+
+	it("bremst das Durchprobieren des Nachweises", async () => {
+		// Eine feste Adresse fuer alle Versuche - die Bremse zaehlt je Aufrufer.
+		await legeAb(annaToken, { recoveryId: "kennung-anna", vaultProof: "beweis-anna" });
+		let gebremst = false;
+		for (let i = 0; i < 30 && !gebremst; i++) {
+			const res = await api(null, "/api/auth/recover", {
+				method: "POST",
+				headers: { "x-echte-adresse": "10.9.9.9" },
+				body: JSON.stringify({ recoveryId: "kennung-anna", proof: `versuch-${i}`, label: "X" })
+			});
+			gebremst = res.status === 429;
+			if (gebremst) expect(res.headers.get("retry-after")).toBeTruthy();
+		}
+		expect(gebremst).toBe(true);
 	});
 });

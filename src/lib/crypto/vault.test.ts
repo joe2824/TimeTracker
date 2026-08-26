@@ -106,11 +106,6 @@ describe("Zeitraum-Kennung", () => {
 		// Hex-Zeichen steht jede zweistellige Folge mit rund 11 Prozent
 		// Wahrscheinlichkeit irgendwo. Genau daran ist dieser Test einmal
 		// grundlos gescheitert.
-		//
-		// Die Eigenschaft, um die es geht, ist eine andere: aus der Kennung darf
-		// sich der Monat nicht ZURUECKRECHNEN lassen. Dafuer muss sie erstens
-		// nichts Erkennbares sein und zweitens bei einem benachbarten Monat
-		// voellig anders aussehen - nicht "um eins verschoben".
 		expect(bucket).toMatch(/^[0-9a-f]{32}$/);
 		expect(bucket).not.toBe("2026-07");
 
@@ -167,10 +162,6 @@ describe("Wiederherstellungs-Phrase", () => {
 		// gelegentlich grundlos rot ist: bei 24 Woertern hat BIP39 nur 8
 		// Pruefbits, ein falsches Wort passt also mit 1:256 zufaellig doch. Genau
 		// das ist hier einmal passiert.
-		//
-		// Geprueft wird deshalb die Eigenschaft, um die es geht: unter den
-		// moeglichen Ersetzungen des letzten Wortes muss die grosse Mehrheit
-		// auffallen. Trifft die Pruefsumme, faellt keine einzige auf.
 		const woerter = phrase.split(" ");
 		const kandidaten = ["zoo", "zone", "zebra", "young", "youth", "wrong", "wrist", "write"];
 		const abgewiesen = kandidaten
@@ -307,12 +298,6 @@ describe("Der Kopplungscode", () => {
 		// Ein fester Vektor, nachgerechnet mit einer eigenen Umsetzung ausserhalb
 		// dieses Programms: SHA-256 ueber die Bytes 0..64, davon die obersten 60 Bit
 		// zu zwoelf Stellen a fuenf Bit.
-		//
-		// Der Vektor steht hier, weil die Bit-Schieberei in pairingCode aussieht,
-		// als koenne man sie "aufraeumen". Wer sie dabei um ein Bit verschiebt,
-		// bekommt weiterhin huebsche Codes - nur eben andere, und die Kopplung
-		// zwischen zwei Fassungen des Programms schluege fehl, ohne dass jemand
-		// saehe warum.
 		const probe = new Uint8Array(65).map((_, i) => i);
 		expect(await pairingCode(probe)).toBe("KR8U3C5RD5YH");
 	});
@@ -372,8 +357,6 @@ describe("checkedPairingKey", () => {
 		// beherrscht, tauscht den hinterlegten Schluessel gegen einen eigenen -
 		// und bekaeme vom bestaetigenden Geraet den Tresorschluessel dagegen
 		// verpackt. Danach koennte er jeden Datensatz des Kontos lesen.
-		//
-		// Der Code auf dem Bildschirm gehoert aber weiterhin zum ECHTEN Schluessel.
 		const echt = await exportPairingPublicKey(await createPairingKeyPair());
 		const angreifer = await exportPairingPublicKey(await createPairingKeyPair());
 		const abgelesen = await pairingCode(echt);
@@ -436,6 +419,17 @@ describe("Wiederherstellung ueber die Phrase", () => {
 			expect(id).not.toContain(wort);
 		}
 		expect(id).toMatch(/^[0-9a-f]{64}$/);
+	});
+
+	it("folgt der Entropie der Phrase, nicht ihrem Text", async () => {
+		// Der Punkt, an dem die erste Fassung mit sich selbst uneins war: der
+		// Schluessel entsteht aus der ENTROPIE (siehe kekFromPhrase), die Kennung
+		// entstand aus dem TEXT. Damit hatten die beiden Haelften desselben Weges
+		// verschiedene Vorstellungen davon, wann zwei Phrasen dieselbe sind - und
+		// eine Schreibweise, die den Tresor oeffnete, fand kein Konto.
+		const p = createRecoveryPhrase();
+		expect(await recoveryLookupId(p)).toMatch(/^[0-9a-f]{64}$/);
+		await expect(recoveryLookupId("kein wort davon ist eine phrase")).rejects.toThrow();
 	});
 
 	it("die Kennung oeffnet die Verpackung NICHT", async () => {

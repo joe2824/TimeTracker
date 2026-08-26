@@ -1,9 +1,5 @@
 <script lang="ts">
 	// Konto & Synchronisation.
-	//
-	// Die Oberflaeche zu einer Sache, die man nur einmal macht und danach nie
-	// wieder ansieht. Deshalb steht im Normalfall genau eine Zeile da - Zustand,
-	// letzter Abgleich - und alles Weitere nur, wenn es etwas zu tun gibt.
 	import * as Card from "$lib/components/ui/card";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
@@ -14,6 +10,11 @@
 	import { formatPairingCode, isPairingCode, normalizePairingCode } from "$lib/crypto/vault";
 	import { fmtDateHuman, fmtClock } from "$lib/time";
 	import { capabilities } from "$lib/platform/env";
+	import { errorText } from "$lib/log";
+
+	/** Text zu einem geworfenen Wert, sonst der eigene Standard. */
+	const fehlertext = (e: unknown, standard: string) =>
+		e instanceof Error ? errorText(e) : standard;
 
 	let serverUrl = $state("");
 	let code = $state("");
@@ -59,7 +60,7 @@
 			// Sekunden, und jemand sieht dabei zu.
 			poll = setInterval(pruefen, 2000);
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : "Kopplung nicht möglich");
+			toast.error(fehlertext(e, "Kopplung nicht möglich"));
 		} finally {
 			laeuft = false;
 		}
@@ -73,7 +74,7 @@
 			}
 		} catch (e) {
 			abbrechen();
-			toast.error(e instanceof Error ? e.message : "Kopplung fehlgeschlagen");
+			toast.error(fehlertext(e, "Kopplung fehlgeschlagen"));
 		}
 	}
 
@@ -99,19 +100,13 @@
 			fremderCode = "";
 			toast.success(`„${label}" ist jetzt verknüpft.`);
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : "Code konnte nicht bestätigt werden");
+			toast.error(fehlertext(e, "Code konnte nicht bestätigt werden"));
 		} finally {
 			laeuft = false;
 		}
 	}
 
-	/**
-	 * Entkoppeln - in drei Stufen, weil das Wort drei Dinge heissen kann.
-	 *
-	 * In JEDER davon bleiben die erfassten Zeiten auf diesem Geraet vollstaendig
-	 * erhalten. Das ist keine Beruhigungsformel: der Server war nie ihre einzige
-	 * Kopie, und genau das laesst sich hier nachpruefen.
-	 */
+	/** Entkoppeln - in drei Stufen, weil das Wort drei Dinge heissen kann. */
 	let loesenOffen = $state(false);
 	let aufloesenOffen = $state(false);
 	/** Wie viele Geraete am Konto haengen - entscheidet, was das Aufloesen bedeutet. */
@@ -131,13 +126,7 @@
 		}
 	}
 
-	/**
-	 * Ein Konto von hier aus anlegen.
-	 *
-	 * Danach wird die Phrase gezeigt, und zwar bevor irgendetwas anderes passiert:
-	 * dieses Konto hat noch keinen Passkey und kein zweites Gerät, also haengt
-	 * alles an diesen 24 Woertern.
-	 */
+	/** Ein Konto von hier aus anlegen. */
 	async function kontoAnlegen() {
 		const url = serverUrl.trim();
 		if (!url) {
@@ -147,17 +136,12 @@
 		laeuft = true;
 		try {
 			// Kein Name, weder fuer das Konto noch fuer das Geraet.
-			//
-			// Das Konto bekommt seine Kennung; sie steht ohnehin nur im
-			// Anmeldedialog des Betriebssystems, den dieses Konto nie sieht - es hat
-			// keinen Passkey. Das Geraet bekommt einen Namen aus der Plattform, der
-			// in der Geraeteliste wiedererkennbar ist, ohne dass jemand ihn tippt.
 			phrase = await account.createAccount(url, "", vorschlagName(), {
 				invite: einladung.trim() || undefined
 			});
 			phraseBestaetigt = false;
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : "Konto konnte nicht angelegt werden");
+			toast.error(fehlertext(e, "Konto konnte nicht angelegt werden"));
 		} finally {
 			laeuft = false;
 		}
@@ -177,7 +161,7 @@
 			phraseEingabe = "";
 			toast.success("Konto zurückgeholt. Die Daten kommen jetzt vom Server.");
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : "Zurückholen fehlgeschlagen");
+			toast.error(fehlertext(e, "Zurückholen fehlgeschlagen"));
 		} finally {
 			laeuft = false;
 		}
@@ -194,7 +178,7 @@
 					: "Verknüpfung gelöst. Die erfassten Zeiten bleiben hier."
 			);
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : "Lösen fehlgeschlagen");
+			toast.error(fehlertext(e, "Lösen fehlgeschlagen"));
 		} finally {
 			laeuft = false;
 		}
@@ -214,7 +198,7 @@
 		} catch (e) {
 			// Wichtig: lokal ist dann NICHTS passiert. Sonst haette jemand ein Gerät
 			// ohne Zugang und Daten, die trotzdem noch beim Server liegen.
-			toast.error(e instanceof Error ? e.message : "Auflösen fehlgeschlagen");
+			toast.error(fehlertext(e, "Auflösen fehlgeschlagen"));
 		} finally {
 			laeuft = false;
 		}

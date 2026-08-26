@@ -1,16 +1,4 @@
 // Datei-Protokoll fuer die Fehlersuche nach dem Fakt.
-//
-// Eine Datei je Tag im App-Datenordner:
-//   logs/2026-07-28.log
-//
-// Bewusst NEBEN "data/": dort liegen die Eintraege, und listEntryMonths() wie
-// pruneEmptyMonthFiles() lesen dieses Verzeichnis blind aus.
-//
-// Kein tauri-plugin-log: die gesamte Logik der App liegt im Frontend und
-// schriebe ueber dasselbe IPC in dieselbe Datei – dafuer eine weitere
-// Abhaengigkeit samt Rust-Bau einzuziehen, lohnt nicht. Was das Frontend nicht
-// sehen kann, ist ein Absturz des Rust-Teils; den haengt der Panic-Hook in
-// lib.rs an genau dieselbe Tagesdatei an.
 import { storage } from "./platform/fs";
 import { fmtDate } from "./time";
 import { zonedParts } from "./tz";
@@ -32,12 +20,7 @@ export function logFile(ts = Date.now()): string {
 /** Ordner der Protokolle, relativ zum App-Datenordner. */
 export const LOG_DIR = DIR;
 
-/**
- * Lesbarer Text zu einem geworfenen Wert.
- *
- * Tauri wirft haeufig blanke Strings statt Error-Objekten; `${e}` allein liefert
- * bei einem Error nur "Error: …" ohne die oft entscheidende Ursache.
- */
+/** Lesbarer Text zu einem geworfenen Wert. */
 export function errorText(e: unknown): string {
 	if (e instanceof Error) return e.message || e.name;
 	if (typeof e === "string") return e;
@@ -143,9 +126,6 @@ function record(level: LogLevel, message: string, detail?: unknown): void {
 	// Fehler zusaetzlich anonym zaehlen – nur so ist zu sehen, ob eine Fassung
 	// bei den Kollegen reihenweise auf etwas laeuft, das hier nie auftritt.
 	// trackError() und nicht track(): das haengt am Schalter.
-	//
-	// Nur `message`, und die durch redact(). `detail` bleibt draussen: dort
-	// stecken Stacks, Dateipfade und Fremd-Fehlermeldungen.
 	if (level === "error") {
 		void trackError("fehler", { meldung: redact(message) });
 	}
@@ -164,12 +144,7 @@ export function logError(message: string, detail?: unknown): void {
 	record("error", message, detail);
 }
 
-/**
- * Unbehandelte Fehler und Promise-Ablehnungen des Fensters mitschreiben.
- *
- * Genau die verschwanden bisher spurlos: sichtbar war nur, dass die App etwas
- * nicht tat. Liefert die Abmeldefunktion.
- */
+/** Unbehandelte Fehler und Promise-Ablehnungen des Fensters mitschreiben. */
 export function installErrorLogging(): () => void {
 	const onError = (e: ErrorEvent) => {
 		logError(`Unbehandelter Fehler: ${e.message}`, e.error ?? `${e.filename}:${e.lineno}`);
@@ -201,12 +176,7 @@ export async function listLogs(): Promise<string[]> {
 	}
 }
 
-/**
- * Die letzten Zeilen des Protokolls, aelteste zuerst.
- *
- * Liest die beiden neuesten Tage: kurz nach Mitternacht steht sonst eine fast
- * leere Datei da, waehrend das Gesuchte von gestern ist.
- */
+/** Die letzten Zeilen des Protokolls, aelteste zuerst. */
 export async function readLog(maxLines = 300): Promise<string[]> {
 	await flushLog();
 	const names = (await listLogs()).slice(0, 2).reverse();
@@ -238,12 +208,7 @@ export async function clearLogs(): Promise<number> {
 	return removed;
 }
 
-/**
- * Protokolle aelter als `keepDays` entfernen. Liefert die geloeschten Namen.
- *
- * Ohne das waechst der Ordner unbegrenzt – ein Protokoll, das niemand aufraeumt,
- * ist auf Dauer schlimmer als keines.
- */
+/** Protokolle aelter als `keepDays` entfernen. Liefert die geloeschten Namen. */
 export async function pruneOldLogs(keepDays = KEEP_DAYS, now = Date.now()): Promise<string[]> {
 	const cutoff = fmtDate(now - keepDays * 24 * 60 * 60 * 1000);
 	const removed: string[] = [];

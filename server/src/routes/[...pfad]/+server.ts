@@ -1,12 +1,4 @@
 // Rueckfall fuer die Seitenanwendung.
-//
-// Die PWA hat ihre eigenen Adressen (/, /einstellungen, …), die es serverseitig
-// nicht gibt - sie entstehen erst im Browser. Wer eine davon direkt aufruft oder
-// neu laedt, muss trotzdem die Anwendung bekommen und nicht "nicht gefunden".
-//
-// Die gebauten Dateien selbst (unter /_app/, Bilder, das Manifest) liefert
-// adapter-node aus dem static-Ordner aus, bevor diese Route ueberhaupt dran ist.
-// Hier landet nur, was danach uebrig bleibt.
 import { error } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { readFile } from "node:fs/promises";

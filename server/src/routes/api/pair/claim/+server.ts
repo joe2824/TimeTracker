@@ -1,8 +1,4 @@
 // Kopplung, Schritt 3 - wieder auf dem NEUEN Geraet.
-//
-// Es fragt seinen eigenen Code ab und bekommt das Paket samt Geraete-Token,
-// sobald jemand bestaetigt hat. Danach ist der Vorgang weg: ein liegen
-// gebliebenes Paket waere ein Angriffsziel ohne jeden Nutzen.
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { pairings } from "$lib/server/db/schema";

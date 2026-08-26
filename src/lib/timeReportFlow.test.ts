@@ -1,11 +1,6 @@
 // Durchstich ueber die ganze Kette, gegen die echte Datei:
 // XLSX lesen -> Report auswerten -> abgleichen -> Nachtrag planen -> Eintraege
 // anlegen -> ERNEUT abgleichen. Danach muss jeder Tag stimmen.
-//
-// Die Einzeltests decken die Bausteine ab; hier geht es um ihr Zusammenspiel.
-// Genau dort sass der Fehler, der beim Pausenabzug fast durchgerutscht waere:
-// die LOGA-Stunden sind netto, und eins zu eins eingetragen bekamen sie den
-// Abzug ein zweites Mal – jeder Tag waere nach dem Nachtrag zu niedrig geblieben.
 import { readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
 import { readXlsx } from "./xlsx";
@@ -47,12 +42,7 @@ function tsAt(date: string, minutes: number): number {
 
 let uid = 0;
 
-/**
- * Einen Monat vollstaendig nachtragen und das Ergebnis zurueckgeben.
- *
- * `shares` bildet die Verteilung auf mehrere Projekte nach: dann wird die
- * gestempelte Zeit jedes Tages geschnitten statt auf ein Projekt gebucht.
- */
+/** Einen Monat vollstaendig nachtragen und das Ergebnis zurueckgeben. */
 function fillMonth(month: string, deductBreaks: boolean, shares?: Share[]) {
 	const days = person.days.filter((d) => d.date.startsWith(`${month}-`));
 	const entries: Entry[] = [];

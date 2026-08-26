@@ -1,16 +1,4 @@
-/**
- * Herkunfts- und Aenderungsspuren fuer den Abgleich mit dem Server.
- *
- * Alle drei Felder sind optional: ein Bestand aus einer Fassung ohne
- * Serveranbindung hat sie nicht, und ohne verknuepftes Konto entstehen sie auch
- * nicht neu. Fehlt `updatedAt`, gilt der Datensatz als "noch nie abgeglichen" –
- * genau das braucht der erste Abgleich, um alles hochzuladen.
- *
- * Gesetzt werden sie an genau einer Stelle: beim Schreiben in store.ts, aus dem
- * Vergleich mit dem Stand auf der Platte. Damit erfasst es JEDEN Schreibweg –
- * auch die aus Sammel-Dialog, Urlaubszeitraum und LOGA-Nachtrag – und es kann
- * keiner vergessen werden.
- */
+/** Herkunfts- und Aenderungsspuren fuer den Abgleich mit dem Server. */
 export interface SyncMeta {
 	/** Letzte Aenderung als Epoch-ms der schreibenden Uhr. */
 	updatedAt?: number;
@@ -128,18 +116,9 @@ export interface Settings {
 	/**
 	 * Arbeitszeit-Check (ArbZG) im Bericht zeigen: Ausgleichszeitraum ueber 24
 	 * Wochen samt Prognose, dazu Tagesgrenzen, Ruhezeit und Sonntagsarbeit.
-	 *
-	 * Wie die Auswertung nur fuer den Nutzer – die Berichts-Mail bleibt davon
-	 * unberuehrt.
 	 */
 	arbzgEnabled: boolean;
-	/**
-	 * Kurzer Hinweis auf der Tracking-Seite, wenn der Arbeitszeit-Check anschlaegt.
-	 *
-	 * Unabhaengig von `arbzgEnabled`: die Card ist der ausfuehrliche Blick, den
-	 * man sucht, wenn man ihn sucht – der Hinweis ist der, den man nicht sucht.
-	 * Beides getrennt schaltbar, weil beides eine andere Frage beantwortet.
-	 */
+	/** Kurzer Hinweis auf der Tracking-Seite, wenn der Arbeitszeit-Check anschlaegt. */
 	arbzgTrackingHint: boolean;
 	/** Chef-Modus: Tab „Team" mit Auswertung der eingegangenen Berichts-Mails */
 	bossMode: boolean;
@@ -149,55 +128,20 @@ export interface Settings {
 	teamSubjectFilter: string;
 	/** Auch Unterordner des Posteingangs durchsuchen (Outlook-Regeln sortieren dorthin) */
 	teamScanSubfolders: boolean;
-	/**
-	 * Anonyme Fehlermeldungen senden (was genau: siehe analytics.ts).
-	 *
-	 * Gilt NUR fuer Fehler und Abstuerze. Die Tagesmeldung „benutzt" haengt
-	 * bewusst nicht daran: sie ist die Nutzerzahl, und die waere bei jeder
-	 * nennenswerten Ablehnquote wertlos statt nur ungenau.
-	 */
+	/** Anonyme Fehlermeldungen senden - NUR Fehler und Abstuerze, nicht die Tagesmeldung. */
 	errorReportsEnabled: boolean;
-	/**
-	 * Vorabversionen beziehen (Beta-Kanal des Updaters).
-	 *
-	 * Gelesen wird das nicht nur hier, sondern auch vom Rust-Teil direkt aus der
-	 * settings.json: die Update-Endpunkte muessen stehen, bevor ueberhaupt ein
-	 * Fenster laeuft (siehe use_beta_channel in lib.rs). Ein Umschalten wirkt
-	 * deshalb erst nach einem Neustart.
-	 */
+	/** Vorabversionen beziehen. Liest auch der Rust-Teil aus der settings.json - wirkt erst nach Neustart. */
 	betaUpdates: boolean;
-	/**
-	 * Zeitzone des Kontos als IANA-Kennung, z.B. "Europe/Berlin".
-	 *
-	 * Gegen sie werden ALLE Tagesgrenzen gerechnet: Monatszuordnung, Tagessummen,
-	 * Mitternachts-Teilung, Bericht, Arbeitszeit-Check. Bewusst nicht die Zone des
-	 * Geraets – sonst landet derselbe Eintrag je nach Standort an einem anderen
-	 * Kalendertag, und zwei Geraete sehen verschiedene Arbeitstage.
-	 *
-	 * Leer = noch nie gesetzt; beim Start wird dann die Zone des Geraets
-	 * uebernommen. Ein spaeterer Wechsel verschiebt die Tageszuordnung bereits
-	 * erfasster Eintraege rueckwirkend – die Einstellung ist keine, die man
-	 * beilaeufig aendert.
-	 */
+	/** Zeitzone des Kontos als IANA-Kennung, z.B. "Europe/Berlin". */
 	timeZone: string;
-	/**
-	 * Tag (YYYY-MM-DD), an dem zuletzt „aktiv" gemeldet wurde.
-	 *
-	 * Steht hier und nicht im Arbeitsspeicher, weil die Meldung genau einmal je
-	 * Kalendertag rausgehen soll – auch ueber Neustarts hinweg.
-	 */
+	/** Tag (YYYY-MM-DD), an dem zuletzt „aktiv" gemeldet wurde. */
 	usageLastDay: string;
 }
 
 /** Standard-Betreff des Monatsberichts. */
 export const DEFAULT_SUBJECT = "Stundenerfassung {month} – {name}";
 
-/**
- * Standard-Merkmal, an dem der Chef-Modus Berichts-Mails erkennt.
- *
- * Bewusst nur das erste Wort von DEFAULT_SUBJECT: der Rest der Vorlage (Monat,
- * Name) ist je Absender verschieden, und viele passen die Vorlage an.
- */
+/** Standard-Merkmal, an dem der Chef-Modus Berichts-Mails erkennt. */
 export const DEFAULT_TEAM_SUBJECT_FILTER = "Stundenerfassung";
 
 export const defaultSettings: Settings = {

@@ -33,14 +33,7 @@ let lastPomoKey: string | null = null;
 let lastPomoSig = "";
 /** Prompt bereits gezeigt; bleibt true bis der Nutzer wieder aktiv ist (idle < Schwelle). */
 let idlePromptShown = false;
-/**
- * Beginn des zuletzt gesehenen Laufs (für Flag-Reset bei Wechsel).
- *
- * Bewusst der Lauf-Beginn und nicht die Eintrags-id: an Mitternacht wird der Timer
- * geteilt, die id wechselt also mitten im Lauf. Am id-Wechsel hing der Reset –
- * damit verschwand der offene "Timer läuft noch"-Dialog um 00:00 von selbst und
- * die Warnung begann am neuen Tag wieder bei null.
- */
+/** Beginn des zuletzt gesehenen Laufs (für Flag-Reset bei Wechsel). */
 let lastRunStart: number | null = null;
 /** Zuletzt gesetzter Tray-Tooltip (vermeidet IPC bei unveränderter Anzeige). */
 let lastTooltip = "";
@@ -54,15 +47,8 @@ async function melden(title: string, body: string) {
  * Feste Stunden, zu denen die Tagesmeldung „aktiv" versucht wird. Die erste
  * erreichte gewinnt, danach ist der Tag erledigt.
  *
- * Fest verdrahtet und nicht „beim Start": eine Meldung beim Start oder beim
- * Beenden waere ein Zeitstempel von Arbeitsbeginn bzw. Feierabend. So landet
- * jede Meldung auf einer von vier Uhrzeiten – aus einem beliebigen Zeitpunkt
- * werden vier Toepfe.
- *
- * Vier statt nur 12 Uhr, weil sonst jeder herausfaellt, dessen Rechner ueber
- * Mittag zu ist – und die Zahl waere dann eine Untergrenze statt eines Istwerts.
- * Der Preis ist bewusst in Kauf genommen: welcher Topf getroffen wird, sagt grob
- * etwas darueber, ab wann jemand die App offen hat.
+ * Haengt bewusst NICHT am Fehler-Schalter: das ist die Nutzerzahl, und die waere
+ * bei jeder nennenswerten Ablehnquote wertlos statt nur ungenau.
  */
 const PING_HOURS = [9, 12, 15, 17];
 
@@ -72,14 +58,6 @@ let pinging = false;
 /**
  * Einmal je Kalendertag „aktiv" melden, sobald eine der PING_HOURS erreicht ist
  * und die App gerade laeuft.
- *
- * Haengt bewusst NICHT am Fehler-Schalter: das hier ist die Nutzerzahl, und die
- * waere bei jeder nennenswerten Ablehnquote nicht ungenau, sondern wertlos. Die
- * Meldung traegt keinen Inhalt – nur „an diesem Tag benutzt".
- *
- * Wessen Rechner zu keiner der vier Stunden laeuft, faellt aus der Zaehlung.
- * Nachzuholen hiesse, zu einer beliebigen und damit aussagekraeftigen Uhrzeit zu
- * senden – genau das soll nicht passieren.
  */
 async function dailyPing(s: Settings): Promise<void> {
 	if (pinging) return;

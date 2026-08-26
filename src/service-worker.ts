@@ -2,16 +2,6 @@
 /// <reference lib="webworker" />
 
 // Der Dienstmitarbeiter der PWA.
-//
-// Seine Aufgabe ist eng: die Anwendung selbst offline verfuegbar halten. Die
-// DATEN gehen ihn nichts an - die liegen in IndexedDB und werden von der
-// Abgleich-Maschine gepflegt. Ein Zwischenspeicher fuer API-Antworten waere hier
-// falsch: er zeigte alte Staende, die nach einem Abgleich schon nicht mehr
-// stimmen.
-//
-// Wichtig fuer die Erwartung: die App muss NICHT geoeffnet sein, damit die Zeit
-// weiterlaeuft. Ein laufender Timer ist ein Datensatz mit einem Startzeitpunkt;
-// die Dauer wird gerechnet, wenn jemand hinsieht.
 
 import { base, build, files, version } from "$service-worker";
 
@@ -20,19 +10,7 @@ const sw = self as unknown as ServiceWorkerGlobalScope;
 /** Ein Zwischenspeicher je Fassung - damit ein Update den alten sauber ersetzt. */
 const CACHE = `timetracker-${version}`;
 
-/**
- * Der Rahmen der Anwendung.
- *
- * Muss ausdruecklich dabeistehen: `build` und `files` enthalten das gebaute
- * Programm und den statischen Ordner - die index.html, die adapter-static als
- * Rueckfall ausliefert, steht in KEINEM von beiden. Ohne sie fand ein kalter
- * Start ohne Netz nichts im Vorrat und endete beim 503; erst nachdem einmal
- * online geladen wurde, lag sie durch den Fetch-Haken zufaellig im Speicher.
- *
- * Mit `base` davor wie alles andere im Vorrat: heute ist das leer, aber ein fest
- * verdrahtetes "/" waere genau die Zeile, die bei einer Unterverzeichnis-
- * Installation als einzige daneben laege.
- */
+/** Der Rahmen der Anwendung. */
 const START = `${base}/`;
 
 /** Was sich nie aendert: die Dateinamen tragen die Fassung. */

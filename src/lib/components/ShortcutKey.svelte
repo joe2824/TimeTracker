@@ -2,9 +2,6 @@
 	// Ein belegtes Tastenkuerzel als Keycap, klickbar zum Neubelegen.
 	// Vorher zweimal von Hand gebaut (SettingsPanel, ActivitiesPanel) – mit
 	// auseinandergelaufenen Abstaenden und nur einmal mit Zeiger-Cursor.
-	//
-	// Nur fuer ein VORHANDENES Kuerzel: die Keycap-Optik sagt "das ist eine Taste".
-	// Fuers Festlegen gehoert ein normaler Button hin, keine Taste.
 	import { Button } from "$lib/components/ui/button";
 
 	interface Props {

@@ -1,13 +1,5 @@
 <script lang="ts">
 	// Verwaltung: Einladungen vergeben.
-	//
-	// Erscheint nur bei einem Konto, das dazu berechtigt ist - und "berechtigt"
-	// entscheidet der Server, nicht diese Datei. Wer die Karte per Werkzeugkasten
-	// sichtbar macht, bekommt von jedem Endpunkt dahinter eine Absage.
-	//
-	// Was ein Verwalter kann, ist absichtlich schmal: Einladungen ausstellen,
-	// ansehen, zurueckziehen. Fremde Daten lesen kann er nicht - das kann der
-	// Server selbst nicht.
 	import * as Card from "$lib/components/ui/card";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";

@@ -1,15 +1,4 @@
 // Zwei Geraete an einem Konto - der ganze Weg.
-//
-// Echte Verschluesselung, echte Zusammenfuehrung, echter Konfliktablauf. Der
-// Server ist hier nachgebaut, nicht echt: seine Regeln sind drueben in
-// server/src/lib/server/sync.test.ts mit 25 Tests belegt. Was HIER geprueft
-// wird, ist die andere Haelfte - ob der Client daraus das Richtige macht.
-//
-// Jedes Geraet hat seinen eigenen Dateibestand, der beim Wechsel ein- und
-// ausgehaengt wird. Das ist nicht Umstaendlichkeit, sondern der Kern: der
-// Schreib-Haken und die Abgleich-Maschine muessen DIESELBE Ablage sehen. Ein
-// erster Anlauf hielt beides getrennt - und uebersah damit, dass die vom Server
-// vergebene Fassung nie auf der Platte ankam.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("../testing/fakeFs")).fakeFs);
@@ -113,11 +102,7 @@ class FakeServer {
 
 // ---------- Ein Geraet ----------
 
-/**
- * Ein Geraet ist ein Dateibestand plus ein Stand.
- *
- * Die Outbox reist im Dateibestand mit (data/outbox.json) - genau wie in echt.
- */
+/** Ein Geraet ist ein Dateibestand plus ein Stand. */
 class Geraet {
 	dateien = new Map<string, string>();
 	state = { seq: 0 };
@@ -128,13 +113,7 @@ class Geraet {
 let server: FakeServer;
 let key: CryptoKey;
 
-/**
- * Etwas AUF einem Geraet tun.
- *
- * Haengt dessen Dateibestand ein, laedt seine Outbox, fuehrt aus, und legt
- * beides danach wieder zurueck. Zwei Geraete kommen sich damit nicht in die
- * Quere, obwohl das Dateisystem im Test nur einmal existiert.
- */
+/** Etwas AUF einem Geraet tun. */
 async function auf<T>(g: Geraet, fn: (engine: InstanceType<typeof SyncEngine>) => Promise<T>): Promise<T> {
 	resetFakeFs();
 	for (const [k, v] of g.dateien) files.set(k, v);
@@ -184,12 +163,8 @@ const eintrag = (id: string, over: Partial<Entry> = {}): Entry => ({
 /**
  * Warten, bis die Uhr weiterspringt.
  *
- * Wer entscheidet, welche von zwei Aenderungen gilt, vergleicht `updatedAt` -
- * und bei Gleichstand die Geraetekennung. Fallen zwei Handlungen im Test in
- * dieselbe Millisekunde, entscheidet also das Alphabet statt der Reihenfolge,
- * und derselbe Test faellt mal so und mal so aus. Wo unten "danach" gemeint ist,
- * steht deshalb das hier - es kostet eine Millisekunde und kann nicht
- * durchrutschen.
+ * Bei gleichem `updatedAt` entscheidet die Geraetekennung statt der Reihenfolge -
+ * derselbe Test fiele sonst mal so und mal so aus.
  */
 async function danach(): Promise<void> {
 	const jetzt = Date.now();
@@ -381,17 +356,7 @@ describe("Zwei Geraete", () => {
 /** Ein Zeitstempel im Folgemonat - fuer alles, was ueber die Monatsgrenze geht. */
 const tsAug = (tag: number, stunde: number) => Date.UTC(2026, 7, tag, stunde) + 2 * 3600_000;
 
-/**
- * Eine Loeschung beim Server nachstellen, ohne ein Geraet dafuer zu bemuehen.
- *
- * Ein Grabstein ist eine Zeile ohne Chiffrat; mehr braucht es nicht. So laesst
- * sich eine Loeschung MITTEN in den Betrieb eines Geraets legen statt nur
- * zwischen zwei seiner Sitzungen - und genau darauf kommt es unten an.
- *
- * Der Zeitstempel liegt bewusst in der Zukunft: die Loeschung soll den Wettstreit
- * eindeutig gewinnen und nicht daran haengen, ob zwei Aufrufe von Date.now() in
- * dieselbe Millisekunde fielen.
- */
+/** Eine Loeschung beim Server nachstellen, ohne ein Geraet dafuer zu bemuehen. */
 function grabstein(id: string, rev: number): void {
 	server.seq++;
 	const alt = server.rows.get(id);
@@ -667,9 +632,6 @@ describe("Der Server kennt den Bestand nicht mehr", () => {
 	// Die Lage nach einem aufgeloesten Konto oder einem aus aelterer Sicherung
 	// wieder aufgesetzten Server: lokal stehen Fassungsnummern, die beim Server
 	// niemand kennt. Er antwortet auf jede mit einem Konflikt gegen Fassung 0.
-	//
-	// Ohne Gegenmassnahme ist das eine stille Sackgasse - und zwar die
-	// unangenehmste Sorte: lokal ist alles heil, es kommt nur nie an.
 
 	it("schreibt die Daten neu an, statt fuer immer im Konflikt zu haengen", async () => {
 		const pc = new Geraet("pc");

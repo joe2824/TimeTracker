@@ -1,21 +1,7 @@
 import type { Settings } from "./types";
 import { clockToMin, minToClock } from "./time";
 
-/**
- * Die Einstellungs-Schluessel, deren Wert sich zwischen zwei Staenden geaendert hat.
- *
- * Die Einstellungs-Seite arbeitet mit lokalen Kopien der Werte (Eingabefelder,
- * die erst beim Verlassen speichern). Aendert jemand ANDERES die Einstellungen –
- * der Willkommens-Assistent, das Tray-Fenster ueber reload() –, muessen genau
- * diese Felder nachgezogen werden: sonst zeigt das Formular weiter den Stand von
- * seinem Aufbau UND schreibt ihn beim naechsten Speichern zurueck. Genau so
- * verschwand die im Assistenten eingetragene Adresse der Vorgesetzten wieder,
- * sobald man in den Einstellungen irgendetwas anfasste.
- *
- * Nur die GEAENDERTEN Schluessel, nicht einfach alle Felder neu befuellen: sonst
- * loeschte ein Speichern in einer anderen Karte eine gerade getippte, noch nicht
- * bestaetigte Eingabe.
- */
+/** Die Einstellungs-Schluessel, deren Wert sich zwischen zwei Staenden geaendert hat. */
 export function changedSettingKeys(prev: Settings, next: Settings): Set<keyof Settings> {
 	const out = new Set<keyof Settings>();
 	for (const key of Object.keys(next) as (keyof Settings)[]) {
@@ -37,13 +23,7 @@ function sameValue(a: unknown, b: unknown): boolean {
 
 // ---------- Formular der Einstellungs-Seite ----------
 
-/**
- * Einstellungen, die als Text im Eingabefeld stehen.
- *
- * Zahlen bleiben unterwegs Text, statt sofort umgerechnet zu werden: ein leeres
- * Feld ist keine 0, sondern "noch nichts eingegeben". Wer eine Zahl zum Neutippen
- * loescht, haette sonst beim ersten Tastendruck eine 0 gespeichert.
- */
+/** Einstellungen, die als Text im Eingabefeld stehen. */
 type TextKey =
 	| "rounding"
 	| "hoursPerDay"
@@ -67,16 +47,7 @@ const TO_FORM: { [K in TextKey]: (s: Settings) => string } = {
 	pomodoroBreakMin: (s) => String(s.pomodoroBreakMin)
 };
 
-/**
- * Die Umrechnung Feldinhalt -> Einstellung, samt Grenzen und Rueckfall.
- *
- * `stored` ist der zuletzt gespeicherte Stand. Ein leeres Feld faellt darauf
- * zurueck, statt einen Standardwert festzuschreiben: die Seite hat keinen
- * Speichern-Knopf, ein `raw || default` machte aus "zum Neutippen geleert" also
- * still eine Aenderung.
- *
- * Fehlt ein Schluessel hier, wird der Feldinhalt unveraendert uebernommen.
- */
+/** Die Umrechnung Feldinhalt -> Einstellung, samt Grenzen und Rueckfall. */
 const TO_SETTING: {
 	[K in keyof Settings]?: (raw: SettingsForm[K], stored: Settings) => Settings[K];
 } = {
@@ -115,10 +86,6 @@ export function formFromSettings(s: Settings): SettingsForm {
 /**
  * Geaenderte Einstellungen in die Arbeitskopie nachziehen. Gibt den Stand
  * zurueck, gegen den beim naechsten Mal verglichen wird.
- *
- * Nur die GEAENDERTEN Schluessel, nicht alle Felder neu befuellen: sonst
- * loeschte ein Speichern in einer anderen Karte eine gerade getippte, noch nicht
- * bestaetigte Eingabe.
  */
 export function syncForm(form: SettingsForm, prev: Settings, next: Settings): Settings {
 	const fresh = formFromSettings(next);
@@ -129,10 +96,6 @@ export function syncForm(form: SettingsForm, prev: Settings, next: Settings): Se
 /**
  * Aus der Arbeitskopie den Patch fuer die genannten Schluessel bauen – und die
  * uebernommenen Werte im Formular normalisieren (getrimmt, "07:30" statt "7:3").
- *
- * Nur Textfelder werden zurueckgeschrieben: eine gerade angelegte, noch leere
- * Team- oder Uhrzeit-Zeile verschwaende sonst unter den Haenden, weil sie beim
- * Speichern herausgefiltert wird.
  */
 export function patchFrom(
 	form: SettingsForm,
@@ -151,13 +114,7 @@ export function patchFrom(
 	return patch;
 }
 
-/**
- * Schreibender Zugriff ueber einen zur Laufzeit gewaehlten Schluessel.
- *
- * TypeScript kann hier nicht mitrechnen: `obj[key] = value` mit einem Schluessel
- * aus einer Schleife ist ihm `never`. Die Werte stammen ausnahmslos aus
- * TO_FORM/TO_SETTING bzw. aus derselben Struktur, passen also zum Schluessel.
- */
+/** Schreibender Zugriff ueber einen zur Laufzeit gewaehlten Schluessel. */
 function assign(target: object, key: PropertyKey, value: unknown): void {
 	(target as Record<PropertyKey, unknown>)[key] = value;
 }

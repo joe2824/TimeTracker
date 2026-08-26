@@ -1,12 +1,4 @@
 // Abholen und Ablegen versiegelter Datensaetze.
-//
-// Das ist die gesamte Fachlogik des Servers - und sie handelt ausschliesslich
-// von Reihenfolge und Kollisionen, nie von Inhalten. Der Server weiss nicht, ob
-// ein Datensatz ein Arbeitstag oder eine Aktivitaet ist; er weiss nur, dass
-// jemand ihn geaendert hat und welche Fassung derjenige vorher kannte.
-//
-// Bewusst ohne HTTP: so laesst sich das Zusammenspiel zweier Geraete pruefen,
-// ohne einen Server zu starten.
 import { and, asc, eq, gt, sql } from "drizzle-orm";
 import type { Db } from "./db";
 import { records, users } from "./db/schema";
@@ -31,13 +23,7 @@ export interface IncomingRecord {
 	id: string;
 	kind: string;
 	bucket?: string | null;
-	/**
-	 * Die Fassung, die dieses Geraet zuletzt gesehen hat. 0 = "gibt es noch nicht".
-	 *
-	 * Der Server nimmt die Aenderung nur an, wenn seine eigene Fassung genau diese
-	 * ist. Sonst hat inzwischen jemand anderes geschrieben, und die Aenderung
-	 * wuerde dessen Arbeit ueberschreiben, ohne sie je gesehen zu haben.
-	 */
+	/** Die Fassung, die dieses Geraet zuletzt gesehen hat. 0 = "gibt es noch nicht". */
 	baseRev: number;
 	updatedAt: number;
 	deletedAt?: number | null;
@@ -87,13 +73,7 @@ const toStored = (r: typeof records.$inferSelect): StoredRecord => ({
 	payload: r.payload
 });
 
-/**
- * Alles, was seit `since` dazugekommen ist - seitenweise.
- *
- * Die Seitengrenze ist nicht optional: ein Konto mit zehn Jahren Bestand haette
- * sonst eine Antwort im zweistelligen Megabyte-Bereich, die Server und Geraet
- * beide vollstaendig im Speicher halten muessten.
- */
+/** Alles, was seit `since` dazugekommen ist - seitenweise. */
 export function pullRecords(
 	db: Db,
 	userId: string,
@@ -125,14 +105,7 @@ export function pullRecords(
 	};
 }
 
-/**
- * Geaenderte Datensaetze ablegen.
- *
- * Alles in einer Transaktion: entweder bekommen alle angenommenen Datensaetze
- * ihre laufende Nummer, oder keiner. Ein halb geschriebener Stapel hinterliesse
- * Luecken in der Reihenfolge, und ein Geraet, das genau dazwischen abholt, hielte
- * den Rest fuer bereits gesehen.
- */
+/** Geaenderte Datensaetze ablegen. */
 export function pushRecords(
 	db: Db,
 	userId: string,
@@ -146,6 +119,8 @@ export function pushRecords(
 		if (!r.id || !r.kind) throw new SyncError("Datensatz ohne id oder kind", 400);
 	}
 
+	// Alles in einer Transaktion: ein halb geschriebener Stapel hinterliesse Luecken in
+	// der seq-Reihenfolge, und wer genau dazwischen abholt, haelt den Rest fuer gesehen.
 	return db.transaction((tx) => {
 		const user = tx.select().from(users).where(eq(users.id, userId)).get();
 		if (!user) throw new SyncError("Konto nicht gefunden", 404);
@@ -221,14 +196,7 @@ export function pushRecords(
 	});
 }
 
-/**
- * Der "Stand" eines Datensatzes, den es auf dem Server gar nicht gibt.
- *
- * Kommt vor, wenn ein Geraet mit baseRev > 0 schreibt, der Datensatz beim Server
- * aber fehlt - etwa nach einem wiederhergestellten Backup. Der Client sieht daran,
- * dass er bei rev 0 neu anfangen muss, statt in eine Schleife aus abgelehnten
- * Versuchen zu laufen.
- */
+/** Der "Stand" eines Datensatzes, den es auf dem Server gar nicht gibt. */
 function leererStand(r: IncomingRecord): StoredRecord {
 	return {
 		id: r.id,

@@ -43,31 +43,7 @@ export const GET: RequestHandler = ({ locals }) => {
 	});
 };
 
-/**
- * Das Konto aufloesen.
- *
- * Danach hat der Server nichts mehr: keine Chiffrate, keine Passkeys, keine
- * verpackten Schluessel, keine Geraete. Die lokalen Daten auf den Geraeten
- * bleiben davon unberuehrt - der Server war nie ihre einzige Kopie.
- *
- * WER DARF DAS. Die Antwort haengt daran, WOMIT sich die Anfrage ausweist, und
- * der Unterschied ist kein Schoenheitsfehler, sondern der Kern:
- *
- *   Sitzungs-Cookie - reicht NICHT. Ein Cookie faehrt bei jeder Anfrage
- *     automatisch mit; es beweist, dass irgendwann einmal jemand angemeldet war,
- *     nicht dass gerade jetzt jemand zustimmt. Verlangt wird eine frische
- *     WebAuthn-Bestaetigung mit Nutzerpruefung: derselbe Passkey, mit PIN oder
- *     Fingerabdruck, auf eine Aufgabe, die dieser Server vor Sekunden
- *     ausgegeben und an genau dieses Konto gebunden hat.
- *
- *   Geraete-Token - reicht. Es sind 256 Bit Zufall, die genau einmal bei der
- *     Kopplung ueber die Leitung gingen, die in keinem Browser-Kontext liegen
- *     und die automatisch nirgends mitfahren. Wer es hat, hat das gekoppelte
- *     Geraet - und damit ohnehin den Tresorschluessel und alle Daten. Eine
- *     zusaetzliche Huerde schuetzte hier nichts; sie wuerde nur so aussehen.
- *     Ein Passkey ist auf dem Desktop auch gar nicht verfuegbar: der Webview hat
- *     eine andere Herkunft als die Domain, an die Passkeys gebunden sind.
- */
+/** Das Konto aufloesen. */
 export const DELETE: RequestHandler = async ({ locals, cookies, request }) => {
 	if (!locals.userId) error(401, "Nicht angemeldet");
 	const user = locals.db.select().from(users).where(eq(users.id, locals.userId)).get();

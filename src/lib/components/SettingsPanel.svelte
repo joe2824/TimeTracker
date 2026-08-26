@@ -75,14 +75,7 @@
 		}
 	}
 
-	/**
-	 * Arbeitskopie aller Einstellungen dieser Seite.
-	 *
-	 * Bearbeitet wird hier, gespeichert wird je Karte beim Verlassen des Feldes.
-	 * Zahlen und Stunden stehen als Text darin – umgerechnet wird erst beim
-	 * Speichern (settingsSync.ts), damit ein zum Neutippen geleertes Feld nicht
-	 * still als 0 gespeichert wird.
-	 */
+	/** Arbeitskopie aller Einstellungen dieser Seite. */
 	let form = $state(formFromSettings(current()));
 	let recordingToggle = $state(false);
 
@@ -91,13 +84,7 @@
 		return $state.snapshot(app.settings) as Settings;
 	}
 
-	/**
-	 * Zuletzt uebernommener Stand der Einstellungen.
-	 *
-	 * Bewusst KEIN $state: der Vergleich unten soll den Effekt nicht selbst wieder
-	 * ausloesen. Und eine Momentaufnahme statt der Referenz, sonst zeigte er beim
-	 * naechsten Lauf ohnehin schon die neuen Werte und faende nie einen Unterschied.
-	 */
+	/** Zuletzt uebernommener Stand der Einstellungen. */
 	let synced = current();
 
 	/**
@@ -105,17 +92,6 @@
 	 * Einstellungen – der Willkommens-Assistent, oder das Tray-Fenster ueber
 	 * reload() –, zeigten sie sonst weiter die alten Werte und schrieben sie beim
 	 * naechsten onchange zurueck.
-	 *
-	 * Der Assistent trifft das mit voller Wucht: bits-ui baut ALLE Tab-Inhalte
-	 * sofort auf (inaktive nur `hidden`), diese Seite steht also schon mit leeren
-	 * Feldern da, waehrend der Assistent noch offen ist. Die dort eingetragene
-	 * Adresse der Vorgesetzten war damit beim ersten Klick in den Einstellungen
-	 * wieder weg.
-	 *
-	 * Gleiches gilt fuer die Teamliste: der Team-Tab nimmt gefundene Absender per
-	 * Klick auf: ohne diesen Abgleich stuende die neue Person zwar in der Datei,
-	 * hier aber nicht in der Liste – und das naechste Speichern dieser Karte haette
-	 * sie wieder entfernt.
 	 */
 	$effect(() => {
 		synced = syncForm(form, synced, current());
@@ -238,13 +214,7 @@
 		savedWorktime = Date.now();
 	}
 
-	/**
-	 * Alle bekannten Zeitzonen, die aktuelle immer dabei.
-	 *
-	 * `supportedValuesOf` fehlt in aelteren Laufzeiten; dann bleibt wenigstens die
-	 * gesetzte Zone waehlbar, statt dass die Liste leer ist und die Einstellung
-	 * sich stillschweigend auf die erste beste umstellt.
-	 */
+	/** Alle bekannten Zeitzonen, die aktuelle immer dabei. */
 	const timeZones = $derived.by(() => {
 		let list: string[] = [];
 		try {
@@ -256,13 +226,7 @@
 		return list.includes(current) || !current ? list : [current, ...list];
 	});
 
-	/**
-	 * Die Zeitzone laeuft NICHT ueber das Formular-Zwischenmodell.
-	 *
-	 * Sie wirkt sofort auf jede Datumsrechnung der Oberflaeche – Monatsliste,
-	 * Tagesgruppen, Auswertung. Ein Zwischenstand, der erst beim Speichern greift,
-	 * zeigte dazwischen einen Bestand, den es so nicht gibt.
-	 */
+	/** Die Zeitzone laeuft NICHT ueber das Formular-Zwischenmodell. */
 	async function saveTimeZone(tz: string) {
 		if (!tz || tz === app.settings.timeZone) return;
 		await app.updateSettings({ timeZone: tz });
@@ -282,12 +246,7 @@
 		savedTimes = Date.now();
 	}
 
-	/**
-	 * Umgeschalteter Update-Kanal, der noch nicht greift.
-	 *
-	 * Bleibt stehen, solange die Seite offen ist: der Neustart-Hinweis soll nicht
-	 * verschwinden, weil jemand anderswo etwas gespeichert hat.
-	 */
+	/** Umgeschalteter Update-Kanal, der noch nicht greift. */
 	let channelChanged = $state(false);
 
 	async function saveBetaUpdates() {
@@ -348,13 +307,7 @@
 		}
 	}
 
-	/**
-	 * Die Bereiche der Einstellungen.
-	 *
-	 * Gruppiert nach dem, wonach jemand SUCHT, nicht danach, was technisch
-	 * zusammengehoert: "Arbeitszeit" und "Zeiterfassung" waren zwei Karten, sind
-	 * aber dieselbe Frage - wie lange arbeite ich und wie wird das gezaehlt.
-	 */
+	/** Die Bereiche der Einstellungen. */
 	const BEREICHE = [
 		{ id: "erfassung", titel: "Zeiterfassung" },
 		{ id: "bericht", titel: "Bericht" },

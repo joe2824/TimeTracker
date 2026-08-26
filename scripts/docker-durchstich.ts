@@ -1,15 +1,4 @@
 // Ein Durchstich gegen den laufenden Container.
-//
-// Kein Ersatz fuer die Testsuiten - die pruefen die Regeln. Hier geht es um das,
-// was nur in echt schiefgehen kann: das gebaute Abbild, die Datei im Volume, die
-// Verschluesselung ueber die Leitung, und die Frage, ob nach dem Entkoppeln
-// wirklich nichts mehr da ist.
-//
-// Bewusst mit dem ECHTEN Krypto-Code des Clients. Etwas Chiffrat-Aehnliches
-// hochzuladen wuerde nichts beweisen; die Frage ist ja gerade, ob das, was die
-// Anwendung wirklich erzeugt, beim Server unlesbar ankommt.
-//
-// Aufruf:  npx vite-node scripts/docker-durchstich.ts
 import {
 	createVaultKey,
 	sealRecord,

@@ -26,13 +26,7 @@
 	/** true = Liste klappt nach OBEN auf, weil unten kein Platz ist. */
 	let up = $state(false);
 
-	/**
-	 * Aufklapp-Richtung bestimmen.
-	 *
-	 * In langen Tabellen (Zeitwächter-Abgleich) sitzen die untersten Zeilen dicht
-	 * am Fensterrand – dort verschwand die Liste hinter der Fußzeile bzw. unter
-	 * dem Fensterrand und war nicht mehr zu bedienen.
-	 */
+	/** Aufklapp-Richtung bestimmen. */
 	function place() {
 		if (!wrap) return;
 		const r = wrap.getBoundingClientRect();

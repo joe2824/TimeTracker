@@ -1,45 +1,13 @@
-// Anonyme Zaehlung (Aptabase). Bewusst das Minimum – und zwei getrennte Wege:
+// Anonyme Zaehlung (Aptabase). Bewusst das Minimum – drei Meldungen:
 //
-//   aktiv  – einmal je Kalendertag, ausgeloest zur ersten erreichten von vier
-//            festen Uhrzeiten (9/12/15/17, siehe watchers). IMMER. Ohne diese
-//            eine Meldung gaebe es keine Nutzerzahl, und genau die ist der
-//            Grund fuer die ganze Anbindung.
-//   fehler – jede ERROR-Zeile des Protokolls (siehe log.ts)  \ nur mit dem
-//   panic  – Absturz des Rust-Teils (siehe lib.rs)           / Schalter
+//   aktiv  – einmal je Kalendertag, zur ersten erreichten von vier festen
+//            Uhrzeiten (siehe watchers). IMMER, sonst gaebe es keine Nutzerzahl.
+//   fehler – jede ERROR-Zeile des Protokolls (log.ts)  \ nur mit dem
+//   panic  – Absturz des Rust-Teils (lib.rs)           / Schalter
 //
-// Warum kein Ereignis beim Start und beim Beenden, obwohl das der uebliche Weg
-// waere, aktive Nutzer zu zaehlen: der Zeitstempel eines solchen Ereignisses
-// IST der Arbeitsbeginn bzw. das Arbeitsende. In einer Zeiterfassung, die
-// Kollegen benutzen, waere das die eine Zahl, die hier niemanden etwas angeht –
-// und sie liesse sich aus dem Aptabase-Diagramm direkt ablesen.
-//
-// Die Tagesmeldung loest das: sie zaehlt denselben Nutzer genauso einmal pro
-// Tag, landet aber immer auf einer von vier festen Uhrzeiten. Aus einem
-// beliebigen Zeitpunkt werden damit vier Toepfe. Ganz umsonst ist das nicht –
-// welcher Topf getroffen wird, sagt grob, ab wann jemand die App offen hat.
-// Bewusst so gewaehlt: mit nur einem Zeitpunkt faellt jeder heraus, dessen
-// Rechner dann gerade zu ist, und die Zahl waere eine Untergrenze statt eines
-// Istwerts.
-//
-// Keine Ereignisse fuer Timer, Berichte, Importe oder Ansichten. Es geht darum
-// zu sehen, ob und womit die App scheitert – nicht darum, Arbeit zu vermessen.
-//
-// ---- Was tatsaechlich das Geraet verlaesst ----
-//
-// Von uns: der Ereignisname, und bei Fehlern der Meldungstext, durch redact()
-// von Pfaden, Mailadressen und langen Ziffernfolgen befreit. Nie das `detail`
-// einer Protokollzeile (Stack, Ursprungsfehler, Dateiname).
-//
-// Vom Plugin automatisch und NICHT abschaltbar (es baut den Rumpf selbst,
-// siehe client.rs `track_event`): appVersion, osName, osVersion, locale,
-// engineName, engineVersion, isDebug, sdkVersion sowie eine sessionId, die je
-// Prozess neu gewuerfelt wird. Das haengt damit auch an der Tagesmeldung.
-// Weniger geht mit diesem Plugin nicht, ohne es zu ersetzen.
-//
-// Kein @aptabase/tauri: das Paket auf npm (0.4.1) haengt noch an
-// @tauri-apps/api v1 und zoege eine zweite, inkompatible IPC-Fassung herein.
-// Die v2-taugliche Fassung liegt nur unveroeffentlicht auf GitHub – und ist
-// genau der eine invoke()-Aufruf weiter unten.
+// Das Plugin haengt an JEDE Meldung und nicht abschaltbar an: appVersion, osName,
+// osVersion, locale, engineName, engineVersion, isDebug, sdkVersion und eine je
+// Prozess neu gewuerfelte sessionId.
 
 /** Nur Strings und Zahlen – mehr nimmt Aptabase nicht an. */
 export type TrackProps = Record<string, string | number>;
@@ -52,18 +20,10 @@ const MAX_LEN = 120;
 /** Einmal fehlgeschlagen (kein Plugin, kein Tauri) = fuer diesen Lauf still. */
 let broken = false;
 
-/**
- * Der Schalter aus den Einstellungen. `null` = noch nicht gelesen.
- *
- * Gilt nur fuer Fehler und Abstuerze. Der Start liest die Einstellungen erst
- * als zweiten Schritt, und ausgerechnet davor passieren die interessantesten
- * Fehler (Datenordner nicht schreibbar, settings.json kaputt). Deshalb wird bis
- * dahin gepuffert statt gesendet oder verworfen – erst der Schalter entscheidet,
- * was mit dem Puffer geschieht.
- */
+/** Der Schalter aus den Einstellungen. `null` = noch nicht gelesen. */
 let errorReports: boolean | null = null;
 
-/** Vor dem Lesen des Schalters aufgelaufene Fehler. */
+/** Vor dem Lesen des Schalters aufgelaufene Fehler - erst er entscheidet ueber sie. */
 let buffered: { name: string; props?: TrackProps }[] = [];
 
 /** Deckel gegen eine Fehlerschleife, die den Puffer volllaufen liesse. */
@@ -80,9 +40,6 @@ function inTauri(): boolean {
 /**
  * Den Fehler-Schalter setzen und den Rust-Teil nachziehen (dort haengt der
  * Absturz-Hook, den das Frontend nicht erreicht).
- *
- * Beim ersten Aufruf entscheidet sich, was mit dem Startpuffer passiert:
- * senden oder verwerfen.
  */
 export function setErrorReportsEnabled(on: boolean): void {
 	errorReports = on;
@@ -106,17 +63,10 @@ async function tellRust(on: boolean): Promise<void> {
 /**
  * Alles aus einer Meldung entfernen, was auf eine Person oder ihre Arbeit
  * zeigen koennte.
- *
- * Die meisten Fehlermeldungen sind feste Texte aus diesem Projekt, ein paar
- * setzen aber Fremdes ein – `Unhandled: ${e.message}` etwa, oder der Pfad aus
- * write_export_file. Genau die faengt das hier ab, statt sich darauf zu
- * verlassen, dass an jeder einzelnen Aufrufstelle daran gedacht wurde.
- *
- * Reihenfolge zaehlt: Mailadressen zuerst, sonst frisst die Pfad-Regel den Teil
- * hinter dem Klammeraffen.
  */
 export function redact(text: string): string {
 	return text
+		// Mailadressen zuerst - sonst frisst die Pfad-Regel den Teil hinter dem @.
 		// Klammern und Satzzeichen gehoeren nie zur Adresse – ohne sie im
 		// Ausschluss frisst die gierige Regel das "(" davor gleich mit.
 		.replace(/[^\s<>"'(),;]+@[^\s<>"'(),;]+\.[a-z]{2,}/gi, "<mail>")
@@ -129,15 +79,7 @@ export function redact(text: string): string {
 		.slice(0, MAX_LEN);
 }
 
-/**
- * Ein Ereignis melden – ohne Schalter. Wirft nie.
- *
- * Nur fuer die Tagesmeldung gedacht. Alles, was ein Fehler ist, gehoert nach
- * trackError().
- *
- * Der Rust-Teil legt das Ereignis nur in eine Warteschlange; gesendet wird
- * gebuendelt im Hintergrund. Abwarten muss der Aufrufer das nicht.
- */
+/** Ein Ereignis melden – ohne Schalter. Wirft nie. */
 export function track(name: string, props?: TrackProps): Promise<void> {
 	if (broken || !inTauri()) return Promise.resolve();
 	return (async () => {
@@ -153,11 +95,7 @@ export function track(name: string, props?: TrackProps): Promise<void> {
 	})();
 }
 
-/**
- * Einen Fehler melden – nur wenn der Schalter es erlaubt. Wirft nie.
- *
- * Vor dem Lesen der Einstellungen wird gepuffert, siehe `errorReports`.
- */
+/** Einen Fehler melden – nur wenn der Schalter es erlaubt. Wirft nie. */
 export function trackError(name: string, props?: TrackProps): Promise<void> {
 	if (errorReports === false) return Promise.resolve();
 	if (errorReports === null) {

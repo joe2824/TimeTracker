@@ -1,15 +1,4 @@
 // Aenderungen erkennen und mit Herkunftsspuren versehen.
-//
-// Reine Rechnung, ohne Dateizugriff: hier steht NUR, was sich zwischen zwei
-// Staenden geaendert hat und welche Spuren die geaenderten Datensaetze bekommen.
-// Wer das aufruft und wohin das Ergebnis geht, steht in store.ts und outbox.ts.
-//
-// Der Vergleich sitzt bewusst an der Speicher-Grenze und nicht an den einzelnen
-// Mutationen: die Eintraege werden von der Tracking-Seite, dem Eintrags-Editor,
-// dem Sammel-Dialog, dem Urlaubszeitraum, dem Kalender-Import und dem
-// LOGA-Nachtrag veraendert. Jede dieser Stellen einzeln zu stempeln hiesse, es
-// frueher oder spaeter an einer davon zu vergessen – und ein vergessener Stempel
-// ist ein Datensatz, der stillschweigend nicht synchronisiert wird.
 import type { Entry, SyncMeta } from "../types";
 
 /** Ein Datensatz, der eine Identitaet und Aenderungsspuren hat. */
@@ -24,23 +13,11 @@ export interface Changes<T extends Identified> {
 	/**
 	 * Was es vorher gab und jetzt nicht mehr - die Datensaetze selbst, nicht nur
 	 * ihre Ids.
-	 *
-	 * Der Grund ist ihre `rev`: der Server nimmt eine Loeschung nur an, wenn sie
-	 * auf seiner aktuellen Fassung aufsetzt. Sobald der Datensatz lokal weg ist,
-	 * ist diese Zahl nirgends mehr zu holen - sie muss hier mitgenommen werden,
-	 * sonst laesst sich nichts mehr loeschen, was jemals abgeglichen wurde.
 	 */
 	deleted: T[];
 }
 
-/**
- * Die Felder, die NICHT zum Inhalt gehoeren.
- *
- * Sie muessen beim Vergleich draussen bleiben, sonst gilt jeder Datensatz als
- * veraendert, sobald er einmal gestempelt wurde: der Stempel selbst waere die
- * Aenderung, und das naechste Speichern stempelte erneut. Eine Endlosschleife
- * aus lauter Selbstbestaetigung.
- */
+/** Die Felder, die NICHT zum Inhalt gehoeren. */
 const META_KEYS: readonly (keyof SyncMeta)[] = ["updatedAt", "rev", "deviceId"];
 
 /** Ein Datensatz ohne seine Aenderungsspuren. */
@@ -56,15 +33,7 @@ function contentOf<T extends Identified>(item: T): Record<string, unknown> {
 	return out;
 }
 
-/**
- * Ob sich der Inhalt zweier Staende desselben Datensatzes unterscheidet.
- *
- * Vergleicht ueber JSON mit sortierten Schluesseln: die Datensaetze sind flache
- * Objekte aus Zahlen, Zeichenketten und Wahrheitswerten, ein tiefer Vergleich
- * waere hier Aufwand ohne Gewinn. Sortiert, weil die Schluesselreihenfolge
- * davon abhaengt, wie ein Objekt entstanden ist – ein neu gebauter Eintrag hat
- * sie anders als einer aus JSON.parse.
- */
+/** Ob sich der Inhalt zweier Staende desselben Datensatzes unterscheidet. */
 function sameContent<T extends Identified>(a: T, b: T): boolean {
 	return stable(contentOf(a)) === stable(contentOf(b));
 }
@@ -76,12 +45,7 @@ function stable(obj: Record<string, unknown>): string {
 /**
  * Zwei Staende vergleichen und die geaenderten Datensaetze stempeln.
  *
- * `after` wird NICHT veraendert; die gestempelten Datensaetze kommen als Kopie
- * zurueck, zusammen mit der vollstaendigen neuen Liste zum Schreiben.
- *
- * `rev` bleibt unangetastet: die Zahl vergibt der Server. Lokal wird sie nur
- * mitgefuehrt, damit der naechste Abgleich weiss, auf welchem Serverstand die
- * Aenderung aufsetzt.
+ * `after` wird nicht veraendert; die gestempelten Datensaetze kommen als Kopie zurueck.
  */
 export function diffAndStamp<T extends Identified>(
 	before: T[],

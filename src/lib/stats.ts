@@ -61,16 +61,7 @@ export function dayWorkHours(
 	return sumPerDay(dayActivityHours(entries, absenceIds, now, deductBreaks));
 }
 
-/**
- * Soll-Stunden eines Monats = Werktage * hoursPerDay.
- *
- * Feiertage brauchen keine Sonderbehandlung: sie werden als Abwesenheit gebucht und
- * stecken damit auf der Ist-Seite (report.total) mit hoursPerDay drin – Soll und Ist
- * heben sich am Feiertag also auf.
- *
- * Im laufenden Monat zaehlen nur die Werktage BIS EINSCHLIESSLICH heute, sonst stuende
- * am Monatsanfang ein Minus fuer den ganzen Rest des Monats. Kuenftige Monate: 0.
- */
+/** Soll-Stunden eines Monats = Werktage * hoursPerDay. */
 export function targetHours(
 	month: string,
 	workdays: number[],
@@ -104,14 +95,7 @@ export interface HeatmapDay {
 	filler: boolean;
 }
 
-/**
- * Jahresraster fuer die Heatmap: Spalten = Wochen, Zeilen = Wochentage (Mo..So).
- *
- * Die Intensitaet ist der Anteil am staerksten Tag des Jahres, nicht ein Quartil:
- * Arbeitstage liegen dicht beieinander (meist 7–8 h), und Quartile wuerden diesen
- * engen Bereich ueber alle vier Stufen spreizen – 7,2 h saehe dann dramatisch
- * anders aus als 7,9 h. Am Maximum relativiert bleiben aehnliche Tage aehnlich.
- */
+/** Jahresraster fuer die Heatmap: Spalten = Wochen, Zeilen = Wochentage (Mo..So). */
 export function heatmapYear(year: number, byDay: Map<string, number>): HeatmapDay[][] {
 	let max = 0;
 	for (const [d, h] of byDay) {

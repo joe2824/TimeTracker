@@ -1,9 +1,4 @@
 // Das Sitzungs-Cookie.
-//
-// Steht hier und nicht in einer Route: SvelteKit laesst in einer Route nur die
-// HTTP-Methoden als Export zu, und der Anmelde- wie der Registrierungs-Endpunkt
-// brauchen beide dieselbe Einstellung. Zweimal gesetzt waeren es zwei Stellen,
-// an denen jemand spaeter `secure` vergessen kann.
 import type { Cookies } from "@sveltejs/kit";
 import { SESSION_TTL_MS } from "./config";
 

@@ -6,17 +6,7 @@
 /** Schluessel = Pfad relativ zum AppData-Ordner, Wert = Dateiinhalt. */
 export const files = new Map<string, string>();
 
-/**
- * Erzwingbare Fehler.
- *
- * `renameThrows` deckt den Fallback-Zweig von writeJson ab – den, der bei
- * Stromausfall eine halbe Datei hinterlassen kann. Ohne ihn lief genau der
- * Zweig in keinem Test.
- *
- * `existsThrows` steht fuer ein Dateisystem, das gar nicht antwortet – so
- * verhaelt sich das fs-Plugin, wenn ihm die Berechtigung fehlt. Der Start muss
- * das melden, statt im Ladebildschirm haengen zu bleiben.
- */
+/** Erzwingbare Fehler. */
 export const fsFaults = { renameThrows: false, existsThrows: false };
 
 /** Angelegte Ordner. "data" gibt es immer, den legt niemand extra an. */
@@ -25,10 +15,6 @@ const dirs = new Set<string>(["data"]);
 /**
  * Jeder Schreibvorgang in der Reihenfolge, in der er kam – auch die von
  * Zwischendateien, die gleich wieder verschwinden.
- *
- * Ohne das war der Weg zum Ziel unsichtbar: eine temp-Datei, die kein echtes
- * Dateisystem angenommen haette, fiel in keinem Test auf, weil am Ende nur die
- * fertige Datei dastand.
  */
 export const written: string[] = [];
 

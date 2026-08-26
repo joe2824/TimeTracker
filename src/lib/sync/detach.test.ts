@@ -1,12 +1,4 @@
 // Entkoppeln darf keine Daten kosten.
-//
-// Das ist die Zusage, an der die ganze Serveranbindung haengt: der Server ist
-// eine Zusatzschicht, nie die einzige Kopie. Wer sie loest, muss danach exakt
-// denselben Bestand haben wie vorher - nur ohne die Herkunftsspuren des
-// Abgleichs.
-//
-// Geprueft wird deshalb nicht "es sind noch Eintraege da", sondern Feld fuer
-// Feld, dass sich ausser den drei Stempeln nichts geaendert hat.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("../testing/fakeFs")).fakeFs);

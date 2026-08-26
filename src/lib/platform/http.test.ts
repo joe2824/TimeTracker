@@ -1,11 +1,4 @@
 // Der Weg ins Netz - und warum es zwei davon gibt.
-//
-// Der Fehler, den diese Datei festhaelt: die Abrufmethode war austauschbar
-// vorgesehen, wurde aber ausser in Tests nie gesetzt. Die Desktop-Anwendung
-// waere damit ueber das eingebaute `fetch` gegangen - aus einem Fenster mit der
-// Herkunft `tauri://localhost`. Jede Anfrage an den eigenen Server waere ein
-// Zugriff ueber Herkunftsgrenzen hinweg gewesen und an der Vorabfrage
-// gescheitert. Der gesamte Abgleich auf dem Rechner haette nicht funktioniert.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { platformFetch } from "./http";
 

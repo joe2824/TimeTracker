@@ -1,13 +1,5 @@
-// Ein Konto anlegen und sich anmelden.
-//
-// Beides passiert im Browser - Passkeys sind an die Domain gebunden, und die
-// Desktop-Anwendung hat keine. Sie koppelt sich stattdessen an ein Geraet, das
-// schon Zugriff hat (siehe account.svelte.ts).
-//
-// Der heikle Teil ist nicht die Anmeldung, sondern der Tresorschluessel: er
-// entsteht hier, verlaesst dieses Geraet nie im Klartext, und er muss auf
-// MINDESTENS zwei Wegen wieder zu oeffnen sein. Sonst haengt alles an einem
-// einzigen Passkey - und wenn das Handy im See liegt, sind die Daten weg.
+// Ein Konto anlegen und sich anmelden - im Browser, weil Passkeys an die Domain
+// gebunden sind. Die Desktop-Anwendung koppelt sich stattdessen (account.svelte.ts).
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import type {
 	AuthenticationResponseJSON,
@@ -57,12 +49,18 @@ function deserialize(payload: string): KeyWrap {
 	};
 }
 
+/** Die Verpackung mit der Phrase oeffnen - oder verstaendlich scheitern. */
+async function oeffneMitPhrase(payload: string, phrase: string): Promise<CryptoKey> {
+	try {
+		return await unwrapWithPhrase(deserialize(payload), phrase);
+	} catch {
+		throw new Error("Die Wörter passen nicht zu diesem Konto – bitte noch einmal prüfen.");
+	}
+}
+
 /**
- * Feste Eingabe fuer die PRF-Erweiterung.
- *
- * Sie muss bei jeder Anmeldung dieselbe sein - derselbe Passkey plus dieselbe
- * Eingabe ergibt denselben Wert, und genau daran haengt, dass der Tresor sich
- * wieder oeffnet. Sie ist kein Geheimnis; das Geheimnis steckt im Passkey.
+ * Feste Eingabe fuer die PRF-Erweiterung - muss bei jeder Anmeldung dieselbe
+ * sein, sonst faellt ein anderer Wert heraus. Kein Geheimnis.
  */
 const PRF_INPUT = new TextEncoder().encode("timetracker-vault-v1");
 
@@ -76,16 +74,7 @@ function prfOf(response: RegistrationResponseJSON | AuthenticationResponseJSON):
 	return first instanceof Uint8Array ? (first.buffer as ArrayBuffer) : first;
 }
 
-/**
- * Die PRF-Eingabe an die Optionen haengen.
- *
- * Der Server stellt die Aufgabe, die EINGABE fuer die Erweiterung kommt von
- * hier: sie ist kein Geheimnis und muss auf jedem Geraet dieselbe sein, sonst
- * faellt bei jeder Anmeldung ein anderer Wert heraus.
- *
- * Der Cast ist noetig, weil die Typdefinition des Browsers `prf` noch nicht
- * kennt - die Erweiterung ist neuer als die Typen.
- */
+/** Die PRF-Eingabe an die Optionen haengen. */
 function withPrf<T extends { extensions?: unknown }>(options: T): T {
 	return {
 		...options,
@@ -106,14 +95,7 @@ export interface EnrollResult {
 	key: CryptoKey;
 }
 
-/**
- * Ein neues Konto anlegen.
- *
- * Die Reihenfolge ist Absicht: erst der Passkey (dort kann der Nutzer noch
- * abbrechen), dann der Schluessel, dann die Verpackungen. Ein Konto ohne
- * Verpackung waere ein Tresor ohne jeden Schluessel - deshalb wird die
- * Phrasen-Verpackung IMMER abgelegt, auch wenn der Passkey PRF kann.
- */
+/** Ein neues Konto anlegen. */
 export async function register(
 	baseUrl: string,
 	displayName: string,
@@ -137,6 +119,7 @@ export async function register(
 	});
 
 	// Ab hier ist die Sitzung offen und die Verpackungen koennen abgelegt werden.
+	// Die Phrasen-Verpackung IMMER, auch wenn der Passkey PRF kann.
 	const key = await createVaultKey();
 	const recoveryPhrase = createRecoveryPhrase();
 	await api.putWrap("recovery", serialize(await wrapWithPhrase(key, recoveryPhrase)), undefined, {
@@ -163,29 +146,13 @@ export interface LoginResult {
 	key: CryptoKey | null;
 	/** Ob eine Phrasen-Verpackung vorliegt, mit der entsperrt werden kann. */
 	canUnlockWithPhrase: boolean;
-	/**
-	 * Was der Authentifikator ueber PRF ausgegeben hat, samt der Kennung des
-	 * benutzten Passkeys. Null, wenn er PRF nicht kann.
-	 *
-	 * Reist mit, damit der Aufrufer nach einem Entsperren ueber die Phrase eine
-	 * PRF-Verpackung nachlegen kann - siehe `addPasskeyWrap`. Beides ist in
-	 * diesem Moment noch da und spaeter nicht mehr zu bekommen: der Wert faellt
-	 * nur bei einer Anmeldung an, und eine zweite dafuer waere ein zweiter
-	 * Passkey-Dialog fuer etwas, das niemand angefordert hat.
-	 */
+	/** Was der Authentifikator ueber PRF ausgegeben hat. Null, wenn er es nicht kann. */
 	prf: ArrayBuffer | null;
 	/** Die Kennung des benutzten Passkeys - an ihr haengt die PRF-Verpackung. */
 	credentialId: string;
 }
 
-/**
- * Anmelden.
- *
- * Wenn der Passkey PRF kann und dafuer eine Verpackung vorliegt, ist der Tresor
- * in derselben Bewegung offen. Sonst kommt der Schluessel `null` zurueck und der
- * Aufrufer fragt nach der Phrase - das ist kein Fehler, sondern der normale Weg
- * auf Geraeten ohne PRF.
- */
+/** Anmelden. */
 export async function login(baseUrl: string): Promise<LoginResult> {
 	const api = new Api({ baseUrl, fetchFn: platformFetch });
 	const start = await api.loginStart();
@@ -226,21 +193,10 @@ export async function unlockWithPhrase(baseUrl: string, phrase: string): Promise
 	const { wraps } = await api.wraps();
 	const wrap = wraps.find((w) => w.kind === "recovery");
 	if (!wrap) throw new Error("Für dieses Konto ist keine Wiederherstellungs-Phrase hinterlegt.");
-	return unwrapWithPhrase(deserialize(wrap.payload), phrase);
+	return oeffneMitPhrase(wrap.payload, phrase);
 }
 
-/**
- * Nach einer Anmeldung ohne PRF-Verpackung: eine anlegen.
- *
- * Damit oeffnet der Passkey den Tresor beim naechsten Mal allein. Passiert
- * stillschweigend im Hintergrund - es gibt nichts zu entscheiden, und ein
- * Dialog dafuer waere reine Stoerung.
- *
- * Aufgerufen wird das nach dem Entsperren ueber die Phrase (WebOnboarding).
- * Ohne diesen Aufruf blieb es bei der Absicht: ein Geraet, dessen Passkey PRF
- * kann, dessen Verpackung aber fehlt oder nicht mehr passt, verlangte bei JEDER
- * Anmeldung erneut die 24 Woerter - genau das, was hier verhindert werden soll.
- */
+/** Nach einer Anmeldung ohne PRF-Verpackung: eine anlegen. */
 export async function addPasskeyWrap(
 	baseUrl: string,
 	key: CryptoKey,
@@ -251,19 +207,7 @@ export async function addPasskeyWrap(
 	await api.putWrap("passkey", serialize(await wrapWithPrf(key, prf)), credentialId);
 }
 
-/**
- * Ein Konto allein mit der Wiederherstellungs-Phrase zurueckholen.
- *
- * Der Weg fuer den Tag, an dem sonst nichts mehr da ist: Rechner kaputt, kein
- * zweites Geraet, kein Passkey. In der Hand sind 24 Woerter.
- *
- * Zwei Schritte, und der zweite ist der Grund fuer beide: erst die Verpackung
- * holen (die Kennung sagt nur, WELCHES Konto gemeint ist), dann oeffnen, dann
- * nachweisen, dass es gelungen ist. Erst danach gibt es ein Geraete-Token.
- * Ohne diesen Nachweis genuegte die Kennung - und wer sie aus einer gestohlenen
- * Datenbank abliest, koennte die Chiffrate loeschen, ohne je etwas
- * entschluesselt zu haben.
- */
+/** Ein Konto allein mit der Wiederherstellungs-Phrase zurueckholen. */
 export async function recoverWithPhrase(
 	baseUrl: string,
 	phrase: string,
@@ -278,7 +222,7 @@ export async function recoverWithPhrase(
 	const { wrap } = await api.recoverWrap(recoveryId);
 	// Hier faellt die Entscheidung: passen die Woerter nicht, geht das Chiffrat
 	// nicht auf. Der Server hat damit nichts zu tun und erfaehrt es auch nicht.
-	const key = await unwrapWithPhrase(deserialize(wrap), phrase);
+	const key = await oeffneMitPhrase(wrap, phrase);
 
 	const angemeldet = await api.recoverDevice({
 		recoveryId,
@@ -295,16 +239,8 @@ export async function recoverWithPhrase(
 }
 
 /**
- * Ein Konto von diesem Geraet aus anlegen - ohne Passkey.
- *
- * Der Weg fuer die Desktop-Anwendung. Sie hat keine Domain und kann deshalb
- * keinen Passkey anbieten; sie bekommt ein Geraete-Token und legt die
- * Wiederherstellungs-Phrase als einzige Verpackung ab.
- *
- * Das ist ausdruecklich ein Konto mit EINEM Weg zurueck. Solange kein zweites
- * Geraet gekoppelt und kein Passkey angelegt ist, haengt alles an diesen 24
- * Woertern - deshalb gibt diese Funktion sie zurueck und die Oberflaeche zeigt
- * sie, bevor irgendetwas anderes passiert.
+ * Ein Konto von diesem Geraet aus anlegen - ohne Passkey, fuer die
+ * Desktop-Anwendung.
  */
 export async function registerFromDevice(
 	baseUrl: string,
@@ -333,10 +269,8 @@ export async function registerFromDevice(
 
 	const key = await createVaultKey();
 	const recoveryPhrase = createRecoveryPhrase();
-	// Die Phrase zuerst: sie ist der einzige Weg zurueck, und ein Konto, dessen
-	// Verpackung nicht abgelegt werden konnte, ist ein Konto ohne Zugriff auf die
-	// eigenen Daten. Scheitert das hier, scheitert das Anlegen sichtbar - statt
-	// still ein unbrauchbares Konto zu hinterlassen.
+	// Die Phrase zuerst: sie ist der einzige Weg zurueck. Scheitert das, scheitert
+	// das Anlegen sichtbar - statt still ein unbrauchbares Konto zu hinterlassen.
 	await api.putWrap("recovery", serialize(await wrapWithPhrase(key, recoveryPhrase)), undefined, {
 		recoveryId: await recoveryLookupId(recoveryPhrase),
 		vaultProof: await vaultProof(key)
@@ -354,19 +288,8 @@ export async function registerFromDevice(
 /**
  * Einen WEITEREN Passkey an ein bestehendes Konto haengen.
  *
- * Zwei Dinge passieren, und beide muessen passieren:
- *
- *   1. Der Passkey wird beim Server hinterlegt - damit meldet er an.
- *   2. Der Tresorschluessel wird gegen ihn verpackt - damit oeffnet er die Daten.
- *
- * Ohne den zweiten Schritt haette man einen Passkey, der zwar hineinkommt, aber
- * vor verschlossenen Daten steht. Das ist der unangenehmste Zustand von allen:
- * es sieht aus, als sei alles in Ordnung, bis der erste Passkey weg ist.
- *
- * Schritt 2 geht nur, wenn der Authentifikator PRF kann. Kann er es nicht,
- * bleibt der Passkey trotzdem nuetzlich - er meldet an, und die Daten oeffnet
- * dann die Phrase oder ein bereits entsperrtes Geraet. Das Ergebnis sagt, was
- * von beidem der Fall ist, damit die Oberflaeche nichts verspricht.
+ *   1. Passkey beim Server hinterlegen - damit meldet er an.
+ *   2. Tresorschluessel gegen ihn verpacken - damit oeffnet er die Daten.
  */
 export async function addPasskey(
 	baseUrl: string,
@@ -388,9 +311,7 @@ export async function addPasskey(
 		response
 	});
 
-	// Erst jetzt die Verpackung: sie braucht die Kennung, die der Server gerade
-	// vergeben hat. Scheitert sie, bleibt ein Passkey ohne Zugriff auf die Daten
-	// zurueck - deshalb sagt das Ergebnis es dem Aufrufer, statt es zu verschweigen.
+	// Erst jetzt die Verpackung: sie braucht die eben vergebene Kennung.
 	if (prf) await api.putWrap("passkey", serialize(await wrapWithPrf(key, prf)), angelegt.id);
 
 	return { id: angelegt.id, label: angelegt.label, prfAvailable: prf !== null };

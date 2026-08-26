@@ -1,14 +1,5 @@
-// Minimaler XLSX-Leser fuer das erste Arbeitsblatt einer Datei.
-//
-// Bewusst ohne npm-Paket: eine .xlsx ist ein ZIP mit XML darin, und beides
-// bringt die Laufzeit schon mit. Die App laeuft in WebView2 (Chromium) und die
-// Tests in Node >= 18 – `DecompressionStream("deflate-raw")` gibt es in beiden.
-// Ein Tabellen-Paket waere fuer den einen Zweck (eine Spaltenliste einlesen)
-// die groessere Abhaengigkeit als diese Datei.
-//
-// Bewusst NICHT enthalten: Formeln, Formatierungen, Zahlenformate. Zahlen kommen
-// so heraus, wie sie in der Datei stehen ("46023.0") – ob das ein Datum ist,
-// weiss nur der Aufrufer (siehe timeReport.ts).
+// Minimaler XLSX-Leser fuer das erste Arbeitsblatt einer Datei. Ohne Formeln,
+// Formatierungen und Zahlenformate - Zahlen kommen roh heraus ("46023.0").
 
 /** Ein eingelesenes Arbeitsblatt. `rows[zeile][spalte]`, Spalte 0 = "A". */
 export interface XlsxSheet {
@@ -37,15 +28,7 @@ const LOCAL_SIG = 0x04034b50;
 /** Maximale Groesse des ZIP-Kommentars (u16) + EOCD-Kopf selbst. */
 const EOCD_MAX_SEARCH = 0xffff + 22;
 
-/**
- * Alle Eintraege eines ZIP-Archivs als Name -> Rohdaten (noch gepackt).
- *
- * Gelesen wird ueber das Central Directory am Dateiende, nicht durch
- * Vorwaertslaufen ueber die lokalen Kopfsaetze: nur dort stehen die Groessen
- * zuverlaessig. Bei gestreamt geschriebenen Archiven sind sie im lokalen Kopf
- * 0 und stehen stattdessen in einem Data Descriptor dahinter – ein
- * Vorwaertsleser bekaeme dort eine leere Datei.
- */
+/** Alle Eintraege eines ZIP-Archivs als Name -> Rohdaten (noch gepackt). */
 function readZipEntries(buf: Uint8Array): Map<string, { method: number; data: Uint8Array }> {
 	const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
 
@@ -175,13 +158,7 @@ export function colIndex(ref: string): number {
 	return n - 1;
 }
 
-/**
- * Ein Arbeitsblatt in Zeilen zerlegen.
- *
- * Die Position kommt aus dem `r`-Attribut, nicht aus der Reihenfolge: XLSX darf
- * leere Zellen UND leere Zeilen komplett auslassen. Genau das tut der
- * Zeitwirtschaftsreport – ohne die Referenzen verrutschten dort ganze Spalten.
- */
+/** Ein Arbeitsblatt in Zeilen zerlegen. */
 export function parseSheetXml(xml: string, shared: string[]): string[][] {
 	const rows: string[][] = [];
 	const rowRe = /<row\b([^>]*?)(\/>|>([\s\S]*?)<\/row>)/g;
@@ -203,6 +180,8 @@ export function parseSheetXml(xml: string, shared: string[]): string[][] {
 		while ((cellMatch = cellRe.exec(body))) {
 			const attrs = cellMatch[1];
 			const inner = cellMatch[3] ?? "";
+			// Position aus `r`, nicht aus der Reihenfolge: XLSX darf leere Zellen und
+			// ganze Zeilen auslassen.
 			const refAttr = /\br="([A-Z]+\d+)"/.exec(attrs);
 			const col = refAttr ? colIndex(refAttr[1]) : nextCol;
 			if (col < 0) continue;

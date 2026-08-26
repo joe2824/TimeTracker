@@ -3,17 +3,7 @@ import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { revokeDevice } from "$lib/server/auth";
 
-/**
- * Ein Geraet loesen.
- *
- * Ohne `deviceId` loest sich das aufrufende Geraet selbst - der Weg, den das
- * Entkoppeln geht. Das Geraet kennt seine eigene Kennung beim Server naemlich
- * nicht: bei der Kopplung bekommt es ein Token, keine ID. Es muesste sie also
- * erst ueber /api/me suchen und dort erraten, welche der aufgefuehrten Zeilen es
- * selbst ist. Der Server weiss das ohnehin - er hat gerade das Token geprueft.
- *
- * Mit `deviceId` loest ein Geraet ein ANDERES: der Fall "Handy verloren".
- */
+/** Ein Geraet loesen. */
 export const DELETE: RequestHandler = async ({ locals, request }) => {
 	if (!locals.userId) error(401, "Nicht angemeldet");
 

@@ -45,24 +45,13 @@
 
 	let tab = $state("tracking");
 
-	/**
-	 * Im Browser ohne Konto: erst anmelden.
-	 *
-	 * Auf dem Rechner nie - dort ist die Serveranbindung ein Zusatz, und wer sie
-	 * nicht will, soll nie einen Anmeldebildschirm sehen.
-	 */
+	/** Im Browser ohne Konto: erst anmelden. */
 	const brauchtAnmeldung = $derived(!isTauri() && !account.linked);
 	let paletteOpen = $state(false);
 
 	/** Laufende Version, sobald der Start sie gelesen hat ("" bis dahin). */
 	let appVersion = $state("");
-	/**
-	 * Vorabversion? Alles mit Semver-Vorabteil zaehlt dazu ("0.8.1-beta.2").
-	 *
-	 * Wer den Beta-Kanal anhat, sieht sonst nicht, ob er gerade eine Vorabversion
-	 * laufen hat – die Version steht nur unten in den Einstellungen. Beim Melden
-	 * eines Fehlers ist genau das die erste Frage.
-	 */
+	/** Vorabversion? Alles mit Semver-Vorabteil zaehlt dazu ("0.8.1-beta.2"). */
 	const isBeta = $derived(appVersion.includes("-"));
 
 	// „Benachrichtigung" = einer der Aufmerksamkeits-Dialoge ist offen/fällig.
@@ -88,13 +77,7 @@
 		entriesFocus.requestToday();
 	}
 
-	/**
-	 * Aus dem Tracking-Hinweis in den Arbeitszeit-Check.
-	 *
-	 * Nur den Tab zu wechseln reicht nicht: die Karte steht unter Verifikation und
-	 * Auswertung, man landet also oben und muss suchen. Das `tick()` wartet, bis
-	 * der Tab-Inhalt sichtbar ist – vorher hat das Ziel keine Position.
-	 */
+	/** Aus dem Tracking-Hinweis in den Arbeitszeit-Check. */
 	async function showArbZgCheck() {
 		tab = "report";
 		await tick();
@@ -112,26 +95,10 @@
 
 	// Laeuft nur, solange auf ein sichtbares Fenster gewartet wird (siehe unten).
 	let visibilityPoll: ReturnType<typeof setInterval> | undefined;
-	/**
-	 * Das laufende Warten auf ein sichtbares Fenster – alle Wartenden teilen es.
-	 *
-	 * Ohne das setzte ein zweiter Aufruf `visibilityPoll` neu, und der Timer des
-	 * ersten liefe fuer immer weiter. Erreichbar, seit die Update-Suche nicht mehr
-	 * nur beim Start laeuft: findet sie eine neuere Version, waehrend das Fenster
-	 * vom Autostart noch versteckt ist, warten zwei.
-	 */
+	/** Das laufende Warten auf ein sichtbares Fenster – alle Wartenden teilen es. */
 	let visibilityWait: Promise<void> | null = null;
 
-	/**
-	 * Warten, bis das Hauptfenster tatsaechlich zu sehen ist.
-	 *
-	 * Beim Autostart startet die App mit `--autostart-hidden`: die Oberflaeche
-	 * laeuft, nur sieht sie niemand. Ein Toast dort ist laengst abgelaufen, bevor
-	 * jemand das Fenster oeffnet – genau so ging der Update-Hinweis jeden Morgen
-	 * verloren, und die Suche musste man in den Einstellungen wiederholen.
-	 *
-	 * Minimiert zaehlt nicht als sichtbar; `isVisible()` sagt dazu ja.
-	 */
+	/** Warten, bis das Hauptfenster tatsaechlich zu sehen ist. */
 	function whenWindowVisible(): Promise<void> {
 		const win = getCurrentWindow();
 		visibilityWait ??= new Promise((resolve) => {
@@ -157,22 +124,9 @@
 		return visibilityWait;
 	}
 
-	/**
-	 * Abstand der Update-Suche im Hintergrund.
-	 *
-	 * Gesucht wurde vorher nur beim Start. Bei einer App, die im Autostart liegt
-	 * und wochenlang im Tray durchlaeuft, war das genau einmal – ein Update kam
-	 * damit erst beim naechsten Neustart des Rechners an.
-	 */
+	/** Abstand der Update-Suche im Hintergrund. */
 	const UPDATE_CHECK_MS = 60 * 60 * 1000;
-	/**
-	 * Wartezeit der ersten Update-Suche, wenn die App versteckt startet.
-	 *
-	 * Beim Autostart faellt der Start in den Login, wo sich Windows, Virenscanner
-	 * und jedes andere Startprogramm um Platte und Netz streiten. Zeigen liesse
-	 * sich ein Fund dort ohnehin nicht: der Hinweis wartet auf ein sichtbares
-	 * Fenster (whenWindowVisible).
-	 */
+	/** Wartezeit der ersten Update-Suche, wenn die App versteckt startet. */
 	const HIDDEN_UPDATE_DELAY_MS = 2 * 60 * 1000;
 	let updateTimer: ReturnType<typeof setInterval> | undefined;
 	/** Version, zu der schon ein Hinweis stand – sonst meldete jede Runde dieselbe. */
@@ -201,13 +155,7 @@
 		});
 	}
 
-	/**
-	 * Alles einrichten, was die App zum Laufen braucht.
-	 *
-	 * Laeuft beim "Erneut versuchen" im Ladebildschirm nochmal – die Ereignis-Abos
-	 * deshalb nur beim ersten erfolgreichen Durchlauf, sonst reagierte die App
-	 * danach doppelt auf jeden Tray-Klick.
-	 */
+	/** Alles einrichten, was die App zum Laufen braucht. */
 	async function startup() {
 		// Als erstes ins Protokoll, mit Version: bei "seit dem Update geht X nicht"
 		// ist genau das die Zeile, an der die Suche beginnt.
@@ -235,9 +183,6 @@
 			// globale Hotkeys, Leerlauf-Erkennung, Autostart und die Update-Suche.
 			// Im Browser wuerde jeder dieser Aufrufe werfen - und zwar mitten in der
 			// Einrichtung, sodass danach auch nichts Harmloses mehr liefe.
-			//
-			// Das `return` verlaesst startup() ganz: die Update-Suche unten steht
-			// ausserhalb des try-Blocks und wuerde sonst trotzdem laufen.
 			if (!isTauri()) return;
 
 			if (unlisteners.length === 0) {
@@ -273,9 +218,6 @@
 		// Beim Start und danach stuendlich still nach Updates suchen. „Installieren"
 		// im Hinweis öffnet direkt den Update-Dialog – vorher landete man nur im
 		// Einstellungs-Tab und musste die Suche dort von Hand wiederholen.
-		//
-		// `??=`: `startup()` läuft beim „Erneut versuchen" im Ladebildschirm noch
-		// einmal, ein zweiter Timer suchte danach doppelt.
 		updateTimer ??= setInterval(() => void checkAndAnnounceUpdate(), UPDATE_CHECK_MS);
 		// Versteckt gestartet? Dann hat die Suche keine Eile (HIDDEN_UPDATE_DELAY_MS).
 		const sichtbar = await getCurrentWindow()

@@ -104,12 +104,7 @@
 	let activityFor = $state<Record<string, string>>({});
 	/** Zuordnung der Stunden JENSEITS der Stempelzeiten, Schluessel = Datum. */
 	let extraActivityFor = $state<Record<string, string>>({});
-	/**
-	 * Tage, die auf MEHRERE Projekte aufgeteilt werden, Schluessel = Datum.
-	 *
-	 * Liegt hier etwas, gilt es statt `activityFor`: der Tag wird beim Uebernehmen
-	 * entlang der Uhr in Bloecke je Projekt geschnitten.
-	 */
+	/** Tage, die auf MEHRERE Projekte aufgeteilt werden, Schluessel = Datum. */
 	let splitFor = $state<Record<string, Share[]>>({});
 	/** Der Verteilen-Bereich ist zugeklappt, bis jemand ihn braucht. */
 	let splitOpen = $state(false);
@@ -161,14 +156,7 @@
 		if (stored) void app.ensureMonth(stored.month).catch(() => {});
 	});
 
-	/**
-	 * Bilanz des gespeicherten Reports fuer die Ruhe-Ansicht der Karte.
-	 *
-	 * Erst wenn der Monat wirklich geladen ist: `monthEntries` liefert fuer einen
-	 * ungeladenen Monat `[]`, und die Karte meldete fuer den Bruchteil bis zum
-	 * Laden „23 Tage offen". Ein leerer, aber geladener Monat ist `[]` und damit
-	 * truthy – nur `undefined` heisst „noch nicht da".
-	 */
+	/** Bilanz des gespeicherten Reports fuer die Ruhe-Ansicht der Karte. */
 	const storedSummary = $derived(
 		stage === "idle" && stored && app.entriesByMonth[stored.month] ? summarize(stored) : null
 	);
@@ -193,10 +181,6 @@
 	/**
 	 * Monate, die sich hier direkt aufrufen lassen: die DIESER Person aus der
 	 * offenen Datei plus alles, was schon eingelesen auf der Platte liegt.
-	 *
-	 * In einem Team-Export deckt nicht jede Person jeden Monat ab; ein Monat aus
-	 * der Gesamtliste kann fuer die gewaehlte Person leer sein. Die gespeicherten
-	 * Monate kommen dazu, damit der Wechsel auch ohne offene Datei geht.
 	 */
 	const availableMonths = $derived.by(() => {
 		const set = new Set(reportMonths);
@@ -211,12 +195,7 @@
 
 	const fixable = $derived(rows.filter((r) => r.plan !== null && !r.day.alreadyFilled));
 	const picked = $derived(fixable.filter((r) => selected[r.day.date]));
-	/**
-	 * Angehakt UND zuordenbar.
-	 *
-	 * Ohne Aktivitaet gaebe es beim Uebernehmen nur eine Fehlermeldung je Tag –
-	 * seit die Auswahl leer startet, waere das der Normalfall statt der Ausnahme.
-	 */
+	/** Angehakt UND zuordenbar. */
 	const chosen = $derived(
 		picked.filter(
 			(r) =>
@@ -235,13 +214,7 @@
 		return Math.round(((relevant - summary.missing - summary.partial) / relevant) * 100);
 	});
 
-	/**
-	 * Vorschlag fuer die ungestempelten Stunden: die eingebaute Zeile „Others".
-	 *
-	 * Die gibt es in jedem Bestand (siehe #seedBuiltins) und sie ist genau dafuer
-	 * da – Zeit, die zu keinem Projekt gehoert. Fehlt sie wider Erwarten, bleibt
-	 * die Auswahl leer und der Nutzer waehlt selbst.
-	 */
+	/** Vorschlag fuer die ungestempelten Stunden: die eingebaute Zeile „Others". */
 	function othersActivity(): string {
 		return app.trackableActivities.find((a) => a.name === BUILTIN_OTHERS)?.id ?? "";
 	}
@@ -279,25 +252,13 @@
 		}
 	}
 
-	/**
-	 * Die ausgewaehlten Tage mit Zeitnachtrag – nur die lassen sich verteilen.
-	 *
-	 * Ohne Bloecke INNERHALB der Stempelzeiten gibt es nichts zu schneiden: solche
-	 * Tage haengen ganz an der Auswahl fuer die ungestempelten Stunden. Waeren sie
-	 * dabei, stuende in der Zeile eine leere Verteilung, die als zugeordnet zaehlt.
-	 */
+	/** Die ausgewaehlten Tage mit Zeitnachtrag – nur die lassen sich verteilen. */
 	const splittable = $derived(
 		picked.filter((r) => r.plan?.kind === "time" && r.plan.blocks.length > 0)
 	);
 	const splittableHours = $derived(splittable.reduce((s, r) => s + (r.plan?.hours ?? 0), 0));
 
-	/**
-	 * Die Anteile auf die ausgewaehlten Tage legen.
-	 *
-	 * "days": jeder Tag geht ganz an ein Projekt, die Anteile entscheiden nur, an
-	 * welches – das ergibt weniger Eintraege. "within": jeder Tag wird in sich
-	 * geschnitten, dafuer stimmt das Verhaeltnis an jedem einzelnen Tag.
-	 */
+	/** Die Anteile auf die ausgewaehlten Tage legen. */
 	function applySplit(shares: Share[], mode: SplitMode) {
 		if (shares.length === 0 || splittable.length === 0) return;
 		if (mode === "days") {
@@ -371,9 +332,6 @@
 	/**
 	 * Der Monat, mit dem der Abgleich startet: der aus der Einträge-Ansicht, wenn
 	 * die Datei ihn enthaelt, sonst der letzte darin.
-	 *
-	 * Ohne diesen Rueckfall stuende bei einer Datei, die den gerade gewaehlten
-	 * Monat nicht abdeckt, eine leere Tabelle da – ohne erkennbaren Grund.
 	 */
 	function preferredMonth(person: TimeReportPerson): string {
 		const months = monthsOf(person);
@@ -433,9 +391,6 @@
 	/**
 	 * Im Abgleich den Monat wechseln – aus der offenen Datei, wenn sie ihn kennt,
 	 * sonst aus dem gespeicherten Report.
-	 *
-	 * Nimmt die Eintraege-Ansicht mit (`month` ist gebunden): sonst zeigte die
-	 * Tabelle daneben weiter den alten Monat.
 	 */
 	async function switchMonth(target: string) {
 		if (!target || target === active?.month) return;
@@ -618,17 +573,7 @@
 		});
 	}
 
-	/**
-	 * Bloecke eines Vorschlags als Text: "08:00–12:00, 12:30–16:30".
-	 *
-	 * Die Tagesgrenze steht als "24:00" da, nicht als "00:00": minToClock()
-	 * rechnet modulo 24 h, und aus einem Block bis Mitternacht wurde damit in der
-	 * Vorschau "22:00–00:00" – gelesen als leerer oder rueckwaerts laufender
-	 * Zeitraum. Betroffen war nur der Text; gespeichert wird ueber tsAt(), das
-	 * Minute 1440 als Folgetag behandelt.
-	 *
-	 * Spaeter als 1440 endet kein Block: planFill() klemmt sein Fenster dort.
-	 */
+	/** Bloecke eines Vorschlags als Text: "08:00–12:00, 12:30–16:30". */
 	function blockRanges(blocks: Interval[]): string {
 		const end = (min: number) => (min === 1440 ? "24:00" : minToClock(min));
 		return blocks.map((b) => `${minToClock(b.start)}–${end(b.end)}`).join(", ");

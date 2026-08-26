@@ -1,10 +1,5 @@
-// Die Kontozeitzone fuer die gesamte Testsuite festnageln.
-//
-// Der Sinn steht in vitest.config.ts: die Suite muss dasselbe Ergebnis liefern,
-// egal in welcher Zone das GERAET steht. Deshalb setzt dieses Setup die
-// Kontozeitzone hart auf Berlin, waehrend `TZ` die Geraetezone stellt. Laeuft die
-// Suite unter `TZ=Pacific/Auckland` gruen, ist bewiesen, dass keine Rechnung
-// mehr an der Geraetezeit haengt.
+// Die Kontozeitzone fuer die gesamte Testsuite festnageln - `TZ` stellt daneben die
+// Geraetezone, damit die Suite in jeder Zone dasselbe liefert (siehe vitest.config.ts).
 import { setAppTimeZone } from "../tz";
 
 setAppTimeZone(process.env.APP_TZ ?? "Europe/Berlin");

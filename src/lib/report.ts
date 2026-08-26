@@ -12,15 +12,7 @@ import {
 	roundHours
 } from "./time";
 
-/**
- * Betreff aus der Vorlage bauen. Platzhalter: {month}, {name}.
- *
- * Fehlt {name} in der Vorlage, obwohl ein Name hinterlegt ist, wird er angehaengt.
- * Sonst ginge der Absender still verloren, nur weil der Platzhalter beim Bearbeiten
- * der Vorlage herausfiel – und der Name steht ja genau dafuer in den Einstellungen.
- *
- * Ohne Namen bleiben keine leeren Trenner stehen ("Stundenerfassung Juli 2026 –").
- */
+/** Betreff aus der Vorlage bauen. Platzhalter: {month}, {name}. */
 export function reportSubject(template: string, label: string, name: string): string {
 	const trimmedName = name.trim();
 	const tpl = template.trim() || DEFAULT_SUBJECT;
@@ -57,10 +49,8 @@ export interface MonthReport {
  * Es erscheinen ALLE nicht-archivierten Aktivitaeten (auch mit 0 Stunden),
  * jeweils auf `step` Stunden gerundet.
  *
- * Ist `deductBreaks` gesetzt, wird die Pause JE TAG abgezogen und anteilig auf
- * die Aktivitaeten des Tages verteilt (siehe breaks.ts). Der Abzug muss
- * tageweise passieren, nicht auf der Monatssumme: die Regel haengt an der
- * Tagesarbeitszeit, und ein Monat liegt immer ueber jeder Schwelle.
+ * `deductBreaks` zieht die Pause JE TAG ab, nie auf der Monatssumme - die Regel
+ * haengt an der Tagesarbeitszeit (siehe breaks.ts).
  */
 export function buildReport(
 	month: string,

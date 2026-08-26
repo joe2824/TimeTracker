@@ -1,9 +1,5 @@
 <script lang="ts">
 	// Protokoll-Karte in den Einstellungen.
-	//
-	// Der Sinn des Protokolls ist, dass es jemand LIEST – deshalb hier und nicht
-	// nur als Datei irgendwo im AppData-Ordner: die letzten Zeilen direkt sichtbar,
-	// alles Weitere einen Klick entfernt im Explorer.
 	import { KEEP_DAYS, LOG_DIR, clearLogs, errorText, logFile, readLog } from "$lib/log";
 	import { Button } from "$lib/components/ui/button";
 	import * as Card from "$lib/components/ui/card";
@@ -55,14 +51,7 @@
 
 	let visibleMarker = $state<HTMLElement | null>(null);
 
-	/**
-	 * Lesen, sobald die Karte tatsaechlich zu sehen ist.
-	 *
-	 * bits-ui baut alle Tab-Inhalte sofort auf und blendet die inaktiven nur aus –
-	 * beim Aufbau zu lesen zeigte also fuer immer den fast leeren Stand vom
-	 * App-Start. Ein Dauer-Nachladen waere die Alternative, aber die Karte laeuft
-	 * ja die ganze Zeit mit.
-	 */
+	/** Lesen, sobald die Karte tatsaechlich zu sehen ist. */
 	$effect(() => {
 		if (!visibleMarker) return;
 		const io = new IntersectionObserver((entries) => {

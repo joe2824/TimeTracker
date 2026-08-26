@@ -1,9 +1,5 @@
 <script lang="ts">
 	// Chef-Modus: Abgabe-Kontrolle der Monatsberichte des Teams.
-	//
-	// Bewusst ohne Stundenauswertung – Outlook gibt per COM nur Betreff und
-	// Empfangszeit heraus, sobald der programmatische Zugriff gesperrt ist
-	// (siehe teamReport.ts). Liest nur, verschiebt und markiert nichts.
 	import { invoke } from "@tauri-apps/api/core";
 	import { save } from "@tauri-apps/plugin-dialog";
 	import { app } from "$lib/app.svelte";

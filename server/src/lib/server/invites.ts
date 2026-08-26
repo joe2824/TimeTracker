@@ -1,38 +1,14 @@
 // Einladungen: ausstellen, pruefen, entwerten.
-//
-// Solange es Einladungen braucht, ist die Registrierung geschlossen - so faengt
-// der Dienst an. Zwei Quellen gelten:
-//
-//   die Umgebung (INVITE_CODES) - eine Tuerklinke. Mehrfach benutzbar, gedacht
-//     fuer den allerersten Menschen, der hereinkommt: ohne ihn gaebe es niemanden,
-//     der Einladungen ausstellen koennte.
-//   die Tabelle - ein Ticket. Gilt genau einmal, hat einen Aussteller, eine Notiz
-//     und auf Wunsch eine Frist.
-//
-// Sobald jemand Verwalter ist, sollte die Tuerklinke aus der Umgebung
-// verschwinden. Sie steht sonst dauerhaft offen, und niemand sieht ihr an, wer
-// sie benutzt hat.
 import { and, desc, eq, isNull } from "drizzle-orm";
 import type { Db, DbLike } from "./db";
 import { invites, users } from "./db/schema";
 import { INVITE_CODES } from "./config";
 import { randomInt } from "node:crypto";
 
-/**
- * Das Alphabet fuer ausgestellte Codes.
- *
- * Ohne I, O, 0 und 1: die werden beim Abschreiben und Vorlesen verwechselt, und
- * ein Einladungscode wird abgeschrieben oder vorgelesen.
- */
+/** Das Alphabet fuer ausgestellte Codes. */
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
-/**
- * Ein neuer Code: vier Gruppen zu vier Zeichen.
- *
- * 16 Zeichen aus 32 sind 80 Bit. Das ist weit mehr, als noetig waere - aber ein
- * Einladungscode wird einmal getippt und nie wieder, und die Gruppen machen ihn
- * vorlesbar.
- */
+/** Ein neuer Code: vier Gruppen zu vier Zeichen. */
 export function neuerCode(): string {
 	const gruppe = () =>
 		Array.from({ length: 4 }, () => ALPHABET[randomInt(ALPHABET.length)]).join("");
@@ -87,14 +63,7 @@ export function listeInvites(db: Db): InviteRow[] {
 		}));
 }
 
-/**
- * Zurueckziehen.
- *
- * Die Zeile bleibt stehen und bekommt nur einen Zeitpunkt. Wer sie loeschte,
- * koennte spaeter nicht mehr sagen, ob es den Code je gab - und genau das ist
- * die Frage, die man sich stellt, wenn jemand behauptet, eine Einladung gehabt
- * zu haben.
- */
+/** Zurueckziehen. */
 export function zieheInviteZurueck(db: Db, code: string): boolean {
 	const r = db
 		.update(invites)
@@ -104,12 +73,7 @@ export function zieheInviteZurueck(db: Db, code: string): boolean {
 	return r.changes > 0;
 }
 
-/**
- * Gilt dieser Code?
- *
- * Prueft nur - entwertet nicht. Entwertet wird erst, wenn das Konto wirklich
- * entsteht; sonst verbraucht ein abgebrochener Versuch die Einladung ersatzlos.
- */
+/** Gilt dieser Code? */
 export function gueltigerCode(db: DbLike, code: string): boolean {
 	if (!code) return false;
 	// Die Tuerklinke aus der Umgebung.

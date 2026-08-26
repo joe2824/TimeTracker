@@ -1,13 +1,4 @@
 // Der Draht zum Server.
-//
-// Absichtlich dumm: hier steht, WIE gefragt wird, nicht WANN oder WARUM. Das
-// Wann steht in engine.ts, das Warum in outbox.ts.
-//
-// Die Abrufmethode ist austauschbar, weil die beiden Ausfuehrungen sie
-// verschieden brauchen: im Browser das eingebaute `fetch`, in der
-// Desktop-Anwendung der Weg ueber das http-Plugin. Letzteres geht durch den
-// Rust-Teil und umgeht damit die Herkunftspruefung des Browsers - ein Webview
-// hat eine Herkunft, die kein Server sinnvoll erlauben kann.
 import type { KeyWrap } from "../crypto/vault";
 
 export type FetchFn = (input: string, init?: RequestInit) => Promise<Response>;
@@ -87,13 +78,7 @@ export interface DeleteSummary {
 	wraps: number;
 }
 
-/**
- * Ein Fehler vom Server, mit seinem Statuscode.
- *
- * Der Code entscheidet, was der Aufrufer tut: 401 heisst "abgemeldet, hoer auf",
- * 409 heisst "versuch es noch einmal", alles ab 500 heisst "spaeter wieder".
- * Ohne ihn muesste jeder Aufrufer Meldungstexte auswerten.
- */
+/** Ein Fehler vom Server, mit seinem Statuscode. */
 export class ApiError extends Error {
 	constructor(
 		message: string,
@@ -207,13 +192,7 @@ export class Api {
 		});
 	}
 
-	/**
-	 * Ein Konto von diesem Geraet aus anlegen - ohne Passkey.
-	 *
-	 * Der Weg fuer die Desktop-Anwendung: sie hat keine Domain und kann deshalb
-	 * keinen Passkey anbieten. Sie bekommt stattdessen ein Geraete-Token; ein
-	 * Passkey kommt spaeter im Browser dazu, nachdem der sich gekoppelt hat.
-	 */
+	/** Ein Konto von diesem Geraet aus anlegen - ohne Passkey. */
 	registerDevice(body: {
 		displayName: string;
 		label: string;
@@ -320,10 +299,6 @@ export class Api {
 	}
 
 	// ---------- Verwaltung ----------
-	//
-	// Nur fuer Verwalter. Was sie koennen, ist bewusst schmal: Einladungen. Auf
-	// fremde Daten kommt auch ein Verwalter nicht - der Server selbst kann sie
-	// nicht lesen.
 
 	invites(): Promise<{ invites: Invite[] }> {
 		return this.#call("/api/admin/invites");
@@ -376,12 +351,7 @@ export class Api {
 		return this.#call("/api/pair/claim", { method: "POST", body: JSON.stringify({ code }) });
 	}
 
-	/**
-	 * Ein Geraet loesen.
-	 *
-	 * Ohne Kennung loest sich dieses Geraet selbst - es kennt seine eigene ID
-	 * beim Server nicht, wohl aber der Server, der gerade das Token geprueft hat.
-	 */
+	/** Ein Geraet loesen. */
 	revokeDevice(deviceId?: string): Promise<{ ok: boolean; deviceId: string }> {
 		return this.#call("/api/devices", {
 			method: "DELETE",
@@ -389,23 +359,12 @@ export class Api {
 		});
 	}
 
-	/**
-	 * Eine Bestaetigung anfordern - eine WebAuthn-Aufgabe fuer diesen Passkey.
-	 *
-	 * Nur im Browser noetig. Wer sich mit einem Geraete-Token ausweist, hat den
-	 * Nachweis bereits erbracht; siehe `deleteAccount`.
-	 */
+	/** Eine Bestaetigung anfordern - eine WebAuthn-Aufgabe fuer diesen Passkey. */
 	confirmStart(): Promise<{ challengeId: string; options: unknown }> {
 		return this.#call("/api/me/confirm", { method: "POST" });
 	}
 
-	/**
-	 * Das Konto aufloesen - alles, was der Server hat, verschwindet.
-	 *
-	 * Ueber ein Geraete-Token ohne Beigabe. Ueber eine Browser-Sitzung nur mit
-	 * einer frischen, vom Menschen bestaetigten WebAuthn-Antwort: ein Cookie
-	 * faehrt automatisch mit und beweist keine Zustimmung.
-	 */
+	/** Das Konto aufloesen - alles, was der Server hat, verschwindet. */
 	deleteAccount(confirm?: { challengeId: string; response: unknown }): Promise<DeleteSummary> {
 		return this.#call<DeleteSummary>("/api/me", {
 			method: "DELETE",

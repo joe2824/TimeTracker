@@ -1,24 +1,4 @@
 // Der Tresorschluessel und alles, was mit ihm geschieht.
-//
-// Grundgedanke: es gibt genau EINEN zufaelligen Schluessel je Konto - den
-// Tresorschluessel. Er verschluesselt jeden Datensatz und verlaesst nie ein
-// Geraet im Klartext. Zugaenglich wird er ueber "Verpackungen": derselbe
-// Schluessel, mehrfach verschluesselt abgelegt, jeweils mit einem anderen
-// Oeffner.
-//
-//   Tresorschluessel (256 bit)
-//     |- Verpackung "recovery" : aus der Wiederherstellungs-Phrase
-//     |- Verpackung "passkey"  : aus der PRF-Erweiterung eines Passkeys
-//     |- Verpackung "device"   : fuer den oeffentlichen Schluessel eines Geraets
-//
-// Der Server speichert die Verpackungen, kann sie aber nicht oeffnen: er sieht
-// nur Chiffrat. Genau deshalb kann er auch keine Auswertung rechnen - und genau
-// deshalb muss er es auch nicht.
-//
-// Warum kein Argon2 fuer die Phrase: die Phrase hat 256 Bit Entropie. Ein
-// Verfahren, das Rateversuche teurer macht, schuetzt eine SCHWACHE Eingabe. Bei
-// 24 zufaelligen Woertern ist Raten ohnehin ausgeschlossen, und PBKDF2 gibt es
-// in jeder Laufzeit ohne zusaetzliches WebAssembly.
 
 import { generateMnemonic, mnemonicToEntropy, validateMnemonic } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english.js";
@@ -29,13 +9,7 @@ const enc = new TextEncoder();
 const KEY_BITS = 256;
 /** GCM will 96 Bit Zufall je Vorgang - laenger bringt nichts, kuerzer schadet. */
 const IV_BYTES = 12;
-/**
- * Iterationen fuer die Phrase.
- *
- * Grosszuegig, aber nicht entscheidend - siehe oben: die Phrase ist stark genug,
- * dass hier nichts zu erraten ist. Die Zahl schuetzt den Fall, dass jemand seine
- * Phrase doch von Hand "vereinfacht" hat.
- */
+/** Iterationen fuer die Phrase - grosszuegig, aber nicht entscheidend (siehe oben). */
 const PBKDF2_ITERATIONS = 600_000;
 
 // ---------- Tresorschluessel ----------
@@ -59,14 +33,7 @@ export async function exportVaultKey(key: CryptoKey): Promise<ArrayBuffer> {
 
 // ---------- Datensaetze ----------
 
-/**
- * Woran ein Chiffrat gebunden ist.
- *
- * Geht als "zusaetzliche Daten" in die Verschluesselung ein: sie werden nicht
- * mitverschluesselt, aber mitversiegelt. Wer ein Chiffrat auf einen anderen
- * Datensatz umhaengt, bekommt es nicht mehr auf - der Server koennte sonst
- * Datensaetze untereinander vertauschen, ohne den Inhalt zu kennen.
- */
+/** Woran ein Chiffrat gebunden ist - als "zusaetzliche Daten" mitversiegelt. */
 export interface RecordBinding {
 	id: string;
 	kind: string;
@@ -98,13 +65,7 @@ export async function sealRecord(
 	return { iv, ciphertext: new Uint8Array(ciphertext) };
 }
 
-/**
- * Einen Datensatz entschluesseln.
- *
- * Wirft, wenn das Chiffrat verfaelscht wurde ODER die Bindung nicht passt.
- * Beides ist derselbe Fehler: der Datensatz ist nicht der, der er zu sein
- * vorgibt.
- */
+/** Einen Datensatz entschluesseln. Wirft, wenn Chiffrat oder Bindung nicht passen. */
 export async function openRecord<T>(
 	key: CryptoKey,
 	sealed: Sealed,
@@ -118,50 +79,30 @@ export async function openRecord<T>(
 	return JSON.parse(new TextDecoder().decode(plain)) as T;
 }
 
-// ---------- Zeitraum-Kennung ----------
+// ---------- Abgeleitete Werte ----------
 
-/**
- * Die verschleierte Kennung eines Monats.
- *
- * Der Server soll gezielt "diesen Zeitraum" ausliefern koennen, ohne zu wissen,
- * WELCHER Zeitraum das ist. Ein Klartext-Monat verriete, in welchen Zeitraeumen
- * jemand gearbeitet hat; gar keine Kennung zwaenge jedes Geraet, immer den
- * Gesamtbestand zu ziehen.
- *
- * Sichtbar bleibt nur, dass es N verschiedene Kennungen mit je einer bestimmten
- * Anzahl Datensaetze gibt.
- */
-export async function bucketFor(key: CryptoKey, month: string): Promise<string> {
+/** Ein fester Wert aus dem Tresorschluessel, je Verwendungszweck ein anderer. */
+async function hmacWithVaultKey(key: CryptoKey, message: string): Promise<Uint8Array> {
 	const raw = await crypto.subtle.exportKey("raw", key);
 	const mac = await crypto.subtle.importKey("raw", raw, { name: "HMAC", hash: "SHA-256" }, false, [
 		"sign"
 	]);
-	const sig = await crypto.subtle.sign("HMAC", mac, enc.encode(`bucket|${month}`));
-	// 16 Byte reichen: die Kennung muss eindeutig sein, nicht faelschungssicher -
-	// wer sie faelscht, bekommt Chiffrate, die er nicht oeffnen kann.
-	return toHex(new Uint8Array(sig).slice(0, 16));
+	return new Uint8Array(await crypto.subtle.sign("HMAC", mac, enc.encode(message)));
 }
 
-/**
- * Die Kennung, unter der ein Konto seine Phrasen-Verpackung findet.
- *
- * Das Problem, das sie loest: wer nur noch die 24 Woerter hat - Rechner kaputt,
- * kein zweites Geraet, kein Passkey - muss beim Server nach seiner Verpackung
- * fragen koennen. Dafuer braucht es einen Namen fuer das Konto, und der darf
- * nicht die Phrase selbst sein.
- *
- * Also ein Hash ueber die Phrase, mit eigenem Verwendungszweck. Er verraet sie
- * nicht: aus 256 Bit Entropie laesst sich nichts zurueckrechnen, und wer ihn
- * kennt, bekommt bloss ein Chiffrat, das er ohne die Woerter nicht oeffnet.
- *
- * WICHTIG ist die Trennung der Zwecke: diese Kennung und der Schluessel, mit dem
- * die Verpackung zugeht, entstehen aus derselben Phrase, aber ueber verschiedene
- * Wege. Waeren es dieselben Bytes, gaebe der Server mit der Kennung den
- * Schluessel heraus - und die Verschluesselung waere ein Theater.
- */
+// ---------- Zeitraum-Kennung ----------
+
+/** Die verschleierte Kennung eines Monats. */
+export async function bucketFor(key: CryptoKey, month: string): Promise<string> {
+	// 16 Byte reichen: die Kennung muss eindeutig sein, nicht faelschungssicher -
+	// wer sie faelscht, bekommt Chiffrate, die er nicht oeffnen kann.
+	return toHex((await hmacWithVaultKey(key, `bucket|${month}`)).slice(0, 16));
+}
+
+/** Die Kennung, unter der ein Konto seine Phrasen-Verpackung findet. */
 export async function recoveryLookupId(phrase: string): Promise<string> {
-	const norm = normalizePhrase(phrase);
-	const base = await crypto.subtle.importKey("raw", enc.encode(norm), "HKDF", false, [
+	const entropy = mnemonicToEntropy(normalizePhrase(phrase), wordlist);
+	const base = await crypto.subtle.importKey("raw", entropy as BufferSource, "HKDF", false, [
 		"deriveBits"
 	]);
 	const bits = await crypto.subtle.deriveBits(
@@ -177,27 +118,9 @@ export async function recoveryLookupId(phrase: string): Promise<string> {
 	return toHex(new Uint8Array(bits));
 }
 
-/**
- * Ein Nachweis, dass jemand den Tresorschluessel wirklich hat.
- *
- * Wozu: die Kennung oben sagt nur, WELCHES Konto gemeint ist. Wer sie erraet
- * oder aus einer gestohlenen Datenbank abliest, duerfte damit noch lange kein
- * Geraet anmelden - er bekaeme sonst Zugriff auf alle Chiffrate und koennte sie
- * loeschen, ohne je etwas entschluesselt zu haben.
- *
- * Deshalb dieser zweite Schritt: der Client oeffnet die Verpackung, hat damit
- * den Tresorschluessel, und rechnet daraus einen festen Wert. Der Server hat
- * denselben Wert beim Anlegen bekommen und vergleicht. Er lernt daraus nichts -
- * ein HMAC gibt seinen Schluessel nicht her - aber er weiss: da hat jemand
- * wirklich aufgeschlossen.
- */
+/** Ein Nachweis, dass jemand den Tresorschluessel wirklich hat. */
 export async function vaultProof(key: CryptoKey): Promise<string> {
-	const raw = await crypto.subtle.exportKey("raw", key);
-	const mac = await crypto.subtle.importKey("raw", raw, { name: "HMAC", hash: "SHA-256" }, false, [
-		"sign"
-	]);
-	const sig = await crypto.subtle.sign("HMAC", mac, enc.encode("vault-proof-v1"));
-	return toHex(new Uint8Array(sig));
+	return toHex(await hmacWithVaultKey(key, "vault-proof-v1"));
 }
 
 // ---------- Verpackungen ----------
@@ -233,13 +156,7 @@ async function unwrapWith(kek: CryptoKey, wrap: KeyWrap): Promise<CryptoKey> {
 
 // ---------- Verpackung aus der Wiederherstellungs-Phrase ----------
 
-/**
- * Eine neue Wiederherstellungs-Phrase: 24 Woerter, 256 Bit Entropie.
- *
- * BIP39, weil das Format eine Pruefsumme hat: ein vertipptes oder vertauschtes
- * Wort faellt beim Eingeben auf, statt still den falschen Schluessel zu erzeugen
- * und den Tresor als "kaputt" erscheinen zu lassen.
- */
+/** Eine neue Wiederherstellungs-Phrase: 24 Woerter, 256 Bit Entropie. */
 export function createRecoveryPhrase(): string {
 	return generateMnemonic(wordlist, KEY_BITS);
 }
@@ -248,13 +165,7 @@ export function isValidRecoveryPhrase(phrase: string): boolean {
 	return validateMnemonic(normalizePhrase(phrase), wordlist);
 }
 
-/**
- * Schreibweise vereinheitlichen, bevor irgendetwas damit gerechnet wird.
- *
- * Wer eine Phrase abtippt, bringt Grossbuchstaben, doppelte Leerzeichen und
- * Zeilenumbrueche mit. Ohne das schluege die Eingabe fehl, obwohl sie richtig
- * war.
- */
+/** Schreibweise vereinheitlichen: Grossbuchstaben, doppelte Leerzeichen, Umbrueche. */
 export function normalizePhrase(phrase: string): string {
 	return phrase.trim().toLowerCase().split(/\s+/).join(" ");
 }
@@ -291,17 +202,7 @@ export async function unwrapWithPhrase(wrap: KeyWrap, phrase: string): Promise<C
 
 // ---------- Verpackung aus einem Passkey (PRF) ----------
 
-/**
- * Der bequeme Weg: der Passkey selbst liefert das Geheimnis.
- *
- * Die PRF-Erweiterung gibt zu einer festen Eingabe immer denselben Zufallswert
- * zurueck, aber nur diesem Passkey. Wer sich anmeldet, hat den Tresor damit in
- * derselben Bewegung offen - ohne Phrase, ohne zweites Geraet.
- *
- * Nicht jeder Authentifikator kann das (Windows Hello ueber TPM je nach Fassung
- * nicht). Wo es fehlt, bleibt die Phrase oder ein bereits entsperrtes Geraet -
- * siehe `wrapWithPhrase` und `wrapForDevice`.
- */
+/** Den Verpackungs-Schluessel aus der PRF-Erweiterung eines Passkeys ableiten. */
 export async function kekFromPrf(prfOutput: ArrayBuffer, salt: Uint8Array): Promise<CryptoKey> {
 	const base = await crypto.subtle.importKey("raw", prfOutput, "HKDF", false, ["deriveKey"]);
 	return crypto.subtle.deriveKey(
@@ -329,18 +230,7 @@ export async function unwrapWithPrf(wrap: KeyWrap, prfOutput: ArrayBuffer): Prom
 
 // ---------- Verpackung fuer ein neues Geraet ----------
 
-/**
- * Der Hauptweg beim Koppeln: ein entsperrtes Geraet oeffnet ein neues.
- *
- * Das neue Geraet erzeugt ein fluechtiges Schluesselpaar und zeigt seinen
- * oeffentlichen Teil als Code. Das entsperrte Geraet verpackt den
- * Tresorschluessel dagegen und legt das Paket beim Server ab. Der Server sieht
- * dabei nur Chiffrat.
- *
- * P-256 statt X25519: in jeder Laufzeit vorhanden, waehrend X25519 in aelteren
- * Browsern fehlt. Fuer eine kurzlebige Kopplung ist der Unterschied ohne
- * Bedeutung.
- */
+/** Das fluechtige Schluesselpaar des neuen Geraets beim Koppeln. */
 export async function createPairingKeyPair(): Promise<CryptoKeyPair> {
 	return crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, [
 		"deriveBits"
@@ -381,45 +271,13 @@ async function kekFromEcdh(
 
 // ---------- Der Kopplungscode ----------
 
-/**
- * Die Zeichen, aus denen ein Kopplungscode besteht.
- *
- * Ohne I, O, 0 und 1: die werden beim Abschreiben verwechselt, und dieser Code
- * wird abgeschrieben. 32 Zeichen sind genau 5 Bit je Stelle.
- */
+/** Zeichen des Kopplungscodes - ohne I, O, 0, 1. 32 Zeichen = 5 Bit je Stelle. */
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
-/**
- * Zwoelf Stellen, also 60 Bit.
- *
- * Nicht die Laenge eines Geheimnisses, sondern die eines Abdrucks: der Code wird
- * unten aus dem oeffentlichen Schluessel GERECHNET. Wer ihn faelschen will, muss
- * ein zweites Schluesselpaar finden, dessen Abdruck genauso anfaengt - und dafuer
- * sind 60 Bit die Huerde. Bei den frueheren acht Stellen waeren es 40 gewesen;
- * das faellt auf einer Grafikkarte in Minuten, und die Kopplung steht zehn.
- */
+/** Zwoelf Stellen, also 60 Bit. */
 const CODE_LENGTH = 12;
 
-/**
- * Der Kopplungscode zu einem oeffentlichen Schluessel.
- *
- * DAS ist die Bindung, an der die ganze Kopplung haengt. Vorher wuerfelte der
- * SERVER den Code, und er hatte mit dem Schluessel nichts zu tun. Damit war die
- * einzige Strecke, die ein Mensch prueft - die zwoelf Zeichen von einem Bildschirm
- * zum anderen - nicht an das Schluesselmaterial gebunden: ein Server, der den
- * hinterlegten oeffentlichen Schluessel gegen einen eigenen tauschte, bekam vom
- * entsperrten Geraet den Tresorschluessel gegen SEINEN Schluessel verpackt. Er
- * konnte ihn oeffnen, danach gegen den echten Schluessel neu verpacken und
- * zurueckschreiben; die Kopplung lief durch, niemand sah etwas, und die Zusage
- * "der Server sieht nur Chiffrat" war ab da nicht mehr wahr.
- *
- * Jetzt IST der Code der Abdruck des Schluessels. Ein getauschter Schluessel
- * ergibt einen anderen Code als den, der auf dem Bildschirm stand - und beide
- * Seiten rechnen nach (siehe startPairing und approvePairing).
- *
- * Gerechnet wird auf den Geraeten, nicht auf dem Server: er ist hier der
- * Angreifer, und eine Pruefung, die er selbst ausfuehrt, beweist nichts.
- */
+/** Der Kopplungscode zu einem oeffentlichen Schluessel - dessen Abdruck. */
 export async function pairingCode(publicKey: Uint8Array): Promise<string> {
 	const abdruck = new Uint8Array(
 		await crypto.subtle.digest("SHA-256", publicKey as BufferSource)
@@ -437,13 +295,7 @@ export async function pairingCode(publicKey: Uint8Array): Promise<string> {
 	return out;
 }
 
-/**
- * Was jemand getippt hat auf die Form bringen, in der gerechnet wird.
- *
- * Grossschreibung, und alles weg, was nicht zum Alphabet gehoert - vor allem die
- * Bindestriche aus der Anzeige. Wer sie mittippt, soll nicht scheitern; wer sie
- * weglaesst, ebenso wenig.
- */
+/** Getipptes auf die Rechenform bringen: Grossschreibung, nur Alphabet-Zeichen. */
 export function normalizePairingCode(input: string): string {
 	return [...input.toUpperCase()].filter((c) => CODE_ALPHABET.includes(c)).join("");
 }
@@ -453,22 +305,7 @@ export function isPairingCode(code: string): boolean {
 	return code.length === CODE_LENGTH && [...code].every((c) => CODE_ALPHABET.includes(c));
 }
 
-/**
- * Der hinterlegte Schluessel - aber nur, wenn er zu diesem Code gehoert.
- *
- * Die eine Pruefung, an der der ganze Kopplungsvorgang haengt, und deshalb hat
- * sie einen eigenen Namen statt in einer Methode zu stecken.
- *
- * Der Schluessel kommt vom SERVER. Der Code kommt von einem Menschen, der ihn
- * von einem anderen Bildschirm abgelesen hat - das ist die einzige Strecke
- * dieses Vorgangs, die nicht ueber den Server laeuft. Nur weil der Code der
- * Abdruck des Schluessels ist, laesst sich das eine gegen das andere halten;
- * und nur deshalb faellt auf, wenn der Server einen anderen Schluessel
- * unterschiebt als den, dessen Code auf dem Bildschirm stand.
- *
- * Wirft, statt etwas zurueckzugeben, das der Aufrufer pruefen koennte: hier
- * weiterzumachen hiesse, den Tresorschluessel gegen einen fremden zu verpacken.
- */
+/** Der hinterlegte Schluessel - aber nur, wenn er zu diesem Code gehoert. */
 export async function checkedPairingKey(code: string, publicKeyBase64: string): Promise<Uint8Array> {
 	const roh = fromBase64(publicKeyBase64);
 	if ((await pairingCode(roh)) !== normalizePairingCode(code)) {

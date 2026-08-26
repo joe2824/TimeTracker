@@ -1,17 +1,7 @@
 // Etwas ausserhalb der Anwendung oeffnen.
-//
-// Auf dem Rechner uebernimmt das Betriebssystem ueber Tauri, im Browser der
-// Browser selbst. Der Unterschied ist klein, aber `openUrl` aus dem Tauri-Plugin
-// wirft im Browser - und ausgerechnet an einem "E-Mail vorbereiten" darf nichts
-// scheitern, was der Browser von Haus aus kann.
 import { isTauri } from "./env";
 
-/**
- * Eine Adresse oeffnen - eine Webseite oder ein mailto-Link.
- *
- * `noopener` ist Absicht: ohne das bekommt die geoeffnete Seite einen Verweis
- * auf unser Fenster und kann es umleiten.
- */
+/** Eine Adresse oeffnen. Ueber Tauri, wo es geht - `openUrl` wirft im Browser. */
 export async function openExternal(url: string): Promise<void> {
 	if (isTauri()) {
 		const { openUrl } = await import("@tauri-apps/plugin-opener");
@@ -27,12 +17,7 @@ export async function openExternal(url: string): Promise<void> {
 	window.open(url, "_blank", "noopener,noreferrer");
 }
 
-/**
- * Einen Ordner im Dateiverwalter zeigen.
- *
- * Gibt es im Browser nicht - dort liegt nichts in einem Ordner. Der Aufrufer
- * fragt vorher ueber `capabilities`, statt hier auf einen Fehler zu warten.
- */
+/** Einen Ordner im Dateiverwalter zeigen. */
 export async function revealInFolder(path: string): Promise<void> {
 	if (!isTauri()) throw new Error("Im Browser gibt es keinen Datenordner");
 	const { revealItemInDir } = await import("@tauri-apps/plugin-opener");

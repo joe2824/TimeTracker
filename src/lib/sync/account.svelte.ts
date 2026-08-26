@@ -1,11 +1,4 @@
 // Das Konto, wie die Oberflaeche es sieht.
-//
-// Hier laufen die Teile zusammen: Geraetekennung, Tresorschluessel, die
-// Abgleich-Maschine und der Weckruf-Kanal. Nach aussen sind es ein Zustand und
-// eine Handvoll Befehle - alles darunter bleibt hier.
-//
-// Ohne verknuepftes Konto ist dieses Modul untaetig und der Schreib-Haken nicht
-// gesetzt: das Programm verhaelt sich dann Zeile fuer Zeile wie zuvor.
 import { app } from "../app.svelte";
 import { logError, logInfo, logWarn } from "../log";
 import { loadDevice, loadEntries, saveDevice, saveEntries } from "../store";
@@ -46,30 +39,13 @@ export interface UnlinkOptions {
 /** Wie es dem Abgleich gerade geht - genau das, was die Oberflaeche zeigt. */
 export type SyncPhase = "ruht" | "laeuft" | "offline" | "fehler";
 
-/**
- * Wie lange nach einer Aenderung gewartet wird, bevor hochgeladen wird.
- *
- * Sammelt zusammen, was zusammengehoert: wer im Eintrags-Dialog tippt, loest
- * sonst mit jedem Zeichen eine Anfrage aus. Kurz genug, dass ein Start am
- * Rechner am Handy sofort ankommt.
- */
+/** Wie lange nach einer Aenderung gewartet wird, bevor hochgeladen wird. */
 const DEBOUNCE_MS = 1500;
 
-/**
- * Abstand zwischen zwei Verbindungsversuchen, wachsend.
- *
- * Ein Server, der gerade neu startet, soll nicht von einem Geraet bestuermt
- * werden, das im Sekundentakt anklopft.
- */
+/** Abstand zwischen zwei Verbindungsversuchen, wachsend. */
 const RETRY_MS = [5_000, 15_000, 60_000, 300_000];
 
-/**
- * Der langsame Takt, wo es keinen Weckruf-Kanal gibt.
- *
- * Fuenf Minuten: zwoelf Anfragen je Stunde, jede davon ein leeres Delta von
- * wenigen Bytes. Wer schneller sein will, bringt das Fenster in den
- * Vordergrund - das gleicht sofort ab.
- */
+/** Der langsame Takt, wo es keinen Weckruf-Kanal gibt. */
 const HEARTBEAT_MS = 5 * 60 * 1000;
 
 class AccountState {
@@ -85,21 +61,9 @@ class AccountState {
 	secretsProtected = $state<boolean>(false);
 	/** Wie viele eigene Aenderungen beim Zusammenfuehren unterlegen sind. */
 	lostEdits = $state<number>(0);
-	/**
-	 * Darf dieses Konto Einladungen vergeben?
-	 *
-	 * Wird beim Verbinden vom Server geholt, nicht lokal gemerkt: eine Rolle, die
-	 * das Geraet selbst behauptet, waere keine. Die Oberflaeche benutzt das nur,
-	 * um den Bereich zu zeigen - erlaubt wird ohnehin auf dem Server.
-	 */
+	/** Darf dieses Konto Einladungen vergeben? */
 	isAdmin = $state<boolean>(false);
-	/**
-	 * Weist sich dieses Geraet mit einem eigenen Token aus - oder mit einem Cookie?
-	 *
-	 * Der Unterschied entscheidet, was ueberhaupt angeboten werden darf: eine
-	 * Browser-Sitzung IST kein Geraet beim Server. "Vom Konto trennen" hat dort
-	 * nichts zu loesen, und der Server weist es folgerichtig ab.
-	 */
+	/** Weist sich dieses Geraet mit einem eigenen Token aus - oder mit einem Cookie? */
 	hasDeviceToken = $state<boolean>(false);
 
 	#api: Api | null = null;
@@ -122,12 +86,7 @@ class AccountState {
 
 	// ---------- Start ----------
 
-	/**
-	 * Beim Programmstart: falls ein Konto verknuepft ist, alles hochfahren.
-	 *
-	 * Scheitert das, bleibt es beim lokalen Betrieb - ein nicht erreichbarer
-	 * Server darf den Start nicht aufhalten.
-	 */
+	/** Beim Programmstart: falls ein Konto verknuepft ist, alles hochfahren. */
 	async init(): Promise<void> {
 		const info = await loadDevice();
 		// Ohne Adresse oder Schluessel gibt es nichts zu verbinden. Das Token darf
@@ -192,12 +151,7 @@ class AccountState {
 
 	// ---------- Abgleich ----------
 
-	/**
-	 * Bald abgleichen.
-	 *
-	 * Aufrufe sammeln sich: wer im Dialog tippt, loest damit eine Anfrage aus,
-	 * nicht zwanzig.
-	 */
+	/** Bald abgleichen. */
 	syncSoon(delay = DEBOUNCE_MS): void {
 		if (!this.#engine) return;
 		if (this.#debounce) clearTimeout(this.#debounce);
@@ -263,22 +217,7 @@ class AccountState {
 
 	// ---------- Weckruf-Kanal ----------
 
-	/**
-	 * Auf Aenderungen anderer Geraete hoeren.
-	 *
-	 * Der Weckruf-Kanal laeuft ueber EventSource - und der kann keine Kopfzeilen
-	 * mitgeben. Er weist sich deshalb ueber das Sitzungs-Cookie aus, was im
-	 * Browser der normale Weg ist.
-	 *
-	 * In der Desktop-Anwendung gibt es dieses Cookie nicht: sie meldet sich mit
-	 * einem Geraete-Token an, und das gehoert nicht in eine Adresse - dort landet
-	 * es in jedem Server-Protokoll und in jeder Zwischenstation. Statt diesen
-	 * Preis zu zahlen, kommt sie ohne Kanal aus: sie gleicht ab, wenn sich lokal
-	 * etwas aendert, wenn das Fenster wieder in den Vordergrund kommt, und
-	 * ansonsten im langsamen Takt. Das kostet zwoelf Anfragen je Stunde und
-	 * traegt genau den Fall, um den es geht - der Rechner war aus, und was am
-	 * Handy passiert ist, kommt beim Aufwachen an.
-	 */
+	/** Auf Aenderungen anderer Geraete hoeren. */
 	#openStream(): void {
 		this.#closeStream();
 		if (typeof EventSource === "undefined" || !this.#api) return;
@@ -319,12 +258,7 @@ class AccountState {
 		this.#heartbeat = null;
 	}
 
-	/**
-	 * Das Fenster kommt in den Vordergrund.
-	 *
-	 * Der wichtigste Zeitpunkt ueberhaupt: wer den Rechner aufklappt, will den
-	 * Stand von unterwegs sehen - nicht erst nach dem naechsten Takt.
-	 */
+	/** Das Fenster kommt in den Vordergrund. */
 	onVisible(): void {
 		if (this.state === "verbunden") this.syncSoon(0);
 	}
@@ -337,17 +271,7 @@ class AccountState {
 
 	// ---------- Konto von hier aus anlegen ----------
 
-	/**
-	 * Ein neues Konto anlegen - von diesem Geraet aus, ohne Umweg ueber den Browser.
-	 *
-	 * Danach ist dieses Geraet verknuepft und der erste Abgleich laedt den
-	 * gesamten lokalen Bestand hoch. Genau das ist der Sinn: die Daten liegen
-	 * hier, nicht dort.
-	 *
-	 * Gibt die Wiederherstellungs-Phrase zurueck. Sie ist der EINZIGE Weg zurueck,
-	 * solange kein zweites Geraet gekoppelt und kein Passkey angelegt ist - der
-	 * Aufrufer muss sie zeigen und sich bestaetigen lassen, bevor er weitermacht.
-	 */
+	/** Ein neues Konto anlegen - von diesem Geraet aus, ohne Umweg ueber den Browser. */
 	async createAccount(
 		serverUrl: string,
 		displayName: string,
@@ -361,14 +285,7 @@ class AccountState {
 		return r.recoveryPhrase;
 	}
 
-	/**
-	 * Ein Konto allein mit der Wiederherstellungs-Phrase zurueckholen.
-	 *
-	 * Der Weg fuer den Tag, an dem sonst nichts mehr da ist. Danach ist dieses
-	 * Geraet verknuepft, und der erste Abgleich holt den gesamten Bestand vom
-	 * Server - das ist ja der Punkt: die Daten sind noch da, nur der Zugang war
-	 * weg.
-	 */
+	/** Ein Konto allein mit der Wiederherstellungs-Phrase zurueckholen. */
 	async recoverWithPhrase(serverUrl: string, phrase: string, label: string): Promise<void> {
 		const url = serverUrl.replace(/\/+$/, "");
 		const { recoverWithPhrase } = await import("./enroll");
@@ -378,14 +295,7 @@ class AccountState {
 
 	// ---------- Koppeln: dieses Geraet ist neu ----------
 
-	/**
-	 * Schritt 1: einen Kopplungscode holen.
-	 *
-	 * Das fluechtige Schluesselpaar bleibt im Speicher dieses Vorgangs - es
-	 * ueberdauert bewusst keinen Neustart. Wer den Vorgang abbricht, faengt neu
-	 * an; ein herumliegender privater Schluessel waere ein Angriffsziel ohne
-	 * Nutzen.
-	 */
+	/** Schritt 1: einen Kopplungscode holen. Nur im Speicher - ueberdauert keinen Neustart. */
 	#pairing: { pair: CryptoKeyPair; code: string; url: string } | null = null;
 
 	async startPairing(serverUrl: string, label: string): Promise<string> {
@@ -413,13 +323,7 @@ class AccountState {
 		return code;
 	}
 
-	/**
-	 * Schritt 3: nachsehen, ob jemand bestaetigt hat.
-	 *
-	 * Wird von der Oberflaeche in Abstaenden gerufen, solange der Dialog offen
-	 * ist. Kein Kanal, kein Warten am Server: der Vorgang dauert Sekunden und
-	 * jemand sieht dabei zu.
-	 */
+	/** Schritt 3: nachsehen, ob jemand bestaetigt hat. */
 	async checkPairing(): Promise<boolean> {
 		if (!this.#pairing) return false;
 		const { pair, code, url } = this.#pairing;
@@ -457,20 +361,7 @@ class AccountState {
 
 	// ---------- Koppeln: dieses Geraet bestaetigt ein anderes ----------
 
-	/**
-	 * Einen Code bestaetigen.
-	 *
-	 * Der Tresorschluessel wird gegen den oeffentlichen Schluessel des neuen
-	 * Geraets verpackt und beim Server abgelegt. Der sieht dabei nur Chiffrat -
-	 * er verwahrt das Paket, oeffnen kann es nur das Geraet, das den Code
-	 * angezeigt hat.
-	 *
-	 * Die entscheidende Zeile ist die Nachrechnung: der Schluessel kommt vom
-	 * SERVER, und geprueft wird er gegen die zwoelf Zeichen, die ein Mensch von
-	 * einem Bildschirm abgelesen hat. Das ist die einzige Strecke dieses Vorgangs,
-	 * die nicht ueber den Server laeuft - und deshalb die einzige, an der sich ein
-	 * getauschter Schluessel ueberhaupt bemerken laesst.
-	 */
+	/** Einen Code bestaetigen. */
 	async approvePairing(code: string): Promise<string> {
 		if (!this.#api || !this.#key) throw new Error("Dieses Gerät ist nicht verknüpft");
 		const getippt = normalizePairingCode(code);
@@ -491,12 +382,7 @@ class AccountState {
 		return label;
 	}
 
-	/**
-	 * Nach Registrierung oder Anmeldung im Browser: die Verknuepfung uebernehmen.
-	 *
-	 * Ohne Geraete-Token - die Sitzung steckt im Cookie. Laeuft es ab, meldet der
-	 * Server 401 und die Oberflaeche fragt neu nach dem Passkey.
-	 */
+	/** Nach Registrierung oder Anmeldung im Browser: die Verknuepfung uebernehmen. */
 	async linkWithSession(url: string, key: CryptoKey, name: string): Promise<void> {
 		await this.#persistLink(url.replace(/\/+$/, ""), null, key, name);
 	}
@@ -542,13 +428,7 @@ class AccountState {
 		void this.syncNow();
 	}
 
-	/**
-	 * Nachsehen, was am Konto haengt - vor allem, wie viele Geraete.
-	 *
-	 * Die Oberflaeche fragt das, bevor sie das Entkoppeln anbietet: bei genau
-	 * einem Geraet ist "loesen" und "aufloesen" dasselbe, bei mehreren nicht,
-	 * und dieser Unterschied gehoert vor die Entscheidung, nicht danach.
-	 */
+	/** Nachsehen, was am Konto haengt - vor allem, wie viele Geraete. */
 	async accountInfo(): Promise<AccountInfo | null> {
 		if (!this.#api) return null;
 		const info = await this.#api.me();
@@ -566,14 +446,7 @@ class AccountState {
 		return (await this.#api.passkeys()).passkeys;
 	}
 
-	/**
-	 * Einen weiteren Passkey anlegen.
-	 *
-	 * Braucht den Tresorschluessel: der neue Passkey soll nicht bloss anmelden,
-	 * sondern auch die Daten oeffnen koennen. Ohne entsperrtes Konto geht das
-	 * nicht - und ohne waere der Passkey die halbe Miete, die man erst bemerkt,
-	 * wenn der erste weg ist.
-	 */
+	/** Einen weiteren Passkey anlegen. */
 	async addPasskey(label: string): Promise<{ prfAvailable: boolean }> {
 		if (!this.#key) throw new Error("Das Konto ist nicht entsperrt");
 		const { addPasskey } = await import("./enroll");
@@ -611,34 +484,7 @@ class AccountState {
 		await this.#api.revokeInvite(code);
 	}
 
-	/**
-	 * Die Verknuepfung loesen.
-	 *
-	 * Drei Abstufungen, weil "entkoppeln" drei verschiedene Dinge heissen kann:
-	 *
-	 *   nichts angegeben  - nur dieses Geraet vergisst das Konto. Der Zugang
-	 *                       bleibt gueltig; wer das Geraet hat, koppelt es
-	 *                       wieder. Fuer den Fall "ich will hier gerade nicht
-	 *                       abgleichen".
-	 *   revokeSelf        - der Zugang DIESES Geraets erlischt auch beim Server.
-	 *                       Das Konto und die anderen Geraete bleiben. Der
-	 *                       Normalfall beim Weggeben eines Rechners.
-	 *   deleteRemote      - das ganze Konto wird aufgeloest. Alles, was der
-	 *                       Server hat, verschwindet: Chiffrate, Passkeys,
-	 *                       verpackte Schluessel, alle Geraete. Auch die der
-	 *                       anderen.
-	 *
-	 * In JEDEM dieser Faelle bleiben die lokalen Daten vollstaendig erhalten.
-	 * Sie waren vor der Verknuepfung da und sind danach immer noch da; nur die
-	 * Herkunftsspuren des Abgleichs fallen weg. Der Server war nie ihre einzige
-	 * Kopie, und das ist der Punkt, an dem sich das beweist.
-	 *
-	 * Scheitert die Serverseite, bricht der Vorgang ab und lokal bleibt alles,
-	 * wie es war. Das ist wichtiger, als es aussieht: waere es andersherum,
-	 * haette jemand mit einem kurz nicht erreichbaren Server am Ende ein Geraet
-	 * ohne Zugang und Daten, die trotzdem noch beim Server liegen - und keine
-	 * Moeglichkeit mehr, sie loeschen zu lassen.
-	 */
+	/** Die Verknuepfung loesen. */
 	async unlink(opts: UnlinkOptions = {}): Promise<DeleteSummary | null> {
 		let summe: DeleteSummary | null = null;
 
@@ -662,14 +508,7 @@ class AccountState {
 		return summe;
 	}
 
-	/**
-	 * Den Menschen bestaetigen lassen - mit dem Passkey, nicht mit einem Haken.
-	 *
-	 * Auf dem Desktop entfaellt das: dort weist sich die Anwendung mit dem
-	 * Geraete-Token aus, und einen Passkey kann sie gar nicht anbieten - der
-	 * Webview hat eine andere Herkunft als die Domain, an die Passkeys gebunden
-	 * sind. Der Server laesst das Token deshalb ausdruecklich genuegen.
-	 */
+	/** Den Menschen bestaetigen lassen - mit dem Passkey, nicht mit einem Haken. */
 	async #bestaetigung(): Promise<{ challengeId: string; response: unknown } | undefined> {
 		if (isTauri()) return undefined;
 		const { startAuthentication } = await import("@simplewebauthn/browser");

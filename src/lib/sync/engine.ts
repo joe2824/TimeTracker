@@ -6,9 +6,8 @@
 //   3. Zusammenfuehren und lokal anwenden
 //   4. Bei Konflikten: zurueck zu 1, jetzt auf dem neuen Serverstand
 //
-// Erst hochladen, dann herunterladen: andersherum wuerde ein gerade
-// heruntergeladener Stand die eigene, noch nicht hochgeladene Aenderung
-// ueberschreiben, bevor sie je beim Server war.
+// Die Herkunftsspuren bleiben aus dem Chiffrat draussen: der Server braucht sie im
+// Klartext fuer die Reihenfolge.
 import type { Entry, Activity, Settings } from "../types";
 import { Api, ApiError, type OutgoingRecord, type ServerRecord } from "./api";
 import {
@@ -57,12 +56,7 @@ export interface SyncOutcome {
 	seq: number;
 }
 
-/**
- * Das Chiffrat samt Zufallswert als eine Zeichenkette.
- *
- * Beides gehoert zusammen und reist zusammen; getrennte Felder waeren zwei
- * Gelegenheiten, eines davon zu vergessen.
- */
+/** Das Chiffrat samt Zufallswert als eine Zeichenkette. */
 function packSealed(sealed: Sealed): string {
 	const out = new Uint8Array(sealed.iv.length + sealed.ciphertext.length);
 	out.set(sealed.iv);
@@ -75,13 +69,7 @@ function unpackSealed(payload: string): Sealed {
 	return { iv: raw.slice(0, 12), ciphertext: raw.slice(12) };
 }
 
-/**
- * Was von einem Eintrag verschluesselt wird.
- *
- * Die Herkunftsspuren bleiben draussen: sie stehen im Klartext daneben, weil der
- * Server die Reihenfolge braucht. Sie ein zweites Mal mitzuverschluesseln waere
- * eine Quelle fuer Widersprueche zwischen beiden Fassungen.
- */
+/** Was von einem Eintrag verschluesselt wird. */
 function contentOf<T extends { updatedAt?: number; rev?: number; deviceId?: string }>(
 	item: T
 ): Omit<T, "updatedAt" | "rev" | "deviceId"> {
@@ -100,19 +88,7 @@ export class SyncEngine {
 	#running = false;
 	/** Kam waehrend eines Durchgangs eine Anforderung? Dann gleich noch einmal. */
 	#again = false;
-	/**
-	 * Datensaetze, die der Server nachweislich nicht kennt.
-	 *
-	 * Der Fall tritt auf, wenn die lokale Fassungsnummer von einem Konto stammt,
-	 * das es beim Server nicht mehr gibt - nach einem Aufloesen und erneutem
-	 * Koppeln, oder wenn der Server aus einer aelteren Sicherung wieder aufgesetzt
-	 * wurde. Der Server antwortet dann mit einem Konflikt gegen Fassung 0.
-	 *
-	 * Ohne diese Merkliste waere das eine Sackgasse: der Client zieht den
-	 * Serverstand, findet nichts, laesst seine alte Fassungsnummer stehen und
-	 * schickt sie erneut - fuenf Runden lang, dann gibt er auf. Die Daten blieben
-	 * lokal heil, kaemen aber nie beim Server an, und niemand saehe warum.
-	 */
+	/** Datensaetze, die der Server nachweislich nicht kennt. */
 	#unbekanntBeimServer = new Set<string>();
 
 	constructor(opts: {
@@ -135,13 +111,7 @@ export class SyncEngine {
 		return this.#state.seq;
 	}
 
-	/**
-	 * Einen Durchgang anstossen.
-	 *
-	 * Laeuft schon einer, wird gemerkt, dass danach gleich der naechste faellig
-	 * ist - statt einen zweiten danebenzustellen. Ohne das wuerden mehrere
-	 * Durchgaenge sich gegenseitig die Outbox unter den Fuessen wegziehen.
-	 */
+	/** Einen Durchgang anstossen. */
 	async sync(): Promise<SyncOutcome | null> {
 		if (this.#running) {
 			this.#again = true;
@@ -223,12 +193,6 @@ export class SyncEngine {
 				// Die Konflikte aufloesen heisst: den Serverstand holen und
 				// zusammenfuehren. Danach steht die Aenderung auf der richtigen
 				// Fassung und kommt in der naechsten Runde durch.
-				//
-				// Das Ergebnis zaehlt mit. Genau hier verliert am ehesten jemand
-				// etwas: seine Aenderung stiess auf einen Konflikt, und beim
-				// Aufloesen gewann der Server. Ging die Zahl hier verloren, stand
-				// am Ende "abgeglichen" da - und niemand erfuhr, dass die eigene,
-				// noch nicht hochgeladene Aenderung dabei ueberschrieben wurde.
 				const aufgeloest = await this.#pullAll();
 				pulled += aufgeloest.pulled;
 				lostEdits += aufgeloest.lostEdits;
@@ -278,11 +242,6 @@ export class SyncEngine {
 	): Promise<OutgoingRecord> {
 		const bucket = month ? await bucketFor(this.#key, month) : null;
 		// Ob geloescht wurde, sagt die Outbox - nicht das Fehlen des Datensatzes.
-		//
-		// Der Unterschied zaehlt: zwischen Vormerken und Hochladen kann ein
-		// Abgleich den Datensatz vom Server zurueckgeholt haben. Wuerde hier auf
-		// "ist da, also geaendert" geschlossen, ginge die Loeschung dabei still
-		// verloren und der Eintrag kaeme immer wieder.
 		if (change.deleted || !item) {
 			return {
 				id: change.id,
@@ -336,12 +295,7 @@ export class SyncEngine {
 		return { pulled, lostEdits };
 	}
 
-	/**
-	 * Serverdaten einspielen - ohne dass der Haken sie als eigene Aenderung nimmt.
-	 *
-	 * Die Klammer sitzt hier und nicht tiefer: alles darunter schreibt lokal, und
-	 * kein einziger dieser Schreibvorgaenge ist eine Aenderung DIESES Geraets.
-	 */
+	/** Serverdaten einspielen - ohne dass der Haken sie als eigene Aenderung nimmt. */
 	async #apply(records: ServerRecord[]): Promise<{ lostEdits: number }> {
 		return applyingRemote(() => this.#applyInner(records));
 	}
@@ -396,9 +350,6 @@ export class SyncEngine {
 			// Aenderung hingehoert. Wer einen Eintrag ueber eine Monatsgrenze schiebt,
 			// hatte ihn sonst auf dem anderen Geraet zweimal - neu im Zielmonat, alt
 			// im Ausgangsmonat, und dort raeumte ihn nie jemand weg.
-			//
-			// Ein Grabstein hat keinen Inhalt und damit keinen eigenen Monat; fuer ihn
-			// bleibt nur die Suche im Bestand.
 			const ziel = geloescht ? null : monthKey(eintrag.startTs);
 			// Der Normalfall ist "liegt schon dort, wo er hingehoert" - dann kostet die
 			// Frage nichts. Erst wenn er da nicht steht, wird der Bestand durchgesehen.
@@ -451,13 +402,6 @@ export class SyncEngine {
 	/**
 	 * Die eine Regel, die der Abgleich neu einfuehrt: hoechstens EIN offener
 	 * Eintrag - und zwar ueber alle Monate hinweg.
-	 *
-	 * Monatsweise genuegte nicht: wer am 31. um 23:50 startet und am anderen Geraet
-	 * am 1. um 00:10 noch einmal, haelt zwei laufende Timer in zwei Dateien, und
-	 * beide zaehlen weiter. Selten - aber genau der Fall, fuer den die Regel da ist.
-	 *
-	 * Die uebrigen Monate werden nur angefasst, wenn ueberhaupt etwas Offenes
-	 * dabei ist. Sonst laege bei jedem Durchgang der gesamte Bestand auf dem Tisch.
 	 */
 	async #closeSurplusOpen(
 		geladen: Map<string, Map<string, Entry>>,
@@ -544,14 +488,7 @@ export class SyncEngine {
 		return ergebnis.lostLocalEdit ? 1 : 0;
 	}
 
-	/**
-	 * Einen Datensatz oeffnen.
-	 *
-	 * `undefined` heisst "nicht zu gebrauchen" - entweder ein Grabstein ohne
-	 * Inhalt oder etwas, das sich nicht entschluesseln laesst. Letzteres darf den
-	 * Abgleich nicht anhalten: ein einzelner unlesbarer Datensatz ist ein
-	 * Aergernis, ein steckengebliebener Abgleich ein Ausfall.
-	 */
+	/** Einen Datensatz oeffnen. */
 	async #open<T>(r: ServerRecord): Promise<T | undefined> {
 		if (!r.payload) return r.deletedAt ? ({} as T) : undefined;
 		try {
@@ -583,15 +520,7 @@ export class SyncEngine {
 
 	#months: string[] | null = null;
 
-	/**
-	 * Die Monate mit Eintraegen - gepuffert je Durchgang, nicht auf Lebenszeit.
-	 *
-	 * Der Unterschied ist keine Feinheit: ein Programm, das laeuft und laeuft,
-	 * saehe sonst nie einen Monat, der nach dem Start dazukam. Ein Grabstein fuer
-	 * einen Eintrag dort faende seinen Monat nicht und wuerde still verworfen -
-	 * waehrend `seq` trotzdem weiterlaeuft. Die Loeschung waere damit endgueltig
-	 * verloren, nicht bloss verspaetet.
-	 */
+	/** Die Monate mit Eintraegen - gepuffert je Durchgang, nicht auf Lebenszeit. */
 	async #knownMonths(): Promise<string[]> {
 		this.#months ??= await this.#monthLister();
 		return this.#months;

@@ -1,17 +1,8 @@
-// Ein Konto vollstaendig entfernen.
-//
-// "Entkoppeln" hat zwei Bedeutungen, und sie auseinanderzuhalten ist hier die
-// ganze Arbeit:
+// Ein Konto vollstaendig entfernen. "Entkoppeln" heisst zweierlei:
 //
 //   - Ein GERAET loesen. Der Zugang dieses einen Geraets erlischt, das Konto und
 //     alle anderen Geraete bleiben. Das macht `revokeDevice` in auth.ts.
 //   - Das KONTO aufloesen. Dann verschwindet alles, was der Server hat.
-//
-// Diese Datei ist der zweite Fall. Sie loescht ausdruecklich Tabelle fuer
-// Tabelle, obwohl das Schema kaskadiert: eine Loeschung, die man lesen kann,
-// ist eine, die man pruefen kann. Und zwei Tabellen kaskadieren gar nicht -
-// `pairings` und `challenges` tragen bewusst keinen Fremdschluessel, weil ihre
-// Zeilen entstehen, bevor das Konto feststeht.
 import { eq } from "drizzle-orm";
 import type { DbLike } from "./db";
 import {
@@ -34,18 +25,7 @@ export interface DeleteSummary {
 	wraps: number;
 }
 
-/**
- * Alles zu diesem Konto entfernen.
- *
- * In EINER Transaktion: ein halb geloeschtes Konto waere schlimmer als ein
- * nicht geloeschtes - es haette keinen Zugang mehr, aber die Daten laegen noch
- * da, und niemand koennte sie noch loeschen lassen.
- *
- * Danach ist der Server in genau dem Zustand, in dem er vor der Registrierung
- * war. Es gibt keinen Papierkorb und keine Frist: was hier verschwindet, ist
- * weg. Das ist Absicht - ein Dienst, der nicht entschluesseln kann, hat auch
- * keinen Grund, Chiffrate aufzubewahren, die niemand mehr abholt.
- */
+/** Alles zu diesem Konto entfernen. */
 export function deleteAccount(db: DbLike, userId: string): DeleteSummary {
 	const zaehle = (tabelle: typeof records | typeof devices | typeof credentials | typeof keyWraps) =>
 		db.select().from(tabelle).where(eq(tabelle.userId, userId)).all().length;
@@ -78,17 +58,7 @@ export function deleteAccount(db: DbLike, userId: string): DeleteSummary {
 	return summe;
 }
 
-/**
- * Das Schreibprotokoll in die Datenbank schieben und abschneiden.
- *
- * `secure_delete` nullt die Seiten der HAUPTdatei. Im Schreibprotokoll stehen
- * daneben aber noch die alten Fassungen derselben Seiten - mit dem Chiffrat
- * darin. Erst dieser Schritt schreibt die genullten Seiten hinueber und wirft
- * das Protokoll weg.
- *
- * Nur nach dem Aufloesen eines Kontos, nicht laufend: ein Abschneiden bei jedem
- * Schreibvorgang naehme WAL genau den Vorteil, wegen dem es eingeschaltet ist.
- */
+/** Das Schreibprotokoll in die Datenbank schieben und abschneiden. */
 export function raeumeSpuren(raw: { pragma(s: string): unknown }): void {
 	try {
 		raw.pragma("wal_checkpoint(TRUNCATE)");

@@ -6,12 +6,6 @@ export const START_PRESETS = [15, 30, 60] as const;
 /**
  * Effektiver Start-Zeitstempel aus Preset (Minuten zurück) und optionaler Uhrzeit.
  * Eine gesetzte Uhrzeit (`customStart`, HH:MM) überschreibt das Preset.
- *
- * Die Uhrzeit meint immer ihr LETZTES Auftreten bis jetzt: wer um 01:10 „23:00"
- * eingibt, meint die vergangene Nacht, nicht heute Abend. Vorher galt das als
- * ungültig, obwohl die Absicht eindeutig ist.
- *
- * Rückgabe `null` nur bei unlesbarer Uhrzeit.
  */
 export function resolveStartTs(
 	presetMin: number,

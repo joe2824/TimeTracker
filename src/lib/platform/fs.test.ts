@@ -1,12 +1,4 @@
 // Der Bestand im Browser muss sich genau so verhalten wie der auf der Platte.
-//
-// Nicht "aehnlich": store.ts unterscheidet an mehreren Stellen zwischen "Datei
-// fehlt" und "Datei ist kaputt", zwischen "leer" und "klein", und es verlaesst
-// sich darauf, dass ein Umbenennen das Ziel ersetzt. Weicht die Ablage in einem
-// dieser Punkte ab, faellt das nicht als Fehler auf - es loescht still Daten.
-//
-// Deshalb laeuft hier EINE Testreihe gegen die Ablage in IndexedDB, mit
-// denselben Erwartungen, die store.ts an sie stellt.
 import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { storage, useBrowserStorage } from "./fs";

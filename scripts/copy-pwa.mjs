@@ -1,12 +1,4 @@
 // Die gebaute PWA in den Server legen.
-//
-// Der Server liefert sie aus seinem static-Ordner aus - ein Container, ein
-// Prozess, eine Adresse. Ein zweiter Webserver nur fuer ein paar Dateien waere
-// Aufwand ohne Gewinn.
-//
-// Absichtlich ein eigener Schritt und nicht Teil des Web-Baus: wer nur die
-// Oberflaeche bauen will (etwa zum Ansehen), soll dabei nichts in den Server
-// schreiben.
 import { cp, rm, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 

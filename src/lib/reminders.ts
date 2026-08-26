@@ -11,13 +11,7 @@ let timer: ReturnType<typeof setTimeout> | null = null;
 // damit die bisherigen Aufrufer unveraendert bleiben.
 export { ensureNotificationPermission };
 
-/**
- * Millisekunden bis zur naechsten konfigurierten Erinnerungszeit.
- *
- * Die Uhrzeit ist Wanduhrzeit der Kontozeitzone, nicht der des Geraets: eine
- * Erinnerung um 14:00 soll im Arbeitskalender um 14:00 kommen, sonst verschoebe
- * sie sich auf Reisen gegenueber allen anderen Zeiten der App.
- */
+/** Millisekunden bis zur naechsten konfigurierten Erinnerungszeit. */
 function nextReminderDelay(times: string[]): number | null {
 	if (!times.length) return null;
 	const now = Date.now();

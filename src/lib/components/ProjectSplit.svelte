@@ -2,9 +2,6 @@
 	// Mehrere Projekte mit Anteilen belegen – die Schätzung für einen Zeitraum,
 	// den man im Nachhinein nicht mehr stundengenau auseinandersortieren kann
 	// („grob 60 % MCB, 40 % FFX").
-	//
-	// Die Regler sind aneinander gekoppelt: die Summe bleibt immer 100 %, sonst
-	// müsste man nach jeder Änderung alle anderen von Hand nachziehen.
 	import { Button } from "$lib/components/ui/button";
 	import ActivityCombobox from "$lib/components/ActivityCombobox.svelte";
 	import PlusIcon from "@lucide/svelte/icons/plus";

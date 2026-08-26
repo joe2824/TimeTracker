@@ -1,9 +1,4 @@
 // Passkeys: registrieren und anmelden.
-//
-// Die eigentliche Kryptografie macht @simplewebauthn/server. Was hier steht, ist
-// die Verbindung zu unserem Schema und die eine Entscheidung, die das Produkt
-// praegt: es gibt kein Passwort und keine Pflicht-Mailadresse. Ein Konto besteht
-// aus einem Anzeigenamen und mindestens einem Passkey.
 import {
 	generateAuthenticationOptions,
 	generateRegistrationOptions,
@@ -20,22 +15,7 @@ import type { Db, DbLike } from "./db";
 import { credentials, users } from "./db/schema";
 import { RP_ID, RP_NAME, WEBAUTHN_ORIGINS } from "./config";
 
-/**
- * Die PRF-Erweiterung anfordern.
- *
- * Wenn der Authentifikator sie kann, liefert derselbe Passkey spaeter einen
- * stabilen Zufallswert, aus dem sich der Tresorschluessel oeffnen laesst - die
- * Anmeldung entsperrt die Daten dann in derselben Bewegung.
- *
- * Kann er sie nicht (Windows Hello ueber TPM je nach Fassung), faellt das hier
- * nicht auf: die Registrierung laeuft normal weiter, und der Tresor wird ueber
- * die Wiederherstellungs-Phrase oder ein bereits entsperrtes Geraet geoeffnet.
- * Genau deshalb ist die Phrase Pflicht und nicht Kuer.
- *
- * Der Cast ist noetig, weil die Typdefinition des Browsers `prf` noch nicht
- * kennt - die Erweiterung ist neuer als die Typen. Uebertragen wird sie
- * trotzdem korrekt; wer sie nicht kann, ignoriert sie schlicht.
- */
+/** Die PRF-Erweiterung anfordern. */
 const PRF_EXTENSION = { prf: {} } as unknown as AuthenticationExtensionsClientInputs;
 
 export async function registrationOptions(displayName: string, userId: string) {
@@ -68,17 +48,7 @@ export async function verifyRegistration(
 	});
 }
 
-/**
- * Die Aufgabe fuer eine BESTAETIGUNG, nicht fuer eine Anmeldung.
- *
- * Unterschied zur Anmeldung ist eine einzige Zeile - und sie ist der ganze
- * Punkt: `userVerification: "required"`. Der Authentifikator muss den Menschen
- * pruefen, mit PIN oder Fingerabdruck. Ohne das genuegte der blosse Besitz des
- * Geraets, und "bestaetigen" hiesse nur "der Schluessel lag hier herum".
- *
- * Fuer eine Aktion, nach der die Daten weg sind, ist das der Unterschied
- * zwischen einer Rueckfrage und einer Sicherung.
- */
+/** Die Aufgabe fuer eine BESTAETIGUNG, nicht fuer eine Anmeldung. */
 export async function confirmationOptions(db: Db, userId: string) {
 	const eigene = db.select().from(credentials).where(eq(credentials.userId, userId)).all();
 	return generateAuthenticationOptions({
@@ -111,13 +81,7 @@ export async function verifyAuthentication(
 	db: Db,
 	response: AuthenticationResponseJSON,
 	expectedChallenge: string,
-	/**
-	 * Ob der Authentifikator den Menschen geprueft haben muss.
-	 *
-	 * Beim Anmelden nein - viele Passkeys koennen es nicht, und wer aussperrt,
-	 * gewinnt nichts. Beim Bestaetigen einer Loeschung ja: dort ist genau das die
-	 * Zusage, die abgegeben wird.
-	 */
+	/** Ob der Authentifikator den Menschen geprueft haben muss. */
 	requireUserVerification = false
 ) {
 	const cred = db.select().from(credentials).where(eq(credentials.id, response.id)).get();

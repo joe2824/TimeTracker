@@ -1,13 +1,4 @@
 // Zeitwirtschaftsreport aus LOGA (Scout -> "gesetzliche Arbeitszeitverstöße").
-//
-// Die Datei hat EINE Zeile je Person und Kalendertag. Massgeblich ist die Spalte
-// "Arbeitszeit täglich": das ist die NETTO-Arbeitszeit, die Pause hat LOGA schon
-// abgezogen. Genau diese Zahl wird spaeter gegen die erfassten Projektzeiten
-// gestellt (siehe timeReconcile.ts).
-//
-// Zugeordnet wird ueber die KOPFZEILE, nicht ueber feste Spaltennummern: der
-// Report ist konfigurierbar, und eine zusaetzliche oder fehlende Spalte haette
-// sonst alles dahinter stillschweigend verschoben.
 import type { XlsxSheet } from "./xlsx";
 import { minToClock } from "./time";
 
@@ -66,9 +57,6 @@ function normalizeHeader(s: string): string {
 /**
  * Spalten des Reports. Der Schluessel ist intern, die Liste enthaelt die
  * Ueberschriften, unter denen die Spalte auftauchen darf.
- *
- * "arbeitszeit täglich" und "arbeitszeit täglich > 10h" beginnen gleich – hier
- * wird deshalb EXAKT verglichen, nie per Praefix.
  */
 const COLUMNS = {
 	personnelNo: ["personalnummer", "personalnr.", "personalnr"],
@@ -121,14 +109,7 @@ function mapHeader(row: string[]): ColumnMap | null {
 
 // ---------- Zellen ----------
 
-/**
- * Excel-Serienzahl -> "YYYY-MM-DD".
- *
- * Epoche ist der 30.12.1899, nicht der 01.01.1900: Excel kennt einen
- * 29.02.1900, den es nie gab, und gleicht diesen Fehler mit dem
- * Zwei-Tage-Versatz aus. Gerechnet wird in UTC, damit keine Zeitzone einen
- * Tag verschiebt – das Ergebnis ist ein reines Kalenderdatum.
- */
+/** Excel-Serienzahl -> "YYYY-MM-DD". */
 export function serialToDate(serial: number): string | null {
 	if (!Number.isFinite(serial) || serial < 1) return null;
 	const d = new Date(Date.UTC(1899, 11, 30) + Math.floor(serial) * 86400000);
@@ -190,10 +171,6 @@ export function parseReportHours(raw: string): number {
 /**
  * Pausenregel des Hauses: ab 4 h 15 Minuten, ab 6 h weitere 30 Minuten
  * (zusammen 45). LOGA zieht sie automatisch von der Anwesenheit ab.
- *
- * Nur ein Rueckfall fuer Tage OHNE Stempel – wo Kommen und Gehen vorliegen,
- * ist die tatsaechliche Pause aus Brutto minus Netto ablesbar und damit
- * genauer (siehe breakHours).
  */
 export function ruleBreakHours(grossHours: number): number {
 	if (grossHours > 6) return 0.75;
@@ -211,14 +188,7 @@ export function grossHours(day: TimeReportDay): number {
 	return min / 60;
 }
 
-/**
- * Die Pause dieses Tages in Stunden.
- *
- * Aus Brutto minus Netto, wo beides vorliegt: das trifft auch Tage mit einer
- * ZUSAETZLICH gestempelten Pause, die keine Regel vorhersagen kann (im Beispiel
- * 08:47–18:18 mit 8,27 h netto, also 1,25 h statt der erwarteten 0,75 h).
- * Sonst die Hausregel.
- */
+/** Die Pause dieses Tages in Stunden. */
 export function breakHours(day: TimeReportDay): number {
 	const gross = grossHours(day);
 	if (gross <= 0) return 0;
@@ -231,16 +201,7 @@ export function hasStamps(day: TimeReportDay): boolean {
 	return !!day.firstIn && !!day.lastOut;
 }
 
-/**
- * In LOGA ist nur „Kommen" gestempelt – das Gehen fehlt noch.
- *
- * So ein Tag ist kein Massstab: „Arbeitszeit täglich" steht dann auf 0 oder auf
- * einem Zwischenstand, weil LOGA den Feierabend noch nicht kennt. Alles, was
- * hier erfasst ist, saehe daneben nach „zu viel" aus.
- *
- * Trifft den laufenden Tag ebenso wie ein vergessenes Gehen in der
- * Vergangenheit – beides ist in LOGA zu klaeren, nicht hier.
- */
+/** In LOGA ist nur „Kommen" gestempelt – das Gehen fehlt noch. */
 export function isOpenDay(day: TimeReportDay): boolean {
 	return !!day.firstIn && !day.lastOut;
 }
@@ -249,10 +210,6 @@ export function isOpenDay(day: TimeReportDay): boolean {
 
 /**
  * Einen eingelesenen Zeitwirtschaftsreport auswerten.
- *
- * Mehrere Personen sind vorgesehen: der Export laesst sich auch fuer ein ganzes
- * Team ziehen (der Report hat eine Spalte "Vorgesetzter"). Die Oberflaeche
- * fragt dann, um wen es geht.
  *
  * @throws {TimeReportError} wenn keine Kopfzeile oder keine Datenzeile passt
  */

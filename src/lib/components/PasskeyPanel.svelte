@@ -1,14 +1,5 @@
 <script lang="ts">
 	// Passkeys verwalten.
-	//
-	// Der Grund, aus dem es diese Karte gibt: ein Konto mit genau EINEM Passkey
-	// haengt an genau einem Gegenstand. Geht der Rechner kaputt, wird er getauscht
-	// oder verlegt man den Stick, ist der Weg hinein weg - und die
-	// Wiederherstellungs-Phrase ist das, was man in genau diesem Moment nicht zur
-	// Hand hat.
-	//
-	// Deshalb steht hier nicht bloss eine Liste, sondern ein Hinweis, solange es
-	// nur einen gibt.
 	import * as Card from "$lib/components/ui/card";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";

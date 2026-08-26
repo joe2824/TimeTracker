@@ -1,22 +1,7 @@
 // Benachrichtigungen.
-//
-// Auf dem Rechner ueber Tauri, im Browser ueber die eingebaute Schnittstelle.
-// Beides sieht fuer den Aufrufer gleich aus, weil der Unterschied ihn nichts
-// angeht: er will eine Erinnerung zeigen, nicht wissen, wer sie zustellt.
-//
-// Der Sinn im Browser ist ein anderer als auf dem Rechner. Dort ist die
-// Erinnerung Beiwerk - man sieht das Fenster ohnehin. Auf dem Handy ist sie oft
-// der einzige Grund, die Anwendung ueberhaupt zu oeffnen.
 import { isTauri } from "./env";
 
-/**
- * Um Erlaubnis fragen - aber nur, wenn es etwas zu fragen gibt.
- *
- * Browser verlangen fuer diese Frage eine Nutzerhandlung; unaufgefordert beim
- * Start gefragt, lehnen manche sie stillschweigend ab und fragen nie wieder.
- * Der Aufrufer soll sie deshalb an eine Handlung haengen - etwa das Einschalten
- * der Erinnerungen.
- */
+/** Um Erlaubnis fragen - aber nur, wenn es etwas zu fragen gibt. */
 export async function ensureNotificationPermission(): Promise<boolean> {
 	if (isTauri()) {
 		const { isPermissionGranted, requestPermission } = await import(
@@ -33,12 +18,7 @@ export async function ensureNotificationPermission(): Promise<boolean> {
 export interface NotifyOptions {
 	title: string;
 	body: string;
-	/**
-	 * Gleiche Kennung ersetzt die vorherige Meldung, statt eine zweite zu zeigen.
-	 *
-	 * Ohne das stapeln sich bei einer wiederholten Erinnerung mehrere gleiche
-	 * Meldungen auf dem Sperrbildschirm.
-	 */
+	/** Gleiche Kennung ersetzt die vorherige Meldung, statt eine zweite zu zeigen. */
 	tag?: string;
 }
 

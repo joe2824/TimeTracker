@@ -1,11 +1,6 @@
 <script lang="ts">
 	// Rueckfrage vor einem rueckdatierten Timer-Start, der bereits erfasste Zeiten
 	// anfasst.
-	//
-	// Muss auch im Tray-Flyout (300x420) funktionieren: dialog-content bringt weder
-	// max-height noch overflow mit, und nebeneinander gestellt bleibt vom Namen bei
-	// der Breite nichts uebrig. Deshalb: feste Hoehengrenze mit scrollender Liste
-	// und je Zeile Name OBEN, Details darunter – das traegt jede Fensterbreite.
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { Button } from "$lib/components/ui/button";
 	import { app } from "$lib/app.svelte";

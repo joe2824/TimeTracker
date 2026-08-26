@@ -1,23 +1,10 @@
 // Der Weckruf-Kanal.
-//
-// Server-Sent Events statt WebSocket: es geht nur in eine Richtung, jeder
-// Reverse-Proxy kann damit umgehen, und der Wiederverbindungs-Versuch steckt
-// schon im Browser. Ein WebSocket waere hier Aufwand ohne Gewinn.
-//
-// Der Kanal traegt keine Daten, nur "es gibt Neues ab Nummer N". Wer das hoert,
-// holt sich das Delta ueber /api/sync. Damit reisen Chiffrate genau einmal.
 import { error } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { subscribe } from "$lib/server/events";
 import { currentSeq } from "$lib/server/sync";
 
-/**
- * Alle 30 Sekunden ein Lebenszeichen.
- *
- * Nicht fuer den Client, sondern gegen die Zeitgeber dazwischen: Reverse-Proxies
- * und Mobilfunknetze schliessen eine Verbindung, auf der lange nichts passiert.
- * Ein Doppelpunkt ist ein SSE-Kommentar - zwei Bytes, die niemand auswertet.
- */
+/** Alle 30 Sekunden ein Lebenszeichen. */
 const HEARTBEAT_MS = 30_000;
 
 export const GET: RequestHandler = ({ locals }) => {

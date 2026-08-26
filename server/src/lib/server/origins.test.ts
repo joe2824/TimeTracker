@@ -1,13 +1,4 @@
 // Welche Adressen einen Passkey tragen koennen.
-//
-// Die Regel kommt nicht von uns, sondern vom Browser: er laesst einen Passkey
-// nur zu, wenn die Adresse unter der RP-Kennung liegt - gleiche Domain oder eine
-// Unterdomain davon. Mehrere Adressen sind also moeglich, aber nicht beliebige.
-//
-// Geprueft wird hier die Auswahl, die config.ts trifft. Sie zu treffen ist
-// billig; sie NICHT zu treffen kostet jemanden einen Nachmittag, weil der
-// Browser eine Meldung zeigt, die niemand mit dieser Einstellung in Verbindung
-// bringt.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /** Die Einstellungen mit dieser Umgebung frisch laden. */

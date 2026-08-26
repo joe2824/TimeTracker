@@ -1,25 +1,4 @@
 // Ein Konto von einem GERAET aus anlegen - ohne Passkey.
-//
-// Warum es das gibt: Passkeys haengen an einer Domain, und die Desktop-Anwendung
-// hat keine. Bisher musste deshalb jeder erst in den Browser, ein Konto anlegen
-// und dann den Rechner koppeln - und das ist genau verkehrt herum. Die Daten
-// liegen auf dem Rechner. Er ist das Hauptgeraet, nicht der Zweitweg.
-//
-// Was so ein Konto hat und was nicht:
-//
-//   ES HAT   ein Geraete-Token fuer dieses eine Geraet, und eine
-//            Wiederherstellungs-Phrase, die der Client erzeugt und ablegt.
-//            Damit laeuft der Abgleich, und der Tresor laesst sich oeffnen.
-//
-//   ES HAT NICHT   einen Passkey. Im Browser kommt man damit zunaechst nicht
-//            hinein. Der Weg dorthin fuehrt ueber die Kopplung: der Browser
-//            meldet sich wie jedes andere neue Geraet an, der Rechner
-//            bestaetigt, und danach laesst sich dort ein Passkey anlegen.
-//
-// Der wichtige Teil ist der zweite. Ein Konto, das nur an einem Rechner haengt,
-// ist genau so viel wert wie dieser Rechner - deshalb sagt die Oberflaeche
-// ausdruecklich, dass die Phrase der einzige Weg zurueck ist, solange kein
-// zweites Geraet dazugekommen ist.
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { REGISTRATION_OPEN } from "$lib/server/config";
@@ -34,15 +13,6 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	const userId = crypto.randomUUID();
 
 	// Ein Name ist NICHT noetig.
-	//
-	// Wozu er da ist: der Anmeldedialog des Betriebssystems zeigt ihn, wenn
-	// jemand einen Passkey anlegt. Dieses Konto hat keinen - es entsteht ja
-	// gerade auf einem Geraet, das gar keinen anbieten kann. Nach etwas zu
-	// fragen, das an dieser Stelle niemanden interessiert und niemand sieht, ist
-	// eine Zeile im Formular zu viel.
-	//
-	// Fehlt er, steht die Kennung da. Das ist haesslich und ehrlich; wer spaeter
-	// im Browser einen Passkey anlegt, kann ihn dort setzen.
 	const gewuenscht = String(body?.displayName ?? "").trim();
 	if (gewuenscht.length > 64) error(400, "Anzeigename ist zu lang");
 	const displayName = gewuenscht || userId;
