@@ -46,6 +46,16 @@ export interface PushAnswer {
 	seq: number;
 }
 
+export interface Passkey {
+	id: string;
+	/** Wie der Mensch ihn nennt. Null, solange niemand ihn benannt hat. */
+	label: string | null;
+	/** Ob er den Tresor allein oeffnen kann - sonst braucht es Phrase oder Gerät. */
+	hasPrf: boolean;
+	createdAt: number;
+	lastUsedAt: number | null;
+}
+
 export interface Invite {
 	code: string;
 	createdAt: number;
@@ -64,7 +74,7 @@ export interface AccountInfo {
 	isAdmin: boolean;
 	seq: number;
 	wrapKinds: string[];
-	passkeys: { id: string; hasPrf: boolean; createdAt: number; lastUsedAt: number | null }[];
+	passkeys: Passkey[];
 	devices: { id: string; label: string; lastSeenAt: number | null; revokedAt: number | null }[];
 }
 
@@ -235,6 +245,39 @@ export class Api {
 			method: "POST",
 			body: JSON.stringify({ kind, payload, credentialId })
 		});
+	}
+
+	// ---------- Passkeys ----------
+	//
+	// Nur im Browser zu gebrauchen: ein Passkey haengt an der Domain, und die
+	// Desktop-Anwendung hat keine. Sie koppelt sich stattdessen.
+
+	passkeys(): Promise<{ passkeys: Passkey[] }> {
+		return this.#call("/api/passkeys");
+	}
+
+	addPasskeyStart(): Promise<{ challengeId: string; options: unknown }> {
+		return this.#call("/api/passkeys/start", { method: "POST" });
+	}
+
+	addPasskeyFinish(body: {
+		challengeId: string;
+		label?: string;
+		hasPrf: boolean;
+		response: unknown;
+	}): Promise<Passkey> {
+		return this.#call("/api/passkeys/finish", { method: "POST", body: JSON.stringify(body) });
+	}
+
+	renamePasskey(id: string, label: string): Promise<{ ok: boolean }> {
+		return this.#call("/api/passkeys", {
+			method: "PATCH",
+			body: JSON.stringify({ id, label })
+		});
+	}
+
+	removePasskey(id: string): Promise<{ ok: boolean }> {
+		return this.#call("/api/passkeys", { method: "DELETE", body: JSON.stringify({ id }) });
 	}
 
 	// ---------- Verwaltung ----------

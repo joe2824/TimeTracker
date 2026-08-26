@@ -12,7 +12,7 @@ import { loadDevice, loadEntries, saveDevice, saveEntries } from "../store";
 import { loadActivities, saveActivities, loadSettings, saveSettings, listEntryMonths } from "../store";
 import { deviceId } from "./device";
 import { startTracking, stopTracking, pendingChanges, setChangeListener } from "./outbox";
-import { Api, ApiError, type AccountInfo, type DeleteSummary, type Invite } from "./api";
+import { Api, ApiError, type AccountInfo, type DeleteSummary, type Invite, type Passkey } from "./api";
 import { detachLocalData } from "./detach";
 import { SyncEngine } from "./engine";
 import {
@@ -506,6 +506,41 @@ class AccountState {
 		const info = await this.#api.me();
 		this.isAdmin = info.isAdmin;
 		return info;
+	}
+
+	// ---------- Passkeys ----------
+	//
+	// Nur im Browser: ein Passkey haengt an der Domain, und die Desktop-Anwendung
+	// hat keine. Dort ist der Weg zu einem zweiten Geraet die Kopplung.
+
+	async passkeys(): Promise<Passkey[]> {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		return (await this.#api.passkeys()).passkeys;
+	}
+
+	/**
+	 * Einen weiteren Passkey anlegen.
+	 *
+	 * Braucht den Tresorschluessel: der neue Passkey soll nicht bloss anmelden,
+	 * sondern auch die Daten oeffnen koennen. Ohne entsperrtes Konto geht das
+	 * nicht - und ohne waere der Passkey die halbe Miete, die man erst bemerkt,
+	 * wenn der erste weg ist.
+	 */
+	async addPasskey(label: string): Promise<{ prfAvailable: boolean }> {
+		if (!this.#key) throw new Error("Das Konto ist nicht entsperrt");
+		const { addPasskey } = await import("./enroll");
+		const ergebnis = await addPasskey(this.serverUrl, this.#key, label);
+		return { prfAvailable: ergebnis.prfAvailable };
+	}
+
+	async renamePasskey(id: string, label: string): Promise<void> {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		await this.#api.renamePasskey(id, label);
+	}
+
+	async removePasskey(id: string): Promise<void> {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		await this.#api.removePasskey(id);
 	}
 
 	// ---------- Verwaltung ----------

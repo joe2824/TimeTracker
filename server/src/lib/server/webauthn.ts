@@ -159,7 +159,9 @@ export function storeCredential(
 	userId: string,
 	cred: { id: string; publicKey: Uint8Array; counter: number },
 	transports: string[] | undefined,
-	hasPrf: boolean
+	hasPrf: boolean,
+	/** Wie der Mensch ihn nennt. Beim ersten Passkey noch niemand - dann null. */
+	label: string | null = null
 ): void {
 	db.insert(credentials)
 		.values({
@@ -169,6 +171,7 @@ export function storeCredential(
 			counter: cred.counter,
 			transports: transports ? JSON.stringify(transports) : null,
 			hasPrf,
+			label,
 			createdAt: Date.now()
 		})
 		.run();

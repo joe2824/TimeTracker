@@ -67,6 +67,14 @@ export const credentials = sqliteTable(
 		transports: text("transports"),
 		/** Ob dieser Authentifikator die PRF-Erweiterung kann - fuer die Anzeige. */
 		hasPrf: integer("has_prf", { mode: "boolean" }).notNull().default(false),
+		/**
+		 * Wie der Mensch diesen Passkey nennt - "Laptop", "Handy", "Stick".
+		 *
+		 * Ohne das steht in der Liste eine base64-Kennung, und niemand weiss, welche
+		 * davon der alte Rechner war, den er gerade entsorgt hat. Genau dann braucht
+		 * man die Liste aber.
+		 */
+		label: text("label"),
 		createdAt: integer("created_at").notNull(),
 		lastUsedAt: integer("last_used_at")
 	},
@@ -178,7 +186,7 @@ export const challenges = sqliteTable("challenges", {
 	challenge: text("challenge").notNull(),
 	/** Bei der Anmeldung bekannt, bei der Registrierung noch nicht. */
 	userId: text("user_id"),
-	purpose: text("purpose").$type<"register" | "login" | "delete">().notNull(),
+	purpose: text("purpose").$type<"register" | "login" | "delete" | "addkey">().notNull(),
 	expiresAt: integer("expires_at").notNull()
 });
 

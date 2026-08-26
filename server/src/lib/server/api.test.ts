@@ -984,3 +984,126 @@ describe("Herkunft unter einem fremden Namen", () => {
 		expect(res.status).toBe(200);
 	});
 });
+
+describe("Passkeys verwalten", () => {
+	/** Einen Passkey direkt eintragen - ohne Authentifikator geht es nicht anders. */
+	function legePasskeyAn(userId: string, id: string, label: string | null = null) {
+		db.$client
+			.prepare(
+				"INSERT INTO credentials (id, user_id, public_key, counter, has_prf, label, created_at) VALUES (?,?,?,0,1,?,?)"
+			)
+			.run(id, userId, Buffer.from([1, 2, 3]), label, Date.now());
+	}
+
+	it("verlangt eine Anmeldung", async () => {
+		expect((await api(null, "/api/passkeys")).status).toBe(401);
+		expect((await api(null, "/api/passkeys/start", { method: "POST" })).status).toBe(401);
+		expect((await api(null, "/api/passkeys", { method: "DELETE", body: "{}" })).status).toBe(401);
+	});
+
+	it("listet nur die eigenen", async () => {
+		legePasskeyAn(ANNA, "annas-schluessel", "Annas Laptop");
+		legePasskeyAn(BODO, "bodos-schluessel", "Bodos Handy");
+
+		const { passkeys } = await (await api(annaToken, "/api/passkeys")).json();
+		expect(passkeys).toHaveLength(1);
+		expect(passkeys[0].label).toBe("Annas Laptop");
+	});
+
+	it("schliesst beim Anlegen die vorhandenen aus", async () => {
+		// Sonst legt derselbe Authentifikator einen zweiten Passkey fuer dasselbe
+		// Konto an - und der Mensch glaubt, er haette jetzt zwei Wege, obwohl beide
+		// an demselben Geraet haengen.
+		legePasskeyAn(ANNA, "schon-da");
+		const { options } = await (
+			await api(annaToken, "/api/passkeys/start", { method: "POST" })
+		).json();
+		expect(options.excludeCredentials.map((c: { id: string }) => c.id)).toContain("schon-da");
+	});
+
+	it("laesst sich umbenennen", async () => {
+		legePasskeyAn(ANNA, "annas-schluessel", "Alt");
+		const res = await api(annaToken, "/api/passkeys", {
+			method: "PATCH",
+			body: JSON.stringify({ id: "annas-schluessel", label: "Der alte Rechner" })
+		});
+		expect(res.status).toBe(200);
+		const { passkeys } = await (await api(annaToken, "/api/passkeys")).json();
+		expect(passkeys[0].label).toBe("Der alte Rechner");
+	});
+
+	it("laesst KEINEN fremden umbenennen", async () => {
+		legePasskeyAn(BODO, "bodos-schluessel", "Bodos Handy");
+		const res = await api(annaToken, "/api/passkeys", {
+			method: "PATCH",
+			body: JSON.stringify({ id: "bodos-schluessel", label: "gekapert" })
+		});
+		expect(res.status).toBe(404);
+	});
+
+	it("entfernt einen von mehreren - samt seiner Verpackung", async () => {
+		legePasskeyAn(ANNA, "alter-rechner", "Alter Rechner");
+		legePasskeyAn(ANNA, "neues-handy", "Neues Handy");
+		await api(annaToken, "/api/wraps", {
+			method: "POST",
+			body: JSON.stringify({ kind: "passkey", payload: "verpackt", credentialId: "alter-rechner" })
+		});
+
+		const res = await api(annaToken, "/api/passkeys", {
+			method: "DELETE",
+			body: JSON.stringify({ id: "alter-rechner" })
+		});
+		expect(res.status).toBe(200);
+
+		const { passkeys } = await (await api(annaToken, "/api/passkeys")).json();
+		expect(passkeys.map((p: { id: string }) => p.id)).toEqual(["neues-handy"]);
+
+		// Die Verpackung ist ohne ihren Passkey nicht mehr zu oeffnen - sie stehen
+		// zu lassen hiesse, eine Tuer ohne Schluessel zu verwahren.
+		const { wraps } = await (await api(annaToken, "/api/wraps")).json();
+		expect(wraps.some((w: { credentialId: string }) => w.credentialId === "alter-rechner")).toBe(
+			false
+		);
+	});
+
+	it("entfernt den LETZTEN nicht", async () => {
+		// Die Grenze, die nicht verhandelbar ist: ohne Passkey kommt niemand mehr
+		// in das Konto. Die Phrase entsperrt die DATEN, aber sie meldet niemanden
+		// an - und der Betreiber kann auch nicht helfen.
+		legePasskeyAn(ANNA, "der-einzige", "Der einzige");
+		const res = await api(annaToken, "/api/passkeys", {
+			method: "DELETE",
+			body: JSON.stringify({ id: "der-einzige" })
+		});
+		expect(res.status).toBe(409);
+
+		const { passkeys } = await (await api(annaToken, "/api/passkeys")).json();
+		expect(passkeys).toHaveLength(1);
+	});
+
+	it("laesst KEINEN fremden entfernen", async () => {
+		legePasskeyAn(ANNA, "annas-eigener");
+		legePasskeyAn(BODO, "bodos-erster");
+		legePasskeyAn(BODO, "bodos-zweiter");
+
+		const res = await api(annaToken, "/api/passkeys", {
+			method: "DELETE",
+			body: JSON.stringify({ id: "bodos-zweiter" })
+		});
+		expect(res.status).toBe(404);
+
+		const { passkeys } = await (await api(bodoToken, "/api/passkeys")).json();
+		expect(passkeys).toHaveLength(2);
+	});
+
+	it("nimmt keine Aufgabe an, die zu einem anderen Konto gehoert", async () => {
+		const { challengeId } = await (
+			await api(bodoToken, "/api/passkeys/start", { method: "POST" })
+		).json();
+		const res = await api(annaToken, "/api/passkeys/finish", {
+			method: "POST",
+			body: JSON.stringify({ challengeId, response: {}, hasPrf: false })
+		});
+		expect(res.status).toBe(403);
+	});
+});

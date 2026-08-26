@@ -37,6 +37,7 @@
 	import SettingRow from "$lib/components/SettingRow.svelte";
 	import AccountPanel from "$lib/components/AccountPanel.svelte";
 	import AdminPanel from "$lib/components/AdminPanel.svelte";
+	import PasskeyPanel from "$lib/components/PasskeyPanel.svelte";
 	import LogPanel from "$lib/components/LogPanel.svelte";
 
 	const REPO_URL = "https://github.com/joe2824/TimeTracker";
@@ -742,6 +743,7 @@
 				</Card.Root>
 		{:else if bereich === "konto"}
 				<AccountPanel />
+				<PasskeyPanel />
 				<AdminPanel />
 		{:else if bereich === "system"}
 				<Card.Root>

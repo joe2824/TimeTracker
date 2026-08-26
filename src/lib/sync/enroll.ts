@@ -245,4 +245,49 @@ export async function addPasskeyWrap(
 	await api.putWrap("passkey", serialize(await wrapWithPrf(key, prf)), credentialId);
 }
 
+/**
+ * Einen WEITEREN Passkey an ein bestehendes Konto haengen.
+ *
+ * Zwei Dinge passieren, und beide muessen passieren:
+ *
+ *   1. Der Passkey wird beim Server hinterlegt - damit meldet er an.
+ *   2. Der Tresorschluessel wird gegen ihn verpackt - damit oeffnet er die Daten.
+ *
+ * Ohne den zweiten Schritt haette man einen Passkey, der zwar hineinkommt, aber
+ * vor verschlossenen Daten steht. Das ist der unangenehmste Zustand von allen:
+ * es sieht aus, als sei alles in Ordnung, bis der erste Passkey weg ist.
+ *
+ * Schritt 2 geht nur, wenn der Authentifikator PRF kann. Kann er es nicht,
+ * bleibt der Passkey trotzdem nuetzlich - er meldet an, und die Daten oeffnet
+ * dann die Phrase oder ein bereits entsperrtes Geraet. Das Ergebnis sagt, was
+ * von beidem der Fall ist, damit die Oberflaeche nichts verspricht.
+ */
+export async function addPasskey(
+	baseUrl: string,
+	key: CryptoKey,
+	label: string
+): Promise<{ id: string; label: string | null; prfAvailable: boolean }> {
+	const api = new Api({ baseUrl, fetchFn: platformFetch });
+	const { challengeId, options } = await api.addPasskeyStart();
+
+	const response = await startRegistration({
+		optionsJSON: withPrf(options as Parameters<typeof startRegistration>[0]["optionsJSON"])
+	});
+
+	const prf = prfOf(response);
+	const angelegt = await api.addPasskeyFinish({
+		challengeId,
+		label,
+		hasPrf: prf !== null,
+		response
+	});
+
+	// Erst jetzt die Verpackung: sie braucht die Kennung, die der Server gerade
+	// vergeben hat. Scheitert sie, bleibt ein Passkey ohne Zugriff auf die Daten
+	// zurueck - deshalb sagt das Ergebnis es dem Aufrufer, statt es zu verschweigen.
+	if (prf) await api.putWrap("passkey", serialize(await wrapWithPrf(key, prf)), angelegt.id);
+
+	return { id: angelegt.id, label: angelegt.label, prfAvailable: prf !== null };
+}
+
 export { ApiError, importVaultKey, toBase64 };

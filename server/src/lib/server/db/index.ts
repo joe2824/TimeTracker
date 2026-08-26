@@ -118,7 +118,8 @@ const MIGRATIONS: string[] = [
 	`ALTER TABLE invites ADD COLUMN created_by TEXT`,
 	`ALTER TABLE invites ADD COLUMN note TEXT`,
 	`ALTER TABLE invites ADD COLUMN expires_at INTEGER`,
-	`ALTER TABLE invites ADD COLUMN revoked_at INTEGER`
+	`ALTER TABLE invites ADD COLUMN revoked_at INTEGER`,
+	`ALTER TABLE credentials ADD COLUMN label TEXT`
 ];
 
 export type Db = ReturnType<typeof drizzle<typeof schema>>;
