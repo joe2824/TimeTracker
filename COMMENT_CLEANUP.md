@@ -191,8 +191,8 @@ projekteigen — nicht anfassen).
 - [x] routes/api/passkeys/+server.ts (bereits sauber, keine Aenderung noetig)
 - [x] routes/api/passkeys/finish/+server.ts (bereits sauber, keine Aenderung noetig)
 - [x] routes/api/passkeys/start/+server.ts (bereits sauber, keine Aenderung noetig)
-- [ ] routes/api/sync/+server.ts
-- [ ] routes/api/sync/stream/+server.ts
+- [x] routes/api/sync/+server.ts (bereits sauber, keine Aenderung noetig)
+- [x] routes/api/sync/stream/+server.ts (bereits sauber, keine Aenderung noetig)
 - [ ] routes/api/sync/wait/+server.ts
 - [ ] routes/api/wraps/+server.ts
 
