@@ -120,7 +120,7 @@ projekteigen — nicht anfassen).
 - [x] startTime.ts (bereits sauber, keine Aenderung noetig)
 - [x] stats.ts (bereits sauber, keine Aenderung noetig)
 - [x] store.ts
-- [ ] teamReport.ts
+- [x] teamReport.ts (bereits sauber, keine Aenderung noetig)
 - [ ] time.ts
 - [ ] timeReconcile.ts
 - [ ] timeReport.ts
