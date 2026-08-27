@@ -358,9 +358,7 @@
 						</button>
 					</div>
 				{:else}
-				<!-- Drei Faelle, alle sichtbar. Vorher stand hier nur die Anmeldung, und
-				     wer die App schon auf dem Rechner hatte, fand seinen Weg erst, wenn
-				     der Passkey-Dialog vorher fehlgeschlagen war. -->
+				<!-- Drei Faelle, alle sichtbar. -->
 				<div class="space-y-2">
 					<Button size="lg" class="w-full" disabled={laeuft} onclick={anmelden}>
 						{laeuft ? "Warte auf Bestätigung…" : "Mit Passkey anmelden"}
@@ -485,9 +483,7 @@
 			</a>
 		</footer>
 	{:else if schritt === "geraet"}
-		<!-- Der eine Schritt nach dem Anlegen. Vorher stand "Ich nutze die App schon
-		     auf dem PC" oben auf dem Startbildschirm - dort ist die Frage falsch:
-		     wer noch kein Konto hat, kann gar nichts koppeln. -->
+		<!-- Der eine Schritt nach dem Anlegen. -->
 		<header class="flex flex-col items-center gap-3 text-center">
 			<img src="/logo.svg" alt="" class="h-14 w-auto drop-shadow-sm" />
 			<div class="space-y-1">

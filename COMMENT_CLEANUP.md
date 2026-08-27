@@ -4,6 +4,10 @@ Laufende Aufgabe: jede Datei einmal durchgehen, Kommentare und Anwender-Texte
 pruefen, fixen, committen. Diese Datei ist der Fortschritts-Tracker — sie liegt
 im Repo, damit jede Maschine (git pull) genau hier weitermachen kann.
 
+**Offen:** TimeReportImport.svelte lief zuletzt als Hintergrund-Agent (cavecrew-builder,
+1068 Zeilen). Falls beim Fortsetzen kein Commit dafuer in der Historie steht: nochmal
+pruefen/anstossen statt anzunehmen, dass es erledigt ist.
+
 ## Regeln
 
 **Code-Kommentare:**
@@ -80,7 +84,7 @@ projekteigen — nicht anfassen).
 - [x] TrackingPanel.svelte
 - [x] UpdateDialog.svelte (bereits sauber, keine Aenderung noetig)
 - [x] VacationRange.svelte (bereits sauber, keine Aenderung noetig)
-- [ ] WebOnboarding.svelte
+- [x] WebOnboarding.svelte (2x Bug-Historie entfernt, Rest gerechtfertigt komplex)
 - [ ] WorkdayPicker.svelte
 
 ## Routen (`src/routes`)
