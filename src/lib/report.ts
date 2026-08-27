@@ -175,7 +175,7 @@ export function reportToHtml(report: MonthReport): string {
 
 	return `<table style="border-collapse:collapse;font-family:Calibri,Arial,sans-serif;width:520px;">
 <tr>
-  <td style="${head}">Acitivities<br>Automation Engineering</td>
+  <td style="${head}">Activities<br>Automation Engineering</td>
   <td style="${head}width:80px;">Stunden</td>
 </tr>
 ${rowsHtml}

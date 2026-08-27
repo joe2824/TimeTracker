@@ -113,7 +113,7 @@ projekteigen — nicht anfassen).
 - [x] onboarding.svelte.ts (bereits sauber, keine Aenderung noetig)
 - [x] outlook.ts (bereits sauber, keine Aenderung noetig)
 - [x] reminders.ts (bereits sauber, keine Aenderung noetig)
-- [ ] report.ts
+- [x] report.ts (Tippfehler "Acitivities" -> "Activities" im HTML-Tabellenkopf gefixt, Rest sauber)
 - [ ] reportSend.ts
 - [ ] settingsSync.ts
 - [ ] shortcuts.ts
