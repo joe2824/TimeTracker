@@ -238,8 +238,8 @@ projekteigen — nicht anfassen).
 - [x] src/lib/settingsSync.test.ts (bereits sauber, keine Aenderung noetig)
 - [x] src/lib/startTime.test.ts (bereits sauber, keine Aenderung noetig)
 - [x] src/lib/stats.test.ts (Bug-Historie umgeschrieben, Rest sauber)
-- [ ] src/lib/store.test.ts
-- [ ] src/lib/sync/detach.test.ts
+- [x] src/lib/store.test.ts (3x Bug-Historie gekuerzt, Rest sauber)
+- [x] src/lib/sync/detach.test.ts (bereits sauber, keine Aenderung noetig)
 - [ ] src/lib/sync/engine.test.ts
 - [ ] src/lib/sync/merge.test.ts
 - [ ] src/lib/sync/nachlese.test.ts
