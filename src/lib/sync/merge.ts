@@ -50,8 +50,17 @@ export function mergeRecord<T extends { id: string } & SyncMeta>(
 
 	// Nichts Eigenes offen: der Serverstand ist die Wahrheit, ohne Wettstreit.
 	if (!localPending) {
+		// Gleiche Zeit heisst sonst: derselbe Stand, es bleibt nur die Fassung
+		// mitzunehmen.
+		//
+		// Fuer einen Grabstein gilt das NICHT. Anlegen und Loeschen koennen in
+		// dieselbe Millisekunde fallen - deleteYear stempelt alle Eintraege eines
+		// Jahres mit demselben Date.now(), und auf einem schnellen Rechner trifft
+		// das den Eintrag, der gerade erst entstanden ist. Die Abkuerzung
+		// verschluckte die Loeschung dann: das andere Geraet behielt den Eintrag,
+		// erfuhr nie davon und schob ihn beim naechsten Abgleich wieder hoch.
 		const gleich = (local.updatedAt ?? 0) === (remote.updatedAt ?? 0);
-		if (gleich) return adoptRev(local, remote);
+		if (gleich && !isTombstone(remote)) return adoptRev(local, remote);
 		return {
 			value: isTombstone(remote) ? null : remote,
 			changed: true,
