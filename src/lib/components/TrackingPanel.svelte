@@ -209,9 +209,8 @@
 	{#if !app.running}
 		<div class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border p-2 text-sm">
 			<span class="text-muted-foreground font-medium">Startzeit</span>
-			<!-- Eine Auswahl aus vier Möglichkeiten: die gewählte ist hervorgehoben.
-			     „ab Uhrzeit" gehört dazu – vorher überschrieb ein Wert im Feld die
-			     Presets still, und markiert war dann gar nichts. -->
+			<!-- Eine Auswahl aus vier Möglichkeiten: die gewählte ist hervorgehoben,
+			     „ab Uhrzeit" eingeschlossen. -->
 			<ButtonGroup.Root>
 				<Button
 					variant={usingClock || presetMin !== 0 ? "outline" : "default"}

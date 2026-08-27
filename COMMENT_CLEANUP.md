@@ -77,7 +77,7 @@ projekteigen — nicht anfassen).
 - [x] SyncHint.svelte (doppelten Leftover-Kommentar entfernt)
 - [x] TeamPanel.svelte
 - [ ] TimeReportImport.svelte
-- [ ] TrackingPanel.svelte
+- [x] TrackingPanel.svelte
 - [ ] UpdateDialog.svelte
 - [ ] VacationRange.svelte
 - [ ] WebOnboarding.svelte
