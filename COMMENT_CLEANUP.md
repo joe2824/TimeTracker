@@ -230,8 +230,8 @@ projekteigen — nicht anfassen).
 - [x] src/lib/log.test.ts (bereits sauber, keine Aenderung noetig)
 - [x] src/lib/longTimer.test.ts (Bug-Historie gekuerzt, Rest sauber)
 - [x] src/lib/outlook.test.ts (Bug-Historie-Vergangenheitsform umgeschrieben, Rest sauber)
-- [ ] src/lib/platform/deeplink.test.ts
-- [ ] src/lib/platform/fs.test.ts
+- [x] src/lib/platform/deeplink.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] src/lib/platform/fs.test.ts (Zeitform-Fix, Rest sauber)
 - [ ] src/lib/platform/http.test.ts
 - [ ] src/lib/reminders.test.ts
 - [ ] src/lib/report.test.ts
