@@ -222,8 +222,8 @@ projekteigen — nicht anfassen).
 - [x] src/lib/backdate.test.ts (Bug-Historie-Rest gekuerzt, Rest sauber)
 - [x] src/lib/breaks.test.ts (bereits sauber, keine Aenderung noetig)
 - [x] src/lib/calendarMap.test.ts (Bug-Historie-Rest gekuerzt, Rest sauber)
-- [ ] src/lib/conflicts.test.ts
-- [ ] src/lib/crypto/vault.test.ts
+- [x] src/lib/conflicts.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] src/lib/crypto/vault.test.ts (3x Bug-Historie gekuerzt, Rest sauber)
 - [ ] src/lib/entriesFocus.dom.test.ts
 - [ ] src/lib/entriesFocus.svelte.test.ts
 - [ ] src/lib/invite.test.ts

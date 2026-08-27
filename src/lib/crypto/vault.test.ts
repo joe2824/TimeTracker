@@ -104,8 +104,7 @@ describe("Zeitraum-Kennung", () => {
 
 		// Auf "enthaelt nicht '07'" zu pruefen waere Unfug: in 32 zufaelligen
 		// Hex-Zeichen steht jede zweistellige Folge mit rund 11 Prozent
-		// Wahrscheinlichkeit irgendwo. Genau daran ist dieser Test einmal
-		// grundlos gescheitert.
+		// Wahrscheinlichkeit irgendwo.
 		expect(bucket).toMatch(/^[0-9a-f]{32}$/);
 		expect(bucket).not.toBe("2026-07");
 
@@ -160,8 +159,7 @@ describe("Wiederherstellungs-Phrase", () => {
 
 		// EIN Wort zu ersetzen und "faellt auf" zu erwarten waere ein Test, der
 		// gelegentlich grundlos rot ist: bei 24 Woertern hat BIP39 nur 8
-		// Pruefbits, ein falsches Wort passt also mit 1:256 zufaellig doch. Genau
-		// das ist hier einmal passiert.
+		// Pruefbits, ein falsches Wort passt also mit 1:256 zufaellig doch.
 		const woerter = phrase.split(" ");
 		const kandidaten = ["zoo", "zone", "zebra", "young", "youth", "wrong", "wrist", "write"];
 		const abgewiesen = kandidaten
@@ -422,11 +420,10 @@ describe("Wiederherstellung ueber die Phrase", () => {
 	});
 
 	it("folgt der Entropie der Phrase, nicht ihrem Text", async () => {
-		// Der Punkt, an dem die erste Fassung mit sich selbst uneins war: der
-		// Schluessel entsteht aus der ENTROPIE (siehe kekFromPhrase), die Kennung
-		// entstand aus dem TEXT. Damit hatten die beiden Haelften desselben Weges
-		// verschiedene Vorstellungen davon, wann zwei Phrasen dieselbe sind - und
-		// eine Schreibweise, die den Tresor oeffnete, fand kein Konto.
+		// Der Schluessel entsteht aus der ENTROPIE der Phrase (siehe kekFromPhrase),
+		// nicht aus ihrem Text - sonst haetten Schluessel und Kennung verschiedene
+		// Vorstellungen davon, wann zwei Phrasen gleich sind, und eine gueltige
+		// Schreibweise faende kein Konto.
 		const p = createRecoveryPhrase();
 		expect(await recoveryLookupId(p)).toMatch(/^[0-9a-f]{64}$/);
 		await expect(recoveryLookupId("kein wort davon ist eine phrase")).rejects.toThrow();
