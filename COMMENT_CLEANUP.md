@@ -135,7 +135,7 @@ projekteigen — nicht anfassen).
 
 - [x] crypto/vault.ts (dicht aber Krypto-Parameter gerechtfertigt, keine Aenderung)
 - [x] platform/deeplink.ts (bereits sauber, keine Aenderung noetig)
-- [ ] platform/env.ts
+- [x] platform/env.ts (bereits sauber, keine Aenderung noetig)
 - [ ] platform/fs.ts
 - [ ] platform/http.ts
 - [x] platform/notify.ts
