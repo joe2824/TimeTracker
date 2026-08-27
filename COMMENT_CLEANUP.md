@@ -4,9 +4,11 @@ Laufende Aufgabe: jede Datei einmal durchgehen, Kommentare und Anwender-Texte
 pruefen, fixen, committen. Diese Datei ist der Fortschritts-Tracker — sie liegt
 im Repo, damit jede Maschine (git pull) genau hier weitermachen kann.
 
-**Offen:** TimeReportImport.svelte lief zuletzt als Hintergrund-Agent (cavecrew-builder,
-1068 Zeilen). Falls beim Fortsetzen kein Commit dafuer in der Historie steht: nochmal
-pruefen/anstossen statt anzunehmen, dass es erledigt ist.
+**Nebenbei, unabhaengig von dieser Aufgabe:** In PasskeyPanel.svelte lag zwischendurch
+eine uncommittete lokale Aenderung (vermutlich User im Editor). Ein Satz dort
+("Erstelle dazu dein Konto im Browser") wirkt falsch, weil die Karte nur sichtbar ist,
+wenn das Konto schon verknuepft ist ("Erstelle" statt "Oeffne"). Nicht angefasst,
+nur geflaggt.
 
 ## Regeln
 
@@ -80,7 +82,7 @@ projekteigen — nicht anfassen).
 - [x] StatsCard.svelte
 - [x] SyncHint.svelte (doppelten Leftover-Kommentar entfernt)
 - [x] TeamPanel.svelte
-- [ ] TimeReportImport.svelte
+- [x] TimeReportImport.svelte
 - [x] TrackingPanel.svelte
 - [x] UpdateDialog.svelte (bereits sauber, keine Aenderung noetig)
 - [x] VacationRange.svelte (bereits sauber, keine Aenderung noetig)

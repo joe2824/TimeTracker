@@ -228,9 +228,8 @@
 		for (const { day, plan } of rows) {
 			// Schon Nachgetragenes nicht erneut anhaken – sonst entstuenden Dubletten.
 			sel[day.date] = plan !== null && !day.alreadyFilled;
-			// Bewusst leer: die meistgenutzte Aktivitaet als Vorschlag traf oft das
-			// falsche Projekt und wurde beim Durchklicken nicht bemerkt. Lieber
-			// einmal bewusst zuordnen – ueber „Alle Tage auf …" geht das in einem Zug.
+			// Bewusst leer: ein vorbelegter Vorschlag träfe oft das falsche Projekt,
+			// unbemerkt beim Durchklicken. „Alle Tage auf …" deckt den Sammelfall ab.
 			acts[day.date] = "";
 			extra[day.date] = others;
 		}
@@ -317,7 +316,7 @@
 			});
 			const person = report.people.find((p) => p.key === personKey);
 			if (person) await useReport(person.key, preferredMonth(person));
-			else stage = "review"; // Personenauswahl zeigen
+			else stage = "review";
 		} catch (e) {
 			stage = "idle";
 			parsed = null;
@@ -727,7 +726,6 @@
 		</Card.Content>
 
 	{:else if parsed && !personKey}
-		<!-- Team-Export: erst klaeren, um wen es geht. -->
 		<Card.Content class="space-y-3">
 			<p class="text-sm">Die Datei enthält mehrere Personen. Wessen Zeiten sollen abgeglichen werden?</p>
 			<div class="flex flex-wrap gap-2">
@@ -744,7 +742,6 @@
 	{:else if active && summary}
 		<Card.Content class="space-y-3 p-0">
 			<div class="space-y-3 px-6">
-				<!-- Kopfzeile: Monat, Person, Bilanz -->
 				<div class="flex flex-wrap items-center justify-between gap-3">
 					<div class="flex flex-wrap items-center gap-2">
 						{#if availableMonths.length > 1}
@@ -829,7 +826,6 @@
 					</Alert.Root>
 				{/if}
 
-				<!-- Sammelaktionen -->
 				{#if fixable.length > 0}
 					<div class="flex flex-wrap items-center gap-2">
 						<Button variant="outline" size="sm" onclick={() => toggleAll(picked.length < fixable.length)}>
@@ -1015,8 +1011,7 @@
 												{/if}
 											</span>
 										{:else if day.status === "open"}
-											<!-- Nur „Kommen" gestempelt: der Tag ist in LOGA noch nicht fertig,
-											     ein Vergleich sagt hier noch nichts. -->
+											<!-- Tag in LOGA noch nicht fertig – ein Vergleich sagt hier noch nichts. -->
 											<span class="text-muted-foreground text-xs">
 												in LOGA nur „Kommen" gestempelt ({day.report.firstIn})
 											</span>
@@ -1025,16 +1020,14 @@
 										{:else if day.blockedByAbsence}
 											<span class="text-muted-foreground text-xs">Ganztags-Abwesenheit eingetragen</span>
 										{:else if day.looksLikeAbsence}
-											<!-- Urlaub/Feiertag laut LOGA, aber am Tag steht schon Projektzeit:
-											     ganztägige Abwesenheit und Projektzeit schließen sich aus. -->
+											<!-- Ganztägige Abwesenheit und Projektzeit schließen sich aus. -->
 											<span class="text-muted-foreground text-xs">
 												Urlaub/Feiertag – am Tag ist bereits Projektzeit erfasst
 											</span>
 										{:else if ruleMismatch(day)}
-											<!-- Die Stempelzeiten sind voll erfasst, es bleibt trotzdem eine
-											     Differenz: LOGA hat an diesem Tag anders abgezogen als die
-											     Hausregel (gestempelte Zusatzpause, Korrekturbuchung). Das
-											     lässt sich nicht auffüllen, ohne Anwesenheit zu erfinden. -->
+											<!-- LOGA hat an diesem Tag anders abgezogen als die Hausregel
+											     (gestempelte Zusatzpause, Korrekturbuchung) – laesst sich nicht
+											     auffuellen, ohne Anwesenheit zu erfinden. -->
 											<span class="text-muted-foreground text-xs">
 												LOGA zieht hier {fmtHoursClock(breakHours(day.report))} h Pause ab statt
 												{fmtHoursClock(ruleBreakHours(grossHours(day.report)))} h – Stempelzeiten sind
