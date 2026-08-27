@@ -141,7 +141,7 @@ projekteigen — nicht anfassen).
 - [x] platform/notify.ts
 - [x] platform/open.ts (bereits sauber, keine Aenderung noetig)
 - [x] platform/os.ts (bereits sauber, keine Aenderung noetig)
-- [ ] platform/secrets.ts
+- [x] platform/secrets.ts (bereits sauber, keine Aenderung noetig)
 - [ ] platform/windows.ts
 - [ ] sync/account.svelte.ts
 - [ ] sync/api.ts
