@@ -58,8 +58,8 @@ projekteigen — nicht anfassen).
 - [x] DateInput.svelte (bereits sauber, keine Aenderung noetig)
 - [x] DayFractionSwitch.svelte
 - [x] EntryEditor.svelte (dicht kommentiert, aber gerechtfertigt - keine Aenderung)
-- [ ] IdleDialog.svelte
-- [ ] LogPanel.svelte
+- [x] IdleDialog.svelte (bereits sauber, keine Aenderung noetig)
+- [x] LogPanel.svelte
 - [ ] LongTimerDialog.svelte
 - [ ] MonthSelector.svelte
 - [ ] OnboardingWizard.svelte

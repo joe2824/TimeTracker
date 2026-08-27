@@ -1,5 +1,4 @@
 <script lang="ts">
-	// Protokoll-Karte in den Einstellungen.
 	import { KEEP_DAYS, LOG_DIR, clearLogs, errorText, logFile, readLog } from "$lib/log";
 	import { Button } from "$lib/components/ui/button";
 	import * as Card from "$lib/components/ui/card";
