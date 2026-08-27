@@ -243,9 +243,9 @@ projekteigen — nicht anfassen).
 - [x] src/lib/sync/engine.test.ts (Bug-Historie gekuerzt, Rest sauber)
 - [x] src/lib/sync/merge.test.ts (bereits sauber, keine Aenderung noetig)
 - [x] src/lib/sync/nachlese.test.ts (2x Bug-Historie gekuerzt, Rest sauber)
-- [ ] src/lib/sync/outbox.test.ts
-- [ ] src/lib/sync/prf.test.ts
-- [ ] src/lib/sync/stamp.test.ts
+- [x] src/lib/sync/outbox.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] src/lib/sync/prf.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] src/lib/sync/stamp.test.ts (bereits sauber, keine Aenderung noetig)
 - [ ] src/lib/teamReport.test.ts
 - [ ] src/lib/time.test.ts
 - [ ] src/lib/timeReconcile.test.ts
