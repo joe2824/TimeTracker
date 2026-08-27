@@ -1,5 +1,4 @@
 <script lang="ts">
-	// Konto & Synchronisation.
 	import * as Card from "$lib/components/ui/card";
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { Button } from "$lib/components/ui/button";
@@ -41,7 +40,7 @@
 	let warten = $state(false);
 	let poll: ReturnType<typeof setInterval> | null = null;
 
-	/** Ein Punkt und ein Wort - mehr will hier niemand wissen. */
+	/** Status als Punkt + kurzer Text. */
 	const zustand = $derived.by(() => {
 		if (account.state === "aus")
 			return { text: "Nicht verknüpft", punkt: "bg-muted-foreground" };
@@ -59,14 +58,7 @@
 		return capabilities.tray ? `Rechner (${p})` : `Browser (${p})`;
 	}
 
-	/**
-	 * Der ganze Vorgang mit einem Knopf.
-	 *
-	 * Erst den eigenen Kopplungscode holen, dann den Browser direkt beim Anlegen
-	 * oeffnen - mit dem Code im Link. Der Browser bestaetigt ihn nach dem Anlegen
-	 * selbst, und die Abfrage hier unten merkt es. Ohne das muesste jemand nach
-	 * dem Anlegen zurueckkommen und zwoelf Zeichen abtippen.
-	 */
+	/** Kopplungscode holen und Browser direkt mit dem Code im Link oeffnen, statt ihn abtippen zu lassen. */
 	async function losgehen() {
 		const url = serverUrl.trim();
 		if (!url) {
@@ -317,15 +309,9 @@
 
 	<Card.Content class="space-y-4">
 		{#if phrase}
-			<!-- Vor allem anderen.
-
-			     Dieses Konto hat noch keinen Passkey und kein zweites Gerät. Es hängt
-			     an diesen 24 Wörtern - geht der Rechner kaputt, bevor irgendetwas
-			     dazugekommen ist, sind sie der einzige Weg zu den Daten. Auch der
-			     Betreiber kann dann nicht helfen; er kann nichts entschlüsseln.
-
-			     Deshalb keine Schaltfläche zum Wegklicken, sondern ein Häkchen, das
-			     man setzen muss. -->
+			<!-- Kein Wegklick-Button, sondern ein Haekchen: ohne zweites Geraet oder
+			     Passkey sind diese 24 Woerter der einzige Weg zu den Daten - auch der
+			     Betreiber kann nichts entschluesseln. -->
 			<div class="border-primary/40 space-y-3 rounded-md border p-4">
 				<div>
 					<p class="font-medium">Deine Wiederherstellungs-Phrase</p>
@@ -357,9 +343,7 @@
 			</div>
 		{/if}
 
-		<!-- Eine Zeile statt zweier Bloecke. Interessant ist nur: haengt das Gerät an
-		     einem Konto, und kommt es gerade dran? Wie lange der letzte Abgleich her
-		     ist, steht oben in der Kopfzeile - dort sieht man es beilaeufig. -->
+		<!-- Nur Verknuepfung + Status; wann zuletzt abgeglichen wurde, steht schon oben in der Kopfzeile. -->
 		<div class="flex flex-wrap items-center justify-between gap-2">
 			<div class="flex items-center gap-2 text-sm">
 				<span class="size-2 shrink-0 rounded-full {zustand.punkt}"></span>
@@ -381,11 +365,6 @@
 			{/if}
 
 			{#if !account.secretsProtected}
-				<!--
-					Nicht verschweigen: ohne Schutz durch das Betriebssystem liegen
-					Schlüssel und Token lesbar im Datenordner. Wer das weiß, kann
-					entscheiden; wer es nicht weiß, kann es nicht.
-				-->
 				<p class="text-muted-foreground border-t pt-3 text-xs">
 					Schlüssel und Zugang liegen hier <strong>ungeschützt</strong> im Datenordner – das
 					Betriebssystem bietet keine geschützte Ablage.
@@ -452,9 +431,6 @@
 			<div class="border-t pt-3">
 				{#if !loesenOffen}
 					<Button variant="outline" size="sm" onclick={dialogOeffnen}>Entkoppeln…</Button>
-					<!-- "hier" allein war zweideutig: es klang wie eine Aussage ueber alle
-					     Daten, auch die beim Server. Was dort passiert, entscheidet erst
-					     die Wahl im Dialog. -->
 					<p class="text-muted-foreground mt-1 text-xs">
 						Die Zeiten auf diesem Gerät bleiben in jedem Fall. Was beim Server passiert,
 						wählst du gleich.
@@ -472,13 +448,8 @@
 							</p>
 						</div>
 
-						<!--
-							Nur mit eigenem Geraete-Token. Eine Browser-Sitzung weist sich mit
-							einem Cookie aus und IST kein Geraet beim Server - sie hat dort
-							nichts zu loesen, und der Server lehnt es mit 400 ab. Die
-							Schaltflaeche konnte also nur fehlschlagen. Wer die Sitzung
-							beenden will, meldet sich ab.
-						-->
+						<!-- Nur mit eigenem Geraete-Token: eine Browser-Sitzung ist beim Server
+						     kein Geraet und laesst sich hier nicht trennen (400). -->
 						{#if account.hasDeviceToken}
 							<div class="space-y-1">
 								<Button
@@ -563,9 +534,6 @@
 		{:else}
 			<div class="space-y-2 border-t pt-3">
 				{#if DEFAULT_SERVER && !eigenerServer}
-					<!-- Steht beim Bauen ein Server fest, ist das fuer fast alle die
-					     richtige Antwort. Sie als Frage zu stellen kostet nur einen
-					     Schritt - wer einen eigenen hat, findet den Link darunter. -->
 					<p class="text-sm">
 						Server: <span class="font-medium">{DEFAULT_SERVER}</span>
 					</p>
@@ -593,17 +561,9 @@
 					{/if}
 				{/if}
 
-				<!-- Ein Konto entsteht im Browser, nicht hier.
-
-				     Ein Passkey haengt an der Domain des Servers; die Anwendung hat
-				     keine und kann deshalb keinen anlegen. Ein von hier aus angelegtes
-				     Konto haette dauerhaft KEINEN Passkey - der Browser kaeme nie
-				     anders hinein als ueber eine Kopplung, und der einzige Weg zurueck
-				     waeren die 24 Woerter.
-
-				     Also andersherum: im Browser anlegen (Einladungscode, Passkey),
-				     danach dieses Geraet dazukoppeln. Die Zeiten von hier gehen beim
-				     ersten Abgleich trotzdem hoch - darum kuemmert sich die Nachlese. -->
+				<!-- Konto entsteht im Browser (Passkey haengt an der Domain des Servers,
+				     die App hat keine), dieses Geraet koppelt sich danach nur an. Lokale
+				     Zeiten gehen beim ersten Abgleich trotzdem hoch (siehe Nachlese). -->
 				<div class="space-y-2 pt-3">
 					<Button disabled={laeuft || !serverUrl.trim()} onclick={losgehen}>
 						{laeuft ? "Öffnet…" : "Konto anlegen und verknüpfen"}
@@ -624,11 +584,7 @@
 					</p>
 				</div>
 
-				<!-- Der Weg für den Tag, an dem sonst nichts mehr da ist.
-
-				     Ohne ihn wären die 24 Wörter ein Versprechen, das niemand einlösen
-				     kann: sie öffnen zwar die Verpackung, aber an die Verpackung käme
-				     man nicht heran - dafür müsste man angemeldet sein. -->
+				<!-- Einziger Weg zurueck, wenn kein anderes Geraet mehr bestaetigen kann. -->
 				<div class="space-y-2 border-t pt-3">
 					{#if !phraseEingabeOffen}
 						<Button variant="ghost" size="sm" onclick={() => (phraseEingabeOffen = true)}>

@@ -45,7 +45,7 @@ projekteigen — nicht anfassen).
 
 - [x] SettingsPanel.svelte
 - [x] AbsenceOverrideDialog.svelte
-- [ ] AccountPanel.svelte
+- [x] AccountPanel.svelte
 - [ ] ActivitiesPanel.svelte
 - [ ] ActivityCombobox.svelte
 - [ ] ActivityDot.svelte
