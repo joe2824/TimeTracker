@@ -10,6 +10,10 @@ eine uncommittete lokale Aenderung (vermutlich User im Editor). Ein Satz dort
 wenn das Konto schon verknuepft ist ("Erstelle" statt "Oeffne"). Nicht angefasst,
 nur geflaggt.
 
+**Ebenfalls nebenbei:** src/lib/teamReport.test.ts enthaelt in den Testdaten eine
+echte Firmendomain ("firma.de") und einen Kollegennamen ("Bernd Müller").
+Ausserhalb des Kommentar/Text-Scopes dieser Aufgabe, nicht angefasst, nur geflaggt.
+
 ## Regeln
 
 **Code-Kommentare:**
@@ -246,8 +250,8 @@ projekteigen — nicht anfassen).
 - [x] src/lib/sync/outbox.test.ts (bereits sauber, keine Aenderung noetig)
 - [x] src/lib/sync/prf.test.ts (bereits sauber, keine Aenderung noetig)
 - [x] src/lib/sync/stamp.test.ts (bereits sauber, keine Aenderung noetig)
-- [ ] src/lib/teamReport.test.ts
-- [ ] src/lib/time.test.ts
+- [x] src/lib/teamReport.test.ts (bereits sauber, keine Aenderung noetig — Testdaten enthalten echte Firmendomain, siehe Hinweis)
+- [x] src/lib/time.test.ts (2x kleine Bug-Historie gekuerzt, Rest sauber)
 - [ ] src/lib/timeReconcile.test.ts
 - [ ] src/lib/timeReport.test.ts
 - [ ] src/lib/timeReportFlow.test.ts
