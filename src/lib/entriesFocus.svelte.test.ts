@@ -4,10 +4,9 @@ import { fmtDate } from "./time";
 
 describe("entriesFocus", () => {
 	it("wechselt die Ansicht SYNCHRON zum Wunsch", () => {
-		// Der Kern: frueher haing der Tabwechsel an einem Effekt auf `pendingDate`.
-		// Die Eintraege-Ansicht liest den Wunsch und loescht ihn dabei – lief sie
-		// zuerst, sah die Shell nur noch null und blieb, wo sie war. Ein Klick auf
-		// einen auffaelligen Tag im Bericht tat dann gar nichts.
+		// Der Tabwechsel muss synchron passieren: haenge er an einem Effekt auf
+		// `pendingDate`, koennte die Eintraege-Ansicht (die den Wunsch liest und
+		// loescht) zuerst laufen, und die Shell saehe nur noch null.
 		const gezeigt = vi.fn();
 		entriesFocus.onShow(gezeigt);
 
@@ -18,8 +17,8 @@ describe("entriesFocus", () => {
 	});
 
 	it("laesst sich vom Verbraucher nicht ausbremsen", () => {
-		// Genau der Fall, der kaputt war: der Verbraucher raeumt den Wunsch sofort
-		// ab. Der Wechsel muss trotzdem passiert sein.
+		// Der Verbraucher raeumt den Wunsch sofort ab - der Wechsel muss trotzdem
+		// passiert sein.
 		const gezeigt = vi.fn(() => {
 			entriesFocus.pendingDate = null;
 		});

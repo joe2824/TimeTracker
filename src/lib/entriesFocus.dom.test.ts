@@ -31,9 +31,9 @@ describe("Wunsch aus dem Bericht in die Eintraege", () => {
 	});
 
 	it("belegt, warum es kein Effekt sein darf: Kind-Effekte laufen zuerst", () => {
-		// Genau der Fehler, der in der App auftrat – ein Klick tat gar nichts.
 		// Die Eintraege-Ansicht ist ein KIND der Shell; ihr Effekt laeuft zuerst
-		// und loescht den Wunsch, bevor die Shell ihn je zu sehen bekommt.
+		// und loescht den Wunsch, bevor die Shell ihn je zu sehen bekommt - deshalb
+		// darf es kein Effekt sein.
 		const s = klick("effect");
 		expect(s.seen.date).toBe("2026-08-17"); // das Kind sieht ihn ...
 		expect(s.tab).toBe("report"); // ... die Shell nie.
