@@ -66,8 +66,8 @@ projekteigen — nicht anfassen).
 - [x] PairingCode.svelte
 - [x] PasskeyNudge.svelte
 - [x] PasskeyPanel.svelte (Original-Beispiel: Server-Adresse-Jargon rausgenommen)
-- [ ] ProjectSplit.svelte
-- [ ] ReportReminderDialog.svelte
+- [x] ProjectSplit.svelte (bereits sauber, keine Aenderung noetig)
+- [x] ReportReminderDialog.svelte (bereits sauber, keine Aenderung noetig)
 - [ ] ReportView.svelte
 - [ ] SavedHint.svelte
 - [ ] SettingRow.svelte
