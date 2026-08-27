@@ -100,11 +100,11 @@ projekteigen — nicht anfassen).
 
 - [x] analytics.ts (bereits sauber, keine Aenderung noetig)
 - [ ] app.svelte.ts
-- [ ] arbzg.ts
+- [x] arbzg.ts (dicht aber exemplarisch begruendet, keine Aenderung)
 - [x] backdate.ts (bereits sauber, keine Aenderung noetig)
-- [ ] breaks.ts
-- [ ] calendarMap.ts
-- [ ] conflicts.ts
+- [x] breaks.ts (bereits sauber, keine Aenderung noetig)
+- [x] calendarMap.ts (bereits sauber, keine Aenderung noetig)
+- [x] conflicts.ts (bereits sauber, keine Aenderung noetig)
 - [ ] defaults.ts
 - [ ] entriesFocus.svelte.ts
 - [ ] invite.ts
