@@ -1,7 +1,4 @@
 <script lang="ts">
-	// Eine Einstellungs-Zeile: links Titel + Erklaerung, rechts das Bedienelement.
-	// EIN Rhythmus fuer alle Einstellungen – vorher stand ein zweispaltiges Grid mit
-	// ueberlangen Labels neben Schalter-Zeilen, die es genau andersherum machten.
 	import type { Snippet } from "svelte";
 	import { cn } from "$lib/utils";
 	import { Label } from "$lib/components/ui/label";

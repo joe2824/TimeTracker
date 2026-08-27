@@ -69,9 +69,9 @@ projekteigen — nicht anfassen).
 - [x] ProjectSplit.svelte (bereits sauber, keine Aenderung noetig)
 - [x] ReportReminderDialog.svelte (bereits sauber, keine Aenderung noetig)
 - [x] ReportView.svelte (bereits sauber, keine Aenderung noetig)
-- [ ] SavedHint.svelte
-- [ ] SettingRow.svelte
-- [ ] SettingToggle.svelte
+- [x] SavedHint.svelte (bereits sauber, keine Aenderung noetig)
+- [x] SettingRow.svelte
+- [x] SettingToggle.svelte (bereits sauber, keine Aenderung noetig)
 - [ ] ShortcutKey.svelte
 - [ ] StatsCard.svelte
 - [ ] SyncHint.svelte
