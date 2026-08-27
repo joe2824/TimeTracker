@@ -87,7 +87,7 @@ projekteigen — nicht anfassen).
 - [x] UpdateDialog.svelte (bereits sauber, keine Aenderung noetig)
 - [x] VacationRange.svelte (bereits sauber, keine Aenderung noetig)
 - [x] WebOnboarding.svelte (2x Bug-Historie entfernt, Rest gerechtfertigt komplex)
-- [ ] WorkdayPicker.svelte
+- [x] WorkdayPicker.svelte (bereits sauber, keine Aenderung noetig)
 
 ## Routen (`src/routes`)
 
