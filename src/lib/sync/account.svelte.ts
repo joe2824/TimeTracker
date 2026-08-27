@@ -539,9 +539,8 @@ class AccountState {
 		}
 
 		// Die Merkliste gehoert IMMER dem vorigen Konto - auf beiden Plattformen.
-		// Ohne diese Zeile lud sie der naechste Abgleich in das neue Konto, ganz
-		// ohne Nachlese: `#pushAll` liest die Outbox, nicht den Stempel. Genau
-		// daran ist der erste Anlauf dieser Absicherung gescheitert.
+		// Ohne diese Zeile laedt sie der naechste Abgleich ins neue Konto: `#pushAll`
+		// liest die Outbox, nicht den Stempel.
 		if (wechsel || fremdeKopie) await clearOutbox();
 
 		// Wem der Bestand gehoert: nach einem Wechsel weiterhin dem alten Konto
@@ -640,7 +639,6 @@ class AccountState {
 		await this.#api.revokeInvite(code);
 	}
 
-	/** Die Verknuepfung loesen. */
 	/**
 	 * Abmelden: die Sitzung beim Server beenden und die Verknuepfung hier vergessen.
 	 *
@@ -662,6 +660,7 @@ class AccountState {
 		if (!isTauri()) await clearAccountData();
 	}
 
+	/** Die Verknuepfung loesen. */
 	async unlink(opts: UnlinkOptions = {}): Promise<DeleteSummary | null> {
 		let summe: DeleteSummary | null = null;
 
