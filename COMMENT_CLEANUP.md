@@ -159,7 +159,7 @@ projekteigen — nicht anfassen).
 ## Server (`server/src`, keine Tests)
 
 - [x] app.d.ts (bereits sauber, keine Aenderung noetig)
-- [ ] hooks.server.ts
+- [x] hooks.server.ts (bereits sauber, keine Aenderung noetig)
 - [ ] lib/server/account.ts
 - [ ] lib/server/auth.ts
 - [ ] lib/server/config.ts
