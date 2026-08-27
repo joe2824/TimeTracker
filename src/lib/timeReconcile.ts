@@ -304,10 +304,8 @@ export function planFill(
 	entries: Entry[],
 	opts: FillOptions = DEFAULT_FILL_OPTIONS
 ): FillPlan | null {
-	// Nur wo der Abgleich wirklich etwas vermisst. Am reinen Vorzeichen von `diff`
-	// zu haengen war falsch: ein Tag mit 8,55 h laut LOGA und 8,50 h erfasst gilt
-	// als „stimmt", haette hier aber einen Nachtrag ueber drei Minuten bekommen –
-	// angehakt und in der Sammeluebernahme mitgezaehlt.
+	// An `status` haengen, nicht am blossen Vorzeichen von `diff`: das faengt auch
+	// Differenzen im Rundungsbereich ab, die als „stimmt" durchgehen.
 	if (day.status !== "missing" && day.status !== "partial") return null;
 	if (day.diff <= 0) return null;
 
@@ -360,10 +358,8 @@ export function planFill(
 		window = { start: clockMin(day.report.firstIn!), end: clockMin(day.report.lastOut!) };
 		if (window.end <= window.start) window.end = 1440; // ueber Mitternacht gestempelt
 		// Der Report kann MEHR Stunden melden, als zwischen Kommen und Gehen
-		// liegen – dann wurde ausserhalb der Stempelung gearbeitet (nachgebuchte
-		// Zeiten, Dienstreise, Korrektur). Im Beispiel: 11:05–16:52 gestempelt,
-		// aber 7,37 h gutgeschrieben. Ohne Verlaengerung liesse sich so ein Tag
-		// nie vollstaendig nachtragen und bliebe fuer immer als „teilweise" stehen.
+		// liegen (nachgebuchte Zeit, Dienstreise, Korrektur) – ohne Verlaengerung
+		// liesse sich so ein Tag nie vollstaendig nachtragen.
 		if (day.report.hours > grossHours(day.report)) {
 			stampEnd = window.end;
 			window.end = 1440;

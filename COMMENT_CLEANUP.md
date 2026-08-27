@@ -122,7 +122,7 @@ projekteigen — nicht anfassen).
 - [x] store.ts
 - [x] teamReport.ts (bereits sauber, keine Aenderung noetig)
 - [x] time.ts (bereits sauber, keine Aenderung noetig)
-- [ ] timeReconcile.ts
+- [x] timeReconcile.ts (2x Beispiel-lastige Kommentare gekuerzt, Rest gerechtfertigt komplex)
 - [ ] timeReport.ts
 - [ ] types.ts
 - [ ] tz.ts
