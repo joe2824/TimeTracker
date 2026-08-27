@@ -1,5 +1,4 @@
 <script lang="ts">
-	// Passkeys verwalten.
 	import * as Card from "$lib/components/ui/card";
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { Button } from "$lib/components/ui/button";
@@ -179,15 +178,15 @@
 					<p class="text-muted-foreground text-xs">
 						Keiner dieser Passkeys kann den Tresor allein öffnen – zum Entsperren braucht es
 						zusätzlich die Wiederherstellungs-Phrase oder ein bereits entsperrtes Gerät. Das liegt
-						am Authentifikator, nicht an dir.
+						an der Technik des Passkeys, nicht an dir.
 					</p>
 				{/if}
 
 				{#if isTauri()}
 					<div class="space-y-2 border-t pt-3">
 						<p class="text-muted-foreground text-sm">
-							Passkeys hängen an der Adresse des Servers – die Desktop-Anwendung hat keine.
-							Angelegt wird einer im Browser, sobald du ihn dort gekoppelt hast.
+							Ein Passkey lässt sich nur im Browser einrichten, nicht in dieser Anwendung.
+							Öffne dazu dein Konto im Browser.
 						</p>
 						<Button variant="outline" size="sm" onclick={imBrowserOeffnen} disabled={!account.serverUrl}>
 							Im Browser öffnen
