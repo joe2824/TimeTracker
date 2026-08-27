@@ -137,7 +137,7 @@ projekteigen — nicht anfassen).
 - [x] platform/deeplink.ts (bereits sauber, keine Aenderung noetig)
 - [x] platform/env.ts (bereits sauber, keine Aenderung noetig)
 - [x] platform/fs.ts (bereits sauber, keine Aenderung noetig)
-- [ ] platform/http.ts
+- [x] platform/http.ts (bereits sauber, keine Aenderung noetig)
 - [x] platform/notify.ts
 - [ ] platform/open.ts
 - [ ] platform/os.ts
