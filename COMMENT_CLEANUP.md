@@ -125,7 +125,7 @@ projekteigen — nicht anfassen).
 - [x] timeReconcile.ts (2x Beispiel-lastige Kommentare gekuerzt, Rest gerechtfertigt komplex)
 - [x] timeReport.ts (bereits sauber, keine Aenderung noetig)
 - [x] types.ts (bereits sauber, keine Aenderung noetig)
-- [ ] tz.ts
+- [x] tz.ts (dicht aber DST-Kanten gerechtfertigt, keine Aenderung)
 - [ ] updater.svelte.ts
 - [ ] utils.ts
 - [ ] watchers.svelte.ts
