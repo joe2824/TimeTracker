@@ -138,7 +138,7 @@ projekteigen — nicht anfassen).
 - [ ] platform/env.ts
 - [ ] platform/fs.ts
 - [ ] platform/http.ts
-- [ ] platform/notify.ts
+- [x] platform/notify.ts
 - [ ] platform/open.ts
 - [ ] platform/os.ts
 - [ ] platform/secrets.ts
@@ -148,10 +148,10 @@ projekteigen — nicht anfassen).
 - [ ] sync/detach.ts
 - [ ] sync/device.ts
 - [ ] sync/engine.ts
-- [ ] sync/enroll.ts
+- [x] sync/enroll.ts (bereits sauber, keine Aenderung noetig)
 - [ ] sync/merge.ts
 - [ ] sync/outbox.ts
-- [ ] sync/stamp.ts
+- [x] sync/stamp.ts (bereits sauber, keine Aenderung noetig)
 - [ ] testing/fakeFs.ts
 - [ ] testing/pinZone.ts
 - [ ] testing/zip.ts

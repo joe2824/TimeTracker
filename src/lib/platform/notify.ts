@@ -1,4 +1,3 @@
-// Benachrichtigungen.
 import { isTauri } from "./env";
 
 /** Um Erlaubnis fragen - aber nur, wenn es etwas zu fragen gibt. */
