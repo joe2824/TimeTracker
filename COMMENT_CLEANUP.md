@@ -98,7 +98,7 @@ projekteigen — nicht anfassen).
 
 ## Lib — Logik (`src/lib/*.ts`, keine Tests)
 
-- [ ] analytics.ts
+- [x] analytics.ts (bereits sauber, keine Aenderung noetig)
 - [ ] app.svelte.ts
 - [ ] arbzg.ts
 - [ ] backdate.ts
