@@ -111,7 +111,7 @@ projekteigen — nicht anfassen).
 - [x] log.ts (bereits sauber, keine Aenderung noetig)
 - [x] longTimer.ts (bereits sauber, keine Aenderung noetig)
 - [x] onboarding.svelte.ts (bereits sauber, keine Aenderung noetig)
-- [ ] outlook.ts
+- [x] outlook.ts (bereits sauber, keine Aenderung noetig)
 - [x] reminders.ts (bereits sauber, keine Aenderung noetig)
 - [ ] report.ts
 - [ ] reportSend.ts
