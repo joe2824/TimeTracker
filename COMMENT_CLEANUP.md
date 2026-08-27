@@ -228,8 +228,8 @@ projekteigen — nicht anfassen).
 - [x] src/lib/entriesFocus.svelte.test.ts (2x Bug-Historie gekuerzt, Rest sauber)
 - [x] src/lib/invite.test.ts (bereits sauber, keine Aenderung noetig)
 - [x] src/lib/log.test.ts (bereits sauber, keine Aenderung noetig)
-- [ ] src/lib/longTimer.test.ts
-- [ ] src/lib/outlook.test.ts
+- [x] src/lib/longTimer.test.ts (Bug-Historie gekuerzt, Rest sauber)
+- [x] src/lib/outlook.test.ts (Bug-Historie-Vergangenheitsform umgeschrieben, Rest sauber)
 - [ ] src/lib/platform/deeplink.test.ts
 - [ ] src/lib/platform/fs.test.ts
 - [ ] src/lib/platform/http.test.ts
