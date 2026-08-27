@@ -232,8 +232,8 @@ projekteigen — nicht anfassen).
 - [x] src/lib/outlook.test.ts (Bug-Historie-Vergangenheitsform umgeschrieben, Rest sauber)
 - [x] src/lib/platform/deeplink.test.ts (bereits sauber, keine Aenderung noetig)
 - [x] src/lib/platform/fs.test.ts (Zeitform-Fix, Rest sauber)
-- [ ] src/lib/platform/http.test.ts
-- [ ] src/lib/reminders.test.ts
+- [x] src/lib/platform/http.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] src/lib/reminders.test.ts (bereits sauber, keine Aenderung noetig)
 - [ ] src/lib/report.test.ts
 - [ ] src/lib/settingsSync.test.ts
 - [ ] src/lib/startTime.test.ts
