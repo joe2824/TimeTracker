@@ -1,9 +1,3 @@
-# Der Server fuer den TimeTracker.
-#
-# EIN Container. Keine getrennte Datenbank, kein Redis, kein Proxy im Stapel -
-# TLS macht der Reverse-Proxy, der ohnehin schon da ist. Was hier laeuft, belegt
-# im Ruhezustand rund 100 MB und praktisch keine CPU.
-#
 # Vor dem ersten Start eine .env anlegen (siehe .env.example) und dort ORIGIN,
 # RP_ID und INVITE_CODES setzen.
 

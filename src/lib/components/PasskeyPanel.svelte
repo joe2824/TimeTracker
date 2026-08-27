@@ -177,8 +177,7 @@
 				{#if mitPrf === 0 && liste.length > 0}
 					<p class="text-muted-foreground text-xs">
 						Keiner dieser Passkeys kann den Tresor allein öffnen – zum Entsperren braucht es
-						zusätzlich die Wiederherstellungs-Phrase oder ein bereits entsperrtes Gerät. Das liegt
-						an der Technik des Passkeys, nicht an dir.
+						zusätzlich die Wiederherstellungs-Phrase oder ein bereits entsperrtes Gerät.
 					</p>
 				{/if}
 
@@ -186,7 +185,7 @@
 					<div class="space-y-2 border-t pt-3">
 						<p class="text-muted-foreground text-sm">
 							Ein Passkey lässt sich nur im Browser einrichten, nicht in dieser Anwendung.
-							Öffne dazu dein Konto im Browser.
+							Erstelle dazu dein Konto im Browser.
 						</p>
 						<Button variant="outline" size="sm" onclick={imBrowserOeffnen} disabled={!account.serverUrl}>
 							Im Browser öffnen
@@ -202,8 +201,7 @@
 							</Button>
 						</div>
 						<p class="text-muted-foreground text-xs">
-							Am besten auf einem anderen Gerät als diesem – ein zweiter Schlüssel im selben
-							Schloss hilft nicht.
+							Am besten auf einem anderen Gerät als diesem.
 						</p>
 					</div>
 				{/if}

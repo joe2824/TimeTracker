@@ -24,9 +24,8 @@ static ERROR_REPORTS_ENABLED: std::sync::atomic::AtomicBool =
 const IDENTIFIER: &str = "com.jklein.timetracker";
 
 /// Datenordner der App – derselbe, den das Frontend ueber BaseDirectory::AppData
-/// bekommt. Je Plattform ein anderer Ort; vorher galt der Linux-Pfad auch fuer
-/// macOS, dort schrieb der Rust-Teil sein Protokoll also woanders hin als das
-/// Frontend.
+/// bekommt. Je Plattform ein anderer Ort, sonst schriebe der Rust-Teil sein
+/// Protokoll woanders hin als das Frontend.
 fn app_data_dir() -> Option<std::path::PathBuf> {
     #[cfg(target_os = "windows")]
     let base = std::env::var_os("APPDATA").map(std::path::PathBuf::from);
