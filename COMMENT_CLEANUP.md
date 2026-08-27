@@ -149,7 +149,7 @@ projekteigen — nicht anfassen).
 - [x] sync/device.ts (bereits sauber, keine Aenderung noetig)
 - [x] sync/engine.ts (dicht aber Sync-Logik gerechtfertigt, keine Aenderung)
 - [x] sync/enroll.ts (bereits sauber, keine Aenderung noetig)
-- [ ] sync/merge.ts
+- [x] sync/merge.ts (bereits sauber, keine Aenderung noetig)
 - [ ] sync/outbox.ts
 - [x] sync/stamp.ts (bereits sauber, keine Aenderung noetig)
 - [ ] testing/fakeFs.ts
