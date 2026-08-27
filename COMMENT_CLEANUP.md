@@ -91,8 +91,8 @@ projekteigen — nicht anfassen).
 
 ## Routen (`src/routes`)
 
-- [ ] +layout.svelte
-- [ ] +layout.ts
+- [x] +layout.svelte (bereits sauber, keine Aenderung noetig)
+- [x] +layout.ts (bereits sauber, keine Aenderung noetig)
 - [ ] +page.svelte
 - [ ] tray/+page.svelte
 
