@@ -226,8 +226,8 @@ projekteigen — nicht anfassen).
 - [x] src/lib/crypto/vault.test.ts (3x Bug-Historie gekuerzt, Rest sauber)
 - [x] src/lib/entriesFocus.dom.test.ts (Bug-Historie gekuerzt, Rest sauber)
 - [x] src/lib/entriesFocus.svelte.test.ts (2x Bug-Historie gekuerzt, Rest sauber)
-- [ ] src/lib/invite.test.ts
-- [ ] src/lib/log.test.ts
+- [x] src/lib/invite.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] src/lib/log.test.ts (bereits sauber, keine Aenderung noetig)
 - [ ] src/lib/longTimer.test.ts
 - [ ] src/lib/outlook.test.ts
 - [ ] src/lib/platform/deeplink.test.ts
