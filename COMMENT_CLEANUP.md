@@ -139,7 +139,7 @@ projekteigen — nicht anfassen).
 - [x] platform/fs.ts (bereits sauber, keine Aenderung noetig)
 - [x] platform/http.ts (bereits sauber, keine Aenderung noetig)
 - [x] platform/notify.ts
-- [ ] platform/open.ts
+- [x] platform/open.ts (bereits sauber, keine Aenderung noetig)
 - [ ] platform/os.ts
 - [ ] platform/secrets.ts
 - [ ] platform/windows.ts
