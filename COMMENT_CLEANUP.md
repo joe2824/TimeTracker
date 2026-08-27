@@ -212,8 +212,8 @@ projekteigen — nicht anfassen).
 
 - [x] server/src/lib/server/api.test.ts (Bug-Historie-Rest gekuerzt, Rest sauber)
 - [x] server/src/lib/server/limit.test.ts (bereits sauber, keine Aenderung noetig)
-- [ ] server/src/lib/server/origins.test.ts
-- [ ] server/src/lib/server/pairing.test.ts
+- [x] server/src/lib/server/origins.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] server/src/lib/server/pairing.test.ts (Historie-Referenz gekuerzt, Rest sauber)
 - [ ] server/src/lib/server/sync.test.ts
 - [ ] server/src/lib/server/webauthn.test.ts
 - [ ] src/lib/analytics.test.ts
