@@ -123,7 +123,7 @@ projekteigen — nicht anfassen).
 - [x] teamReport.ts (bereits sauber, keine Aenderung noetig)
 - [x] time.ts (bereits sauber, keine Aenderung noetig)
 - [x] timeReconcile.ts (2x Beispiel-lastige Kommentare gekuerzt, Rest gerechtfertigt komplex)
-- [ ] timeReport.ts
+- [x] timeReport.ts (bereits sauber, keine Aenderung noetig)
 - [ ] types.ts
 - [ ] tz.ts
 - [ ] updater.svelte.ts
