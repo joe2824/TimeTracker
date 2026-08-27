@@ -168,8 +168,8 @@ projekteigen — nicht anfassen).
 - [x] lib/server/events.ts (bereits sauber, keine Aenderung noetig)
 - [x] lib/server/invites.ts (bereits sauber, keine Aenderung noetig)
 - [x] lib/server/limit.ts (bereits sauber, keine Aenderung noetig)
-- [ ] lib/server/pairing.ts
-- [ ] lib/server/session.ts
+- [x] lib/server/pairing.ts (bereits sauber, keine Aenderung noetig)
+- [x] lib/server/session.ts (bereits sauber, keine Aenderung noetig)
 - [ ] lib/server/sync.ts
 - [ ] lib/server/webauthn.ts
 - [ ] routes/[...pfad]/+server.ts
