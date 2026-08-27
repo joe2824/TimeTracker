@@ -94,7 +94,7 @@ projekteigen — nicht anfassen).
 - [x] +layout.svelte (bereits sauber, keine Aenderung noetig)
 - [x] +layout.ts (bereits sauber, keine Aenderung noetig)
 - [x] +page.svelte (Bug-Historie entfernt, Rest gerechtfertigt komplex)
-- [ ] tray/+page.svelte
+- [x] tray/+page.svelte
 
 ## Lib — Logik (`src/lib/*.ts`, keine Tests)
 

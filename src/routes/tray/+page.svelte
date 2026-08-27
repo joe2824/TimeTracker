@@ -85,8 +85,7 @@
 		if (!customStart && presetMin === 0) return null;
 		const ts = resolveStartTs(presetMin, customStart);
 		if (ts == null) return "ungültige Uhrzeit";
-		// Auch im Tray sagen, dass zwei Eintraege entstehen: der Hinweis stand
-		// bisher nur im Hauptfenster, obwohl hier genauso rueckdatiert wird.
+		// Auch im Tray sagen, dass zwei Eintraege entstehen - hier wird genauso rueckdatiert.
 		const geteilt = midnightSplitHint(ts, now);
 		return geteilt ? `ab ${fmtClock(ts)} – ${geteilt}` : `ab ${fmtClock(ts)}`;
 	});
@@ -147,8 +146,7 @@
 				{startHint ?? "Timer starten"}
 			</div>
 			<!-- 300px Flyout: xs-Groesse, und das Uhrzeitfeld erscheint erst, wenn es
-			     gebraucht wird. Die gewaehlte Option ist hervorgehoben – vorher
-			     ueberschrieb ein Wert im Feld die Presets still. -->
+			     gebraucht wird. Die gewaehlte Option ist hervorgehoben. -->
 			<div class="flex flex-1 items-center justify-center gap-1">
 				{#if usingClock}
 					<Input
