@@ -1,10 +1,6 @@
 <script lang="ts">
-	// Ein Konto ohne Passkey - im Browser der haeufigste Zustand nach einer
-	// Kopplung oder einer Wiederherstellung.
-	//
-	// Bewusst kein Toast: der ist weg, bevor jemand ihn liest, und genau dieser
-	// Schritt entscheidet, ob der naechste Besuch ein Klick ist oder wieder eine
-	// Kopplung. Deshalb ein Streifen, der stehen bleibt, bis es erledigt ist.
+	// Bewusst kein Toast: der ist weg, bevor jemand ihn liest. Deshalb ein
+	// Streifen, der stehen bleibt, bis der Passkey angelegt oder weggeklickt ist.
 	import { Button } from "$lib/components/ui/button";
 	import { toast } from "svelte-sonner";
 	import { account } from "$lib/sync/account.svelte";

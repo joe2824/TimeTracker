@@ -64,7 +64,7 @@ projekteigen — nicht anfassen).
 - [x] MonthSelector.svelte
 - [x] OnboardingWizard.svelte
 - [x] PairingCode.svelte
-- [ ] PasskeyNudge.svelte
+- [x] PasskeyNudge.svelte
 - [ ] PasskeyPanel.svelte
 - [ ] ProjectSplit.svelte
 - [ ] ReportReminderDialog.svelte
