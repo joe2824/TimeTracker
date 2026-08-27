@@ -147,8 +147,8 @@ class AppState {
 					laeuft: this.#runningName()
 				});
 			} catch (e) {
-				// Merken statt werfen: eine abgewiesene Promise landete nur in der
-				// Konsole, und davor sitzt niemand – zu sehen war weiterhin "Laedt…".
+				// Merken statt werfen: eine abgewiesene Promise landet nur in der
+				// Konsole, und davor sitzt niemand – sonst bliebe der Ladebildschirm bei "Laedt…" haengen.
 				logError(`Start fehlgeschlagen beim Schritt „${this.initStep}"`, e);
 				this.initError = { step: this.initStep ?? "Start", message: errorText(e) };
 				return false;
@@ -293,7 +293,6 @@ class AppState {
 			});
 			added++;
 		}
-		// "Others"/"Abwesenheiten" immer ans Ende
 		this.#reindexBuiltinsLast();
 		if (added) await this.persistActivities();
 		return added;
@@ -756,10 +755,10 @@ class AppState {
 		// Kann von newMonth abweichen, wenn die Bearbeitung ueber einen Monatswechsel
 		// reicht – #reportConflict braucht diesen Monat fuer den Ueberschneidungs-Check.
 		if (updated.endTs != null) await this.ensureMonth(monthKey(updated.endTs));
-		// Die Ueberschneidungs-Regel ist neu; aeltere Daten koennen sie verletzen.
-		// Wer nur die Notiz aendert, darf davon nicht ausgesperrt werden – sonst
-		// bliebe fuer solche Eintraege nur noch Loeschen. Zeiten unveraendert ->
-		// keine neue Ueberschneidung moeglich.
+		// Manche gespeicherten Eintraege koennen die Ueberschneidungs-Regel bereits
+		// verletzen. Wer nur die Notiz aendert, darf davon nicht ausgesperrt werden
+		// – sonst bliebe fuer solche Eintraege nur noch Loeschen. Zeiten unveraendert
+		// -> keine neue Ueberschneidung moeglich.
 		const old = this.monthEntries(oldMonth).find((e) => e.id === updated.id);
 		const timesUnchanged =
 			!!old && old.startTs === updated.startTs && old.endTs === updated.endTs;

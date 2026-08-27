@@ -99,7 +99,7 @@ projekteigen — nicht anfassen).
 ## Lib — Logik (`src/lib/*.ts`, keine Tests)
 
 - [x] analytics.ts (bereits sauber, keine Aenderung noetig)
-- [ ] app.svelte.ts
+- [x] app.svelte.ts (Bug-Historie/redundante Kommentare entfernt, Rest gerechtfertigt komplex)
 - [x] arbzg.ts (dicht aber exemplarisch begruendet, keine Aenderung)
 - [x] backdate.ts (bereits sauber, keine Aenderung noetig)
 - [x] breaks.ts (bereits sauber, keine Aenderung noetig)
@@ -108,9 +108,9 @@ projekteigen — nicht anfassen).
 - [x] defaults.ts (bereits sauber, keine Aenderung noetig)
 - [x] entriesFocus.svelte.ts (bereits sauber, keine Aenderung noetig)
 - [x] invite.ts (bereits sauber, keine Aenderung noetig)
-- [ ] log.ts
-- [ ] longTimer.ts
-- [ ] onboarding.svelte.ts
+- [x] log.ts (bereits sauber, keine Aenderung noetig)
+- [x] longTimer.ts (bereits sauber, keine Aenderung noetig)
+- [x] onboarding.svelte.ts (bereits sauber, keine Aenderung noetig)
 - [ ] outlook.ts
 - [x] reminders.ts (bereits sauber, keine Aenderung noetig)
 - [ ] report.ts
