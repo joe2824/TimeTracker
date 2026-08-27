@@ -298,13 +298,10 @@
 
 <style>
 	/* Sequenzielle Rampe (eine Hue, hell->dunkel) – in BEIDEN Themes in dieselbe
-	   Richtung: hell = wenig, dunkel = viel. Frueher kippte der Anker im
-	   Dunkelmodus (viel = hell), rein aus Kontrastgruenden gegen die dunkle Card.
-	   Nur liest niemand eine Legende zweimal: "dunkler = mehr Arbeit" ist die
-	   Bedeutung, die haengen bleibt, und die darf nicht am Theme haengen.
-	   Im Dunkelmodus endet die Rampe deshalb bei einem mittleren Blau statt im
-	   Schwarz – dunkel genug fuer die Aussage, hell genug gegen die Card (#171717).
-	   Level 0 (nichts erfasst) bleibt neutral grau und faellt so aus der Rampe. */
+	   Richtung: hell = wenig, dunkel = viel, sonst kippt die Bedeutung mit dem
+	   Theme. Im Dunkelmodus endet die Rampe deshalb bei einem mittleren Blau
+	   statt im Schwarz – dunkel genug fuer die Aussage, hell genug gegen die
+	   Card (#171717). Level 0 (nichts erfasst) bleibt neutral grau. */
 	.heat {
 		background: var(--heat-0);
 	}

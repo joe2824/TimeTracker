@@ -73,7 +73,7 @@ projekteigen — nicht anfassen).
 - [x] SettingRow.svelte
 - [x] SettingToggle.svelte (bereits sauber, keine Aenderung noetig)
 - [x] ShortcutKey.svelte
-- [ ] StatsCard.svelte
+- [x] StatsCard.svelte
 - [ ] SyncHint.svelte
 - [ ] TeamPanel.svelte
 - [ ] TimeReportImport.svelte
