@@ -187,7 +187,7 @@ projekteigen — nicht anfassen).
 - [x] routes/api/me/confirm/+server.ts (bereits sauber, keine Aenderung noetig)
 - [x] routes/api/pair/approve/+server.ts (bereits sauber, keine Aenderung noetig)
 - [x] routes/api/pair/claim/+server.ts (bereits sauber, keine Aenderung noetig)
-- [ ] routes/api/pair/start/+server.ts
+- [x] routes/api/pair/start/+server.ts (bereits sauber, keine Aenderung noetig)
 - [ ] routes/api/passkeys/+server.ts
 - [ ] routes/api/passkeys/finish/+server.ts
 - [ ] routes/api/passkeys/start/+server.ts
