@@ -1225,9 +1225,9 @@ describe("Konto von einem Geraet aus anlegen", () => {
 });
 
 describe("Herkunft ohne Sitzung", () => {
-	// Der Fall, der beim ersten Anlauf durchfiel: die Desktop-Anwendung legt ein
-	// Konto an. Sie hat noch kein Token - das bekommt sie ja gerade erst - und
-	// schickt trotzdem eine Herkunft mit, weil ein Fenster nun einmal eine hat.
+	// Die Desktop-Anwendung legt ein Konto an, hat noch kein Token - das bekommt
+	// sie ja gerade erst - und schickt trotzdem eine Herkunft mit, weil ein
+	// Fenster nun einmal eine hat.
 	it("laesst eine Anfrage ohne Cookie durch, egal woher sie kommt", async () => {
 		db.$client.prepare("INSERT INTO invites (code, created_at) VALUES (?, ?)").run("HERK-TEST", Date.now());
 		const res = await api(null, "/api/auth/device", {

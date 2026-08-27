@@ -210,8 +210,8 @@ projekteigen — nicht anfassen).
 
 ## Tests (`*.test.ts`, niedrige Prioritaet — nur Kommentare, keine Anwender-Texte)
 
-- [ ] server/src/lib/server/api.test.ts
-- [ ] server/src/lib/server/limit.test.ts
+- [x] server/src/lib/server/api.test.ts (Bug-Historie-Rest gekuerzt, Rest sauber)
+- [x] server/src/lib/server/limit.test.ts (bereits sauber, keine Aenderung noetig)
 - [ ] server/src/lib/server/origins.test.ts
 - [ ] server/src/lib/server/pairing.test.ts
 - [ ] server/src/lib/server/sync.test.ts
