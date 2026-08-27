@@ -154,7 +154,7 @@ projekteigen — nicht anfassen).
 - [x] sync/stamp.ts (bereits sauber, keine Aenderung noetig)
 - [x] testing/fakeFs.ts (bereits sauber, keine Aenderung noetig)
 - [x] testing/pinZone.ts (bereits sauber, keine Aenderung noetig)
-- [ ] testing/zip.ts
+- [x] testing/zip.ts (bereits sauber, keine Aenderung noetig)
 
 ## Server (`server/src`, keine Tests)
 
