@@ -1,5 +1,4 @@
 <script lang="ts">
-	// Ein Kopplungscode, gross genug zum Abtippen - und mit Knopf zum Kopieren.
 	import { Button } from "$lib/components/ui/button";
 	import { toast } from "svelte-sonner";
 	import { formatPairingCode } from "$lib/crypto/vault";

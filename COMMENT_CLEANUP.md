@@ -63,7 +63,7 @@ projekteigen — nicht anfassen).
 - [x] LongTimerDialog.svelte (bereits sauber, keine Aenderung noetig)
 - [x] MonthSelector.svelte
 - [x] OnboardingWizard.svelte
-- [ ] PairingCode.svelte
+- [x] PairingCode.svelte
 - [ ] PasskeyNudge.svelte
 - [ ] PasskeyPanel.svelte
 - [ ] ProjectSplit.svelte
