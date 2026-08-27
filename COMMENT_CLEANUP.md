@@ -60,8 +60,8 @@ projekteigen — nicht anfassen).
 - [x] EntryEditor.svelte (dicht kommentiert, aber gerechtfertigt - keine Aenderung)
 - [x] IdleDialog.svelte (bereits sauber, keine Aenderung noetig)
 - [x] LogPanel.svelte
-- [ ] LongTimerDialog.svelte
-- [ ] MonthSelector.svelte
+- [x] LongTimerDialog.svelte (bereits sauber, keine Aenderung noetig)
+- [x] MonthSelector.svelte
 - [ ] OnboardingWizard.svelte
 - [ ] PairingCode.svelte
 - [ ] PasskeyNudge.svelte

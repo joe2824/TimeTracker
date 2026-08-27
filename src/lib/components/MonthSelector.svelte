@@ -20,9 +20,8 @@
 	/** Monate mit Eintraegen (von der Platte). */
 	let stored = $state<string[]>([]);
 
-	// Neu lesen, sobald sich Eintraege geaendert haben – egal wo. Vorher musste
-	// jeder Schreiber hier von Hand Bescheid sagen: ein in den Einstellungen
-	// geloeschtes Jahr blieb deshalb bis zum Neuladen der Seite in der Auswahl.
+	// Neu lesen, sobald sich Eintraege irgendwo geaendert haben - sonst bliebe ein
+	// geloeschtes Jahr bis zum Neuladen der Seite in der Auswahl.
 	$effect(() => {
 		app.entriesVersion;
 		void listEntryMonths().then((m) => (stored = m));
