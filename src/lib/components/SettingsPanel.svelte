@@ -358,7 +358,7 @@
 		Das Formular selbst bleibt oben in einem Stueck - es umfasst alle Bereiche,
 		und ein Wechsel darf nichts verwerfen, was noch nicht gespeichert ist.
 	-->
-	<div class="flex flex-wrap gap-1 border-b pb-2">
+	<div class="scrollbar-lose flex gap-1 overflow-x-auto border-b pb-2">
 		{#each BEREICHE as b (b.id)}
 			<Button
 				variant={bereich === b.id ? "secondary" : "ghost"}
