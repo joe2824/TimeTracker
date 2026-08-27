@@ -289,8 +289,7 @@
 		}
 
 		// Beim Start und danach stuendlich still nach Updates suchen. „Installieren"
-		// im Hinweis öffnet direkt den Update-Dialog – vorher landete man nur im
-		// Einstellungs-Tab und musste die Suche dort von Hand wiederholen.
+		// im Hinweis öffnet direkt den Update-Dialog.
 		updateTimer ??= setInterval(() => void checkAndAnnounceUpdate(), UPDATE_CHECK_MS);
 		// Versteckt gestartet? Dann hat die Suche keine Eile (HIDDEN_UPDATE_DELAY_MS).
 		const sichtbar = await getCurrentWindow()
@@ -362,9 +361,7 @@
 
 {#if !app.loaded}
 	<!-- Ladebildschirm mit Auskunft: welcher Schritt laeuft, wie lange schon, und
-	     bei einem Fehler die Meldung samt Weg zurueck. Vorher stand hier nur
-	     "Laedt…" – nach einem Update blieb die App genau so stehen, ohne dass
-	     erkennbar war, woran es haengt. -->
+	     bei einem Fehler die Meldung samt Weg zurueck. -->
 	<div class="flex min-h-screen items-center justify-center p-8">
 		<div class="w-full max-w-md space-y-4 text-center">
 			<img src="/logo.svg" alt="TimeTracker" class="mx-auto h-12 w-auto" />
@@ -553,12 +550,8 @@
 			<Tabs.Content value="report" class="mt-4">
 				<ReportView />
 			</Tabs.Content>
-			<!-- Nur bei aktivem Chef-Modus einhaengen: bits-ui baut ALLE Tab-Inhalte
-			     sofort auf, ein blosses Ausblenden liesse das Panel mitlaufen. -->
-			<!--
-				Der Chef-Modus liest Berichts-Mails aus Outlook. Im Browser gibt es das
-				nicht, und ein leerer Tab waere schlechter als gar keiner.
-			-->
+			<!-- Nur bei aktivem Chef-Modus einhaengen: bits-ui baut sonst alle
+			     Tab-Inhalte mit auf, und im Browser gibt es kein Outlook dafuer. -->
 			{#if app.settings.bossMode && capabilities.outlook}
 				<Tabs.Content value="team" class="mt-4">
 					<TeamPanel />
