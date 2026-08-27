@@ -114,7 +114,7 @@ projekteigen — nicht anfassen).
 - [x] outlook.ts (bereits sauber, keine Aenderung noetig)
 - [x] reminders.ts (bereits sauber, keine Aenderung noetig)
 - [x] report.ts (Tippfehler "Acitivities" -> "Activities" im HTML-Tabellenkopf gefixt, Rest sauber)
-- [ ] reportSend.ts
+- [x] reportSend.ts (bereits sauber, keine Aenderung noetig)
 - [ ] settingsSync.ts
 - [ ] shortcuts.ts
 - [ ] startTime.ts
