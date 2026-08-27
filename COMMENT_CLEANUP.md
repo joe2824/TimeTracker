@@ -160,8 +160,8 @@ projekteigen — nicht anfassen).
 
 - [x] app.d.ts (bereits sauber, keine Aenderung noetig)
 - [x] hooks.server.ts (bereits sauber, keine Aenderung noetig)
-- [ ] lib/server/account.ts
-- [ ] lib/server/auth.ts
+- [x] lib/server/account.ts (bereits sauber, keine Aenderung noetig)
+- [x] lib/server/auth.ts (bereits sauber, keine Aenderung noetig)
 - [ ] lib/server/config.ts
 - [ ] lib/server/db/index.ts
 - [ ] lib/server/db/schema.ts
