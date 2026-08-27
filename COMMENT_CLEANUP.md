@@ -253,8 +253,8 @@ projekteigen — nicht anfassen).
 - [x] src/lib/teamReport.test.ts (bereits sauber, keine Aenderung noetig — Testdaten enthalten echte Firmendomain, siehe Hinweis)
 - [x] src/lib/time.test.ts (2x kleine Bug-Historie gekuerzt, Rest sauber)
 - [x] src/lib/timeReconcile.test.ts (Bug-Historie gekuerzt, Rest sauber)
-- [ ] src/lib/timeReport.test.ts
-- [ ] src/lib/timeReportFlow.test.ts
+- [x] src/lib/timeReport.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] src/lib/timeReportFlow.test.ts (bereits sauber, keine Aenderung noetig)
 - [ ] src/lib/tz.test.ts
 - [ ] src/lib/xlsx.test.ts
 
