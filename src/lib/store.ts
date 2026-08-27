@@ -384,9 +384,8 @@ export async function deleteYear(year: number): Promise<string[]> {
 
 	// Die Monate gehen ueber saveEntries(month, []) und NICHT ueber ein direktes
 	// storage.remove(): nur so laeuft die Loeschung durch den Haken und landet in
-	// der Outbox. Vorher raeumte dieser Weg an ihm vorbei – der naechste Abgleich
-	// fand die Monate beim Server unveraendert vor und lud das ganze Jahr wieder
-	// herunter. Ein geloeschtes Jahr, das von selbst zurueckkommt.
+	// der Outbox - sonst faende der naechste Abgleich die Monate beim Server
+	// unveraendert vor und laedt das geloeschte Jahr wieder herunter.
 	const monate = (await desJahres(MONTH_FILE_RE)).map(([, month]) => month);
 	for (const month of monate) await saveEntries(month, []);
 

@@ -506,9 +506,9 @@ class AppState {
 
 	async #saveMonth(month: string): Promise<void> {
 		const list = this.entriesByMonth[month];
-		// Kein Cache-Eintrag heisst "nicht geladen", nicht "leer". Frueher war das
-		// egal, weil `[]` eine leere Datei schrieb – heute LOESCHT saveEntries sie.
-		// Ohne diese Wache wuerde ein ungeladener Monat still geleert.
+		// Kein Cache-Eintrag heisst "nicht geladen", nicht "leer" - saveEntries
+		// LOESCHT die Datei bei `[]`. Ohne diese Wache wuerde ein ungeladener
+		// Monat still geleert.
 		if (!list) return;
 		await saveEntries(month, $state.snapshot(list) as Entry[]);
 		// Einziger Weg, auf dem Eintraege auf die Platte kommen – deshalb sitzt das

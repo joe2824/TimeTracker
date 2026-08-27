@@ -101,7 +101,7 @@ projekteigen — nicht anfassen).
 - [x] analytics.ts (bereits sauber, keine Aenderung noetig)
 - [ ] app.svelte.ts
 - [ ] arbzg.ts
-- [ ] backdate.ts
+- [x] backdate.ts (bereits sauber, keine Aenderung noetig)
 - [ ] breaks.ts
 - [ ] calendarMap.ts
 - [ ] conflicts.ts
@@ -112,14 +112,14 @@ projekteigen — nicht anfassen).
 - [ ] longTimer.ts
 - [ ] onboarding.svelte.ts
 - [ ] outlook.ts
-- [ ] reminders.ts
+- [x] reminders.ts (bereits sauber, keine Aenderung noetig)
 - [ ] report.ts
 - [ ] reportSend.ts
 - [ ] settingsSync.ts
 - [ ] shortcuts.ts
 - [ ] startTime.ts
 - [ ] stats.ts
-- [ ] store.ts
+- [x] store.ts
 - [ ] teamReport.ts
 - [ ] time.ts
 - [ ] timeReconcile.ts
