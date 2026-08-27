@@ -126,7 +126,7 @@ projekteigen — nicht anfassen).
 - [x] timeReport.ts (bereits sauber, keine Aenderung noetig)
 - [x] types.ts (bereits sauber, keine Aenderung noetig)
 - [x] tz.ts (dicht aber DST-Kanten gerechtfertigt, keine Aenderung)
-- [ ] updater.svelte.ts
+- [x] updater.svelte.ts (Bug-Historie-Rest im Kommentar entfernt, Rest gerechtfertigt)
 - [ ] utils.ts
 - [ ] watchers.svelte.ts
 - [ ] xlsx.ts

@@ -85,8 +85,7 @@ export async function installUpdate(): Promise<void> {
 	updater.progress = -1;
 	updater.downloaded = 0;
 	updater.totalBytes = 0;
-	// Vor dem Neustart schreiben: was hier schiefgeht, sieht danach niemand mehr –
-	// genau die Luecke, in der die App nach einem Update seltsam dastand.
+	// Vor dem Neustart schreiben: was hier schiefgeht, sieht danach niemand mehr.
 	logInfo(`Update ${update.version} wird installiert`);
 	try {
 		await update.downloadAndInstall((event) => {
