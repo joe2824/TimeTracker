@@ -280,8 +280,8 @@ describe("forecast", () => {
 	});
 
 	it("fordert erst kurz vor dem Umkehrpunkt zum Handeln auf", () => {
-		// Der Kern der Beschwerde: bei 8:00 Schnitt und negativem Puffer stand
-		// dauerhaft Rot, obwohl noch Wochen Zeit waren, es zu drehen.
+		// Bei 8:00 Schnitt und negativem Puffer bleiben noch Wochen Zeit, es zu
+		// drehen - Rot soll erst kommen, wenn es wirklich eng wird.
 		const far = forecast(facts(7.5), "strict", { ...base, pace: 8.3 }).verdict;
 		expect(far.headline).toMatch(/Umkehrpunkt in etwa \d+ Wochen/);
 		expect(far.requiresAction).toBe(false);
@@ -447,10 +447,9 @@ describe("checkArbZg", () => {
 		expect(r.windows.strict.average).toBeCloseTo(9);
 		expect(r.forecasts.strict.verdict.level).toBe("crit");
 		expect(r.forecasts.legal.verdict.level).toBe("ok");
-		// Er gehoert keinem Tag und darf deshalb in keiner Tageszeile stehen –
-		// dort stand er sonst doppelt (je Lesart) am selben Datum, und weil die
-		// Liste je Tag nach Regel adressiert wird, war das ein doppelter
-		// Schluessel: die Ansicht brach ab, sobald der Schnitt riss.
+		// Er gehoert keinem Tag und darf deshalb in keiner Tageszeile stehen -
+		// sonst stuende er doppelt (je Lesart) am selben Datum und ergaebe einen
+		// doppelten Schluessel in einer nach Regel+Tag adressierten Liste.
 		const perDay = new Map<string, Set<string>>();
 		for (const f of r.findings) {
 			const seen = perDay.get(f.date) ?? new Set<string>();
@@ -620,14 +619,11 @@ describe("Zeitsimulation", () => {
 	});
 
 	it("laesst maxPace nicht vom naechsten Tag bestimmen", () => {
-		// Der Fehler, der die Kachel „Höchstens" unbrauchbar machte: das Fenster,
-		// das MORGEN endet, hat genau einen kuenftigen Arbeitstag im Nenner, und
-		// das gesamte Restbudget faellt auf ihn. Bei einem Schnitt knapp unter der
-		// Grenze kam so „hoechstens 5:37 h je Arbeitstag" heraus – unter einer
-		// Ueberschrift, die sagt, es sei nichts zu tun.
+		// Das Fenster, das MORGEN endet, hat genau einen kuenftigen Arbeitstag im
+		// Nenner - das gesamte Restbudget faellt auf ihn und wuerde maxPace bei
+		// einem Schnitt knapp unter der Grenze verzerren.
 		const f = forecast(flat(7.5), "strict", { ...base, pace: 8.02 });
 		expect(f.verdict.requiresAction).toBe(false);
-		// Frueher: 5:37 h, bestimmt vom Fenster, das morgen endet.
 		expect(f.maxPace!).toBeCloseTo(NORM_DAILY, 6);
 	});
 

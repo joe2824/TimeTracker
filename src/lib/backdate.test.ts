@@ -46,7 +46,7 @@ describe("planBackdate", () => {
 	});
 
 	it("entfernt einen laufenden Eintrag, der ganz im neuen Zeitraum liegt", () => {
-		// Genau die Null-Sekunden-Eintraege, die vorher entstanden.
+		// Ohne diese Regel entstuende hier ein Null-Sekunden-Eintrag statt der Entfernung.
 		const plan = planBackdate([e("r", 9, null)], at(8), ABSENCES, NOW);
 		expect(plan.truncate).toEqual([]);
 		expect(plan.remove.map((x) => x.id)).toEqual(["r"]);
