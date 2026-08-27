@@ -54,9 +54,9 @@ projekteigen — nicht anfassen).
 - [x] BackdateDialog.svelte (bereits sauber, keine Aenderung noetig)
 - [x] BulkEntryDialog.svelte (bereits sauber, keine Aenderung noetig)
 - [x] CalendarImport.svelte
-- [ ] CommandPalette.svelte
-- [ ] DateInput.svelte
-- [ ] DayFractionSwitch.svelte
+- [x] CommandPalette.svelte (bereits sauber, keine Aenderung noetig)
+- [x] DateInput.svelte (bereits sauber, keine Aenderung noetig)
+- [x] DayFractionSwitch.svelte
 - [ ] EntryEditor.svelte
 - [ ] IdleDialog.svelte
 - [ ] LogPanel.svelte

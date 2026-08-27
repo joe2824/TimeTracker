@@ -1,8 +1,4 @@
 <script lang="ts">
-	// Ganzer/halber Abwesenheitstag – EINE Stelle fuer alle Dialoge.
-	// Vorher dreimal gebaut: zwei <select> (EntryEditor, BulkEntryDialog) und ein
-	// Switch (VacationRange). Die beiden <select> hatten sich auseinandergelebt und
-	// zeigten dieselbe Einstellung unterschiedlich an – "7:30 h" gegen "7,5 h".
 	import { app } from "$lib/app.svelte";
 	import { fmtHoursClock } from "$lib/time";
 	import { Label } from "$lib/components/ui/label";
