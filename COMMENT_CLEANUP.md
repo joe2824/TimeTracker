@@ -183,8 +183,8 @@ projekteigen — nicht anfassen).
 - [x] routes/api/auth/register/start/+server.ts (Bad-Beispiel-Kommentar aus der Doku hier endlich gekuerzt)
 - [x] routes/api/devices/+server.ts (bereits sauber, keine Aenderung noetig)
 - [x] routes/api/health/+server.ts (bereits sauber, keine Aenderung noetig)
-- [ ] routes/api/me/+server.ts
-- [ ] routes/api/me/confirm/+server.ts
+- [x] routes/api/me/+server.ts (bereits sauber, keine Aenderung noetig)
+- [x] routes/api/me/confirm/+server.ts (bereits sauber, keine Aenderung noetig)
 - [ ] routes/api/pair/approve/+server.ts
 - [ ] routes/api/pair/claim/+server.ts
 - [ ] routes/api/pair/start/+server.ts
