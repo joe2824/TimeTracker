@@ -46,8 +46,8 @@ projekteigen — nicht anfassen).
 - [x] SettingsPanel.svelte
 - [x] AbsenceOverrideDialog.svelte
 - [x] AccountPanel.svelte
-- [ ] ActivitiesPanel.svelte
-- [ ] ActivityCombobox.svelte
+- [x] ActivitiesPanel.svelte (bereits sauber, keine Aenderung noetig)
+- [x] ActivityCombobox.svelte (bereits sauber, keine Aenderung noetig)
 - [ ] ActivityDot.svelte
 - [ ] AdminPanel.svelte
 - [ ] ArbZgCard.svelte
