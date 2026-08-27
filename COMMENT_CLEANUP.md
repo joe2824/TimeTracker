@@ -205,8 +205,8 @@ projekteigen — nicht anfassen).
 
 ## Scripts
 
-- [ ] docker-durchstich.ts
-- [ ] recover-probe.ts
+- [x] docker-durchstich.ts (bereits sauber, keine Aenderung noetig)
+- [x] recover-probe.ts (bereits sauber, keine Aenderung noetig)
 
 ## Tests (`*.test.ts`, niedrige Prioritaet — nur Kommentare, keine Anwender-Texte)
 
