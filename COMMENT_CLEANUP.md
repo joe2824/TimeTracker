@@ -199,7 +199,7 @@ projekteigen — nicht anfassen).
 ## Rust (`src-tauri/src`)
 
 - [x] lib.rs (Bug-Historie-Rest im Kommentar bei app_data_dir() gekuerzt, Rest gerechtfertigt komplex)
-- [ ] main.rs
+- [x] main.rs (bereits sauber, keine Aenderung noetig)
 - [ ] outlook.rs
 - [ ] secret.rs
 
