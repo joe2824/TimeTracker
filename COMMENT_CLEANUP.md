@@ -217,7 +217,7 @@ projekteigen — nicht anfassen).
 - [x] server/src/lib/server/sync.test.ts (bereits sauber, keine Aenderung noetig)
 - [x] server/src/lib/server/webauthn.test.ts (bereits sauber, keine Aenderung noetig)
 - [x] src/lib/analytics.test.ts (bereits sauber, keine Aenderung noetig)
-- [ ] src/lib/app.svelte.test.ts
+- [x] src/lib/app.svelte.test.ts (2x Bug-Historie gekuerzt, Rest sauber)
 - [ ] src/lib/arbzg.test.ts
 - [ ] src/lib/backdate.test.ts
 - [ ] src/lib/breaks.test.ts

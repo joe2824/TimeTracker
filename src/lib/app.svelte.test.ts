@@ -328,8 +328,8 @@ describe("Zurückgebliebene offene Einträge (Absturz)", () => {
 	}
 
 	it("schließt einen zurückgebliebenen Eintrag am nächsten Start – statt ihn zu nullen", async () => {
-		// Der Klassiker: Absturz um 12, danach neu gestartet. Der 09–12-Block ist
-		// echte Arbeit und bekam frueher endTs = startTs, also Dauer 0.
+		// Absturz um 12, danach neu gestartet: der 09–12-Block ist echte Arbeit und
+		// muss eine echte Dauer behalten, nicht endTs = startTs.
 		await reloadAt(at(17, 15), [entry("alt", P1, at(17, 9), null), entry("neu", P2, at(17, 12), null)]);
 
 		const alt = onDisk("2026-07").find((e) => e.id === "alt")!;
@@ -524,8 +524,8 @@ describe("Bearbeiten eines anstossenden Timer-Eintrags", () => {
 
 describe("#reportConflict über Monatsgrenzen", () => {
 	it("erkennt eine Überschneidung, wenn der Kandidat über den Monatswechsel reicht", async () => {
-		// Vorher pruefte #reportConflict nur den Monat von candidate.startTs (Juli) –
-		// ein Eintrag am 1. August war fuer den Ueberschneidungs-Check unsichtbar.
+		// #reportConflict muss auch den Folgemonat pruefen: ein Kandidat, der ueber
+		// den Monatswechsel reicht, darf einen Eintrag am 1. August nicht uebersehen.
 		const augustStart = wallToTs(2026, 8, 1, 0, 0, 0);
 		const bestehend = entry("aug", P2, augustStart, augustStart + 30 * 60 * 1000); // 00:00–00:30
 		reset({ "2026-08": [bestehend] });
