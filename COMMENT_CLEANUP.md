@@ -220,8 +220,8 @@ projekteigen — nicht anfassen).
 - [x] src/lib/app.svelte.test.ts (2x Bug-Historie gekuerzt, Rest sauber)
 - [x] src/lib/arbzg.test.ts (mehrere Bug-Historie/Beschwerde-Referenzen gekuerzt, Rest sauber)
 - [x] src/lib/backdate.test.ts (Bug-Historie-Rest gekuerzt, Rest sauber)
-- [ ] src/lib/breaks.test.ts
-- [ ] src/lib/calendarMap.test.ts
+- [x] src/lib/breaks.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] src/lib/calendarMap.test.ts (Bug-Historie-Rest gekuerzt, Rest sauber)
 - [ ] src/lib/conflicts.test.ts
 - [ ] src/lib/crypto/vault.test.ts
 - [ ] src/lib/entriesFocus.dom.test.ts
