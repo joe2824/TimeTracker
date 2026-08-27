@@ -255,9 +255,10 @@ projekteigen — nicht anfassen).
 - [x] src/lib/timeReconcile.test.ts (Bug-Historie gekuerzt, Rest sauber)
 - [x] src/lib/timeReport.test.ts (bereits sauber, keine Aenderung noetig)
 - [x] src/lib/timeReportFlow.test.ts (bereits sauber, keine Aenderung noetig)
-- [ ] src/lib/tz.test.ts
-- [ ] src/lib/xlsx.test.ts
+- [x] src/lib/tz.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] src/lib/xlsx.test.ts (bereits sauber, keine Aenderung noetig)
 
 ---
 
-Zuletzt aktualisiert: 2026-08-27
+Zuletzt aktualisiert: 2026-08-27 — **Aufgabe fertig.** Alle Dateien durchgegangen,
+alle Tests gruen (706/706), svelte-check und cargo check sauber.
