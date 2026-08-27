@@ -257,9 +257,8 @@ describe("Nachlese: was der Schreib-Haken nie gesehen hat", () => {
 	});
 
 	it("traegt den Bestand NICHT in ein fremdes Konto", async () => {
-		// Der Fall aus dem Betrieb: abgemeldet, neues Konto angelegt - und der alte
-		// Bestand landete im neuen Konto. Drei Konten, jedes mit denselben 98
-		// Datensaetzen.
+		// Abgemeldet, neues Konto angelegt: der alte Bestand darf nicht ins neue
+		// Konto wandern.
 		const rechner = new Geraet("rechner");
 		await ohneKonto(rechner, async () => {
 			await store.saveActivities([aktivitaet("akt-1", "Geheim", "#ff0000")]);
@@ -286,9 +285,9 @@ describe("Nachlese: was der Schreib-Haken nie gesehen hat", () => {
 	});
 
 	it("nimmt die Merkliste des vorigen Kontos nicht mit", async () => {
-		// Der zweite Anlauf dieser Absicherung: der Stempel-Waechter allein reichte
-		// nicht. `#pushAll` liest die OUTBOX - was dort vom vorigen Konto liegen
-		// blieb, ging hoch, ohne dass je eine Nachlese lief.
+		// Der Stempel-Waechter allein reicht nicht: `#pushAll` liest die OUTBOX -
+		// was dort vom vorigen Konto liegen blieb, ginge sonst hoch, ohne dass je
+		// eine Nachlese lief.
 		const rechner = new Geraet("rechner");
 		await ohneKonto(rechner, async () => {
 			await store.saveActivities([aktivitaet("akt-1", "Geheim", "#ff0000")]);
