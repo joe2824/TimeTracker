@@ -299,7 +299,7 @@
 	});
 </script>
 
-<Card.Root class="lg:col-span-2">
+<Card.Root>
 	<Card.Header>
 		<Card.Title>Konto & Synchronisation</Card.Title>
 		<Card.Description>
@@ -416,7 +416,7 @@
 						Im Browser öffnen
 					</Button>
 				{/if}
-				<div class="flex gap-2">
+				<div class="flex flex-wrap gap-2">
 					<Input
 						id="fremdcode"
 						bind:value={fremderCode}
@@ -569,8 +569,9 @@
 						{laeuft ? "Öffnet…" : "Konto anlegen und verknüpfen"}
 					</Button>
 					<p class="text-muted-foreground text-xs">
-						Öffnet den Browser direkt beim Anlegen. Sobald das Konto steht, ist dieser
-						Rechner verknüpft – ohne dass du etwas abtippst.
+						Öffnet den Browser direkt beim Anlegen. Sobald das Konto steht, legt der
+						Browser den Code von hier zum Bestätigen vor – abtippen musst du ihn nicht,
+						nur mit dem Code unten vergleichen.
 					</p>
 				</div>
 

@@ -82,6 +82,14 @@
 	// haette das Nachsehen (siehe entriesFocus.svelte.ts).
 	entriesFocus.onShow(() => (tab = "entries"));
 
+	// Jeder Tab faengt oben an. Die Tabs teilen sich den Fensterscroll: wer den
+	// langen Bericht bis ans Ende gescrollt hat, landete danach in der Erfassung
+	// ebenfalls unten – obwohl er dort nie gescrollt hat.
+	$effect(() => {
+		tab;
+		window.scrollTo({ top: 0 });
+	});
+
 	// Abmelden gehoert dorthin, wo man es sucht: oben rechts, nicht in einer Karte
 	// tief in den Einstellungen. Nur im Browser - auf dem Rechner ist der Zugang
 	// ein Geraete-Token, das ueber "Entkoppeln" geloest wird.
@@ -415,8 +423,10 @@
 	<WebOnboarding />
 {:else}
 	<Tabs.Root bind:value={tab}>
+		<!-- pt-safe: die Kopfzeile klebt oben, also traegt sie den Abstand zur
+		     Statusleiste/Notch. Ohne das liegt das Logo auf dem Handy darunter. -->
 		<header
-			class="bg-background/80 supports-backdrop-filter:bg-background/60 sticky top-0 z-30 border-b backdrop-blur"
+			class="bg-background/80 supports-backdrop-filter:bg-background/60 sticky top-0 z-30 border-b pt-[env(safe-area-inset-top)] backdrop-blur"
 		>
 			<!-- Auf schmalen Displays zwei Reihen: oben Logo und Status, darunter die
 			     Navigation ueber die volle Breite. Drei Spalten nebeneinander gehen
@@ -453,9 +463,11 @@
 				<!-- Schmal: eigene Reihe, waagerecht scrollbar statt umbrechend, und die
 				     Beschriftung weicht dem Symbol. Ein Tab, der nicht mehr passt,
 				     verschwindet damit nicht - man scrollt zu ihm. -->
+				<!-- h-11 auf schmalen Displays: 32px sind mit dem Daumen nicht sicher zu
+				     treffen. Ab sm zurueck auf die kompakte Hoehe, dort zeigt ein Zeiger. -->
 				<Tabs.List
 					variant="line"
-					class="scrollbar-lose col-span-2 col-start-1 row-start-2 w-full justify-start gap-1 overflow-x-auto lg:col-span-1 lg:col-start-2 lg:row-start-1 lg:w-auto lg:justify-self-center lg:gap-2"
+					class="scrollbar-lose col-span-2 col-start-1 row-start-2 w-full justify-start gap-1 overflow-x-auto group-data-horizontal/tabs:h-11 sm:group-data-horizontal/tabs:h-8 lg:col-span-1 lg:col-start-2 lg:row-start-1 lg:w-auto lg:justify-self-center lg:gap-2"
 				>
 					<Tabs.Trigger value="tracking" title="Tracking">
 						<TimerIcon /><span class="hidden sm:inline">Tracking</span>
@@ -539,8 +551,11 @@
 
 		<PasskeyNudge />
 
-		<!-- pb-12: die letzte Card soll nicht auf der Fensterkante aufsitzen. -->
-		<div class="mx-auto w-full max-w-6xl px-4 pb-12 sm:px-6">
+		<!-- pb-12: die letzte Card soll nicht auf der Fensterkante aufsitzen; auf dem
+		     Handy kommt der Streifen der Gestensteuerung obendrauf. -->
+		<div
+			class="mx-auto w-full max-w-6xl px-4 pb-[calc(3rem+env(safe-area-inset-bottom))] sm:px-6"
+		>
 			<Tabs.Content value="tracking" class="mt-0">
 				<TrackingPanel onShowEntries={showEntriesToday} onShowReport={showArbZgCheck} />
 			</Tabs.Content>

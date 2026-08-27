@@ -99,7 +99,7 @@
 </script>
 
 {#if account.linked}
-	<Card.Root class="lg:col-span-2">
+	<Card.Root>
 		<Card.Header>
 			<Card.Title>Passkeys</Card.Title>
 			<Card.Description>

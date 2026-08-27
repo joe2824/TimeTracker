@@ -118,8 +118,14 @@
 	}
 </script>
 
-<div class="bg-background fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-4">
-	<div class="w-full max-w-lg space-y-6">
+<!-- items-start + my-auto statt items-center: ein zentriertes Flex-Kind, das
+     hoeher ist als der Bildschirm, laesst sich nach oben nicht mehr scrollen -
+     der Anfang bleibt dann unerreichbar. So wird mittig zentriert, solange es
+     passt, und sonst von oben gescrollt. -->
+<div
+	class="bg-background fixed inset-0 z-50 flex items-start justify-center overflow-y-auto px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]"
+>
+	<div class="my-auto w-full max-w-lg space-y-6">
 		<div class="flex items-center justify-center">
 			<img src="/logo.svg" alt="TimeTracker" class="h-14 w-auto" />
 		</div>

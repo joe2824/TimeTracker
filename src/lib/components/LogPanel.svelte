@@ -82,7 +82,7 @@
 	}
 </script>
 
-<Card.Root class="lg:col-span-2">
+<Card.Root>
 	<Card.Header>
 		<Card.Title>Protokoll</Card.Title>
 		<Card.Description>

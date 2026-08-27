@@ -741,7 +741,7 @@
 
 	{:else if active && summary}
 		<Card.Content class="space-y-3 p-0">
-			<div class="space-y-3 px-6">
+			<div class="space-y-3 px-4">
 				<div class="flex flex-wrap items-center justify-between gap-3">
 					<div class="flex flex-wrap items-center gap-2">
 						{#if availableMonths.length > 1}
@@ -1045,7 +1045,7 @@
 			</Tooltip.Provider>
 
 			<!-- Bleibt beim Scrollen der langen Tabelle erreichbar. -->
-			<div class="bg-card sticky bottom-0 flex justify-end gap-2 border-t px-6 py-3">
+			<div class="bg-card sticky bottom-0 flex justify-end gap-2 border-t px-4 py-3">
 				<Button variant="outline" onclick={close} disabled={applying}>Schließen</Button>
 				<Button onclick={apply} disabled={applying || chosen.length === 0}>
 					{#if applying}<LoaderCircleIcon class="size-4 animate-spin" />{/if}

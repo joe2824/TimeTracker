@@ -48,7 +48,7 @@
 
 {#if ohnePasskey && !weggeklickt}
 	<div class="border-b border-amber-500/40 bg-amber-500/5">
-		<div class="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-6 py-2 text-sm">
+		<div class="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 py-2 text-sm sm:px-6">
 			<KeyRoundIcon class="size-4 shrink-0" />
 			<p class="flex-1">
 				Dieser Browser hat noch keinen Passkey. Ohne ihn brauchst du beim nächsten Mal

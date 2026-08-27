@@ -252,8 +252,10 @@
 			</div>
 		{/snippet}
 		<Card.Content class="p-0">
-			<div class="px-6 pb-3">{@render actions()}</div>
-			<ul class="divide-border max-h-[calc(100vh-22rem)] divide-y overflow-y-auto border-y text-sm">
+			<div class="px-4 pb-3">{@render actions()}</div>
+			<!-- Gedeckelt erst ab sm: schmal scrollt die Seite, und 100vh springt auf dem
+			     Handy mit der Adressleiste. -->
+			<ul class="divide-border divide-y overflow-y-auto border-y text-sm sm:max-h-[calc(100dvh-22rem)]">
 				{#each events as ev, i (ev.start + ev.subject)}
 					{@const hasWorkday = eventHasWorkday(ev)}
 						{@const isAbs = !!mapping[i] && app.isAbsenceId(mapping[i])}
@@ -304,7 +306,7 @@
 					</li>
 				{/each}
 			</ul>
-			<div class="px-6 pt-3">{@render actions()}</div>
+			<div class="px-4 pt-3">{@render actions()}</div>
 		</Card.Content>
 	{/if}
 </Card.Root>

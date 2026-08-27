@@ -292,6 +292,34 @@
 		void app.ensureMonth(month);
 	});
 
+	/** Die scrollbare Tagesliste – Ziel des Sprungs auf einen Tag. */
+	let listEl = $state<HTMLUListElement | null>(null);
+
+	/**
+	 * Den Tag mittig in die LISTE schieben.
+	 *
+	 * Bewusst von Hand statt `scrollIntoView`: das bewegt jeden scrollbaren
+	 * Vorfahren mit, also auch das Fenster – danach stehen alle anderen Tabs
+	 * ebenfalls auf dieser Hoehe, obwohl dort niemand gescrollt hat.
+	 * Ueber die Rechtecke statt `offsetTop`, weil weder Liste noch Zeile
+	 * positioniert sind und `offsetTop` sich sonst auf irgendeinen Vorfahren
+	 * weiter oben bezieht.
+	 */
+	function centerRow(date: string): boolean {
+		const row = document.getElementById(`day-row-${date}`);
+		if (!listEl || !row) return false;
+		// Solange der Tab noch nicht eingeblendet ist, sind alle Masse 0. Die
+		// Rechnung liefe dann auf ein No-Op hinaus und meldete trotzdem Erfolg -
+		// der Sprung fiele still aus. Lieber als "noch nicht" melden und im
+		// naechsten Frame erneut versuchen.
+		if (listEl.clientHeight === 0) return false;
+		const rowBox = row.getBoundingClientRect();
+		const listBox = listEl.getBoundingClientRect();
+		const delta = rowBox.top - listBox.top - (listEl.clientHeight - rowBox.height) / 2;
+		listEl.scrollTo({ top: listEl.scrollTop + delta, behavior: "smooth" });
+		return true;
+	}
+
 	/** Auf den Monat des Tages wechseln und ihn mittig in die Liste scrollen. */
 	async function jumpToDate(date: string) {
 		const targetMonth = date.slice(0, 7);
@@ -300,9 +328,15 @@
 			await app.ensureMonth(targetMonth);
 		}
 		await tick(); // Warten, bis die Tage neu gerendert sind.
-		document
-			.getElementById(`day-row-${date}`)
-			?.scrollIntoView({ block: "center", behavior: "smooth" });
+		if (centerRow(date)) return;
+		// Nach einem Monatswechsel haengen die Zeilen an Daten, die erst nach
+		// weiteren Durchlaeufen stehen – ein `tick()` reicht dann nicht, und der
+		// Sprung fiel bisher still aus ("Scroll bleibt haengen"). Ein paar Frames
+		// nachfassen, danach war es kein Ladeproblem mehr.
+		for (let i = 0; i < 10; i++) {
+			await new Promise(requestAnimationFrame);
+			if (centerRow(date)) return;
+		}
 	}
 
 	// Wunsch aus Tracking oder Arbeitszeit-Check konsumieren.
@@ -501,10 +535,20 @@
 
 <div class="space-y-4">
 	{#if !anyPreview}
+	<!-- Die Monatssumme stand als nackter Σ-Span zwischen den Knoepfen und sah aus
+	     wie eine Beschriftung, die zum naechsten Knopf gehoert. Sie gehoert zum
+	     Monat links, nicht zu den Aktionen rechts. -->
 	<div class="flex flex-wrap items-end justify-between gap-3">
-		<MonthSelector bind:month id="month" />
-		<div class="flex flex-wrap items-center gap-3">
-			<span class="text-muted-foreground text-sm">Σ {fmtHoursClock(totalHours)} h</span>
+		<div class="flex flex-wrap items-end gap-3">
+			<MonthSelector bind:month id="month" />
+			<div class="bg-muted/40 rounded-lg px-3 py-1.5">
+				<div class="text-muted-foreground text-[11px] leading-tight">Summe</div>
+				<div class="font-mono text-sm leading-tight tabular-nums">
+					{fmtHoursClock(totalHours)} h
+				</div>
+			</div>
+		</div>
+		<div class="flex flex-wrap items-center gap-2">
 			<Button variant="outline" onclick={() => (vacOpen = true)}>
 				<PalmtreeIcon class="size-4" /> Abwesenheit
 			</Button>
@@ -520,7 +564,15 @@
 			<!-- Kein divide-y: die Linie UNTER einer Zeile waere der border-top der
 			     naechsten, damit liesse sie sich fuer heute nicht abschalten. Mit
 			     eigenem border-b je Zeile geht das. -->
-			<ul class="max-h-[calc(100vh-20rem)] overflow-y-auto">
+			<!-- Eigener Scroll-Bereich auf jeder Breite: der Sprung auf einen Tag soll
+			     die Liste bewegen und nicht die Seite - sonst stehen nach dem Sprung
+			     auch alle anderen Tabs auf dieser Hoehe. dvh statt vh, weil die
+			     Adressleiste auf dem Handy sonst mitrechnet.
+			     overscroll-contain: am Ende der Liste scrollt nicht die Seite weiter. -->
+			<ul
+				bind:this={listEl}
+				class="max-h-[calc(100dvh-20rem)] min-h-64 overflow-y-auto overscroll-contain"
+			>
 				{#each days as day, i (day.date)}
 					{@const isToday = day.date === todayStr}
 					<!-- Heute traegt nur den linken Balken: die Zeilen konkurrieren schon mit
@@ -530,7 +582,7 @@
 					     transparent, sonst versetzte heute den Inhalt um 2px. -->
 					<li
 						id={`day-row-${day.date}`}
-						class="flex items-start gap-3 border-b border-l-2 px-3 py-1.5 text-sm last:border-b-0 {isToday ||
+						class="flex flex-wrap items-start gap-x-3 gap-y-1 border-b border-l-2 px-3 py-1.5 text-sm last:border-b-0 sm:flex-nowrap {isToday ||
 						days[i + 1]?.date === todayStr
 							? 'border-b-transparent'
 							: 'border-b-border'} {isToday
@@ -551,7 +603,11 @@
 								{day.weekday}{day.date === todayStr ? " · heute" : ""}
 							</div>
 						</div>
-						<div class="flex-1 space-y-1 py-0.5">
+						<!-- Schmal eine eigene Zeile: neben Datum und Kennzahlen blieben bei
+						     360px keine 60px fuer den Eintragsnamen, alles war abgeschnitten. -->
+						<div
+							class="order-last min-w-0 basis-full space-y-1 py-0.5 sm:order-none sm:basis-0 sm:flex-1"
+						>
 							{#each day.entries as e (e.id)}
 								{@const isAbs = app.isAbsenceId(e.activityId)}
 								<!-- Button-Komponente statt roher <button>: bringt Fokusring, Hover
@@ -582,7 +638,7 @@
 								</div>
 							{/each}
 						</div>
-						<div class="flex items-center gap-2 pt-0.5">
+						<div class="ml-auto flex items-center gap-2 pt-0.5 sm:ml-0">
 							{#if day.missing > 0}
 								<!-- Aus dem Zeitwirtschaftsreport: hier fehlt Zeit gegenueber LOGA. -->
 								<span
@@ -698,8 +754,10 @@
 					<DayFractionSwitch id="frac" bind:value={draft.fraction} />
 				</div>
 			{:else}
-				<div class="grid grid-cols-3 gap-2">
-					<div class="col-span-3 space-y-1">
+				<!-- Schmal zwei Spalten: Von/Bis nebeneinander, Stunden ueber die volle
+				     Breite. Zu dritt bleiben bei 360px keine 90px je Feld. -->
+				<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+					<div class="col-span-2 space-y-1 sm:col-span-3">
 						<Label for="date">Datum</Label>
 						<DateInput id="date" bind:value={draft.date} />
 					</div>
@@ -727,7 +785,7 @@
 							onchange={commitEnd}
 						/>
 					</div>
-					<div class="space-y-1">
+					<div class="col-span-2 space-y-1 sm:col-span-1">
 						<Label for="dur">Stunden</Label>
 						<Input
 							id="dur"

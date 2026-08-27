@@ -103,7 +103,7 @@
 </script>
 
 {#if account.isAdmin}
-	<Card.Root class="lg:col-span-2">
+	<Card.Root>
 		<Card.Header>
 			<Card.Title>Verwaltung</Card.Title>
 			<Card.Description>

@@ -3,6 +3,7 @@
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
+	import { Checkbox } from "$lib/components/ui/checkbox";
 	import * as Card from "$lib/components/ui/card";
 	import { toast } from "svelte-sonner";
 	import { account } from "$lib/sync/account.svelte";
@@ -18,7 +19,12 @@
 	import { errorText, logWarn } from "$lib/log";
 	import { linkParameter } from "$lib/invite";
 	import { onboardingOffen } from "$lib/onboarding.svelte";
-	import { isPairingCode, isValidRecoveryPhrase, normalizePairingCode } from "$lib/crypto/vault";
+	import {
+		formatPairingCode,
+		isPairingCode,
+		isValidRecoveryPhrase,
+		normalizePairingCode
+	} from "$lib/crypto/vault";
 
 	type Schritt = "start" | "phrase" | "entsperren" | "geraet";
 
@@ -90,23 +96,17 @@
 	if (ausLink) invite = ausLink;
 
 	/**
-	 * Der Rechner hat diesen Link geoeffnet und seinen Kopplungscode mitgeschickt.
+	 * Der Kopplungscode, den der Link mitgebracht hat - zum Bestaetigen, nicht
+	 * bestaetigt.
 	 *
-	 * Sobald hier ein Konto steht, wird er bestaetigt - der Rechner haengt dann
-	 * dran, ohne dass jemand zwoelf Zeichen abtippt. Nur ein Bestaetigen, kein
-	 * Anmelden: der Code allein oeffnet keinen Tresor.
+	 * Er wird ausdruecklich NICHT von allein durchgewinkt. Wer den Link geschickt
+	 * hat, muss nicht der sein, dem der Rechner gehoert: ein untergeschobenes
+	 * `?pair=` verpackte sonst still den Tresorschluessel fuer ein fremdes Geraet,
+	 * und der Link waere aus der Adresszeile schon wieder verschwunden. Der Code
+	 * landet deshalb nur im Feld. Bestaetigt wird er von Hand - nachdem jemand ihn
+	 * mit dem Bildschirm des Rechners verglichen hat, der wirklich dazusoll.
 	 */
-	async function rechnerDazuholen() {
-		if (!vomLink.pair) return;
-		try {
-			const label = await account.approvePairing(vomLink.pair);
-			toast.success(`„${label}" ist jetzt verknüpft.`);
-		} catch (e) {
-			// Der Code ist nach zehn Minuten hin, oder der Vorgang wurde abgebrochen.
-			// Kein Grund, das frisch angelegte Konto schlechtzureden.
-			logWarn("Rechner konnte nicht dazugeholt werden", e);
-		}
-	}
+	let codeVomLink = $state("");
 
 	/**
 	 * Ein Konto anlegen - ohne vorher nach einem Einladungscode zu fragen.
@@ -151,17 +151,14 @@
 		// das Flag erst danach setzt, sieht ihn nie.
 		onboardingOffen.wert = true;
 		await account.linkWithSession(serverUrl, schluessel, angemeldeterName);
-		// Reihenfolge: erst muss DIESER Browser am Konto haengen, sonst darf er
-		// keinen fremden Kopplungscode bestaetigen.
-		await rechnerDazuholen();
 
-		// Kam der Anstoss vom Rechner, ist der schon dabei - dann gibt es nichts
-		// mehr zu fragen. Sonst noch der eine Schritt, und dafuer bleibt dieser
-		// Bildschirm stehen, obwohl das Konto bereits haengt.
-		if (vomLink.pair) {
-			onboardingOffen.wert = false;
-			toast.success("Konto angelegt und Rechner verknüpft.");
-			return;
+		// Der Code aus dem Link kommt vorbereitet ins Feld - siehe codeVomLink.
+		// Reihenfolge: erst muss DIESER Browser am Konto haengen, sonst darf er
+		// ohnehin keinen fremden Kopplungscode bestaetigen.
+		const ausLinkCode = normalizePairingCode(vomLink.pair);
+		if (isPairingCode(ausLinkCode)) {
+			codeVomLink = ausLinkCode;
+			appCode = formatPairingCode(ausLinkCode);
 		}
 		schritt = "geraet";
 	}
@@ -177,6 +174,7 @@
 		try {
 			const label = await account.approvePairing(c);
 			appCode = "";
+			codeVomLink = "";
 			fertig();
 			toast.success(`„${label}" ist jetzt verknüpft.`);
 		} catch (e) {
@@ -304,7 +302,11 @@
 	}
 </script>
 
-<div class="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-6 p-4">
+<!-- max(): der Abstand waechst nur dort, wo Statusleiste oder Gestenstreifen
+     Platz brauchen - sonst bleibt es bei den 1rem von p-4. -->
+<div
+	class="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-6 px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]"
+>
 	{#if schritt === "start"}
 		<!-- Kopf und Fuss stehen ausserhalb der Karte: sie gehoeren zur Seite, nicht
 		     zum jeweiligen Schritt. -->
@@ -346,7 +348,8 @@
 						<p class="text-muted-foreground text-center text-xs">
 							Ein Klick, dann fragt dein Gerät nach Fingerabdruck, Gesicht oder PIN.
 							{#if vomLink.pair}
-								Der Rechner wird gleich mit verknüpft.
+								Den Kopplungscode aus dem Link bekommst du danach zum Bestätigen
+								vorgelegt.
 							{/if}
 						</p>
 						<button
@@ -494,11 +497,43 @@
 
 		<Card.Root class="w-full">
 			<Card.Content class="space-y-5 pt-6">
+				{#if codeVomLink}
+					<!-- Der Code kam aus dem Link und steht schon im Feld - bestaetigt ist
+					     er damit nicht. Der Vergleich mit dem Bildschirm des Rechners ist
+					     der einzige Schritt, der "mein eigener Rechner" von "ein Code, den
+					     mir jemand untergeschoben hat" unterscheidet. Deshalb steht hier,
+					     was ein Bestaetigen bedeutet. -->
+					<div
+						class="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-amber-700 dark:text-amber-300"
+					>
+						<p class="text-xs font-medium">Dieser Link hat einen Kopplungscode mitgebracht:</p>
+						<p class="font-mono text-lg font-semibold tracking-[0.2em]">
+							{formatPairingCode(codeVomLink)}
+						</p>
+						<p class="text-xs">
+							Vergleiche ihn mit dem Code, der auf dem Rechner steht, den du verknüpfen
+							willst. Ein bestätigter Code gibt diesem Gerät Zugriff auf alle deine
+							Zeiten – stimmt er nicht überein, leere das Feld.
+						</p>
+					</div>
+				{/if}
+
 				<div class="space-y-2">
-					<p class="text-sm font-medium">Hast du TimeTracker schon auf dem Rechner?</p>
+					<p class="text-sm font-medium">
+						{#if codeVomLink}
+							Rechner verknüpfen
+						{:else}
+							Hast du TimeTracker schon auf dem Rechner?
+						{/if}
+					</p>
 					<Label for="appcode" class="text-muted-foreground text-xs font-normal">
-						Dann dort unter Einstellungen → Konto den Kopplungscode anzeigen lassen und hier
-						eintragen.
+						{#if codeVomLink}
+							Der Code aus dem Link steht unten. Bestätige ihn, sobald er mit dem auf dem
+							Rechner übereinstimmt.
+						{:else}
+							Dann dort unter Einstellungen → Konto den Kopplungscode anzeigen lassen und
+							hier eintragen.
+						{/if}
 					</Label>
 					<div class="flex gap-2">
 						<Input
@@ -575,20 +610,25 @@
 						Ohne PRF öffnet der Passkey den Tresor nicht allein. Dann ist die
 						Phrase nicht das Netz, sondern der Alltagsweg - das gehört gesagt.
 					-->
-					<p class="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+					<p
+						class="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-700 dark:text-amber-300"
+					>
 						Dieses Gerät unterstützt die Passkey-Erweiterung nicht, mit der sich der Tresor
 						beim Anmelden von selbst öffnet. Du wirst die Phrase bei jeder Anmeldung auf
 						diesem Gerät brauchen.
 					</p>
 				{/if}
 
-				<label class="flex items-start gap-2 text-sm">
-					<input type="checkbox" bind:checked={bestaetigt} class="mt-0.5" />
+				<Label
+					for="phrase-ok"
+					class="bg-muted/40 items-start gap-2.5 rounded-lg p-3 text-sm leading-relaxed font-normal"
+				>
+					<Checkbox id="phrase-ok" bind:checked={bestaetigt} class="mt-0.5" />
 					<span>
 						Ich habe die 24 Wörter an einem sicheren Ort gesichert. Mir ist klar, dass meine
 						Daten ohne sie bei Verlust aller Geräte unwiederbringlich weg sind.
 					</span>
-				</label>
+				</Label>
 
 				<Button class="w-full" disabled={!bestaetigt} onclick={phraseUebernehmen}>
 					Weiter

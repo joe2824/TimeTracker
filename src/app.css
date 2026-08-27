@@ -127,6 +127,14 @@
 	}
 	body {
 		@apply bg-background text-foreground;
+		/*
+		 * viewport-fit=cover (siehe app.html) laesst die Seite bis in die Ecken
+		 * laufen - quer liegt sonst die linke Spalte unter der Notch. Seitlich
+		 * einmal global statt in jedem Container; oben/unten sitzt der Abstand
+		 * dort, wo die Kopfzeile klebt bzw. der Inhalt endet.
+		 */
+		padding-left: env(safe-area-inset-left);
+		padding-right: env(safe-area-inset-right);
 	}
 
 	/* Anklickbares zeigt den Zeiger. Browser geben <button> von Haus aus

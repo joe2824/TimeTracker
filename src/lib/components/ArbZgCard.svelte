@@ -28,6 +28,7 @@
 	import * as Chart from "$lib/components/ui/chart";
 	import * as Tooltip from "$lib/components/ui/tooltip";
 	import { Skeleton } from "$lib/components/ui/skeleton";
+	import StatTile from "$lib/components/StatTile.svelte";
 	import { LineChart } from "layerchart";
 	import { scaleTime } from "d3-scale";
 	import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
@@ -195,13 +196,9 @@
 			     Kennzahlen, Verlauf. So springt beim Erscheinen nichts. -->
 			<div class="space-y-3">
 				<Skeleton class="h-20 w-full" />
-				<div class="flex flex-wrap gap-8">
+				<div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
 					{#each [0, 1, 2, 3, 4] as i (i)}
-						<div class="space-y-1.5">
-							<Skeleton class="h-3 w-24" />
-							<Skeleton class="h-7 w-20" />
-							<Skeleton class="h-3 w-16" />
-						</div>
+						<Skeleton class="h-[4.75rem] w-full {i === 4 ? 'col-span-2 sm:col-span-1' : ''}" />
 					{/each}
 				</div>
 				<Skeleton class="h-3 w-3/4" />
@@ -216,11 +213,17 @@
 		<div class="space-y-3">
 			<div class="flex flex-wrap items-start justify-between gap-3">
 				<!-- Farbe bedeutet Handlungsbedarf, sonst nichts. „Dicht an der Grenze"
-				     ist eine Beobachtung, keine Aufforderung. -->
+				     ist eine Beobachtung, keine Aufforderung. Die Stufen sind bewusst
+				     zurueckhaltend getoent: der Rahmen soll die Aussage stuetzen,
+				     nicht die Card uebertoenen. -->
 				<div
-					class="flex flex-1 items-start gap-3 rounded-md border px-4 py-3"
-					class:verdict-crit={strict.verdict.requiresAction && strict.verdict.level === "crit"}
-					class:verdict-warn={strict.verdict.requiresAction && strict.verdict.level !== "crit"}
+					class={[
+						"flex flex-1 items-start gap-3 rounded-md border px-4 py-3",
+						strict.verdict.requiresAction &&
+							(strict.verdict.level === "crit"
+								? "border-destructive/50 bg-destructive/6 text-destructive"
+								: "border-amber-500/55 bg-amber-500/7 text-amber-700 dark:text-amber-400")
+					]}
 				>
 					{#if strict.verdict.requiresAction}
 						<TriangleAlertIcon class="mt-0.5 size-5 shrink-0" />
@@ -239,64 +242,54 @@
 				</div>
 			</div>
 
-			<div class="flex flex-wrap gap-8">
-				<div>
-					<div class="text-muted-foreground text-xs">Schnitt · 24 Wochen</div>
-					<div class="text-2xl" class:text-destructive={alarm}>
-						{fmtHoursClock(strictWindow.average)} h
-					</div>
-					<div class="text-muted-foreground text-xs">Grenze {fmtHoursClock(NORM_DAILY)} h</div>
-				</div>
-				<div>
-					<div class="text-muted-foreground text-xs">Puffer</div>
-					<div class="text-2xl" class:text-destructive={alarm}>
-						{strictWindow.bufferHours >= 0 ? "+" : "−"}{fmtHoursClock(Math.abs(strictWindow.bufferHours))} h
-					</div>
-					<div class="text-muted-foreground text-xs">im Fenster</div>
-				</div>
-				<div>
-					<div class="text-muted-foreground text-xs">Dein Tempo</div>
-					<div class="text-2xl">{fmtHoursClock(result.pace)} h</div>
-					<div class="text-muted-foreground text-xs">je Arbeitstag</div>
-				</div>
-				<div>
-					<div class="text-muted-foreground text-xs">Umkehrpunkt</div>
-					<div class="text-2xl" class:text-destructive={alarm}>
-						{#if strict.tooLate}
-							verstrichen
-						{:else if strict.easeOffDate}
-							<!-- Jahr nur, wenn es ein anderes ist: der Umkehrpunkt liegt oft
-							     Monate voraus und dann auch mal im naechsten Jahr, wo "22.02."
-							     nach uebermorgen aussaehe. -->
-							{new Date(noonTs(strict.easeOffDate)).toLocaleDateString(
-								"de-DE",
-								strict.easeOffDate.slice(0, 4) === until.slice(0, 4)
-									? { day: "2-digit", month: "2-digit" }
-									: { day: "2-digit", month: "2-digit", year: "2-digit" }
-							)}
-						{:else}
-							—
-						{/if}
-					</div>
-					<div class="text-muted-foreground text-xs">
-						{strict.easeOffDate || strict.tooLate ? "letzter Tag zum Drehen" : "nicht nötig"}
-					</div>
-				</div>
-				<div>
-					<div class="text-muted-foreground text-xs">Höchstens</div>
-					<div class="text-2xl">
-						{strict.maxPace === null || strict.maxPace <= 0
-							? "—"
-							: `${fmtHoursClock(strict.maxPace)} h`}
-					</div>
-					{#if strict.paceDelta !== null && strict.paceDelta < 0}
-						<div class="text-destructive text-xs">
-							{fmtHoursClock(strict.paceDelta)} h je Tag
-						</div>
+			<!-- Fuenf Kennzahlen als Kacheln: nebeneinander mit gap-8 war weder zu
+			     sehen, wo eine aufhoert und die naechste anfaengt, noch passte die
+			     Reihe unter 1000px. -->
+			<div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+				<StatTile label="Schnitt · 24 Wochen" hint="Grenze {fmtHoursClock(NORM_DAILY)} h" {alarm}>
+					{fmtHoursClock(strictWindow.average)} h
+				</StatTile>
+				<StatTile label="Puffer" hint="im Fenster" {alarm}>
+					{strictWindow.bufferHours >= 0 ? "+" : "−"}{fmtHoursClock(
+						Math.abs(strictWindow.bufferHours)
+					)} h
+				</StatTile>
+				<StatTile label="Dein Tempo" hint="je Arbeitstag">
+					{fmtHoursClock(result.pace)} h
+				</StatTile>
+				<StatTile
+					label="Umkehrpunkt"
+					hint={strict.easeOffDate || strict.tooLate ? "letzter Tag zum Drehen" : "nicht nötig"}
+					{alarm}
+				>
+					{#if strict.tooLate}
+						verstrichen
+					{:else if strict.easeOffDate}
+						<!-- Jahr nur, wenn es ein anderes ist: der Umkehrpunkt liegt oft
+						     Monate voraus und dann auch mal im naechsten Jahr, wo "22.02."
+						     nach uebermorgen aussaehe. -->
+						{new Date(noonTs(strict.easeOffDate)).toLocaleDateString(
+							"de-DE",
+							strict.easeOffDate.slice(0, 4) === until.slice(0, 4)
+								? { day: "2-digit", month: "2-digit" }
+								: { day: "2-digit", month: "2-digit", year: "2-digit" }
+						)}
 					{:else}
-						<div class="text-muted-foreground text-xs">je Arbeitstag</div>
+						—
 					{/if}
-				</div>
+				</StatTile>
+				<StatTile label="Höchstens" class="col-span-2 sm:col-span-1">
+					{strict.maxPace === null || strict.maxPace <= 0
+						? "—"
+						: `${fmtHoursClock(strict.maxPace)} h`}
+					{#snippet hintSlot()}
+						{#if strict.paceDelta !== null && strict.paceDelta < 0}
+							<div class="text-destructive text-xs">{fmtHoursClock(strict.paceDelta)} h je Tag</div>
+						{:else}
+							<div class="text-muted-foreground text-xs">je Arbeitstag</div>
+						{/if}
+					{/snippet}
+				</StatTile>
 			</div>
 
 			{#if month > app.currentMonth}
@@ -478,20 +471,3 @@
 	</Card.Content>
 </Card.Root>
 
-<style>
-	/* Nur das Urteil traegt Farbe. Die Stufen sind bewusst zurueckhaltend
-	   getoent: der Rahmen soll die Aussage stuetzen, nicht die Card uebertoenen. */
-	.verdict-crit {
-		border-color: color-mix(in oklab, var(--destructive) 50%, transparent);
-		background: color-mix(in oklab, var(--destructive) 6%, transparent);
-		color: var(--destructive);
-	}
-	.verdict-warn {
-		border-color: color-mix(in oklab, #f59e0b 55%, transparent);
-		background: color-mix(in oklab, #f59e0b 7%, transparent);
-		color: #b45309;
-	}
-	:global(.dark) .verdict-warn {
-		color: #fbbf24;
-	}
-</style>

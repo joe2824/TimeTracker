@@ -8,6 +8,7 @@
 	import * as Card from "$lib/components/ui/card";
 	import * as Chart from "$lib/components/ui/chart";
 	import { Skeleton } from "$lib/components/ui/skeleton";
+	import StatTile from "$lib/components/StatTile.svelte";
 	import { BarChart } from "layerchart";
 	import { scaleBand } from "d3-scale";
 
@@ -123,6 +124,16 @@
 	 * Der Monatserste kann auf JEDEN Wochentag fallen, nicht nur auf den ersten
 	 * Tag der Spalte – sonst fehlen alle Monate, die mitten in der Woche beginnen.
 	 */
+	/** Gemessene Breite des Diagramms – entscheidet ueber die Beschriftungsspalte. */
+	let chartWidth = $state(0);
+
+	/**
+	 * Platz fuer die Aktivitaetsnamen links. Auf einer schmalen Karte kostet die
+	 * feste Spalte ein Drittel der Flaeche – dann lieber kuerzere Namen als
+	 * Balken, an denen nichts mehr abzulesen ist. 0 = noch nicht gemessen.
+	 */
+	const axisPad = $derived(chartWidth > 0 && chartWidth < 420 ? 72 : 104);
+
 	const monthTicks = $derived(
 		weeks
 			.map((w, i) => {
@@ -141,28 +152,28 @@
 		<Card.Description>Saldo, Verteilung und gearbeitete Tage – nur für dich, nicht Teil der E-Mail.</Card.Description>
 	</Card.Header>
 	<Card.Content class="space-y-8">
-		<!-- Saldo: eine Kennzahl, kein Diagramm. -->
-		<div class="flex flex-wrap gap-8">
-			<div>
-				<div class="text-muted-foreground text-xs">Ist</div>
-				<div class="text-2xl">{fmtHoursClock(report.total)} h</div>
-			</div>
-			<div>
-				<div class="text-muted-foreground text-xs">Soll</div>
-				<div class="text-2xl">{fmtHoursClock(soll)} h</div>
-			</div>
-			<div>
-				<div class="text-muted-foreground text-xs">Saldo</div>
-				<div class="text-2xl" class:text-muted-foreground={Math.abs(saldo) < 0.01}>
+		<!-- Saldo: Kennzahlen, kein Diagramm. Zwei Spalten schon ab 360px – die
+		     Kacheln tragen ihre Beschriftung selbst und brauchen keine ganze Zeile. -->
+		<div class="space-y-2">
+			<div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+				<StatTile label="Ist">{fmtHoursClock(report.total)} h</StatTile>
+				<StatTile label="Soll" hint={month === app.currentMonth ? "Werktage bis heute" : undefined}>
+					{fmtHoursClock(soll)} h
+				</StatTile>
+				<StatTile
+					label="Saldo"
+					class="col-span-2 sm:col-span-1"
+					valueClass={Math.abs(saldo) < 0.01 ? "text-muted-foreground" : undefined}
+				>
 					{saldo >= 0 ? "+" : "−"}{fmtHoursClock(Math.abs(saldo))} h
-				</div>
+				</StatTile>
 			</div>
+			{#if month === app.currentMonth}
+				<p class="text-muted-foreground text-xs">
+					Laufender Monat: Soll zählt nur die Werktage bis heute.
+				</p>
+			{/if}
 		</div>
-		{#if month === app.currentMonth}
-			<p class="text-muted-foreground -mt-6 text-xs">
-				Laufender Monat: Soll zählt nur die Werktage bis heute.
-			</p>
-		{/if}
 
 		<!-- Stunden je Aktivitaet -->
 		<div class="space-y-2">
@@ -173,6 +184,7 @@
 				<!-- Feste Zeilenhoehe statt Seitenverhaeltnis: sonst werden die Balken bei
 				     wenigen Aktivitaeten fett. Als Style, weil Tailwind dynamische
 				     Arbitrary-Values nicht kompilieren kann. -->
+				<div bind:clientWidth={chartWidth}>
 				<Chart.Container
 					config={chartConfig}
 					class="aspect-auto w-full"
@@ -187,7 +199,7 @@
 						x="hours"
 						axis="y"
 						grid={false}
-						padding={{ left: 104, right: 8 }}
+						padding={{ left: axisPad, right: 8 }}
 						series={[{ key: "hours", label: "Stunden", color: "var(--color-hours)" }]}
 						props={{ bars: { radius: 4, rounded: "right" }, yAxis: { tickLabelProps: { class: "fill-muted-foreground" } } }}
 					>
@@ -196,6 +208,7 @@
 						{/snippet}
 					</BarChart>
 				</Chart.Container>
+				</div>
 				<!-- Tabelle als zweiter Kanal: exakte Werte, unabhaengig von der Farbe. -->
 				<table class="w-full text-sm">
 					<tbody>

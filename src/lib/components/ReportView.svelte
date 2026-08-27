@@ -8,6 +8,7 @@
 	import { logInfo } from "$lib/log";
 	import { Button } from "$lib/components/ui/button";
 	import MonthSelector from "$lib/components/MonthSelector.svelte";
+	import StatTile from "$lib/components/StatTile.svelte";
 	import StatsCard from "$lib/components/StatsCard.svelte";
 	import ArbZgCard from "$lib/components/ArbZgCard.svelte";
 	import * as Card from "$lib/components/ui/card";
@@ -144,28 +145,38 @@
 				Gesamtsumme inkl. Abwesenheiten zum Abgleich mit dem Zeitnachweis. Gesendet wird
 				ausschließlich die Tabelle aus der Vorschau – sonst nichts von dieser Seite.
 			</Card.Description>
-		</Card.Header>
-		<Card.Content>
-			<div class="flex flex-wrap items-center justify-between gap-4">
-				<div class="flex flex-wrap gap-6 text-sm">
-					<div>Arbeitszeit: <strong>{fmtHoursClock(report.workHours)} h</strong></div>
-					{#if report.breakHours > 0}
-						<!-- Der Abzug steckt bereits in den Zahlen der Tabelle. Er gehoert
-						     genannt: sonst steht im Bericht weniger als erfasst wurde, ohne
-						     dass irgendwo steht, warum. -->
-						<div class="text-muted-foreground">
-							abzgl. Pause: <strong>{fmtHoursClock(report.breakHours)} h</strong>
-						</div>
-					{/if}
-					<div>Abwesenheiten: <strong>{fmtHoursClock(report.absenceHours)} h</strong></div>
-					<div>Gesamt: <strong>{fmtHoursClock(report.total)} h</strong></div>
-				</div>
+			<Card.Action>
 				<Button variant="outline" onclick={() => (previewOpen = true)}>
 					<EyeIcon class="size-4" /> Vorschau
 				</Button>
+			</Card.Action>
+		</Card.Header>
+		<Card.Content class="space-y-3">
+			<!-- Vier Zahlen, die man gegen den Zeitnachweis haelt - vorher standen sie
+			     als Fliesstext in einer Zeile und waren zum Vergleichen erst zu
+			     suchen. Gesamt ist die Zahl, um die es geht, und traegt deshalb als
+			     einzige Farbe. -->
+			<div class="grid grid-cols-2 gap-3 {report.breakHours > 0 ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}">
+				<StatTile label="Arbeitszeit">{fmtHoursClock(report.workHours)} h</StatTile>
+				{#if report.breakHours > 0}
+					<!-- Der Abzug steckt bereits in den Zahlen der Tabelle. Er gehoert
+					     genannt: sonst steht im Bericht weniger als erfasst wurde, ohne
+					     dass irgendwo steht, warum. -->
+					<StatTile label="abzgl. Pause" hint="steckt schon in der Tabelle">
+						−{fmtHoursClock(report.breakHours)} h
+					</StatTile>
+				{/if}
+				<StatTile label="Abwesenheiten">{fmtHoursClock(report.absenceHours)} h</StatTile>
+				<StatTile
+					label="Gesamt"
+					class="bg-primary/10 {report.breakHours > 0 ? '' : 'col-span-2 sm:col-span-1'}"
+					valueClass="text-primary font-medium"
+				>
+					{fmtHoursClock(report.total)} h
+				</StatTile>
 			</div>
 			{#if !app.settings.bossEmail}
-				<p class="text-muted-foreground mt-2 text-xs">
+				<p class="text-muted-foreground text-xs">
 					Hinweis: Keine Empfänger-Adresse hinterlegt (Tab „Einstellungen“). Der Entwurf wird ohne
 					Empfänger geöffnet.
 				</p>

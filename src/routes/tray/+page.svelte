@@ -120,15 +120,30 @@
 	}
 </script>
 
-<div class="bg-background text-foreground flex h-screen flex-col gap-3 px-2 py-3 text-sm">
+<div class="bg-background text-foreground flex h-dvh flex-col gap-2.5 px-2.5 py-3 text-sm">
 	<!-- Statusbereich mit fester (schlanker) Höhe: hält die Schnellstart-Liste an
 	     Ort und Stelle, egal ob ein Timer läuft oder nicht. -->
 	<div class="flex h-16 shrink-0 flex-col gap-1">
 		{#if app.running}
-			<div class="border-primary/20 bg-primary/10 flex flex-1 items-center justify-between gap-2 rounded-lg border px-3 py-1.5">
+			<div
+				class="border-primary/20 bg-primary/10 flex flex-1 items-center justify-between gap-2 rounded-lg border px-3 py-1.5"
+			>
 				<div class="min-w-0">
-					<div class="truncate text-xs font-medium">{app.activityName(app.running.activityId)}</div>
-					<div class="text-primary font-mono text-base tabular-nums">{fmtHMS(app.runningSeconds)}</div>
+					<div class="flex items-center gap-1.5">
+						<!-- Derselbe pulsierende Punkt wie in Kopfzeile und Hauptfenster. -->
+						<span class="relative flex size-1.5 shrink-0">
+							<span
+								class="bg-primary absolute inline-flex size-full animate-ping rounded-full opacity-75"
+							></span>
+							<span class="bg-primary relative inline-flex size-1.5 rounded-full"></span>
+						</span>
+						<span class="truncate text-xs font-medium">
+							{app.activityName(app.running.activityId)}
+						</span>
+					</div>
+					<div class="text-primary font-mono text-base leading-tight tabular-nums">
+						{fmtHMS(app.runningSeconds)}
+					</div>
 				</div>
 				<Button variant="destructive" size="sm" onclick={stop}>
 					<SquareIcon class="size-4" /> Stopp
@@ -195,7 +210,7 @@
 		{/if}
 	</div>
 
-	<div class="text-muted-foreground text-xs font-medium">Schnellstart</div>
+	<div class="text-muted-foreground px-0.5 text-xs font-medium">Schnellstart</div>
 	{#if loadError}
 		<p class="text-destructive px-2 text-xs">Daten nicht lesbar: {loadError}</p>
 	{/if}
@@ -205,7 +220,7 @@
 			{@const active = app.running?.activityId === a.id}
 			<button
 				type="button"
-				class="hover:bg-accent flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left {active
+				class="hover:bg-accent focus-visible:ring-ring/50 flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left outline-none transition-colors focus-visible:ring-3 {active
 					? 'bg-accent'
 					: ''}"
 				onclick={() => (active ? stop() : start(a.id))}
