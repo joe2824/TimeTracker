@@ -240,7 +240,7 @@ projekteigen — nicht anfassen).
 - [x] src/lib/stats.test.ts (Bug-Historie umgeschrieben, Rest sauber)
 - [x] src/lib/store.test.ts (3x Bug-Historie gekuerzt, Rest sauber)
 - [x] src/lib/sync/detach.test.ts (bereits sauber, keine Aenderung noetig)
-- [ ] src/lib/sync/engine.test.ts
+- [x] src/lib/sync/engine.test.ts (Bug-Historie gekuerzt, Rest sauber)
 - [ ] src/lib/sync/merge.test.ts
 - [ ] src/lib/sync/nachlese.test.ts
 - [ ] src/lib/sync/outbox.test.ts

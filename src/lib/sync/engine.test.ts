@@ -523,11 +523,10 @@ describe("Was der Mensch erfahren muss", () => {
 
 describe("Kein Echo", () => {
 	it("merkt Eingespieltes nicht als eigene Aenderung vor", async () => {
-		// Der Fehler, der diesen Test verdient hat: der Schreib-Haken sah das
-		// Einspielen von Serverdaten wie jede andere Aenderung und merkte sie vor.
-		// Der naechste Durchgang lud sie wieder hoch, wo sie als veraltet
-		// abgewiesen wurde - ein Geraet, das dieselben Datensaetze im Kreis
-		// schickt und dabei dauernd Konflikte meldet.
+		// Ohne diese Wache saehe der Schreib-Haken das Einspielen von Serverdaten
+		// wie jede andere Aenderung und merkte sie vor - der naechste Durchgang
+		// luede sie wieder hoch, wo sie als veraltet abgewiesen wuerde: ein
+		// Geraet, das dieselben Datensaetze im Kreis schickt.
 		const handy = new Geraet("handy");
 		await auf(handy, async (engine) => {
 			await store.saveEntries(MONAT, [eintrag("e1")]);
