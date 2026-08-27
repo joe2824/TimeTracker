@@ -121,7 +121,7 @@ projekteigen — nicht anfassen).
 - [x] stats.ts (bereits sauber, keine Aenderung noetig)
 - [x] store.ts
 - [x] teamReport.ts (bereits sauber, keine Aenderung noetig)
-- [ ] time.ts
+- [x] time.ts (bereits sauber, keine Aenderung noetig)
 - [ ] timeReconcile.ts
 - [ ] timeReport.ts
 - [ ] types.ts
