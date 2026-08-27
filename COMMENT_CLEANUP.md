@@ -129,7 +129,7 @@ projekteigen — nicht anfassen).
 - [x] updater.svelte.ts (Bug-Historie-Rest im Kommentar entfernt, Rest gerechtfertigt)
 - [x] utils.ts (bereits sauber, keine Aenderung noetig)
 - [x] watchers.svelte.ts (bereits sauber, keine Aenderung noetig)
-- [ ] xlsx.ts
+- [x] xlsx.ts (dicht aber ZIP/XML-Kanten gerechtfertigt, keine Aenderung)
 
 ## Lib — Unterordner (`src/lib/**/*.ts`, keine Tests, kein `ui/`)
 
