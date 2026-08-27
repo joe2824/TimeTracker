@@ -134,7 +134,7 @@ projekteigen — nicht anfassen).
 ## Lib — Unterordner (`src/lib/**/*.ts`, keine Tests, kein `ui/`)
 
 - [x] crypto/vault.ts (dicht aber Krypto-Parameter gerechtfertigt, keine Aenderung)
-- [ ] platform/deeplink.ts
+- [x] platform/deeplink.ts (bereits sauber, keine Aenderung noetig)
 - [ ] platform/env.ts
 - [ ] platform/fs.ts
 - [ ] platform/http.ts
