@@ -201,7 +201,7 @@ projekteigen — nicht anfassen).
 - [x] lib.rs (Bug-Historie-Rest im Kommentar bei app_data_dir() gekuerzt, Rest gerechtfertigt komplex)
 - [x] main.rs (bereits sauber, keine Aenderung noetig)
 - [x] outlook.rs (Vorher-Nachher-Beispiel im BOM-Kommentar gekuerzt, Rest gerechtfertigt)
-- [ ] secret.rs
+- [x] secret.rs (bereits sauber, keine Aenderung noetig)
 
 ## Scripts
 
