@@ -144,7 +144,7 @@ projekteigen — nicht anfassen).
 - [x] platform/secrets.ts (bereits sauber, keine Aenderung noetig)
 - [x] platform/windows.ts (bereits sauber, keine Aenderung noetig)
 - [x] sync/account.svelte.ts (verwaisten Kommentar + Bug-Historie-Satz gefixt, Rest gerechtfertigt komplex)
-- [ ] sync/api.ts
+- [x] sync/api.ts (bereits sauber, keine Aenderung noetig)
 - [ ] sync/detach.ts
 - [ ] sync/device.ts
 - [ ] sync/engine.ts
