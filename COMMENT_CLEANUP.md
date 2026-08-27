@@ -173,8 +173,8 @@ projekteigen — nicht anfassen).
 - [x] lib/server/sync.ts (bereits sauber, keine Aenderung noetig)
 - [x] lib/server/webauthn.ts (bereits sauber, keine Aenderung noetig)
 - [x] routes/[...pfad]/+server.ts (bereits sauber, keine Aenderung noetig)
-- [ ] routes/api/admin/invites/+server.ts
-- [ ] routes/api/auth/device/+server.ts
+- [x] routes/api/admin/invites/+server.ts (bereits sauber, keine Aenderung noetig)
+- [x] routes/api/auth/device/+server.ts (bereits sauber, keine Aenderung noetig)
 - [ ] routes/api/auth/login/finish/+server.ts
 - [ ] routes/api/auth/login/start/+server.ts
 - [ ] routes/api/auth/logout/+server.ts
