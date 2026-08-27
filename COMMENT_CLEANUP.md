@@ -181,8 +181,8 @@ projekteigen — nicht anfassen).
 - [x] routes/api/auth/recover/+server.ts (bereits sauber, keine Aenderung noetig)
 - [x] routes/api/auth/register/finish/+server.ts (bereits sauber, keine Aenderung noetig)
 - [x] routes/api/auth/register/start/+server.ts (Bad-Beispiel-Kommentar aus der Doku hier endlich gekuerzt)
-- [ ] routes/api/devices/+server.ts
-- [ ] routes/api/health/+server.ts
+- [x] routes/api/devices/+server.ts (bereits sauber, keine Aenderung noetig)
+- [x] routes/api/health/+server.ts (bereits sauber, keine Aenderung noetig)
 - [ ] routes/api/me/+server.ts
 - [ ] routes/api/me/confirm/+server.ts
 - [ ] routes/api/pair/approve/+server.ts
