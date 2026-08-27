@@ -44,7 +44,7 @@ projekteigen — nicht anfassen).
 ## Komponenten (`src/lib/components/*.svelte`)
 
 - [x] SettingsPanel.svelte
-- [ ] AbsenceOverrideDialog.svelte
+- [x] AbsenceOverrideDialog.svelte
 - [ ] AccountPanel.svelte
 - [ ] ActivitiesPanel.svelte
 - [ ] ActivityCombobox.svelte
