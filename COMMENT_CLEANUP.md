@@ -78,8 +78,8 @@ projekteigen — nicht anfassen).
 - [x] TeamPanel.svelte
 - [ ] TimeReportImport.svelte
 - [x] TrackingPanel.svelte
-- [ ] UpdateDialog.svelte
-- [ ] VacationRange.svelte
+- [x] UpdateDialog.svelte (bereits sauber, keine Aenderung noetig)
+- [x] VacationRange.svelte (bereits sauber, keine Aenderung noetig)
 - [ ] WebOnboarding.svelte
 - [ ] WorkdayPicker.svelte
 
