@@ -49,7 +49,7 @@ projekteigen — nicht anfassen).
 - [x] ActivitiesPanel.svelte (bereits sauber, keine Aenderung noetig)
 - [x] ActivityCombobox.svelte (bereits sauber, keine Aenderung noetig)
 - [x] ActivityDot.svelte
-- [ ] AdminPanel.svelte
+- [x] AdminPanel.svelte
 - [ ] ArbZgCard.svelte
 - [ ] BackdateDialog.svelte
 - [ ] BulkEntryDialog.svelte

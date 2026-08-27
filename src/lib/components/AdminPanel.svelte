@@ -1,5 +1,4 @@
 <script lang="ts">
-	// Verwaltung: Einladungen vergeben.
 	import * as Card from "$lib/components/ui/card";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
