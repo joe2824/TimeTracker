@@ -105,9 +105,9 @@ projekteigen — nicht anfassen).
 - [x] breaks.ts (bereits sauber, keine Aenderung noetig)
 - [x] calendarMap.ts (bereits sauber, keine Aenderung noetig)
 - [x] conflicts.ts (bereits sauber, keine Aenderung noetig)
-- [ ] defaults.ts
-- [ ] entriesFocus.svelte.ts
-- [ ] invite.ts
+- [x] defaults.ts (bereits sauber, keine Aenderung noetig)
+- [x] entriesFocus.svelte.ts (bereits sauber, keine Aenderung noetig)
+- [x] invite.ts (bereits sauber, keine Aenderung noetig)
 - [ ] log.ts
 - [ ] longTimer.ts
 - [ ] onboarding.svelte.ts
