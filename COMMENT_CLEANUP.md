@@ -147,7 +147,7 @@ projekteigen — nicht anfassen).
 - [x] sync/api.ts (bereits sauber, keine Aenderung noetig)
 - [x] sync/detach.ts (bereits sauber, keine Aenderung noetig)
 - [x] sync/device.ts (bereits sauber, keine Aenderung noetig)
-- [ ] sync/engine.ts
+- [x] sync/engine.ts (dicht aber Sync-Logik gerechtfertigt, keine Aenderung)
 - [x] sync/enroll.ts (bereits sauber, keine Aenderung noetig)
 - [ ] sync/merge.ts
 - [ ] sync/outbox.ts
