@@ -48,7 +48,7 @@ projekteigen — nicht anfassen).
 - [x] AccountPanel.svelte
 - [x] ActivitiesPanel.svelte (bereits sauber, keine Aenderung noetig)
 - [x] ActivityCombobox.svelte (bereits sauber, keine Aenderung noetig)
-- [ ] ActivityDot.svelte
+- [x] ActivityDot.svelte
 - [ ] AdminPanel.svelte
 - [ ] ArbZgCard.svelte
 - [ ] BackdateDialog.svelte
