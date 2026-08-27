@@ -53,7 +53,7 @@ projekteigen — nicht anfassen).
 - [x] ArbZgCard.svelte
 - [x] BackdateDialog.svelte (bereits sauber, keine Aenderung noetig)
 - [x] BulkEntryDialog.svelte (bereits sauber, keine Aenderung noetig)
-- [ ] CalendarImport.svelte
+- [x] CalendarImport.svelte
 - [ ] CommandPalette.svelte
 - [ ] DateInput.svelte
 - [ ] DayFractionSwitch.svelte

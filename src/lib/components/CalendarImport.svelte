@@ -159,11 +159,8 @@
 					if (created) count++;
 				}
 			} else {
-				// Abwesenheit mit Uhrzeit gibt es nicht: die Auswahl bietet sie bei
-				// Terminen mit Uhrzeit gar nicht an, das hier faengt nur Altlasten aus
-				// der Stichwort-Zuordnung ab. Frueher entstand hier ein widerspruech-
-				// licher Eintrag – echte Zeitspanne UND Tagesanteil 0.5 –, der still
-				// einen halben Urlaubstag buchte.
+				// Abwesenheit mit Uhrzeit gibt es nicht (die Auswahl bietet sie dort gar
+				// nicht an) - faengt nur Altlasten aus der Stichwort-Zuordnung ab.
 				if (isAbsence) continue;
 				// Wochenenden/freie Tage nicht importieren – sind keine Arbeitstage.
 				if (!isWorkday(startTs, app.settings.workdays)) continue;
