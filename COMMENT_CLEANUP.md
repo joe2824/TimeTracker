@@ -50,7 +50,7 @@ projekteigen — nicht anfassen).
 - [x] ActivityCombobox.svelte (bereits sauber, keine Aenderung noetig)
 - [x] ActivityDot.svelte
 - [x] AdminPanel.svelte
-- [ ] ArbZgCard.svelte
+- [x] ArbZgCard.svelte
 - [ ] BackdateDialog.svelte
 - [ ] BulkEntryDialog.svelte
 - [ ] CalendarImport.svelte

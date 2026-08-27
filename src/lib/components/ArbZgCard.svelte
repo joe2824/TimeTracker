@@ -216,8 +216,7 @@
 		<div class="space-y-3">
 			<div class="flex flex-wrap items-start justify-between gap-3">
 				<!-- Farbe bedeutet Handlungsbedarf, sonst nichts. „Dicht an der Grenze"
-				     ist eine Beobachtung, keine Aufforderung – die stand vorher gelb
-				     da und liess niemanden wissen, was zu tun sei. -->
+				     ist eine Beobachtung, keine Aufforderung. -->
 				<div
 					class="flex flex-1 items-start gap-3 rounded-md border px-4 py-3"
 					class:verdict-crit={strict.verdict.requiresAction && strict.verdict.level === "crit"}
@@ -306,11 +305,8 @@
 				</p>
 			{/if}
 
-			<!-- Die gesetzliche Lesart und die Datenlage: beides gehoert gesagt,
-			     beides ist Nebensache. Eine Zeile, nicht zwei Absaetze. -->
-			<!-- Nebeneinander gelesen wirkte das wie ein Widerspruch: oben eine
-			     Warnung, darunter „unkritisch". Wo gewarnt wird, sagt die Zeile
-			     deshalb zuerst, worauf sich die Warnung stuetzt. -->
+			<!-- Eine Zeile fuer gesetzliche Lesart + Datenlage. Wird gewarnt, steht
+			     zuerst, worauf sich die Warnung stuetzt. -->
 			<p class="text-muted-foreground text-xs">
 				{#if strict.verdict.requiresAction && legal.verdict.level === "ok"}
 					Warum trotzdem eine Warnung: nach dem Gesetz (Werktage Mo–Sa) läge der Schnitt bei
@@ -466,7 +462,7 @@
 
 		{/if}
 
-		<!-- Was diese Card nicht weiss. Gehoert hierher, nicht in die README. -->
+		<!-- Was diese Card nicht abdeckt. -->
 		<p class="text-muted-foreground border-t pt-3 text-xs">
 			Erfasst werden Projektzeiten, keine Stempelzeiten – das hier ist eine Annahme, kein Nachweis,
 			und kein Rechtsrat. Maßgeblich bleibt die Zeiterfassung deines Arbeitgebers.
