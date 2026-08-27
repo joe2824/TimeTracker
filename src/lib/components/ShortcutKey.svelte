@@ -1,7 +1,4 @@
 <script lang="ts">
-	// Ein belegtes Tastenkuerzel als Keycap, klickbar zum Neubelegen.
-	// Vorher zweimal von Hand gebaut (SettingsPanel, ActivitiesPanel) – mit
-	// auseinandergelaufenen Abstaenden und nur einmal mit Zeiger-Cursor.
 	import { Button } from "$lib/components/ui/button";
 
 	interface Props {
