@@ -162,7 +162,7 @@ projekteigen — nicht anfassen).
 - [x] hooks.server.ts (bereits sauber, keine Aenderung noetig)
 - [x] lib/server/account.ts (bereits sauber, keine Aenderung noetig)
 - [x] lib/server/auth.ts (bereits sauber, keine Aenderung noetig)
-- [ ] lib/server/config.ts
+- [x] lib/server/config.ts (bereits sauber, keine Aenderung noetig)
 - [ ] lib/server/db/index.ts
 - [ ] lib/server/db/schema.ts
 - [ ] lib/server/events.ts
