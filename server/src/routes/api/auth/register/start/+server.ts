@@ -13,9 +13,8 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	const displayName = String(body?.displayName ?? "").trim();
 	if (displayName.length > 64) error(400, "Anzeigename ist zu lang");
 
-	// Geschlossener Betrieb: der Code wird hier nur GEPRUEFT, nicht entwertet.
-	// Entwertet wird er erst, wenn das Konto wirklich entsteht - sonst verbraucht
-	// ein abgebrochener Versuch ihn ersatzlos.
+	// Nur GEPRUEFT, nicht entwertet - das passiert erst beim tatsaechlichen
+	// Anlegen des Kontos, sonst verbraucht ein abgebrochener Versuch die Einladung.
 	if (!REGISTRATION_OPEN) {
 		const code = String(body?.invite ?? "").trim();
 		if (!gueltigerCode(locals.db, code)) error(403, "Einladungscode ungültig");

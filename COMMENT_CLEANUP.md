@@ -179,8 +179,8 @@ projekteigen — nicht anfassen).
 - [x] routes/api/auth/login/start/+server.ts (bereits sauber, keine Aenderung noetig)
 - [x] routes/api/auth/logout/+server.ts (bereits sauber, keine Aenderung noetig)
 - [x] routes/api/auth/recover/+server.ts (bereits sauber, keine Aenderung noetig)
-- [ ] routes/api/auth/register/finish/+server.ts
-- [ ] routes/api/auth/register/start/+server.ts  ← enthaelt das Beispiel-Kommentar oben, HIER ZUERST
+- [x] routes/api/auth/register/finish/+server.ts (bereits sauber, keine Aenderung noetig)
+- [x] routes/api/auth/register/start/+server.ts (Bad-Beispiel-Kommentar aus der Doku hier endlich gekuerzt)
 - [ ] routes/api/devices/+server.ts
 - [ ] routes/api/health/+server.ts
 - [ ] routes/api/me/+server.ts
