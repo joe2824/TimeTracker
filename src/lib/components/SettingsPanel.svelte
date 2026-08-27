@@ -87,12 +87,7 @@
 	/** Zuletzt uebernommener Stand der Einstellungen. */
 	let synced = current();
 
-	/**
-	 * Die Felder oben sind Kopien vom Aufbau dieser Seite. Aendert etwas anderes die
-	 * Einstellungen – der Willkommens-Assistent, oder das Tray-Fenster ueber
-	 * reload() –, zeigten sie sonst weiter die alten Werte und schrieben sie beim
-	 * naechsten onchange zurueck.
-	 */
+	/** Haelt die Kopie synchron, wenn andere Stellen (Assistent, Tray-Fenster) die Einstellungen aendern. */
 	$effect(() => {
 		synced = syncForm(form, synced, current());
 	});
@@ -128,11 +123,7 @@
 	}
 
 	onMount(async () => {
-		// Nur wo es das ueberhaupt gibt. Im Browser ist das Autostart-Plugin nicht
-		// geladen, und der Aufruf scheiterte an einem `invoke`, das dort nicht
-		// existiert - mit einer Fehlermeldung, die eine Minute lang im Bild stand
-		// und nach einem kaputten Programm aussah. Es fehlt aber nichts; die
-		// Funktion gibt es im Browser schlicht nicht.
+		// Autostart-Plugin gibt es nur auf dem Desktop.
 		if (capabilities.autostart) {
 			try {
 				form.autostart = await isEnabled();
@@ -148,13 +139,9 @@
 	});
 
 	// ---- Automatisches Speichern ----
-	// Kein Speichern-Button: Autostart und Hotkey mussten ohnehin sofort wirken
-	// (OS-API bzw. globale Registrierung), zwei gleich aussehende Schalter mit
-	// zwei Verhalten waren der Bruch. Statt Toast je Aenderung ein kurzer Hinweis
-	// an der Card – ein Toast pro Tastendruck waere Laerm.
-	// Je Card ein eigener Zeitstempel UND eine eigene Speicherfunktion: eine
-	// gemeinsame haette den Hinweis auch auf der Card blinken lassen, die man gar
-	// nicht angefasst hat.
+	// Kein Speichern-Button, statt Toast je Aenderung nur ein kurzer Hinweis an
+	// der Card. Eigener Zeitstempel je Card, sonst blinkt der Hinweis auch auf
+	// einer Card, die man gar nicht angefasst hat.
 	let savedReport = $state(0);
 	let savedWorktime = $state(0);
 	let savedTimes = $state(0);
@@ -162,9 +149,8 @@
 	let savedSystem = $state(0);
 	let savedBoss = $state(0);
 
-	// Welche Einstellungen zu welcher Card gehoeren. Die Umrechnung (getrimmt,
-	// begrenzt, Uhrzeit -> Stunden) samt Rueckfall auf den gespeicherten Wert bei
-	// geleertem Feld steckt in settingsSync.ts.
+	// Welche Einstellungen zu welcher Card gehoeren; Umrechnung und Rueckfallwerte
+	// stecken in settingsSync.ts.
 	const REPORT_KEYS = [
 		"bossEmail",
 		"senderName",
@@ -280,9 +266,7 @@
 	}
 
 	// ---- Benachrichtigungen im Browser ----
-	//
-	// Der Browser fragt nur auf eine Nutzerhandlung hin - ein Knopf ist also nicht
-	// Zierde, sondern die einzige Stelle, an der sich das ueberhaupt erlauben laesst.
+	// Der Browser fragt nur nach einer Nutzerhandlung - dafuer der Button.
 	let meldeRecht = $state<NotificationPermission | "unbekannt">("unbekannt");
 
 	$effect(() => {
@@ -302,9 +286,8 @@
 	let yearToDelete = $state<StoredYear | null>(null);
 	let deleting = $state(false);
 
-	// Neu lesen, sobald sich Eintraege geaendert haben – egal wo. Vorher lief das
-	// nur beim Mount und nach dem Loeschen hier: neue Eintraege liessen das Jahr
-	// erst nach einem Neuladen der Seite wieder auftauchen.
+	// Neu laden, wenn sich Eintraege irgendwo geaendert haben - sonst taucht ein
+	// neues Jahr erst nach einem Neuladen der Seite auf.
 	$effect(() => {
 		app.entriesVersion;
 		void listEntryYears().then((y) => (years = y));
@@ -325,7 +308,6 @@
 		}
 	}
 
-	/** Die Bereiche der Einstellungen. */
 	const BEREICHE = [
 		{ id: "erfassung", titel: "Zeiterfassung" },
 		{ id: "bericht", titel: "Bericht" },
@@ -347,17 +329,9 @@
 </script>
 
 <div class="space-y-4">
-	<!--
-		Ein Bereich zur Zeit.
-
-		Frueher standen alle Karten untereinander. Das war uebersichtlich, solange es
-		vier waren - bei elf sucht man. Die Bereiche schalten mit {#if} um und nicht
-		ueber Tabs: Tabs montieren in dieser Bibliothek ALLE Inhalte gleichzeitig,
-		und dann laufen unsichtbare Karten mit, deren Zustand still veraltet.
-
-		Das Formular selbst bleibt oben in einem Stueck - es umfasst alle Bereiche,
-		und ein Wechsel darf nichts verwerfen, was noch nicht gespeichert ist.
-	-->
+	<!-- Bereiche schalten per {#if}, nicht ueber eine Tabs-Komponente: die wuerde
+	     alle Inhalte gleichzeitig mounten, und unsichtbare Karten liefen mit
+	     veraltetem Zustand weiter. -->
 	<div class="scrollbar-lose flex gap-1 overflow-x-auto border-b pb-2">
 		{#each BEREICHE as b (b.id)}
 			<Button
@@ -379,9 +353,6 @@
 						<Card.Action><SavedHint at={savedTracking} /></Card.Action>
 					</Card.Header>
 					<Card.Content class="space-y-4">
-						<!-- Ein Rhythmus wie bei den Schaltern darunter: Titel links, Feld rechts.
-						     Vorher ein 2er-Grid mit überlangen Labels („… (Min, 0 = aus)“) – die
-						     Hinweise stehen jetzt in der Erklärungszeile, wo sie hingehören. -->
 						<!-- Braucht die Leerlauf-Erkennung des Systems - im Browser gibt es die nicht. -->
 						{#if capabilities.idleDetection}
 							<SettingRow
@@ -456,8 +427,6 @@
 												<XIcon />
 											</Button>
 										{:else}
-											<!-- Festlegen ist eine Aktion, keine Taste – also ein normaler Button
-											     statt der Keycap-Optik, die es vorher trug. -->
 											<Button variant="outline" size="sm" onclick={() => (recordingToggle = true)}>
 												Festlegen…
 											</Button>
@@ -581,8 +550,7 @@
 						/>
 					</Card.Content>
 				</Card.Root>
-				<!-- Liest den Outlook-Posteingang ueber COM. Im Browser gibt es das nicht,
-				     und nachbauen laesst es sich auch nicht. -->
+				<!-- Liest den Outlook-Posteingang per COM - gibt es nur auf dem Desktop. -->
 				{#if capabilities.outlook}
 					<Card.Root>
 						<Card.Header>
@@ -673,10 +641,8 @@
 						</p>
 
 						{#if !isTauri()}
-							<!-- Im Browser haengt JEDE Meldung an der Erlaubnis fuer diesen Tab -
-							     Erinnerungen wie Auto-Stopp-Warnung. Ohne sie stellt der Browser
-							     stillschweigend nichts zu, und die Uhrzeiten unten sehen aus, als
-							     wuerden sie funktionieren. -->
+							<!-- Im Browser haengt jede Benachrichtigung an dieser Erlaubnis, auch
+							     die Auto-Stopp-Warnung. Ohne sie kommt still nichts an. -->
 							{#if meldeRecht === "granted"}
 								<p class="text-muted-foreground flex items-center gap-1.5 text-xs">
 									<span class="size-1.5 rounded-full bg-emerald-500"></span>
@@ -769,8 +735,8 @@
 				<PasskeyPanel />
 				<AdminPanel />
 		{:else if bereich === "system"}
-				<!-- Im Browser bleibt von dieser Karte nichts uebrig: Autostart und Updater
-				     sind alles, was darin steht. Eine leere Karte ist keine Auskunft. -->
+				<!-- Im Browser bleibt von dieser Karte nichts brauchbares - nur Autostart
+				     und Updater gehoeren rein. -->
 				{#if capabilities.autostart || capabilities.updater}
 					<Card.Root>
 						<Card.Header>
@@ -778,8 +744,6 @@
 							<Card.Action><SavedHint at={savedSystem} /></Card.Action>
 						</Card.Header>
 						<Card.Content class="space-y-4">
-							<!-- Nur auf dem Rechner: im Browser gibt es keinen Autostart. Einen
-							     Schalter zu zeigen, der nichts tut, ist schlimmer als keiner. -->
 							{#if capabilities.autostart}
 								<SettingToggle
 									id="autostart"
@@ -798,10 +762,7 @@
 								class="border-t pt-3"
 							/>
 							{#if channelChanged}
-								<!-- Der Kanal steht fest, sobald das Updater-Plugin seine Konfiguration
-								     gelesen hat – das passiert beim Start, lange bevor dieser Schalter
-								     erreichbar ist. Ohne diesen Hinweis suchte die App weiter im alten
-								     Kanal, ohne dass erkennbar wäre, warum. -->
+								<!-- Update-Kanal wird nur beim Start gelesen, wirkt also erst nach Neustart. -->
 								<div class="flex flex-wrap items-center gap-2 text-sm">
 									<span class="text-muted-foreground">Wirkt nach einem Neustart der App.</span>
 									<Button variant="outline" size="sm" onclick={restartApp}>Jetzt neu starten</Button>
@@ -813,10 +774,6 @@
 						</Card.Content>
 					</Card.Root>
 				{/if}
-				<!-- Nur auf dem Rechner. Im Browser liegt der Bestand in dessen Ablage und
-				     ist nicht "der Datenordner"; vor allem aber loescht das hier NUR lokal -
-				     beim Server bleibt alles stehen und kaeme beim naechsten Abgleich zum
-				     Teil zurueck. Wer serverseitig loeschen will, loest das Konto auf. -->
 				{#if isTauri()}
 				<Card.Root>
 					<Card.Header>
@@ -962,8 +919,7 @@
 	</div>
 </div>
 
-<!-- Loeschen ist endgueltig: kein Papierkorb, kein Backup. Deshalb wird vorher
-     genannt, was genau verschwindet. -->
+<!-- Endgueltig, kein Papierkorb - deshalb vorher genau sagen, was verschwindet. -->
 <Dialog.Root open={yearToDelete !== null} onOpenChange={(o) => !o && (yearToDelete = null)}>
 	<Dialog.Content>
 		<Dialog.Header>
