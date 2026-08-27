@@ -1,5 +1,4 @@
 <script lang="ts">
-	// Chef-Modus: Abgabe-Kontrolle der Monatsberichte des Teams.
 	import { invoke } from "@tauri-apps/api/core";
 	import { save } from "@tauri-apps/plugin-dialog";
 	import { app } from "$lib/app.svelte";
