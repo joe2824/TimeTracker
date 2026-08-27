@@ -117,7 +117,7 @@ projekteigen — nicht anfassen).
 - [x] reportSend.ts (bereits sauber, keine Aenderung noetig)
 - [x] settingsSync.ts (bereits sauber, keine Aenderung noetig)
 - [x] shortcuts.ts (bereits sauber, keine Aenderung noetig)
-- [ ] startTime.ts
+- [x] startTime.ts (bereits sauber, keine Aenderung noetig)
 - [ ] stats.ts
 - [x] store.ts
 - [ ] teamReport.ts
