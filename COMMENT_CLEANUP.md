@@ -153,7 +153,7 @@ projekteigen — nicht anfassen).
 - [x] sync/outbox.ts (bereits sauber, keine Aenderung noetig)
 - [x] sync/stamp.ts (bereits sauber, keine Aenderung noetig)
 - [x] testing/fakeFs.ts (bereits sauber, keine Aenderung noetig)
-- [ ] testing/pinZone.ts
+- [x] testing/pinZone.ts (bereits sauber, keine Aenderung noetig)
 - [ ] testing/zip.ts
 
 ## Server (`server/src`, keine Tests)
