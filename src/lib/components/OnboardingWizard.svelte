@@ -258,15 +258,13 @@
 			{/each}
 		</div>
 
-		<!-- Kein „Überspringen“: wer den Assistenten wegklickt, sieht nie, was sich
-		     überhaupt einstellen lässt. Jeder Schritt lässt sich leer bestätigen.
+		<!-- Kein „Überspringen“: jeder Schritt laesst sich leer bestaetigen, aber
+		     wegklicken soll niemand koennen, ohne die Moeglichkeiten gesehen zu haben.
 
-		     EINE Ausnahme, und zwar keine der Bequemlichkeit: wer gerade ein Konto
-		     angelegt hat und gleich ein Gerät koppeln will, HAT seine Einstellungen
-		     schon – sie sind bloß noch nicht hier. Ausgefüllt entstünden frische
-		     mit frischem Zeitstempel, und beim Zusammenführen gewännen die leeren
-		     gegen die echten. Deshalb steht der Weg daran vorbei nur dort, wo
-		     dieser Fall überhaupt eintreten kann. -->
+		     Ausnahme nur hier: wer gerade ein Konto angelegt hat und ein Geraet
+		     koppeln will, hat seine Einstellungen schon - nur noch nicht lokal.
+		     Ausgefuellte Felder wuerden beim Zusammenfuehren mit frischem Zeitstempel
+		     gegen die echten Werte gewinnen. -->
 		<div class="flex items-center justify-between gap-2">
 			{#if account.linked}
 				<Button variant="ghost" onclick={() => app.dismissOnboarding()} disabled={saving}>
