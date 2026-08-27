@@ -236,8 +236,8 @@ projekteigen — nicht anfassen).
 - [x] src/lib/reminders.test.ts (bereits sauber, keine Aenderung noetig)
 - [x] src/lib/report.test.ts (Bug-Historie umgeschrieben, Rest sauber)
 - [x] src/lib/settingsSync.test.ts (bereits sauber, keine Aenderung noetig)
-- [ ] src/lib/startTime.test.ts
-- [ ] src/lib/stats.test.ts
+- [x] src/lib/startTime.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] src/lib/stats.test.ts (Bug-Historie umgeschrieben, Rest sauber)
 - [ ] src/lib/store.test.ts
 - [ ] src/lib/sync/detach.test.ts
 - [ ] src/lib/sync/engine.test.ts
