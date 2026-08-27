@@ -51,8 +51,8 @@ projekteigen — nicht anfassen).
 - [x] ActivityDot.svelte
 - [x] AdminPanel.svelte
 - [x] ArbZgCard.svelte
-- [ ] BackdateDialog.svelte
-- [ ] BulkEntryDialog.svelte
+- [x] BackdateDialog.svelte (bereits sauber, keine Aenderung noetig)
+- [x] BulkEntryDialog.svelte (bereits sauber, keine Aenderung noetig)
 - [ ] CalendarImport.svelte
 - [ ] CommandPalette.svelte
 - [ ] DateInput.svelte
