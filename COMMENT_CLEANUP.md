@@ -166,8 +166,8 @@ projekteigen — nicht anfassen).
 - [x] lib/server/db/index.ts (bereits sauber, keine Aenderung noetig)
 - [x] lib/server/db/schema.ts (bereits sauber, keine Aenderung noetig)
 - [x] lib/server/events.ts (bereits sauber, keine Aenderung noetig)
-- [ ] lib/server/invites.ts
-- [ ] lib/server/limit.ts
+- [x] lib/server/invites.ts (bereits sauber, keine Aenderung noetig)
+- [x] lib/server/limit.ts (bereits sauber, keine Aenderung noetig)
 - [ ] lib/server/pairing.ts
 - [ ] lib/server/session.ts
 - [ ] lib/server/sync.ts
