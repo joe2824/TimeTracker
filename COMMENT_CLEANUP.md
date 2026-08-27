@@ -152,7 +152,7 @@ projekteigen — nicht anfassen).
 - [x] sync/merge.ts (bereits sauber, keine Aenderung noetig)
 - [x] sync/outbox.ts (bereits sauber, keine Aenderung noetig)
 - [x] sync/stamp.ts (bereits sauber, keine Aenderung noetig)
-- [ ] testing/fakeFs.ts
+- [x] testing/fakeFs.ts (bereits sauber, keine Aenderung noetig)
 - [ ] testing/pinZone.ts
 - [ ] testing/zip.ts
 
