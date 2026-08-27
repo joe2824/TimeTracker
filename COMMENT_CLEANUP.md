@@ -216,7 +216,7 @@ projekteigen — nicht anfassen).
 - [x] server/src/lib/server/pairing.test.ts (Historie-Referenz gekuerzt, Rest sauber)
 - [x] server/src/lib/server/sync.test.ts (bereits sauber, keine Aenderung noetig)
 - [x] server/src/lib/server/webauthn.test.ts (bereits sauber, keine Aenderung noetig)
-- [ ] src/lib/analytics.test.ts
+- [x] src/lib/analytics.test.ts (bereits sauber, keine Aenderung noetig)
 - [ ] src/lib/app.svelte.test.ts
 - [ ] src/lib/arbzg.test.ts
 - [ ] src/lib/backdate.test.ts
