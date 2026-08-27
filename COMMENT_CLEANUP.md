@@ -74,7 +74,7 @@ projekteigen — nicht anfassen).
 - [x] SettingToggle.svelte (bereits sauber, keine Aenderung noetig)
 - [x] ShortcutKey.svelte
 - [x] StatsCard.svelte
-- [ ] SyncHint.svelte
+- [x] SyncHint.svelte (doppelten Leftover-Kommentar entfernt)
 - [ ] TeamPanel.svelte
 - [ ] TimeReportImport.svelte
 - [ ] TrackingPanel.svelte

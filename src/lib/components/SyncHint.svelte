@@ -20,18 +20,8 @@
 	const alter = $derived(account.lastSync ? app.now - account.lastSync : null);
 
 	/**
-	 * Punkt und Text fuer die Kopfzeile.
-	 *
-	 * Steht dauerhaft da, solange ein Konto haengt: der Wert ist beilaeufig, und
-	 * eine Anzeige, die nur im Fehlerfall auftaucht, sieht man genau dann nicht,
-	 * wenn man sie sucht - naemlich um zu pruefen, ob alles laeuft.
-	 */
-	/**
-	 * Punkt und - nur wenn noetig - ein Text.
-	 *
-	 * Im Normalfall bleibt der Punkt allein: dass gerade abgeglichen wurde, sieht
-	 * man daran, dass er gruen ist. Eine Zeile "gerade eben" daneben sagt dasselbe
-	 * noch einmal und braucht Platz, den die Kopfzeile nicht hat.
+	 * Punkt und - nur wenn noetig - ein Text. Im Normalfall bleibt der Punkt
+	 * allein: dass gerade abgeglichen wurde, sieht man daran, dass er gruen ist.
 	 */
 	const zustand = $derived.by(() => {
 		if (!account.linked) return null;
