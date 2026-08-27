@@ -57,7 +57,7 @@ projekteigen — nicht anfassen).
 - [x] CommandPalette.svelte (bereits sauber, keine Aenderung noetig)
 - [x] DateInput.svelte (bereits sauber, keine Aenderung noetig)
 - [x] DayFractionSwitch.svelte
-- [ ] EntryEditor.svelte
+- [x] EntryEditor.svelte (dicht kommentiert, aber gerechtfertigt - keine Aenderung)
 - [ ] IdleDialog.svelte
 - [ ] LogPanel.svelte
 - [ ] LongTimerDialog.svelte
