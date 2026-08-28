@@ -24,10 +24,9 @@ describe("istPairingCode", () => {
 	});
 
 	it("weist alles ab, was nicht die Form eines Abdrucks hat", () => {
-		// Der alte, gewuerfelte Code hatte acht Stellen. Er darf nicht mehr durch:
-		// zwoelf Stellen sind kein Schoenheitsentscheid, sondern der Abstand
-		// zwischen 40 und 60 Bit - und 40 Bit faellt auf einer Grafikkarte,
-		// waehrend die Kopplung noch offen steht.
+		// Acht Stellen sind zu wenig: zwoelf Stellen sind kein Schoenheitsentscheid,
+		// sondern der Abstand zwischen 40 und 60 Bit - und 40 Bit faellt auf einer
+		// Grafikkarte, waehrend die Kopplung noch offen steht.
 		expect(istPairingCode("ABCD2345")).toBe(false);
 		expect(istPairingCode("")).toBe(false);
 		expect(istPairingCode("ABCDEFGHJKLMN")).toBe(false);

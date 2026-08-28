@@ -23,9 +23,8 @@ fn ensure_script(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     }
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     // MIT BOM schreiben: `powershell.exe` (Windows PowerShell 5.1) liest eine
-    // .ps1 ohne BOM als ANSI, nicht als UTF-8. Aus "Outlook ist beschäftigt"
-    // wurde damit "Outlook ist beschÃ¤ftigt" – und zwar genau in den Meldungen,
-    // die dem Benutzer als Fehlertext angezeigt werden.
+    // .ps1 ohne BOM als ANSI, nicht als UTF-8 - deutsche Umlaute in Meldungen
+    // kaemen sonst verstuemmelt beim Benutzer an.
     let mut bytes = Vec::with_capacity(OUTLOOK_PS1.len() + 3);
     bytes.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
     bytes.extend_from_slice(OUTLOOK_PS1.as_bytes());

@@ -185,8 +185,8 @@ describe("buildReport – offene Einträge", () => {
 	});
 
 	it("kappt einen vergessenen offenen Eintrag am Ende SEINES Tages", () => {
-		// Vorher zählte der bis Date.now(): ein offener Eintrag vom 1. Juni meldete
-		// über 1000 h – und die gingen so an die Vorgesetzten.
+		// Ohne Kappung zaehlte ein offener Eintrag bis Date.now(): ein vergessener
+		// Eintrag vom 1. Juni meldete dann über 1000 h an die Vorgesetzten.
 		const r = buildReport(
 			"2026-06",
 			[P1],

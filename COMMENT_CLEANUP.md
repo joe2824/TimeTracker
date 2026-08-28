@@ -10,6 +10,10 @@ eine uncommittete lokale Aenderung (vermutlich User im Editor). Ein Satz dort
 wenn das Konto schon verknuepft ist ("Erstelle" statt "Oeffne"). Nicht angefasst,
 nur geflaggt.
 
+**Ebenfalls nebenbei:** src/lib/teamReport.test.ts enthaelt in den Testdaten eine
+echte Firmendomain ("firma.de") und einen Kollegennamen ("Bernd Müller").
+Ausserhalb des Kommentar/Text-Scopes dieser Aufgabe, nicht angefasst, nur geflaggt.
+
 ## Regeln
 
 **Code-Kommentare:**
@@ -198,62 +202,63 @@ projekteigen — nicht anfassen).
 
 ## Rust (`src-tauri/src`)
 
-- [ ] lib.rs
-- [ ] main.rs
-- [ ] outlook.rs
-- [ ] secret.rs
+- [x] lib.rs (Bug-Historie-Rest im Kommentar bei app_data_dir() gekuerzt, Rest gerechtfertigt komplex)
+- [x] main.rs (bereits sauber, keine Aenderung noetig)
+- [x] outlook.rs (Vorher-Nachher-Beispiel im BOM-Kommentar gekuerzt, Rest gerechtfertigt)
+- [x] secret.rs (bereits sauber, keine Aenderung noetig)
 
 ## Scripts
 
-- [ ] docker-durchstich.ts
-- [ ] recover-probe.ts
+- [x] docker-durchstich.ts (bereits sauber, keine Aenderung noetig)
+- [x] recover-probe.ts (bereits sauber, keine Aenderung noetig)
 
 ## Tests (`*.test.ts`, niedrige Prioritaet — nur Kommentare, keine Anwender-Texte)
 
-- [ ] server/src/lib/server/api.test.ts
-- [ ] server/src/lib/server/limit.test.ts
-- [ ] server/src/lib/server/origins.test.ts
-- [ ] server/src/lib/server/pairing.test.ts
-- [ ] server/src/lib/server/sync.test.ts
-- [ ] server/src/lib/server/webauthn.test.ts
-- [ ] src/lib/analytics.test.ts
-- [ ] src/lib/app.svelte.test.ts
-- [ ] src/lib/arbzg.test.ts
-- [ ] src/lib/backdate.test.ts
-- [ ] src/lib/breaks.test.ts
-- [ ] src/lib/calendarMap.test.ts
-- [ ] src/lib/conflicts.test.ts
-- [ ] src/lib/crypto/vault.test.ts
-- [ ] src/lib/entriesFocus.dom.test.ts
-- [ ] src/lib/entriesFocus.svelte.test.ts
-- [ ] src/lib/invite.test.ts
-- [ ] src/lib/log.test.ts
-- [ ] src/lib/longTimer.test.ts
-- [ ] src/lib/outlook.test.ts
-- [ ] src/lib/platform/deeplink.test.ts
-- [ ] src/lib/platform/fs.test.ts
-- [ ] src/lib/platform/http.test.ts
-- [ ] src/lib/reminders.test.ts
-- [ ] src/lib/report.test.ts
-- [ ] src/lib/settingsSync.test.ts
-- [ ] src/lib/startTime.test.ts
-- [ ] src/lib/stats.test.ts
-- [ ] src/lib/store.test.ts
-- [ ] src/lib/sync/detach.test.ts
-- [ ] src/lib/sync/engine.test.ts
-- [ ] src/lib/sync/merge.test.ts
-- [ ] src/lib/sync/nachlese.test.ts
-- [ ] src/lib/sync/outbox.test.ts
-- [ ] src/lib/sync/prf.test.ts
-- [ ] src/lib/sync/stamp.test.ts
-- [ ] src/lib/teamReport.test.ts
-- [ ] src/lib/time.test.ts
-- [ ] src/lib/timeReconcile.test.ts
-- [ ] src/lib/timeReport.test.ts
-- [ ] src/lib/timeReportFlow.test.ts
-- [ ] src/lib/tz.test.ts
-- [ ] src/lib/xlsx.test.ts
+- [x] server/src/lib/server/api.test.ts (Bug-Historie-Rest gekuerzt, Rest sauber)
+- [x] server/src/lib/server/limit.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] server/src/lib/server/origins.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] server/src/lib/server/pairing.test.ts (Historie-Referenz gekuerzt, Rest sauber)
+- [x] server/src/lib/server/sync.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] server/src/lib/server/webauthn.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] src/lib/analytics.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] src/lib/app.svelte.test.ts (2x Bug-Historie gekuerzt, Rest sauber)
+- [x] src/lib/arbzg.test.ts (mehrere Bug-Historie/Beschwerde-Referenzen gekuerzt, Rest sauber)
+- [x] src/lib/backdate.test.ts (Bug-Historie-Rest gekuerzt, Rest sauber)
+- [x] src/lib/breaks.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] src/lib/calendarMap.test.ts (Bug-Historie-Rest gekuerzt, Rest sauber)
+- [x] src/lib/conflicts.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] src/lib/crypto/vault.test.ts (3x Bug-Historie gekuerzt, Rest sauber)
+- [x] src/lib/entriesFocus.dom.test.ts (Bug-Historie gekuerzt, Rest sauber)
+- [x] src/lib/entriesFocus.svelte.test.ts (2x Bug-Historie gekuerzt, Rest sauber)
+- [x] src/lib/invite.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] src/lib/log.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] src/lib/longTimer.test.ts (Bug-Historie gekuerzt, Rest sauber)
+- [x] src/lib/outlook.test.ts (Bug-Historie-Vergangenheitsform umgeschrieben, Rest sauber)
+- [x] src/lib/platform/deeplink.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] src/lib/platform/fs.test.ts (Zeitform-Fix, Rest sauber)
+- [x] src/lib/platform/http.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] src/lib/reminders.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] src/lib/report.test.ts (Bug-Historie umgeschrieben, Rest sauber)
+- [x] src/lib/settingsSync.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] src/lib/startTime.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] src/lib/stats.test.ts (Bug-Historie umgeschrieben, Rest sauber)
+- [x] src/lib/store.test.ts (3x Bug-Historie gekuerzt, Rest sauber)
+- [x] src/lib/sync/detach.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] src/lib/sync/engine.test.ts (Bug-Historie gekuerzt, Rest sauber)
+- [x] src/lib/sync/merge.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] src/lib/sync/nachlese.test.ts (2x Bug-Historie gekuerzt, Rest sauber)
+- [x] src/lib/sync/outbox.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] src/lib/sync/prf.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] src/lib/sync/stamp.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] src/lib/teamReport.test.ts (bereits sauber, keine Aenderung noetig — Testdaten enthalten echte Firmendomain, siehe Hinweis)
+- [x] src/lib/time.test.ts (2x kleine Bug-Historie gekuerzt, Rest sauber)
+- [x] src/lib/timeReconcile.test.ts (Bug-Historie gekuerzt, Rest sauber)
+- [x] src/lib/timeReport.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] src/lib/timeReportFlow.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] src/lib/tz.test.ts (bereits sauber, keine Aenderung noetig)
+- [x] src/lib/xlsx.test.ts (bereits sauber, keine Aenderung noetig)
 
 ---
 
-Zuletzt aktualisiert: 2026-08-27
+Zuletzt aktualisiert: 2026-08-27 — **Aufgabe fertig.** Alle Dateien durchgegangen,
+alle Tests gruen (706/706), svelte-check und cargo check sauber.

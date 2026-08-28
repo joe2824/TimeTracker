@@ -281,7 +281,7 @@ describe("parseHours", () => {
 	});
 
 	it("parst vierstellige HHMM-Eingabe als Uhrzeit, nicht als Stundenzahl", () => {
-		expect(parseHours("0741")).toBeCloseTo(7 + 41 / 60, 10); // war fälschlich 741
+		expect(parseHours("0741")).toBeCloseTo(7 + 41 / 60, 10); // sonst fälschlich 741
 		expect(parseHours("1230")).toBe(12.5);
 		expect(parseHours("0800")).toBe(8);
 		expect(parseHours("0015")).toBe(0.25);
@@ -416,7 +416,7 @@ describe("splitAtMidnight", () => {
 describe("splitAtMidnight – manuelle Einträge", () => {
 	it("teilt einen von Hand angelegten Eintrag 23:00–01:00", () => {
 		// Derselbe Fall wie beim Timer, nur ueber „Eintrag" oder „Mehrere Tage":
-		// vorher zaehlte die ganze Spanne auf den Starttag.
+		// ohne Teilung zaehlte die ganze Spanne auf den Starttag.
 		const a = toTs("2026-07-16", "23:00");
 		const b = toTs("2026-07-17", "01:00");
 		const parts = splitAtMidnight(a, b);

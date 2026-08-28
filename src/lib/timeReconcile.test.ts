@@ -586,8 +586,8 @@ describe("rebalanceShares", () => {
 	});
 
 	it("bleibt bei vielen kleinen Anteilen auf 100 Prozent", () => {
-		// Genau der Fall, in dem einzeln gerundet 101 % herauskamen und der
-		// letzte Regler dafuer auf 0 fiel.
+		// Bei individueller Rundung kaemen hier 101 % heraus, und der letzte
+		// Regler fiele dafuer auf 0.
 		const next = rebalanceShares([17, 17, 17, 17, 17, 15], 0, 97);
 		expect(summe(next)).toBe(100);
 		expect(next[0]).toBe(97);

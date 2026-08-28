@@ -146,6 +146,26 @@ describe("mergeRecord", () => {
 		expect(r.value?.wert).toBe("a");
 	});
 
+	it("nimmt einen Grabstein an, auch wenn die Zeit gleich ist", () => {
+		// Der Fall, der engine.test.ts flackern liess: deleteYear stempelt alle
+		// Eintraege eines Jahres mit demselben Date.now(). Faellt das mit dem
+		// updatedAt eines gerade erst angelegten Eintrags zusammen, standen hier
+		// zwei gleiche Stempel - und die Abkuerzung fuer "derselbe Stand" nahm
+		// den Grabstein nicht zur Kenntnis. Das andere Geraet behielt den
+		// Eintrag und schob ihn beim naechsten Abgleich wieder hoch.
+		const r = mergeRecord(
+			{
+				local: s({ updatedAt: 1000 }),
+				remote: s({ updatedAt: 1000, deletedAt: 1000 }),
+				localPending: false
+			},
+			grab
+		);
+		expect(r.value).toBeNull();
+		expect(r.changed).toBe(true);
+		expect(r.lostLocalEdit).toBe(false);
+	});
+
 	it("kommt auf beiden Geraeten zum selben Ergebnis", () => {
 		// Die Zusage, an der alles haengt: derselbe Code, dieselbe Ausgangslage,
 		// dieselbe Entscheidung - egal, wer gerade rechnet.

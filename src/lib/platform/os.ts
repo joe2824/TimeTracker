@@ -41,5 +41,14 @@ export function hatDesktopApp(os: Betriebssystem): boolean {
 	return os === "windows";
 }
 
+/** Das Vorhaben selbst. Stand vorher dreimal woertlich in der Oberflaeche. */
+export const REPO_URL = "https://github.com/joe2824/TimeTracker";
+
 /** Wo die Installer liegen. Die Dateinamen tragen die Version, die Seite nicht. */
-export const RELEASES_URL = "https://github.com/joe2824/TimeTracker/releases/latest";
+export const RELEASES_URL = `${REPO_URL}/releases/latest`;
+
+/** Das Nachschlagewerk. Was frueher im README stand, steht jetzt dort. */
+export const WIKI_URL = `${REPO_URL}/wiki`;
+
+/** Das Server-Abbild in der GitHub-Registry. Siehe .github/workflows/docker.yml. */
+export const IMAGE_REF = "ghcr.io/joe2824/timetracker-server:latest";

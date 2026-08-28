@@ -174,8 +174,8 @@ describe("heatmapYear", () => {
 
 describe("heatmapYear – Monatsanfaenge (Beschriftung der Heatmap)", () => {
 	// Die Card sucht je Wochenspalte einen Tag, der auf den Monatsersten faellt.
-	// Fruehere Fassung prueft nur den ersten Tag der Spalte -> Monate, die mitten
-	// in der Woche starten, fielen weg (es blieben nur Jan und Jun uebrig).
+	// Nur den ersten Tag der Spalte zu pruefen wuerde Monate uebersehen, die
+	// mitten in der Woche starten (es blieben sonst nur Jan und Jun uebrig).
 	const ticksOf = (year: number) =>
 		heatmapYear(year, new Map())
 			.map((w) => w.find((d) => !d.filler && d.date.endsWith("-01")))

@@ -103,7 +103,8 @@ describe("checkEnd", () => {
 	});
 
 	it("meldet die Zukunft, statt still auf jetzt zu klemmen", () => {
-		// Genau der Fehler: im Feld nur „18:26“ getippt, Datum blieb auf HEUTE.
+		// Im Feld nur „18:26“ getippt, Datum blieb auf HEUTE - das muss als Zukunft
+		// erkannt werden, nicht still auf jetzt geklemmt.
 		expect(checkEnd(at(D20, 18, 26), START, NOW)).toBe("future");
 	});
 

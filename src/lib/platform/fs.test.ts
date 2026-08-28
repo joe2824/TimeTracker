@@ -118,8 +118,8 @@ describe("store.ts auf der Browser-Ablage", () => {
 
 	it("kennt einen Ordner an dem, was darin liegt", async () => {
 		// Es gibt keine Ordner - der Pfad ist Teil des Schluessels. Wer trotzdem
-		// erst auf den Ordner prueft (log.ts tut es), bekam sonst immer "nein" und
-		// damit einen leeren Bestand.
+		// erst auf den Ordner prueft (log.ts tut es), bekaeme sonst immer "nein"
+		// und damit einen leeren Bestand.
 		expect(await storage.exists("kiste")).toBe(false);
 		await storage.writeTextFile("kiste/inhalt.txt", "etwas\n");
 		expect(await storage.exists("kiste")).toBe(true);
