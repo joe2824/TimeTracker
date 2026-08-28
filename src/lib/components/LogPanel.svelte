@@ -88,7 +88,7 @@
 		<Card.Description>
 			Für die Fehlersuche: Ereignisse und Fehler, eine Datei je Tag, {KEEP_DAYS} Tage lang.
 			{#if isTauri()}
-				Sie liegen unter <code class="text-xs">{LOG_DIR}/</code> im App-Datenordner – bei einem
+				Sie liegen unter <code class="bg-muted rounded px-1 py-0.5 text-xs">{LOG_DIR}/</code> im App-Datenordner – bei einem
 				Problem hilft es, die Datei mitzuschicken.
 			{:else}
 				Im Browser liegen sie in dessen eigener Ablage; zum Mitschicken den Text hier unten
@@ -116,7 +116,7 @@
 					<FolderOpenIcon class="size-4" /> Ordner öffnen
 				</Button>
 			{/if}
-			<Button variant="outline" size="sm" onclick={clearAll}>
+			<Button variant="destructive" size="sm" class="ml-auto" onclick={clearAll}>
 				<Trash2Icon class="size-4" /> Leeren
 			</Button>
 		</div>
@@ -129,7 +129,7 @@
 			<!-- Neueste unten, wie in jeder Logdatei; der Kasten scrollt selbst, damit
 			     lange Zeilen die Karte nicht auseinanderziehen. -->
 			<pre
-				class="bg-muted max-h-72 overflow-auto rounded-md p-3 text-xs leading-relaxed select-text">{shown.join(
+				class="bg-muted max-h-72 overflow-auto overscroll-contain rounded-lg p-3 text-xs leading-relaxed select-text">{shown.join(
 					"\n"
 				)}</pre>
 		{/if}

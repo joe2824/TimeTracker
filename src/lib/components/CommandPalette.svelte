@@ -2,6 +2,8 @@
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { app } from "$lib/app.svelte";
 	import PlayIcon from "@lucide/svelte/icons/play";
+	import SearchIcon from "@lucide/svelte/icons/search";
+	import CornerDownRightIcon from "@lucide/svelte/icons/corner-down-right";
 	import SquareIcon from "@lucide/svelte/icons/square";
 	import ActivityDot from "$lib/components/ActivityDot.svelte";
 
@@ -85,18 +87,23 @@
 
 <Dialog.Root bind:open>
 	<Dialog.Content class="overflow-hidden p-0 sm:max-w-lg" showCloseButton={false}>
-		<input
-			bind:value={query}
-			onkeydown={onKey}
-			placeholder="Timer starten oder navigieren…"
-			class="w-full border-b bg-transparent px-4 py-3 text-sm outline-none"
-		/>
-		<ul class="max-h-80 overflow-y-auto p-1">
+		<!-- Lupe in der Zeile: ohne sie sah das Feld aus wie ein Textfeld, in das man
+		     etwas eintraegt, nicht wie eine Suche. -->
+		<div class="flex items-center gap-2 border-b px-4">
+			<SearchIcon class="text-muted-foreground size-4 shrink-0" />
+			<input
+				bind:value={query}
+				onkeydown={onKey}
+				placeholder="Timer starten oder navigieren…"
+				class="w-full bg-transparent py-3 text-sm outline-none"
+			/>
+		</div>
+		<ul class="max-h-80 overflow-y-auto overscroll-contain p-1.5">
 			{#each items as it, i (it.id)}
 				<li>
 					<button
 						type="button"
-						class="flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-left text-sm {i ===
+						class="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors {i ===
 						active
 							? 'bg-accent text-accent-foreground'
 							: ''}"
@@ -104,7 +111,7 @@
 						onclick={() => choose(it)}
 					>
 						{#if it.id.startsWith("nav:")}
-							<span class="text-muted-foreground size-4 shrink-0"></span>
+							<CornerDownRightIcon class="text-muted-foreground size-4 shrink-0" />
 						{:else if app.running?.activityId === it.id}
 							<SquareIcon class="size-4 shrink-0" />
 						{:else}
@@ -121,5 +128,12 @@
 				<li class="text-muted-foreground px-3 py-6 text-center text-sm">Nichts gefunden.</li>
 			{/each}
 		</ul>
+		<div
+			class="text-muted-foreground bg-muted/40 flex flex-wrap items-center gap-x-3 gap-y-1 border-t px-4 py-2 text-[11px]"
+		>
+			<span><kbd class="bg-background rounded border px-1 py-0.5 font-mono">↑↓</kbd> wählen</span>
+			<span><kbd class="bg-background rounded border px-1 py-0.5 font-mono">↵</kbd> ausführen</span>
+			<span><kbd class="bg-background rounded border px-1 py-0.5 font-mono">Esc</kbd> schließen</span>
+		</div>
 	</Dialog.Content>
 </Dialog.Root>

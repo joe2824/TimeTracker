@@ -24,16 +24,18 @@
 		</Dialog.Header>
 
 		{#if u?.body}
-			<div class="text-muted-foreground max-h-40 overflow-y-auto whitespace-pre-wrap text-sm">
+			<div
+				class="bg-muted/40 text-muted-foreground max-h-40 overflow-y-auto overscroll-contain rounded-lg p-3 text-sm leading-relaxed whitespace-pre-wrap"
+			>
 				{u.body}
 			</div>
 		{/if}
 
 		{#if updater.installing}
 			<div class="space-y-1">
-				<div class="bg-muted h-2 w-full overflow-hidden rounded">
+				<div class="bg-muted h-2 w-full overflow-hidden rounded-full">
 					<div
-						class="bg-primary h-full transition-all"
+						class="bg-primary h-full rounded-full transition-all"
 						style={`width:${updater.progress < 0 ? 100 : updater.progress}%`}
 						class:animate-pulse={updater.progress < 0}
 					></div>

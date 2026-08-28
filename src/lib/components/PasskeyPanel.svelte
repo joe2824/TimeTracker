@@ -2,6 +2,7 @@
 	import * as Card from "$lib/components/ui/card";
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { Button } from "$lib/components/ui/button";
+	import { Badge } from "$lib/components/ui/badge";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
 	import { toast } from "svelte-sonner";
@@ -113,7 +114,7 @@
 				<p class="text-muted-foreground text-sm">Lädt…</p>
 			{:else}
 				{#if liste.length === 1}
-					<div class="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
+					<div class="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
 						<p class="font-medium">Nur ein Passkey.</p>
 						<p class="text-muted-foreground mt-1 text-xs">
 							Geht dieses Gerät verloren oder wird getauscht, kommst du nur noch über die
@@ -128,18 +129,23 @@
 						<div class="flex items-center justify-between gap-2 border-b py-2 text-sm last:border-0">
 							<div class="min-w-0">
 								{#if benennt === p.id}
-									<div class="flex gap-1">
-										<Input bind:value={neuerName} class="h-8 w-48" placeholder="z. B. Handy" />
+									<div class="flex flex-wrap gap-1">
+										<Input bind:value={neuerName} class="h-8 w-40 sm:w-48" placeholder="z. B. Handy" />
 										<Button size="sm" onclick={() => umbenennen(p.id)}>Speichern</Button>
 										<Button variant="ghost" size="sm" onclick={() => (benennt = null)}>
 											Abbrechen
 										</Button>
 									</div>
 								{:else}
-									<p class="truncate font-medium">
-										{p.label ?? "Unbenannt"}
+									<p class="flex flex-wrap items-center gap-1.5 font-medium">
+										<span class="truncate">{p.label ?? "Unbenannt"}</span>
 										{#if !p.hasPrf}
-											<span class="text-muted-foreground font-normal"> · öffnet die Daten nicht allein</span>
+											<Badge
+												variant="outline"
+												title="Ohne die Passkey-Erweiterung PRF: die Anmeldung klappt, den Tresor öffnet dieser Passkey aber nicht von allein."
+											>
+												öffnet die Daten nicht allein
+											</Badge>
 										{/if}
 									</p>
 									<p class="text-muted-foreground text-xs">

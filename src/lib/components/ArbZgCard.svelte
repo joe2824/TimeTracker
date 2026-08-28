@@ -26,7 +26,7 @@
 	import { Button } from "$lib/components/ui/button";
 	import * as Card from "$lib/components/ui/card";
 	import * as Chart from "$lib/components/ui/chart";
-	import * as Tooltip from "$lib/components/ui/tooltip";
+	import * as Popover from "$lib/components/ui/popover";
 	import { Skeleton } from "$lib/components/ui/skeleton";
 	import StatTile from "$lib/components/StatTile.svelte";
 	import { LineChart } from "layerchart";
@@ -402,13 +402,17 @@
 					{result.counts.hinweis}
 					{result.counts.hinweis === 1 ? "Hinweis" : "Hinweise"}
 				</p>
-				<Tooltip.Provider>
+				<!-- Ohne diesen Satz ist am Handy nichts zu sehen, was die Badges als
+				     anklickbar ausweist - Hover gibt es dort nicht. -->
+				<p class="text-muted-foreground text-xs">
+					Jeder Befund lässt sich anklicken – dahinter steht, worauf er sich stützt.
+				</p>
 				<table class="w-full text-sm">
 					<tbody>
 						{#each byDay as d (d.date)}
 							<!-- Die Zeile fuehrt in die Eintraege des Tages. Der Klick haengt am
 							     Datum und nicht an der ganzen Zeile: rechts stehen die Badges mit
-							     eigenen Tooltips, und ein Knopf im Knopf waere weder gueltiges
+							     eigener Erklaerung, und ein Knopf im Knopf waere weder gueltiges
 							     HTML noch mit der Tastatur zu bedienen. Der Hover faerbt
 							     trotzdem die ganze Zeile, damit sie als anklickbar zu erkennen ist. -->
 							<tr class="hover:bg-muted/50 border-b last:border-0">
@@ -427,8 +431,17 @@
 								<td class="py-1">
 									<div class="flex flex-wrap justify-end gap-1">
 										{#each d.findings as f (f.rule)}
-											<Tooltip.Root>
-												<Tooltip.Trigger>
+											<!--
+												Popover statt Tooltip: die Erklaerung haengt sonst am Hover
+												und ist auf dem Handy gar nicht zu bekommen - dort ist sie
+												aber genauso noetig. Ein Klick oeffnet, Escape schliesst,
+												und die Tastatur kommt genauso hin.
+											-->
+											<Popover.Root>
+												<Popover.Trigger
+													class="focus-visible:ring-ring/50 cursor-pointer rounded-4xl outline-none transition-opacity hover:opacity-80 focus-visible:ring-3"
+													aria-label="{f.label} – erklären"
+												>
 													<Badge variant={badgeVariant(f.level)}>
 														{#if f.level === "verstoss"}
 															<TriangleAlertIcon />
@@ -437,11 +450,17 @@
 														{/if}
 														{f.label}
 													</Badge>
-												</Tooltip.Trigger>
-												<Tooltip.Content class="max-w-72">
-													{f.text}
-												</Tooltip.Content>
-											</Tooltip.Root>
+												</Popover.Trigger>
+												<Popover.Content align="end" class="space-y-1.5">
+													<div class="flex items-center gap-1.5">
+														<Badge variant={badgeVariant(f.level)}>{f.label}</Badge>
+														<span class="text-muted-foreground text-xs">
+															{fmtDateHuman(noonTs(d.date))}
+														</span>
+													</div>
+													<p class="text-muted-foreground text-xs leading-relaxed">{f.text}</p>
+												</Popover.Content>
+											</Popover.Root>
 										{/each}
 									</div>
 								</td>
@@ -449,7 +468,6 @@
 						{/each}
 					</tbody>
 				</table>
-				</Tooltip.Provider>
 			{/if}
 		</div>
 

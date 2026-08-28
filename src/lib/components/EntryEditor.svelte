@@ -36,6 +36,7 @@
 	import { Label } from "$lib/components/ui/label";
 	import * as Card from "$lib/components/ui/card";
 	import * as Dialog from "$lib/components/ui/dialog";
+	import * as Popover from "$lib/components/ui/popover";
 	import CalendarImport from "$lib/components/CalendarImport.svelte";
 	import TimeReportImport from "$lib/components/TimeReportImport.svelte";
 	import ActivityCombobox from "$lib/components/ActivityCombobox.svelte";
@@ -639,34 +640,56 @@
 							{/each}
 						</div>
 						<div class="ml-auto flex items-center gap-2 pt-0.5 sm:ml-0">
-							{#if day.missing > 0}
-								<!-- Aus dem Zeitwirtschaftsreport: hier fehlt Zeit gegenueber LOGA. -->
-								<span
-									class="rounded bg-amber-500/15 px-1.5 py-0.5 font-mono text-xs tabular-nums text-amber-700 dark:text-amber-300"
-									title={`LOGA: ${fmtHoursClock(day.reportHours)} h – hier fehlen ${fmtHoursClock(day.missing)} h`}
-								>
-									−{fmtHoursClock(day.missing)}
-								</span>
-							{:else if day.over > 0}
-								<!-- Die Gegenrichtung: hier steht mehr, als LOGA fuer den Tag kennt.
-								     Gleiches Blau wie „zu viel" im Abgleich, damit beide Ansichten
-								     dieselbe Farbe fuer dieselbe Aussage benutzen. -->
-								<span
-									class="rounded bg-sky-500/15 px-1.5 py-0.5 font-mono text-xs tabular-nums text-sky-700 dark:text-sky-300"
-									title={`LOGA: ${fmtHoursClock(day.reportHours)} h – hier sind ${fmtHoursClock(day.over)} h zu viel erfasst`}
-								>
-									+{fmtHoursClock(day.over)}
-								</span>
+							{#if day.missing > 0 || day.over > 0}
+								{@const fehlt = day.missing > 0}
+								<!--
+									Aus dem Zeitwirtschaftsreport: der Tag weicht von LOGA ab.
+									„−0:45" allein sagt nichts – was es heisst, stand bisher nur im
+									title und war damit auf dem Handy gar nicht zu bekommen.
+									Amber = hier fehlt Zeit, Sky = hier steht zu viel; dieselben
+									Farben wie im Abgleich, damit dieselbe Farbe dasselbe heisst.
+								-->
+								<Popover.Root>
+									<Popover.Trigger
+										class="focus-visible:ring-ring/50 cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs tabular-nums outline-none transition-opacity hover:opacity-80 focus-visible:ring-3 {fehlt
+											? 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+											: 'bg-sky-500/15 text-sky-700 dark:text-sky-300'}"
+										aria-label="Abweichung zum Zeitwächter – erklären"
+									>
+										{fehlt ? "−" : "+"}{fmtHoursClock(fehlt ? day.missing : day.over)}
+									</Popover.Trigger>
+									<Popover.Content align="end" class="space-y-1">
+										<div class="text-xs font-medium">Abweichung zum Zeitwächter</div>
+										<p class="text-muted-foreground text-xs leading-relaxed">
+											LOGA kennt für diesen Tag {fmtHoursClock(day.reportHours)} h.
+											{#if fehlt}
+												Hier fehlen {fmtHoursClock(day.missing)} h.
+											{:else}
+												Hier sind {fmtHoursClock(day.over)} h zu viel erfasst.
+											{/if}
+										</p>
+									</Popover.Content>
+								</Popover.Root>
 							{/if}
 							{#if day.pause > 0}
 								<!-- Der Abzug muss sichtbar sein: die Tagessumme daneben ist sonst
 								     unerklaerlich niedriger als die Eintraege darueber. -->
-								<span
-									class="text-muted-foreground text-xs"
-									title={`${fmtHoursClock(day.pause)} h Pause automatisch abgezogen`}
-								>
-									−{fmtHoursClock(day.pause)}&nbsp;Pause
-								</span>
+								<Popover.Root>
+									<Popover.Trigger
+										class="text-muted-foreground focus-visible:ring-ring/50 cursor-pointer rounded px-1 text-xs outline-none transition-opacity hover:opacity-80 focus-visible:ring-3"
+										aria-label="Pausenabzug – erklären"
+									>
+										−{fmtHoursClock(day.pause)}&nbsp;Pause
+									</Popover.Trigger>
+									<Popover.Content align="end" class="space-y-1">
+										<div class="text-xs font-medium">Pause automatisch abgezogen</div>
+										<p class="text-muted-foreground text-xs leading-relaxed">
+											{fmtHoursClock(day.pause)} h werden von der Tagessumme abgezogen – deshalb
+											steht dort weniger als in den Einträgen darüber. Die Einträge selbst bleiben
+											unverändert; abschalten lässt sich das unter Einstellungen → Zeiterfassung.
+										</p>
+									</Popover.Content>
+								</Popover.Root>
 							{/if}
 							{#if day.hours > 0}
 								<span class="text-muted-foreground w-14 text-right font-mono text-xs tabular-nums">

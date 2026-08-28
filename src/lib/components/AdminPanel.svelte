@@ -1,6 +1,7 @@
 <script lang="ts">
 	import * as Card from "$lib/components/ui/card";
 	import { Button } from "$lib/components/ui/button";
+	import { Badge } from "$lib/components/ui/badge";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
 	import { toast } from "svelte-sonner";
@@ -87,14 +88,14 @@
 	}
 
 	/** Was mit dieser Einladung los ist - in einem Wort. */
-	function stand(i: Invite): { text: string; ton: string } {
-		if (i.usedAt) return { text: `benutzt ${fmtDateHuman(i.usedAt)}`, ton: "text-muted-foreground" };
-		if (i.revokedAt) return { text: "zurückgezogen", ton: "text-muted-foreground" };
+	function stand(i: Invite): { text: string; offen: boolean } {
+		if (i.usedAt) return { text: `benutzt ${fmtDateHuman(i.usedAt)}`, offen: false };
+		if (i.revokedAt) return { text: "zurückgezogen", offen: false };
 		if (i.expiresAt && i.expiresAt < Date.now()) {
-			return { text: "abgelaufen", ton: "text-muted-foreground" };
+			return { text: "abgelaufen", offen: false };
 		}
-		if (i.expiresAt) return { text: `offen bis ${fmtDateHuman(i.expiresAt)}`, ton: "text-emerald-600" };
-		return { text: "offen", ton: "text-emerald-600" };
+		if (i.expiresAt) return { text: `offen bis ${fmtDateHuman(i.expiresAt)}`, offen: true };
+		return { text: "offen", offen: true };
 	}
 
 	const offen = $derived(
@@ -113,7 +114,7 @@
 
 		<Card.Content class="space-y-4">
 			{#if frisch}
-				<div class="bg-muted space-y-2 rounded-md p-3">
+				<div class="border-primary/30 bg-primary/[0.06] space-y-2 rounded-lg border p-3">
 					<p class="text-sm">Neue Einladung – gilt genau einmal:</p>
 					<p class="font-mono text-xl tracking-wider select-all">{frisch}</p>
 
@@ -176,7 +177,9 @@
 					<div class="space-y-1">
 						{#each liste as i (i.code)}
 							{@const s = stand(i)}
-							<div class="flex items-center justify-between gap-2 text-sm">
+							<div
+								class="flex flex-wrap items-center justify-between gap-2 border-b py-2 text-sm last:border-0"
+							>
 								<div class="min-w-0">
 									<span class="font-mono">{i.code}</span>
 									{#if i.note}
@@ -184,7 +187,14 @@
 									{/if}
 								</div>
 								<div class="flex shrink-0 items-center gap-2">
-									<span class="text-xs {s.ton}">{s.text}</span>
+									<Badge
+										variant={s.offen ? "outline" : "secondary"}
+										class={s.offen
+											? "border-emerald-600/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+											: ""}
+									>
+										{s.text}
+									</Badge>
 									{#if !i.usedAt && !i.revokedAt}
 										<Button
 											variant="ghost"

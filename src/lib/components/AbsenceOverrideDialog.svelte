@@ -22,7 +22,7 @@
 			</Dialog.Description>
 		</Dialog.Header>
 
-		<div class="space-y-2">
+		<div class="bg-muted/40 space-y-2 rounded-lg p-3">
 			{#each p?.days ?? [] as d (d.entry.id)}
 				<div class="flex items-center gap-2 text-sm">
 					<PalmtreeIcon class="text-amber-600 dark:text-amber-400 size-4 shrink-0" />

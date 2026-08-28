@@ -53,7 +53,7 @@
 	import * as Table from "$lib/components/ui/table";
 	import ActivityCombobox from "$lib/components/ActivityCombobox.svelte";
 	import ProjectSplit from "$lib/components/ProjectSplit.svelte";
-	import * as Tooltip from "$lib/components/ui/tooltip";
+	import * as Popover from "$lib/components/ui/popover";
 	import FileSpreadsheetIcon from "@lucide/svelte/icons/file-spreadsheet";
 	import UploadIcon from "@lucide/svelte/icons/upload";
 	import LoaderCircleIcon from "@lucide/svelte/icons/loader-circle";
@@ -870,7 +870,6 @@
 			<!-- Bewusst ohne eigenen Scrollbereich: die Aktivitäts-Combobox klappt ihre
 			     Liste absolut positioniert auf, ein `overflow-y-auto` hier würde sie
 			     abschneiden. Die Seite scrollt stattdessen, die Fußzeile bleibt sichtbar. -->
-			<Tooltip.Provider>
 				<div class="border-y">
 					<Table.Root>
 						<Table.Header class="bg-background sticky top-0 z-10">
@@ -901,17 +900,28 @@
 										{#if day.report.flags.length > 0}
 											<span class="ml-1 inline-flex gap-1 align-middle">
 												{#each day.report.flags as f (f.key)}
-													<Tooltip.Root>
-														<Tooltip.Trigger>
+													<!-- Popover statt Tooltip: das Kuerzel sagt allein nichts, und
+													     am Hover haengend war die Erklaerung auf dem Handy gar
+													     nicht zu bekommen. -->
+													<Popover.Root>
+														<Popover.Trigger
+															class="focus-visible:ring-ring/50 cursor-pointer rounded-4xl align-middle outline-none transition-opacity hover:opacity-80 focus-visible:ring-3"
+															aria-label="{f.label} – erklären"
+														>
 															<Badge variant="outline" class="text-[10px] text-amber-700 dark:text-amber-300">
 																{f.label}
 															</Badge>
-														</Tooltip.Trigger>
-														<Tooltip.Content>
-															{FLAG_HINT[f.key] ?? f.label}
-															{#if f.value && f.value !== "X"}({f.value}){/if}
-														</Tooltip.Content>
-													</Tooltip.Root>
+														</Popover.Trigger>
+														<Popover.Content align="start" class="space-y-1.5">
+															<Badge variant="outline" class="text-amber-700 dark:text-amber-300">
+																{f.label}
+															</Badge>
+															<p class="text-muted-foreground text-xs leading-relaxed">
+																{FLAG_HINT[f.key] ?? f.label}
+																{#if f.value && f.value !== "X"}({f.value}){/if}
+															</p>
+														</Popover.Content>
+													</Popover.Root>
 												{/each}
 											</span>
 										{/if}
@@ -1042,7 +1052,6 @@
 						</Table.Body>
 					</Table.Root>
 				</div>
-			</Tooltip.Provider>
 
 			<!-- Bleibt beim Scrollen der langen Tabelle erreichbar. -->
 			<div class="bg-card sticky bottom-0 flex justify-end gap-2 border-t px-4 py-3">

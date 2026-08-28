@@ -4,6 +4,8 @@
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
+	import { Checkbox } from "$lib/components/ui/checkbox";
+	import { Badge } from "$lib/components/ui/badge";
 	import SettingRow from "$lib/components/SettingRow.svelte";
 	import PairingCode from "$lib/components/PairingCode.svelte";
 	import { toast } from "svelte-sonner";
@@ -312,7 +314,7 @@
 			<!-- Kein Wegklick-Button, sondern ein Haekchen: ohne zweites Geraet oder
 			     Passkey sind diese 24 Woerter der einzige Weg zu den Daten - auch der
 			     Betreiber kann nichts entschluesseln. -->
-			<div class="border-primary/40 space-y-3 rounded-md border p-4">
+			<div class="border-primary/40 space-y-3 rounded-lg border p-4">
 				<div>
 					<p class="font-medium">Deine Wiederherstellungs-Phrase</p>
 					<p class="text-muted-foreground text-sm">
@@ -321,14 +323,14 @@
 					</p>
 				</div>
 
-				<p class="bg-muted rounded-md p-3 font-mono text-sm leading-relaxed select-all">
+				<p class="bg-muted rounded-lg p-3 font-mono text-sm leading-relaxed select-all">
 					{phrase}
 				</p>
 
-				<label class="flex items-start gap-2 text-sm">
-					<input type="checkbox" bind:checked={phraseBestaetigt} class="mt-1" />
+				<Label for="phrase-gesichert" class="items-start gap-2.5 text-sm font-normal">
+					<Checkbox id="phrase-gesichert" bind:checked={phraseBestaetigt} class="mt-0.5" />
 					<span>Ich habe die Phrase gesichert.</span>
-				</label>
+				</Label>
 
 				<Button
 					disabled={!phraseBestaetigt}
@@ -344,25 +346,27 @@
 		{/if}
 
 		<!-- Nur Verknuepfung + Status; wann zuletzt abgeglichen wurde, steht schon oben in der Kopfzeile. -->
-		<div class="flex flex-wrap items-center justify-between gap-2">
-			<div class="flex items-center gap-2 text-sm">
+		<div class="bg-muted/40 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-lg px-3 py-2.5">
+			<div class="flex min-w-0 items-center gap-2 text-sm">
 				<span class="size-2 shrink-0 rounded-full {zustand.punkt}"></span>
-				<span class="font-medium">{zustand.text}</span>
-				{#if account.linked && account.serverUrl}
-					<span class="text-muted-foreground truncate">· {account.serverUrl}</span>
-				{/if}
+				<div class="min-w-0">
+					<div class="font-medium">{zustand.text}</div>
+					{#if account.linked && account.serverUrl}
+						<div class="text-muted-foreground truncate text-xs">{account.serverUrl}</div>
+					{/if}
+					{#if account.linked && account.pending > 0}
+						<div class="text-muted-foreground text-xs">
+							{account.pending} Änderung{account.pending === 1 ? "" : "en"} noch nicht übertragen.
+						</div>
+					{/if}
+				</div>
 			</div>
 			{#if account.linked}
-				<Button variant="ghost" size="sm" onclick={() => account.syncNow()}>Jetzt abgleichen</Button>
+				<Button variant="outline" size="sm" onclick={() => account.syncNow()}>Jetzt abgleichen</Button>
 			{/if}
 		</div>
 
 		{#if account.linked}
-			{#if account.pending > 0}
-				<p class="text-muted-foreground text-xs">
-					{account.pending} Änderung{account.pending === 1 ? "" : "en"} noch nicht übertragen.
-				</p>
-			{/if}
 
 			{#if !account.secretsProtected}
 				<p class="text-muted-foreground border-t pt-3 text-xs">
@@ -372,7 +376,7 @@
 			{/if}
 
 			{#if account.lostEdits > 0}
-				<p class="border-t pt-3 text-xs text-amber-600">
+				<p class="border-t pt-3 text-xs text-amber-700 dark:text-amber-300">
 					{account.lostEdits} eigene Änderung{account.lostEdits === 1 ? "" : "en"} wurde{account.lostEdits === 1 ? "" : "n"}
 					von einer neueren Fassung eines anderen Geräts überschrieben.
 				</p>
@@ -384,10 +388,10 @@
 					{#each geraete as g (g.id)}
 						<div class="flex items-center justify-between gap-2 border-b py-2 text-sm last:border-0">
 							<div class="min-w-0">
-								<p class="truncate font-medium">
-									{g.label}
+								<p class="flex items-center gap-1.5 truncate font-medium">
+									<span class="truncate">{g.label}</span>
 									{#if g.id === account.thisDeviceId}
-										<span class="text-muted-foreground font-normal"> · dieses Gerät</span>
+										<Badge variant="secondary">dieses Gerät</Badge>
 									{/if}
 								</p>
 								<p class="text-muted-foreground text-xs">
@@ -489,7 +493,7 @@
 									Die Datensätze dort werden gelöscht; die Zeiten auf diesem Gerät bleiben.
 								</p>
 							{:else}
-								<div class="border-destructive/40 space-y-2 rounded-md border p-3">
+								<div class="border-destructive/40 bg-destructive/5 space-y-2 rounded-lg border p-3">
 									<p class="text-sm">
 										Das lässt sich nicht rückgängig machen. Alle verschlüsselten Datensätze,
 										Passkeys und Geräte dieses Kontos werden beim Server gelöscht.
