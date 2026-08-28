@@ -59,7 +59,11 @@
 			passkeyId = r.credentialId;
 			if (r.key) {
 				await account.linkWithSession(serverUrl, r.key, r.displayName);
-				toast.success(`Willkommen zurück, ${r.displayName}.`);
+				// Begruesst wird mit dem Namen aus "Bericht & E-Mail" - der steht hier auf
+				// dem Geraet und ist der, den die Person selbst gesetzt hat. Ist er leer,
+				// bleibt der Gruss namenlos statt auf die Kontokennung auszuweichen.
+				const name = app.settings.senderName.trim();
+				toast.success(name ? `Willkommen zurück, ${name}.` : "Willkommen zurück.");
 				return;
 			}
 			// Der Passkey konnte den Tresor nicht öffnen - das ist kein Fehler,
