@@ -158,6 +158,12 @@ export const pairings = sqliteTable(
 		/** Oeffentlicher Schluessel des neuen Geraets, base64. */
 		publicKey: text("public_key").notNull(),
 		label: text("label").notNull(),
+		/**
+		 * Hash des Abhol-Geheimnisses. Das Geheimnis selbst kennt nur das neue
+		 * Geraet; ohne es holt niemand das Geraete-Token ab - auch wer den Code
+		 * kennt nicht. Der Code ist zum Vergleichen da und darf sichtbar sein.
+		 */
+		claimHash: text("claim_hash"),
 		/** Erst gesetzt, wenn ein entsperrtes Geraet den Schluessel verpackt hat. */
 		wrappedKey: text("wrapped_key"),
 		deviceToken: text("device_token"),

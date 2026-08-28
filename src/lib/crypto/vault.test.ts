@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	bucketFor,
 	checkedPairingKey,
+	createClaimSecret,
 	createPairingKeyPair,
 	createRecoveryPhrase,
 	createVaultKey,
@@ -13,6 +14,7 @@ import {
 	importVaultKey,
 	isPairingCode,
 	isValidRecoveryPhrase,
+	sha256Hex,
 	normalizePairingCode,
 	normalizePhrase,
 	openRecord,
@@ -337,6 +339,39 @@ describe("Der Kopplungscode", () => {
 		expect(normalizePairingCode(angezeigt)).toBe(code);
 		expect(normalizePairingCode(angezeigt.toLowerCase())).toBe(code);
 		expect(normalizePairingCode(angezeigt.replace(/-/g, " "))).toBe(code);
+	});
+});
+
+describe("Das Abhol-Geheimnis", () => {
+	// Der Kopplungscode ist der Abdruck des Geraeteschluessels und muss sichtbar
+	// sein - ein Mensch soll ihn vergleichen. Zum Abholen des Geraete-Tokens
+	// taugt er deshalb nicht: dafuer gibt es dieses Geheimnis, das das Geraet
+	// behaelt und von dem der Server nur den Hash sieht.
+
+	it("gibt ein Geheimnis und dessen Hash", async () => {
+		const { secret, hash } = await createClaimSecret();
+		expect(secret.length).toBeGreaterThan(20);
+		expect(hash).toMatch(/^[0-9a-f]{64}$/);
+		expect(await sha256Hex(secret)).toBe(hash);
+	});
+
+	it("wuerfelt jedes Mal neu", async () => {
+		// Zwei Geraete, die gleichzeitig koppeln, duerfen sich nicht dasselbe
+		// Geheimnis teilen - sonst holte eines das Token des anderen ab.
+		const a = await createClaimSecret();
+		const b = await createClaimSecret();
+		expect(a.secret).not.toBe(b.secret);
+		expect(a.hash).not.toBe(b.hash);
+	});
+
+	it("rechnet denselben Hash wie der Server", async () => {
+		// Angenagelt an einen festen Wert, und derselbe Wert steht in
+		// server/src/lib/server/api.test.ts. Driften die beiden Rechnungen
+		// auseinander, koppelt gar nichts mehr - und zwar still, weil der Server
+		// dann schlicht 404 antwortet.
+		expect(await sha256Hex("geheim-abholen")).toBe(
+			"38493643ffb2d864afda079804427ffd9224181468ba3dd5fcd018863d169da2"
+		);
 	});
 });
 

@@ -7,8 +7,6 @@
 export const INVITE_PARAM = "invite";
 /** Direkt zum Anlegen springen, statt die Auswahl zu zeigen. */
 export const NEU_PARAM = "neu";
-/** Der Kopplungscode des Rechners, der diesen Link geoeffnet hat. */
-export const PAIR_PARAM = "pair";
 
 /** Der Link, der die Anmeldeseite mit vorbereitetem Code oeffnet. */
 export function inviteLink(baseUrl: string, code: string): string {
@@ -16,14 +14,17 @@ export function inviteLink(baseUrl: string, code: string): string {
 }
 
 /**
- * Der Link, den die Desktop-Anwendung oeffnet: gleich zum Anlegen, und mit dem
- * eigenen Kopplungscode im Gepaeck, damit danach niemand mehr etwas abtippt.
+ * Der Link, den die Desktop-Anwendung oeffnet: gleich zum Anlegen.
+ *
+ * Der Kopplungscode reist bewusst NICHT mit. Er ist der Abdruck des
+ * Geraeteschluessels und der einzige Anhaltspunkt, an dem ein Mensch "mein
+ * Rechner" von "ein untergeschobener Vorgang" unterscheiden kann. In einer
+ * Adresse landete er in der Chronik, in Bildschirmfotos und im Verlauf des
+ * Browsers - und der Vergleich waere zur Formsache geworden, weil der Code schon
+ * im Feld stand. Er steht jetzt nur auf dem Rechner und wird abgetippt.
  */
-export function anlegenLink(baseUrl: string, pairCode?: string): string {
-	return mitParametern(baseUrl, {
-		[NEU_PARAM]: "1",
-		...(pairCode ? { [PAIR_PARAM]: pairCode } : {})
-	});
+export function anlegenLink(baseUrl: string): string {
+	return mitParametern(baseUrl, { [NEU_PARAM]: "1" });
 }
 
 function mitParametern(baseUrl: string, werte: Record<string, string>): string {
@@ -39,8 +40,8 @@ function mitParametern(baseUrl: string, werte: Record<string, string>): string {
  * sie landeten in der Chronik, in geteilten Bildschirmfotos und im naechsten
  * Neuladen, wo sie dann nicht mehr gelten und wie ein Fehler aussehen.
  */
-export function linkParameter(): { invite: string; neu: boolean; pair: string } {
-	if (typeof location === "undefined") return { invite: "", neu: false, pair: "" };
+export function linkParameter(): { invite: string; neu: boolean } {
+	if (typeof location === "undefined") return { invite: "", neu: false };
 	const url = new URL(location.href);
 	const lies = (name: string) => {
 		const wert = url.searchParams.get(name)?.trim() ?? "";
@@ -49,9 +50,8 @@ export function linkParameter(): { invite: string; neu: boolean; pair: string } 
 	};
 	const invite = lies(INVITE_PARAM);
 	const neu = lies(NEU_PARAM) !== "";
-	const pair = lies(PAIR_PARAM);
 
-	if (invite || neu || pair) {
+	if (invite || neu) {
 		try {
 			history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
 		} catch {
@@ -59,5 +59,5 @@ export function linkParameter(): { invite: string; neu: boolean; pair: string } 
 			// die Anmeldung daran scheitern zu lassen.
 		}
 	}
-	return { invite, neu, pair };
+	return { invite, neu };
 }

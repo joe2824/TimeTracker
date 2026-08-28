@@ -25,10 +25,13 @@ describe("anlegenLink", () => {
 		expect(anlegenLink("https://tracker.example.de")).toBe("https://tracker.example.de/?neu=1");
 	});
 
-	it("nimmt den Kopplungscode mit", () => {
-		// Damit der Browser den Rechner danach ohne Abtippen bestaetigen kann.
-		expect(anlegenLink("http://localhost:3000", "ABCDEFGHJKLM")).toBe(
-			"http://localhost:3000/?neu=1&pair=ABCDEFGHJKLM"
-		);
+	it("traegt den Kopplungscode NICHT mit", () => {
+		// Der Code ist der Abdruck des Geraeteschluessels und der einzige
+		// Anhaltspunkt, an dem ein Mensch den eigenen Rechner von einem
+		// untergeschobenen Vorgang unterscheidet. In einer Adresse landete er in
+		// der Chronik - und der Vergleich waere zur Formsache geworden, weil der
+		// Code schon im Feld stuende. Er wird abgetippt.
+		expect(anlegenLink("http://localhost:3000")).toBe("http://localhost:3000/?neu=1");
+		expect(anlegenLink("http://localhost:3000")).not.toContain("pair");
 	});
 });

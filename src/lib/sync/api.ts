@@ -324,11 +324,12 @@ export class Api {
 	pairStart(
 		publicKey: string,
 		label: string,
-		code: string
+		code: string,
+		claimHash: string
 	): Promise<{ code: string; expiresAt: number }> {
 		return this.#call("/api/pair/start", {
 			method: "POST",
-			body: JSON.stringify({ publicKey, label, code })
+			body: JSON.stringify({ publicKey, label, code, claimHash })
 		});
 	}
 
@@ -343,12 +344,17 @@ export class Api {
 		});
 	}
 
+	/** Das Geheimnis weist aus, nicht der Code - siehe createClaimSecret. */
 	pairClaim(
-		code: string
+		code: string,
+		claimSecret: string
 	): Promise<
 		{ pending: true } | { pending: false; userId: string; wrappedKey: string; deviceToken: string }
 	> {
-		return this.#call("/api/pair/claim", { method: "POST", body: JSON.stringify({ code }) });
+		return this.#call("/api/pair/claim", {
+			method: "POST",
+			body: JSON.stringify({ code, claimSecret })
+		});
 	}
 
 	/** Ein Geraet loesen. */

@@ -31,6 +31,7 @@ import {
 	importVaultKey,
 	normalizePairingCode,
 	pairingCode,
+	createClaimSecret,
 	toBase64,
 	unwrapForDevice,
 	vaultProof,
@@ -412,7 +413,13 @@ class AccountState {
 	// ---------- Koppeln: dieses Geraet ist neu ----------
 
 	/** Schritt 1: einen Kopplungscode holen. Nur im Speicher - ueberdauert keinen Neustart. */
-	#pairing: { pair: CryptoKeyPair; code: string; url: string } | null = null;
+	#pairing: {
+		pair: CryptoKeyPair;
+		code: string;
+		url: string;
+		/** Weist beim Abholen aus. Nur hier im Speicher, nie im Link, nie am Bildschirm. */
+		claimSecret: string;
+	} | null = null;
 
 	async startPairing(serverUrl: string, label: string): Promise<string> {
 		const url = serverUrl.replace(/\/+$/, "");
@@ -425,7 +432,12 @@ class AccountState {
 		// er ist dessen Abdruck (siehe pairingCode). Der Server bekommt ihn nur
 		// mitgeteilt und legt den Vorgang darunter ab.
 		const code = await pairingCode(roh);
-		const antwort = await api.pairStart(publicKey, label, code);
+
+		// Der Code ist zum Vergleichen da und steht deshalb offen herum. Das
+		// Abholen des Geraete-Tokens haengt an diesem Geheimnis, das dieses Geraet
+		// behaelt - sonst genuegte ein mitgelesener Code.
+		const { secret: claimSecret, hash: claimHash } = await createClaimSecret();
+		const antwort = await api.pairStart(publicKey, label, code, claimHash);
 
 		// Und was er zurueckgibt, muss dasselbe sein. Ein Server, der einen anderen
 		// Code herausgibt, brauchte ihn nur, um ihn auf den Bildschirm zu bekommen:
@@ -435,16 +447,16 @@ class AccountState {
 			throw new Error("Der Server hat einen anderen Kopplungscode zurückgegeben.");
 		}
 
-		this.#pairing = { pair, code, url };
+		this.#pairing = { pair, code, url, claimSecret };
 		return code;
 	}
 
 	/** Schritt 3: nachsehen, ob jemand bestaetigt hat. */
 	async checkPairing(): Promise<boolean> {
 		if (!this.#pairing) return false;
-		const { pair, code, url } = this.#pairing;
+		const { pair, code, url, claimSecret } = this.#pairing;
 		const api = new Api({ baseUrl: url, fetchFn: platformFetch });
-		const antwort = await api.pairClaim(code);
+		const antwort = await api.pairClaim(code, claimSecret);
 		if (antwort.pending) return false;
 
 		// Das Paket oeffnen - das kann nur dieses Geraet, mit seinem privaten

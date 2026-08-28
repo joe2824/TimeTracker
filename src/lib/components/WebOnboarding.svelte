@@ -21,7 +21,6 @@
 	import { linkParameter } from "$lib/invite";
 	import { onboardingOffen } from "$lib/onboarding.svelte";
 	import {
-		formatPairingCode,
 		isPairingCode,
 		isValidRecoveryPhrase,
 		normalizePairingCode
@@ -107,7 +106,6 @@
 	 * landet deshalb nur im Feld. Bestaetigt wird er von Hand - nachdem jemand ihn
 	 * mit dem Bildschirm des Rechners verglichen hat, der wirklich dazusoll.
 	 */
-	let codeVomLink = $state("");
 
 	/**
 	 * Ein Konto anlegen - ohne vorher nach einem Einladungscode zu fragen.
@@ -153,14 +151,6 @@
 		onboardingOffen.wert = true;
 		await account.linkWithSession(serverUrl, schluessel, angemeldeterName);
 
-		// Der Code aus dem Link kommt vorbereitet ins Feld - siehe codeVomLink.
-		// Reihenfolge: erst muss DIESER Browser am Konto haengen, sonst darf er
-		// ohnehin keinen fremden Kopplungscode bestaetigen.
-		const ausLinkCode = normalizePairingCode(vomLink.pair);
-		if (isPairingCode(ausLinkCode)) {
-			codeVomLink = ausLinkCode;
-			appCode = formatPairingCode(ausLinkCode);
-		}
 		schritt = "geraet";
 	}
 
@@ -175,7 +165,6 @@
 		try {
 			const label = await account.approvePairing(c);
 			appCode = "";
-			codeVomLink = "";
 			fertig();
 			toast.success(`„${label}" ist jetzt verknüpft.`);
 		} catch (e) {
@@ -342,10 +331,7 @@
 							</Button>
 							<p class="text-muted-foreground text-center text-xs">
 								Ein Klick, dann fragt dein Gerät nach Fingerabdruck, Gesicht oder PIN.
-								{#if vomLink.pair}
-									Den Kopplungscode aus dem Link bekommst du danach zum Bestätigen
-									vorgelegt.
-								{/if}
+								Danach trägst du den Kopplungscode ein, der auf dem Rechner steht.
 							</p>
 							<button
 								type="button"
@@ -437,43 +423,14 @@
 
 			<Card.Root class="w-full">
 				<Card.Content class="space-y-5 pt-6">
-					{#if codeVomLink}
-						<!-- Der Code kam aus dem Link und steht schon im Feld - bestaetigt ist
-						     er damit nicht. Der Vergleich mit dem Bildschirm des Rechners ist
-						     der einzige Schritt, der "mein eigener Rechner" von "ein Code, den
-						     mir jemand untergeschoben hat" unterscheidet. Deshalb steht hier,
-						     was ein Bestaetigen bedeutet. -->
-						<div
-							class="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-amber-700 dark:text-amber-300"
-						>
-							<p class="text-xs font-medium">Dieser Link hat einen Kopplungscode mitgebracht:</p>
-							<p class="font-mono text-lg font-semibold tracking-[0.2em]">
-								{formatPairingCode(codeVomLink)}
-							</p>
-							<p class="text-xs">
-								Vergleiche ihn mit dem Code, der auf dem Rechner steht, den du verknüpfen
-								willst. Ein bestätigter Code gibt diesem Gerät Zugriff auf alle deine
-								Zeiten – stimmt er nicht überein, leere das Feld.
-							</p>
-						</div>
-					{/if}
-
 					<div class="space-y-2">
-						<p class="text-sm font-medium">
-							{#if codeVomLink}
-								Rechner verknüpfen
-							{:else}
-								Hast du TimeTracker schon auf dem Rechner?
-							{/if}
-						</p>
+						<p class="text-sm font-medium">Hast du TimeTracker schon auf dem Rechner?</p>
+						<!-- Der Code steht drueben auf dem Bildschirm und wird hier abgetippt.
+						     Genau dieses Abtippen ist die Pruefung: es gibt keinen Weg, auf dem
+						     ein fremder Code unbemerkt in dieses Feld kaeme. -->
 						<Label for="appcode" class="text-muted-foreground text-xs font-normal">
-							{#if codeVomLink}
-								Der Code aus dem Link steht unten. Bestätige ihn, sobald er mit dem auf dem
-								Rechner übereinstimmt.
-							{:else}
-								Dann dort unter Einstellungen → Konto den Kopplungscode anzeigen lassen und
-								hier eintragen.
-							{/if}
+							Dort steht der Kopplungscode – beim Verknüpfen oder unter Einstellungen →
+							Konto. Trag ihn hier ein.
 						</Label>
 						<div class="flex gap-2">
 							<Input

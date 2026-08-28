@@ -40,6 +40,19 @@ function apiVon(token: string | null, path: string, init: RequestInit = {}) {
 	});
 }
 
+// Das Abhol-Geheimnis. Es entsteht auf dem neuen Geraet und bleibt dort; der
+// Server sieht nur den Hash. Der Code darf sichtbar sein - das Geheimnis nicht,
+// und genau das trennt "abholen duerfen" von "den Code kennen".
+const SECRET = "geheim-abholen";
+const SECRET_HASH = hashSecret(SECRET);
+
+/** Schritt 1, mit allem was der Server heute verlangt. */
+const startBody = (publicKey: string, label: string, code: string, hash = SECRET_HASH) =>
+	JSON.stringify({ publicKey, label, code, claimHash: hash });
+
+/** Schritt 3, mit dem Ausweis. */
+const claimBody = (code: string, secret = SECRET) => JSON.stringify({ code, claimSecret: secret });
+
 const rec = (id: string, over: Record<string, unknown> = {}) => ({
 	id,
 	kind: "entry",
@@ -265,7 +278,7 @@ describe("Kopplung", () => {
 		const start = await (
 			await api(null, "/api/pair/start", {
 				method: "POST",
-				body: JSON.stringify({ publicKey: "b2VmZmVudGxpY2g=", label: "Handy", code: CODE })
+				body: startBody("b2VmZmVudGxpY2g=", "Handy", CODE)
 			})
 		).json();
 		expect(start.code).toBe(CODE);
@@ -274,7 +287,7 @@ describe("Kopplung", () => {
 		const frueh = await (
 			await api(null, "/api/pair/claim", {
 				method: "POST",
-				body: JSON.stringify({ code: start.code })
+				body: claimBody(start.code)
 			})
 		).json();
 		expect(frueh.pending).toBe(true);
@@ -292,7 +305,7 @@ describe("Kopplung", () => {
 		const claim = await (
 			await api(null, "/api/pair/claim", {
 				method: "POST",
-				body: JSON.stringify({ code: start.code })
+				body: claimBody(start.code)
 			})
 		).json();
 		expect(claim.pending).toBe(false);
@@ -307,14 +320,14 @@ describe("Kopplung", () => {
 		const start = await (
 			await api(null, "/api/pair/start", {
 				method: "POST",
-				body: JSON.stringify({ publicKey: "cHVi", label: "Handy", code: CODE })
+				body: startBody("cHVi", "Handy", CODE)
 			})
 		).json();
 		await api(annaToken, "/api/pair/approve", {
 			method: "POST",
 			body: JSON.stringify({ code: start.code, wrappedKey: "cGFrZXQ=" })
 		});
-		const body = JSON.stringify({ code: start.code });
+		const body = claimBody(start.code);
 		expect((await (await api(null, "/api/pair/claim", { method: "POST", body })).json()).pending).toBe(false);
 		expect((await api(null, "/api/pair/claim", { method: "POST", body })).status).toBe(404);
 	});
@@ -323,12 +336,101 @@ describe("Kopplung", () => {
 		const start = await (
 			await api(null, "/api/pair/start", {
 				method: "POST",
-				body: JSON.stringify({ publicKey: "cHVi", label: "Handy", code: CODE2 })
+				body: startBody("cHVi", "Handy", CODE2)
 			})
 		).json();
 		const body = JSON.stringify({ code: start.code, wrappedKey: "cGFrZXQ=" });
 		expect((await api(annaToken, "/api/pair/approve", { method: "POST", body })).status).toBe(200);
 		expect((await api(bodoToken, "/api/pair/approve", { method: "POST", body })).status).toBe(409);
+	});
+
+	// ---- Der Code allein reicht nicht ----
+	//
+	// Der Kopplungscode ist der Abdruck des Geraeteschluessels. Er MUSS sichtbar
+	// sein, sonst kann ihn niemand vergleichen - er steht am Bildschirm und wird
+	// abgetippt. Als Ausweis beim Abholen taugt er damit nicht: wer ihn mitliest,
+	// bekaeme sonst das Geraete-Token. Den Tresor oeffnet er damit zwar nicht,
+	// aber er haette Zugang zu den versiegelten Datensaetzen - und der echte
+	// Vorgang waere abgeraeumt, weil das Abholen die Zeile loescht.
+
+	// apiVon statt api: jeder dieser Tests beginnt eigene Kopplungen, und der
+	// Bremseimer fuer /api/pair/start haengt an der Adresse. Ueber api() waere der
+	// Vorrat der uebrigen Tests aufgebraucht.
+	it("gibt ohne Abhol-Geheimnis nichts heraus", async () => {
+		const code = "AAAABBBBCCCC";
+		await apiVon(null, "/api/pair/start", { method: "POST", body: startBody("cHVi", "Handy", code) });
+		await api(annaToken, "/api/pair/approve", {
+			method: "POST",
+			body: JSON.stringify({ code, wrappedKey: "cGFrZXQ=" })
+		});
+
+		// Nur der Code - wie ihn jemand vom Bildschirm ablesen koennte.
+		const ohne = await apiVon(null, "/api/pair/claim", {
+			method: "POST",
+			body: JSON.stringify({ code })
+		});
+		expect(ohne.status).toBe(404);
+
+		// Und das Paket liegt noch da: der Fehlgriff hat den Vorgang nicht verbraucht.
+		const echt = await (
+			await apiVon(null, "/api/pair/claim", { method: "POST", body: claimBody(code) })
+		).json();
+		expect(echt.pending).toBe(false);
+		expect(echt.wrappedKey).toBe("cGFrZXQ=");
+	});
+
+	it("weist ein falsches Abhol-Geheimnis wie einen unbekannten Code ab", async () => {
+		// 404, nicht 403: eine eigene Antwort verriete, dass es diesen Vorgang
+		// gibt. So sieht Raten aus wie Raten - und die Bremse zaehlt es als
+		// Fehlgriff (siehe hooks.server.ts).
+		const code = "DDDDEEEEFFFF";
+		await apiVon(null, "/api/pair/start", { method: "POST", body: startBody("cHVi", "Handy", code) });
+		const falsch = await apiVon(null, "/api/pair/claim", {
+			method: "POST",
+			body: claimBody(code, "danebengeraten")
+		});
+		expect(falsch.status).toBe(404);
+	});
+
+	it("laesst kein fremdes Abhol-Geheimnis nachschieben", async () => {
+		// Der oeffentliche Schluessel ist ueber /api/pair/approve abfragbar. Wer ihn
+		// samt Code hat, duerfte sonst mit einem eigenen Geheimnis noch einmal
+		// starten und dem echten Geraet das Token wegnehmen.
+		const code = "GGGGHHHHJJJJ";
+		await apiVon(null, "/api/pair/start", { method: "POST", body: startBody("cHVi", "Handy", code) });
+
+		const fremd = await apiVon(null, "/api/pair/start", {
+			method: "POST",
+			body: startBody("cHVi", "Handy", code, hashSecret("meins"))
+		});
+		expect(fremd.status).toBe(409);
+
+		// Das echte Geheimnis gilt weiterhin.
+		await api(annaToken, "/api/pair/approve", {
+			method: "POST",
+			body: JSON.stringify({ code, wrappedKey: "cGFrZXQ=" })
+		});
+		const echt = await (
+			await apiVon(null, "/api/pair/claim", { method: "POST", body: claimBody(code) })
+		).json();
+		expect(echt.pending).toBe(false);
+	});
+
+	it("rechnet denselben Hash wie das Geraet", () => {
+		// Angenagelt, und derselbe Wert steht in src/lib/crypto/vault.test.ts.
+		// Rechnen Server und Geraet verschieden, koppelt gar nichts mehr - und
+		// zwar still, weil der Server dann einfach 404 antwortet.
+		expect(SECRET_HASH).toBe("38493643ffb2d864afda079804427ffd9224181468ba3dd5fcd018863d169da2");
+	});
+
+	it("beginnt keine Kopplung ohne Abhol-Geheimnis", async () => {
+		// Aeltere Fassungen der Anwendung schicken keinen mit. Der Vorgang wird
+		// abgewiesen, statt still auf die schwaechere Regel zurueckzufallen.
+		const r = await apiVon(null, "/api/pair/start", {
+			method: "POST",
+			body: JSON.stringify({ publicKey: "cHVi", label: "Alt", code: "KKKKLLLLMMMM" })
+		});
+		expect(r.status).toBe(400);
 	});
 
 	it("weist einen unbekannten Code ab", async () => {
@@ -350,12 +452,12 @@ describe("Kopplung", () => {
 		const code = "MMMMNNNNPPPP";
 		await api(null, "/api/pair/start", {
 			method: "POST",
-			body: JSON.stringify({ publicKey: "ZWNodA==", label: "Echt", code })
+			body: startBody("ZWNodA==", "Echt", code)
 		});
 
 		const fremd = await api(null, "/api/pair/start", {
 			method: "POST",
-			body: JSON.stringify({ publicKey: "ZmFsc2No", label: "Untergeschoben", code })
+			body: startBody("ZmFsc2No", "Untergeschoben", code)
 		});
 		expect(fremd.status).toBe(409);
 
@@ -368,7 +470,7 @@ describe("Kopplung", () => {
 		// Derselbe Schluessel ergibt denselben Code: ein zweiter Anlauf desselben
 		// Geraets landet zwangslaeufig auf demselben Vorgang.
 		const code = "RRRRSSSSTTTT";
-		const body = JSON.stringify({ publicKey: "d2llZGVy", label: "Handy", code });
+		const body = startBody("d2llZGVy", "Handy", code);
 		expect((await api(null, "/api/pair/start", { method: "POST", body })).status).toBe(200);
 		await api(annaToken, "/api/pair/approve", {
 			method: "POST",
@@ -378,7 +480,7 @@ describe("Kopplung", () => {
 
 		// Das hinterlegte Paket hat den zweiten Anlauf ueberlebt.
 		const claim = await (
-			await api(null, "/api/pair/claim", { method: "POST", body: JSON.stringify({ code }) })
+			await api(null, "/api/pair/claim", { method: "POST", body: claimBody(code) })
 		).json();
 		expect(claim.pending).toBe(false);
 		expect(claim.wrappedKey).toBe("cGFrZXQ=");
@@ -692,14 +794,14 @@ describe("Warten beim Koppeln", () => {
 		const code = "WWWWXXXXYYYY";
 		const gestartet = await api(null, "/api/pair/start", {
 			method: "POST",
-			body: JSON.stringify({ publicKey: "AAAA", label: "Wartendes Gerät", code })
+			body: startBody("AAAA", "Wartendes Gerät", code)
 		});
 		expect(gestartet.status).toBe(200);
 
 		for (let i = 0; i < 60; i++) {
 			const res = await api(null, "/api/pair/claim", {
 				method: "POST",
-				body: JSON.stringify({ code })
+				body: claimBody(code)
 			});
 			expect(res.status, `Anfrage ${i + 1}`).toBe(200);
 			expect((await res.json()).pending).toBe(true);

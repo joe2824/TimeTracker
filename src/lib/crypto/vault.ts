@@ -305,6 +305,28 @@ export function isPairingCode(code: string): boolean {
 	return code.length === CODE_LENGTH && [...code].every((c) => CODE_ALPHABET.includes(c));
 }
 
+/**
+ * Das Abhol-Geheimnis und sein Hash.
+ *
+ * Der Kopplungscode ist der Abdruck des Geraeteschluessels und muss sichtbar
+ * sein - ein Mensch soll ihn vergleichen. Als Ausweis beim Abholen taugt er
+ * damit nicht: wer ihn mitliest, holte sonst das Geraete-Token ab. Das
+ * Geheimnis bleibt deshalb hier im Speicher, zum Server geht nur sein Hash.
+ *
+ * Gehasht wird die ZEICHENKETTE, nicht die Bytes dahinter - der Server rechnet
+ * mit `createHash("sha256").update(secret)` genauso.
+ */
+export async function createClaimSecret(): Promise<{ secret: string; hash: string }> {
+	const secret = toBase64(crypto.getRandomValues(new Uint8Array(32)));
+	return { secret, hash: await sha256Hex(secret) };
+}
+
+/** SHA-256 einer Zeichenkette, hexadezimal - die Form, in der der Server ablegt. */
+export async function sha256Hex(text: string): Promise<string> {
+	const roh = new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(text)));
+	return [...roh].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 /** Der hinterlegte Schluessel - aber nur, wenn er zu diesem Code gehoert. */
 export async function checkedPairingKey(code: string, publicKeyBase64: string): Promise<Uint8Array> {
 	const roh = fromBase64(publicKeyBase64);

@@ -60,7 +60,11 @@
 		return capabilities.tray ? `Rechner (${p})` : `Browser (${p})`;
 	}
 
-	/** Kopplungscode holen und Browser direkt mit dem Code im Link oeffnen, statt ihn abtippen zu lassen. */
+	/**
+	 * Kopplungscode holen und den Browser oeffnen. Der Code bleibt HIER auf dem
+	 * Bildschirm stehen und wird drueben abgetippt - im Link haette er in der
+	 * Chronik gestanden, und der Vergleich waere zur Formsache geworden.
+	 */
 	async function losgehen() {
 		const url = serverUrl.trim();
 		if (!url) {
@@ -72,7 +76,7 @@
 			code = await account.startPairing(url, vorschlagName());
 			warten = true;
 			poll = setInterval(pruefen, 2000);
-			await openExternal(anlegenLink(url, code));
+			await openExternal(anlegenLink(url));
 		} catch (e) {
 			toast.error(fehlertext(e, "Konnte nicht beginnen"));
 		} finally {

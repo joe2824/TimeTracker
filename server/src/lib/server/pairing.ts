@@ -15,3 +15,16 @@ export function normalisiereCode(eingabe: unknown): string {
 export function istPairingCode(code: string): boolean {
 	return code.length === PAIRING_CODE_LENGTH && [...code].every((c) => ALPHABET.includes(c));
 }
+
+/**
+ * Laenge des Abhol-Geheimnisses als Hex-Hash (SHA-256).
+ *
+ * Geprueft wird nur die FORM. Was der Hash wert ist, entscheidet sich auf dem
+ * Geraet, das das Geheimnis wuerfelt - der Server sieht es nie.
+ */
+export const CLAIM_HASH_LENGTH = 64;
+
+/** Ob eine Zeichenkette die Form eines Abhol-Hashes hat. */
+export function istClaimHash(hash: string): boolean {
+	return hash.length === CLAIM_HASH_LENGTH && /^[0-9a-f]+$/.test(hash);
+}

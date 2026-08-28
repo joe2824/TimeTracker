@@ -105,7 +105,11 @@ const MIGRATIONS: string[] = [
 	`ALTER TABLE users ADD COLUMN vault_proof TEXT`,
 	// Eindeutig: zwei Konten mit derselben Kennung waeren zwei Konten mit
 	// derselben Phrase - das kann nicht sein und darf nicht entstehen.
-	`CREATE UNIQUE INDEX IF NOT EXISTS users_recovery ON users(recovery_id) WHERE recovery_id IS NOT NULL`
+	`CREATE UNIQUE INDEX IF NOT EXISTS users_recovery ON users(recovery_id) WHERE recovery_id IS NOT NULL`,
+	// Der Kopplungscode allein reicht nicht mehr zum Abholen: er ist der Abdruck
+	// des Geraeteschluessels, also zwangslaeufig sichtbar. Das Abhol-Geheimnis
+	// bleibt dagegen auf dem Geraet, das die Kopplung begonnen hat.
+	`ALTER TABLE pairings ADD COLUMN claim_hash TEXT`
 ];
 
 export type Db = ReturnType<typeof drizzle<typeof schema>>;
