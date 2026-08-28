@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
+	import { account } from "$lib/sync/account.svelte";
 	import { clockToMin } from "$lib/time";
 	import { scheduleReminders } from "$lib/reminders";
 	import { logInfo, logWarn } from "$lib/log";
@@ -117,8 +118,14 @@
 	}
 </script>
 
-<div class="bg-background fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-4">
-	<div class="w-full max-w-lg space-y-6">
+<!-- items-start + my-auto statt items-center: ein zentriertes Flex-Kind, das
+     hoeher ist als der Bildschirm, laesst sich nach oben nicht mehr scrollen -
+     der Anfang bleibt dann unerreichbar. So wird mittig zentriert, solange es
+     passt, und sonst von oben gescrollt. -->
+<div
+	class="bg-background fixed inset-0 z-50 flex items-start justify-center overflow-y-auto px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]"
+>
+	<div class="my-auto w-full max-w-lg space-y-6">
 		<div class="flex items-center justify-center">
 			<img src="/logo.svg" alt="TimeTracker" class="h-14 w-auto" />
 		</div>
@@ -257,15 +264,29 @@
 			{/each}
 		</div>
 
-		<!-- Kein „Überspringen“: wer den Assistenten wegklickt, sieht nie, was sich
-		     überhaupt einstellen lässt. Jeder Schritt lässt sich leer bestätigen. -->
-		<div class="flex items-center justify-end gap-2">
-			{#if step > 0}
-				<Button variant="outline" onclick={back} disabled={saving}>Zurück</Button>
+		<!-- Kein „Überspringen“: jeder Schritt laesst sich leer bestaetigen, aber
+		     wegklicken soll niemand koennen, ohne die Moeglichkeiten gesehen zu haben.
+
+		     Ausnahme nur hier: wer gerade ein Konto angelegt hat und ein Geraet
+		     koppeln will, hat seine Einstellungen schon - nur noch nicht lokal.
+		     Ausgefuellte Felder wuerden beim Zusammenfuehren mit frischem Zeitstempel
+		     gegen die echten Werte gewinnen. -->
+		<div class="flex items-center justify-between gap-2">
+			{#if account.linked}
+				<Button variant="ghost" onclick={() => app.dismissOnboarding()} disabled={saving}>
+					Meine Daten liegen auf einem anderen Gerät
+				</Button>
+			{:else}
+				<span></span>
 			{/if}
-			<Button onclick={next} disabled={saving}>
-				{step < STEPS - 1 ? "Weiter" : saving ? "Speichere…" : "Los geht's"}
-			</Button>
+			<div class="flex items-center gap-2">
+				{#if step > 0}
+					<Button variant="outline" onclick={back} disabled={saving}>Zurück</Button>
+				{/if}
+				<Button onclick={next} disabled={saving}>
+					{step < STEPS - 1 ? "Weiter" : saving ? "Speichere…" : "Los geht's"}
+				</Button>
+			</div>
 		</div>
 	</div>
 </div>

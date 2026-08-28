@@ -6,8 +6,8 @@ describe("mailtoFallback", () => {
 
 	it("kodiert Leerzeichen NICHT als +", () => {
 		// URLSearchParams macht "+" daraus (Formular-Kodierung); mailto nimmt das
-		// laut RFC 6068 wörtlich – der Betreff kam als
-		// "Stundenerfassung+Juli+2026+–+Anna+Klein" bei den Vorgesetzten an.
+		// laut RFC 6068 wörtlich - sonst kaeme der Betreff mit Pluszeichen statt
+		// Leerzeichen bei den Vorgesetzten an.
 		expect(M).not.toContain("+");
 		expect(M).toContain("Stundenerfassung%20Juli%202026");
 	});

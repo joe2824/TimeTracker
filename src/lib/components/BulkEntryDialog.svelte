@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
 	import { fmtDate, noonTs, parseClock, parseHours, startOfNextDay, toTs } from "$lib/time";
+	import { stepDate } from "$lib/time";
+	import { weekdayOfDate } from "$lib/tz";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
@@ -68,9 +70,9 @@
 		}
 		commitStart();
 		commitEnd();
-		const a = new Date(noonTs(von));
-		const b = new Date(noonTs(bis));
-		if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime()) || a > b) {
+		const a = noonTs(von);
+		const b = noonTs(bis);
+		if (Number.isNaN(a) || Number.isNaN(b) || a > b) {
 			toast.error("Ungültiger Datumsbereich.");
 			return;
 		}
@@ -91,9 +93,11 @@
 		}
 
 		let count = 0;
-		for (let d = new Date(a); d <= b; d.setDate(d.getDate() + 1)) {
-			if (!days.includes(d.getDay())) continue; // nur gewählte Wochentage
-			const date = fmtDate(d.getTime());
+		// Ueber Kalendertage laufen, nicht ueber Zeitstempel: an einer
+		// Sommerzeit-Grenze traefe eine 24-Stunden-Addition den Tag daneben, und die
+		// Wochentagspruefung haengt sonst an der Zone des Geraets statt der des Kontos.
+		for (let date = fmtDate(a); date <= fmtDate(b); date = stepDate(date, 1)) {
+			if (!days.includes(weekdayOfDate(date))) continue; // nur gewählte Wochentage
 			if (useTimes) {
 				const s = toTs(date, start);
 				let e = toTs(date, end);

@@ -53,7 +53,7 @@
 	import * as Table from "$lib/components/ui/table";
 	import ActivityCombobox from "$lib/components/ActivityCombobox.svelte";
 	import ProjectSplit from "$lib/components/ProjectSplit.svelte";
-	import * as Tooltip from "$lib/components/ui/tooltip";
+	import * as Popover from "$lib/components/ui/popover";
 	import FileSpreadsheetIcon from "@lucide/svelte/icons/file-spreadsheet";
 	import UploadIcon from "@lucide/svelte/icons/upload";
 	import LoaderCircleIcon from "@lucide/svelte/icons/loader-circle";
@@ -104,12 +104,7 @@
 	let activityFor = $state<Record<string, string>>({});
 	/** Zuordnung der Stunden JENSEITS der Stempelzeiten, Schluessel = Datum. */
 	let extraActivityFor = $state<Record<string, string>>({});
-	/**
-	 * Tage, die auf MEHRERE Projekte aufgeteilt werden, Schluessel = Datum.
-	 *
-	 * Liegt hier etwas, gilt es statt `activityFor`: der Tag wird beim Uebernehmen
-	 * entlang der Uhr in Bloecke je Projekt geschnitten.
-	 */
+	/** Tage, die auf MEHRERE Projekte aufgeteilt werden, Schluessel = Datum. */
 	let splitFor = $state<Record<string, Share[]>>({});
 	/** Der Verteilen-Bereich ist zugeklappt, bis jemand ihn braucht. */
 	let splitOpen = $state(false);
@@ -161,14 +156,7 @@
 		if (stored) void app.ensureMonth(stored.month).catch(() => {});
 	});
 
-	/**
-	 * Bilanz des gespeicherten Reports fuer die Ruhe-Ansicht der Karte.
-	 *
-	 * Erst wenn der Monat wirklich geladen ist: `monthEntries` liefert fuer einen
-	 * ungeladenen Monat `[]`, und die Karte meldete fuer den Bruchteil bis zum
-	 * Laden „23 Tage offen". Ein leerer, aber geladener Monat ist `[]` und damit
-	 * truthy – nur `undefined` heisst „noch nicht da".
-	 */
+	/** Bilanz des gespeicherten Reports fuer die Ruhe-Ansicht der Karte. */
 	const storedSummary = $derived(
 		stage === "idle" && stored && app.entriesByMonth[stored.month] ? summarize(stored) : null
 	);
@@ -193,10 +181,6 @@
 	/**
 	 * Monate, die sich hier direkt aufrufen lassen: die DIESER Person aus der
 	 * offenen Datei plus alles, was schon eingelesen auf der Platte liegt.
-	 *
-	 * In einem Team-Export deckt nicht jede Person jeden Monat ab; ein Monat aus
-	 * der Gesamtliste kann fuer die gewaehlte Person leer sein. Die gespeicherten
-	 * Monate kommen dazu, damit der Wechsel auch ohne offene Datei geht.
 	 */
 	const availableMonths = $derived.by(() => {
 		const set = new Set(reportMonths);
@@ -211,12 +195,7 @@
 
 	const fixable = $derived(rows.filter((r) => r.plan !== null && !r.day.alreadyFilled));
 	const picked = $derived(fixable.filter((r) => selected[r.day.date]));
-	/**
-	 * Angehakt UND zuordenbar.
-	 *
-	 * Ohne Aktivitaet gaebe es beim Uebernehmen nur eine Fehlermeldung je Tag –
-	 * seit die Auswahl leer startet, waere das der Normalfall statt der Ausnahme.
-	 */
+	/** Angehakt UND zuordenbar. */
 	const chosen = $derived(
 		picked.filter(
 			(r) =>
@@ -235,13 +214,7 @@
 		return Math.round(((relevant - summary.missing - summary.partial) / relevant) * 100);
 	});
 
-	/**
-	 * Vorschlag fuer die ungestempelten Stunden: die eingebaute Zeile „Others".
-	 *
-	 * Die gibt es in jedem Bestand (siehe #seedBuiltins) und sie ist genau dafuer
-	 * da – Zeit, die zu keinem Projekt gehoert. Fehlt sie wider Erwarten, bleibt
-	 * die Auswahl leer und der Nutzer waehlt selbst.
-	 */
+	/** Vorschlag fuer die ungestempelten Stunden: die eingebaute Zeile „Others". */
 	function othersActivity(): string {
 		return app.trackableActivities.find((a) => a.name === BUILTIN_OTHERS)?.id ?? "";
 	}
@@ -255,9 +228,8 @@
 		for (const { day, plan } of rows) {
 			// Schon Nachgetragenes nicht erneut anhaken – sonst entstuenden Dubletten.
 			sel[day.date] = plan !== null && !day.alreadyFilled;
-			// Bewusst leer: die meistgenutzte Aktivitaet als Vorschlag traf oft das
-			// falsche Projekt und wurde beim Durchklicken nicht bemerkt. Lieber
-			// einmal bewusst zuordnen – ueber „Alle Tage auf …" geht das in einem Zug.
+			// Bewusst leer: ein vorbelegter Vorschlag träfe oft das falsche Projekt,
+			// unbemerkt beim Durchklicken. „Alle Tage auf …" deckt den Sammelfall ab.
 			acts[day.date] = "";
 			extra[day.date] = others;
 		}
@@ -279,25 +251,13 @@
 		}
 	}
 
-	/**
-	 * Die ausgewaehlten Tage mit Zeitnachtrag – nur die lassen sich verteilen.
-	 *
-	 * Ohne Bloecke INNERHALB der Stempelzeiten gibt es nichts zu schneiden: solche
-	 * Tage haengen ganz an der Auswahl fuer die ungestempelten Stunden. Waeren sie
-	 * dabei, stuende in der Zeile eine leere Verteilung, die als zugeordnet zaehlt.
-	 */
+	/** Die ausgewaehlten Tage mit Zeitnachtrag – nur die lassen sich verteilen. */
 	const splittable = $derived(
 		picked.filter((r) => r.plan?.kind === "time" && r.plan.blocks.length > 0)
 	);
 	const splittableHours = $derived(splittable.reduce((s, r) => s + (r.plan?.hours ?? 0), 0));
 
-	/**
-	 * Die Anteile auf die ausgewaehlten Tage legen.
-	 *
-	 * "days": jeder Tag geht ganz an ein Projekt, die Anteile entscheiden nur, an
-	 * welches – das ergibt weniger Eintraege. "within": jeder Tag wird in sich
-	 * geschnitten, dafuer stimmt das Verhaeltnis an jedem einzelnen Tag.
-	 */
+	/** Die Anteile auf die ausgewaehlten Tage legen. */
 	function applySplit(shares: Share[], mode: SplitMode) {
 		if (shares.length === 0 || splittable.length === 0) return;
 		if (mode === "days") {
@@ -356,7 +316,7 @@
 			});
 			const person = report.people.find((p) => p.key === personKey);
 			if (person) await useReport(person.key, preferredMonth(person));
-			else stage = "review"; // Personenauswahl zeigen
+			else stage = "review";
 		} catch (e) {
 			stage = "idle";
 			parsed = null;
@@ -371,9 +331,6 @@
 	/**
 	 * Der Monat, mit dem der Abgleich startet: der aus der Einträge-Ansicht, wenn
 	 * die Datei ihn enthaelt, sonst der letzte darin.
-	 *
-	 * Ohne diesen Rueckfall stuende bei einer Datei, die den gerade gewaehlten
-	 * Monat nicht abdeckt, eine leere Tabelle da – ohne erkennbaren Grund.
 	 */
 	function preferredMonth(person: TimeReportPerson): string {
 		const months = monthsOf(person);
@@ -433,9 +390,6 @@
 	/**
 	 * Im Abgleich den Monat wechseln – aus der offenen Datei, wenn sie ihn kennt,
 	 * sonst aus dem gespeicherten Report.
-	 *
-	 * Nimmt die Eintraege-Ansicht mit (`month` ist gebunden): sonst zeigte die
-	 * Tabelle daneben weiter den alten Monat.
 	 */
 	async function switchMonth(target: string) {
 		if (!target || target === active?.month) return;
@@ -618,17 +572,7 @@
 		});
 	}
 
-	/**
-	 * Bloecke eines Vorschlags als Text: "08:00–12:00, 12:30–16:30".
-	 *
-	 * Die Tagesgrenze steht als "24:00" da, nicht als "00:00": minToClock()
-	 * rechnet modulo 24 h, und aus einem Block bis Mitternacht wurde damit in der
-	 * Vorschau "22:00–00:00" – gelesen als leerer oder rueckwaerts laufender
-	 * Zeitraum. Betroffen war nur der Text; gespeichert wird ueber tsAt(), das
-	 * Minute 1440 als Folgetag behandelt.
-	 *
-	 * Spaeter als 1440 endet kein Block: planFill() klemmt sein Fenster dort.
-	 */
+	/** Bloecke eines Vorschlags als Text: "08:00–12:00, 12:30–16:30". */
 	function blockRanges(blocks: Interval[]): string {
 		const end = (min: number) => (min === 1440 ? "24:00" : minToClock(min));
 		return blocks.map((b) => `${minToClock(b.start)}–${end(b.end)}`).join(", ");
@@ -782,7 +726,6 @@
 		</Card.Content>
 
 	{:else if parsed && !personKey}
-		<!-- Team-Export: erst klaeren, um wen es geht. -->
 		<Card.Content class="space-y-3">
 			<p class="text-sm">Die Datei enthält mehrere Personen. Wessen Zeiten sollen abgeglichen werden?</p>
 			<div class="flex flex-wrap gap-2">
@@ -798,8 +741,7 @@
 
 	{:else if active && summary}
 		<Card.Content class="space-y-3 p-0">
-			<div class="space-y-3 px-6">
-				<!-- Kopfzeile: Monat, Person, Bilanz -->
+			<div class="space-y-3 px-4">
 				<div class="flex flex-wrap items-center justify-between gap-3">
 					<div class="flex flex-wrap items-center gap-2">
 						{#if availableMonths.length > 1}
@@ -884,7 +826,6 @@
 					</Alert.Root>
 				{/if}
 
-				<!-- Sammelaktionen -->
 				{#if fixable.length > 0}
 					<div class="flex flex-wrap items-center gap-2">
 						<Button variant="outline" size="sm" onclick={() => toggleAll(picked.length < fixable.length)}>
@@ -929,7 +870,6 @@
 			<!-- Bewusst ohne eigenen Scrollbereich: die Aktivitäts-Combobox klappt ihre
 			     Liste absolut positioniert auf, ein `overflow-y-auto` hier würde sie
 			     abschneiden. Die Seite scrollt stattdessen, die Fußzeile bleibt sichtbar. -->
-			<Tooltip.Provider>
 				<div class="border-y">
 					<Table.Root>
 						<Table.Header class="bg-background sticky top-0 z-10">
@@ -960,17 +900,28 @@
 										{#if day.report.flags.length > 0}
 											<span class="ml-1 inline-flex gap-1 align-middle">
 												{#each day.report.flags as f (f.key)}
-													<Tooltip.Root>
-														<Tooltip.Trigger>
+													<!-- Popover statt Tooltip: das Kuerzel sagt allein nichts, und
+													     am Hover haengend war die Erklaerung auf dem Handy gar
+													     nicht zu bekommen. -->
+													<Popover.Root>
+														<Popover.Trigger
+															class="focus-visible:ring-ring/50 cursor-pointer rounded-4xl align-middle outline-none transition-opacity hover:opacity-80 focus-visible:ring-3"
+															aria-label="{f.label} – erklären"
+														>
 															<Badge variant="outline" class="text-[10px] text-amber-700 dark:text-amber-300">
 																{f.label}
 															</Badge>
-														</Tooltip.Trigger>
-														<Tooltip.Content>
-															{FLAG_HINT[f.key] ?? f.label}
-															{#if f.value && f.value !== "X"}({f.value}){/if}
-														</Tooltip.Content>
-													</Tooltip.Root>
+														</Popover.Trigger>
+														<Popover.Content align="start" class="space-y-1.5">
+															<Badge variant="outline" class="text-amber-700 dark:text-amber-300">
+																{f.label}
+															</Badge>
+															<p class="text-muted-foreground text-xs leading-relaxed">
+																{FLAG_HINT[f.key] ?? f.label}
+																{#if f.value && f.value !== "X"}({f.value}){/if}
+															</p>
+														</Popover.Content>
+													</Popover.Root>
 												{/each}
 											</span>
 										{/if}
@@ -1070,8 +1021,7 @@
 												{/if}
 											</span>
 										{:else if day.status === "open"}
-											<!-- Nur „Kommen" gestempelt: der Tag ist in LOGA noch nicht fertig,
-											     ein Vergleich sagt hier noch nichts. -->
+											<!-- Tag in LOGA noch nicht fertig – ein Vergleich sagt hier noch nichts. -->
 											<span class="text-muted-foreground text-xs">
 												in LOGA nur „Kommen" gestempelt ({day.report.firstIn})
 											</span>
@@ -1080,16 +1030,14 @@
 										{:else if day.blockedByAbsence}
 											<span class="text-muted-foreground text-xs">Ganztags-Abwesenheit eingetragen</span>
 										{:else if day.looksLikeAbsence}
-											<!-- Urlaub/Feiertag laut LOGA, aber am Tag steht schon Projektzeit:
-											     ganztägige Abwesenheit und Projektzeit schließen sich aus. -->
+											<!-- Ganztägige Abwesenheit und Projektzeit schließen sich aus. -->
 											<span class="text-muted-foreground text-xs">
 												Urlaub/Feiertag – am Tag ist bereits Projektzeit erfasst
 											</span>
 										{:else if ruleMismatch(day)}
-											<!-- Die Stempelzeiten sind voll erfasst, es bleibt trotzdem eine
-											     Differenz: LOGA hat an diesem Tag anders abgezogen als die
-											     Hausregel (gestempelte Zusatzpause, Korrekturbuchung). Das
-											     lässt sich nicht auffüllen, ohne Anwesenheit zu erfinden. -->
+											<!-- LOGA hat an diesem Tag anders abgezogen als die Hausregel
+											     (gestempelte Zusatzpause, Korrekturbuchung) – laesst sich nicht
+											     auffuellen, ohne Anwesenheit zu erfinden. -->
 											<span class="text-muted-foreground text-xs">
 												LOGA zieht hier {fmtHoursClock(breakHours(day.report))} h Pause ab statt
 												{fmtHoursClock(ruleBreakHours(grossHours(day.report)))} h – Stempelzeiten sind
@@ -1104,10 +1052,9 @@
 						</Table.Body>
 					</Table.Root>
 				</div>
-			</Tooltip.Provider>
 
 			<!-- Bleibt beim Scrollen der langen Tabelle erreichbar. -->
-			<div class="bg-card sticky bottom-0 flex justify-end gap-2 border-t px-6 py-3">
+			<div class="bg-card sticky bottom-0 flex justify-end gap-2 border-t px-4 py-3">
 				<Button variant="outline" onclick={close} disabled={applying}>Schließen</Button>
 				<Button onclick={apply} disabled={applying || chosen.length === 0}>
 					{#if applying}<LoaderCircleIcon class="size-4 animate-spin" />{/if}

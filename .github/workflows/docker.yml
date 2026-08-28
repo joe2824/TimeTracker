@@ -1,0 +1,294 @@
+name: Docker
+
+# Das Server-Abbild. Eigener Ablauf, nicht im Release-Job: der baut auf Windows
+# fuer die Desktop-Anwendung, und ein Docker-Abbild gehoert auf einen Linux-Laeufer.
+on:
+  push:
+    tags:
+      - 'v*'
+  # Woechentlich dasselbe Abbild noch einmal. Der Quelltext aendert sich dabei
+  # nicht - node:22-alpine schon: dort werden Luecken gestopft, und wer
+  # ghcr.io/...:latest zieht, soll den geflickten Unterbau bekommen, ohne dass
+  # jemand dafuer eine neue Version herausgeben muss.
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Welche Version neu bauen? Leer = neuester stabiler Tag.'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}-server
+
+jobs:
+  # Welcher Stand wird gebaut?
+  #
+  # Ein Tag-Push beantwortet das selbst. Der geplante Lauf und der von Hand
+  # gestartete laufen dagegen auf einem BRANCH - und dort waere die naheliegende
+  # Antwort die falsche: main enthaelt unveroeffentlichten Quelltext, und den als
+  # `:latest` auszuliefern, weil ein Grundabbild geflickt wurde, verteilt still
+  # etwas ganz anderes als einen Sicherheitsflicken. Gebaut wird deshalb immer
+  # ein Versions-Tag, notfalls derselbe wie beim letzten Mal.
+  ziel:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.w.outputs.tag }}
+      stabil: ${{ steps.w.outputs.stabil }}
+      gefunden: ${{ steps.w.outputs.gefunden }}
+      image: ${{ steps.w.outputs.image }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # ohne die Tags gibt es nichts auszuwaehlen
+
+      - name: Version auswaehlen
+        id: w
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TAG="${{ github.ref_name }}"
+          elif [ -n "${{ inputs.version }}" ]; then
+            TAG="${{ inputs.version }}"
+          else
+            # Betas sind ausgenommen: ein Neubau soll das ausliefern, was unter
+            # `:latest` steht, und dort steht nie eine Vorabversion.
+            TAG="$(git tag --list 'v*' --sort=-v:refname | grep -v -- '-beta' | head -1 || true)"
+          fi
+
+          if [ -z "$TAG" ] || ! git rev-parse -q --verify "refs/tags/$TAG^{commit}" >/dev/null; then
+            echo "::warning::Kein brauchbarer Versions-Tag (‚${TAG:-<leer>}‘) - nichts zu bauen."
+            echo "gefunden=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          case "$TAG" in
+            *-beta.*) STABIL=false ;;
+            *)        STABIL=true  ;;
+          esac
+
+          # ghcr.io nimmt nur Kleinbuchstaben. `docker/metadata-action` rechnet
+          # das von allein um, cosign und die Beglaubigung nicht - die bekommen
+          # den Namen woertlich und scheiterten an dem grossen T in TimeTracker.
+          #
+          # tr statt ${IMAGE,,}: die Klammerform gibt es erst ab bash 4, und ein
+          # "bad substitution" waere unter `set -e` ein stiller Abbruch.
+          IMAGE_LC="$(printf '%s' "$IMAGE" | tr '[:upper:]' '[:lower:]')"
+
+          {
+            echo "gefunden=true"
+            echo "tag=$TAG"
+            echo "stabil=$STABIL"
+            echo "image=$IMAGE_LC"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Gebaut wird $TAG (stabil: $STABIL) als $IMAGE_LC."
+
+  # Wie beim Release: ein rotes Testergebnis darf gar nicht erst zu einem Abbild
+  # fuehren, das jemand auf seinen Server zieht. Geprueft wird der Stand, der
+  # gleich gebaut wird - nicht main.
+  test:
+    needs: ziel
+    if: needs.ziel.outputs.gefunden == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.ziel.outputs.tag }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run server:check
+      - name: Server bauen (die Tests laufen gegen das Kompilat)
+        run: npm run server:build
+      - run: npm run server:test
+
+  build:
+    needs: [ziel, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Zum Schreiben in die GitHub-Registry.
+      packages: write
+      # Fuer die Herkunftsbeglaubigung und cosign: beide holen sich ueber OIDC
+      # ein kurzlebiges Zertifikat, statt einen Schluessel zu hinterlegen.
+      id-token: write
+      attestations: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.ziel.outputs.tag }}
+
+      # Fuer arm64: viele Heimserver sind Raspberry Pi oder ein ARM-Mini-PC.
+      # better-sqlite3 ist eine native Erweiterung und wird je Architektur
+      # uebersetzt - ohne diesen Schritt gaebe es nur ein x86-Abbild.
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Marken bestimmen
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ needs.ziel.outputs.image }}
+          # `value=` ist hier nicht schmueckendes Beiwerk: ohne die ausdrueckliche
+          # Angabe liest `type=semver` die Version aus github.ref - und auf einem
+          # Branch steht dort keine. Der geplante Lauf haette dann GAR keine
+          # Marke, und `build-push-action` bricht ohne Marke ab.
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.ziel.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.ziel.outputs.tag }}
+            type=raw,value=latest,enable=${{ needs.ziel.outputs.stabil == 'true' }}
+
+      - uses: docker/build-push-action@v6
+        id: push
+        with:
+          context: .
+          file: server/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Der ganze Zweck des woechentlichen Laufs. Ohne das bliebe das
+          # Grundabbild aus dem Zwischenspeicher stehen, und der Neubau lieferte
+          # denselben ungeflickten Unterbau noch einmal aus.
+          pull: true
+          # Stueckliste und Herkunft wandern als Anhaengsel mit in die Registry.
+          # Damit laesst sich spaeter beantworten, was in einem laufenden
+          # Container steckt, ohne ihn aufzumachen - und ob es von hier kommt.
+          sbom: true
+          provenance: mode=max
+          # Der Zwischenspeicher liegt in der Registry: ohne ihn uebersetzt jeder
+          # Lauf better-sqlite3 fuer beide Architekturen neu, und das dauert.
+          # Aendert sich node:22-alpine nicht, faellt der woechentliche Lauf
+          # dadurch auf denselben Digest zurueck und kostet fast nichts.
+          cache-from: type=registry,ref=${{ needs.ziel.outputs.image }}:buildcache
+          cache-to: type=registry,ref=${{ needs.ziel.outputs.image }}:buildcache,mode=max
+
+      # Beglaubigung von GitHub selbst - nachpruefbar mit
+      # `gh attestation verify oci://<abbild> --repo <repo>`.
+      - name: Herkunft beglaubigen
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ needs.ziel.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+      - uses: sigstore/cosign-installer@v3
+
+      # Signiert wird der Digest, nicht die Marke: `:latest` zeigt morgen
+      # woanders hin, der Digest bleibt genau dieses Abbild. Die Unterschrift
+      # deckt damit alle Marken ab, die auf ihn zeigen.
+      - name: Abbild signieren
+        env:
+          ZIEL: ${{ needs.ziel.outputs.image }}@${{ steps.push.outputs.digest }}
+        run: cosign sign --yes "$ZIEL"
+
+      - name: Zusammenfassung
+        env:
+          ZIEL: ${{ needs.ziel.outputs.image }}@${{ steps.push.outputs.digest }}
+          MARKEN: ${{ steps.meta.outputs.tags }}
+        run: |
+          {
+            echo "### Abbild veroeffentlicht"
+            echo
+            echo '```'
+            echo "$MARKEN"
+            echo '```'
+            echo
+            echo "Digest: \`${{ steps.push.outputs.digest }}\`"
+            echo
+            echo "Pruefen:"
+            echo '```bash'
+            echo "cosign verify $ZIEL \\"
+            echo "  --certificate-identity-regexp '^https://github.com/${{ github.repository }}/\\.github/workflows/docker\\.yml@' \\"
+            echo "  --certificate-oidc-issuer https://token.actions.githubusercontent.com"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Den Startbefehl an das Release haengen.
+  #
+  # Nur beim Tag-Push: der woechentliche Neubau aendert am Release nichts, der
+  # Abschnitt steht dort dann schon.
+  # Den Startbefehl an das Release haengen.
+  #
+  # Nur beim Tag-Push: der woechentliche Neubau aendert am Release nichts, der
+  # Abschnitt steht dort dann schon.
+  release-notiz:
+    needs: [ziel, build]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # Ohne ref: fuer einen Tag-Push ist der ausgeloeste Ref der Tag selbst -
+      # und damit dieselbe Vorlage, die zu dieser Version gehoert.
+      - uses: actions/checkout@v5
+
+      # release.yml legt das Release an, und das dauert: der Tauri-Bau laeuft auf
+      # Windows und braucht laenger als das Abbild. Deshalb warten statt scheitern.
+      - name: Auf das Release warten
+        id: warten
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.ziel.outputs.tag }}
+        run: |
+          for i in $(seq 1 40); do
+            if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "da=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 45
+          done
+          # Kein Fehlschlag: das Abbild liegt in der Registry und ist benutzbar.
+          # Nur die Notiz fehlt, und die traegt niemand mit sich herum.
+          echo "::warning::Release $TAG ist nach 30 Minuten nicht da - Abschnitt entfaellt."
+          echo "da=false" >> "$GITHUB_OUTPUT"
+
+      - name: Startbefehl anhaengen
+        if: steps.warten.outputs.da == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.ziel.outputs.tag }}
+          IMAGE_LC: ${{ needs.ziel.outputs.image }}
+        run: |
+          set -euo pipefail
+          BODY="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body -q .body)"
+
+          # Die Marke im Text macht den Schritt wiederholbar: ein zweiter Lauf
+          # desselben Tags haengt den Abschnitt sonst ein zweites Mal an.
+          case "$BODY" in
+            *'<!-- docker-quickstart -->'*)
+              echo "Abschnitt steht schon im Release."
+              exit 0
+              ;;
+          esac
+
+          # Der Text liegt als Vorlage daneben - im Ablauf selbst waere er ein
+          # Heredoc in einem YAML-Blockskalar, und jede Zeile ohne Einrueckung
+          # bricht dort aus dem Block aus.
+          sed -e "s|{{IMAGE}}|${IMAGE_LC}|g" \
+              -e "s|{{VERSION}}|${TAG#v}|g" \
+              -e "s|{{REPO}}|${GITHUB_REPOSITORY}|g" \
+              .github/release-docker.md > abschnitt.md
+
+          { printf '%s\n\n' "$BODY"; cat abschnitt.md; } > notiz.md
+
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notiz.md
+          echo "Startbefehl an $TAG angehaengt."

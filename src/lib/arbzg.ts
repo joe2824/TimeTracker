@@ -1,18 +1,6 @@
 // Arbeitszeit-Check nach dem Arbeitszeitgesetz (ArbZG).
 //
-// Der Schwerpunkt liegt auf § 3 Abs. 1 Satz 2: acht Stunden werktaeglich im
-// DURCHSCHNITT ueber 24 Wochen. Das ist die Grenze, in die man hineinlaeuft,
-// ohne es zu merken – jeder einzelne Tag darf ja bis zu zehn Stunden haben, und
-// erst die Summe ueber ein halbes Jahr kippt.
-//
-// Entscheidend und leicht zu uebersehen: das Fenster ROLLT. Alte schwere Tage
-// fallen hinten heraus, waehrend vorne neue hineinlaufen. Der Schnitt steigt
-// deshalb nicht monoton, er hat einen Verlauf mit Bergen und Taelern. Eine
-// Prognose muss ihn Tag fuer Tag simulieren; eine Hochrechnung "aktueller
-// Schnitt plus X" waere schlicht falsch.
-//
 // Was hier NICHT geprueft wird und warum:
-//
 // - Ruhepausen (§ 4) nur, wenn der automatische Pausenabzug abgeschaltet ist.
 //   Ist er an, rechnet die App wie LOGA und zieht die Pause ohnehin ab – ein
 //   Timer, der ueber die Mittagspause durchlaeuft, duerfte dann keinen Verstoss
@@ -22,9 +10,8 @@
 //   Rechnung.
 // - Nachtarbeit (§ 6) und Ersatzruhetage (§ 11) – fuer Bueroarbeit totes Gewicht.
 //
-// Und die Grenze der Datenlage, die jede Ausgabe traegt: erfasst werden
-// PROJEKTZEITEN, keine Stempelzeiten. Das Ergebnis ist eine Annahme, kein
-// Nachweis; massgeblich bleibt die Zeiterfassung des Arbeitgebers.
+// Gerechnet wird auf PROJEKTZEITEN, nicht auf Stempelzeiten: eine Annahme, kein
+// Nachweis. Massgeblich bleibt die Zeiterfassung des Arbeitgebers.
 import type { Entry } from "./types";
 import { dayWorkHours } from "./stats";
 import {
@@ -32,11 +19,11 @@ import {
 	fmtDateHuman,
 	fmtHoursClock,
 	isWorkday,
-	monthKey,
 	noonTs,
 	openEntryUntil,
 	stepDate
 } from "./time";
+import { weekdayOfDate } from "./tz";
 
 /** Werktaegliche Regelarbeitszeit (§ 3 Abs. 1 Satz 1). */
 export const NORM_DAILY = 8;
@@ -51,34 +38,11 @@ export const RISK_REST_HOURS = 11.5;
 /**
  * Wie weit der Schnitt ueber acht Stunden liegen muss, damit es als
  * Ueberschreitung gilt – drei Minuten je Werktag.
- *
- * Ohne diese Toleranz wird die Aussage unbrauchbar, sobald die Kurve die
- * Schwelle streift: derselbe Verlauf meldet dann mal "in 6 Tagen", mal "in 12
- * Wochen", je nachdem, an welcher Delle er die 8 zuerst kratzt. Ein Fenster von
- * 120 Werktagen verschiebt schon ein einziger halber Arbeitstag um diese
- * Groessenordnung – eine auf den Tag genaue Prognose gibt die Datenlage dort
- * nicht her, und so eine Zahl zu nennen ist schlimmer als keine.
  */
 export const AVG_TOLERANCE = 0.05;
 /** Ausgleichszeitraum: 24 Wochen (§ 3 Abs. 1 Satz 2). */
 export const AVG_WINDOW_DAYS = 168;
-/**
- * Referenzzeitraum, aus dem das "aktuelle Tempo" abgeleitet wird.
- *
- * Zwei Drittel des Ausgleichszeitraums. Bewusst traege: der Umkehrpunkt liegt
- * bei normaler Arbeit Monate voraus, es ist also reichlich Zeit gegenzusteuern,
- * und dann waere ein nervoeser Massstab der falsche. Vier Wochen schlagen schon
- * bei zwei zufaellig langen Wochen aus; auf ein halbes Jahr hochgerechnet wird
- * daraus eine Warnung, die sich von selbst wieder erledigt – und wer die zweimal
- * gesehen hat, sieht die dritte nicht mehr an.
- *
- * Die Kehrseite, offen gesagt: je naeher der Bezugszeitraum an die 24 Wochen
- * rueckt, desto mehr naehert sich das Tempo dem Fensterschnitt SELBST an. Die
- * Prognose wird dadurch flacher und sagt im Grenzfall nur noch "so wie bisher
- * bleibt es, wie es ist" – frueh warnen kann sie dann nicht mehr. Deshalb sind
- * 4, 8 und 12 Wochen in der Karte weiterhin waehlbar; wer den Verdacht hat,
- * gerade laufe eine heisse Phase, sieht dort den ungeglaetteten Stand.
- */
+/** Referenzzeitraum, aus dem das "aktuelle Tempo" abgeleitet wird. */
 export const DEFAULT_PACE_WEEKS = 16;
 /**
  * So viele Arbeitstage muss der Bezugszeitraum mindestens hergeben, sonst wird
@@ -88,42 +52,14 @@ export const MIN_PACE_DAYS = 5;
 /**
  * So viele kuenftige Arbeitstage muss ein Fenster enthalten, damit es das
  * hoechste vertraegliche Tempo mitbestimmt.
- *
- * Ohne diese Schranke gewinnt immer das Fenster, das morgen endet: dort steht
- * genau EIN kuenftiger Arbeitstag im Nenner, und das gesamte Restbudget des
- * Fensters faellt auf ihn. Bei einem Schnitt von 7:59 kommt so "hoechstens
- * 5:37 h je Arbeitstag" heraus – rechnerisch richtig fuer diesen einen Tag,
- * als Tempo-Empfehlung aber Unsinn. Eine Empfehlung ueber ein Tempo braucht
- * einen Zeitraum, ueber den sie gilt; vier Wochen sind der kuerzeste, der das
- * traegt.
- *
- * Der Preis dafuer, offen gesagt: in den ersten vier Wochen kann der Schnitt
- * die Grenze streifen, obwohl man sich an die Empfehlung haelt – die Fenster
- * dort sind von bereits gearbeiteten Stunden bestimmt. Ueber sechzig zufaellige
- * Halbjahre gemessen lag die groesste Ueberschreitung bei elf Minuten; der Test
- * "haelt die Zusage von maxPace" deckelt sie bei einer Viertelstunde. Ab vier
- * Wochen gilt die Zusage ohne Einschraenkung.
  */
 export const MIN_FUTURE_WORKDAYS = 20;
 /**
  * So viele Wochen muss die Erfassung abdecken, damit ein Urteil ungefragt
  * angezeigt werden darf.
- *
- * Die Card darf immer rechnen – sie weist die Datenlage aus ("erst 16 von 24
- * Wochen") und wird bewusst aufgesucht. Ein Hinweis, der von sich aus aufpoppt,
- * darf das nicht: aus einem einzigen erfassten Monat mit langen Tagen entstuende
- * sonst ein rotes "Grenze bereits gerissen", das nur heisst, dass die uebrigen
- * fuenf Monate fehlen.
  */
 export const MIN_HINT_WEEKS = 8;
-/**
- * So viele Tage vor dem Umkehrpunkt wird zum Handeln aufgefordert.
- *
- * Ueber der Grenze zu liegen ist fuer sich genommen kein Notfall: das Fenster
- * rollt, und wer kuerzer tritt, holt es wieder ein. Dringend wird es erst, wenn
- * Kuerzertreten nicht mehr reicht – und davor braucht man Vorlauf, nicht die
- * Meldung selbst.
- */
+/** So viele Tage vor dem Umkehrpunkt wird zum Handeln aufgefordert. */
 export const EASE_OFF_LEAD_DAYS = 7;
 /** Wie weit die Prognose in die Zukunft rechnet. */
 export const DEFAULT_HORIZON_WEEKS = 26;
@@ -255,13 +191,6 @@ export interface Forecast {
 	/**
 	 * Der spaeteste Tag, an dem man anfangen kann herunterzugehen, ohne die
 	 * Grenze zu reissen – der Umkehrpunkt.
-	 *
-	 * Gerechnet wird der guenstigste Fall: bis zu diesem Tag im aktuellen Tempo,
-	 * danach gar nichts mehr. Wer spaeter anfaengt, bekommt den Schnitt im
-	 * Prognosezeitraum nicht mehr unter acht Stunden.
-	 *
-	 * Null, wenn es keinen braucht – dann traegt das Fenster das aktuelle Tempo
-	 * dauerhaft.
 	 */
 	easeOffDate: string | null;
 	/** Selbst ab sofort nichts mehr zu arbeiten wendet die Ueberschreitung nicht ab. */
@@ -275,10 +204,6 @@ export type VerdictLevel = "ok" | "warn" | "crit";
 /**
  * Das Ergebnis in der Form, in der es gelesen wird: erst die Stufe, dann vier
  * Woerter, dann die eine Zahl, auf die es ankommt.
- *
- * Frueher stand hier ein einzelner langer Satz. Der enthielt alles Noetige und
- * war trotzdem unbrauchbar: drei solche Saetze untereinander sind eine Wand,
- * und die Frage "muss ich etwas tun?" beantwortet keiner davon auf einen Blick.
  */
 export interface Verdict {
 	level: VerdictLevel;
@@ -289,12 +214,6 @@ export interface Verdict {
 	/**
 	 * Ist etwas zu TUN – also muesste man sp&uuml;rbar herunter, um das Fenster zu
 	 * halten?
-	 *
-	 * Getrennt von `level`, weil beides verschiedene Fragen beantwortet. Die Card
-	 * darf abgestuft zeigen, dass es eng wird; der Hinweis auf der Tracking-Seite
-	 * darf nur dann rufen, wenn Handeln noetig ist. Sonst steht dort dauerhaft
-	 * eine Warnung, die nichts von einem will – und dann wird auch die
-	 * ueberlesen, die etwas will.
 	 */
 	requiresAction: boolean;
 }
@@ -328,37 +247,21 @@ export interface ArbZgResult {
 
 // ---------- Datenbeschaffung ----------
 
-/**
- * Die Monate, die fuer einen Stichtag geladen sein muessen.
- *
- * Zwoelf: das Ausgleichsfenster reicht 24 Wochen zurueck, die Verlaufskurve
- * fuer den Rueckblick noch einmal so weit.
- *
- * Steht hier und nicht in der Oberflaeche, weil zwei Ansichten dieselbe Liste
- * brauchen – die Card im Bericht und der Hinweis auf der Tracking-Seite. Zwei
- * Kopien wuerden irgendwann auseinanderlaufen, und die Abweichung faellt
- * niemandem auf: es fehlten einfach still ein paar Wochen im Schnitt.
- */
+/** Die Monate, die fuer einen Stichtag geladen sein muessen. */
 export function arbzgMonths(until: string): string[] {
 	const [y, m] = until.split("-").map(Number);
 	const out: string[] = [];
-	for (let i = 11; i >= 0; i--) out.push(monthKey(new Date(y, m - 1 - i, 1).getTime()));
+	// Ueber Monatszahlen rechnen, nicht ueber Zeitstempel: eine lokale
+	// Date-Konstruktion haengt an der Zone des Geraets und verschob den ersten
+	// Monat des Fensters je nach Standort um einen.
+	for (let i = 11; i >= 0; i--) {
+		const idx = (y * 12 + (m - 1)) - i;
+		out.push(`${Math.floor(idx / 12)}-${String((idx % 12) + 1).padStart(2, "0")}`);
+	}
 	return out;
 }
 
-/**
- * Ab wann die Daten als belastbar gelten: der fruehest ERFASSTE Tag.
- *
- * Ein Monat ohne Datei ist von einem Monat ohne Eintraege nicht zu
- * unterscheiden, deshalb faengt die Rechnung erst dort an, wo nachweislich
- * erfasst wurde.
- *
- * Bewusst der Tag und nicht der Monatserste: wer am 20. mit dem Erfassen
- * anfaengt, haette sonst neunzehn erfundene Null-Stunden-Werktage im Nenner.
- * Bei zehn Stunden am Tag drueckt das den Schnitt von 10:00 auf 6:59 – aus
- * einem klaren Verstoss wird eine Beruhigung, und zwar genau in dem Monat, in
- * dem jemand anfaengt hinzusehen.
- */
+/** Ab wann die Daten als belastbar gelten: der fruehest ERFASSTE Tag. */
 export function dataFromEntries(entries: Entry[], fallback: string): string {
 	let earliest: string | null = null;
 	for (const e of entries) {
@@ -370,13 +273,7 @@ export function dataFromEntries(entries: Entry[], fallback: string): string {
 
 // ---------- Tagesdaten ----------
 
-/**
- * Die Eintraege zu Tagesdaten verdichten.
- *
- * Die Stunden kommen aus dayWorkHours() – dieselbe Rechnung, die auch Bericht
- * und Auswertung benutzen. Steht hier eine andere Zahl als dort, ist eine von
- * beiden falsch; das darf gar nicht erst moeglich sein.
- */
+/** Die Eintraege zu Tagesdaten verdichten. */
 export function dayFacts(
 	entries: Entry[],
 	absenceIds: Set<string>,
@@ -398,7 +295,7 @@ export function dayFacts(
 				firstStart: null,
 				lastEnd: null,
 				absenceFraction: 0,
-				weekday: new Date(noonTs(date)).getDay(),
+				weekday: weekdayOfDate(date),
 				pauseMinutes: null,
 				longestStretch: null
 			};
@@ -450,10 +347,6 @@ export function dayFacts(
 /**
  * Spannen sortieren und alles zusammenziehen, was weniger als 15 Minuten
  * auseinanderliegt.
- *
- * Nach § 4 Satz 2 zaehlt eine Unterbrechung erst ab 15 Minuten als Pause. Zwei
- * Luecken von je zehn Minuten sind also keine zwanzig Minuten Pause, sondern
- * gar keine – und der Block dazwischen laeuft fuer § 4 Satz 3 durch.
  */
 function mergeSpans(list: { start: number; end: number }[]): { start: number; end: number }[] {
 	const sorted = [...list].sort((a, b) => a.start - b.start);
@@ -474,11 +367,6 @@ function mergeSpans(list: { start: number; end: number }[]): { start: number; en
 /**
  * Eine luechenlose Datumsachse von `from` bis `to` mit allem, was die
  * Fensterrechnung braucht.
- *
- * Luechenlos, weil ein Fenster ueber Kalendertage laeuft, nicht ueber erfasste
- * Tage: ein Tag ohne jede Erfassung ist ein Werktag mit null Stunden und
- * gehoert in den Nenner. Wuerde man nur ueber die vorhandenen Tage laufen,
- * saehe ein Monat Urlaub aus wie ein Monat Vollzeit.
  */
 interface Axis {
 	dates: string[];
@@ -509,7 +397,7 @@ function buildAxis(
 
 	for (const date of dates) {
 		const noon = noonTs(date);
-		const weekday = new Date(noon).getDay();
+		const weekday = weekdayOfDate(date);
 		const isPlanWorkday = isWorkday(noon, opts.workdays);
 		const future = date > opts.until;
 		// Vor dem Beginn der Datenbasis traegt ein Tag NICHTS bei – weder Stunden
@@ -527,12 +415,6 @@ function buildAxis(
 			continue;
 		}
 		// Abwesenheit zaehlt nur an ARBEITSTAGEN.
-		//
-		// Urlaub am Samstag gibt es nicht; report.ts ignoriert Abwesenheiten an
-		// Nicht-Arbeitstagen aus demselben Grund ausdruecklich. In der
-		// gesetzlichen Lesart ist der Samstag aber ein Werktag – ohne diese Regel
-		// hat ein versehentlich dorthin gebuchter Urlaubstag echtes Budget
-		// vernichtet und den Schnitt gehoben, ohne dass irgendwo Stunden dazukamen.
 		const absence = future || !isPlanWorkday ? 0 : (f?.absenceFraction ?? 0);
 		// Sonntag ist kein Werktag; gearbeitete Sonntagsstunden zaehlen trotzdem
 		// im Zaehler – die vorsichtige Seite.
@@ -549,19 +431,7 @@ function buildAxis(
 	};
 }
 
-/**
- * Die Zeitachse samt allen Praefixsummen – einmal aufgebaut.
- *
- * Frueher baute jede Rechnung ihre eigene: zwei Fenster, ein bis zwei
- * Tempo-Messungen, zwei Prognosen, also sechs Achsen je Durchlauf. Jede kostet
- * ueber 500 Tage hinweg ein paar tausend Date-Objekte, und die Prognoseachse ist
- * ohnehin die weiteste – sie enthaelt alle anderen als Ausschnitt. Es genuegt
- * also, sie einmal zu bauen und mit Indexgrenzen zu arbeiten.
- *
- * Die Funktionen nehmen sie als optionalen letzten Parameter und bauen sich
- * sonst selbst eine. So bleiben sie einzeln aufrufbar (und einzeln testbar),
- * ohne dass der gemeinsame Weg sechsmal dasselbe tut.
- */
+/** Die Zeitachse samt allen Praefixsummen – einmal aufgebaut. */
 export interface Prepared {
 	dates: string[];
 	todayIndex: number;
@@ -609,14 +479,7 @@ function range(pre: number[], lo: number, hi: number): number {
 
 // ---------- Ausgleichszeitraum ----------
 
-/**
- * Stand des 24-Wochen-Fensters zum Stichtag.
- *
- * Abwesenheiten fallen aus dem NENNER, nicht nur aus dem Zaehler: ein
- * Urlaubstag bringt kein Acht-Stunden-Budget mit. Anders gerechnet liesse sich
- * ein Ausgleich schlicht erurlauben, und die Warnung schwiege genau dann, wenn
- * sie gebraucht wird.
- */
+/** Stand des 24-Wochen-Fensters zum Stichtag. */
 export function avgWindow(
 	facts: Map<string, DayFacts>,
 	basis: AvgBasis,
@@ -651,19 +514,7 @@ function daysBetween(a: string, b: string): number {
 	return Math.round(ms / 86400000) + 1;
 }
 
-/**
- * Das aktuelle Tempo: Stunden je Arbeitstag der letzten `weeks` Wochen.
- *
- * Nenner sind die Arbeitstage abzueglich Abwesenheiten – wer zwei Wochen Urlaub
- * hatte, hat deshalb kein halbiertes Tempo. Die Frage lautet "wie viel arbeite
- * ich an einem Arbeitstag", nicht "wie viel arbeite ich im Kalender".
- *
- * Deckt der Bezugszeitraum zu wenige Arbeitstage ab, wird auf das volle
- * Ausgleichsfenster ausgewichen. Sonst faellt das Tempo nach vier Wochen Urlaub
- * auf null – der Nenner ist dann leer –, und die Prognose meldet ausgerechnet
- * dem, der bei 7:54 steht, "im gruenen Bereich, Luft 8:00 h je Arbeitstag".
- * Ein leerer Nenner ist keine Aussage ueber das Tempo, sondern ihr Fehlen.
- */
+/** Das aktuelle Tempo: Stunden je Arbeitstag der letzten `weeks` Wochen. */
 export function currentPace(
 	facts: Map<string, DayFacts>,
 	opts: { until: string; dataFrom: string; workdays: number[]; weeks?: number },
@@ -685,23 +536,7 @@ export function currentPace(
 
 // ---------- Prognose ----------
 
-/**
- * Den Verlauf des Schnitts in die Zukunft simulieren.
- *
- * Fuer jedes kuenftige Fensterende E gilt
- *
- *   schnitt(E) = (bekannte Stunden im Fenster + p * kuenftige Arbeitstage)
- *                / Budgettage im Fenster
- *
- * Daraus faellt das hoechste noch vertraegliche Tempo direkt heraus, ohne
- * Suche: aus schnitt(E) <= 8 wird
- *
- *   p <= (8 * Budgettage - bekannte Stunden) / kuenftige Arbeitstage
- *
- * und das Minimum ueber alle E ist die Antwort. Ein Fenster ohne kuenftige
- * Arbeitstage laesst sich durch kein p mehr beeinflussen – so eines ist
- * entweder schon gerissen oder unkritisch, und das wird getrennt gemeldet.
- */
+/** Den Verlauf des Schnitts in die Zukunft simulieren. */
 export function forecast(
 	facts: Map<string, DayFacts>,
 	basis: AvgBasis,
@@ -777,9 +612,6 @@ export function forecast(
 	/**
 	 * Der Schnitt eines Fensters, wenn nur bis `stopIndex` im aktuellen Tempo
 	 * gearbeitet wird und danach gar nicht mehr.
-	 *
-	 * Kein Neuaufbau der Summen noetig: `w` zaehlt die kuenftigen Arbeitstage,
-	 * und es genuegt, den Zaehlbereich am Aufhoertag abzuschneiden.
 	 */
 	const atWithStop = (i: number, stopIndex: number): number | null => {
 		const lo = i - (AVG_WINDOW_DAYS - 1);
@@ -814,32 +646,12 @@ export function forecast(
 			else hi = mid;
 		}
 		// Auf den letzten ARBEITSTAG zurueckgehen.
-		//
-		// Die Halbierung liefert den letzten Kalendertag, der noch traegt – und der
-		// faellt gern auf einen Sonntag, weil ein arbeitsfreier Tag am Ergebnis
-		// nichts aendert und deshalb genauso "haelt" wie der Freitag davor. Als
-		// Ansage taugt das nicht: "bis Sonntag kannst du so weitermachen" heisst
-		// in Wahrheit "bis Freitag". Gemeint ist der letzte Tag, an dem noch
-		// gearbeitet wird, also wird bis dorthin zurueckgegangen.
 		let i = Math.max(axis.todayIndex, lo);
 		while (i > axis.todayIndex && !isWorkday(noonTs(axis.dates[i]), opts.workdays)) i--;
 		easeOffDate = axis.dates[i];
 	}
 
-	/**
-	 * Ab wann traegt das Fenster wieder, selbst ohne jede weitere Stunde?
-	 *
-	 * Gefragt ist der Tag NACH der letzten Ueberschreitung, nicht der erste Tag
-	 * unterhalb der Grenze: der kann heute sein, waehrend der Schnitt in vier
-	 * Wochen noch einmal darueber geht, weil ein leerer Tag hinten aus dem
-	 * Fenster faellt.
-	 *
-	 * Gerechnet wird gegen dieselbe Schwelle wie das Urteil. Vorher stand hier
-	 * die nackte Acht: bei einem Schnitt zwischen 8:00 und 8:03 entstand dadurch
-	 * ein Datum, das keine Stufe je benutzte, und im Fall "nicht mehr
-	 * aufzuhalten" fehlte es umgekehrt genau dann, wenn der Schnitt heute noch
-	 * unter der Toleranz lag.
-	 */
+	/** Ab wann traegt das Fenster wieder, selbst ohne jede weitere Stunde? */
 	const limit = NORM_DAILY + AVG_TOLERANCE;
 	let lastOver = -1;
 	for (let i = axis.todayIndex; i < axis.dates.length; i++) {
@@ -878,16 +690,7 @@ export function forecast(
 	};
 }
 
-/**
- * Aus der Rechnung ein Urteil machen.
- *
- * Dringlichkeit bemisst sich an der UMKEHRBARKEIT, nicht daran, ob die Grenze
- * gerade ueberschritten ist. Ein paar Minuten ueber acht Stunden sind kein
- * Notfall – das Fenster rollt, und wer kuerzer tritt, holt es wieder ein. Ernst
- * wird es, wenn Kuerzertreten nicht mehr reicht. Deshalb steuert der
- * Umkehrpunkt die Stufen und nicht der aktuelle Schnitt: gewarnt wird eine Woche
- * vorher, nicht monatelang davor.
- */
+/** Aus der Rechnung ein Urteil machen. */
 function makeVerdict(f: {
 	until: string;
 	pace: number;
@@ -978,11 +781,7 @@ function makeVerdict(f: {
 // ---------- Tagesbefunde ----------
 
 
-/**
- * Die Tagesregeln pruefen.
- *
- * `deductBreaks` schaltet § 4 ab – die Begruendung steht im Dateikopf.
- */
+/** Die Tagesregeln pruefen. */
 export function dayFindings(
 	facts: Map<string, DayFacts>,
 	opts: { from: string; to: string; deductBreaks: boolean }
@@ -1062,9 +861,8 @@ export function dayFindings(
 /**
  * Der komplette Check fuer die Oberflaeche.
  *
- * `entries` darf ruhig mehr als den betrachteten Monat enthalten – fuer das
- * Ausgleichsfenster MUSS es das sogar, sonst steht `complete` auf false und die
- * Prognose ist nur ein Anhaltspunkt.
+ * `entries` MUSS mehr als den betrachteten Monat enthalten - sonst steht `complete`
+ * auf false und die Prognose ist nur ein Anhaltspunkt.
  */
 export function checkArbZg(entries: Entry[], opts: ArbZgOptions): ArbZgResult {
 	const facts = dayFacts(entries, opts.absenceIds, {

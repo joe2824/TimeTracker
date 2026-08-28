@@ -6,8 +6,24 @@ import tailwindcss from "@tailwindcss/vite";
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
-export default defineConfig(async () => ({
+export default defineConfig(async ({ command }) => ({
   plugins: [tailwindcss(), sveltekit()],
+
+  // Der voreingestellte Server, beim Bauen eingesetzt.
+  //
+  // Ueber `define` und nicht ueber import.meta.env: Vite reicht nur Variablen mit
+  // VITE_-Praefix an den Client durch, damit keine Server-Geheimnisse im Bundle
+  // landen. Diese eine Adresse ist kein Geheimnis - sie hier ausdruecklich
+  // einzusetzen ist genauer, als den Praefix-Schutz fuer alle aufzuweichen.
+  define: {
+    // Im Entwicklungsmodus zeigt die Vorgabe auf den Server aus docker-compose:
+    // dort laeuft er beim Entwickeln, und ihn jedes Mal von Hand einzutippen ist
+    // ein Schritt, den niemand braucht. DEFAULT_SERVER sticht das aus, und
+    // eintragen laesst sich ohnehin jederzeit etwas anderes.
+    __DEFAULT_SERVER__: JSON.stringify(
+      process.env.DEFAULT_SERVER ?? (command === "serve" ? "http://localhost:3000" : ""),
+    ),
+  },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

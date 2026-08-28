@@ -1,9 +1,8 @@
-// Tauri doesn't have a Node.js server to do proper SSR
-// so we use adapter-static with a fallback to index.html to put the site in SPA mode
-// See: https://svelte.dev/docs/kit/single-page-apps
-// See: https://v2.tauri.app/start/frontend/sveltekit/ for more info
+// EINE Oberflaeche, zwei Ziele.
 import adapter from "@sveltejs/adapter-static";
 import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";
+
+const web = process.env.BUILD_TARGET === "web";
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
@@ -11,8 +10,14 @@ const config = {
   kit: {
     adapter: adapter({
       fallback: "index.html",
+      pages: web ? "build-web" : "build",
+      assets: web ? "build-web" : "build"
     }),
-  },
+    // Der Dienstmitarbeiter wird nur fuer die PWA gebaut. In der
+    // Desktop-Anwendung waere er ohne Nutzen und mit Ueberraschungen: sie laedt
+    // ohnehin aus dem eigenen Paket.
+    serviceWorker: { register: web }
+  }
 };
 
 export default config;

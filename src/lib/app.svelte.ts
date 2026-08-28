@@ -10,8 +10,10 @@ import {
 	noonTs,
 	prevMonthKey,
 	splitAtMidnight,
-	startOfNextDay
+	startOfNextDay,
+	stepDate
 } from "./time";
+import { setAppTimeZone, systemTimeZone, weekdayOfDate } from "./tz";
 import { dayConflict, overlapConflict } from "./conflicts";
 import { planBackdate, planNeedsConfirm, type BackdatePlan } from "./backdate";
 import { errorText, logDebug, logError, logInfo, logWarn } from "./log";
@@ -53,25 +55,13 @@ class AppState {
 	/** tickt jede Sekunde fuer Live-Dauer */
 	now = $state(Date.now());
 	loaded = $state(false);
-	/**
-	 * Woran der Start gerade arbeitet – der Ladebildschirm zeigt es an.
-	 *
-	 * Ohne diese Angabe blieb bei einem haengenden oder gescheiterten Start nur
-	 * ein ewiges "Laedt…" stehen: kein Schritt, keine Meldung, kein Weg weiter.
-	 * Genau in dem Zustand landete die App schon nach einem Update.
-	 */
+	/** Woran der Start gerade arbeitet – der Ladebildschirm zeigt es an. */
 	initStep = $state<string | null>(null);
 	/** Start gescheitert: Schritt und Meldung fuer den Ladebildschirm. */
 	initError = $state<{ step: string; message: string } | null>(null);
 	/** true = Willkommensbildschirm anzeigen (erster Start oder Dev-Re-Trigger) */
 	showOnboarding = $state(false);
-	/**
-	 * Versteckter Dev-Modus (ueber das Logo aktiviert).
-	 *
-	 * Liegt hier statt in der Einstellungs-Seite: die wird beim Vorfuehren des
-	 * Ladebildschirms kurz abgebaut, und danach waere das Dev-Menue jedes Mal
-	 * wieder zu.
-	 */
+	/** Versteckter Dev-Modus (ueber das Logo aktiviert). */
 	devMode = $state(false);
 	/**
 	 * Dev: den naechsten Startschritt scheitern lassen ("error") oder aufhalten
@@ -80,15 +70,7 @@ class AppState {
 	devFail = $state<{ step: string; mode: "error" | "hang" } | null>(null);
 	/** Cache: Monat "YYYY-MM" -> Eintraege */
 	entriesByMonth = $state<Record<string, Entry[]>>({});
-	/**
-	 * Zaehlt bei jeder Aenderung an den Eintragsdateien hoch.
-	 *
-	 * Monatsauswahl und Jahresliste leiten sich vom DATEISYSTEM ab, nicht vom
-	 * Cache – ohne dieses Signal muesste jeder Schreiber jeden Leser kennen und
-	 * von Hand benachrichtigen. Genau daran hing es: ein geloeschtes Jahr blieb in
-	 * der Monatsauswahl stehen, und neue Eintraege tauchten in der Jahresliste
-	 * erst nach einem Neuladen der Seite auf.
-	 */
+	/** Zaehlt bei jeder Aenderung an den Eintragsdateien hoch. */
 	entriesVersion = $state(0);
 	/**
 	 * Offene Rueckfrage: ein rueckdatierter Start wuerde abgeschlossene Zeiten
@@ -133,6 +115,10 @@ class AppState {
 				const firstRun = !(await this.#step("Einstellungen suchen", settingsFileExists));
 				this.activities = await this.#step("Aktivitäten laden", loadActivities);
 				this.settings = await this.#step("Einstellungen laden", loadSettings);
+				// VOR jeder Datumsrechnung: currentMonth, prevMonthKey und
+				// #findRunning haengen alle an der Zeitzone. Stuende sie erst danach,
+				// laedt der Start an einer Tagesgrenze den falschen Monat.
+				await this.#step("Zeitzone bestimmen", () => this.#applyTimeZone());
 				// So frueh wie moeglich: bis hierher haelt analytics.ts alles zurueck,
 				// was seit dem Start anfiel.
 				setErrorReportsEnabled(this.settings.errorReportsEnabled);
@@ -161,8 +147,8 @@ class AppState {
 					laeuft: this.#runningName()
 				});
 			} catch (e) {
-				// Merken statt werfen: eine abgewiesene Promise landete nur in der
-				// Konsole, und davor sitzt niemand – zu sehen war weiterhin "Laedt…".
+				// Merken statt werfen: eine abgewiesene Promise landet nur in der
+				// Konsole, und davor sitzt niemand – sonst bliebe der Ladebildschirm bei "Laedt…" haengen.
 				logError(`Start fehlgeschlagen beim Schritt „${this.initStep}"`, e);
 				this.initError = { step: this.initStep ?? "Start", message: errorText(e) };
 				return false;
@@ -228,6 +214,7 @@ class AppState {
 	async reload(): Promise<void> {
 		this.activities = await loadActivities();
 		this.settings = await loadSettings();
+		await this.#applyTimeZone();
 		setErrorReportsEnabled(this.settings.errorReportsEnabled);
 		for (const m of [this.currentMonth, prevMonthKey()]) {
 			this.entriesByMonth[m] = await loadEntries(m);
@@ -306,7 +293,6 @@ class AppState {
 			});
 			added++;
 		}
-		// "Others"/"Abwesenheiten" immer ans Ende
 		this.#reindexBuiltinsLast();
 		if (added) await this.persistActivities();
 		return added;
@@ -343,14 +329,7 @@ class AppState {
 		return id;
 	}
 
-	/**
-	 * Umbenennen – ausser bei den eingebauten Zeilen.
-	 *
-	 * #seedBuiltins erkennt sie am NAMEN: umbenannt legte der naechste Start eine
-	 * zweite an. Die stuende dann als 0-h-Zeile im Bericht beim Chef und liesse
-	 * sich nicht mehr loeschen (deleteActivity schuetzt Abwesenheiten). Archivieren,
-	 * Ausblenden und Loeschen sind fuer sie ohnehin schon gesperrt.
-	 */
+	/** Umbenennen – ausser bei den eingebauten Zeilen. */
 	async renameActivity(id: string, name: string): Promise<void> {
 		const a = this.activities.find((x) => x.id === id);
 		if (!a || a.isAbsence || a.name === BUILTIN_OTHERS) return;
@@ -480,15 +459,7 @@ class AppState {
 	}
 
 	// ---------- Eintraege ----------
-	/**
-	 * Laufende Ladevorgaenge je Monat.
-	 *
-	 * Ohne die Merkliste liest die App dieselbe Datei mehrfach gleichzeitig:
-	 * `ensureMonth` prueft VOR dem await, ob der Monat schon da ist, und beim
-	 * Start fragen drei Ansichten gleichzeitig nach ueberlappenden Zwoelfer-
-	 * Bloecken (Auswertung, Arbeitszeit-Check, Tracking-Hinweis). Jede kam
-	 * durch die Pruefung, bevor die erste fertig war.
-	 */
+	/** Laufende Ladevorgaenge je Monat. */
 	#loadingMonths = new Map<string, Promise<void>>();
 
 	async ensureMonth(month: string): Promise<void> {
@@ -511,14 +482,7 @@ class AppState {
 		return this.entriesByMonth[month] ?? [];
 	}
 
-	/**
-	 * Ist dieser Monat bereits geladen?
-	 *
-	 * `monthEntries` liefert fuer einen ungeladenen Monat eine leere Liste und
-	 * ist damit nicht von einem leeren Monat zu unterscheiden. Wer ueber mehrere
-	 * Monate rechnet, braucht den Unterschied: waehrend des Ladens saehe ein
-	 * halbes Jahr sonst aus wie ein halbes Jahr ohne Arbeit.
-	 */
+	/** Ist dieser Monat bereits geladen? */
 	monthLoaded(month: string): boolean {
 		return this.entriesByMonth[month] !== undefined;
 	}
@@ -541,9 +505,9 @@ class AppState {
 
 	async #saveMonth(month: string): Promise<void> {
 		const list = this.entriesByMonth[month];
-		// Kein Cache-Eintrag heisst "nicht geladen", nicht "leer". Frueher war das
-		// egal, weil `[]` eine leere Datei schrieb – heute LOESCHT saveEntries sie.
-		// Ohne diese Wache wuerde ein ungeladener Monat still geleert.
+		// Kein Cache-Eintrag heisst "nicht geladen", nicht "leer" - saveEntries
+		// LOESCHT die Datei bei `[]`. Ohne diese Wache wuerde ein ungeladener
+		// Monat still geleert.
 		if (!list) return;
 		await saveEntries(month, $state.snapshot(list) as Entry[]);
 		// Einziger Weg, auf dem Eintraege auf die Platte kommen – deshalb sitzt das
@@ -596,8 +560,6 @@ class AppState {
 	 * Eintrag anlegen. Geht er ueber Mitternacht, entsteht je Tag einer – dieselbe
 	 * Regel wie beim Timer: sonst zaehlte die Zeit nach 00:00 zum Vortag und an
 	 * einer Monatsgrenze im falschen Bericht.
-	 *
-	 * Der Konflikt-Check laeuft ueber die GANZE Spanne, bevor geteilt wird.
 	 *
 	 * @returns das erste Tagesstueck, oder null wenn nichts angelegt wurde
 	 */
@@ -713,12 +675,7 @@ class AppState {
 		return result.slice(0, limit);
 	}
 
-	/**
-	 * Schnellstart-Liste: Favoriten zuerst, dann mit den zuletzt benutzten aufgefuellt.
-	 *
-	 * Tray-Menue und Flyout bauten sie vorher jedes fuer sich zusammen – zweimal
-	 * dieselbe Regel, die beim naechsten Eingriff auseinandergelaufen waere.
-	 */
+	/** Schnellstart-Liste: Favoriten zuerst, dann mit den zuletzt benutzten aufgefuellt. */
 	quickActivities(limit: number): Activity[] {
 		const seen = new Set<string>();
 		const out: Activity[] = [];
@@ -798,10 +755,10 @@ class AppState {
 		// Kann von newMonth abweichen, wenn die Bearbeitung ueber einen Monatswechsel
 		// reicht – #reportConflict braucht diesen Monat fuer den Ueberschneidungs-Check.
 		if (updated.endTs != null) await this.ensureMonth(monthKey(updated.endTs));
-		// Die Ueberschneidungs-Regel ist neu; aeltere Daten koennen sie verletzen.
-		// Wer nur die Notiz aendert, darf davon nicht ausgesperrt werden – sonst
-		// bliebe fuer solche Eintraege nur noch Loeschen. Zeiten unveraendert ->
-		// keine neue Ueberschneidung moeglich.
+		// Manche gespeicherten Eintraege koennen die Ueberschneidungs-Regel bereits
+		// verletzen. Wer nur die Notiz aendert, darf davon nicht ausgesperrt werden
+		// – sonst bliebe fuer solche Eintraege nur noch Loeschen. Zeiten unveraendert
+		// -> keine neue Ueberschneidung moeglich.
 		const old = this.monthEntries(oldMonth).find((e) => e.id === updated.id);
 		const timesUnchanged =
 			!!old && old.startTs === updated.startTs && old.endTs === updated.endTs;
@@ -873,29 +830,7 @@ class AppState {
 		return out;
 	}
 
-	/**
-	 * Die zusammenhaengenden Stuecke EINES Laufs, aeltestes zuerst.
-	 *
-	 * Ein Timer ueber Mitternacht wird dort geteilt (#rolloverAtMidnight), aus einem
-	 * Lauf werden also mehrere Eintraege. Wer ihn spaeter mit einer frueheren Endzeit
-	 * beendet, meint den GANZEN Lauf – nicht nur das letzte Stueck. Ohne diese Kette
-	 * blieben die Tagesstuecke mit je 24 h stehen, die nie gearbeitet wurden, und
-	 * landeten so im Bericht.
-	 *
-	 * Erkennungsmerkmal der Teilung: gleiche Aktivitaet, das Vorgaengerstueck endet
-	 * exakt an der Mitternacht, an der das naechste beginnt. Zwei manuelle Eintraege,
-	 * die zufaellig aneinander stossen, erfuellen das nicht.
-	 *
-	 * Ein noch OFFENES Vorgaengerstueck zaehlt ebenso. Das Bindeglied ist sonst
-	 * `endTs`, und genau das fehlt, wenn die Teilung den Vorgaenger offen stehen
-	 * liess: der Lauf zerfiel dann in zwei vermeintlich eigenstaendige, und das
-	 * Folgestueck blieb beim Beenden mit einer frueheren Endzeit als Eintrag ueber
-	 * 00:00–00:00 zurueck. Ein offener Eintrag am Vortag, dessen Mitternacht genau
-	 * der Start hier ist, kann nichts anderes sein als die andere Haelfte.
-	 *
-	 * Gesucht wird nur in den geladenen Monaten – weiter zurueck reicht kein Lauf,
-	 * der noch offen ist.
-	 */
+	/** Die zusammenhaengenden Stuecke EINES Laufs, aeltestes zuerst. */
 	runChain(entry: Entry): Entry[] {
 		const all = Object.values(this.entriesByMonth).flat();
 		const chain = [entry];
@@ -943,24 +878,6 @@ class AppState {
 		}
 		// Der ganze Lauf, nicht nur das letzte Tagesstueck: eine Endzeit vor
 		// Mitternacht muss die schon abgetrennten Stuecke mitnehmen.
-		//
-		// Alle Ketten VOR der ersten Aenderung bilden. Das Bindeglied ist `endTs`,
-		// und sobald das erste Stueck geschlossen ist, findet das naechste seinen
-		// Vorgaenger nicht mehr. Standen beide Stuecke eines geteilten Laufs offen,
-		// zerfiel er genau dadurch in zwei – und das Folgestueck blieb als
-		// 00:00–00:00 zurueck, statt mit dem Rest wegzufallen.
-		//
-		// Laengste Kette zuerst, und jedes Stueck nur einmal anfassen: standen
-		// mehrere Stuecke eines Laufs offen, liefert jedes seine eigene Kette, und
-		// die kuerzere ist ein Anfangsstueck der laengeren. Zweimal verarbeitet,
-		// zerlegte sie denselben Lauf ein zweites Mal ueber Mitternacht und legte
-		// den Folgetag doppelt an.
-		//
-		// Bewusst ueber die STUECKE und nicht ueber den Ketten-Anfang: zwei offene
-		// Fortsetzungen derselben Mitternacht (siehe die Idempotenz-Wache in
-		// #rolloverAtMidnight) haben denselben Anfang und dieselbe Laenge – nach
-		// Anfang abgeraeumt bliebe eine davon offen stehen, und „schliesst ALLE
-		// offenen Eintraege" waere gebrochen.
 		const chains = offen.map((open) => this.runChain(open)).sort((a, b) => b.length - a.length);
 		const erledigt = new Set<string>();
 
@@ -1005,9 +922,6 @@ class AppState {
 	/**
 	 * Folgetag-Stueck eines geteilten Eintrags anlegen; liefert dessen Monat –
 	 * oder null, wenn der Tag eine Ganztags-Abwesenheit traegt.
-	 *
-	 * Ohne diese Wache umginge die Teilung die Regel, die #reportConflict ueberall
-	 * sonst durchsetzt: an einem Ganztags-Abwesenheitstag gibt es keine Projektzeit.
 	 */
 	async #addSegment(from: Entry, startTs: number, endTs: number | null): Promise<string | null> {
 		const m = monthKey(startTs);
@@ -1093,16 +1007,6 @@ class AppState {
 	 * Den laufenden Eintrag bestimmen: der neueste offene. Aeltere offene bleiben
 	 * zurueck, wenn die App abgestuerzt ist oder ein Start den vorherigen nicht
 	 * sauber beendet hat – die muessen geschlossen werden, sonst laufen sie ewig.
-	 *
-	 * Sie werden GESCHAETZT geschlossen, nicht genullt: frueher bekam so ein
-	 * Eintrag endTs = startTs, also Dauer 0. Damit war echte Arbeitszeit still
-	 * verschwunden – ohne Meldung, und niemand haette es je gemerkt.
-	 *
-	 * Geschaetzt wird nach derselben Regel, die der Bericht ohnehin auf offene
-	 * Eintraege anwendet (siehe `until` in report.ts): bis zum naechsten Start –
-	 * dann wurde die Arbeit gewechselt – hoechstens aber bis zum Ende des eigenen
-	 * Tages. Ohne diese Kappung schluckte ein Eintrag nach einem Absturz von
-	 * Freitag ein ganzes Wochenende.
 	 */
 	async #findRunning(): Promise<void> {
 		const open = this.#openEntries().sort((a, b) => b.startTs - a.startTs);
@@ -1202,17 +1106,7 @@ class AppState {
 		);
 	}
 
-	/**
-	 * Plan anwenden und den Timer setzen.
-	 *
-	 * Der Plan wird HIER neu gebildet, nicht von der Rueckfrage mitgebracht:
-	 * dazwischen liegt eine Luecke ohne Sperre. Ein anderes Fenster kann per
-	 * `data-reload` ein `reload()` ausloesen, das die Eintrags-Objekte komplett
-	 * ersetzt – ein mitgebrachter Plan schriebe dann in abgehaengte Objekte, und
-	 * die Kuerzung ginge lautlos verloren. Ausserdem koennen in der Luecke neue
-	 * offene Eintraege entstehen (Mitternachts-Wechsel, Tray), die ein alter Plan
-	 * nicht kennt – es gaebe zwei laufende Timer.
-	 */
+	/** Plan anwenden und den Timer setzen. */
 	async #applyStart(activityId: string, start: number): Promise<void> {
 		await this.#ensureSpan(start);
 		const plan = this.#planFor(start);
@@ -1320,22 +1214,23 @@ class AppState {
 	): Promise<{ added: number; skipped: number }> {
 		const abs = this.absenceActivity;
 		if (!abs) return { added: 0, skipped: 0 };
-		const start = new Date(noonTs(startDate));
-		const end = new Date(noonTs(endDate));
-		if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) {
+		if (Number.isNaN(noonTs(startDate)) || Number.isNaN(noonTs(endDate)) || endDate < startDate) {
 			return { added: 0, skipped: 0 };
 		}
 		let added = 0;
 		let skipped = 0;
-		for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+		// Ueber Kalendertage statt ueber einen Date-Cursor: der haengt an der Zone
+		// des Geraets, und an einer Sommerzeit-Grenze trifft +24 h den falschen Tag.
+		for (let date = startDate; date <= endDate; date = stepDate(date, 1)) {
 			// Nur reguläre Arbeitstage; Wochenenden/freie Tage nicht als Abwesenheit buchen.
-			if (!this.settings.workdays.includes(d.getDay())) continue;
+			if (!this.settings.workdays.includes(weekdayOfDate(date))) continue;
+			const noon = noonTs(date);
 			// Ganztags-Konflikt mit Projektzeit -> Tag still überspringen (kein Doppel-Toast).
-			if (fraction >= 1 && this.hasProjectEntry(d.getTime())) {
+			if (fraction >= 1 && this.hasProjectEntry(noon)) {
 				skipped++;
 				continue;
 			}
-			const e = await this.addEntry(abs.id, d.getTime(), d.getTime(), "", "manual", fraction);
+			const e = await this.addEntry(abs.id, noon, noon, "", "manual", fraction);
 			if (e) added++;
 			else skipped++;
 		}
@@ -1401,8 +1296,23 @@ class AppState {
 	}
 
 	// ---------- Einstellungen ----------
+	/** Die Zeitzone des Kontos in Kraft setzen. */
+	async #applyTimeZone(): Promise<void> {
+		const stored = this.settings.timeZone;
+		if (stored && setAppTimeZone(stored)) return;
+		const fallback = systemTimeZone();
+		setAppTimeZone(fallback);
+		if (stored) logWarn(`Unbekannte Zeitzone „${stored}", nutze ${fallback}`);
+		this.settings = { ...this.settings, timeZone: fallback };
+		await saveSettings($state.snapshot(this.settings) as Settings);
+		logInfo("Zeitzone festgeschrieben", { zone: fallback });
+	}
+
 	async updateSettings(patch: Partial<Settings>): Promise<void> {
 		this.settings = { ...this.settings, ...patch };
+		// Sofort wirksam machen: alles Weitere in diesem Durchlauf rechnet sonst
+		// noch gegen die alte Zone.
+		if (patch.timeZone !== undefined) setAppTimeZone(patch.timeZone);
 		// Vor dem Speichern: ein Abschalten soll sofort greifen, nicht erst, wenn
 		// das Schreiben durch ist.
 		if (patch.errorReportsEnabled !== undefined) setErrorReportsEnabled(patch.errorReportsEnabled);
@@ -1424,6 +1334,11 @@ class AppState {
 		this.showOnboarding = false;
 	}
 
+	/** Den Willkommensbildschirm weglegen, OHNE etwas zu schreiben. */
+	dismissOnboarding(): void {
+		this.showOnboarding = false;
+	}
+
 	/** Willkommensbildschirm erneut oeffnen (Dev-Re-Trigger). */
 	openOnboarding(): void {
 		this.showOnboarding = true;
@@ -1432,15 +1347,6 @@ class AppState {
 	/**
 	 * Dev: den Ladebildschirm vorfuehren – Start wiederholen und dabei am Schritt
 	 * `step` scheitern ("error") oder haengen bleiben ("hang").
-	 *
-	 * Die Stoerung sitzt in #step, also genau dort, wo auch echte Fehler entstehen:
-	 * ein bloss gesetzter `initError` pruefte weder den Fang-Zweig noch das
-	 * Protokoll noch den zweiten Anlauf.
-	 *
-	 * Kaputtgehen kann dabei nichts: der gestoerte Schritt laeuft nicht an, alle
-	 * anderen lesen nur, der Sekundentakt laeuft weiter (ein laufender Timer
-	 * zaehlt unbeirrt mit), und die Stoerung gilt genau einmal – "Erneut versuchen"
-	 * startet die App wieder normal.
 	 */
 	async devSimulateStartFault(mode: "error" | "hang", step = "Einträge"): Promise<void> {
 		logInfo(`Dev-Test: Ladebildschirm (${mode}) bei Schritt „${step}"`);

@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Activity, Entry } from "./types";
+import { defaultSettings } from "./types";
 import { fakeFs, files, fsFaults, resetFakeFs } from "./testing/fakeFs";
+import { appTimeZone, wallToTs } from "./tz";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("./testing/fakeFs")).fakeFs);
 // Toasts sind hier Beiwerk; die Meldungen selbst prueft niemand.
@@ -19,13 +21,19 @@ const ACTIVITIES: Activity[] = [
 	{ id: ABS, name: "Abwesenheiten", sortOrder: 2, archived: false, isAbsence: true }
 ];
 
-const at = (day: number, h: number, min = 0) => new Date(2026, 6, day, h, min, 0, 0).getTime();
+const at = (day: number, h: number, min = 0) => wallToTs(2026, 7, day, h, min, 0);
 const monthFile = (m: string) => `data/entries-${m}.json`;
 const onDisk = (m: string): Entry[] => JSON.parse(files.get(monthFile(m)) ?? "[]");
 
 /** Frischer App-Zustand ohne init() – das wuerde den Sekunden-Tick starten. */
 function reset(entries: Record<string, Entry[]> = {}) {
 	resetFakeFs();
+	// Ein KONFIGURIERTES Konto nachstellen: ohne gespeicherte Zeitzone uebernaehme
+	// reload() die des Geraets und die Suite prueft dann nur noch sich selbst.
+	files.set(
+		"data/settings.json",
+		JSON.stringify({ ...defaultSettings, timeZone: appTimeZone() })
+	);
 	app.dispose();
 	app.activities = [...ACTIVITIES];
 	app.running = null;
@@ -67,16 +75,16 @@ describe("stop() – Teilung an Mitternacht", () => {
 
 	it("legt das Folgetag-Stück in die richtige MONATSDATEI", async () => {
 		// Ueber die Monatsgrenze: sonst zaehlte die Zeit im falschen Bericht.
-		const silvester = new Date(2026, 6, 31, 23, 0, 0).getTime();
+		const silvester = wallToTs(2026, 7, 31, 23, 0, 0);
 		const laufend = entry("r", P1, silvester, null);
 		reset({ "2026-07": [laufend] });
 		app.running = laufend;
 
-		await app.stop(new Date(2026, 7, 1, 1, 0, 0).getTime());
+		await app.stop(wallToTs(2026, 8, 1, 1, 0, 0));
 
 		expect(onDisk("2026-07")).toHaveLength(1);
 		expect(onDisk("2026-08")).toHaveLength(1);
-		expect(onDisk("2026-08")[0].startTs).toBe(new Date(2026, 7, 1, 0, 0, 0).getTime());
+		expect(onDisk("2026-08")[0].startTs).toBe(wallToTs(2026, 8, 1, 0, 0, 0));
 	});
 
 	it("lässt einen Timer innerhalb eines Tages ungeteilt", async () => {
@@ -280,7 +288,7 @@ describe("addEntry – Konfliktregeln", () => {
 describe("deleteYearEntries", () => {
 	it("löscht nur das genannte Jahr – aus Datei UND Cache", async () => {
 		reset({
-			"2025-12": [entry("alt", P1, new Date(2025, 11, 1, 8).getTime(), new Date(2025, 11, 1, 9).getTime())],
+			"2025-12": [entry("alt", P1, wallToTs(2025, 12, 1, 8, 0, 0), wallToTs(2025, 12, 1, 9, 0, 0))],
 			"2026-07": [entry("neu", P1, at(17, 8), at(17, 9))]
 		});
 
@@ -292,7 +300,7 @@ describe("deleteYearEntries", () => {
 	});
 
 	it("stoppt einen Timer, der im gelöschten Jahr läuft", async () => {
-		const laufend = entry("r", P1, new Date(2025, 11, 1, 8).getTime(), null);
+		const laufend = entry("r", P1, wallToTs(2025, 12, 1, 8, 0, 0), null);
 		reset({ "2025-12": [laufend] });
 		app.running = laufend;
 
@@ -302,7 +310,7 @@ describe("deleteYearEntries", () => {
 	});
 
 	it("meldet die Änderung, damit abgeleitete Listen neu lesen", async () => {
-		reset({ "2025-12": [entry("alt", P1, new Date(2025, 11, 1, 8).getTime(), new Date(2025, 11, 1, 9).getTime())] });
+		reset({ "2025-12": [entry("alt", P1, wallToTs(2025, 12, 1, 8, 0, 0), wallToTs(2025, 12, 1, 9, 0, 0))] });
 		const vorher = app.entriesVersion;
 		await app.deleteYearEntries(2025);
 		expect(app.entriesVersion).toBeGreaterThan(vorher);
@@ -320,8 +328,8 @@ describe("Zurückgebliebene offene Einträge (Absturz)", () => {
 	}
 
 	it("schließt einen zurückgebliebenen Eintrag am nächsten Start – statt ihn zu nullen", async () => {
-		// Der Klassiker: Absturz um 12, danach neu gestartet. Der 09–12-Block ist
-		// echte Arbeit und bekam frueher endTs = startTs, also Dauer 0.
+		// Absturz um 12, danach neu gestartet: der 09–12-Block ist echte Arbeit und
+		// muss eine echte Dauer behalten, nicht endTs = startTs.
 		await reloadAt(at(17, 15), [entry("alt", P1, at(17, 9), null), entry("neu", P2, at(17, 12), null)]);
 
 		const alt = onDisk("2026-07").find((e) => e.id === "alt")!;
@@ -477,7 +485,7 @@ describe("Bearbeiten eines anstossenden Timer-Eintrags", () => {
 	// Timer-Eintraege stossen aber sekundengenau aneinander: ein Aktivitaetswechsel
 	// setzt das Ende des einen exakt auf den Start des naechsten.
 	const sec = (day: number, h: number, m: number, s: number) =>
-		new Date(2026, 6, day, h, m, s, 0).getTime();
+		wallToTs(2026, 7, day, h, m, s);
 
 	/** 11:20:39–14:00:22, direkt gefolgt von 14:00:22–24:00 (Annas 19.08.). */
 	function paar() {
@@ -516,14 +524,14 @@ describe("Bearbeiten eines anstossenden Timer-Eintrags", () => {
 
 describe("#reportConflict über Monatsgrenzen", () => {
 	it("erkennt eine Überschneidung, wenn der Kandidat über den Monatswechsel reicht", async () => {
-		// Vorher pruefte #reportConflict nur den Monat von candidate.startTs (Juli) –
-		// ein Eintrag am 1. August war fuer den Ueberschneidungs-Check unsichtbar.
-		const augustStart = new Date(2026, 7, 1, 0, 0, 0).getTime();
+		// #reportConflict muss auch den Folgemonat pruefen: ein Kandidat, der ueber
+		// den Monatswechsel reicht, darf einen Eintrag am 1. August nicht uebersehen.
+		const augustStart = wallToTs(2026, 8, 1, 0, 0, 0);
 		const bestehend = entry("aug", P2, augustStart, augustStart + 30 * 60 * 1000); // 00:00–00:30
 		reset({ "2026-08": [bestehend] });
 
-		const silvester = new Date(2026, 6, 31, 23, 45, 0).getTime();
-		const ende = new Date(2026, 7, 1, 0, 15, 0).getTime(); // überschneidet 00:00–00:15 mit "aug"
+		const silvester = wallToTs(2026, 7, 31, 23, 45, 0);
+		const ende = wallToTs(2026, 8, 1, 0, 15, 0); // überschneidet 00:00–00:15 mit "aug"
 		const result = await app.addEntry(P1, silvester, ende);
 
 		expect(result).toBeNull();
@@ -532,12 +540,12 @@ describe("#reportConflict über Monatsgrenzen", () => {
 	});
 
 	it("lässt einen anstoßenden (nicht überschneidenden) Monatswechsel weiterhin zu", async () => {
-		const augustStart = new Date(2026, 7, 1, 0, 15, 0).getTime();
+		const augustStart = wallToTs(2026, 8, 1, 0, 15, 0);
 		const bestehend = entry("aug", P2, augustStart, augustStart + 30 * 60 * 1000); // 00:15–00:45
 		reset({ "2026-08": [bestehend] });
 
-		const silvester = new Date(2026, 6, 31, 23, 45, 0).getTime();
-		const ende = new Date(2026, 7, 1, 0, 15, 0).getTime(); // endet genau, wo "aug" beginnt
+		const silvester = wallToTs(2026, 7, 31, 23, 45, 0);
+		const ende = wallToTs(2026, 8, 1, 0, 15, 0); // endet genau, wo "aug" beginnt
 		const result = await app.addEntry(P1, silvester, ende);
 
 		expect(result).not.toBeNull();

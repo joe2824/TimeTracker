@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { dayConflict, overlapConflict } from "./conflicts";
 import type { Entry } from "./types";
+import { wallToTs } from "./tz";
 
 const ABS = "abs";
 // Lokalzeit, nicht Date.UTC: dayConflict gruppiert ueber fmtDate, also nach dem
 // LOKALEN Tag. Mit UTC-Zeitstempeln haengt es an der Zone des Rechners, ob zwei
 // Eintraege ueberhaupt auf denselben Tag fallen – der Test prueft dann anderes,
 // als er behauptet. Aus demselben Grund kein "+24h" fuer den Folgetag.
-const DAY = new Date(2026, 5, 10, 8, 0, 0).getTime();
-const NEXT = new Date(2026, 5, 11, 8, 0, 0).getTime();
+const DAY = wallToTs(2026, 6, 10, 8, 0, 0);
+const NEXT = wallToTs(2026, 6, 11, 8, 0, 0);
 
 function e(id: string, activityId: string, startTs: number, dayFraction?: number): Entry {
 	const entry: Entry = { id, activityId, startTs, endTs: startTs, note: "", source: "manual" };

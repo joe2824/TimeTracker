@@ -1,13 +1,10 @@
 // Abgleich: LOGA-Tagesstunden gegen die hier erfassten Projektzeiten.
-//
-// Reine Logik, keine Svelte-/Tauri-Abhaengigkeit – die Entscheidung, welcher Tag
-// als "fehlt" gilt und wo ein nachgetragener Block liegt, ist der heikle Teil
-// und gehoert in Tests.
 import type { Entry } from "./types";
 import type { TimeReportDay } from "./timeReport";
 import { breakHours, grossHours, hasStamps, isOpenDay } from "./timeReport";
 import { deductBreakFromHours, grossForNet } from "./breaks";
 import { entryHours, fmtDate, openEntryUntil, startOfNextDay } from "./time";
+import { zonedParts } from "./tz";
 
 /** Zeitspanne innerhalb eines Tages, in Minuten ab Mitternacht. */
 export interface Interval {
@@ -63,13 +60,7 @@ export interface ReconcileOptions {
 	tolerance: number;
 	absenceIds: Set<string>;
 	now?: number;
-	/**
-	 * Pause automatisch abziehen (settings.breakDeduction).
-	 *
-	 * Ist der Abzug aktiv, rechnet die App auf derselben Grundlage wie LOGA, und
-	 * die Spalte „erfasst" ist unmittelbar mit „Arbeitszeit täglich" vergleichbar.
-	 * Ohne ihn steht ein durchlaufender Timer dauerhaft als „zu viel" da.
-	 */
+	/** Pause automatisch abziehen (settings.breakDeduction). */
 	deductBreaks?: boolean;
 }
 
@@ -88,12 +79,7 @@ function roundHours(h: number): number {
 	return Math.round(h * 60) / 60;
 }
 
-/**
- * Den Report eines Monats gegen die erfassten Eintraege stellen.
- *
- * `days` und `entries` duerfen mehr als den gewuenschten Monat enthalten; das
- * Ergebnis folgt `days`.
- */
+/** Den Report eines Monats gegen die erfassten Eintraege stellen. */
 export function reconcile(
 	days: TimeReportDay[],
 	entries: Entry[],
@@ -154,25 +140,10 @@ export function reconcile(
 		// Nur „Kommen" gestempelt: LOGA ist mit dem Tag noch nicht durch. Was hier
 		// steht, kann dort noch gar nicht ankommen – „zu viel" waere eine
 		// Falschmeldung.
-		//
-		// Bewusst ohne Datumsvergleich: das ist nicht nur der laufende Tag. Ein
-		// vergessenes Gehen bleibt auch in der Vergangenheit unvollstaendig, und
-		// gegen eine 0 aus LOGA ist jede erfasste Stunde „zu viel" – die Meldung
-		// stuende dann fuer immer da, obwohl sie in LOGA zu klaeren ist. Der Status
-		// „offen" sagt im Abgleich, woran es liegt.
-		//
-		// „fehlt" bleibt stehen: dort ist die LOGA-Zahl bereits groesser als das
-		// Erfasste, das laesst sich durch ein spaeteres Gehen nicht entkraeften.
 		if (status === "over" && isOpenDay(report)) status = "open";
 
 		// Kein Stempel, aber Stunden: Urlaub, Feiertag oder Gleittag. LOGA
 		// unterscheidet das nicht – hier ist alles drei „Abwesenheit".
-		//
-		// Verlangt wird zusaetzlich, dass die Stunden auf einen halben oder ganzen
-		// Tag passen. Eine Abwesenheit kennt nur diese beiden Groessen: ein
-		// stempelloser 3-Stunden-Tag wuerde sonst als halber Tag gebucht und damit
-		// 3,75 h schreiben, wo LOGA 3 h meldet. Solche Tage laufen als normaler
-		// Nachtrag mit Uhrzeiten.
 		const fullDay = hoursPerDay > 0 && Math.abs(reportHours - hoursPerDay) <= tolerance;
 		const halfDay = hoursPerDay > 0 && Math.abs(reportHours - hoursPerDay / 2) <= tolerance;
 		const looksLikeAbsence = !hasStamps(report) && reportHours > 0 && (fullDay || halfDay);
@@ -213,16 +184,10 @@ function clockMin(t: string): number {
 /**
  * Minuten seit lokaler Mitternacht – aus der WANDUHR, nicht aus der Differenz
  * zum Tagesbeginn.
- *
- * An den beiden Umstellungstagen im Jahr hat ein Tag 23 oder 25 Stunden; eine
- * Differenzrechnung verschoebe dort jede Uhrzeit nach der Umstellung um eine
- * Stunde. Das Fenster kommt aus den Stempeln des Reports und ist Wanduhrzeit –
- * beides muss auf derselben Skala liegen, sonst legte der Nachtrag sich an
- * genau diesen Tagen um eine Stunde versetzt in die Luecken.
  */
 function minutesOfDay(ts: number): number {
-	const d = new Date(ts);
-	return d.getHours() * 60 + d.getMinutes();
+	const p = zonedParts(ts);
+	return p.hour * 60 + p.minute;
 }
 
 /** Die von vorhandenen Eintraegen belegten Spannen eines Tages, zusammengefasst. */
@@ -311,14 +276,7 @@ export interface FillPlan {
 	blocks: Interval[];
 	/** Summe von `blocks` bzw. der Abwesenheit in Stunden */
 	hours: number;
-	/**
-	 * Blöcke JENSEITS der Stempelzeiten.
-	 *
-	 * Entstehen, wenn LOGA mehr Stunden meldet, als zwischen „Erstes kommen" und
-	 * „Letztes gehen" liegen – die Zeit wurde gebucht, aber nicht gestempelt.
-	 * Getrennt ausgewiesen, weil sie meist auf etwas anderes gehört als der
-	 * gestempelte Arbeitstag (Dienstreise, Rufbereitschaft, „Others").
-	 */
+	/** Blöcke JENSEITS der Stempelzeiten. */
 	extraBlocks: Interval[];
 	/** Summe von `extraBlocks` in Stunden */
 	extraHours: number;
@@ -330,14 +288,7 @@ export interface FillOptions {
 	/** Uhrzeit, an der die Pause bevorzugt liegt ("HH:MM") */
 	lunchAt: string;
 	now?: number;
-	/**
-	 * Zieht die App die Pause selbst ab (settings.breakDeduction)?
-	 *
-	 * Das dreht die Bedeutung des Nachtrags um: dann wird die ANWESENHEIT
-	 * eingetragen (also inklusive Pause, wie ein durchlaufender Timer sie
-	 * erfasst), und die App zieht sie anschliessend ab. Ohne den Abzug wird die
-	 * Pause stattdessen als Luecke ausgespart.
-	 */
+	/** Zieht die App die Pause selbst ab (settings.breakDeduction)? */
 	deductBreaks?: boolean;
 }
 
@@ -346,16 +297,6 @@ export const DEFAULT_FILL_OPTIONS: FillOptions = { defaultStart: "09:00", lunchA
 /**
  * Wie die fehlende Zeit eines Tages nachgetragen wird.
  *
- * Bei gestempelten Tagen liegt das Fenster zwischen „Erstes kommen" und
- * „Letztes gehen". Ist darin mehr Platz als Stunden fehlen, entsteht eine
- * LUECKE in Hoehe der Pause – sonst stuende der Nachtrag quer durch die
- * Mittagspause, und die Summe waere zwar richtig, der Tag aber erkennbar falsch.
- * Die Luecke wandert an die Mittagszeit, soweit vor und nach ihr noch Arbeit
- * liegt.
- *
- * Belegte Zeiten bleiben unangetastet: `addEntry` weist Ueberschneidungen
- * ohnehin ab, eine Sammeluebernahme scheiterte dort sonst reihenweise.
- *
  * @returns null, wenn nichts nachzutragen ist oder kein Platz bleibt
  */
 export function planFill(
@@ -363,10 +304,8 @@ export function planFill(
 	entries: Entry[],
 	opts: FillOptions = DEFAULT_FILL_OPTIONS
 ): FillPlan | null {
-	// Nur wo der Abgleich wirklich etwas vermisst. Am reinen Vorzeichen von `diff`
-	// zu haengen war falsch: ein Tag mit 8,55 h laut LOGA und 8,50 h erfasst gilt
-	// als „stimmt", haette hier aber einen Nachtrag ueber drei Minuten bekommen –
-	// angehakt und in der Sammeluebernahme mitgezaehlt.
+	// An `status` haengen, nicht am blossen Vorzeichen von `diff`: das faengt auch
+	// Differenzen im Rundungsbereich ab, die als „stimmt" durchgehen.
 	if (day.status !== "missing" && day.status !== "partial") return null;
 	if (day.diff <= 0) return null;
 
@@ -419,14 +358,8 @@ export function planFill(
 		window = { start: clockMin(day.report.firstIn!), end: clockMin(day.report.lastOut!) };
 		if (window.end <= window.start) window.end = 1440; // ueber Mitternacht gestempelt
 		// Der Report kann MEHR Stunden melden, als zwischen Kommen und Gehen
-		// liegen – dann wurde ausserhalb der Stempelung gearbeitet (nachgebuchte
-		// Zeiten, Dienstreise, Korrektur). Im Beispiel: 11:05–16:52 gestempelt,
-		// aber 7,37 h gutgeschrieben. Ohne Verlaengerung liesse sich so ein Tag
-		// nie vollstaendig nachtragen und bliebe fuer immer als „teilweise" stehen.
-		//
-		// Bewusst NUR in diesem Fall: ein Rest, der blosss daraus entsteht, dass
-		// unsere Pausenregel von LOGAs Abzug abweicht, wird nicht mit erfundener
-		// Anwesenheit aufgefuellt.
+		// liegen (nachgebuchte Zeit, Dienstreise, Korrektur) – ohne Verlaengerung
+		// liesse sich so ein Tag nie vollstaendig nachtragen.
 		if (day.report.hours > grossHours(day.report)) {
 			stampEnd = window.end;
 			window.end = 1440;
@@ -495,16 +428,6 @@ export function planFill(
  * Auf wie viele Stunden EIN Eintrag gesetzt werden muss, damit sein Tag auf die
  * von LOGA gemeldete Zeit kommt.
  *
- * Gedacht fuer den Eintrags-Dialog: dort ist die Dauer des offenen Eintrags die
- * Stellschraube, alles andere am Tag steht fest. Deshalb kommt der Rest des
- * Tages herein und nicht die fertige Abweichung – so bleibt die Zahl richtig,
- * wenn im Dialog schon an den Zeiten gedreht wurde, und zweimal anwenden
- * verdoppelt nichts.
- *
- * Zieht die App die Pause selbst ab, ist die Zielgroesse die ANWESENHEIT: die
- * LOGA-Stunden sind netto, eins zu eins uebernommen bekaemen sie den Abzug ein
- * zweites Mal (dieselbe Ueberlegung wie in `planFill`).
- *
  * @param reportHours "Arbeitszeit täglich" des Tages (netto)
  * @param othersWorked Projektzeit der UEBRIGEN Eintraege des Tages, vor Abzug
  * @param othersAbsent Abwesenheitsstunden des Tages
@@ -534,11 +457,6 @@ export interface Share {
  * Einen Regler auf `value` setzen und die übrigen so nachziehen, dass die Summe
  * 100 bleibt – im Verhältnis ihrer bisherigen Werte.
  *
- * Ganze Prozent, damit Anzeige und Regler dasselbe sagen. Vergeben wird immer
- * nur, was noch übrig ist: einzeln gerundet summierten sich mehrere kleine
- * Anteile sonst über den Rest hinaus, und das letzte Projekt fiel dafür
- * stillschweigend auf 0 – die Summe stand dann auf 101 %.
- *
  * @param pcts aktuelle Anteile in Prozent
  * @param index der Regler, an dem gezogen wurde
  * @param value sein neuer Wert (0..100)
@@ -567,22 +485,11 @@ export function rebalanceShares(pcts: number[], index: number, value: number): n
 	return out;
 }
 
-/**
- * Wie die Anteile auf die Tage kommen.
- *
- * "days" = jeder Tag geht ganz an ein Projekt (siehe `distributeDays`),
- * "within" = jeder Tag wird in sich geschnitten (siehe `splitBlocks`).
- */
+/** Wie die Anteile auf die Tage kommen. */
 export type SplitMode = "days" | "within";
 
 /**
  * Die Zeit EINES Tages der Reihe nach auf mehrere Projekte schneiden.
- *
- * Die Blöcke bleiben, wo sie sind – geschnitten wird entlang der Uhr, damit der
- * Tag danach lückenlos und in der richtigen Reihenfolge dasteht. Rundungsreste
- * gehen an das letzte Projekt, sonst fehlten am Ende ein paar Minuten.
- *
- * Anteile ohne Zeit fallen raus: ein Eintrag über null Minuten ist kein Eintrag.
  *
  * @param blocks zusammenhängende Zeitblöcke des Tages (Minuten ab Mitternacht)
  * @param shares Projekte mit Anteilen; müssen sich nicht auf 1 summieren
@@ -623,14 +530,6 @@ export function splitBlocks(blocks: Interval[], shares: Share[]): { id: string; 
 /**
  * GANZE Tage auf mehrere Projekte verteilen, so dass die Anteile über den
  * Zeitraum möglichst genau hinkommen.
- *
- * Die Alternative zu `splitBlocks`: statt jeden Tag zu zerschneiden bekommt jeder
- * Tag genau ein Projekt. Das ergibt weniger und sauberere Einträge und ist näher
- * an der Wirklichkeit, wenn man ohnehin tageweise an einem Projekt sitzt.
- *
- * Verfahren: Tag für Tag an das Projekt, dem gemessen an seinem Anteil gerade am
- * meisten fehlt. Bei gleichem Rückstand entscheidet die Reihenfolge der Anteile,
- * damit dasselbe Ergebnis reproduzierbar bleibt.
  *
  * @param days Tage in der Reihenfolge, in der sie vergeben werden (Datum + Stunden)
  * @returns Zuordnung Datum -> Projekt; leer, wenn nichts zu verteilen ist

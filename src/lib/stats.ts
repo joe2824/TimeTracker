@@ -1,7 +1,8 @@
 // Reine Statistik-Logik fuer die Auswertungs-Card: keine Svelte-/Tauri-Abhaengigkeit,
 // damit alles direkt testbar bleibt.
 import type { Entry } from "./types";
-import { durationSeconds, fmtDate, isWorkday, monthKey, openEntryUntil } from "./time";
+import { durationSeconds, fmtDate, monthKey, openEntryUntil } from "./time";
+import { addCalendarDays, daysInMonth, isoDate, weekdayOfDate, zonedParts } from "./tz";
 import { deductBreakFromDay } from "./breaks";
 
 /**
@@ -60,16 +61,7 @@ export function dayWorkHours(
 	return sumPerDay(dayActivityHours(entries, absenceIds, now, deductBreaks));
 }
 
-/**
- * Soll-Stunden eines Monats = Werktage * hoursPerDay.
- *
- * Feiertage brauchen keine Sonderbehandlung: sie werden als Abwesenheit gebucht und
- * stecken damit auf der Ist-Seite (report.total) mit hoursPerDay drin – Soll und Ist
- * heben sich am Feiertag also auf.
- *
- * Im laufenden Monat zaehlen nur die Werktage BIS EINSCHLIESSLICH heute, sonst stuende
- * am Monatsanfang ein Minus fuer den ganzen Rest des Monats. Kuenftige Monate: 0.
- */
+/** Soll-Stunden eines Monats = Werktage * hoursPerDay. */
 export function targetHours(
 	month: string,
 	workdays: number[],
@@ -78,16 +70,17 @@ export function targetHours(
 ): number {
 	const [y, m] = month.split("-").map(Number);
 	if (!y || !m) return 0;
-	const today = new Date(now);
 	const currentMonth = monthKey(now);
 	if (month > currentMonth) return 0;
 
-	const daysInMonth = new Date(y, m, 0).getDate();
-	const lastDay = month === currentMonth ? Math.min(today.getDate(), daysInMonth) : daysInMonth;
+	// Alles ueber den Kalender, nicht ueber lokale Date-Konstruktion: sonst haengt
+	// die Zahl der Werktage an der Zone des Geraets statt an der des Kontos.
+	const dim = daysInMonth(y, m);
+	const lastDay = month === currentMonth ? Math.min(zonedParts(now).day, dim) : dim;
 
 	let workdayCount = 0;
 	for (let d = 1; d <= lastDay; d++) {
-		if (isWorkday(new Date(y, m - 1, d).getTime(), workdays)) workdayCount++;
+		if (workdays.includes(weekdayOfDate(isoDate(y, m, d)))) workdayCount++;
 	}
 	return workdayCount * hoursPerDay;
 }
@@ -102,14 +95,7 @@ export interface HeatmapDay {
 	filler: boolean;
 }
 
-/**
- * Jahresraster fuer die Heatmap: Spalten = Wochen, Zeilen = Wochentage (Mo..So).
- *
- * Die Intensitaet ist der Anteil am staerksten Tag des Jahres, nicht ein Quartil:
- * Arbeitstage liegen dicht beieinander (meist 7–8 h), und Quartile wuerden diesen
- * engen Bereich ueber alle vier Stufen spreizen – 7,2 h saehe dann dramatisch
- * anders aus als 7,9 h. Am Maximum relativiert bleiben aehnliche Tage aehnlich.
- */
+/** Jahresraster fuer die Heatmap: Spalten = Wochen, Zeilen = Wochentage (Mo..So). */
 export function heatmapYear(year: number, byDay: Map<string, number>): HeatmapDay[][] {
 	let max = 0;
 	for (const [d, h] of byDay) {
@@ -121,23 +107,25 @@ export function heatmapYear(year: number, byDay: Map<string, number>): HeatmapDa
 		return Math.min(4, Math.max(1, Math.ceil((h / max) * 4)));
 	};
 
-	// Auf den Montag der Woche gehen, in der der 1. Januar liegt.
-	const first = new Date(year, 0, 1);
-	const offsetToMonday = (first.getDay() + 6) % 7; // So(0) -> 6, Mo(1) -> 0
-	const cursor = new Date(year, 0, 1 - offsetToMonday);
+	// Auf den Montag der Woche gehen, in der der 1. Januar liegt. Reine
+	// Kalenderrechnung auf "YYYY-MM-DD" – ein Date-Cursor haengt an der Zone des
+	// Geraets und das Raster verrutschte dort um einen Tag.
+	const jan1 = isoDate(year, 1, 1);
+	const offsetToMonday = (weekdayOfDate(jan1) + 6) % 7; // So(0) -> 6, Mo(1) -> 0
+	let cursor = addCalendarDays(jan1, -offsetToMonday);
 
 	// Volle Wochen bis der Cursor das Jahr verlaesst; Tage ausserhalb sind Filler.
 	const weeks: HeatmapDay[][] = [];
+	const yearOf = (date: string) => Number(date.slice(0, 4));
 	do {
 		const week: HeatmapDay[] = [];
 		for (let i = 0; i < 7; i++) {
-			const inYear = cursor.getFullYear() === year;
-			const date = fmtDate(cursor.getTime());
-			const hours = inYear ? (byDay.get(date) ?? 0) : 0;
-			week.push({ date, hours, level: inYear ? levelOf(hours) : 0, filler: !inYear });
-			cursor.setDate(cursor.getDate() + 1);
+			const inYear = yearOf(cursor) === year;
+			const hours = inYear ? (byDay.get(cursor) ?? 0) : 0;
+			week.push({ date: cursor, hours, level: inYear ? levelOf(hours) : 0, filler: !inYear });
+			cursor = addCalendarDays(cursor, 1);
 		}
 		weeks.push(week);
-	} while (cursor.getFullYear() === year);
+	} while (yearOf(cursor) === year);
 	return weeks;
 }

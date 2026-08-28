@@ -1,8 +1,5 @@
 // Winziger ZIP-Schreiber – nur fuer Tests, um xlsx.ts mit selbst gebauten
 // Archiven zu fuettern (gespeichert UND deflatiert, beide Wege liest der Leser).
-//
-// Der Gegenpart zu src/lib/xlsx.ts. Bewusst kein Paket: das Format ist hier auf
-// die drei Kopfsaetze beschraenkt, die ein XLSX braucht.
 
 const CRC_TABLE = (() => {
 	const table = new Uint32Array(256);

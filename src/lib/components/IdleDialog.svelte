@@ -28,10 +28,10 @@
 				{/if}
 			</Dialog.Description>
 		</Dialog.Header>
-		<div class="flex flex-col gap-2 sm:flex-row sm:justify-end">
+		<Dialog.Footer>
 			<Button variant="ghost" onclick={() => resolveIdle("discard")}>Eintrag verwerfen</Button>
 			<Button variant="outline" onclick={() => resolveIdle("subtract")}>Leerlauf abziehen</Button>
 			<Button onclick={() => resolveIdle("keep")}>Zeit behalten</Button>
-		</div>
+		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

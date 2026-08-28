@@ -127,6 +127,14 @@
 	}
 	body {
 		@apply bg-background text-foreground;
+		/*
+		 * viewport-fit=cover (siehe app.html) laesst die Seite bis in die Ecken
+		 * laufen - quer liegt sonst die linke Spalte unter der Notch. Seitlich
+		 * einmal global statt in jedem Container; oben/unten sitzt der Abstand
+		 * dort, wo die Kopfzeile klebt bzw. der Inhalt endet.
+		 */
+		padding-left: env(safe-area-inset-left);
+		padding-right: env(safe-area-inset-right);
 	}
 
 	/* Anklickbares zeigt den Zeiger. Browser geben <button> von Haus aus
@@ -154,6 +162,21 @@
 	}
 	*::-webkit-scrollbar-thumb:hover {
 		background: color-mix(in oklab, var(--foreground) 35%, transparent);
+	}
+}
+
+/*
+ * Waagerecht scrollen, ohne den Balken zu zeigen.
+ *
+ * Fuer die Navigation auf schmalen Displays: dort passen nicht alle Tabs
+ * nebeneinander, und ein Balken unter der Kopfzeile sieht aus wie ein Fehler.
+ * Gescrollt wird trotzdem - mit Finger, Rad oder Tastatur.
+ */
+@utility scrollbar-lose {
+	scrollbar-width: none;
+	-ms-overflow-style: none;
+	&::-webkit-scrollbar {
+		display: none;
 	}
 }
 

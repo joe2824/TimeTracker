@@ -1,7 +1,4 @@
 <script lang="ts">
-	// Eine Einstellungs-Zeile: links Titel + Erklaerung, rechts das Bedienelement.
-	// EIN Rhythmus fuer alle Einstellungen – vorher stand ein zweispaltiges Grid mit
-	// ueberlangen Labels neben Schalter-Zeilen, die es genau andersherum machten.
 	import type { Snippet } from "svelte";
 	import { cn } from "$lib/utils";
 	import { Label } from "$lib/components/ui/label";
@@ -15,17 +12,26 @@
 		description?: string;
 		/** das Bedienelement rechts */
 		control: Snippet;
-		/** Zusatzklassen fuer die Zeile, z.B. eine Trennlinie darueber */
+		/** Zusatzklassen fuer die Zeile */
 		class?: string;
 	}
 	let { id, title, description, control, class: className }: Props = $props();
 </script>
 
-<div class={cn("flex items-center justify-between gap-4", className)}>
-	<Label for={id} class="flex flex-col items-start gap-1">
+<!--
+	Umbrechende Zeile statt fester Aufteilung: schmale Bedienelemente (Schalter,
+	Zahlenfeld) bleiben neben ihrer Beschriftung stehen, breite (Auswahllisten)
+	rutschen von selbst darunter, sobald beides nicht mehr nebeneinander passt.
+	basis-32 ist die Schwelle - so viel Platz braucht die Beschriftung mindestens,
+	sonst steht dort eine Spalte von zwei Wörtern Breite.
+-->
+<div class={cn("flex flex-wrap items-center justify-between gap-x-6 gap-y-2", className)}>
+	<Label for={id} class="min-w-0 grow basis-32 flex-col items-start gap-1">
 		<span class="text-sm font-medium">{title}</span>
 		{#if description}
-			<span class="text-muted-foreground text-xs font-normal">{description}</span>
+			<span class="text-muted-foreground text-xs leading-relaxed font-normal text-pretty">
+				{description}
+			</span>
 		{/if}
 	</Label>
 	<div class="shrink-0">

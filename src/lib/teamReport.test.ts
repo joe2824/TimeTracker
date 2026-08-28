@@ -11,6 +11,7 @@ import {
 	teamSummaryToCsv
 } from "./teamReport";
 import type { TeamMember } from "./types";
+import { wallToTs } from "./tz";
 
 const team: TeamMember[] = [
 	{ id: "m1", name: "Anna Meier", email: "anna.meier@firma.de" },
@@ -23,7 +24,7 @@ function mail(over: Partial<Parameters<typeof buildTeamSummary>[1][number]> = {}
 		subject: "Stundenerfassung Juli 2026 – Anna Meier",
 		senderName: "Anna Meier",
 		senderEmail: "anna.meier@firma.de",
-		received: new Date(2026, 7, 1, 9, 30).toISOString(),
+		received: new Date(wallToTs(2026, 8, 1, 9, 30, 0)).toISOString(),
 		...over
 	};
 }
@@ -72,12 +73,12 @@ describe("nameFromSubject", () => {
 
 describe("monthFromReceived", () => {
 	it("rechnet fruehe Mails dem Vormonat zu", () => {
-		expect(monthFromReceived(new Date(2026, 7, 3, 8, 0).getTime())).toBe("2026-07");
-		expect(monthFromReceived(new Date(2026, 0, 5, 8, 0).getTime())).toBe("2025-12");
+		expect(monthFromReceived(wallToTs(2026, 8, 3, 8, 0, 0))).toBe("2026-07");
+		expect(monthFromReceived(wallToTs(2026, 1, 5, 8, 0, 0))).toBe("2025-12");
 	});
 
 	it("rechnet spaete Mails dem laufenden Monat zu", () => {
-		expect(monthFromReceived(new Date(2026, 6, 31, 16, 0).getTime())).toBe("2026-07");
+		expect(monthFromReceived(wallToTs(2026, 7, 31, 16, 0, 0))).toBe("2026-07");
 	});
 });
 
@@ -198,8 +199,8 @@ describe("buildTeamSummary", () => {
 		const s = buildTeamSummary(
 			"2026-07",
 			[
-				mail({ ...anonym, received: new Date(2026, 7, 1, 9, 0).toISOString() }),
-				mail({ ...anonym, received: new Date(2026, 7, 2, 9, 0).toISOString() })
+				mail({ ...anonym, received: new Date(wallToTs(2026, 8, 1, 9, 0, 0)).toISOString() }),
+				mail({ ...anonym, received: new Date(wallToTs(2026, 8, 2, 9, 0, 0)).toISOString() })
 			],
 			team
 		);
@@ -238,13 +239,13 @@ describe("buildTeamSummary", () => {
 		const s = buildTeamSummary(
 			"2026-07",
 			[
-				mail({ received: new Date(2026, 7, 1, 9, 0).toISOString() }),
-				mail({ received: new Date(2026, 7, 3, 11, 0).toISOString() })
+				mail({ received: new Date(wallToTs(2026, 8, 1, 9, 0, 0)).toISOString() }),
+				mail({ received: new Date(wallToTs(2026, 8, 3, 11, 0, 0)).toISOString() })
 			],
 			team
 		);
 		expect(s.entries).toHaveLength(1);
-		expect(s.entries[0].receivedTs).toBe(new Date(2026, 7, 3, 11, 0).getTime());
+		expect(s.entries[0].receivedTs).toBe(wallToTs(2026, 8, 3, 11, 0, 0));
 	});
 
 	it("faellt ohne Monat im Betreff auf das Empfangsdatum zurueck und sagt es", () => {

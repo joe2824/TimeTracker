@@ -46,15 +46,15 @@ describe("stepDate", () => {
 describe("isWorkday", () => {
 	const MON_FRI = [1, 2, 3, 4, 5];
 	it("Mo–Fr sind bei Standard-Arbeitstagen wahr, Sa/So falsch", () => {
-		const mon = new Date(2026, 6, 6).getTime(); // Montag
-		const sat = new Date(2026, 6, 11).getTime(); // Samstag
-		const sun = new Date(2026, 6, 12).getTime(); // Sonntag
+		const mon = wallToTs(2026, 7, 6, 0, 0, 0); // Montag
+		const sat = wallToTs(2026, 7, 11, 0, 0, 0); // Samstag
+		const sun = wallToTs(2026, 7, 12, 0, 0, 0); // Sonntag
 		expect(isWorkday(mon, MON_FRI)).toBe(true);
 		expect(isWorkday(sat, MON_FRI)).toBe(false);
 		expect(isWorkday(sun, MON_FRI)).toBe(false);
 	});
 	it("respektiert eine abweichende Arbeitswoche (z. B. inkl. Samstag)", () => {
-		const sat = new Date(2026, 6, 11).getTime();
+		const sat = wallToTs(2026, 7, 11, 0, 0, 0);
 		expect(isWorkday(sat, [1, 2, 3, 4, 5, 6])).toBe(true);
 	});
 });
@@ -62,21 +62,21 @@ describe("isWorkday", () => {
 describe("allDayNoons", () => {
 	// Outlook: Ganztags-Ende ist exklusiv (nächster Tag 00:00).
 	it("einzelner Ganztags-Termin -> genau der Starttag", () => {
-		const start = new Date(2026, 6, 8, 0, 0, 0).getTime(); // Mi 08.07.
-		const end = new Date(2026, 6, 9, 0, 0, 0).getTime(); // Do 09.07. 00:00 (exklusiv)
+		const start = wallToTs(2026, 7, 8, 0, 0, 0); // Mi 08.07.
+		const end = wallToTs(2026, 7, 9, 0, 0, 0); // Do 09.07. 00:00 (exklusiv)
 		const days = allDayNoons(start, end);
 		expect(days.map(fmtDate)).toEqual(["2026-07-08"]);
 	});
 
 	it("mehrtägiger Ganztags-Termin -> jeder Tag im Bereich", () => {
-		const start = new Date(2026, 6, 8, 0, 0, 0).getTime(); // Mi 08.07.
-		const end = new Date(2026, 6, 11, 0, 0, 0).getTime(); // Sa 11.07. 00:00 (exklusiv)
+		const start = wallToTs(2026, 7, 8, 0, 0, 0); // Mi 08.07.
+		const end = wallToTs(2026, 7, 11, 0, 0, 0); // Sa 11.07. 00:00 (exklusiv)
 		const days = allDayNoons(start, end);
 		expect(days.map(fmtDate)).toEqual(["2026-07-08", "2026-07-09", "2026-07-10"]);
 	});
 
 	it("Ende <= Start -> Fallback auf den Starttag", () => {
-		const start = new Date(2026, 6, 8, 0, 0, 0).getTime();
+		const start = wallToTs(2026, 7, 8, 0, 0, 0);
 		expect(allDayNoons(start, start).map(fmtDate)).toEqual(["2026-07-08"]);
 	});
 
@@ -84,15 +84,16 @@ describe("allDayNoons", () => {
 	// Wer hier mit +24h rechnet statt mit setDate(+1), landet auf 11:00 bzw. 13:00 und
 	// schiebt die Tage danach ueber Mitternacht in den falschen Tag.
 	it.each([
-		["Winterzeit-Umstellung", new Date(2026, 9, 23), new Date(2026, 9, 28)],
-		["Sommerzeit-Umstellung", new Date(2026, 2, 27), new Date(2026, 3, 1)]
+		["Winterzeit-Umstellung", new Date(wallToTs(2026, 10, 23, 0, 0, 0)), new Date(wallToTs(2026, 10, 28, 0, 0, 0))],
+		["Sommerzeit-Umstellung", new Date(wallToTs(2026, 3, 27, 0, 0, 0)), new Date(wallToTs(2026, 4, 1, 0, 0, 0))]
 	])("alle Zeitstempel liegen auf 12:00 (%s)", (_name, from, to) => {
 		const noons = allDayNoons(from.getTime(), to.getTime());
 		expect(noons.length).toBeGreaterThan(2); // sonst prueft die Schleife nichts
-		for (const ts of noons) expect(new Date(ts).getHours()).toBe(12);
+		for (const ts of noons) expect(zonedParts(ts).hour).toBe(12);
 	});
 });
 import type { Entry } from "./types";
+import { wallToTs, zonedParts } from "./tz";
 
 describe("roundHours", () => {
 	it("rundet auf halbe Stunden", () => {
@@ -280,7 +281,7 @@ describe("parseHours", () => {
 	});
 
 	it("parst vierstellige HHMM-Eingabe als Uhrzeit, nicht als Stundenzahl", () => {
-		expect(parseHours("0741")).toBeCloseTo(7 + 41 / 60, 10); // war fälschlich 741
+		expect(parseHours("0741")).toBeCloseTo(7 + 41 / 60, 10); // sonst fälschlich 741
 		expect(parseHours("1230")).toBe(12.5);
 		expect(parseHours("0800")).toBe(8);
 		expect(parseHours("0015")).toBe(0.25);
@@ -306,14 +307,13 @@ describe("durationHours", () => {
 });
 
 describe("toTs / noonTs", () => {
-	it("toTs liefert die lokale Zeit des Tages", () => {
-		const ts = toTs("2026-06-10", "08:30");
-		const d = new Date(ts);
-		expect(d.getFullYear()).toBe(2026);
-		expect(d.getMonth()).toBe(5);
-		expect(d.getDate()).toBe(10);
-		expect(d.getHours()).toBe(8);
-		expect(d.getMinutes()).toBe(30);
+	it("toTs liefert die Wanduhrzeit des Tages in der Kontozone", () => {
+		const p = zonedParts(toTs("2026-06-10", "08:30"));
+		expect(p.year).toBe(2026);
+		expect(p.month).toBe(6);
+		expect(p.day).toBe(10);
+		expect(p.hour).toBe(8);
+		expect(p.minute).toBe(30);
 	});
 
 	it("toTs gibt NaN bei Unsinn", () => {
@@ -321,8 +321,7 @@ describe("toTs / noonTs", () => {
 	});
 
 	it("noonTs trifft die Tagesmitte", () => {
-		const d = new Date(noonTs("2026-06-10"));
-		expect(d.getHours()).toBe(12);
+		expect(zonedParts(noonTs("2026-06-10")).hour).toBe(12);
 		expect(fmtDate(noonTs("2026-06-10"))).toBe("2026-06-10");
 	});
 
@@ -417,7 +416,7 @@ describe("splitAtMidnight", () => {
 describe("splitAtMidnight – manuelle Einträge", () => {
 	it("teilt einen von Hand angelegten Eintrag 23:00–01:00", () => {
 		// Derselbe Fall wie beim Timer, nur ueber „Eintrag" oder „Mehrere Tage":
-		// vorher zaehlte die ganze Spanne auf den Starttag.
+		// ohne Teilung zaehlte die ganze Spanne auf den Starttag.
 		const a = toTs("2026-07-16", "23:00");
 		const b = toTs("2026-07-17", "01:00");
 		const parts = splitAtMidnight(a, b);
@@ -454,7 +453,7 @@ describe("midnightSplitHint", () => {
 });
 
 describe("keepSeconds", () => {
-	const ts = (h: number, m: number, sec = 0) => new Date(2026, 7, 19, h, m, sec, 0).getTime();
+	const ts = (h: number, m: number, sec = 0) => wallToTs(2026, 8, 19, h, m, sec);
 
 	it("gibt den gespeicherten Zeitpunkt zurueck, wenn die Minute gleich blieb", () => {
 		// Annas Fall: Timer-Wechsel um 14:00:22, im Dialog steht "14:00".
@@ -467,7 +466,7 @@ describe("keepSeconds", () => {
 
 	it("unterscheidet gleiche Uhrzeit an verschiedenen Tagen", () => {
 		const heute = ts(14, 0, 0);
-		const gestern = new Date(2026, 7, 18, 14, 0, 22, 0).getTime();
+		const gestern = wallToTs(2026, 8, 18, 14, 0, 22);
 		expect(keepSeconds(heute, gestern)).toBe(heute);
 	});
 
@@ -482,17 +481,17 @@ describe("keepSeconds", () => {
 
 describe("quantize", () => {
 	it("rundet auf ganze Minuten ab", () => {
-		const t = new Date(2026, 5, 10, 14, 37, 42, 500).getTime();
+		const t = (wallToTs(2026, 6, 10, 14, 37, 42) + 500);
 		const q = quantize(t, MINUTE_MS);
 		expect(new Date(q).getSeconds()).toBe(0);
 		expect(new Date(q).getMilliseconds()).toBe(0);
-		expect(new Date(q).getMinutes()).toBe(37);
+		expect(zonedParts(q).minute).toBe(37);
 	});
 
 	it("liefert innerhalb derselben Minute denselben Wert", () => {
 		// Genau darauf beruht die Ersparnis: Svelte gibt einen unveraenderten
 		// Wert nicht weiter, die Rechnung dahinter laeuft also einmal je Minute.
-		const base = new Date(2026, 5, 10, 14, 37, 0).getTime();
+		const base = wallToTs(2026, 6, 10, 14, 37, 0);
 		const werte = new Set<number>();
 		for (let s = 0; s < 60; s++) werte.add(quantize(base + s * 1000, MINUTE_MS));
 		expect(werte.size).toBe(1);
@@ -501,7 +500,7 @@ describe("quantize", () => {
 	});
 
 	it("rundet ab, nie auf – eine Rechnung darf nicht in die Zukunft greifen", () => {
-		const t = new Date(2026, 5, 10, 14, 37, 59, 999).getTime();
+		const t = (wallToTs(2026, 6, 10, 14, 37, 59) + 999);
 		expect(quantize(t, MINUTE_MS)).toBeLessThanOrEqual(t);
 	});
 });

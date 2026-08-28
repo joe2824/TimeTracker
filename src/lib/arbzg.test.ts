@@ -12,6 +12,7 @@ import {
 	NORM_DAILY
 } from "./arbzg";
 import { stepDate, toTs } from "./time";
+import { weekdayOfDate, zonedParts } from "./tz";
 import type { Entry } from "./types";
 
 const ABS = "abs";
@@ -32,8 +33,8 @@ function entry(date: string, from: string, to: string, activityId = "a"): Entry 
 
 /** Ein Eintrag ab 08:00 ueber `hours` Stunden. */
 function day(date: string, hours: number): Entry {
-	const end = new Date(toTs(date, "08:00") + hours * 3600000);
-	const clock = `${String(end.getHours()).padStart(2, "0")}:${String(end.getMinutes()).padStart(2, "0")}`;
+	const end = zonedParts(toTs(date, "08:00") + hours * 3600000);
+	const clock = `${String(end.hour).padStart(2, "0")}:${String(end.minute).padStart(2, "0")}`;
 	return entry(date, "08:00", clock);
 }
 
@@ -53,7 +54,7 @@ function absence(date: string, fraction = 1): Entry {
 function series(from: string, to: string, hours: number, workdays = MO_FR): Entry[] {
 	const out: Entry[] = [];
 	for (let d = from; d <= to; d = stepDate(d, 1)) {
-		if (workdays.includes(new Date(`${d}T12:00:00`).getDay())) out.push(day(d, hours));
+		if (workdays.includes(weekdayOfDate(d))) out.push(day(d, hours));
 	}
 	return out;
 }
@@ -185,7 +186,7 @@ describe("avgWindow", () => {
 
 	it("zaehlt Sonntagsstunden im Zaehler, gibt dafuer aber kein Budget", () => {
 		const sunday = "2026-06-28"; // Sonntag
-		expect(new Date(`${sunday}T12:00:00`).getDay()).toBe(0);
+		expect(weekdayOfDate(sunday)).toBe(0);
 		const plain = avgWindow(facts(), "strict", base);
 		const withSunday = avgWindow(
 			dayFacts([...series(HISTORY_FROM, UNTIL, 7.5), day(sunday, 6)], ABSENCE, { deductBreaks: false }),
@@ -207,7 +208,7 @@ describe("currentPace", () => {
 		// Die Frage ist "wie viel arbeite ich an einem Arbeitstag", nicht
 		// "wie viel arbeite ich im Kalender".
 		const entries = [...series(HISTORY_FROM, UNTIL, 9)].filter(
-			(e) => new Date(e.startTs) < new Date(`${stepDate(UNTIL, -10)}T00:00:00`) || new Date(e.startTs) > new Date(`${stepDate(UNTIL, -5)}T23:59:59`)
+			(e) => e.startTs < toTs(stepDate(UNTIL, -10), "00:00") || e.startTs > toTs(stepDate(UNTIL, -5), "23:59")
 		);
 		for (let d = stepDate(UNTIL, -10); d <= stepDate(UNTIL, -5); d = stepDate(d, 1)) {
 			entries.push(absence(d));
@@ -279,8 +280,8 @@ describe("forecast", () => {
 	});
 
 	it("fordert erst kurz vor dem Umkehrpunkt zum Handeln auf", () => {
-		// Der Kern der Beschwerde: bei 8:00 Schnitt und negativem Puffer stand
-		// dauerhaft Rot, obwohl noch Wochen Zeit waren, es zu drehen.
+		// Bei 8:00 Schnitt und negativem Puffer bleiben noch Wochen Zeit, es zu
+		// drehen - Rot soll erst kommen, wenn es wirklich eng wird.
 		const far = forecast(facts(7.5), "strict", { ...base, pace: 8.3 }).verdict;
 		expect(far.headline).toMatch(/Umkehrpunkt in etwa \d+ Wochen/);
 		expect(far.requiresAction).toBe(false);
@@ -446,10 +447,9 @@ describe("checkArbZg", () => {
 		expect(r.windows.strict.average).toBeCloseTo(9);
 		expect(r.forecasts.strict.verdict.level).toBe("crit");
 		expect(r.forecasts.legal.verdict.level).toBe("ok");
-		// Er gehoert keinem Tag und darf deshalb in keiner Tageszeile stehen –
-		// dort stand er sonst doppelt (je Lesart) am selben Datum, und weil die
-		// Liste je Tag nach Regel adressiert wird, war das ein doppelter
-		// Schluessel: die Ansicht brach ab, sobald der Schnitt riss.
+		// Er gehoert keinem Tag und darf deshalb in keiner Tageszeile stehen -
+		// sonst stuende er doppelt (je Lesart) am selben Datum und ergaebe einen
+		// doppelten Schluessel in einer nach Regel+Tag adressierten Liste.
 		const perDay = new Map<string, Set<string>>();
 		for (const f of r.findings) {
 			const seen = perDay.get(f.date) ?? new Set<string>();
@@ -462,19 +462,6 @@ describe("checkArbZg", () => {
 
 // ---------------------------------------------------------------------------
 // Die Zeitsimulation gegen eine unabhaengige Referenzrechnung.
-//
-// Die eingesetzte Fassung summiert ueber Praefixsummen: ein Fenster kostet zwei
-// Subtraktionen statt 168 Additionen. Genau dort sitzen die Fehler, die keiner
-// sieht – ein Tag zu weit links, ein Tag zu weit rechts, ein Budget doppelt
-// gezaehlt. Beispieltests fangen so etwas nur zufaellig, weil sie meist glatte
-// Zahlen benutzen, bei denen sich ein Versatz aufhebt.
-//
-// Die Referenz unten ist bewusst NICHT aus der Implementierung abgeleitet,
-// sondern aus den dokumentierten Regeln neu aufgeschrieben: Fenster von 168
-// Tagen, Tage vor Beginn der Datenbasis tragen nichts, Werktag je nach Lesart,
-// Abwesenheit mindert das Budget, kuenftige Arbeitstage bekommen das
-// angenommene Tempo.
-// ---------------------------------------------------------------------------
 
 /** Deterministischer Zufall – ein fehlschlagender Lauf muss reproduzierbar sein. */
 function rng(seed: number): () => number {
@@ -485,7 +472,7 @@ function rng(seed: number): () => number {
 	};
 }
 
-const weekdayOf = (date: string) => new Date(`${date}T12:00:00`).getDay();
+const weekdayOf = (date: string) => weekdayOfDate(date);
 
 /** Der Schnitt eines Fensters, naiv Tag fuer Tag. */
 function naiveAverage(opts: {
@@ -591,9 +578,6 @@ describe("Zeitsimulation", () => {
 		//    gearbeiteten Stunden bestimmt, und eine Tempoempfehlung kann daran
 		//    wenig aendern. Aber sie darf nicht beliebig danebenliegen: eine
 		//    Viertelstunde ist die Grenze.
-		//
-		// Ohne den zweiten Teil waere der erste eine Ausrede – dann duerfte maxPace
-		// beliebig zu hoch liegen, solange der Schaden nur frueh genug eintritt.
 		const soonEnough = stepDate(UNTIL, 28);
 		const NEAR_TERM_SLACK = 0.25;
 		let checkedNearTerm = 0;
@@ -635,14 +619,11 @@ describe("Zeitsimulation", () => {
 	});
 
 	it("laesst maxPace nicht vom naechsten Tag bestimmen", () => {
-		// Der Fehler, der die Kachel „Höchstens" unbrauchbar machte: das Fenster,
-		// das MORGEN endet, hat genau einen kuenftigen Arbeitstag im Nenner, und
-		// das gesamte Restbudget faellt auf ihn. Bei einem Schnitt knapp unter der
-		// Grenze kam so „hoechstens 5:37 h je Arbeitstag" heraus – unter einer
-		// Ueberschrift, die sagt, es sei nichts zu tun.
+		// Das Fenster, das MORGEN endet, hat genau einen kuenftigen Arbeitstag im
+		// Nenner - das gesamte Restbudget faellt auf ihn und wuerde maxPace bei
+		// einem Schnitt knapp unter der Grenze verzerren.
 		const f = forecast(flat(7.5), "strict", { ...base, pace: 8.02 });
 		expect(f.verdict.requiresAction).toBe(false);
-		// Frueher: 5:37 h, bestimmt vom Fenster, das morgen endet.
 		expect(f.maxPace!).toBeCloseTo(NORM_DAILY, 6);
 	});
 
@@ -743,19 +724,6 @@ describe("Zeitsimulation", () => {
 
 // ---------------------------------------------------------------------------
 // Kalender-Randfaelle.
-//
-// Die ganze Rechnung laeuft ueber Kalendertage: das Fenster ist 168 Tage lang,
-// die Achse wird mit stepDate() Tag fuer Tag aufgebaut, und der Nenner haengt am
-// Wochentag. Schaltjahr, Jahreswechsel und Sommerzeit sind damit genau die
-// Stellen, an denen ein Tag verloren gehen oder doppelt gezaehlt werden kann –
-// und zwar unauffaellig, weil das Ergebnis nur um Minuten danebenliegt.
-//
-// Der Pruefstein ist eine Invariante, die keinen Kalender braucht: 168 Tage sind
-// exakt 24 Wochen, also exakt 24-mal jeder Wochentag. Bei durchgaengiger
-// Erfassung ohne Abwesenheiten muss der Nenner deshalb IMMER 120 (Mo–Fr) bzw.
-// 144 (Mo–Sa) sein – ganz gleich, wo das Fenster liegt. Verrutscht irgendwo ein
-// Tag, faellt genau das auf.
-// ---------------------------------------------------------------------------
 
 /** Datum plus `days`, in UTC gerechnet – kennt keine Sommerzeit. */
 function utcShift(iso: string, days: number): string {
@@ -841,11 +809,6 @@ describe("Kalender-Randfaelle", () => {
 
 // ---------------------------------------------------------------------------
 // Boesartige Eintraege.
-//
-// Die Zufallsszenarien oben erzeugen brave Tage: ein Block, sauber im
-// Arbeitstag. Was die Rechnung wirklich aergert, sind die Faelle, die im Alltag
-// entstehen und die niemand erzeugt, wenn er Testdaten "normal" baut.
-// ---------------------------------------------------------------------------
 
 describe("boesartige Eintraege", () => {
 	const opts = (dataFrom: string) => ({ until: UNTIL, dataFrom, workdays: MO_FR });

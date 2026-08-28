@@ -2,7 +2,10 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window",
-  "windows": ["main", "tray"],
+  "windows": [
+    "main",
+    "tray"
+  ],
   "permissions": [
     "core:default",
     "core:window:allow-show",
@@ -22,10 +25,28 @@
     "autostart:default",
     "updater:default",
     "process:default",
+    "deep-link:default",
     "global-shortcut:allow-register",
     "global-shortcut:allow-unregister",
     "global-shortcut:allow-unregister-all",
     "global-shortcut:allow-is-registered",
-    "aptabase:allow-track-event"
+    "aptabase:allow-track-event",
+    {
+      "identifier": "http:default",
+      "allow": [
+        {
+          "url": "https://*"
+        },
+        {
+          "url": "https://*/*"
+        },
+        {
+          "url": "http://localhost:*"
+        },
+        {
+          "url": "http://localhost:*/*"
+        }
+      ]
+    }
   ]
 }

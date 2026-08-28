@@ -29,12 +29,7 @@ export async function readOutlookCalendar(start: string, end: string): Promise<C
 	return Array.isArray(res) ? res : [];
 }
 
-/**
- * Der Briefumschlag einer Mail aus dem Posteingang (Chef-Modus).
- *
- * Ohne Inhalt: den gibt Outlook auf gesperrten Rechnern ohnehin nicht heraus,
- * und fuer die Abgabe-Kontrolle reichen Betreff und Empfangszeit.
- */
+/** Der Briefumschlag einer Mail aus dem Posteingang (Chef-Modus). */
 export interface OutlookMail {
 	subject: string;
 	senderName: string;
@@ -66,15 +61,7 @@ export async function readOutlookMails(
 	return Array.isArray(res) ? res : [];
 }
 
-/**
- * Fallback: oeffnet den Standard-Mailclient via mailto (ohne HTML-Tabelle).
- *
- * Nicht URLSearchParams: das kodiert Leerzeichen als "+" (Formular-Kodierung),
- * mailto nimmt "+" laut RFC 6068 aber woertlich. Der Betreff kam damit als
- * "Stundenerfassung+Juli+2026+–+Anna+Klein" bei den Vorgesetzten an – und zwar
- * genau dann, wenn kein klassisches Outlook da ist, also im Fall, fuer den es
- * diesen Fallback ueberhaupt gibt.
- */
+/** Fallback: oeffnet den Standard-Mailclient via mailto (ohne HTML-Tabelle). */
 export function mailtoFallback(to: string, subject: string, bodyText: string): string {
 	const q = `subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText)}`;
 	return `mailto:${encodeURIComponent(to)}?${q}`;
@@ -118,11 +105,6 @@ export function explainOutlookError(err: unknown, info?: OutlookInfo | null): st
 /**
  * Einen fehlgeschlagenen Outlook-Aufruf protokollieren und die Meldung fuer den
  * Bildschirm zurueckgeben.
- *
- * Vier Stellen (Bericht, Kalender-Import, Chef-Modus zweimal) taten dasselbe von
- * Hand: Erkennung nachladen, mit `{ fehler, outlook }` protokollieren, Meldung
- * bauen. Die Erkennung gehoert dabei ins Protokoll – die Meldung allein sagt
- * spaeter nicht, WELCHES Outlook der Rechner ueberhaupt hat.
  */
 export async function reportOutlookError(context: string, err: unknown): Promise<string> {
 	const info = await detectOutlook().catch(() => null);

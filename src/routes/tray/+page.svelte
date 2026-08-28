@@ -11,6 +11,7 @@
 	import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 	import { invoke } from "@tauri-apps/api/core";
 	import { emit, listen } from "@tauri-apps/api/event";
+	import { notifyDataChanged, type DataChanged } from "$lib/platform/windows";
 	import { toast } from "svelte-sonner";
 	import SquareIcon from "@lucide/svelte/icons/square";
 	import PlayIcon from "@lucide/svelte/icons/play";
@@ -57,10 +58,17 @@
 			"main-attention",
 			(e) => (attention = !!e.payload?.active)
 		);
+		// Das Hauptfenster meldet, wenn der Abgleich etwas mitgebracht hat. Ohne
+		// das zeigt ein offenes Flyout den Stand von seinem letzten Einblenden.
+		const unDaten = listen<DataChanged>("data-reload", (e) => {
+			if (e.payload?.from === "tray") return;
+			void refresh();
+		});
 		return () => {
 			clearInterval(tick);
 			void un.then((f) => f());
 			void unAtt.then((f) => f());
+			void unDaten.then((f) => f());
 		};
 	});
 
@@ -77,8 +85,7 @@
 		if (!customStart && presetMin === 0) return null;
 		const ts = resolveStartTs(presetMin, customStart);
 		if (ts == null) return "ungültige Uhrzeit";
-		// Auch im Tray sagen, dass zwei Eintraege entstehen: der Hinweis stand
-		// bisher nur im Hauptfenster, obwohl hier genauso rueckdatiert wird.
+		// Auch im Tray sagen, dass zwei Eintraege entstehen - hier wird genauso rueckdatiert.
 		const geteilt = midnightSplitHint(ts, now);
 		return geteilt ? `ab ${fmtClock(ts)} – ${geteilt}` : `ab ${fmtClock(ts)}`;
 	});
@@ -98,12 +105,12 @@
 		// Nach dem Start zurück auf "jetzt", damit der Offset nicht am nächsten Start klebt.
 		presetMin = 0;
 		customStart = "";
-		await emit("data-reload"); // Hauptfenster aktualisieren + Tray-Menü/Icon
+		await notifyDataChanged(); // Hauptfenster aktualisieren + Tray-Menü/Icon
 		// Flyout bleibt offen; schließt erst bei Fokusverlust.
 	}
 	async function stop() {
 		await app.stop();
-		await emit("data-reload");
+		await notifyDataChanged();
 	}
 	async function openMain() {
 		// Derselbe Weg wie „Öffnen" im Tray-Menue (show_main im Rust-Teil), statt
@@ -113,15 +120,30 @@
 	}
 </script>
 
-<div class="bg-background text-foreground flex h-screen flex-col gap-3 px-2 py-3 text-sm">
+<div class="bg-background text-foreground flex h-dvh flex-col gap-2.5 px-2.5 py-3 text-sm">
 	<!-- Statusbereich mit fester (schlanker) Höhe: hält die Schnellstart-Liste an
 	     Ort und Stelle, egal ob ein Timer läuft oder nicht. -->
 	<div class="flex h-16 shrink-0 flex-col gap-1">
 		{#if app.running}
-			<div class="border-primary/20 bg-primary/10 flex flex-1 items-center justify-between gap-2 rounded-lg border px-3 py-1.5">
+			<div
+				class="border-primary/20 bg-primary/10 flex flex-1 items-center justify-between gap-2 rounded-lg border px-3 py-1.5"
+			>
 				<div class="min-w-0">
-					<div class="truncate text-xs font-medium">{app.activityName(app.running.activityId)}</div>
-					<div class="text-primary font-mono text-base tabular-nums">{fmtHMS(app.runningSeconds)}</div>
+					<div class="flex items-center gap-1.5">
+						<!-- Derselbe pulsierende Punkt wie in Kopfzeile und Hauptfenster. -->
+						<span class="relative flex size-1.5 shrink-0">
+							<span
+								class="bg-primary absolute inline-flex size-full animate-ping rounded-full opacity-75"
+							></span>
+							<span class="bg-primary relative inline-flex size-1.5 rounded-full"></span>
+						</span>
+						<span class="truncate text-xs font-medium">
+							{app.activityName(app.running.activityId)}
+						</span>
+					</div>
+					<div class="text-primary font-mono text-base leading-tight tabular-nums">
+						{fmtHMS(app.runningSeconds)}
+					</div>
 				</div>
 				<Button variant="destructive" size="sm" onclick={stop}>
 					<SquareIcon class="size-4" /> Stopp
@@ -139,8 +161,7 @@
 				{startHint ?? "Timer starten"}
 			</div>
 			<!-- 300px Flyout: xs-Groesse, und das Uhrzeitfeld erscheint erst, wenn es
-			     gebraucht wird. Die gewaehlte Option ist hervorgehoben – vorher
-			     ueberschrieb ein Wert im Feld die Presets still. -->
+			     gebraucht wird. Die gewaehlte Option ist hervorgehoben. -->
 			<div class="flex flex-1 items-center justify-center gap-1">
 				{#if usingClock}
 					<Input
@@ -189,7 +210,7 @@
 		{/if}
 	</div>
 
-	<div class="text-muted-foreground text-xs font-medium">Schnellstart</div>
+	<div class="text-muted-foreground px-0.5 text-xs font-medium">Schnellstart</div>
 	{#if loadError}
 		<p class="text-destructive px-2 text-xs">Daten nicht lesbar: {loadError}</p>
 	{/if}
@@ -199,7 +220,7 @@
 			{@const active = app.running?.activityId === a.id}
 			<button
 				type="button"
-				class="hover:bg-accent flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left {active
+				class="hover:bg-accent focus-visible:ring-ring/50 flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left outline-none transition-colors focus-visible:ring-3 {active
 					? 'bg-accent'
 					: ''}"
 				onclick={() => (active ? stop() : start(a.id))}
@@ -250,6 +271,6 @@
 	onapplied={() => {
 		presetMin = 0;
 		customStart = "";
-		void emit("data-reload");
+		void notifyDataChanged();
 	}}
 />

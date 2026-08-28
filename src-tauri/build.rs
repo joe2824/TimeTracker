@@ -9,10 +9,6 @@ fn main() {
 ///  1. die Umgebungsvariable `APTABASE_KEY` (so setzt ihn der Release-Workflow
 ///     aus der GitHub-Variablen),
 ///  2. eine Zeile `APTABASE_KEY=...` in `src-tauri/.env` (fuer Laeufe von Hand).
-///
-/// Fehlt beides, bleibt der Key leer. Das Plugin schaltet sich dann selbst ab
-/// (`is_enabled = !app_key.is_empty()`) – ein Bau ohne Key ist also kein Fehler,
-/// er sendet nur nichts. Genau das ist fuer Entwicklungs-Builds gewollt.
 fn aptabase_key() {
     // Ohne diese Zeile merkte Cargo eine Aenderung am Key nicht und baute den
     // alten Wert erneut ein.

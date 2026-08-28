@@ -22,7 +22,13 @@ ipc.invoke.mockImplementation(async (cmd: string) => (cmd === "idle_seconds" ? i
 vi.mock("@tauri-apps/api/core", () => ({ invoke: ipc.invoke }));
 
 const meldungen = vi.hoisted(() => ({ send: vi.fn() }));
-vi.mock("@tauri-apps/plugin-notification", () => ({ sendNotification: meldungen.send }));
+// Gemeldet wird ueber platform/notify - die Huelle dahinter (Tauri-Plugin oder
+// Web-Notification) ist hier nicht der Gegenstand und laeuft unter vitest ohnehin
+// in keine der beiden Aeste.
+vi.mock("./platform/notify", () => ({
+	notify: meldungen.send,
+	ensureNotificationPermission: async () => true
+}));
 // Die Berechtigung ist hier nicht der Gegenstand: immer erteilt.
 vi.mock("./reminders", () => ({ ensureNotificationPermission: async () => true }));
 

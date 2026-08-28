@@ -1,9 +1,4 @@
 <script lang="ts">
-	// Chef-Modus: Abgabe-Kontrolle der Monatsberichte des Teams.
-	//
-	// Bewusst ohne Stundenauswertung – Outlook gibt per COM nur Betreff und
-	// Empfangszeit heraus, sobald der programmatische Zugriff gesperrt ist
-	// (siehe teamReport.ts). Liest nur, verschiebt und markiert nichts.
 	import { invoke } from "@tauri-apps/api/core";
 	import { save } from "@tauri-apps/plugin-dialog";
 	import { app } from "$lib/app.svelte";
@@ -25,6 +20,7 @@
 	import { Button } from "$lib/components/ui/button";
 	import { Badge } from "$lib/components/ui/badge";
 	import MonthSelector from "$lib/components/MonthSelector.svelte";
+	import StatTile from "$lib/components/StatTile.svelte";
 	import * as Card from "$lib/components/ui/card";
 	import * as Table from "$lib/components/ui/table";
 	import { toast } from "svelte-sonner";
@@ -46,6 +42,13 @@
 		buildTeamSummary(month, mails, app.settings.team, app.settings.teamSubjectFilter)
 	);
 	const range = $derived(scanRange(month));
+	/**
+	 * Gefundene Mails, die einen anderen Monat betreffen. Der Filter greift ueber
+	 * den Betreff, der Zeitraum ueber das Empfangsdatum – wer seinen Januar-Bericht
+	 * im Maerz nachreicht, taucht deshalb im Posteingang auf, aber nicht in dieser
+	 * Tabelle. Ungenannt wirkt das wie ein verschluckter Bericht.
+	 */
+	const andererMonat = $derived(Math.max(0, mails.length - summary.entries.length));
 	/** Fehlende mit Adresse – nur die lassen sich erinnern. */
 	const reachableMissing = $derived(summary.missing.filter((m) => m.email.trim()));
 
@@ -199,17 +202,34 @@
 			<Card.Header>
 				<Card.Title>{summary.label}</Card.Title>
 				<Card.Description>
-					{summary.entries.length} abgegeben
-					{#if summary.missing.length > 0}· {summary.missing.length} ausstehend{/if}
-					{#if mails.length > summary.entries.length}
-						· {mails.length - summary.entries.length} Mail(s) betreffen einen anderen Monat
-					{/if}
+					Gelesen wurde der Posteingang vom {range.start} bis {range.end}.
 				</Card.Description>
 			</Card.Header>
-			<Card.Content class="px-0">
+			<Card.Content class="space-y-4 px-0">
 				{#if summary.entries.length === 0 && summary.missing.length === 0}
-					<p class="text-muted-foreground px-6 text-sm">Nichts gefunden.</p>
+					<p class="text-muted-foreground px-4 text-sm">Nichts gefunden.</p>
 				{:else}
+					<div class="grid grid-cols-2 gap-3 px-4 {andererMonat > 0 ? 'sm:grid-cols-3' : ''}">
+						<StatTile label="Abgegeben">{summary.entries.length}</StatTile>
+						<StatTile
+							label="Ausstehend"
+							valueClass={summary.missing.length === 0 ? "text-muted-foreground" : "text-destructive"}
+						>
+							{summary.missing.length}
+						</StatTile>
+						{#if andererMonat > 0}
+							<!-- Mails, die der Filter fand, die aber einen anderen Monat betreffen.
+							     Gehoert genannt: sonst wundert man sich, warum der Posteingang mehr
+							     hergab als die Tabelle zeigt. -->
+							<StatTile
+								label="Anderer Monat"
+								hint="gefunden, nicht gezählt"
+								class="col-span-2 sm:col-span-1"
+							>
+								{andererMonat}
+							</StatTile>
+						{/if}
+					</div>
 					<Table.Root>
 						<Table.Header>
 							<Table.Row>
@@ -249,9 +269,12 @@
 										{/if}
 									</Table.Cell>
 									<Table.Cell>
-										<span class="inline-flex items-center gap-1 text-green-700 dark:text-green-400">
-											<CheckIcon class="size-4" /> abgegeben
-										</span>
+										<Badge
+											variant="outline"
+											class="border-green-600/40 bg-green-500/10 whitespace-nowrap text-green-700 dark:text-green-400"
+										>
+											<CheckIcon /> abgegeben
+										</Badge>
 									</Table.Cell>
 									<Table.Cell class="text-right text-sm whitespace-nowrap">
 										{fmtDateHuman(e.receivedTs)}, {fmtClock(e.receivedTs)}
@@ -266,7 +289,14 @@
 											<div class="text-muted-foreground text-xs">{m.email}</div>
 										{/if}
 									</Table.Cell>
-									<Table.Cell class="text-red-600 dark:text-red-400">kein Bericht</Table.Cell>
+									<Table.Cell>
+										<Badge
+											variant="outline"
+											class="border-destructive/40 bg-destructive/10 text-destructive whitespace-nowrap"
+										>
+											kein Bericht
+										</Badge>
+									</Table.Cell>
 									<Table.Cell class="text-muted-foreground text-right">—</Table.Cell>
 								</Table.Row>
 							{/each}

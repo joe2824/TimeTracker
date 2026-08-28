@@ -27,8 +27,39 @@ jobs:
       - name: Tests
         run: npm test
 
+      # Die Kontozeitzone haengt nicht an der des Geraets - das ist eine Zusage,
+      # keine Vermutung. Geprueft wird sie, indem dieselbe Suite unter Zonen
+      # laeuft, die weit weg liegen: +14, -11 und eine mit Viertelstunden-Versatz.
+      # Die Kontozone bleibt dabei Berlin (siehe src/lib/testing/pinZone.ts), das
+      # Ergebnis muss also unveraendert sein.
+      - name: Tests in fremden Zeitzonen
+        run: |
+          for tz in Pacific/Kiritimati Pacific/Midway Australia/Eucla; do
+            echo "--- $tz ---"
+            TZ=$tz npm test
+          done
+
       - name: Build
         run: npm run build
+
+      # Der Server ist ein eigener Workspace mit eigenen Tests. Der Bau muss vor
+      # den Tests laufen: der Durchstich in api.test.ts startet den GEBAUTEN
+      # Server und spricht ihn ueber echtes HTTP an.
+      # Die PWA aus derselben Quelle wie die Desktop-Anwendung. Bricht dieser
+      # Schritt, ist etwas eingezogen, das nur in der Desktop-Huelle laeuft.
+      - name: PWA bauen
+        run: npm run build:web
+
+      - name: Server pruefen
+        run: npm run server:check
+
+      # Der Bau MUSS vor den Server-Tests laufen: der Durchstich in api.test.ts
+      # startet den gebauten Server und spricht ihn ueber echtes HTTP an.
+      - name: Server bauen
+        run: npm run server:build
+
+      - name: Server-Tests
+        run: npm run server:test
 
   # Die Rust-Seite wurde bisher erst im Release-Build uebersetzt – ein Fehler in
   # src-tauri fiel also erst auf, wenn der Tag schon stand.

@@ -12,15 +12,26 @@
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "test": "vitest run",
     "test:watch": "vitest",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "server:dev": "npm --workspace server run dev",
+    "server:build": "npm --workspace server run build",
+    "server:test": "npm --workspace server run test",
+    "build:web": "cross-env BUILD_TARGET=web vite build",
+    "dev:web": "cross-env BUILD_TARGET=web vite dev",
+    "pwa:bundle": "npm run build:web && node scripts/copy-pwa.mjs",
+    "server:check": "npm --workspace server run check"
   },
   "license": "MIT",
   "dependencies": {
+    "@scure/bip39": "^2.3.0",
+    "@simplewebauthn/browser": "^13.3.0",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-autostart": "^2.5.1",
+    "@tauri-apps/plugin-deep-link": "^2.4.9",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-fs": "^2.5.1",
     "@tauri-apps/plugin-global-shortcut": "^2.3.2",
+    "@tauri-apps/plugin-http": "^2.5.9",
     "@tauri-apps/plugin-notification": "^2.3.3",
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-process": "^2.3.1",
@@ -40,7 +51,9 @@
     "@tauri-apps/cli": "^2",
     "@types/d3-scale": "^4.0.9",
     "@types/node": "^26.1.2",
+    "cross-env": "^10.1.0",
     "d3-scale": "^4.0.2",
+    "fake-indexeddb": "^6.2.5",
     "happy-dom": "^20.11.6",
     "layerchart": "^2.0.0-next.48",
     "mode-watcher": "^1.1.0",
@@ -52,5 +65,14 @@
     "typescript": "~5.6.2",
     "vite": "^6.0.3",
     "vitest": "^4.1.9"
+  },
+  "workspaces": [
+    "server"
+  ],
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true,
+    "fsevents@2.3.3": true,
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true
   }
 }

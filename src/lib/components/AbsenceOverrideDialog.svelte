@@ -1,9 +1,7 @@
 <script lang="ts">
 	// Rueckfrage, wenn ein Eintrag ueber Mitternacht in einen Tag mit
-	// Ganztags-Abwesenheit reicht: #reportConflict prueft nur den ersten Tag,
-	// der Folgetag wird hier separat abgefangen (siehe app.svelte.ts,
-	// addEntry/updateEntry). Bestaetigen entfernt die Abwesenheit(en) fuer
-	// genau diese Tage und legt den Eintrag danach normal an.
+	// Ganztags-Abwesenheit reicht (siehe addEntry/updateEntry in app.svelte.ts).
+	// Bestaetigen entfernt die Abwesenheit fuer diese Tage und legt den Eintrag an.
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { Button } from "$lib/components/ui/button";
 	import { app } from "$lib/app.svelte";
@@ -19,12 +17,12 @@
 		<Dialog.Header>
 			<Dialog.Title>Abwesenheit entfernen?</Dialog.Title>
 			<Dialog.Description>
-				Der Eintrag reicht in einen Tag mit Ganztags-Abwesenheit. Dort kann keine Projektzeit
-				neben einer Ganztags-Abwesenheit stehen.
+				Der Eintrag reicht in einen Tag mit Ganztags-Abwesenheit – dort kann keine Projektzeit
+				daneben stehen.
 			</Dialog.Description>
 		</Dialog.Header>
 
-		<div class="space-y-2">
+		<div class="bg-muted/40 space-y-2 rounded-lg p-3">
 			{#each p?.days ?? [] as d (d.entry.id)}
 				<div class="flex items-center gap-2 text-sm">
 					<PalmtreeIcon class="text-amber-600 dark:text-amber-400 size-4 shrink-0" />

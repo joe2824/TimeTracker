@@ -127,13 +127,22 @@
 		return v.requiresAction ? v : null;
 	});
 
+	/** Tagesbilanz: erfasst, Pausenabzug, Arbeitszeit. */
 	/**
-	 * Tagesbilanz: erfasst, Pausenabzug, Arbeitszeit.
+	 * Form und Toenung der Hinweiszeile.
 	 *
-	 * Tickt ueber app.now mit, solange ein Timer laeuft – und damit auch der
-	 * Abzug: er setzt beim Ueberschreiten von 4 bzw. 6 Stunden ein, und genau
-	 * dann will man sehen, dass die Arbeitszeit gerade um 15 Minuten springt.
+	 * Gedeckt gehalten: der Hinweis steht ueber dem Timer und darf ihn nicht
+	 * uebertoenen – er soll auffallen, wenn man hinsieht, nicht bevor. Dieselben
+	 * Stufen wie das Urteil im Arbeitszeit-Check, damit dieselbe Farbe dasselbe
+	 * heisst (frueher zwei getrennte <style>-Bloecke mit denselben Werten).
 	 */
+	const HINT_FORM = "flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-xs";
+	const hintTon = $derived(
+		arbzgVerdict?.level === "crit"
+			? "border-destructive/50 bg-destructive/6 text-destructive"
+			: "border-amber-500/55 bg-amber-500/7 text-amber-700 dark:text-amber-400"
+	);
+
 	const todaySum = $derived.by(() => {
 		let worked = 0;
 		let absent = 0;
@@ -156,68 +165,87 @@
 		     kein Klick. -->
 		{#if app.settings.arbzgEnabled}
 			<button
-				class="hint flex w-full items-center gap-2 rounded-md border px-3 py-1.5 text-left text-xs"
-				class:hint-crit={arbzgVerdict.level === "crit"}
+				class={[HINT_FORM, hintTon, "text-left transition-colors hover:brightness-[0.97]"]}
 				onclick={() => onShowReport?.()}
 			>
 				<TriangleAlertIcon class="size-3.5 shrink-0" />
 				<span class="font-medium">{arbzgVerdict.headline}</span>
-				<span class="text-muted-foreground truncate">· Arbeitszeit-Check</span>
+				<span class="text-muted-foreground hidden truncate sm:inline">· Arbeitszeit-Check</span>
 				<ChevronRightIcon class="ml-auto size-3.5 shrink-0 opacity-60" />
 			</button>
 		{:else}
-			<div
-				class="hint flex w-full items-center gap-2 rounded-md border px-3 py-1.5 text-xs"
-				class:hint-crit={arbzgVerdict.level === "crit"}
-			>
+			<div class={[HINT_FORM, hintTon]}>
 				<TriangleAlertIcon class="size-3.5 shrink-0" />
 				<span class="font-medium">{arbzgVerdict.headline}</span>
-				<span class="text-muted-foreground truncate">· Arbeitszeit-Check</span>
+				<span class="text-muted-foreground hidden truncate sm:inline">· Arbeitszeit-Check</span>
 			</div>
 		{/if}
 	{/if}
 
-	<Card.Root>
-		<Card.Header>
-			<Card.Title>Aktueller Timer</Card.Title>
-		</Card.Header>
-		<Card.Content>
+	<!--
+		Der laufende Timer ist die Hauptaussage der Seite und traegt deshalb Farbe,
+		solange er laeuft – vorher war er eine Karte wie jede andere, und ob
+		ueberhaupt etwas lief, musste man lesen statt sehen. Steht er, bleibt die
+		Karte bewusst still: dort gibt es nichts zu melden.
+	-->
+	<!-- Bewusst KEIN aria-live: die Uhr tickt im Sekundentakt und wuerde als
+	     Live-Bereich jeden Screenreader zuschuetten. -->
+	<Card.Root class={app.running ? "ring-primary/25 bg-primary/[0.04]" : ""}>
+		<Card.Content class="py-1">
 			{#if app.running}
-				<div class="flex items-center justify-between">
-					<div>
-						<div class="text-lg font-medium">{app.activityName(app.running.activityId)}</div>
-						<div class="text-muted-foreground text-3xl font-mono tabular-nums">
+				<div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+					<div class="min-w-0">
+						<div class="flex items-center gap-2">
+							<!-- Derselbe pulsierende Punkt wie in der Kopfzeile: ein Zeichen,
+							     eine Bedeutung. -->
+							<span class="relative flex size-2 shrink-0">
+								<span
+									class="bg-primary absolute inline-flex size-full animate-ping rounded-full opacity-75"
+								></span>
+								<span class="bg-primary relative inline-flex size-2 rounded-full"></span>
+							</span>
+							<span class="truncate text-sm font-medium">
+								{app.activityName(app.running.activityId)}
+							</span>
+						</div>
+						<div class="mt-0.5 font-mono text-4xl leading-none tabular-nums">
 							{fmtHMS(app.runningSeconds)}
 						</div>
-						<div class="text-muted-foreground text-xs">seit {fmtClock(app.running.startTs)}</div>
-						{#if app.pomodoro}
-							{@const p = app.pomodoro}
-							<div
-								class="mt-2 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium {p.phase ===
-								'break'
-									? 'bg-green-500/15 text-green-600 dark:text-green-400'
-									: 'bg-primary/10 text-primary'}"
-							>
-								{p.phase === "break" ? "Pause" : "Fokus"} · noch {fmtHMS(p.remaining)}
-							</div>
-						{/if}
+						<div class="text-muted-foreground mt-1.5 flex flex-wrap items-center gap-2 text-xs">
+							<span>seit {fmtClock(app.running.startTs)}</span>
+							{#if app.pomodoro}
+								{@const p = app.pomodoro}
+								<span
+									class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-medium {p.phase ===
+									'break'
+										? 'bg-green-500/15 text-green-600 dark:text-green-400'
+										: 'bg-primary/10 text-primary'}"
+								>
+									{p.phase === "break" ? "Pause" : "Fokus"} · noch {fmtHMS(p.remaining)}
+								</span>
+							{/if}
+						</div>
 					</div>
-					<Button variant="destructive" onclick={() => app.stop()}>
+					<Button variant="destructive" size="lg" onclick={() => app.stop()}>
 						<SquareIcon class="size-4" /> Stopp
 					</Button>
 				</div>
 			{:else}
-				<p class="text-muted-foreground">Kein Timer läuft. Wähle unten eine Aktivität.</p>
+				<div class="flex items-center gap-3 py-1">
+					<span class="bg-muted-foreground/30 size-2 shrink-0 rounded-full"></span>
+					<p class="text-muted-foreground text-sm">
+						Kein Timer läuft. Wähle unten eine Aktivität.
+					</p>
+				</div>
 			{/if}
 		</Card.Content>
 	</Card.Root>
 
 	{#if !app.running}
-		<div class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border p-2 text-sm">
-			<span class="text-muted-foreground font-medium">Startzeit</span>
-			<!-- Eine Auswahl aus vier Möglichkeiten: die gewählte ist hervorgehoben.
-			     „ab Uhrzeit" gehört dazu – vorher überschrieb ein Wert im Feld die
-			     Presets still, und markiert war dann gar nichts. -->
+		<div class="bg-muted/40 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg px-3 py-2.5 text-sm">
+			<span class="text-muted-foreground text-xs font-medium">Startzeit</span>
+			<!-- Eine Auswahl aus vier Möglichkeiten: die gewählte ist hervorgehoben,
+			     „ab Uhrzeit" eingeschlossen. -->
 			<ButtonGroup.Root>
 				<Button
 					variant={usingClock || presetMin !== 0 ? "outline" : "default"}
@@ -233,12 +261,15 @@
 					<Button
 						variant={!usingClock && presetMin === m ? "default" : "outline"}
 						size="sm"
+						title="Vor {m} Minuten"
 						onclick={() => {
 							presetMin = m;
 							customStart = "";
 						}}
 					>
-						−{m} min
+						<!-- Schmal nur "−15": die Einheit steht ueber der Leiste ("Startzeit"),
+						     und ausgeschrieben sprengt die Gruppe bei 360px die Zeile. -->
+						−{m}<span class="hidden sm:inline">&nbsp;min</span>
 					</Button>
 				{/each}
 				<Button
@@ -281,8 +312,11 @@
 	{/if}
 
 	<div>
-		<div class="mb-2 flex items-center justify-between">
-			<h3 class="text-sm font-medium">Aktivität wählen</h3>
+		<div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+			<div>
+				<h3 class="text-sm font-medium">Aktivität wählen</h3>
+				<p class="text-muted-foreground text-xs">Ein Klick startet den Timer.</p>
+			</div>
 			{#if app.hasFavorites}
 				<Button
 					variant={onlyFavorites ? "default" : "ghost"}
@@ -302,7 +336,9 @@
 				{/if}
 			</p>
 		{:else}
-			<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+			<!-- Eine Spalte erst ab ~420px verdoppeln: darunter bleibt neben Symbol,
+			     Punkt und Stern kaum Platz fuer den Namen. -->
+			<div class="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 sm:grid-cols-3">
 				{#each choices as a (a.id)}
 					{@const active = app.running?.activityId === a.id}
 					<Button
@@ -330,7 +366,7 @@
 	</div>
 
 	<Card.Root>
-		<Card.Header class="flex flex-row items-start justify-between gap-2 space-y-0">
+		<Card.Header class="flex flex-row flex-wrap items-start justify-between gap-2 space-y-0">
 			<div class="min-w-0">
 				<Card.Title>Heute ({today})</Card.Title>
 				{#if todaySum.worked > 0 || todaySum.absent > 0}
@@ -385,23 +421,4 @@
 	</Card.Root>
 </div>
 
-<style>
-	/* Gedeckt gehalten: der Hinweis steht ueber dem Timer und darf ihn nicht
-	   uebertoenen – er soll auffallen, wenn man hinsieht, nicht bevor. */
-	.hint {
-		border-color: color-mix(in oklab, #f59e0b 55%, transparent);
-		background: color-mix(in oklab, #f59e0b 7%, transparent);
-		color: #b45309;
-	}
-	.hint-crit {
-		border-color: color-mix(in oklab, var(--destructive) 50%, transparent);
-		background: color-mix(in oklab, var(--destructive) 6%, transparent);
-		color: var(--destructive);
-	}
-	:global(.dark) .hint {
-		color: #fbbf24;
-	}
-	:global(.dark) .hint-crit {
-		color: var(--destructive);
-	}
-</style>
+

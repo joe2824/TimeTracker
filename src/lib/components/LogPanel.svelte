@@ -1,18 +1,14 @@
 <script lang="ts">
-	// Protokoll-Karte in den Einstellungen.
-	//
-	// Der Sinn des Protokolls ist, dass es jemand LIEST – deshalb hier und nicht
-	// nur als Datei irgendwo im AppData-Ordner: die letzten Zeilen direkt sichtbar,
-	// alles Weitere einen Klick entfernt im Explorer.
 	import { KEEP_DAYS, LOG_DIR, clearLogs, errorText, logFile, readLog } from "$lib/log";
 	import { Button } from "$lib/components/ui/button";
 	import * as Card from "$lib/components/ui/card";
 	import { appDataDir, join } from "@tauri-apps/api/path";
-	import { revealItemInDir } from "@tauri-apps/plugin-opener";
+	import { revealInFolder } from "$lib/platform/open";
 	import { toast } from "svelte-sonner";
 	import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
 	import FolderOpenIcon from "@lucide/svelte/icons/folder-open";
 	import Trash2Icon from "@lucide/svelte/icons/trash-2";
+	import { isTauri } from "$lib/platform/env";
 
 	/** Mehr als das liest ohnehin niemand am Bildschirm; die Datei hat alles. */
 	const SHOWN_LINES = 200;
@@ -55,14 +51,7 @@
 
 	let visibleMarker = $state<HTMLElement | null>(null);
 
-	/**
-	 * Lesen, sobald die Karte tatsaechlich zu sehen ist.
-	 *
-	 * bits-ui baut alle Tab-Inhalte sofort auf und blendet die inaktiven nur aus –
-	 * beim Aufbau zu lesen zeigte also fuer immer den fast leeren Stand vom
-	 * App-Start. Ein Dauer-Nachladen waere die Alternative, aber die Karte laeuft
-	 * ja die ganze Zeit mit.
-	 */
+	/** Lesen, sobald die Karte tatsaechlich zu sehen ist. */
 	$effect(() => {
 		if (!visibleMarker) return;
 		const io = new IntersectionObserver((entries) => {
@@ -76,7 +65,7 @@
 		try {
 			// Auf die heutige Datei zeigen: der Explorer oeffnet dann den Ordner und
 			// markiert sie. Auf den Ordner selbst gezeigt landete man eine Ebene zu hoch.
-			await revealItemInDir(await join(await appDataDir(), logFile()));
+			await revealInFolder(await join(await appDataDir(), logFile()));
 		} catch (e) {
 			toast.error(`Ordner nicht zu öffnen: ${errorText(e)}`, { duration: 30000 });
 		}
@@ -93,13 +82,18 @@
 	}
 </script>
 
-<Card.Root class="lg:col-span-2">
+<Card.Root>
 	<Card.Header>
 		<Card.Title>Protokoll</Card.Title>
 		<Card.Description>
-			Für die Fehlersuche: die App schreibt Ereignisse und Fehler in eine Datei je Tag
-			(<code class="text-xs">{LOG_DIR}/</code> im App-Datenordner, {KEEP_DAYS} Tage). Bei einem
-			Problem hilft es, die Datei mitzuschicken.
+			Für die Fehlersuche: Ereignisse und Fehler, eine Datei je Tag, {KEEP_DAYS} Tage lang.
+			{#if isTauri()}
+				Sie liegen unter <code class="bg-muted rounded px-1 py-0.5 text-xs">{LOG_DIR}/</code> im App-Datenordner – bei einem
+				Problem hilft es, die Datei mitzuschicken.
+			{:else}
+				Im Browser liegen sie in dessen eigener Ablage; zum Mitschicken den Text hier unten
+				kopieren.
+			{/if}
 		</Card.Description>
 	</Card.Header>
 	<Card.Content class="space-y-3">
@@ -115,10 +109,14 @@
 			>
 				Nur Warnungen & Fehler
 			</Button>
-			<Button variant="outline" size="sm" onclick={openFolder}>
-				<FolderOpenIcon class="size-4" /> Ordner öffnen
-			</Button>
-			<Button variant="outline" size="sm" onclick={clearAll}>
+			{#if isTauri()}
+				<!-- Im Browser gibt es keinen Ordner: das Protokoll liegt in der
+				     Ablage des Browsers, nicht als Datei. -->
+				<Button variant="outline" size="sm" onclick={openFolder}>
+					<FolderOpenIcon class="size-4" /> Ordner öffnen
+				</Button>
+			{/if}
+			<Button variant="destructive" size="sm" class="ml-auto" onclick={clearAll}>
 				<Trash2Icon class="size-4" /> Leeren
 			</Button>
 		</div>
@@ -131,7 +129,7 @@
 			<!-- Neueste unten, wie in jeder Logdatei; der Kasten scrollt selbst, damit
 			     lange Zeilen die Karte nicht auseinanderziehen. -->
 			<pre
-				class="bg-muted max-h-72 overflow-auto rounded-md p-3 text-xs leading-relaxed select-text">{shown.join(
+				class="bg-muted max-h-72 overflow-auto overscroll-contain rounded-lg p-3 text-xs leading-relaxed select-text">{shown.join(
 					"\n"
 				)}</pre>
 		{/if}

@@ -1,22 +1,22 @@
 import type { Entry } from "./types";
-
-/** "YYYY-MM" fuer einen Zeitstempel (Lokalzeit). */
-export function monthKey(ts: number): string {
-	const d = new Date(ts);
-	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
+import { addCalendarDays, appTimeZone, isoDate, wallStringToTs, zonedParts } from "./tz";
 
 /**
- * Der Vormonat als "YYYY-MM".
- *
- * Ueber den Monatsersten rechnen, nicht per setMonth() auf dem heutigen Datum:
- * am 31. rollt "31. Juni" auf den 1. Juli, `setMonth(-1)` lieferte dort also den
- * AKTUELLEN Monat. Folge waren ein nie geladener Vormonat und ein Bericht-Hinweis,
- * der ausgerechnet am Monatsletzten verschwand.
+ * "YYYY-MM" fuer einen Zeitstempel – in der Zeitzone des Kontos, nicht der des
+ * Geraets. Welcher Monat ein Zeitstempel ist, muss auf jedem Geraet dieselbe
+ * Antwort haben, sonst landet derselbe Eintrag in zwei Monatsdateien.
  */
+export function monthKey(ts: number): string {
+	const p = zonedParts(ts);
+	return `${p.year}-${String(p.month).padStart(2, "0")}`;
+}
+
+/** Der Vormonat als "YYYY-MM". */
 export function prevMonthKey(now = Date.now()): string {
-	const d = new Date(now);
-	return monthKey(new Date(d.getFullYear(), d.getMonth() - 1, 1).getTime());
+	const p = zonedParts(now);
+	const year = p.month === 1 ? p.year - 1 : p.year;
+	const month = p.month === 1 ? 12 : p.month - 1;
+	return `${year}-${String(month).padStart(2, "0")}`;
 }
 
 /** Dauer eines Eintrags in Sekunden (laufende Eintraege bis `now`). */
@@ -42,12 +42,6 @@ export function entryHours(
 /**
  * Ende eines offenen Eintrags (endTs === null) fuer Auswertungen: gekappt auf
  * das Ende SEINES Tages, nie unbegrenzt bis `now`.
- *
- * Ein vergessener offener Eintrag in einem alten Monat zaehlte sonst bis
- * `now` weiter – erreichbar, weil beim Start nur der aktuelle und der
- * Vormonat geladen werden und eine aeltere offene Zeile niemand schliesst.
- * Ein laufender Timer wird an Mitternacht geteilt, kann also nie ueber
- * seinen eigenen Tag hinausreichen – dort wird gekappt.
  */
 export function openEntryUntil(e: Entry, now: number): number {
 	return e.endTs === null ? Math.min(now, startOfNextDay(e.startTs)) : now;
@@ -68,58 +62,37 @@ export function fmtHMS(totalSeconds: number): string {
 	return `${h}:${pad(m)}:${pad(sec)}`;
 }
 
-/** Lokale Uhrzeit "HH:MM" eines Zeitstempels. */
+/** Uhrzeit "HH:MM" eines Zeitstempels in der Zeitzone des Kontos. */
 export function fmtClock(ts: number): string {
-	const d = new Date(ts);
-	return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+	const p = zonedParts(ts);
+	return `${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}`;
 }
 
 /** Eine Minute in Millisekunden – Schrittweite fuer `quantize`. */
 export const MINUTE_MS = 60_000;
 
-/**
- * Einen Zeitstempel auf ein Vielfaches von `stepMs` abrunden.
- *
- * Gedacht fuer Auswertungen, die an `app.now` haengen. Der tickt im
- * Sekundentakt, damit die laufende Uhr laeuft – ein Jahresschnitt oder eine
- * Heatmap aendert sich dadurch aber nicht sichtbar. Auf Minuten gerundet bleibt
- * der Wert 59 von 60 Sekunden GLEICH, und einen unveraenderten Wert gibt Svelte
- * nicht weiter: die dahinterliegende Rechnung laeuft dann einmal je Minute statt
- * sechzigmal, samt allem, was daran haengt (Diagramme, Wochenraster).
- */
+/** Einen Zeitstempel auf ein Vielfaches von `stepMs` abrunden. */
 export function quantize(ts: number, stepMs: number): number {
 	return Math.floor(ts / stepMs) * stepMs;
 }
 
-/** Datum "YYYY-MM-DD" (lokal) eines Zeitstempels. */
+/** Datum "YYYY-MM-DD" eines Zeitstempels in der Zeitzone des Kontos. */
 export function fmtDate(ts: number): string {
-	const d = new Date(ts);
-	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+	const p = zonedParts(ts);
+	return isoDate(p.year, p.month, p.day);
 }
 
 /**
- * Epoch-ms fuer "YYYY-MM-DD" + "HH:MM" in Lokalzeit. NaN bei ungueltiger Eingabe.
+ * Epoch-ms fuer "YYYY-MM-DD" + "HH:MM" in der Zeitzone des Kontos. NaN bei
+ * ungueltiger Eingabe.
  */
 export function toTs(date: string, time: string): number {
-	return new Date(`${date}T${time}:00`).getTime();
+	return wallStringToTs(date, time);
 }
 
 /**
  * Einen minutengenau bearbeiteten Zeitpunkt auf den gespeicherten zurueckfuehren,
  * solange die MINUTE dieselbe geblieben ist.
- *
- * Der Eintrags-Dialog zeigt "HH:MM" und baut daraus wieder einen Zeitstempel –
- * die Sekunden fallen dabei weg. Timer-Eintraege haben aber welche: ein Wechsel
- * setzt das Ende des einen exakt auf den Start des naechsten (…14:00:22). Wer
- * so einen Eintrag anfasst, verschiebt seinen Start ungewollt auf 14:00:00 und
- * ragt damit 22 Sekunden in den Vorgaenger – die Ueberschneidungs-Regel weist
- * das Speichern ab, und zwar fuer ein Feld, das der Nutzer gar nicht angefasst
- * hat. Betroffen ist jeder Eintrag, der an einen anderen anstoesst, also der
- * Normalfall nach einem Aktivitaetswechsel.
- *
- * Der Preis ist ein bewusster: wer 14:00 tippt und exakt 14:00:00 meint, bekommt
- * die alten 22 Sekunden zurueck. Das Feld kann diesen Unterschied ohnehin nicht
- * ausdruecken.
  *
  * @param original der gespeicherte Zeitpunkt, oder null bei einem neuen Eintrag
  */
@@ -128,28 +101,24 @@ export function keepSeconds(ts: number, original: number | null): number {
 	return Math.floor(ts / 60000) === Math.floor(original / 60000) ? original : ts;
 }
 
-/**
- * Epoch-ms fuer die Tagesmitte eines "YYYY-MM-DD".
- *
- * 12:00 statt 00:00, weil ein Tag an DST-Grenzen um Mitternacht auf den Vortag
- * kippen kann. Der Mittag haelt in jeder Zeitzone Abstand zu beiden Raendern.
- * Abwesenheiten haengen genau daran (start == end == Tagesmitte).
- */
+/** Epoch-ms fuer die Tagesmitte eines "YYYY-MM-DD". */
 export function noonTs(date: string): number {
 	return toTs(date, "12:00");
 }
 
+/** Mitternacht (Tagesbeginn) eines "YYYY-MM-DD" in der Zeitzone des Kontos. */
+export function startOfDay(date: string): number {
+	return wallStringToTs(date, "00:00");
+}
+
 /** Verschiebt ein "YYYY-MM-DD"-Datum um `delta` Tage – mit Monats-/Jahresübergang. */
 export function stepDate(date: string, delta: number): string {
-	const d = new Date(noonTs(date));
-	if (Number.isNaN(d.getTime())) return date;
-	d.setDate(d.getDate() + delta);
-	return fmtDate(d.getTime());
+	return addCalendarDays(date, delta);
 }
 
 /** Ist der Tag von `ts` ein regulärer Arbeitstag? (workdays: Wochentagsnummern 0=So..6=Sa) */
 export function isWorkday(ts: number, workdays: number[]): boolean {
-	return workdays.includes(new Date(ts).getDay());
+	return workdays.includes(zonedParts(ts).weekday);
 }
 
 /**
@@ -159,19 +128,15 @@ export function isWorkday(ts: number, workdays: number[]): boolean {
  */
 export function allDayNoons(startTs: number, endExclusiveTs: number): number[] {
 	const out: number[] = [];
-	const day = new Date(startTs);
-	day.setHours(12, 0, 0, 0);
-	const endMidnight = new Date(endExclusiveTs);
-	endMidnight.setHours(0, 0, 0, 0);
-	while (day.getTime() < endMidnight.getTime()) {
-		out.push(day.getTime());
-		day.setDate(day.getDate() + 1);
+	let date = fmtDate(startTs);
+	const endDate = fmtDate(endExclusiveTs);
+	// Ueber die Kalendertage laufen, nicht ueber Zeitstempel: an einer
+	// Sommerzeit-Grenze traefe eine 24-Stunden-Addition den Tag daneben.
+	while (date < endDate) {
+		out.push(noonTs(date));
+		date = addCalendarDays(date, 1);
 	}
-	if (out.length === 0) {
-		const s = new Date(startTs);
-		s.setHours(12, 0, 0, 0);
-		out.push(s.getTime());
-	}
+	if (out.length === 0) out.push(noonTs(fmtDate(startTs)));
 	return out;
 }
 
@@ -276,25 +241,12 @@ export function durationHours(start: string, end: string): number {
 	return d / 60;
 }
 
-/**
- * Mitternacht des Folgetags. setHours(24,…) statt +24h: an DST-Tagen hat ein Tag
- * 23 oder 25 Stunden, eine feste Addition traefe die Grenze dort nicht.
- */
+/** Mitternacht des Folgetags, in der Zeitzone des Kontos. */
 export function startOfNextDay(ts: number): number {
-	const d = new Date(ts);
-	d.setHours(24, 0, 0, 0);
-	return d.getTime();
+	return startOfDay(addCalendarDays(fmtDate(ts), 1));
 }
 
-/**
- * Zerlegt [startTs, endTs] an Mitternacht in Tagesstuecke.
- *
- * Ein Timer ueber Mitternacht muss dort enden und am neuen Tag fortgesetzt
- * werden – sonst zaehlt die Zeit nach 00:00 zum Vortag, und an einer
- * Monatsgrenze landet sie sogar in der falschen Monatsdatei.
- *
- * Ein Zeitraum innerhalb eines Tages ergibt genau ein Stueck.
- */
+/** Zerlegt [startTs, endTs] an Mitternacht in Tagesstuecke. */
 export function splitAtMidnight(
 	startTs: number,
 	endTs: number
@@ -309,17 +261,7 @@ export function splitAtMidnight(
 	return parts.length > 0 ? parts : [{ startTs, endTs }];
 }
 
-/**
- * Hinweistext, wenn eine Spanne ueber Mitternacht geht – sonst null.
- *
- * Ueber Mitternacht entsteht ein Eintrag JE TAG. Das gehoert vor dem Speichern
- * gesagt, nicht erst hinterher in der Liste entdeckt.
- *
- * Liegt hier und nicht in einer Komponente, weil dieselbe Regel an drei Stellen
- * gilt: Timer-Start im Hauptfenster, Timer-Start im Tray und der manuelle
- * Eintrag. Zweimal hat der Hinweis schlicht gefehlt, weil jede Stelle ihren
- * eigenen Text baute.
- */
+/** Hinweistext, wenn eine Spanne ueber Mitternacht geht – sonst null. */
 export function midnightSplitHint(startTs: number, endTs: number): string | null {
 	const parts = splitAtMidnight(startTs, endTs).length;
 	return parts > 1 ? `über Mitternacht, wird in ${parts} Einträge geteilt` : null;
@@ -328,6 +270,7 @@ export function midnightSplitHint(startTs: number, endTs: number): string | null
 /** Datum deutsch mit Wochentag, z.B. "Do., 16.07.2026" – fuer Meldungen und Tooltips. */
 export function fmtDateHuman(ts: number): string {
 	return new Date(ts).toLocaleDateString("de-DE", {
+		timeZone: appTimeZone(),
 		weekday: "short",
 		day: "2-digit",
 		month: "2-digit",
@@ -338,6 +281,11 @@ export function fmtDateHuman(ts: number): string {
 /** Monatsname deutsch, z.B. "Juni 2026" aus "2026-06". */
 export function monthLabel(monthKey: string): string {
 	const [y, m] = monthKey.split("-").map(Number);
-	const d = new Date(y, m - 1, 1);
-	return d.toLocaleDateString("de-DE", { month: "long", year: "numeric" });
+	// Ueber UTC bauen und in UTC formatieren: eine lokale Konstruktion des
+	// Monatsersten kann in westlichen Zonen auf den Vormonat kippen.
+	return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("de-DE", {
+		timeZone: "UTC",
+		month: "long",
+		year: "numeric"
+	});
 }

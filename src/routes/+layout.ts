@@ -1,5 +1,10 @@
-// Tauri doesn't have a Node.js server to do proper SSR
-// so we use adapter-static with a fallback to index.html to put the site in SPA mode
-// See: https://svelte.dev/docs/kit/single-page-apps
-// See: https://v2.tauri.app/start/frontend/sveltekit/ for more info
+// Tauri hat keinen Node-Server fuer echtes SSR, deshalb adapter-static mit
+// Rueckfall auf index.html - die Anwendung ist eine reine Seitenanwendung.
+// Siehe https://svelte.dev/docs/kit/single-page-apps
 export const ssr = false;
+
+import { isTauri } from "$lib/platform/env";
+import { useBrowserStorage } from "$lib/platform/fs";
+
+/** Die Ablage waehlen, BEVOR irgendetwas Daten liest. */
+if (!isTauri()) useBrowserStorage();

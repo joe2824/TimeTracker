@@ -3,10 +3,12 @@
 	import type { MonthReport } from "$lib/report";
 	import { dayActivityHours, heatmapYear, sumPerDay, targetHours } from "$lib/stats";
 	import { fmtDateHuman, fmtHoursClock, MINUTE_MS, monthLabel, noonTs, quantize } from "$lib/time";
+	import { zonedParts } from "$lib/tz";
 	import type { Entry } from "$lib/types";
 	import * as Card from "$lib/components/ui/card";
 	import * as Chart from "$lib/components/ui/chart";
 	import { Skeleton } from "$lib/components/ui/skeleton";
+	import StatTile from "$lib/components/StatTile.svelte";
 	import { BarChart } from "layerchart";
 	import { scaleBand } from "d3-scale";
 
@@ -33,14 +35,7 @@
 	);
 	const yearEntries = $derived(monthKeys.flatMap((m) => app.monthEntries(m) as Entry[]));
 
-	/**
-	 * Ist das ganze Jahr geladen?
-	 *
-	 * Saldo und Balken haengen nur am ausgewaehlten Monat und stehen sofort. Die
-	 * Heatmap braucht zwoelf Monate, und ein noch nicht geladener Monat ist von
-	 * einem leeren nicht zu unterscheiden – sie fuellte sich also sichtbar von
-	 * hinten nach vorn. Gewartet wird deshalb nur hier, nicht in der ganzen Karte.
-	 */
+	/** Ist das ganze Jahr geladen? */
 	const yearReady = $derived(monthKeys.every((m) => app.monthLoaded(m)));
 
 	// `app.now` tickt im Sekundentakt. Nur ein laufender Timer IN DIESEM JAHR braucht
@@ -48,7 +43,7 @@
 	// Maps, das Wochenraster und ~370 keyed Spans – jede Sekunde neu. Abgeschlossene
 	// Eintraege haben ein endTs und lesen `now` gar nicht, der Wert ist dann egal.
 	const runningInYear = $derived(
-		app.running !== null && new Date(app.running.startTs).getFullYear() === year
+		app.running !== null && zonedParts(app.running.startTs).year === year
 	);
 	// Auf fuenf Minuten gerundet: `app.now` tickt im Sekundentakt, ein Jahresraster
 	// aendert sich dadurch aber nicht sichtbar – eine Zelle deckt einen ganzen Tag
@@ -129,6 +124,16 @@
 	 * Der Monatserste kann auf JEDEN Wochentag fallen, nicht nur auf den ersten
 	 * Tag der Spalte – sonst fehlen alle Monate, die mitten in der Woche beginnen.
 	 */
+	/** Gemessene Breite des Diagramms – entscheidet ueber die Beschriftungsspalte. */
+	let chartWidth = $state(0);
+
+	/**
+	 * Platz fuer die Aktivitaetsnamen links. Auf einer schmalen Karte kostet die
+	 * feste Spalte ein Drittel der Flaeche – dann lieber kuerzere Namen als
+	 * Balken, an denen nichts mehr abzulesen ist. 0 = noch nicht gemessen.
+	 */
+	const axisPad = $derived(chartWidth > 0 && chartWidth < 420 ? 72 : 104);
+
 	const monthTicks = $derived(
 		weeks
 			.map((w, i) => {
@@ -147,28 +152,28 @@
 		<Card.Description>Saldo, Verteilung und gearbeitete Tage – nur für dich, nicht Teil der E-Mail.</Card.Description>
 	</Card.Header>
 	<Card.Content class="space-y-8">
-		<!-- Saldo: eine Kennzahl, kein Diagramm. -->
-		<div class="flex flex-wrap gap-8">
-			<div>
-				<div class="text-muted-foreground text-xs">Ist</div>
-				<div class="text-2xl">{fmtHoursClock(report.total)} h</div>
-			</div>
-			<div>
-				<div class="text-muted-foreground text-xs">Soll</div>
-				<div class="text-2xl">{fmtHoursClock(soll)} h</div>
-			</div>
-			<div>
-				<div class="text-muted-foreground text-xs">Saldo</div>
-				<div class="text-2xl" class:text-muted-foreground={Math.abs(saldo) < 0.01}>
+		<!-- Saldo: Kennzahlen, kein Diagramm. Zwei Spalten schon ab 360px – die
+		     Kacheln tragen ihre Beschriftung selbst und brauchen keine ganze Zeile. -->
+		<div class="space-y-2">
+			<div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+				<StatTile label="Ist">{fmtHoursClock(report.total)} h</StatTile>
+				<StatTile label="Soll" hint={month === app.currentMonth ? "Werktage bis heute" : undefined}>
+					{fmtHoursClock(soll)} h
+				</StatTile>
+				<StatTile
+					label="Saldo"
+					class="col-span-2 sm:col-span-1"
+					valueClass={Math.abs(saldo) < 0.01 ? "text-muted-foreground" : undefined}
+				>
 					{saldo >= 0 ? "+" : "−"}{fmtHoursClock(Math.abs(saldo))} h
-				</div>
+				</StatTile>
 			</div>
+			{#if month === app.currentMonth}
+				<p class="text-muted-foreground text-xs">
+					Laufender Monat: Soll zählt nur die Werktage bis heute.
+				</p>
+			{/if}
 		</div>
-		{#if month === app.currentMonth}
-			<p class="text-muted-foreground -mt-6 text-xs">
-				Laufender Monat: Soll zählt nur die Werktage bis heute.
-			</p>
-		{/if}
 
 		<!-- Stunden je Aktivitaet -->
 		<div class="space-y-2">
@@ -179,6 +184,7 @@
 				<!-- Feste Zeilenhoehe statt Seitenverhaeltnis: sonst werden die Balken bei
 				     wenigen Aktivitaeten fett. Als Style, weil Tailwind dynamische
 				     Arbitrary-Values nicht kompilieren kann. -->
+				<div bind:clientWidth={chartWidth}>
 				<Chart.Container
 					config={chartConfig}
 					class="aspect-auto w-full"
@@ -193,7 +199,7 @@
 						x="hours"
 						axis="y"
 						grid={false}
-						padding={{ left: 104, right: 8 }}
+						padding={{ left: axisPad, right: 8 }}
 						series={[{ key: "hours", label: "Stunden", color: "var(--color-hours)" }]}
 						props={{ bars: { radius: 4, rounded: "right" }, yAxis: { tickLabelProps: { class: "fill-muted-foreground" } } }}
 					>
@@ -202,6 +208,7 @@
 						{/snippet}
 					</BarChart>
 				</Chart.Container>
+				</div>
 				<!-- Tabelle als zweiter Kanal: exakte Werte, unabhaengig von der Farbe. -->
 				<table class="w-full text-sm">
 					<tbody>
@@ -304,13 +311,10 @@
 
 <style>
 	/* Sequenzielle Rampe (eine Hue, hell->dunkel) – in BEIDEN Themes in dieselbe
-	   Richtung: hell = wenig, dunkel = viel. Frueher kippte der Anker im
-	   Dunkelmodus (viel = hell), rein aus Kontrastgruenden gegen die dunkle Card.
-	   Nur liest niemand eine Legende zweimal: "dunkler = mehr Arbeit" ist die
-	   Bedeutung, die haengen bleibt, und die darf nicht am Theme haengen.
-	   Im Dunkelmodus endet die Rampe deshalb bei einem mittleren Blau statt im
-	   Schwarz – dunkel genug fuer die Aussage, hell genug gegen die Card (#171717).
-	   Level 0 (nichts erfasst) bleibt neutral grau und faellt so aus der Rampe. */
+	   Richtung: hell = wenig, dunkel = viel, sonst kippt die Bedeutung mit dem
+	   Theme. Im Dunkelmodus endet die Rampe deshalb bei einem mittleren Blau
+	   statt im Schwarz – dunkel genug fuer die Aussage, hell genug gegen die
+	   Card (#171717). Level 0 (nichts erfasst) bleibt neutral grau. */
 	.heat {
 		background: var(--heat-0);
 	}

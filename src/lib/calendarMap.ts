@@ -1,16 +1,11 @@
 // Zuordnung von Outlook-Terminen auf Aktivitaeten – reine Logik, damit die Regel
 // testbar ist und nicht in der Import-Ansicht versteckt liegt.
+//
+// Reihenfolge: Ganztags -> Abwesenheiten; sonst gemerktes Stichwort; sonst Name.
 import type { CalendarEvent } from "./outlook";
 import type { Activity } from "./types";
 
-/**
- * Darf dieser Termin ueberhaupt eine Abwesenheit werden?
- *
- * Eine Abwesenheit ist ein ganzer oder halber TAG, nie eine Zeitspanne – also
- * kann nur ein Ganztags-Termin eine sein. Ein zweistuendiger Termin mit Status
- * "abwesend" (Arzt o.ae.) ist kein Urlaubstag; dort traegt man einfach keine
- * Projektzeit ein.
- */
+/** Darf dieser Termin ueberhaupt eine Abwesenheit werden? */
 export function absenceAllowed(ev: Pick<CalendarEvent, "allDay">): boolean {
 	return ev.allDay;
 }
@@ -23,14 +18,7 @@ export function activityOptions(
 	return absenceAllowed(ev) ? activities : activities.filter((a) => !a.isAbsence);
 }
 
-/**
- * Vorauswahl fuer einen Termin: "" = ignorieren.
- *
- * Reihenfolge: Ganztags -> Abwesenheiten; sonst gemerktes Stichwort; sonst
- * Namenstreffer. Bei Terminen mit Uhrzeit kann nie eine Abwesenheit herauskommen –
- * auch dann nicht, wenn die Stichwort-Zuordnung aus einer frueheren Version noch
- * "Zahnarzt -> Abwesenheiten" kennt.
- */
+/** Vorauswahl fuer einen Termin: "" = ignorieren. */
 export function guessActivity(
 	ev: Pick<CalendarEvent, "subject" | "allDay">,
 	activities: Activity[],

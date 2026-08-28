@@ -4,36 +4,23 @@
 //   data/settings.json            (global)
 //   data/entries-YYYY-MM.json     (eine Datei pro Monat)
 //   data/timereport-YYYY-MM.json  (eingelesener LOGA-Report, eine Datei pro Monat)
-import {
-	BaseDirectory,
-	exists,
-	mkdir,
-	readDir,
-	readTextFile,
-	remove,
-	rename,
-	stat,
-	writeTextFile
-} from "@tauri-apps/plugin-fs";
+import { storage } from "./platform/fs";
 import type { Activity, Entry, Settings } from "./types";
 import type { TimeReportDay } from "./timeReport";
 import { defaultSettings } from "./types";
 import { logError, logWarn } from "./log";
 
 const DIR = "data";
-const baseOpts = { baseDir: BaseDirectory.AppData } as const;
 
 async function ensureDir(): Promise<void> {
-	if (!(await exists(DIR, baseOpts))) {
-		await mkdir(DIR, { baseDir: BaseDirectory.AppData, recursive: true });
-	}
+	if (!(await storage.exists(DIR))) await storage.mkdir(DIR);
 }
 
 async function readJson<T>(file: string, fallback: T): Promise<T> {
 	const path = `${DIR}/${file}`;
-	if (!(await exists(path, baseOpts))) return fallback;
+	if (!(await storage.exists(path))) return fallback;
 	try {
-		const txt = await readTextFile(path, baseOpts);
+		const txt = await storage.readTextFile(path);
 		return txt.trim() ? (JSON.parse(txt) as T) : fallback;
 	} catch {
 		return fallback;
@@ -44,18 +31,8 @@ async function readJson<T>(file: string, fallback: T): Promise<T> {
  * Je Datei ein Schreibvorgang zur Zeit; das jeweils letzte Versprechen haelt die
  * Schlange.
  *
- * Ohne das teilen sich zwei gleichzeitige Speicherungen derselben Datei ihre
- * Zwischendatei – und eine Reihenfolge davon endet mit dem AELTEREN Stand auf
- * der Platte: A schreibt tmp, B ueberschreibt tmp, B benennt um, A findet sein
- * tmp nicht mehr, faellt in den direkten Weg und schreibt seinen alten Stand
- * ueber B. Die Aenderung von B lebte danach nur noch im Speicher, bis irgendwann
- * das naechste Speichern kam. Gleichzeitig ist der Normalfall: die Schalter in
- * den Einstellungen rufen ihr save() ohne await.
- *
- * Erst seit die Zwischendatei ohne fuehrenden Punkt geschrieben wird (der Scope
- * des fs-Plugins liess versteckte Dateien nicht zu), greift der atomare Weg
- * ueberhaupt – vorher lief jedes Speichern direkt und die Luecke blieb
- * unsichtbar.
+ * Ohne das teilen sich zwei gleichzeitige Speicherungen ihre .tmp-Datei, und eine
+ * Reihenfolge davon endet mit dem AELTEREN Stand auf der Platte.
  */
 const writeQueue = new Map<string, Promise<void>>();
 
@@ -80,6 +57,24 @@ function writeJson(file: string, data: unknown): Promise<void> {
 	return queued(file, () => writeJsonNow(file, data));
 }
 
+/**
+ * Der Abgleich klinkt sich hier ein, um jeden Schreibvorgang mitzubekommen.
+ *
+ * Laeuft INNERHALB der Warteschlange: damit sieht er jede Aenderung genau einmal
+ * und in der richtigen Reihenfolge.
+ */
+export interface WriteHook {
+	entries(month: string, before: Entry[], after: Entry[]): Promise<Entry[]>;
+	activities(before: Activity[], after: Activity[]): Promise<Activity[]>;
+	settings(before: Settings | null, after: Settings): Promise<Settings>;
+}
+
+let writeHook: WriteHook | null = null;
+
+export function setWriteHook(hook: WriteHook | null): void {
+	writeHook = hook;
+}
+
 async function writeJsonNow(file: string, data: unknown): Promise<void> {
 	await ensureDir();
 	const target = `${DIR}/${file}`;
@@ -87,27 +82,19 @@ async function writeJsonNow(file: string, data: unknown): Promise<void> {
 	// Bevorzugt atomar: temp-Datei + rename (überschreibt das Ziel atomar).
 	// Falls rename nicht erlaubt/möglich ist, direkt schreiben – Speichern darf
 	// nie fehlschlagen, sonst bliebe z.B. ein gestarteter Timer ungespeichert.
-	//
-	// OHNE fuehrenden Punkt: der Scope des fs-Plugins ($APPDATA/**) laesst keine
-	// versteckten Dateien zu. Mit ".settings.json.tmp" scheiterte JEDER Schreib-
-	// versuch mit "forbidden path", und jedes Speichern lief im Fallback unten –
-	// der atomare Weg war damit seit jeher tot, auf allen Plattformen.
 	const tmp = `${DIR}/${file}.tmp`;
 	try {
-		await writeTextFile(tmp, json, baseOpts);
-		await rename(tmp, target, {
-			oldPathBaseDir: BaseDirectory.AppData,
-			newPathBaseDir: BaseDirectory.AppData
-		});
+		await storage.writeTextFile(tmp, json);
+		await storage.rename(tmp, target);
 	} catch (e) {
 		// Der unsichere Weg: ab hier kann ein Stromausfall eine halbe Datei
 		// hinterlassen. Wenn das dauerhaft passiert, steht der Grund im Protokoll.
 		logWarn(`${file}: atomares Schreiben nicht möglich, schreibe direkt`, e);
-		await writeTextFile(target, json, baseOpts);
+		await storage.writeTextFile(target, json);
 		// Die temp-Datei liegt sonst fuer immer im Datenordner – und zwar bei
 		// JEDEM Speichern erneut, solange rename scheitert.
 		try {
-			if (await exists(tmp, baseOpts)) await remove(tmp, baseOpts);
+			if (await storage.exists(tmp)) await storage.remove(tmp);
 		} catch {
 			/* Aufraeumen darf das Speichern nicht kippen */
 		}
@@ -121,16 +108,11 @@ function entriesFile(month: string): string {
 const MONTH_FILE_RE = /^entries-(\d{4}-\d{2})\.json$/;
 const REPORT_FILE_RE = /^timereport-(\d{4}-\d{2})\.json$/;
 
-/**
- * Dateien im Datenordner, deren Name auf `re` passt: [Dateiname, Monat].
- *
- * Monatsliste, Report-Liste, Aufraeumen und Jahr-Loeschen lasen dafuer vorher
- * jede fuer sich das Verzeichnis und liefen mit derselben Schleife darueber.
- */
+/** Dateien im Datenordner, deren Name auf `re` passt: [Dateiname, Monat]. */
 async function dataFiles(re: RegExp): Promise<[string, string][]> {
 	await ensureDir();
 	const hits: [string, string][] = [];
-	for (const e of await readDir(DIR, baseOpts)) {
+	for (const e of await storage.readDir(DIR)) {
 		const m = e.name?.match(re);
 		if (m) hits.push([e.name, m[1]]);
 	}
@@ -142,50 +124,49 @@ export async function loadActivities(): Promise<Activity[]> {
 	return readJson<Activity[]>("activities.json", []);
 }
 export async function saveActivities(activities: Activity[]): Promise<void> {
-	return writeJson("activities.json", activities);
+	if (!writeHook) return writeJson("activities.json", activities);
+	return queued("activities.json", async () => {
+		const before = await readJson<Activity[]>("activities.json", []);
+		await writeJsonNow("activities.json", await writeHook!.activities(before, activities));
+	});
 }
 
 // ---- Einstellungen ----
 /** Ob bereits eine settings.json existiert (false = erster Programmstart). */
 export async function settingsFileExists(): Promise<boolean> {
-	return exists(`${DIR}/settings.json`, baseOpts);
+	return storage.exists(`${DIR}/settings.json`);
 }
 export async function loadSettings(): Promise<Settings> {
 	const stored = await readJson<Partial<Settings>>("settings.json", {});
 	return { ...defaultSettings, ...stored };
 }
 export async function saveSettings(settings: Settings): Promise<void> {
-	return writeJson("settings.json", settings);
+	if (!writeHook) return writeJson("settings.json", settings);
+	return queued("settings.json", async () => {
+		const before = await readJson<Settings | null>("settings.json", null);
+		await writeJsonNow("settings.json", await writeHook!.settings(before, settings));
+	});
 }
 
 // ---- Eintraege (pro Monat) ----
-/**
- * Eintraege eines Monats lesen.
- *
- * Eine beschaedigte Datei wird NICHT als "leer" behandelt, sondern zur Seite
- * gelegt: readJson verschluckt Parse-Fehler und liefert [] – pruneEmptyMonthFiles
- * haette die Datei damit fuer leer gehalten und beim naechsten Start geloescht,
- * ebenso der naechste Speichervorgang. Ein halb geschriebener Monat (Stromausfall
- * im Fallback-Zweig von writeJson) waere so lautlos komplett verloren.
- */
+/** Eintraege eines Monats lesen. */
 export async function loadEntries(month: string): Promise<Entry[]> {
 	const file = entriesFile(month);
 	const path = `${DIR}/${file}`;
-	if (!(await exists(path, baseOpts))) return [];
-	const txt = await readTextFile(path, baseOpts);
+	if (!(await storage.exists(path))) return [];
+	const txt = await storage.readTextFile(path);
 	if (!txt.trim()) return [];
 	try {
 		return JSON.parse(txt) as Entry[];
 	} catch (e) {
+		// Eine beschaedigte Datei darf NICHT als "leer" durchgehen: pruneEmptyMonthFiles
+		// und der naechste Speichervorgang haetten sie sonst geloescht.
 		// Umbenennen statt loeschen – der Name passt dann nicht mehr auf
 		// MONTH_FILE_RE, wird also weder gelistet noch aufgeraeumt.
 		const quarantine = `${path}.beschaedigt-${Date.now()}`;
 		logError(`${file} ist beschädigt, abgelegt als ${quarantine}`, e);
 		try {
-			await rename(path, quarantine, {
-				oldPathBaseDir: BaseDirectory.AppData,
-				newPathBaseDir: BaseDirectory.AppData
-			});
+			await storage.rename(path, quarantine);
 		} catch (renameErr) {
 			logError("Beschädigte Datei konnte nicht abgelegt werden", renameErr);
 		}
@@ -195,27 +176,29 @@ export async function loadEntries(month: string): Promise<Entry[]> {
 export async function saveEntries(month: string, entries: Entry[]): Promise<void> {
 	// Ein leerer Monat hinterlaesst keine Datei: sonst bliebe eine "[]"-Datei liegen
 	// und der Monat geisterte ohne Eintraege weiter durch die Monatsauswahl.
-	//
-	// Auch das Loeschen geht durch die Warteschlange: sonst raeumte es die Datei
-	// weg, waehrend ein Speichern desselben Monats noch laeuft – und der Monat
-	// stuende danach wieder da, mit dem Eintrag, den gerade jemand entfernt hat.
+	const file = entriesFile(month);
 	if (entries.length === 0) {
-		return queued(entriesFile(month), async () => {
-			const path = `${DIR}/${entriesFile(month)}`;
-			if (await exists(path, baseOpts)) await remove(path, baseOpts);
+		return queued(file, async () => {
+			const path = `${DIR}/${file}`;
+			// Auch das Leeren geht durch den Haken: sonst verschwaende ein
+			// geleerter Monat, ohne dass der Abgleich die Loeschungen je erfaehrt.
+			if (writeHook) await writeHook.entries(month, await readEntriesRaw(month), []);
+			if (await storage.exists(path)) await storage.remove(path);
 		});
 	}
-	return writeJson(entriesFile(month), entries);
+	if (!writeHook) return writeJson(file, entries);
+	return queued(file, async () => {
+		const before = await readEntriesRaw(month);
+		await writeJsonNow(file, await writeHook!.entries(month, before, entries));
+	});
 }
 
-/**
- * Alle Monats-Keys mit Eintraegen, neueste zuerst.
- *
- * Liest nur das Verzeichnis: seit `saveEntries` leere Monate loescht, bedeutet
- * "Datei da" = "hat Eintraege". Altlasten aus frueheren Versionen raeumt
- * `pruneEmptyMonthFiles()` einmalig beim Start weg – diese Funktion laeuft nach
- * jedem Speichern und darf nicht jedes Mal den ganzen Bestand einlesen.
- */
+/** Der Stand einer Monatsdatei ohne die Quarantaene-Behandlung von `loadEntries`. */
+async function readEntriesRaw(month: string): Promise<Entry[]> {
+	return readJson<Entry[]>(entriesFile(month), []);
+}
+
+/** Alle Monats-Keys mit Eintraegen, neueste zuerst. */
 export async function listEntryMonths(): Promise<string[]> {
 	return (await dataFiles(MONTH_FILE_RE)).map(([, month]) => month).sort().reverse();
 }
@@ -226,25 +209,19 @@ const EMPTY_MONTH_MAX_BYTES = 64;
 /**
  * Beim Start: leere "[]"-Monatsdateien entfernen, die fruehere Versionen liegen
  * liessen. Ohne das geisterten die Monate ohne Eintraege durch die Auswahl.
- *
- * Gelesen wird nur, was klein genug ist, um leer zu sein. Vorher zog dieser
- * Schritt bei JEDEM Start den kompletten Bestand durch JSON.parse – wachsend mit
- * jedem Monat, der je existierte, und noch vor dem ersten Bild.
- *
- * Eine beschaedigte Datei ueber der Grenze faellt damit nicht mehr hier auf,
- * sondern beim Laden ihres Monats – `loadEntries` legt sie dort ohnehin zur Seite.
  */
 export async function pruneEmptyMonthFiles(): Promise<string[]> {
 	const pruned: string[] = [];
 	for (const [name, month] of await dataFiles(MONTH_FILE_RE)) {
 		// Metadaten statt Inhalt. Antwortet das Dateisystem nicht, bleibt die Datei
 		// liegen – geloescht wird nur, was nachweislich leer ist.
-		const bytes = await stat(`${DIR}/${name}`, baseOpts)
+		const bytes = await storage
+			.stat(`${DIR}/${name}`)
 			.then((info) => info.size)
 			.catch(() => Number.MAX_SAFE_INTEGER);
 		if (bytes > EMPTY_MONTH_MAX_BYTES) continue;
 		if ((await loadEntries(month)).length === 0) {
-			await remove(`${DIR}/${name}`, baseOpts);
+			await storage.remove(`${DIR}/${name}`);
 			pruned.push(month);
 		}
 	}
@@ -281,15 +258,101 @@ export async function saveTimeReport(report: StoredTimeReport): Promise<void> {
 	return writeJson(reportFile(report.month), report);
 }
 
-/**
- * Monate, zu denen ein eingelesener Report auf der Platte liegt, aufsteigend.
- *
- * Damit der Abgleich den Monat wechseln kann, ohne dass die Datei noch offen ist –
- * sonst muesste man ihn schliessen, den Monat in der Eintraege-Ansicht umstellen
- * und ihn wieder oeffnen.
- */
+/** Monate, zu denen ein eingelesener Report auf der Platte liegt, aufsteigend. */
 export async function listTimeReportMonths(): Promise<string[]> {
 	return (await dataFiles(REPORT_FILE_RE)).map(([, month]) => month).sort();
+}
+
+// ---- Geraet und Abgleich ----
+
+/**
+ * Was dieses Geraet ueber sich und seine Verknuepfung weiss.
+ *
+ * Eigene Datei, bewusst NICHT settings.json: Token und Tresorschluessel gehoeren
+ * nicht in etwas, das in jedem Backup und jedem Fehlerbericht landet.
+ */
+export interface DeviceInfo {
+	/** Zufaellige, dauerhafte Kennung dieses Geraets. */
+	id: string;
+	/** Adresse des Servers, z.B. "https://tracker.example.de". */
+	serverUrl?: string;
+	/** Das Geraete-Token, geschuetzt ueber das Betriebssystem (siehe secret.rs). */
+	token?: string;
+	/** Der Tresorschluessel, ebenso geschuetzt. */
+	vaultKey?: string;
+	/** Ob Token und Schluessel wirklich vom Betriebssystem geschuetzt sind. */
+	protected?: boolean;
+	/** Bis zu welchem Serverstand dieses Geraet alles kennt. */
+	seq?: number;
+	/** Anzeigename des Kontos - nur fuer die Oberflaeche. */
+	accountName?: string;
+	/**
+	 * Welches Konto hier haengt - der Nachweis aus seinem Tresorschluessel.
+	 *
+	 * Zwei Konten haben verschiedene Schluessel, also verschiedene Nachweise.
+	 * Damit laesst sich ein Kontowechsel erkennen, ohne die Kontokennung selbst
+	 * abzulegen.
+	 */
+	kontoKennung?: string;
+	/**
+	 * Wem der lokale Bestand gehoert.
+	 *
+	 * Weicht das von `kontoKennung` ab, stammen die Daten aus einem ANDEREN
+	 * Konto - dann duerfen sie nicht in das jetzige hochgeladen werden. Fehlt der
+	 * Wert, hat dieses Geraet noch nie ein Konto gesehen: der Bestand ist dann
+	 * der eigene und gehoert hoch.
+	 */
+	bestandGehoertZu?: string;
+}
+
+/**
+ * Alles loeschen, was zu einem Konto gehoert - Eintraege, Aktivitaeten, Outbox.
+ *
+ * Fuer den Browser: dort ist der Bestand nur eine Kopie des Servers. Bleibt er
+ * beim Kontowechsel liegen, sieht der naechste Mensch die Zeiten des vorigen -
+ * und schlimmer: sie wandern beim naechsten Abgleich in SEIN Konto.
+ *
+ * Die Einstellungen bleiben: sie sind eine Eigenschaft dieses Geraets, kein
+ * Inhalt des Kontos.
+ */
+export async function clearAccountData(): Promise<void> {
+	for (const monat of await listEntryMonths()) {
+		const pfad = `${DIR}/${entriesFile(monat)}`;
+		if (await storage.exists(pfad)) await storage.remove(pfad);
+	}
+	for (const datei of ["activities.json", "outbox.json"]) {
+		const pfad = `${DIR}/${datei}`;
+		if (await storage.exists(pfad)) await storage.remove(pfad);
+	}
+}
+
+/**
+ * Die Merkliste leeren - was darin steht, gehoert dem vorigen Konto.
+ *
+ * Getrennt von `clearAccountData`, weil sie auch dort weg muss, wo die Zeiten
+ * bleiben sollen: der Abgleich liest die Outbox und fragt dabei keinen Stempel.
+ */
+export async function clearOutbox(): Promise<void> {
+	const pfad = `${DIR}/outbox.json`;
+	if (await storage.exists(pfad)) await storage.remove(pfad);
+}
+
+export async function loadDevice(): Promise<DeviceInfo | null> {
+	return readJson<DeviceInfo | null>("device.json", null);
+}
+
+export async function saveDevice(info: DeviceInfo): Promise<void> {
+	return writeJson("device.json", info);
+}
+
+/** Ausstehende Aenderungen. Der Inhalt steht in sync/outbox.ts. */
+export async function loadOutbox<T>(): Promise<T[]> {
+	const stored = await readJson<T[]>("outbox.json", []);
+	return Array.isArray(stored) ? stored : [];
+}
+
+export async function saveOutbox<T>(changes: T[]): Promise<void> {
+	return writeJson("outbox.json", changes);
 }
 
 export interface StoredYear {
@@ -314,30 +377,27 @@ export async function listEntryYears(): Promise<StoredYear[]> {
 	return [...byYear.values()].sort((a, b) => b.year - a.year);
 }
 
-/**
- * Alle Monatsdateien eines Jahres loeschen. Gibt die geloeschten Monate zurueck.
- *
- * Die eingelesenen LOGA-Reports des Jahres gehen mit: sie enthalten dieselben
- * Arbeitszeiten wie die Eintraege selbst. Wer ein Jahr entfernt, will nicht,
- * dass der Abgleich es danach weiter kennt.
- */
+/** Alle Monatsdateien eines Jahres loeschen. Gibt die geloeschten Monate zurueck. */
 export async function deleteYear(year: number): Promise<string[]> {
-	const removeYear = async (re: RegExp) => {
-		const hits = (await dataFiles(re)).filter(([, month]) => month.startsWith(`${year}-`));
-		// Durch die Warteschlange, aus demselben Grund wie das Loeschen eines leeren
-		// Monats in saveEntries: ein noch anstehendes Speichern derselben Datei legte
-		// sie sonst NACH dem Loeschen wieder an. Der Cache ist da schon geraeumt
-		// (deleteYearEntries), der Monat laege also unsichtbar auf der Platte – und
-		// stuende beim naechsten Start wieder in der Auswahl.
-		for (const [name] of hits) {
-			await queued(name, async () => {
-				const path = `${DIR}/${name}`;
-				if (await exists(path, baseOpts)) await remove(path, baseOpts);
-			});
-		}
-		return hits.map(([, month]) => month);
-	};
-	const deleted = await removeYear(MONTH_FILE_RE);
-	await removeYear(REPORT_FILE_RE);
-	return deleted.sort();
+	const desJahres = async (re: RegExp) =>
+		(await dataFiles(re)).filter(([, month]) => month.startsWith(`${year}-`));
+
+	// Die Monate gehen ueber saveEntries(month, []) und NICHT ueber ein direktes
+	// storage.remove(): nur so laeuft die Loeschung durch den Haken und landet in
+	// der Outbox - sonst faende der naechste Abgleich die Monate beim Server
+	// unveraendert vor und laedt das geloeschte Jahr wieder herunter.
+	const monate = (await desJahres(MONTH_FILE_RE)).map(([, month]) => month);
+	for (const month of monate) await saveEntries(month, []);
+
+	// Die eingelesenen LOGA-Reports gleicht niemand ab; sie duerfen direkt weg -
+	// aber durch die Warteschlange, aus demselben Grund wie das Leeren eines Monats
+	// in saveEntries: ein noch anstehendes saveTimeReport derselben Datei legte sie
+	// sonst NACH dem Loeschen wieder an, unsichtbar bis zum naechsten Start.
+	for (const [name] of await desJahres(REPORT_FILE_RE)) {
+		await queued(name, async () => {
+			const path = `${DIR}/${name}`;
+			if (await storage.exists(path)) await storage.remove(path);
+		});
+	}
+	return monate.sort();
 }

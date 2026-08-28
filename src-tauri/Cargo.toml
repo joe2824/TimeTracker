@@ -23,7 +23,14 @@ tauri-plugin-opener = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-dialog = "2"
+# Der Weg ins Netz fuehrt durch den Rust-Teil, nicht durch den Webview: ein
+# Webview hat eine Herkunft, die kein Server sinnvoll erlauben kann, und die
+# Herkunftspruefung des Browsers stuende jedem Abgleich im Weg.
+tauri-plugin-http = "2"
 serde = { version = "1", features = ["derive"] }
+# Schluesselbytes nach Gebrauch ausnullen. Kein Allheilmittel - der Tresor-
+# schluessel liegt ohnehin auch im Webview -, aber hier kostet es nichts.
+zeroize = "1"
 serde_json = "1"
 # Nur fuer den Zeitstempel im Absturz-Protokoll (steckte ohnehin schon als
 # indirekte Abhaengigkeit im Baum).
@@ -36,7 +43,20 @@ windows-sys = { version = "0.60", features = [
     "Win32_Foundation",
     "Win32_System_Threading",
     "Win32_UI_WindowsAndMessaging",
+    # DPAPI: den Tresorschluessel an das Benutzerkonto binden, statt ihn im
+    # Klartext in den Datenordner zu legen (siehe secret.rs).
+    "Win32_Security_Cryptography",
 ] }
+
+# Der Systemschluesselbund: Keychain unter macOS, Secret Service unter Linux.
+# Windows bleibt bei DPAPI - das ist dort der eingebaute Weg und braucht keinen
+# laufenden Dienst (siehe secret.rs).
+#
+# Das Feature "v1" waehlt je Ziel den richtigen Speicher. Wichtig ist, was es
+# NICHT waehlt: linux-keyutils haelt Geheimnisse nur je SITZUNG, nicht je
+# Anmeldung - nach einem Neustart waeren sie weg.
+[target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
+keyring = { version = "4", features = ["v1"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 user-idle = "0.6"
@@ -45,6 +65,9 @@ tauri-plugin-autostart = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-process = "2"
+# Kopplung per Link: der Browser zeigt einen "timetracker://"-Link, ein Klick
+# oeffnet die Anwendung mit dem Code darin (siehe deep_link in lib.rs).
+tauri-plugin-deep-link = "2"
 # Anonyme Nutzungszahlen. Bewusst nur fuer Desktop: das Plugin kennt in sys.rs
 # nur WebKit/WebKitGTK/WebView2 und liesse sich fuer Android/iOS gar nicht erst
 # uebersetzen.

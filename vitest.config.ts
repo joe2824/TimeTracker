@@ -16,11 +16,11 @@ export default defineConfig({
 		// (23- und 25-Stunden-Tage) pruefen nur dort etwas, wo es ueberhaupt eine
 		// Umstellung gibt – auf einem UTC-CI-Runner waeren sie stumm. Berlin ist
 		// ausserdem die Zone, in der das Programm laeuft.
-		//
-		// Ein gesetztes TZ gewinnt aber, sonst liesse sich die Suite nicht gegen
-		// andere Zonen pruefen: ein fest verdrahtetes "Europe/Berlin" verschluckte
-		// `TZ=Asia/Tokyo npx vitest run` stillschweigend und der Lauf sagte nichts
-		// aus, obwohl er gruen meldet.
-		env: { TZ: process.env.TZ ?? "Europe/Berlin" }
+		env: { TZ: process.env.TZ ?? "Europe/Berlin" },
+		// Die Kontozeitzone haengt NICHT an der Geraetezone: sie wird hier fest
+		// gesetzt. Damit prueft `TZ=Pacific/Auckland npx vitest run` die Zusage,
+		// dass zwei Geraete in verschiedenen Zonen denselben Arbeitstag sehen –
+		// die ganze Suite muss dort unveraendert gruen sein.
+		setupFiles: ["src/lib/testing/pinZone.ts"]
 	}
 });

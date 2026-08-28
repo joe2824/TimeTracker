@@ -1,24 +1,12 @@
 // Datei-Protokoll fuer die Fehlersuche nach dem Fakt.
-//
-// Eine Datei je Tag im App-Datenordner:
-//   logs/2026-07-28.log
-//
-// Bewusst NEBEN "data/": dort liegen die Eintraege, und listEntryMonths() wie
-// pruneEmptyMonthFiles() lesen dieses Verzeichnis blind aus.
-//
-// Kein tauri-plugin-log: die gesamte Logik der App liegt im Frontend und
-// schriebe ueber dasselbe IPC in dieselbe Datei – dafuer eine weitere
-// Abhaengigkeit samt Rust-Bau einzuziehen, lohnt nicht. Was das Frontend nicht
-// sehen kann, ist ein Absturz des Rust-Teils; den haengt der Panic-Hook in
-// lib.rs an genau dieselbe Tagesdatei an.
-import { BaseDirectory, exists, mkdir, readDir, readTextFile, remove, writeTextFile } from "@tauri-apps/plugin-fs";
+import { storage } from "./platform/fs";
 import { fmtDate } from "./time";
+import { zonedParts } from "./tz";
 import { redact, trackError } from "./analytics";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
 const DIR = "logs";
-const baseOpts = { baseDir: BaseDirectory.AppData } as const;
 const FILE_RE = /^(\d{4}-\d{2}-\d{2})\.log$/;
 
 /** So viele Tage bleiben liegen; aeltere raeumt pruneOldLogs() beim Start weg. */
@@ -32,12 +20,7 @@ export function logFile(ts = Date.now()): string {
 /** Ordner der Protokolle, relativ zum App-Datenordner. */
 export const LOG_DIR = DIR;
 
-/**
- * Lesbarer Text zu einem geworfenen Wert.
- *
- * Tauri wirft haeufig blanke Strings statt Error-Objekten; `${e}` allein liefert
- * bei einem Error nur "Error: …" ohne die oft entscheidende Ursache.
- */
+/** Lesbarer Text zu einem geworfenen Wert. */
 export function errorText(e: unknown): string {
 	if (e instanceof Error) return e.message || e.name;
 	if (typeof e === "string") return e;
@@ -61,11 +44,11 @@ function detailText(detail: unknown): string {
 	return errorText(detail);
 }
 
-/** "2026-07-28 13:45:02.123" in Lokalzeit – dieselbe Zone wie alle Anzeigen. */
+/** "2026-07-28 13:45:02.123" in der Zeitzone des Kontos – dieselbe wie alle Anzeigen. */
 function stamp(ts: number): string {
-	const d = new Date(ts);
+	const z = zonedParts(ts);
 	const p = (n: number, len = 2) => String(n).padStart(len, "0");
-	return `${fmtDate(ts)} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`;
+	return `${fmtDate(ts)} ${p(z.hour)}:${p(z.minute)}:${p(z.second)}.${p(ts % 1000, 3)}`;
 }
 
 /**
@@ -103,12 +86,10 @@ async function writePending(): Promise<void> {
 		// Einmal je Sitzung pruefen: das Protokoll schreibt oft, und jede Pruefung
 		// waere eine weitere Runde ueber die IPC-Bruecke.
 		if (!dirReady) {
-			if (!(await exists(DIR, baseOpts))) {
-				await mkdir(DIR, { baseDir: BaseDirectory.AppData, recursive: true });
-			}
+			if (!(await storage.exists(DIR))) await storage.mkdir(DIR);
 			dirReady = true;
 		}
-		await writeTextFile(logFile(), `${lines.join("\n")}\n`, { append: true, ...baseOpts });
+		await storage.appendTextFile(logFile(), `${lines.join("\n")}\n`);
 	} catch (e) {
 		// Verlorene Zeilen sind besser als eine App, die am Protokollieren scheitert.
 		// Deshalb auch kein erneuter Versuch: dann haenge das Protokoll im Kreis.
@@ -145,9 +126,6 @@ function record(level: LogLevel, message: string, detail?: unknown): void {
 	// Fehler zusaetzlich anonym zaehlen – nur so ist zu sehen, ob eine Fassung
 	// bei den Kollegen reihenweise auf etwas laeuft, das hier nie auftritt.
 	// trackError() und nicht track(): das haengt am Schalter.
-	//
-	// Nur `message`, und die durch redact(). `detail` bleibt draussen: dort
-	// stecken Stacks, Dateipfade und Fremd-Fehlermeldungen.
 	if (level === "error") {
 		void trackError("fehler", { meldung: redact(message) });
 	}
@@ -166,12 +144,7 @@ export function logError(message: string, detail?: unknown): void {
 	record("error", message, detail);
 }
 
-/**
- * Unbehandelte Fehler und Promise-Ablehnungen des Fensters mitschreiben.
- *
- * Genau die verschwanden bisher spurlos: sichtbar war nur, dass die App etwas
- * nicht tat. Liefert die Abmeldefunktion.
- */
+/** Unbehandelte Fehler und Promise-Ablehnungen des Fensters mitschreiben. */
 export function installErrorLogging(): () => void {
 	const onError = (e: ErrorEvent) => {
 		logError(`Unbehandelter Fehler: ${e.message}`, e.error ?? `${e.filename}:${e.lineno}`);
@@ -190,8 +163,8 @@ export function installErrorLogging(): () => void {
 /** Vorhandene Protokolldateien, neueste zuerst. */
 export async function listLogs(): Promise<string[]> {
 	try {
-		if (!(await exists(DIR, baseOpts))) return [];
-		const dir = await readDir(DIR, baseOpts);
+		if (!(await storage.exists(DIR))) return [];
+		const dir = await storage.readDir(DIR);
 		return dir
 			.map((e) => e.name ?? "")
 			.filter((n) => FILE_RE.test(n))
@@ -203,19 +176,14 @@ export async function listLogs(): Promise<string[]> {
 	}
 }
 
-/**
- * Die letzten Zeilen des Protokolls, aelteste zuerst.
- *
- * Liest die beiden neuesten Tage: kurz nach Mitternacht steht sonst eine fast
- * leere Datei da, waehrend das Gesuchte von gestern ist.
- */
+/** Die letzten Zeilen des Protokolls, aelteste zuerst. */
 export async function readLog(maxLines = 300): Promise<string[]> {
 	await flushLog();
 	const names = (await listLogs()).slice(0, 2).reverse();
 	const lines: string[] = [];
 	for (const name of names) {
 		try {
-			const txt = await readTextFile(`${DIR}/${name}`, baseOpts);
+			const txt = await storage.readTextFile(`${DIR}/${name}`);
 			lines.push(...txt.split("\n").filter((l) => l.trim()));
 		} catch (e) {
 			console.error(`Protokoll ${name} nicht lesbar`, e);
@@ -231,7 +199,7 @@ export async function clearLogs(): Promise<number> {
 	let removed = 0;
 	for (const name of names) {
 		try {
-			await remove(`${DIR}/${name}`, baseOpts);
+			await storage.remove(`${DIR}/${name}`);
 			removed++;
 		} catch (e) {
 			console.error(`Protokoll ${name} nicht loeschbar`, e);
@@ -240,12 +208,7 @@ export async function clearLogs(): Promise<number> {
 	return removed;
 }
 
-/**
- * Protokolle aelter als `keepDays` entfernen. Liefert die geloeschten Namen.
- *
- * Ohne das waechst der Ordner unbegrenzt – ein Protokoll, das niemand aufraeumt,
- * ist auf Dauer schlimmer als keines.
- */
+/** Protokolle aelter als `keepDays` entfernen. Liefert die geloeschten Namen. */
 export async function pruneOldLogs(keepDays = KEEP_DAYS, now = Date.now()): Promise<string[]> {
 	const cutoff = fmtDate(now - keepDays * 24 * 60 * 60 * 1000);
 	const removed: string[] = [];
@@ -254,7 +217,7 @@ export async function pruneOldLogs(keepDays = KEEP_DAYS, now = Date.now()): Prom
 		// Datumsnamen vergleichen sich als Text richtig (ISO-Reihenfolge).
 		if (!day || day >= cutoff) continue;
 		try {
-			await remove(`${DIR}/${name}`, baseOpts);
+			await storage.remove(`${DIR}/${name}`);
 			removed.push(name);
 		} catch (e) {
 			console.error(`Altes Protokoll ${name} nicht loeschbar`, e);

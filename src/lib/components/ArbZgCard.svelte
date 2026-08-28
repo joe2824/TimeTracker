@@ -20,13 +20,15 @@
 		noonTs,
 		quantize
 	} from "$lib/time";
+	import { appTimeZone, wallToTs, zonedParts } from "$lib/tz";
 	import type { Entry } from "$lib/types";
 	import { Badge } from "$lib/components/ui/badge";
 	import { Button } from "$lib/components/ui/button";
 	import * as Card from "$lib/components/ui/card";
 	import * as Chart from "$lib/components/ui/chart";
-	import * as Tooltip from "$lib/components/ui/tooltip";
+	import * as Popover from "$lib/components/ui/popover";
 	import { Skeleton } from "$lib/components/ui/skeleton";
+	import StatTile from "$lib/components/StatTile.svelte";
 	import { LineChart } from "layerchart";
 	import { scaleTime } from "d3-scale";
 	import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
@@ -43,15 +45,7 @@
 	/** Referenzzeitraum fuer das angenommene Tempo (siehe DEFAULT_PACE_WEEKS). */
 	let paceWeeks = $state(DEFAULT_PACE_WEEKS);
 
-	/**
-	 * Stichtag: das Monatsende – aber nie in der Zukunft.
-	 *
-	 * Die Monatsauswahl kennt keine obere Grenze. Ohne die Deckelung liegen bei
-	 * einem kuenftigen Monat alle Tage von heute bis dahin als Werktage mit null
-	 * Stunden im Fenster; aus zehn Stunden am Tag wird dann ein Schnitt von 6:20
-	 * und aus "Grenze bereits gerissen" ein "im gruenen Bereich". Je weiter man
-	 * nach vorn blaettert, desto beruhigender die Auskunft – genau verkehrt herum.
-	 */
+	/** Stichtag: das Monatsende – aber nie in der Zukunft. */
 	const until = $derived.by(() => {
 		const today = fmtDate(Date.now());
 		const [y, m] = month.split("-").map(Number);
@@ -65,16 +59,7 @@
 		for (const m of monthsNeeded) void app.ensureMonth(m);
 	});
 
-	/**
-	 * Sind alle zwoelf Monate da?
-	 *
-	 * `monthEntries` liefert fuer einen noch nicht geladenen Monat eine leere
-	 * Liste, die von einem leeren Monat nicht zu unterscheiden ist. Waehrend des
-	 * Ladens rechnete die Karte deshalb ueber einen Bruchteil der Daten und zeigte
-	 * ein Ergebnis, das eine Sekunde spaeter ein voellig anderes war – im
-	 * schlimmsten Fall sprang sie von "im gruenen Bereich" auf Rot. Lieber
-	 * gar nichts zeigen als kurz etwas Falsches.
-	 */
+	/** Sind alle zwoelf Monate da? */
 	const ready = $derived(monthsNeeded.every((m) => app.monthLoaded(m)));
 
 	const absenceIds = $derived(new Set(app.activities.filter((a) => a.isAbsence).map((a) => a.id)));
@@ -135,31 +120,30 @@
 		return [Math.min(...values) - 0.25, Math.max(...values) + 0.25];
 	});
 
-	/**
-	 * Monatserste als Achsenmarken.
-	 *
-	 * Weder automatisch noch als Anzahl: bei einer Marke je Datenpunkt stand
-	 * derselbe Monat fuenfmal nebeneinander, bei einer gedeckelten Anzahl blieben
-	 * zwei Beschriftungen fuer ein halbes Jahr uebrig. Ein Monatsraster ist das,
-	 * was hier gelesen wird.
-	 */
+	/** Monatserste als Achsenmarken. */
 	const monthTicks = $derived.by(() => {
 		const out: Date[] = [];
 		if (chartData.length === 0) return out;
 		const first = chartData[0].ts;
 		const last = chartData[chartData.length - 1].ts;
-		const cursor = new Date(first.getFullYear(), first.getMonth(), 1);
-		if (cursor < first) cursor.setMonth(cursor.getMonth() + 1);
-		while (cursor <= last) {
-			out.push(new Date(cursor));
-			cursor.setMonth(cursor.getMonth() + 1);
-		}
+		// Monatsindex statt Date-Cursor: der Monatserste haengt sonst an der Zone
+		// des Geraets und die Marken saessen neben den Datenpunkten.
+		const p = zonedParts(first.getTime());
+		let idx = p.year * 12 + (p.month - 1);
+		const tickAt = (i: number) => new Date(wallToTs(Math.floor(i / 12), (i % 12) + 1, 1, 12));
+		if (tickAt(idx) < first) idx++;
+		for (let t = tickAt(idx); t <= last; t = tickAt(++idx)) out.push(t);
 		return out;
 	});
 
 	// Das Jahr nur im Januar – sonst steht es sechsmal da, wo es niemand braucht.
-	const tickLabel = (d: Date) =>
-		d.toLocaleDateString("de-DE", d.getMonth() === 0 ? { month: "short", year: "2-digit" } : { month: "short" });
+	const tickLabel = (d: Date) => {
+		const month = zonedParts(d.getTime()).month;
+		return d.toLocaleDateString("de-DE", {
+			timeZone: appTimeZone(),
+			...(month === 1 ? { month: "short", year: "2-digit" } : { month: "short" })
+		});
+	};
 
 	const chartConfig = {
 		schnitt: { label: "Schnitt", theme: { light: "#2a78d6", dark: "#6ea6ec" } },
@@ -212,13 +196,9 @@
 			     Kennzahlen, Verlauf. So springt beim Erscheinen nichts. -->
 			<div class="space-y-3">
 				<Skeleton class="h-20 w-full" />
-				<div class="flex flex-wrap gap-8">
+				<div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
 					{#each [0, 1, 2, 3, 4] as i (i)}
-						<div class="space-y-1.5">
-							<Skeleton class="h-3 w-24" />
-							<Skeleton class="h-7 w-20" />
-							<Skeleton class="h-3 w-16" />
-						</div>
+						<Skeleton class="h-[4.75rem] w-full {i === 4 ? 'col-span-2 sm:col-span-1' : ''}" />
 					{/each}
 				</div>
 				<Skeleton class="h-3 w-3/4" />
@@ -233,12 +213,17 @@
 		<div class="space-y-3">
 			<div class="flex flex-wrap items-start justify-between gap-3">
 				<!-- Farbe bedeutet Handlungsbedarf, sonst nichts. „Dicht an der Grenze"
-				     ist eine Beobachtung, keine Aufforderung – die stand vorher gelb
-				     da und liess niemanden wissen, was zu tun sei. -->
+				     ist eine Beobachtung, keine Aufforderung. Die Stufen sind bewusst
+				     zurueckhaltend getoent: der Rahmen soll die Aussage stuetzen,
+				     nicht die Card uebertoenen. -->
 				<div
-					class="flex flex-1 items-start gap-3 rounded-md border px-4 py-3"
-					class:verdict-crit={strict.verdict.requiresAction && strict.verdict.level === "crit"}
-					class:verdict-warn={strict.verdict.requiresAction && strict.verdict.level !== "crit"}
+					class={[
+						"flex flex-1 items-start gap-3 rounded-md border px-4 py-3",
+						strict.verdict.requiresAction &&
+							(strict.verdict.level === "crit"
+								? "border-destructive/50 bg-destructive/6 text-destructive"
+								: "border-amber-500/55 bg-amber-500/7 text-amber-700 dark:text-amber-400")
+					]}
 				>
 					{#if strict.verdict.requiresAction}
 						<TriangleAlertIcon class="mt-0.5 size-5 shrink-0" />
@@ -257,64 +242,54 @@
 				</div>
 			</div>
 
-			<div class="flex flex-wrap gap-8">
-				<div>
-					<div class="text-muted-foreground text-xs">Schnitt · 24 Wochen</div>
-					<div class="text-2xl" class:text-destructive={alarm}>
-						{fmtHoursClock(strictWindow.average)} h
-					</div>
-					<div class="text-muted-foreground text-xs">Grenze {fmtHoursClock(NORM_DAILY)} h</div>
-				</div>
-				<div>
-					<div class="text-muted-foreground text-xs">Puffer</div>
-					<div class="text-2xl" class:text-destructive={alarm}>
-						{strictWindow.bufferHours >= 0 ? "+" : "−"}{fmtHoursClock(Math.abs(strictWindow.bufferHours))} h
-					</div>
-					<div class="text-muted-foreground text-xs">im Fenster</div>
-				</div>
-				<div>
-					<div class="text-muted-foreground text-xs">Dein Tempo</div>
-					<div class="text-2xl">{fmtHoursClock(result.pace)} h</div>
-					<div class="text-muted-foreground text-xs">je Arbeitstag</div>
-				</div>
-				<div>
-					<div class="text-muted-foreground text-xs">Umkehrpunkt</div>
-					<div class="text-2xl" class:text-destructive={alarm}>
-						{#if strict.tooLate}
-							verstrichen
-						{:else if strict.easeOffDate}
-							<!-- Jahr nur, wenn es ein anderes ist: der Umkehrpunkt liegt oft
-							     Monate voraus und dann auch mal im naechsten Jahr, wo "22.02."
-							     nach uebermorgen aussaehe. -->
-							{new Date(noonTs(strict.easeOffDate)).toLocaleDateString(
-								"de-DE",
-								strict.easeOffDate.slice(0, 4) === until.slice(0, 4)
-									? { day: "2-digit", month: "2-digit" }
-									: { day: "2-digit", month: "2-digit", year: "2-digit" }
-							)}
-						{:else}
-							—
-						{/if}
-					</div>
-					<div class="text-muted-foreground text-xs">
-						{strict.easeOffDate || strict.tooLate ? "letzter Tag zum Drehen" : "nicht nötig"}
-					</div>
-				</div>
-				<div>
-					<div class="text-muted-foreground text-xs">Höchstens</div>
-					<div class="text-2xl">
-						{strict.maxPace === null || strict.maxPace <= 0
-							? "—"
-							: `${fmtHoursClock(strict.maxPace)} h`}
-					</div>
-					{#if strict.paceDelta !== null && strict.paceDelta < 0}
-						<div class="text-destructive text-xs">
-							{fmtHoursClock(strict.paceDelta)} h je Tag
-						</div>
+			<!-- Fuenf Kennzahlen als Kacheln: nebeneinander mit gap-8 war weder zu
+			     sehen, wo eine aufhoert und die naechste anfaengt, noch passte die
+			     Reihe unter 1000px. -->
+			<div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+				<StatTile label="Schnitt · 24 Wochen" hint="Grenze {fmtHoursClock(NORM_DAILY)} h" {alarm}>
+					{fmtHoursClock(strictWindow.average)} h
+				</StatTile>
+				<StatTile label="Puffer" hint="im Fenster" {alarm}>
+					{strictWindow.bufferHours >= 0 ? "+" : "−"}{fmtHoursClock(
+						Math.abs(strictWindow.bufferHours)
+					)} h
+				</StatTile>
+				<StatTile label="Dein Tempo" hint="je Arbeitstag">
+					{fmtHoursClock(result.pace)} h
+				</StatTile>
+				<StatTile
+					label="Umkehrpunkt"
+					hint={strict.easeOffDate || strict.tooLate ? "letzter Tag zum Drehen" : "nicht nötig"}
+					{alarm}
+				>
+					{#if strict.tooLate}
+						verstrichen
+					{:else if strict.easeOffDate}
+						<!-- Jahr nur, wenn es ein anderes ist: der Umkehrpunkt liegt oft
+						     Monate voraus und dann auch mal im naechsten Jahr, wo "22.02."
+						     nach uebermorgen aussaehe. -->
+						{new Date(noonTs(strict.easeOffDate)).toLocaleDateString(
+							"de-DE",
+							strict.easeOffDate.slice(0, 4) === until.slice(0, 4)
+								? { day: "2-digit", month: "2-digit" }
+								: { day: "2-digit", month: "2-digit", year: "2-digit" }
+						)}
 					{:else}
-						<div class="text-muted-foreground text-xs">je Arbeitstag</div>
+						—
 					{/if}
-				</div>
+				</StatTile>
+				<StatTile label="Höchstens" class="col-span-2 sm:col-span-1">
+					{strict.maxPace === null || strict.maxPace <= 0
+						? "—"
+						: `${fmtHoursClock(strict.maxPace)} h`}
+					{#snippet hintSlot()}
+						{#if strict.paceDelta !== null && strict.paceDelta < 0}
+							<div class="text-destructive text-xs">{fmtHoursClock(strict.paceDelta)} h je Tag</div>
+						{:else}
+							<div class="text-muted-foreground text-xs">je Arbeitstag</div>
+						{/if}
+					{/snippet}
+				</StatTile>
 			</div>
 
 			{#if month > app.currentMonth}
@@ -323,11 +298,8 @@
 				</p>
 			{/if}
 
-			<!-- Die gesetzliche Lesart und die Datenlage: beides gehoert gesagt,
-			     beides ist Nebensache. Eine Zeile, nicht zwei Absaetze. -->
-			<!-- Nebeneinander gelesen wirkte das wie ein Widerspruch: oben eine
-			     Warnung, darunter „unkritisch". Wo gewarnt wird, sagt die Zeile
-			     deshalb zuerst, worauf sich die Warnung stuetzt. -->
+			<!-- Eine Zeile fuer gesetzliche Lesart + Datenlage. Wird gewarnt, steht
+			     zuerst, worauf sich die Warnung stuetzt. -->
 			<p class="text-muted-foreground text-xs">
 				{#if strict.verdict.requiresAction && legal.verdict.level === "ok"}
 					Warum trotzdem eine Warnung: nach dem Gesetz (Werktage Mo–Sa) läge der Schnitt bei
@@ -430,13 +402,17 @@
 					{result.counts.hinweis}
 					{result.counts.hinweis === 1 ? "Hinweis" : "Hinweise"}
 				</p>
-				<Tooltip.Provider>
+				<!-- Ohne diesen Satz ist am Handy nichts zu sehen, was die Badges als
+				     anklickbar ausweist - Hover gibt es dort nicht. -->
+				<p class="text-muted-foreground text-xs">
+					Jeder Befund lässt sich anklicken – dahinter steht, worauf er sich stützt.
+				</p>
 				<table class="w-full text-sm">
 					<tbody>
 						{#each byDay as d (d.date)}
 							<!-- Die Zeile fuehrt in die Eintraege des Tages. Der Klick haengt am
 							     Datum und nicht an der ganzen Zeile: rechts stehen die Badges mit
-							     eigenen Tooltips, und ein Knopf im Knopf waere weder gueltiges
+							     eigener Erklaerung, und ein Knopf im Knopf waere weder gueltiges
 							     HTML noch mit der Tastatur zu bedienen. Der Hover faerbt
 							     trotzdem die ganze Zeile, damit sie als anklickbar zu erkennen ist. -->
 							<tr class="hover:bg-muted/50 border-b last:border-0">
@@ -455,8 +431,17 @@
 								<td class="py-1">
 									<div class="flex flex-wrap justify-end gap-1">
 										{#each d.findings as f (f.rule)}
-											<Tooltip.Root>
-												<Tooltip.Trigger>
+											<!--
+												Popover statt Tooltip: die Erklaerung haengt sonst am Hover
+												und ist auf dem Handy gar nicht zu bekommen - dort ist sie
+												aber genauso noetig. Ein Klick oeffnet, Escape schliesst,
+												und die Tastatur kommt genauso hin.
+											-->
+											<Popover.Root>
+												<Popover.Trigger
+													class="focus-visible:ring-ring/50 cursor-pointer rounded-4xl outline-none transition-opacity hover:opacity-80 focus-visible:ring-3"
+													aria-label="{f.label} – erklären"
+												>
 													<Badge variant={badgeVariant(f.level)}>
 														{#if f.level === "verstoss"}
 															<TriangleAlertIcon />
@@ -465,11 +450,17 @@
 														{/if}
 														{f.label}
 													</Badge>
-												</Tooltip.Trigger>
-												<Tooltip.Content class="max-w-72">
-													{f.text}
-												</Tooltip.Content>
-											</Tooltip.Root>
+												</Popover.Trigger>
+												<Popover.Content align="end" class="space-y-1.5">
+													<div class="flex items-center gap-1.5">
+														<Badge variant={badgeVariant(f.level)}>{f.label}</Badge>
+														<span class="text-muted-foreground text-xs">
+															{fmtDateHuman(noonTs(d.date))}
+														</span>
+													</div>
+													<p class="text-muted-foreground text-xs leading-relaxed">{f.text}</p>
+												</Popover.Content>
+											</Popover.Root>
 										{/each}
 									</div>
 								</td>
@@ -477,13 +468,12 @@
 						{/each}
 					</tbody>
 				</table>
-				</Tooltip.Provider>
 			{/if}
 		</div>
 
 		{/if}
 
-		<!-- Was diese Card nicht weiss. Gehoert hierher, nicht in die README. -->
+		<!-- Was diese Card nicht abdeckt. -->
 		<p class="text-muted-foreground border-t pt-3 text-xs">
 			Erfasst werden Projektzeiten, keine Stempelzeiten – das hier ist eine Annahme, kein Nachweis,
 			und kein Rechtsrat. Maßgeblich bleibt die Zeiterfassung deines Arbeitgebers.
@@ -499,20 +489,3 @@
 	</Card.Content>
 </Card.Root>
 
-<style>
-	/* Nur das Urteil traegt Farbe. Die Stufen sind bewusst zurueckhaltend
-	   getoent: der Rahmen soll die Aussage stuetzen, nicht die Card uebertoenen. */
-	.verdict-crit {
-		border-color: color-mix(in oklab, var(--destructive) 50%, transparent);
-		background: color-mix(in oklab, var(--destructive) 6%, transparent);
-		color: var(--destructive);
-	}
-	.verdict-warn {
-		border-color: color-mix(in oklab, #f59e0b 55%, transparent);
-		background: color-mix(in oklab, #f59e0b 7%, transparent);
-		color: #b45309;
-	}
-	:global(.dark) .verdict-warn {
-		color: #fbbf24;
-	}
-</style>

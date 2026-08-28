@@ -15,9 +15,6 @@ export interface BackdatePlan {
  * - endet vor dem Start          -> unberuehrt
  * - beginnt am/nach dem Start    -> vollstaendig ueberdeckt -> entfernen
  * - wird angeschnitten           -> auf `start` kuerzen
- *
- * Abwesenheiten bleiben aussen vor: die sind tagesgenau und haben keine Spanne.
- * Ein laufender Eintrag zaehlt bis `now`.
  */
 export function planBackdate(
 	entries: Entry[],
@@ -42,16 +39,7 @@ export function planIsEmpty(plan: BackdatePlan): boolean {
 	return plan.truncate.length === 0 && plan.remove.length === 0;
 }
 
-/**
- * Muss vorher gefragt werden?
- *
- * Einen laufenden Timer zu KUERZEN ist der ganz normale Wechsel – dafuer jedes Mal
- * einen Dialog zu zeigen waere unertraeglich. Ihn ganz zu ENTFERNEN ist es nicht:
- * wer um 10:30 "ab 09:00" startet, waehrend seit 10:00 ein Timer laeuft, verlaere
- * dessen halbe Stunde sonst kommentarlos.
- *
- * Bei abgeschlossenen Zeiten wird immer gefragt.
- */
+/** Muss vorher gefragt werden? */
 export function planNeedsConfirm(plan: BackdatePlan): boolean {
 	return plan.truncate.some((t) => t.entry.endTs !== null) || plan.remove.length > 0;
 }

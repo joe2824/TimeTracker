@@ -206,7 +206,7 @@
 			<ul class="divide-border divide-y">
 				{#each listed as a (a.id)}
 					<li
-						class="relative flex items-center gap-2 py-1.5"
+						class="relative flex flex-wrap items-center gap-2 py-1.5"
 						class:opacity-40={draggingId === a.id}
 						class:opacity-50={a.archived}
 						ondragover={(e) => onDragOver(e, a.id)}
@@ -268,15 +268,22 @@
 						{/if}
 						<!-- Eingebaute Zeilen nicht umbenennbar: #seedBuiltins erkennt sie am
 						     Namen und legte sonst beim naechsten Start eine zweite an. -->
+						<!-- min-w-0: ohne das setzt das Feld seine intrinsische Breite durch und
+						     schiebt die Knoepfe aus der Zeile. basis-40 laesst die Knoepfe
+						     umbrechen, bevor vom Namen nichts mehr uebrig ist. -->
 						<input
-							class="flex-1 bg-transparent text-sm outline-none disabled:cursor-default disabled:opacity-100"
+							class="hover:bg-muted/60 focus:bg-muted/60 focus-visible:ring-ring/50 min-w-0 grow basis-40 rounded-md bg-transparent px-1.5 py-1 text-sm transition-colors outline-none focus-visible:ring-3 disabled:cursor-default disabled:bg-transparent disabled:opacity-100"
 							value={a.name}
 							disabled={app.isBuiltinActivity(a)}
 							title={app.isBuiltinActivity(a) ? "Eingebaute Zeile – nicht umbenennbar" : "Umbenennen"}
 							onchange={(e: Event) => app.renameActivity(a.id, (e.target as HTMLInputElement).value)}
 						/>
+						<!-- Aktionen als eine Gruppe, nicht als fuenf lose Knoepfe: so brechen
+						     sie geschlossen um und lesen sich als ein Satz Werkzeuge zu dieser
+						     Zeile. gap-0.5, weil sie zusammengehoeren. -->
+						<div class="ml-auto flex shrink-0 items-center gap-0.5">
 						{#if a.hidden && !a.archived}
-							<Badge variant="outline">ausgeblendet</Badge>
+							<Badge variant="outline" class="mr-1">ausgeblendet</Badge>
 						{/if}
 						{#if !isBuiltin(a.name, a.isAbsence)}
 							{#if recordingId === a.id}
@@ -306,7 +313,7 @@
 							{/if}
 							<Button
 								variant="ghost"
-								size="icon"
+								size="icon-sm"
 								title={a.favorite ? "Favorit entfernen" : "Als Favorit markieren"}
 								onclick={() => app.toggleFavorite(a.id)}
 							>
@@ -315,7 +322,7 @@
 							{#if !a.archived}
 								<Button
 									variant="ghost"
-									size="icon"
+									size="icon-sm"
 									title={a.hidden ? "In Auswahl einblenden" : "Aus Auswahl ausblenden (bleibt im Bericht)"}
 									onclick={() => app.toggleHidden(a.id)}
 								>
@@ -331,13 +338,13 @@
 							<Badge variant="secondary">fix</Badge>
 						{:else}
 							{#if a.archived}
-								<Button variant="ghost" size="icon" title="Wiederherstellen (zurück in die Auswahl)" onclick={() => app.setArchived(a.id, false)}>
+								<Button variant="ghost" size="icon-sm" title="Wiederherstellen (zurück in die Auswahl)" onclick={() => app.setArchived(a.id, false)}>
 									<RotateCcwIcon class="size-4" />
 								</Button>
 							{:else}
 								<Button
 									variant="ghost"
-									size="icon"
+									size="icon-sm"
 									title="Archivieren – aus Auswahl/Timer entfernen; erfasste Stunden bleiben im Bericht"
 									onclick={() => app.setArchived(a.id, true)}
 								>
@@ -346,13 +353,14 @@
 							{/if}
 							<Button
 								variant="ghost"
-								size="icon"
+								size="icon-sm"
 								title="Löschen – Aktivität und alle Einträge unwiderruflich entfernen"
 								onclick={() => askDelete(a)}
 							>
 								<Trash2Icon class="text-destructive size-4" />
 							</Button>
 						{/if}
+						</div>
 					</li>
 				{/each}
 			</ul>

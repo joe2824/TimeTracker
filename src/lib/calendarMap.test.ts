@@ -43,8 +43,8 @@ describe("guessActivity", () => {
 	});
 
 	it("macht aus einem Termin MIT Uhrzeit nie eine Abwesenheit", () => {
-		// Frueher wurde ein zweistuendiger Arzttermin (busyStatus "abwesend")
-		// automatisch zum halben Urlaubstag.
+		// Ein Termin MIT Uhrzeit (z.B. busyStatus "abwesend") darf nie automatisch
+		// zum Urlaubstag werden.
 		expect(guessActivity(timed("Zahnarzt"), ACTIVITIES, {})).toBe("");
 	});
 

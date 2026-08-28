@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { dayActivityHours, dayWorkHours, heatmapYear, targetHours } from "./stats";
 import type { Entry } from "./types";
+import { wallToTs } from "./tz";
 
 const ABS = "abs";
 const MO_FR = [1, 2, 3, 4, 5];
 
 /** Eintrag am lokalen Tag `d` (Monat 1-basiert) ueber `hours` Stunden ab 08:00. */
 function e(id: string, activityId: string, y: number, m: number, d: number, hours: number): Entry {
-	const start = new Date(y, m - 1, d, 8, 0, 0).getTime();
+	const start = wallToTs(y, m, d, 8, 0, 0);
 	return {
 		id,
 		activityId,
@@ -34,7 +35,7 @@ describe("dayWorkHours", () => {
 	});
 
 	it("rechnet einen laufenden Eintrag bis now", () => {
-		const start = new Date(2026, 5, 10, 8, 0, 0).getTime();
+		const start = wallToTs(2026, 6, 10, 8, 0, 0);
 		const running: Entry = { id: "r", activityId: "a", startTs: start, endTs: null, note: "", source: "timer" };
 		const map = dayWorkHours([running], new Set(), start + 2 * 3600 * 1000);
 		expect(map.get("2026-06-10")).toBeCloseTo(2);
@@ -45,8 +46,8 @@ describe("dayWorkHours", () => {
 		// #findRunning, das nur den aktuellen+Vormonat beim Start bereinigt) die
 		// Jahres-Heatmap sprengen: normalisiert wird auf den staerksten Tag, ein
 		// einzelner Tag mit Hunderten Stunden flacht dann alle anderen auf ~0 ab.
-		const start = new Date(2026, 5, 1, 8, 0, 0).getTime(); // 1. Juni
-		const now = new Date(2026, 6, 17, 8, 30, 0).getTime(); // erst Mitte Juli entdeckt
+		const start = wallToTs(2026, 6, 1, 8, 0, 0); // 1. Juni
+		const now = wallToTs(2026, 7, 17, 8, 30, 0); // erst Mitte Juli entdeckt
 		const stale: Entry = { id: "x", activityId: "a", startTs: start, endTs: null, note: "", source: "timer" };
 		const map = dayWorkHours([stale], new Set(), now);
 		expect(map.get("2026-06-01")).toBeCloseTo(16); // 08:00 bis Mitternacht, nicht bis now
@@ -79,23 +80,23 @@ describe("dayActivityHours", () => {
 describe("targetHours", () => {
 	it("zaehlt die Werktage eines abgeschlossenen Monats", () => {
 		// Juni 2026: 22 Werktage (Mo-Fr).
-		const now = new Date(2026, 7, 1).getTime(); // August -> Juni ist Vergangenheit
+		const now = wallToTs(2026, 8, 1, 0, 0, 0); // August -> Juni ist Vergangenheit
 		expect(targetHours("2026-06", MO_FR, 7.5, now)).toBeCloseTo(22 * 7.5);
 	});
 
 	it("zaehlt im laufenden Monat nur bis heute", () => {
 		// 10.06.2026 ist ein Mittwoch -> Werktage 1..10 = 8.
-		const now = new Date(2026, 5, 10, 12, 0, 0).getTime();
+		const now = wallToTs(2026, 6, 10, 12, 0, 0);
 		expect(targetHours("2026-06", MO_FR, 7.5, now)).toBeCloseTo(8 * 7.5);
 	});
 
 	it("gibt 0 fuer kuenftige Monate", () => {
-		const now = new Date(2026, 5, 10).getTime();
+		const now = wallToTs(2026, 6, 10, 0, 0, 0);
 		expect(targetHours("2026-09", MO_FR, 7.5, now)).toBe(0);
 	});
 
 	it("respektiert abweichende Arbeitstage", () => {
-		const now = new Date(2026, 7, 1).getTime();
+		const now = wallToTs(2026, 8, 1, 0, 0, 0);
 		// Nur Montage im Juni 2026: 1., 8., 15., 22., 29. = 5.
 		expect(targetHours("2026-06", [1], 8, now)).toBeCloseTo(5 * 8);
 	});
@@ -173,8 +174,8 @@ describe("heatmapYear", () => {
 
 describe("heatmapYear – Monatsanfaenge (Beschriftung der Heatmap)", () => {
 	// Die Card sucht je Wochenspalte einen Tag, der auf den Monatsersten faellt.
-	// Fruehere Fassung prueft nur den ersten Tag der Spalte -> Monate, die mitten
-	// in der Woche starten, fielen weg (es blieben nur Jan und Jun uebrig).
+	// Nur den ersten Tag der Spalte zu pruefen wuerde Monate uebersehen, die
+	// mitten in der Woche starten (es blieben sonst nur Jan und Jun uebrig).
 	const ticksOf = (year: number) =>
 		heatmapYear(year, new Map())
 			.map((w) => w.find((d) => !d.filler && d.date.endsWith("-01")))

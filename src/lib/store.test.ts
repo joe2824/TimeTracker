@@ -35,9 +35,8 @@ describe("saveEntries", () => {
 
 	it("schreibt die Zwischendatei sichtbar, nicht als Punktdatei", async () => {
 		// Der Scope des fs-Plugins ($APPDATA/**) laesst keine versteckten Dateien
-		// zu. Mit ".entries-….json.tmp" scheiterte JEDER Versuch mit "forbidden
-		// path" – die App schrieb daraufhin dauerhaft direkt, also ohne den Schutz,
-		// den dieser Weg geben soll. Zu sehen war das nur im Protokoll.
+		// zu - mit einem fuehrenden Punkt im Namen schiede jeder Versuch mit
+		// "forbidden path", und die App schriebe dauerhaft ungeschuetzt direkt.
 		await saveEntries("2026-06", [entry("e1")]);
 		const versteckt = written.filter((p) => (p.split("/").pop() ?? "").startsWith("."));
 		expect(versteckt).toEqual([]);
@@ -50,9 +49,6 @@ describe("saveEntries", () => {
 		// Zwischendatei: die eine benennt sie um, der anderen fehlt sie dann, und
 		// die faellt in den direkten Weg – wo sie ihren Stand ueber den der ersten
 		// schreibt. Je nachdem, wer zuerst drankommt, bleibt der AELTERE stehen.
-		//
-		// Geprueft wird deshalb der Ausloeser, nicht nur der Ausgang: laeuft keine
-		// der beiden in den Ersatzweg, kann auch keine die andere ueberschreiben.
 		await Promise.all([
 			saveEntries("2026-06", [entry("alt")]),
 			saveEntries("2026-06", [entry("neu")])
@@ -215,7 +211,7 @@ describe("beschädigte Monatsdatei", () => {
 	it("überlebt pruneEmptyMonthFiles – der Monat wird nicht gelöscht", async () => {
 		files.set(file("2026-06"), kaputt);
 		await pruneEmptyMonthFiles();
-		// Vorher loeschte prune die Datei, weil sie als "[]" gelesen wurde.
+		// Eine beschaedigte Datei darf prune nicht faelschlich als leer lesen und loeschen.
 		expect([...files.keys()].some((p) => p.includes("beschaedigt"))).toBe(true);
 	});
 
@@ -234,8 +230,8 @@ describe("beschädigte Monatsdatei", () => {
 });
 
 describe("Speichern, wenn rename fehlschlägt", () => {
-	// Der Fallback-Zweig von writeJson lief in keinem Test: der Mock konnte
-	// vorher gar nicht werfen. Genau der Zweig schreibt nicht-atomar.
+	// fsFaults.renameThrows macht den Fallback-Zweig von writeJson testbar - er
+	// schreibt nicht-atomar.
 	beforeEach(() => {
 		fsFaults.renameThrows = true;
 	});

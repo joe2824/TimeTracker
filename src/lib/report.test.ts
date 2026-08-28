@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildReport, reportSubject, reportToHtml } from "./report";
 import type { Activity, Entry } from "./types";
+import { wallToTs } from "./tz";
 
 const HPD = 7.5;
 
@@ -15,7 +16,7 @@ const activities: Activity[] = [
 // Lokalzeit, nicht Date.UTC: buildReport gruppiert ueber fmtDate und prueft
 // Werktage ueber getDay() – beides lokal. Mit UTC-Zeitstempeln entschiede die
 // Zone des Rechners, auf welchen Tag (und Wochentag) ein Eintrag faellt.
-const start = new Date(2026, 5, 10, 8, 0, 0).getTime();
+const start = wallToTs(2026, 6, 10, 8, 0, 0);
 
 function work(id: string, activityId: string, seconds: number): Entry {
 	return { id, activityId, startTs: start, endTs: start + seconds * 1000, note: "", source: "manual" };
@@ -23,7 +24,7 @@ function work(id: string, activityId: string, seconds: number): Entry {
 
 /** Tagesversatz ueber den Kalender, nicht ueber +24h – siehe allDayNoons. */
 function absence(id: string, fraction: number, dayOffset = 0): Entry {
-	const ts = new Date(2026, 5, 10 + dayOffset, 12, 0, 0).getTime();
+	const ts = wallToTs(2026, 6, 10 + dayOffset, 12, 0, 0);
 	return { id, activityId: "abs", startTs: ts, endTs: ts, note: "", source: "manual", dayFraction: fraction };
 }
 
@@ -62,8 +63,8 @@ describe("buildReport", () => {
 
 
 	it("klammert Abwesenheiten an Nicht-Arbeitstagen aus (workdays Mo–Fr)", () => {
-		const fri = new Date(2026, 6, 10, 12, 0, 0).getTime(); // Freitag
-		const sat = new Date(2026, 6, 11, 12, 0, 0).getTime(); // Samstag
+		const fri = wallToTs(2026, 7, 10, 12, 0, 0); // Freitag
+		const sat = wallToTs(2026, 7, 11, 12, 0, 0); // Samstag
 		const es: Entry[] = [
 			{ id: "f", activityId: "abs", startTs: fri, endTs: fri, note: "", source: "manual", dayFraction: 1 },
 			{ id: "s", activityId: "abs", startTs: sat, endTs: sat, note: "", source: "manual", dayFraction: 1 }
@@ -173,7 +174,7 @@ describe("buildReport – offene Einträge", () => {
 		isAbsence: false
 	};
 	/** Feste Uhr: 17.07.2026, 08:30 – sonst prüfte der Test die Wanduhr. */
-	const NOW = new Date(2026, 6, 17, 8, 30, 0).getTime();
+	const NOW = wallToTs(2026, 7, 17, 8, 30, 0);
 	const offen = (start: number): Entry => ({
 		id: "x",
 		activityId: "p1",
@@ -184,12 +185,12 @@ describe("buildReport – offene Einträge", () => {
 	});
 
 	it("kappt einen vergessenen offenen Eintrag am Ende SEINES Tages", () => {
-		// Vorher zählte der bis Date.now(): ein offener Eintrag vom 1. Juni meldete
-		// über 1000 h – und die gingen so an die Vorgesetzten.
+		// Ohne Kappung zaehlte ein offener Eintrag bis Date.now(): ein vergessener
+		// Eintrag vom 1. Juni meldete dann über 1000 h an die Vorgesetzten.
 		const r = buildReport(
 			"2026-06",
 			[P1],
-			[offen(new Date(2026, 5, 1, 8, 0, 0).getTime())],
+			[offen(wallToTs(2026, 6, 1, 8, 0, 0))],
 			0.5,
 			7.5,
 			[1, 2, 3, 4, 5],
@@ -202,7 +203,7 @@ describe("buildReport – offene Einträge", () => {
 		const r = buildReport(
 			"2026-07",
 			[P1],
-			[offen(new Date(2026, 6, 17, 6, 30, 0).getTime())],
+			[offen(wallToTs(2026, 7, 17, 6, 30, 0))],
 			0.5,
 			7.5,
 			[1, 2, 3, 4, 5],
@@ -215,7 +216,7 @@ describe("buildReport – offene Einträge", () => {
 		const r = buildReport(
 			"2026-06",
 			[P1],
-			[offen(new Date(2026, 5, 1, 8, 0, 0).getTime())],
+			[offen(wallToTs(2026, 6, 1, 8, 0, 0))],
 			0.5,
 			7.5,
 			[1, 2, 3, 4, 5]
@@ -227,7 +228,7 @@ describe("buildReport – offene Einträge", () => {
 describe("buildReport mit automatischem Pausenabzug", () => {
 	/** Eintrag an einem frei waehlbaren Tag im Juni 2026. */
 	function workOn(id: string, activityId: string, day: number, hours: number): Entry {
-		const ts = new Date(2026, 5, day, 8, 0, 0).getTime();
+		const ts = wallToTs(2026, 6, day, 8, 0, 0);
 		return {
 			id,
 			activityId,

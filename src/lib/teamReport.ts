@@ -1,16 +1,7 @@
 // Chef-Modus: Abgabe-Kontrolle der Monatsberichte des Teams.
-//
-// BEWUSST OHNE STUNDEN. Outlook gibt per COM auf gesperrten Rechnern nur die
-// Huelle einer Mail heraus – Betreff und Empfangszeit – waehrend Body,
-// Absendername und -adresse leer bleiben (Richtlinie
-// "PromptOOMAddressInformationAccess", siehe README). Eine Stundenauswertung
-// waere dort dauerhaft leer. Statt einer Tabelle voller Nullen zeigt dieser
-// Modus nur, was wirklich ankommt: WER abgegeben hat und WER fehlt.
-//
-// Die Auswertung der Stundentabellen lag in Commit 90f6aa1, falls der Zugriff
-// je freigegeben wird.
 import type { TeamMember } from "./types";
-import { fmtClock, fmtDate, monthKey, monthLabel } from "./time";
+import { fmtClock, fmtDate, monthLabel } from "./time";
+import { isoDate, zonedParts } from "./tz";
 
 // ---------- Monat und Name aus dem Betreff ----------
 
@@ -46,11 +37,6 @@ export function monthFromSubject(subject: string): string | null {
 /**
  * Der Absendername aus dem Betreff – in der Vorlage der Teil hinter dem letzten
  * Gedankenstrich ("Stundenerfassung Juli 2026 – Anna Meier").
- *
- * Klingt nach Beiwerk, ist aber der wichtigste Weg zur Person: Outlook
- * verweigert Name und Adresse des Absenders, sobald die Richtlinie
- * "PromptOOMAddressInformationAccess" auf Nachfragen steht – und nachfragen kann
- * es bei einem Hintergrundzugriff niemanden. Der Betreff ist nie geschuetzt.
  */
 export function nameFromSubject(subject: string, subjectFilter = ""): string | null {
 	const parts = subject.split(/\s[–—-]\s/);
@@ -63,9 +49,6 @@ export function nameFromSubject(subject: string, subjectFilter = ""): string | n
 	// Ohne Trennstrich: alles wegstreichen, was bekannt ist – das Betreff-Merkmal
 	// und die Monatsangabe. Was uebrig bleibt, ist der Name. Deckt die Form ab,
 	// die in der Praxis vorkommt: "Anna Meier Stundenerfassung Juli 2026".
-	//
-	// Nur mit bekanntem Merkmal: ohne das bliebe von "Stundenerfassung Juli 2026"
-	// das Wort "Stundenerfassung" stehen und stuende als Name in der Liste.
 	if (!subjectFilter.trim()) return null;
 	const rest = stripKnown(subject, subjectFilter)
 		.replace(/[–—\-,;:]+/g, " ")
@@ -88,15 +71,7 @@ function escapeRegExp(s: string): string {
 	return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/**
- * Das Teammitglied, dessen Name im Betreff steht – egal an welcher Stelle.
- *
- * Verlaesslicher als jede Positionsregel: in der Praxis steht der Name mal
- * hinten ("… – Anna Meier"), mal vorne ("Anna Meier Stundenerfassung Juli
- * 2026"). Verglichen wird wortweise, nicht als Teilstring – sonst fiele ein
- * Mitglied "Klein" auf jede "Kleinschmidt" herein. Die Monatsangabe wird vorher
- * entfernt, damit ein Mitglied namens "Mai" nicht auf den Monat passt.
- */
+/** Das Teammitglied, dessen Name im Betreff steht – egal an welcher Stelle. */
 function memberFromSubject(
 	subject: string,
 	team: TeamMember[],
@@ -130,15 +105,13 @@ function tokens(s: string): string[] {
 /**
  * Ersatzweise der Monat aus dem Empfangsdatum: bis zum 10. gilt die Mail dem
  * VORmonat, danach dem laufenden.
- *
- * Berichte kommen am Monatsende oder in den ersten Tagen danach – die eigene
- * Erinnerung der App feuert am letzten Werktag. Ein Bericht ohne Monat im
- * Betreff ginge ohne diese Annahme gar nicht zuzuordnen.
  */
 export function monthFromReceived(ts: number): string {
-	const d = new Date(ts);
-	if (d.getDate() <= 10) d.setMonth(d.getMonth() - 1, 1);
-	return monthKey(d.getTime());
+	const p = zonedParts(ts);
+	if (p.day > 10) return `${p.year}-${String(p.month).padStart(2, "0")}`;
+	const year = p.month === 1 ? p.year - 1 : p.year;
+	const month = p.month === 1 ? 12 : p.month - 1;
+	return `${year}-${String(month).padStart(2, "0")}`;
 }
 
 /**
@@ -148,12 +121,11 @@ export function monthFromReceived(ts: number): string {
  */
 export function scanRange(month: string): { start: string; end: string } {
 	const [y, m] = month.split("-").map(Number);
-	const end = new Date(y, m, 20);
-	const pad = (n: number) => String(n).padStart(2, "0");
-	return {
-		start: `${month}-01`,
-		end: `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}`
-	};
+	// Der 20. des FOLGEmonats – reine Kalenderrechnung, damit der Jahreswechsel
+	// (Dezember -> Januar) ohne lokale Date-Konstruktion stimmt.
+	const year = m === 12 ? y + 1 : y;
+	const month2 = m === 12 ? 1 : m + 1;
+	return { start: `${month}-01`, end: isoDate(year, month2, 20) };
 }
 
 // ---------- Zusammenfassung ----------
@@ -198,12 +170,7 @@ const norm = (s: string) => s.trim().toLowerCase();
  * Baut aus den gelesenen Mails die Abgabe-Uebersicht eines Monats.
  *
  * Absender ausserhalb der Teamliste werden NICHT verworfen, sondern mit
- * memberId = null gefuehrt: beim ersten Einrichten ist die Liste leer, und ein
- * Bericht, der still verschwindet, waere schlimmer als eine Zeile zu viel.
- * Gefiltert wird ueber den Betreff, nicht ueber die Teamliste.
- *
- * Mehrere Mails derselben Person zum selben Monat: die neueste gewinnt – eine
- * Korrektur wird nachgeschickt, nicht die alte zurueckgezogen.
+ * `memberId = null` gefuehrt - beim ersten Einrichten ist die Liste leer.
  */
 export function buildTeamSummary(
 	month: string,
@@ -239,13 +206,6 @@ export function buildTeamSummary(
 
 		// Schluessel bewusst ueber die Person, nicht die Mail: zwei Mails derselben
 		// Person zum selben Monat sind eine Korrektur, keine zwei Berichte.
-		//
-		// Nur: wenn Outlook Absender UND Name verschweigt und auch im Betreff keiner
-		// steht, gibt es keine Person, ueber die sich gruppieren liesse. Dann ist
-		// jede Mail ihr eigener Eintrag – sonst faellt sie mit jeder anderen
-		// namenlosen zu EINER Zeile zusammen, und das Team verliert stillschweigend
-		// Berichte. Der Anzeigename taugt dafuer nicht: der ist dann fuer alle
-		// "(unbekannt)".
 		const key =
 			member?.id ||
 			norm(email) ||

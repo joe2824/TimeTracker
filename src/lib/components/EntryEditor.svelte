@@ -21,6 +21,7 @@
 		parseHours,
 		toTs
 	} from "$lib/time";
+	import { daysInMonth, weekdayOfDate, zonedParts } from "$lib/tz";
 	import type { Entry, EntrySource } from "$lib/types";
 	import { loadTimeReport, type StoredTimeReport } from "$lib/store";
 	import {
@@ -35,6 +36,7 @@
 	import { Label } from "$lib/components/ui/label";
 	import * as Card from "$lib/components/ui/card";
 	import * as Dialog from "$lib/components/ui/dialog";
+	import * as Popover from "$lib/components/ui/popover";
 	import CalendarImport from "$lib/components/CalendarImport.svelte";
 	import TimeReportImport from "$lib/components/TimeReportImport.svelte";
 	import ActivityCombobox from "$lib/components/ActivityCombobox.svelte";
@@ -63,14 +65,7 @@
 	let report = $state<StoredTimeReport | null>(null);
 	const absenceIds = $derived(new Set(app.activities.filter((a) => a.isAbsence).map((a) => a.id)));
 
-	/**
-	 * Der Abgleich dieses Monats, Tag fuer Tag.
-	 *
-	 * Bewusst ueber `reconcile` statt mit einer eigenen Differenz: die Karte
-	 * „Zeitwächter-Report" rechnet damit, und zwei Rechnungen fuer denselben Tag
-	 * saehen frueher oder spaeter verschieden aus – Pausenabzug, Abwesenheiten und
-	 * angefangene Tage stecken alle da drin.
-	 */
+	/** Der Abgleich dieses Monats, Tag fuer Tag. */
 	const reportByDate = $derived.by(() => {
 		const out = new Map<string, ReconcileDay>();
 		if (!report) return out;
@@ -128,14 +123,7 @@
 	let startText = $state(""); // Roh-Eingabe Von, erst beim Verlassen normalisiert
 	let endText = $state(""); // Roh-Eingabe Bis
 	const draftIsAbsence = $derived(app.isAbsenceId(draft.activityId));
-	/**
-	 * Warnung beim Öffnen: der gespeicherte Eintrag passt nicht in Datum + Von/Bis.
-	 *
-	 * Der Dialog kennt nur EIN Datum und zwei Uhrzeiten. Ein Eintrag über mehrere
-	 * Tage (vergessener Timer) sah darin völlig unauffällig aus – 09:00–17:00 –,
-	 * während die Liste daneben 73 Stunden zeigte und der Bericht sie übernahm.
-	 * Lieber sagen, was wirklich gespeichert ist.
-	 */
+	/** Warnung beim Öffnen: der gespeicherte Eintrag passt nicht in Datum + Von/Bis. */
 	let spanNote = $state<string | null>(null);
 
 	/**
@@ -163,10 +151,6 @@
 	/**
 	 * Was der Zeitwächter zum Tag des Entwurfs sagt – und auf welche Dauer dieser
 	 * eine Eintrag gesetzt werden müsste, damit der Tag zu LOGA passt.
-	 *
-	 * Gerechnet wird über die ANDEREN Einträge des Tages, nicht über die aktuelle
-	 * Abweichung. Nur so stimmt die Zahl auch dann noch, wenn im Dialog schon an
-	 * den Zeiten gedreht wurde – und ein zweiter Klick verdoppelt nichts.
 	 */
 	const dayAdjust = $derived.by(() => {
 		if (draftIsAbsence) return null;
@@ -248,13 +232,7 @@
 		const h = durationHours(draft.start, draft.end);
 		dur = h ? String(Math.round(h * 100) / 100).replace(".", ",") : "";
 	}
-	/**
-	 * Bis aus Von + Stunden-Eingabe ableiten. Akzeptiert "7,5" und "7:30".
-	 *
-	 * Ueber 24 h wird abgelehnt statt gerechnet: minToClock rechnet modulo 24 h,
-	 * aus "30" wuerde sonst still ein Ende 6 h nach dem Start – die Eingabe kaeme
-	 * als 6-Stunden-Eintrag zurueck, ohne Fehler.
-	 */
+	/** Bis aus Von + Stunden-Eingabe ableiten. Akzeptiert "7,5" und "7:30". */
 	function applyDur() {
 		const h = parseHours(dur);
 		const a = clockToMin(draft.start);
@@ -295,15 +273,14 @@
 	}
 
 	function emptyDraft(): Draft {
-		const now = new Date();
-		const hh = String(now.getHours()).padStart(2, "0");
+		const hh = String(zonedParts(Date.now()).hour).padStart(2, "0");
 		return {
 			id: null,
 			originalStartTs: 0,
 			originalEndTs: null,
 			// Bewusst leer: der Nutzer wählt die Aktivität selbst (kein Default).
 			activityId: "",
-			date: fmtDate(now.getTime()),
+			date: fmtDate(Date.now()),
 			start: `${hh}:00`,
 			end: `${hh}:00`,
 			fraction: 1,
@@ -316,6 +293,34 @@
 		void app.ensureMonth(month);
 	});
 
+	/** Die scrollbare Tagesliste – Ziel des Sprungs auf einen Tag. */
+	let listEl = $state<HTMLUListElement | null>(null);
+
+	/**
+	 * Den Tag mittig in die LISTE schieben.
+	 *
+	 * Bewusst von Hand statt `scrollIntoView`: das bewegt jeden scrollbaren
+	 * Vorfahren mit, also auch das Fenster – danach stehen alle anderen Tabs
+	 * ebenfalls auf dieser Hoehe, obwohl dort niemand gescrollt hat.
+	 * Ueber die Rechtecke statt `offsetTop`, weil weder Liste noch Zeile
+	 * positioniert sind und `offsetTop` sich sonst auf irgendeinen Vorfahren
+	 * weiter oben bezieht.
+	 */
+	function centerRow(date: string): boolean {
+		const row = document.getElementById(`day-row-${date}`);
+		if (!listEl || !row) return false;
+		// Solange der Tab noch nicht eingeblendet ist, sind alle Masse 0. Die
+		// Rechnung liefe dann auf ein No-Op hinaus und meldete trotzdem Erfolg -
+		// der Sprung fiele still aus. Lieber als "noch nicht" melden und im
+		// naechsten Frame erneut versuchen.
+		if (listEl.clientHeight === 0) return false;
+		const rowBox = row.getBoundingClientRect();
+		const listBox = listEl.getBoundingClientRect();
+		const delta = rowBox.top - listBox.top - (listEl.clientHeight - rowBox.height) / 2;
+		listEl.scrollTo({ top: listEl.scrollTop + delta, behavior: "smooth" });
+		return true;
+	}
+
 	/** Auf den Monat des Tages wechseln und ihn mittig in die Liste scrollen. */
 	async function jumpToDate(date: string) {
 		const targetMonth = date.slice(0, 7);
@@ -324,9 +329,15 @@
 			await app.ensureMonth(targetMonth);
 		}
 		await tick(); // Warten, bis die Tage neu gerendert sind.
-		document
-			.getElementById(`day-row-${date}`)
-			?.scrollIntoView({ block: "center", behavior: "smooth" });
+		if (centerRow(date)) return;
+		// Nach einem Monatswechsel haengen die Zeilen an Daten, die erst nach
+		// weiteren Durchlaeufen stehen – ein `tick()` reicht dann nicht, und der
+		// Sprung fiel bisher still aus ("Scroll bleibt haengen"). Ein paar Frames
+		// nachfassen, danach war es kein Ladeproblem mehr.
+		for (let i = 0; i < 10; i++) {
+			await new Promise(requestAnimationFrame);
+			if (centerRow(date)) return;
+		}
 	}
 
 	// Wunsch aus Tracking oder Arbeitszeit-Check konsumieren.
@@ -341,7 +352,7 @@
 	// Alle Tage des Monats als Gitter.
 	const days = $derived.by(() => {
 		const [y, m] = month.split("-").map(Number);
-		const count = new Date(y, m, 0).getDate();
+		const count = daysInMonth(y, m);
 		const byDate = new Map<string, Entry[]>();
 		for (const e of app.monthEntries(month)) {
 			const d = fmtDate(e.startTs);
@@ -350,7 +361,7 @@
 		const list = [];
 		for (let d = 1; d <= count; d++) {
 			const date = `${month}-${String(d).padStart(2, "0")}`;
-			const wd = new Date(y, m - 1, d).getDay();
+			const wd = weekdayOfDate(date);
 			const entries = (byDate.get(date) ?? []).sort((a, b) => a.startTs - b.startTs);
 			// Projektzeit und Abwesenheit getrennt: die Pause geht nur von der
 			// gearbeiteten Zeit ab, nie von einem Urlaubstag.
@@ -525,10 +536,20 @@
 
 <div class="space-y-4">
 	{#if !anyPreview}
+	<!-- Die Monatssumme stand als nackter Σ-Span zwischen den Knoepfen und sah aus
+	     wie eine Beschriftung, die zum naechsten Knopf gehoert. Sie gehoert zum
+	     Monat links, nicht zu den Aktionen rechts. -->
 	<div class="flex flex-wrap items-end justify-between gap-3">
-		<MonthSelector bind:month id="month" />
-		<div class="flex flex-wrap items-center gap-3">
-			<span class="text-muted-foreground text-sm">Σ {fmtHoursClock(totalHours)} h</span>
+		<div class="flex flex-wrap items-end gap-3">
+			<MonthSelector bind:month id="month" />
+			<div class="bg-muted/40 rounded-lg px-3 py-1.5">
+				<div class="text-muted-foreground text-[11px] leading-tight">Summe</div>
+				<div class="font-mono text-sm leading-tight tabular-nums">
+					{fmtHoursClock(totalHours)} h
+				</div>
+			</div>
+		</div>
+		<div class="flex flex-wrap items-center gap-2">
 			<Button variant="outline" onclick={() => (vacOpen = true)}>
 				<PalmtreeIcon class="size-4" /> Abwesenheit
 			</Button>
@@ -544,7 +565,15 @@
 			<!-- Kein divide-y: die Linie UNTER einer Zeile waere der border-top der
 			     naechsten, damit liesse sie sich fuer heute nicht abschalten. Mit
 			     eigenem border-b je Zeile geht das. -->
-			<ul class="max-h-[calc(100vh-20rem)] overflow-y-auto">
+			<!-- Eigener Scroll-Bereich auf jeder Breite: der Sprung auf einen Tag soll
+			     die Liste bewegen und nicht die Seite - sonst stehen nach dem Sprung
+			     auch alle anderen Tabs auf dieser Hoehe. dvh statt vh, weil die
+			     Adressleiste auf dem Handy sonst mitrechnet.
+			     overscroll-contain: am Ende der Liste scrollt nicht die Seite weiter. -->
+			<ul
+				bind:this={listEl}
+				class="max-h-[calc(100dvh-20rem)] min-h-64 overflow-y-auto overscroll-contain"
+			>
 				{#each days as day, i (day.date)}
 					{@const isToday = day.date === todayStr}
 					<!-- Heute traegt nur den linken Balken: die Zeilen konkurrieren schon mit
@@ -554,7 +583,7 @@
 					     transparent, sonst versetzte heute den Inhalt um 2px. -->
 					<li
 						id={`day-row-${day.date}`}
-						class="flex items-start gap-3 border-b border-l-2 px-3 py-1.5 text-sm last:border-b-0 {isToday ||
+						class="flex flex-wrap items-start gap-x-3 gap-y-1 border-b border-l-2 px-3 py-1.5 text-sm last:border-b-0 sm:flex-nowrap {isToday ||
 						days[i + 1]?.date === todayStr
 							? 'border-b-transparent'
 							: 'border-b-border'} {isToday
@@ -575,7 +604,11 @@
 								{day.weekday}{day.date === todayStr ? " · heute" : ""}
 							</div>
 						</div>
-						<div class="flex-1 space-y-1 py-0.5">
+						<!-- Schmal eine eigene Zeile: neben Datum und Kennzahlen blieben bei
+						     360px keine 60px fuer den Eintragsnamen, alles war abgeschnitten. -->
+						<div
+							class="order-last min-w-0 basis-full space-y-1 py-0.5 sm:order-none sm:basis-0 sm:flex-1"
+						>
 							{#each day.entries as e (e.id)}
 								{@const isAbs = app.isAbsenceId(e.activityId)}
 								<!-- Button-Komponente statt roher <button>: bringt Fokusring, Hover
@@ -606,35 +639,57 @@
 								</div>
 							{/each}
 						</div>
-						<div class="flex items-center gap-2 pt-0.5">
-							{#if day.missing > 0}
-								<!-- Aus dem Zeitwirtschaftsreport: hier fehlt Zeit gegenueber LOGA. -->
-								<span
-									class="rounded bg-amber-500/15 px-1.5 py-0.5 font-mono text-xs tabular-nums text-amber-700 dark:text-amber-300"
-									title={`LOGA: ${fmtHoursClock(day.reportHours)} h – hier fehlen ${fmtHoursClock(day.missing)} h`}
-								>
-									−{fmtHoursClock(day.missing)}
-								</span>
-							{:else if day.over > 0}
-								<!-- Die Gegenrichtung: hier steht mehr, als LOGA fuer den Tag kennt.
-								     Gleiches Blau wie „zu viel" im Abgleich, damit beide Ansichten
-								     dieselbe Farbe fuer dieselbe Aussage benutzen. -->
-								<span
-									class="rounded bg-sky-500/15 px-1.5 py-0.5 font-mono text-xs tabular-nums text-sky-700 dark:text-sky-300"
-									title={`LOGA: ${fmtHoursClock(day.reportHours)} h – hier sind ${fmtHoursClock(day.over)} h zu viel erfasst`}
-								>
-									+{fmtHoursClock(day.over)}
-								</span>
+						<div class="ml-auto flex items-center gap-2 pt-0.5 sm:ml-0">
+							{#if day.missing > 0 || day.over > 0}
+								{@const fehlt = day.missing > 0}
+								<!--
+									Aus dem Zeitwirtschaftsreport: der Tag weicht von LOGA ab.
+									„−0:45" allein sagt nichts – was es heisst, stand bisher nur im
+									title und war damit auf dem Handy gar nicht zu bekommen.
+									Amber = hier fehlt Zeit, Sky = hier steht zu viel; dieselben
+									Farben wie im Abgleich, damit dieselbe Farbe dasselbe heisst.
+								-->
+								<Popover.Root>
+									<Popover.Trigger
+										class="focus-visible:ring-ring/50 cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs tabular-nums outline-none transition-opacity hover:opacity-80 focus-visible:ring-3 {fehlt
+											? 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+											: 'bg-sky-500/15 text-sky-700 dark:text-sky-300'}"
+										aria-label="Abweichung zum Zeitwächter – erklären"
+									>
+										{fehlt ? "−" : "+"}{fmtHoursClock(fehlt ? day.missing : day.over)}
+									</Popover.Trigger>
+									<Popover.Content align="end" class="space-y-1">
+										<div class="text-xs font-medium">Abweichung zum Zeitwächter</div>
+										<p class="text-muted-foreground text-xs leading-relaxed">
+											LOGA kennt für diesen Tag {fmtHoursClock(day.reportHours)} h.
+											{#if fehlt}
+												Hier fehlen {fmtHoursClock(day.missing)} h.
+											{:else}
+												Hier sind {fmtHoursClock(day.over)} h zu viel erfasst.
+											{/if}
+										</p>
+									</Popover.Content>
+								</Popover.Root>
 							{/if}
 							{#if day.pause > 0}
 								<!-- Der Abzug muss sichtbar sein: die Tagessumme daneben ist sonst
 								     unerklaerlich niedriger als die Eintraege darueber. -->
-								<span
-									class="text-muted-foreground text-xs"
-									title={`${fmtHoursClock(day.pause)} h Pause automatisch abgezogen`}
-								>
-									−{fmtHoursClock(day.pause)}&nbsp;Pause
-								</span>
+								<Popover.Root>
+									<Popover.Trigger
+										class="text-muted-foreground focus-visible:ring-ring/50 cursor-pointer rounded px-1 text-xs outline-none transition-opacity hover:opacity-80 focus-visible:ring-3"
+										aria-label="Pausenabzug – erklären"
+									>
+										−{fmtHoursClock(day.pause)}&nbsp;Pause
+									</Popover.Trigger>
+									<Popover.Content align="end" class="space-y-1">
+										<div class="text-xs font-medium">Pause automatisch abgezogen</div>
+										<p class="text-muted-foreground text-xs leading-relaxed">
+											{fmtHoursClock(day.pause)} h werden von der Tagessumme abgezogen – deshalb
+											steht dort weniger als in den Einträgen darüber. Die Einträge selbst bleiben
+											unverändert; abschalten lässt sich das unter Einstellungen → Zeiterfassung.
+										</p>
+									</Popover.Content>
+								</Popover.Root>
 							{/if}
 							{#if day.hours > 0}
 								<span class="text-muted-foreground w-14 text-right font-mono text-xs tabular-nums">
@@ -722,8 +777,10 @@
 					<DayFractionSwitch id="frac" bind:value={draft.fraction} />
 				</div>
 			{:else}
-				<div class="grid grid-cols-3 gap-2">
-					<div class="col-span-3 space-y-1">
+				<!-- Schmal zwei Spalten: Von/Bis nebeneinander, Stunden ueber die volle
+				     Breite. Zu dritt bleiben bei 360px keine 90px je Feld. -->
+				<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+					<div class="col-span-2 space-y-1 sm:col-span-3">
 						<Label for="date">Datum</Label>
 						<DateInput id="date" bind:value={draft.date} />
 					</div>
@@ -751,7 +808,7 @@
 							onchange={commitEnd}
 						/>
 					</div>
-					<div class="space-y-1">
+					<div class="col-span-2 space-y-1 sm:col-span-1">
 						<Label for="dur">Stunden</Label>
 						<Input
 							id="dur"

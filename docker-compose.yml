@@ -1,0 +1,56 @@
+# Vor dem ersten Start eine .env anlegen (siehe .env.example) und dort ORIGIN,
+# RP_ID und INVITE_CODES setzen.
+
+services:
+  timetracker:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    image: timetracker-server:latest
+    restart: unless-stopped
+
+    environment:
+      # Die Adresse, unter der die Anwendung im Browser erreichbar ist. Muss
+      # exakt stimmen - WebAuthn prueft sie.
+      ORIGIN: ${ORIGIN:?ORIGIN fehlt, z.B. https://tracker.example.de}
+      # Der Hostname ohne Schema und Port. ACHTUNG: Passkeys sind daran gebunden
+      # und ueberleben keinen Wechsel. Von Anfang an die endgueltige Domain.
+      RP_ID: ${RP_ID:?RP_ID fehlt, z.B. tracker.example.de}
+      RP_NAME: ${RP_NAME:-TimeTracker}
+      # Herkuenfte, von denen schreibende Anfragen angenommen werden.
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-${ORIGIN}}
+      # Die Tuerklinke fuer den ersten Menschen. Mehrfach benutzbar, ohne Frist.
+      # Sobald es einen Verwalter gibt, gehoert sie geleert - dann vergibt der
+      # Einladungen einzeln, und jede ist nachvollziehbar.
+      INVITE_CODES: ${INVITE_CODES:-}
+      # Darf sich jeder registrieren? Voreinstellung nein. Eine leere
+      # INVITE_CODES-Zeile oeffnet den Dienst ausdruecklich NICHT.
+      REGISTRATION_OPEN: ${REGISTRATION_OPEN:-false}
+      DATA_DIR: /data
+      # Hinter einem Reverse-Proxy: die echte Adresse des Aufrufers steht in den
+      # weitergereichten Kopfzeilen, nicht in der Verbindung.
+      ADDRESS_HEADER: X-Forwarded-For
+      PROTOCOL_HEADER: X-Forwarded-Proto
+      HOST_HEADER: X-Forwarded-Host
+
+    volumes:
+      # Der gesamte Zustand. Sicherung = diese eine Datei kopieren, am besten
+      # ueber "sqlite3 timetracker.db '.backup sicherung.db'" waehrend des Betriebs.
+      - timetracker-data:/data
+
+    ports:
+      # Nur auf der Rueckschleife: erreichbar ist der Dienst ausschliesslich
+      # ueber den Reverse-Proxy davor.
+      - "127.0.0.1:3000:3000"
+
+    # Grenzen, damit ein Fehlverhalten den Heimserver nicht mitnimmt.
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  timetracker-data:

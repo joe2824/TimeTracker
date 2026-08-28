@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { planBackdate, planIsEmpty, planNeedsConfirm } from "./backdate";
 import type { Entry } from "./types";
+import { wallToTs } from "./tz";
 
 const ABS = "abs";
 const ABSENCES = new Set([ABS]);
 const H = 3600 * 1000;
-const DAY = new Date(2026, 6, 17, 0, 0, 0).getTime();
+const DAY = wallToTs(2026, 7, 17, 0, 0, 0);
 const at = (h: number) => DAY + h * H;
 
 function e(id: string, from: number, to: number | null, activityId = "p1"): Entry {
@@ -45,7 +46,7 @@ describe("planBackdate", () => {
 	});
 
 	it("entfernt einen laufenden Eintrag, der ganz im neuen Zeitraum liegt", () => {
-		// Genau die Null-Sekunden-Eintraege, die vorher entstanden.
+		// Ohne diese Regel entstuende hier ein Null-Sekunden-Eintrag statt der Entfernung.
 		const plan = planBackdate([e("r", 9, null)], at(8), ABSENCES, NOW);
 		expect(plan.truncate).toEqual([]);
 		expect(plan.remove.map((x) => x.id)).toEqual(["r"]);
