@@ -19,6 +19,7 @@ import { planBackdate, planNeedsConfirm, type BackdatePlan } from "./backdate";
 import { errorText, logDebug, logError, logInfo, logWarn } from "./log";
 import { setErrorReportsEnabled } from "./analytics";
 import { notifyDataChanged } from "./platform/windows";
+import { isTauri } from "./platform/env";
 import {
 	deleteYear,
 	listEntryMonths,
@@ -241,7 +242,25 @@ class AppState {
 		this.loaded = true;
 		// Ein anderes Fenster hat geschrieben – abgeleitete Listen neu lesen.
 		this.entriesVersion++;
+		void this.updateTrayState();
 		logDebug("Daten neu geladen", { laeuft: this.#runningName() });
+	}
+
+	/** Aktualisiert das native OS Tray Icon und Menü sofort imperativ. */
+	async updateTrayState(): Promise<void> {
+		if (!isTauri()) return;
+		try {
+			const { invoke } = await import("@tauri-apps/api/core");
+			const quick = this.quickActivities(6).map((a) => ({
+				id: a.id,
+				name: a.name,
+				favorite: !!a.favorite
+			}));
+			const running = this.running ? this.activityName(this.running.activityId) : null;
+			await invoke("set_tray_state", { state: { running, activities: quick } });
+		} catch {
+			// kein nativer Kanal
+		}
 	}
 
 	/** Name des laufenden Timers, fuers Protokoll. */

@@ -453,7 +453,7 @@ class AccountState {
 				const antwort = await this.#api!.waitForChange(stand, abbruch.signal);
 				if (this.#warten !== abbruch) return;
 				errorCount = 0;
-				if (antwort.changed) this.syncSoon(100);
+				if (antwort.changed) this.syncSoon(50);
 			} catch (e) {
 				if (abbruch.signal.aborted) return;
 				// Nach einem Fehlschlag wachsend warten, sonst haemmert eine
