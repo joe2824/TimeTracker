@@ -121,10 +121,12 @@ if [[ -n "$(git status --porcelain)" ]]; then
     exit 1
 fi
 
-echo "→ Running pre-flight checks (svelte-check & test suites)..."
+echo "→ Running pre-flight checks (svelte-check, vitest & cargo test)..."
 npm run check
 npm --workspace server run check
 npm test -- --run
+( cd server && npx vitest run )
+( cd src-tauri && cargo test )
 
 if [[ "$BETA" == true ]]; then
     echo "→ Releasing v${VERSION} (beta channel)"

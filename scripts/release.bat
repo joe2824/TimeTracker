@@ -132,10 +132,16 @@ for /f %%i in ('git status --porcelain') do (
   exit /b 1
 )
 
-echo -^> Running pre-flight checks (svelte-check ^& test suites)...
+echo -^> Running pre-flight checks (svelte-check, vitest ^& cargo test)...
 call npm run check || exit /b 1
 call npm --workspace server run check || exit /b 1
 call npm test -- --run || exit /b 1
+pushd server
+call npx vitest run || (popd & exit /b 1)
+popd
+pushd src-tauri
+cargo test || (popd & exit /b 1)
+popd
 
 if "%BETA%"=="1" (
   echo -^> Releasing v%VERSION% ^(beta channel^)
