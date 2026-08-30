@@ -732,3 +732,98 @@ describe("Der Server kennt den Bestand nicht mehr", () => {
 		expect(server.rows.get("e1")?.rev).toBe(3);
 	});
 });
+
+describe("onProgress – Ladeanzeige beim Massenimport", () => {
+	/**
+	 * Geraet mit eigenem SyncEngine und onProgress-Callback.
+	 * Gibt alle Progress-Events zurueck.
+	 */
+	async function syncMitProgress(g: Geraet): Promise<{ events: import("./engine").SyncProgress[] }> {
+		resetFakeFs();
+		for (const [k, v] of g.dateien) files.set(k, v);
+		resetOutboxForTests();
+		await startTracking(g.id);
+
+		const events: import("./engine").SyncProgress[] = [];
+		const localStore: LocalStore = {
+			entriesOfMonth: (m) => store.loadEntries(m),
+			saveEntries: (m, list) => store.saveEntries(m, list),
+			activities: () => store.loadActivities(),
+			saveActivities: (l) => store.saveActivities(l),
+			settings: () => store.loadSettings(),
+			saveSettings: (s) => store.saveSettings(s)
+		};
+		const engine = new SyncEngine({
+			api: new Api({ baseUrl: "http://test", token: "t", fetchFn: server.fetchFor(g.id) }),
+			key,
+			store: localStore,
+			deviceId: g.id,
+			state: g.state,
+			saveState: async (s) => { g.state = s; },
+			onProgress: (p) => events.push({ ...p })
+		});
+		engine.setMonthLister(() => store.listEntryMonths());
+
+		try {
+			await engine.sync();
+		} finally {
+			g.dateien = new Map(files);
+		}
+		return { events };
+	}
+
+	it("ruft onProgress mit phase=pulling auf, waehrend Eintraege gezogen werden", async () => {
+		// Geraet 1 laedt 25 Eintraege hoch.
+		const sender = new Geraet("sender");
+		const eintraege25 = Array.from({ length: 25 }, (_, i) =>
+			eintrag(`e${i}`, { startTs: ts(1 + (i % 15), 9 + (i % 8)) })
+		);
+		await auf(sender, async (engine) => {
+			await store.saveEntries(MONAT, eintraege25);
+			return engine.sync();
+		});
+
+		// Geraet 2 zieht die 25 Eintraege herunter - onProgress soll firing.
+		const empfaenger = new Geraet("empfaenger");
+		const { events } = await syncMitProgress(empfaenger);
+
+		// Es muss mindestens ein Event mit phase=pulling und pulled>=20 geben.
+		const bulkEvents = events.filter((e) => e.phase === "pulling" && e.pulled >= 20);
+		expect(bulkEvents.length).toBeGreaterThan(0);
+
+		// Der finale pulled-Zaehler muss 25 betragen.
+		const letztesPulling = [...events].reverse().find((e) => e.phase === "pulling");
+		expect(letztesPulling?.pulled).toBe(25);
+	});
+
+	it("ruft onProgress NICHT mit pulled>=20 auf, wenn weniger als 20 Eintraege kommen", async () => {
+		// Nur 5 Eintraege hochladen.
+		const sender = new Geraet("sender2");
+		const eintraege5 = Array.from({ length: 5 }, (_, i) => eintrag(`f${i}`));
+		await auf(sender, async (engine) => {
+			await store.saveEntries(MONAT, eintraege5);
+			return engine.sync();
+		});
+
+		const empfaenger = new Geraet("empfaenger2");
+		const { events } = await syncMitProgress(empfaenger);
+
+		// Kein Event mit pulled >= 20.
+		const bulkEvents = events.filter((e) => e.phase === "pulling" && e.pulled >= 20);
+		expect(bulkEvents).toHaveLength(0);
+	});
+
+	it("endet immer mit phase=idle", async () => {
+		const sender = new Geraet("sender3");
+		await auf(sender, async (engine) => {
+			await store.saveEntries(MONAT, [eintrag("g1")]);
+			return engine.sync();
+		});
+
+		const empfaenger = new Geraet("empfaenger3");
+		const { events } = await syncMitProgress(empfaenger);
+
+		// Letztes Event muss idle sein.
+		expect(events.at(-1)?.phase).toBe("idle");
+	});
+});
