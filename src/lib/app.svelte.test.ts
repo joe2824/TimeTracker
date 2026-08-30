@@ -674,4 +674,31 @@ describe("ensureMonth", () => {
 		await app.ensureMonth("2026-04");
 		expect(app.monthLoaded("2026-04")).toBe(true);
 	});
+
+	it("aktiviert Pomodoro in den Einstellungen, startet Timer und uebersteht reload", async () => {
+		reset();
+		await app.updateSettings({
+			pomodoroEnabled: true,
+			pomodoroMin: 25,
+			pomodoroBreakMin: 5
+		});
+		expect(app.settings.pomodoroEnabled).toBe(true);
+		expect(app.settings.pomodoroMin).toBe(25);
+		expect(app.settings.pomodoroBreakMin).toBe(5);
+
+		// Timer starten
+		await app.startActivity(P1);
+		expect(app.running).not.toBeNull();
+		expect(app.running?.activityId).toBe(P1);
+		expect(app.pomodoro).not.toBeNull();
+		expect(app.pomodoro?.phase).toBe("focus");
+
+		// Reload simuliert Sync/Fenster-Neuladen
+		await app.reload();
+		expect(app.settings.pomodoroEnabled).toBe(true);
+		expect(app.settings.pomodoroMin).toBe(25);
+		expect(app.settings.pomodoroBreakMin).toBe(5);
+		expect(app.running?.activityId).toBe(P1);
+		expect(app.pomodoro?.phase).toBe("focus");
+	});
 });
