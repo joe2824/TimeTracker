@@ -18,7 +18,7 @@ export interface ReleaseInfo {
 }
 
 export const CURRENT_RELEASE: ReleaseInfo = {
-	version: "0.9.0",
+	version: "0.9.1",
 	title: "Multi-Geräte-Synchronisation",
 	summary: "TimeTracker synchronisiert deine Arbeitszeiten ab sofort nahtlos und sicher zwischen all deinen Geräten.",
 	highlights: [

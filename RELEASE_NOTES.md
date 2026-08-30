@@ -1,3 +1,23 @@
+## TimeTracker v0.9.1 – Bugfix-Release
+
+Dieses Update behebt wichtige Probleme bei der Konto-Isolation und verbessert das Onboarding im Web.
+
+### Fehlerbehebungen & Verbesserungen
+
+- **Strikte Kontoisolation & Bereinigung:**
+  - `clearAccountData()` bereinigt nun vollständig alle lokalen Einstellungs- und Berichtsdateien bei Kontowechsel oder Neuregistrierung im Browser.
+  - Verhindert zuverlässig, dass Altdaten eines früheren Nutzers in ein neu registriertes Konto oder einen neuen Server übertragen werden.
+  - Zurücksetzen des In-Memory-Outbox-Puffers beim Abmelden (`stopTracking()`).
+
+- **Web-Onboarding & Einrichtung:**
+  - Nach der Neuregistrierung im Web öffnet sich bei Überspringen der Desktop-Kopplung nun automatisch der interaktive Einrichtungs-Assistent (OnboardingWizard).
+  - Web-Registrierung übergibt keine alten Namen mehr vorab an den Server.
+
+- **Passkey- & Favicon-Assets:**
+  - Optimierte Favicon- und App-Icon-Assets für Passwort-Manager (z. B. 1Password, Bitwarden) und Apple-Touch-Icons.
+
+---
+
 ## TimeTracker v0.9.0 – Das große Server- & Sync-Update
 
 Mit dieser Version wird TimeTracker um einen optionalen, Ende-zu-Ende verschlüsselten Server erweitert: Arbeitszeiten und Aktivitäten lassen sich jetzt nahtlos zwischen Desktop-App und Web-Browser synchronisieren.
