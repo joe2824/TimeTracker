@@ -160,6 +160,20 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	const antwort = await resolve(event);
 
+	// Standard-Sicherheits-Header
+	antwort.headers.set("x-content-type-options", "nosniff");
+	antwort.headers.set("x-frame-options", "DENY");
+	antwort.headers.set("referrer-policy", "strict-origin-when-cross-origin");
+	antwort.headers.set("permissions-policy", "camera=(), microphone=(), geolocation=()");
+
+	const contentType = antwort.headers.get("content-type") ?? "";
+	if (contentType.includes("text/html")) {
+		antwort.headers.set(
+			"content-security-policy",
+			"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws: wss:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';"
+		);
+	}
+
 	// Erst jetzt steht fest, ob es ein Fehlgriff war: 404 heisst vertippt oder
 	// geraten, alles andere ist ein Mensch, der auf die Bestaetigung wartet.
 	if (bremse && nurFehlgriffe && antwort.status === 404) {

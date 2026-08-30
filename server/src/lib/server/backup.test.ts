@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openDb } from "./db";
-import { cleanupBackups, performBackup } from "./backup";
+import { cleanupBackups, performBackup, verifyBackupIntegrity } from "./backup";
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -41,13 +41,16 @@ describe("Datenbanksicherungen", () => {
 		const fs = await import("node:fs");
 		fs.mkdirSync(backupDir, { recursive: true });
 		for (let i = 1; i <= 4; i++) {
-			writeFileSync(join(backupDir, `timetracker-backup-2026-08-0${i}_12-00-00.db`), "alt");
+			const p = join(backupDir, `timetracker-backup-2026-08-0${i}_12-00-00.db`);
+			writeFileSync(p, "alt");
+			const time = 1000000 + i * 1000;
+			fs.utimesSync(p, time, time);
 		}
 
 		// Mit keep=3 ausfuehren -> aelteste muessen aufgeraeumt werden
 		const ergebnis = await performBackup(raw, { dir: backupDir, keep: 3 });
 
-		const dateien = readdirSync(backupDir);
+		const dateien = readdirSync(backupDir).filter((f) => f.startsWith("timetracker-backup-") && f.endsWith(".db"));
 		expect(dateien.length).toBe(3);
 		expect(dateien).toContain(ergebnis.name);
 		expect(ergebnis.pruned).toBeGreaterThanOrEqual(1);
@@ -66,6 +69,23 @@ describe("Datenbanksicherungen", () => {
 		expect(geloescht).toBe(3);
 		const rest = readdirSync(backupDir);
 		expect(rest.length).toBe(2);
+	});
+
+	it("verifyBackupIntegrity erkennt intakte und korrupte Datenbanken", () => {
+		const { raw } = openDb(dbFile);
+		raw.exec("CREATE TABLE foo (id INT); INSERT INTO foo VALUES (42);");
+		raw.close();
+
+		// Intakte DB pruefen
+		const fs = require("node:fs");
+		const ok = verifyBackupIntegrity(dbFile);
+		expect(ok).toBe(true);
+
+		// Korrupte Datei pruefen
+		const kaputt = join(dir, "kaputt.db");
+		fs.writeFileSync(kaputt, "KEINE_SQLITE_DATENBANK");
+		const nichtOk = verifyBackupIntegrity(kaputt);
+		expect(nichtOk).toBe(false);
 	});
 });
 

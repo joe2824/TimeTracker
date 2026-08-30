@@ -1,4 +1,4 @@
-// Automatische und manuelle Datenbanksicherungen.
+import DatabaseConstructor from "better-sqlite3";
 import type Database from "better-sqlite3";
 import { mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
@@ -11,6 +11,22 @@ function zeitstempel(): string {
 	const datum = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 	const zeit = `${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
 	return `${datum}_${zeit}`;
+}
+
+/** Prueft die Integritaet einer erstellten SQLite-Sicherung. */
+export function verifyBackupIntegrity(backupPath: string): boolean {
+	try {
+		const testDb = new DatabaseConstructor(backupPath, { readonly: true });
+		try {
+			const res = testDb.pragma("quick_check") as Array<{ quick_check: string }>;
+			return Array.isArray(res) && res.length > 0 && res[0]?.quick_check === "ok";
+		} finally {
+			testDb.close();
+		}
+	} catch (err) {
+		console.warn(`[Backup] Integritätsprüfung fehlgeschlagen für ${backupPath}:`, err);
+		return false;
+	}
 }
 
 /** Alte Sicherungen aufraeumen, damit der Speicherplatz nicht volllaeuft. */
@@ -46,10 +62,11 @@ export function cleanupBackups(dir: string, keepCount: number): number {
 /** Eine Sicherung im laufenden Betrieb durchfuehren (atomar & konsistent). */
 export async function performBackup(
 	raw: Database.Database,
-	opts: { dir?: string; keep?: number; customName?: string } = {}
-): Promise<{ path: string; name: string; pruned: number }> {
+	opts: { dir?: string; keep?: number; customName?: string; verify?: boolean } = {}
+): Promise<{ path: string; name: string; pruned: number; verified: boolean }> {
 	const dir = opts.dir ?? BACKUP_DIR;
 	const keep = opts.keep ?? BACKUP_KEEP;
+	const verify = opts.verify ?? true;
 
 	mkdirSync(dir, { recursive: true });
 
@@ -57,9 +74,23 @@ export async function performBackup(
 	const destPath = join(dir, name);
 
 	await raw.backup(destPath);
+
+	let verified = true;
+	if (verify) {
+		verified = verifyBackupIntegrity(destPath);
+		if (!verified) {
+			try {
+				unlinkSync(destPath);
+			} catch {
+				/* ignore */
+			}
+			throw new Error(`Integritätsprüfung für Backup ${name} fehlgeschlagen.`);
+		}
+	}
+
 	const pruned = cleanupBackups(dir, keep);
 
-	return { path: destPath, name, pruned };
+	return { path: destPath, name, pruned, verified };
 }
 
 /** Startet den automatischen Backup-Zeitgeber des Servers. */
