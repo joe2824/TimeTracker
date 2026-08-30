@@ -13,10 +13,8 @@
 	import type { DataChanged } from "$lib/platform/windows";
 	import { onPairLink } from "$lib/platform/deeplink";
 	import WebOnboarding from "$lib/components/onboarding/WebOnboarding.svelte";
-	import { onboardingOffen } from "$lib/onboarding.svelte";
 	import PasskeyNudge from "$lib/components/onboarding/PasskeyNudge.svelte";
 	import { errorText, logError, logFile, logInfo, logWarn, pruneOldLogs } from "$lib/log";
-	import { appDataDir, join } from "@tauri-apps/api/path";
 	import { revealInFolder } from "$lib/platform/open";
 	import { Button } from "$lib/components/ui/button";
 	import * as Dialog from "$lib/components/ui/dialog";
@@ -29,7 +27,6 @@
 	import SyncHint from "$lib/components/shared/SyncHint.svelte";
 	import TimerIcon from "@lucide/svelte/icons/timer";
 	import PencilLineIcon from "@lucide/svelte/icons/pencil-line";
-	import ChartColumnIcon from "@lucide/svelte/icons/chart-column";
 	import LayersIcon from "@lucide/svelte/icons/layers";
 	import UsersIcon from "@lucide/svelte/icons/users";
 	import SettingsIcon from "@lucide/svelte/icons/settings";
@@ -42,7 +39,6 @@
 	import SettingsPanel from "$lib/components/SettingsPanel.svelte";
 	import TeamPanel from "$lib/components/TeamPanel.svelte";
 	import IdleDialog from "$lib/components/dialogs/IdleDialog.svelte";
-	import LongTimerDialog from "$lib/components/dialogs/LongTimerDialog.svelte";
 	import OnboardingWizard from "$lib/components/onboarding/OnboardingWizard.svelte";
 	import CommandPalette from "$lib/components/dialogs/CommandPalette.svelte";
 	import ReportReminderDialog from "$lib/components/dialogs/ReportReminderDialog.svelte";
@@ -54,15 +50,6 @@
 
 	let tab = $state("tracking");
 
-	/** Im Browser ohne Konto: erst anmelden. */
-	// Das Onboarding bleibt auch nach dem Verknuepfen stehen, solange es noch
-	// einen Schritt zu zeigen hat - sonst waere es weg, bevor jemand sagen konnte,
-	// ob er seine App noch dazuholen will.
-	const brauchtAnmeldung = $derived(!isTauri() && (!account.linked || onboardingOffen.wert));
-	let paletteOpen = $state(false);
-
-	/** Laufende Version, sobald der Start sie gelesen hat ("" bis dahin). */
-	let appVersion = $state("");
 	/** Vorabversion? Alles mit Semver-Vorabteil zaehlt dazu ("0.8.1-beta.2"). */
 	const isBeta = $derived(appVersion.includes("-"));
 
