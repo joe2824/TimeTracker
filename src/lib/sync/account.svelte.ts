@@ -215,6 +215,9 @@ class AccountState {
 			},
 			onProgress: (p) => {
 				this.syncProgress = p.phase === "idle" ? null : p;
+				if (p.phase === "pulling" && p.pulled >= 20) {
+					toast.loading(`Lade Daten (${p.pulled} Einträge)…`, { id: "sync-bulk" });
+				}
 			}
 		});
 		this.#engine.setMonthLister(listEntryMonths);
@@ -294,8 +297,12 @@ class AccountState {
 					logInfo("Abgeglichen", ergebnis);
 				}
 				if (ergebnis.pulled >= 20) {
-					toast.success(`${ergebnis.pulled} Einträge vom Server geladen.`);
+					toast.success(`${ergebnis.pulled} Einträge synchronisiert.`, { id: "sync-bulk" });
+				} else {
+					toast.dismiss("sync-bulk");
 				}
+			} else {
+				toast.dismiss("sync-bulk");
 			}
 			// Der Bestand kann sich geaendert haben - die Ansichten haengen daran.
 			await app.reload();
@@ -311,6 +318,7 @@ class AccountState {
 				app.dismissOnboarding();
 			}
 		} catch (e) {
+			toast.dismiss("sync-bulk");
 			this.#onSyncError(e);
 		}
 	}
