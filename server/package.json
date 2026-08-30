@@ -1,6 +1,6 @@
 {
   "name": "timetracker-server",
-  "version": "0.9.0-beta.8",
+  "version": "0.9.0-beta.9",
   "private": true,
   "type": "module",
   "scripts": {
