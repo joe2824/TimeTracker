@@ -136,7 +136,7 @@
 					variant="outline"
 					size="sm"
 					href="#download"
-					class="gap-1.5 font-medium border-primary/30 bg-primary/[0.04] hover:bg-primary/[0.08] hover:border-primary/50 transition-colors shadow-xs"
+					class="gap-1.5 font-medium border-primary/30 bg-primary/4 hover:bg-primary/8 hover:border-primary/50 transition-colors shadow-xs"
 				>
 					<DownloadIcon class="size-3.5 text-primary" />
 					<span>{desktop ? "Download" : "Windows-App"}</span>
@@ -166,7 +166,7 @@
 		     pointer-events-none, damit es weder vorgelesen wird noch Klicks frisst. -->
 		<div
 			aria-hidden="true"
-			class="pointer-events-none absolute inset-0 [mask-image:radial-gradient(60%_50%_at_50%_0%,black,transparent)] opacity-[0.55] dark:opacity-30"
+			class="pointer-events-none absolute inset-0 mask-[radial-gradient(60%_50%_at_50%_0%,black,transparent)]"
 			style="background-image:linear-gradient(to right,var(--border) 1px,transparent 1px),linear-gradient(to bottom,var(--border) 1px,transparent 1px);background-size:56px 56px"
 		></div>
 

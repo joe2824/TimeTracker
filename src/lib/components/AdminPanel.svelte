@@ -185,7 +185,7 @@
 			{/if}
 
 			{#if frisch}
-				<div class="border-primary/30 bg-primary/[0.06] space-y-2 rounded-lg border p-3">
+				<div class="border-primary/30 bg-primary/6 space-y-2 rounded-lg border p-3">
 					<p class="text-sm">Neue Einladung – gilt genau einmal:</p>
 					<p class="font-mono text-xl tracking-wider select-all">{frisch}</p>
 
