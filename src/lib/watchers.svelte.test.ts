@@ -47,7 +47,6 @@ const AKTIVITAETEN: Activity[] = [
 import { wallStringToTs } from "./tz";
 
 /** Ein Tag ohne Tagesmeldung: 10 Uhr steht nicht in PING_HOURS (9/12/15/17). */
-const STILLE_STUNDE = new Date(2026, 7, 24, 10, 0, 0);
 const STILLE_STUNDE = new Date(wallStringToTs("2026-08-24", "10:00"));
 
 function laufend(startTs: number, activityId = P1): Entry {
@@ -99,7 +98,6 @@ afterEach(() => {
 	vi.useRealTimers();
 });
 
-console.log("INTL:", Intl.DateTimeFormat().resolvedOptions().timeZone); import { appTimeZone, systemTimeZone } from "./tz.ts"; console.log("ZONES:", appTimeZone(), systemTimeZone()); describe("Tray-Tooltip", () => {
 describe("Tray-Tooltip", () => {
 	it("meldet Aktivitaet und laufende Zeit", async () => {
 		timerLaeuftSeit(3661); // 1:01:01
@@ -189,7 +187,6 @@ describe("Auto-Stop-Warnung", () => {
 		// wieder das letzte Stueck gezaehlt wird – bei einer Grenze unter 10 Stunden
 		// schluege beides an und der Test bewiese nichts.
 		app.settings.maxTimerHours = 12;
-		const mitternacht = new Date(2026, 7, 24, 0, 0, 0).getTime();
 		const mitternacht = wallStringToTs("2026-08-24", "00:00");
 		const gestern = laufend(mitternacht - 8 * 3600 * 1000);
 		gestern.endTs = mitternacht;
@@ -321,7 +318,6 @@ describe("Pomodoro", () => {
 
 describe("Tagesmeldung", () => {
 	it("laeuft zu einer festen Stunde und merkt sich den Tag", async () => {
-		vi.setSystemTime(new Date(2026, 7, 24, 12, 0, 0));
 		vi.setSystemTime(wallStringToTs("2026-08-24", "12:00"));
 		app.now = Date.now();
 		await tick();
@@ -336,14 +332,12 @@ describe("Tagesmeldung", () => {
 	});
 
 	it("laeuft am selben Tag nur einmal", async () => {
-		vi.setSystemTime(new Date(2026, 7, 24, 12, 0, 0));
 		vi.setSystemTime(wallStringToTs("2026-08-24", "12:00"));
 		app.now = Date.now();
 		await tick();
 		const gespeichert = { ...app.settings };
 		const update = vi.spyOn(app, "updateSettings");
 
-		vi.setSystemTime(new Date(2026, 7, 24, 15, 0, 0));
 		vi.setSystemTime(wallStringToTs("2026-08-24", "15:00"));
 		await tick();
 
