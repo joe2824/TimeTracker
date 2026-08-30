@@ -493,9 +493,9 @@
 					</Tabs.Trigger>
 				</Tabs.List>
 
-				<!-- reservierte rechte Spalte: Pill verschiebt die Tabs nicht mehr -->
+				<!-- reservierte rechte Spalte: ganz rechts ausgerichtet -->
 				<div
-					class="col-start-2 row-start-1 flex items-center gap-2 justify-self-end lg:col-start-3"
+					class="col-start-2 row-start-1 flex items-center gap-3 justify-self-end sm:col-start-3"
 				>
 					<!-- Bleibt stehen, solange das Update aussteht: der Hinweis-Toast beim
 					     Start ist beim Autostart nicht zu sehen und danach weg. -->
