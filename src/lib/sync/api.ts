@@ -108,14 +108,30 @@ export interface ApiOptions {
 	fetchFn?: FetchFn;
 }
 
+/** Server-URL bereinigen: Protokoll/Host kleinschreiben, Trailing Slash entfernen. */
+export function normalizeServerUrl(raw: string): string {
+	let u = raw.trim().replace(/\/+$/, "");
+	if (!u) return "";
+	if (!/^https?:\/\//i.test(u)) {
+		u = `https://${u}`;
+	}
+	try {
+		const parsed = new URL(u);
+		parsed.protocol = parsed.protocol.toLowerCase();
+		parsed.hostname = parsed.hostname.toLowerCase();
+		return parsed.origin + (parsed.pathname === "/" ? "" : parsed.pathname.replace(/\/+$/, ""));
+	} catch {
+		return u;
+	}
+}
+
 export class Api {
 	#baseUrl: string;
 	#token: string | null;
 	#fetch: FetchFn;
 
 	constructor(opts: ApiOptions) {
-		// Abschliessende Schraegstriche wegnehmen, sonst entstehen Adressen mit "//".
-		this.#baseUrl = opts.baseUrl.replace(/\/+$/, "");
+		this.#baseUrl = normalizeServerUrl(opts.baseUrl);
 		this.#token = opts.token ?? null;
 		this.#fetch = opts.fetchFn ?? ((i, init) => globalThis.fetch(i, init));
 	}

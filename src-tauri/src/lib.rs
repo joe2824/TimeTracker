@@ -251,7 +251,10 @@ fn toggle_flyout(app: &tauri::AppHandle, click: tauri::PhysicalPosition<f64>) {
         }
         if let Ok(size) = win.outer_size() {
             let mut x = click.x - size.width as f64 / 2.0;
-            let mut y = click.y - size.height as f64 - 8.0; // über dem Cursor (Taskleiste unten)
+            #[cfg(target_os = "macos")]
+            let mut y = click.y + 8.0; // Unter der Menüleiste (macOS)
+            #[cfg(not(target_os = "macos"))]
+            let mut y = click.y - size.height as f64 - 8.0; // Über der Taskleiste (Windows/Linux)
             // grob auf den sichtbaren Bereich des Monitors klemmen
             if let Ok(Some(monitor)) = win.current_monitor() {
                 let mp = monitor.position();

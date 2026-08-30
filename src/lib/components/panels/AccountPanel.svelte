@@ -318,6 +318,18 @@
 					<RefreshCwIcon class="size-3.5 {account.phase === 'laeuft' ? 'animate-spin' : ''}" />
 					{account.phase === "laeuft" ? "Gleicht ab…" : "Jetzt abgleichen"}
 				</Button>
+			{:else if account.state === "fehler"}
+				<Button
+					variant="outline"
+					size="sm"
+					class="shrink-0 self-start sm:self-center text-xs text-destructive hover:bg-destructive/10"
+					onclick={async () => {
+						await account.unlink();
+						toast.info("Verknüpfung zurückgesetzt.");
+					}}
+				>
+					Verknüpfung zurücksetzen
+				</Button>
 			{/if}
 		</div>
 

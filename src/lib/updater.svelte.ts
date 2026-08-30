@@ -51,9 +51,13 @@ export async function checkForUpdate({ silent = false } = {}): Promise<boolean> 
 		// den Benutzer, der Grund gehört aber ins Protokoll. Einmal je Ausfall:
 		// die nächste erfolgreiche Suche setzt die Wache zurück.
 		if (silent) {
-			if (!silentFailureLogged) {
+			const msg = String(e instanceof Error ? e.message : e);
+			const isPlatformMismatch = msg.includes("fallback platforms") || msg.includes("platforms");
+			if (!silentFailureLogged && !isPlatformMismatch) {
 				silentFailureLogged = true;
 				logWarn("Update-Prüfung im Hintergrund nicht möglich (z.B. kein Netz)", e);
+			} else if (isPlatformMismatch) {
+				logDebug("Kein passendes Update-Paket für dieses Betriebssystem in Release-Feed");
 			}
 		} else {
 			logError("Update-Prüfung fehlgeschlagen", e);

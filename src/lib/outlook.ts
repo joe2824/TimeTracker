@@ -93,11 +93,12 @@ export function explainOutlookError(err: unknown, info?: OutlookInfo | null): st
 	const raw = String(err ?? "").trim();
 	if (info && !info.comUsable) {
 		if (info.newOutlookInstalled && !info.classicComRegistered) {
-			return "Du nutzt das neue Outlook (Store-App). Für den Outlook-Entwurf/Kalender wird das klassische Outlook benötigt – dafür steht nur der Mail-Fallback zur Verfügung.";
+			return "Du nutzt das neue Outlook (Store-App). Für den direkten Entwurf wird das klassische Outlook benötigt – nutze bitte den Mail-Fallback.";
 		}
 		if (info.classicComRegistered && !info.classicProfile) {
-			return "Im klassischen Outlook ist kein E-Mail-Profil eingerichtet. Bitte einmal das klassische Outlook einrichten – bis dahin greift der Mail-Fallback.";
+			return "Im klassischen Outlook ist kein E-Mail-Profil eingerichtet – bitte nutze den Mail-Fallback.";
 		}
+		return "Klassisches Outlook (COM) ist nicht verfügbar – nutze bitte den Mail-Fallback.";
 	}
 	return raw || "Outlook konnte nicht angesprochen werden.";
 }
