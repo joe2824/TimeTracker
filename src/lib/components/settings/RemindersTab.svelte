@@ -219,7 +219,10 @@
 				title="Monatliche Berichtserinnerung aktivieren"
 				description="Benachrichtigt dich automatisch am letzten Arbeitstag des Monats."
 				bind:checked={form.reportReminderEnabled}
-				onCheckedChange={() => saveReportReminder()}
+				onCheckedChange={(v) => {
+					form.reportReminderEnabled = v;
+					void saveReportReminder();
+				}}
 			/>
 
 			{#if form.reportReminderEnabled}

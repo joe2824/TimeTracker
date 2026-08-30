@@ -87,21 +87,30 @@
 		title="Auswertung anzeigen"
 		description="Saldo, Stunden je Aktivität und Jahres-Heatmap im Tab „Bericht“. Nur für dich – die E-Mail bleibt unverändert."
 		bind:checked={form.statsEnabled}
-		onCheckedChange={() => saveReport()}
+		onCheckedChange={(v) => {
+			form.statsEnabled = v;
+			void saveReport();
+		}}
 	/>
 	<SettingToggle
 		id="arbzg"
 		title="Arbeitszeit-Check anzeigen"
 		description="Schätzt nach dem Arbeitszeitgesetz, ob der 24-Wochen-Schnitt von 8 h zu reißen droht, und was sich am Tempo ändern müsste. Nur für dich – die E-Mail bleibt unverändert."
 		bind:checked={form.arbzgEnabled}
-		onCheckedChange={() => saveReport()}
+		onCheckedChange={(v) => {
+			form.arbzgEnabled = v;
+			void saveReport();
+		}}
 	/>
 	<SettingToggle
 		id="arbzghint"
 		title="Hinweis beim Tracking"
 		description="Zeigt oben auf der Tracking-Seite eine Zeile, wenn der 24-Wochen-Schnitt zu reißen droht. Schweigt, solange alles im grünen Bereich ist."
 		bind:checked={form.arbzgTrackingHint}
-		onCheckedChange={() => saveReport()}
+		onCheckedChange={(v) => {
+			form.arbzgTrackingHint = v;
+			void saveReport();
+		}}
 	/>
 </SettingsCard>
 
@@ -116,7 +125,10 @@
 			title="Chef-Modus"
 			description="Blendet den Tab „Team“ ein. Es wird ausschließlich gelesen – keine Mail wird verschoben oder markiert."
 			bind:checked={form.bossMode}
-			onCheckedChange={() => saveBossMode()}
+			onCheckedChange={(v) => {
+				form.bossMode = v;
+				void saveBossMode();
+			}}
 		/>
 
 		{#if form.bossMode}
@@ -172,7 +184,10 @@
 				title="Unterordner mitlesen"
 				description="Auch Unterordner des Posteingangs durchsuchen – für alle, die Berichte per Regel einsortieren lassen."
 				bind:checked={form.teamScanSubfolders}
-				onCheckedChange={() => saveBossMode()}
+				onCheckedChange={(v) => {
+					form.teamScanSubfolders = v;
+					void saveBossMode();
+				}}
 			/>
 		{/if}
 	</SettingsCard>

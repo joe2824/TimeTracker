@@ -81,7 +81,10 @@
 			title="Anonyme Fehlermeldungen senden"
 			description="Hilft, Abstürze und Fehler zu finden, die nur auf anderen Rechnern auftreten."
 			bind:checked={form.errorReportsEnabled}
-			onCheckedChange={() => saveErrorReports()}
+			onCheckedChange={(v) => {
+				form.errorReportsEnabled = v;
+				void saveErrorReports();
+			}}
 		/>
 
 		<div class="text-muted-foreground space-y-2 text-xs leading-relaxed">

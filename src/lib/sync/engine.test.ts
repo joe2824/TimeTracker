@@ -351,6 +351,34 @@ describe("Zwei Geraete", () => {
 		expect(s.hoursPerDay).toBe(8);
 		expect((s as unknown as { id?: string }).id).toBeUndefined();
 	});
+
+	it("gleicht Pomodoro-Einstellungen und laufenden Timer korrekt ab", async () => {
+		const handy = new Geraet("handy");
+		await auf(handy, async (engine) => {
+			await store.saveSettings({
+				...defaultSettings,
+				pomodoroEnabled: true,
+				pomodoroMin: 25,
+				pomodoroBreakMin: 5
+			});
+			await store.saveEntries("2026-07", [
+				eintrag("timer1", { startTs: ts(15, 9), endTs: null })
+			]);
+			return engine.sync();
+		});
+
+		const rechner = new Geraet("rechner");
+		await auf(rechner, (engine) => engine.sync());
+		const s = await auf(rechner, () => store.loadSettings());
+		const entries = await auf(rechner, () => store.loadEntries("2026-07"));
+
+		expect(s.pomodoroEnabled).toBe(true);
+		expect(s.pomodoroMin).toBe(25);
+		expect(s.pomodoroBreakMin).toBe(5);
+		expect(entries).toHaveLength(1);
+		expect(entries[0].id).toBe("timer1");
+		expect(entries[0].endTs).toBeNull();
+	});
 });
 
 /** Ein Zeitstempel im Folgemonat - fuer alles, was ueber die Monatsgrenze geht. */

@@ -153,7 +153,10 @@
 			title="Hinweis bei Shortcut-Start/Stop"
 			description="Kurze Meldung, verschwindet selbst."
 			bind:checked={form.shortcutNotify}
-			onCheckedChange={() => saveTracking()}
+			onCheckedChange={(v) => {
+				form.shortcutNotify = v;
+				void saveTracking();
+			}}
 		/>
 	{/if}
 
@@ -163,7 +166,10 @@
 			title="Pomodoro"
 			description="Fokus-/Pausen-Zyklus mit Hinweisen (optional)."
 			bind:checked={form.pomodoroEnabled}
-			onCheckedChange={() => saveTracking()}
+			onCheckedChange={(v) => {
+				form.pomodoroEnabled = v;
+				void saveTracking();
+			}}
 		/>
 		{#if form.pomodoroEnabled}
 			<div class="bg-muted/40 grid gap-3 rounded-lg p-3 sm:max-w-md sm:grid-cols-2">
@@ -175,6 +181,7 @@
 						min="1"
 						bind:value={form.pomodoroMin}
 						onchange={saveTracking}
+						oninput={saveTracking}
 					/>
 				</div>
 				<div class="space-y-1.5">
@@ -185,6 +192,7 @@
 						min="0"
 						bind:value={form.pomodoroBreakMin}
 						onchange={saveTracking}
+						oninput={saveTracking}
 					/>
 				</div>
 			</div>
@@ -270,7 +278,10 @@
 		title="Pause automatisch abziehen"
 		description="Ab 4 h Tagesarbeitszeit 15 Minuten, ab 6 h insgesamt 45 – wie LOGA es rechnet. Wirkt auf Tagessummen, Bericht und Auswertung; die erfassten Einträge bleiben unverändert."
 		bind:checked={form.breakDeduction}
-		onCheckedChange={() => saveWorktime()}
+		onCheckedChange={(v) => {
+			form.breakDeduction = v;
+			void saveWorktime();
+		}}
 	/>
 	<SettingRow id="round" title="Rundung" description="Stunden je Aktivität im Bericht.">
 		{#snippet control()}

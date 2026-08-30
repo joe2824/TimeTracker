@@ -28,6 +28,13 @@
 
 <SettingRow {id} {title} {description} class={className}>
 	{#snippet control()}
-		<Switch {id} bind:checked {onCheckedChange} />
+		<Switch
+			{id}
+			bind:checked
+			onCheckedChange={(v) => {
+				checked = v;
+				onCheckedChange?.(v);
+			}}
+		/>
 	{/snippet}
 </SettingRow>
