@@ -63,8 +63,8 @@ export type SyncPhase = "ruht" | "laeuft" | "offline" | "fehler";
  */
 const DEBOUNCE_MS = 400;
 
-/** Abstand zwischen zwei Verbindungsversuchen, wachsend. */
-const RETRY_MS = [5_000, 15_000, 60_000, 300_000];
+/** Abstand zwischen zwei Verbindungsversuchen, wachsend (maximal 30s). */
+const RETRY_MS = [1_000, 3_000, 5_000, 10_000, 20_000, 30_000];
 
 /** Der langsame Takt, wo es keinen Weckruf-Kanal gibt. */
 const HEARTBEAT_MS = 5 * 60 * 1000;
@@ -105,6 +105,7 @@ class AccountState {
 	#device = "";
 	#heartbeat: ReturnType<typeof setInterval> | null = null;
 	/** Laeuft eine Weckruf-Schleife? Der Abbruch beendet auch die offene Anfrage. */
+	#listenersInstalled = false;
 	#warten: AbortController | null = null;
 
 	get linked(): boolean {
@@ -177,6 +178,7 @@ class AccountState {
 		await startTracking(this.#device);
 		// Jede lokale Aenderung stoesst einen Abgleich an - gesammelt, nicht sofort.
 		setChangeListener(() => this.syncSoon());
+		this.#installNetworkListeners();
 		this.#openStream();
 	}
 
@@ -298,6 +300,44 @@ class AccountState {
 
 	// ---------- Weckruf-Kanal ----------
 
+	#installNetworkListeners(): void {
+		if (this.#listenersInstalled || typeof window === "undefined") return;
+		this.#listenersInstalled = true;
+
+		window.addEventListener("online", () => {
+			logInfo("Netzwerkverbindung wieder verfügbar (online Event)");
+			if (this.state === "verbunden") {
+				this.#retryStep = 0;
+				if (this.#retry) {
+					clearTimeout(this.#retry);
+					this.#retry = null;
+				}
+				if (this.phase === "offline") {
+					this.phase = "ruht";
+				}
+				this.#openStream();
+				void this.syncNow();
+			}
+		});
+
+		window.addEventListener("offline", () => {
+			logWarn("Netzwerkverbindung unterbrochen (offline Event)");
+			if (this.phase !== "laeuft") {
+				this.phase = "offline";
+			}
+		});
+
+		document.addEventListener("visibilitychange", () => {
+			if (document.visibilityState === "visible") {
+				this.onVisible();
+			}
+		});
+
+		window.addEventListener("focus", () => {
+			this.onVisible();
+		});
+	}
+
 	/** Auf Aenderungen anderer Geraete hoeren. */
 	#openStream(): void {
 		this.#closeStream();
@@ -313,6 +353,12 @@ class AccountState {
 
 		try {
 			this.#stream = new EventSource(this.#api.streamUrl(), { withCredentials: true });
+			this.#stream.onopen = () => {
+				if (this.phase === "offline") {
+					this.phase = "ruht";
+				}
+				this.#retryStep = 0;
+			};
 			this.#stream.addEventListener("change", (ev) => {
 				const daten = JSON.parse((ev as MessageEvent).data ?? "{}");
 				// Den eigenen Weckruf ueberspringen: was dieses Geraet gerade
@@ -321,9 +367,12 @@ class AccountState {
 				this.syncSoon(300);
 			});
 			this.#stream.onerror = () => {
-				// EventSource verbindet von selbst neu. Nichts tun ist hier richtig -
-				// ein eigener Versuch liefe dagegen.
 				if (this.phase !== "laeuft") this.phase = "offline";
+				// Falls EventSource geschlossen wurde (z. B. Netzwerk-Drop auf Mobile):
+				if (this.#stream && this.#stream.readyState === EventSource.CLOSED) {
+					this.#closeStream();
+					this.#scheduleRetry();
+				}
 			};
 		} catch (e) {
 			logWarn("Weckruf-Kanal nicht verfügbar, nutze langsamen Takt", e);
@@ -377,9 +426,15 @@ class AccountState {
 		this.#heartbeat = null;
 	}
 
-	/** Das Fenster kommt in den Vordergrund. */
+	/** Das Fenster kommt in den Vordergrund oder wird wieder aktiv. */
 	onVisible(): void {
-		if (this.state === "verbunden") this.syncSoon(0);
+		if (this.state === "verbunden") {
+			if (this.phase === "offline" || !this.#stream) {
+				this.#retryStep = 0;
+				this.#openStream();
+			}
+			this.syncSoon(0);
+		}
 	}
 
 	#closeStream(): void {
