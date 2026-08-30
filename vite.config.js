@@ -25,9 +25,7 @@ export default defineConfig(async ({ command }) => ({
     // dort laeuft er beim Entwickeln, und ihn jedes Mal von Hand einzutippen ist
     // ein Schritt, den niemand braucht. DEFAULT_SERVER sticht das aus, und
     // eintragen laesst sich ohnehin jederzeit etwas anderes.
-    __DEFAULT_SERVER__: JSON.stringify(
-      process.env.DEFAULT_SERVER ?? (command === "serve" ? "http://localhost:3000" : ""),
-    ),
+    __DEFAULT_SERVER__: JSON.stringify(process.env.DEFAULT_SERVER ?? ""),
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

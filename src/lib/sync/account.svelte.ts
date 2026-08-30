@@ -608,6 +608,7 @@ class AccountState {
 		const wrap = await wrapForDevice(this.#key, roh);
 		await this.#api.pairApprove(getippt, JSON.stringify(serializeWrap(wrap)));
 		logInfo("Gerät gekoppelt", { label });
+		void this.abgleichMitNachlese();
 		return label;
 	}
 

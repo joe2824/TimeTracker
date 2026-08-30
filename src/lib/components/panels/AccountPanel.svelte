@@ -13,7 +13,7 @@
 	import { app } from "$lib/app.svelte";
 	import { isPairingCode, normalizePairingCode } from "$lib/crypto/vault";
 	import { fmtDateHuman } from "$lib/time";
-	import { capabilities } from "$lib/platform/env";
+	import { capabilities, isTauri } from "$lib/platform/env";
 	import { errorText } from "$lib/log";
 	import { DEFAULT_SERVER } from "$lib/defaults";
 	import { anlegenLink } from "$lib/invite";
@@ -28,8 +28,18 @@
 	const formatError = (e: unknown, fallback: string) =>
 		e instanceof Error ? errorText(e) : fallback;
 
-	let serverUrl = $state(DEFAULT_SERVER);
-	let isCustomServer = $state(false);
+	let serverUrl = $state(
+		account.serverUrl ||
+			(typeof localStorage !== "undefined" ? localStorage.getItem("tt_server_url") || "" : "") ||
+			DEFAULT_SERVER ||
+			""
+	);
+
+	$effect(() => {
+		if (serverUrl && typeof localStorage !== "undefined") {
+			localStorage.setItem("tt_server_url", serverUrl);
+		}
+	});
 	let pairingCode = $state("");
 	let remotePairingCode = $state("");
 	let inviteCode = $state("");
@@ -312,7 +322,7 @@
 		</div>
 
 		{#if account.linked}
-			{#if !account.secretsProtected}
+			{#if isTauri() && !account.secretsProtected}
 				<div class="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200">
 					<ShieldAlertIcon class="size-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
 					<div>
@@ -438,33 +448,10 @@
 			</div>
 		{:else}
 			<div class="space-y-2 border-t pt-3">
-				{#if DEFAULT_SERVER && !isCustomServer}
-					<p class="text-sm">
-						Server: <span class="font-medium">{DEFAULT_SERVER}</span>
-					</p>
-					<button
-						type="button"
-						class="text-muted-foreground hover:text-foreground text-xs underline underline-offset-2"
-						onclick={() => (isCustomServer = true)}
-					>
-						Eigenen Server verwenden
-					</button>
-				{:else}
+				<div class="space-y-1.5">
 					<Label for="srv">Adresse des Servers</Label>
 					<Input id="srv" bind:value={serverUrl} placeholder="https://tracker.example.de" />
-					{#if DEFAULT_SERVER}
-						<button
-							type="button"
-							class="text-muted-foreground hover:text-foreground text-xs underline underline-offset-2"
-							onclick={() => {
-								isCustomServer = false;
-								serverUrl = DEFAULT_SERVER;
-							}}
-						>
-							Zurück zu {DEFAULT_SERVER}
-						</button>
-					{/if}
-				{/if}
+				</div>
 
 				<div class="space-y-2 pt-3">
 					<Button disabled={isLoading || !serverUrl.trim()} onclick={handleStartRegistration}>
