@@ -397,12 +397,13 @@
 
 			<div class="space-y-2 rounded-lg border bg-muted/20 p-3.5">
 				<div>
-					<p class="font-medium text-sm text-foreground">Weiteres Gerät verknüpfen</p>
-					<p class="text-muted-foreground text-xs">
-						Auf dem neuen Gerät den Kopplungscode anzeigen lassen und hier bestätigen.
+					<p class="font-medium text-sm text-foreground">Neues Gerät freigeben</p>
+					<p class="text-muted-foreground text-xs leading-relaxed">
+						Möchtest du TimeTracker auf deinem Smartphone oder einem zweiten Computer nutzen?
+						Wähle dort im Tab <strong>Konto</strong> die Option <em>„Kopplungscode anzeigen“</em> und gib den 12-stelligen Code hier ein:
 					</p>
 				</div>
-				<div class="flex flex-wrap gap-2 pt-1">
+				<div class="flex flex-wrap items-center gap-2 pt-1">
 					<Input
 						id="fremdcode"
 						bind:value={remotePairingCode}
@@ -412,7 +413,7 @@
 						onkeydown={(e) => e.key === "Enter" && remotePairingCode.trim() && !isLoading && handleApprovePairing()}
 					/>
 					<Button onclick={handleApprovePairing} disabled={isLoading || !remotePairingCode.trim()}>
-						{isLoading ? "Verknüpft…" : "Verknüpfen"}
+						{isLoading ? "Wird autorisiert…" : "Gerät freigeben"}
 					</Button>
 				</div>
 			</div>
@@ -462,12 +463,12 @@
 				</div>
 
 				<div class="space-y-2 border-t pt-3">
-					<p class="text-sm font-medium">Konto gibt es schon?</p>
+					<p class="text-sm font-medium">Mit bestehendem Konto verbinden</p>
 					<Button variant="outline" onclick={handleStartPairing} disabled={isLoading}>
 						Kopplungscode anzeigen
 					</Button>
 					<p class="text-muted-foreground text-xs">
-						Den Code auf einem Gerät bestätigen, das schon an dem Konto hängt.
+						Generiert einen Code, den du auf deinem bereits verknüpften Gerät eingibst.
 					</p>
 				</div>
 
