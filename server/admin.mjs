@@ -72,8 +72,9 @@ function liste() {
 	console.log("\nKonten:\n");
 	for (const k of konten) {
 		const m = merkmale(k.id);
+		const name = k.display_name && k.display_name !== k.id ? k.display_name : "–";
 		console.log(
-			`  ${k.is_admin ? "[Verwalter]" : "[         ]"}  ${k.display_name.padEnd(20)}  ${k.id}`
+			`  ${k.is_admin ? "[Verwalter]" : "[         ]"}  ${name.padEnd(20)}  ID: ${k.id}`
 		);
 		console.log(
 			`                 seit ${datum(k.created_at)}   Geräte: ${m.geraete}   Datensätze: ${m.datensaetze}`

@@ -43,6 +43,23 @@ export const GET: RequestHandler = ({ locals }) => {
 	});
 };
 
+/** Profildaten aktualisieren (z.B. Anzeigename aus den Einstellungen). */
+export const PATCH: RequestHandler = async ({ locals, request }) => {
+	if (!locals.userId) error(401, "Nicht angemeldet");
+	const user = locals.db.select().from(users).where(eq(users.id, locals.userId)).get();
+	if (!user) error(401, "Nicht angemeldet");
+
+	const body = await request.json().catch(() => null);
+	const rawName = typeof body?.displayName === "string" ? body.displayName.trim() : undefined;
+	if (rawName !== undefined) {
+		const displayName = rawName.slice(0, 64) || user.id;
+		locals.db.update(users).set({ displayName }).where(eq(users.id, user.id)).run();
+		return json({ ok: true, displayName });
+	}
+
+	return json({ ok: true, displayName: user.displayName });
+};
+
 /** Das Konto aufloesen. */
 export const DELETE: RequestHandler = async ({ locals, cookies, request }) => {
 	if (!locals.userId) error(401, "Nicht angemeldet");

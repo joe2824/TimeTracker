@@ -182,6 +182,18 @@
 						</Button>
 					</div>
 				{/if}
+			{:else}
+				<div class="border-border/60 bg-muted/40 text-muted-foreground flex items-center justify-between rounded-lg border p-3 text-sm">
+					<div class="flex items-start gap-2">
+						<ShieldCheckIcon class="text-muted-foreground mt-0.5 size-5 shrink-0" />
+						<div>
+							<p class="text-foreground font-medium">Registrierung über individuelle Einladungscodes</p>
+							<p class="text-xs opacity-90">
+								Statische .env-Codes sind nicht aktiv oder nicht hinterlegt. Neue Konten können sich nur über die unten ausgestellten Einladungscodes registrieren.
+							</p>
+						</div>
+					</div>
+				</div>
 			{/if}
 
 			{#if frisch}

@@ -126,6 +126,18 @@ describe("Zugang", () => {
 		expect((await r.json()).displayName).toBe("Anna");
 	});
 
+	it("laesst den Anzeigenamen per PATCH /api/me aktualisieren", async () => {
+		const r = await api(annaToken, "/api/me", {
+			method: "PATCH",
+			body: JSON.stringify({ displayName: "Anna Neu" })
+		});
+		expect(r.status).toBe(200);
+		expect((await r.json()).displayName).toBe("Anna Neu");
+
+		const me = await (await api(annaToken, "/api/me")).json();
+		expect(me.displayName).toBe("Anna Neu");
+	});
+
 	it("weist ein widerrufenes Geraet ab", async () => {
 		const me = await (await api(annaToken, "/api/me")).json();
 		const deviceId = me.devices[0].id;

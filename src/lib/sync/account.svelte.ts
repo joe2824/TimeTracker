@@ -251,6 +251,7 @@ class AccountState {
 			}
 			// Der Bestand kann sich geaendert haben - die Ansichten haengen daran.
 			await app.reload();
+			void this.accountInfo().catch(() => {});
 			// Und das Tray-Fenster liest dieselben Dateien, bekommt davon aber
 			// nichts mit: es haelt seinen eigenen Zustand.
 			if (ergebnis && ergebnis.pulled > 0) void notifyDataChanged();
@@ -585,12 +586,35 @@ class AccountState {
 		void this.abgleichMitNachlese();
 	}
 
-	/** Nachsehen, was am Konto haengt - vor allem, wie viele Geraete. */
+	/** Nachsehen, was am Konto haengt - vor allem, wie viele Geraete und die Verwalterrolle. */
 	async accountInfo(): Promise<AccountInfo | null> {
 		if (!this.#api) return null;
 		const info = await this.#api.me();
 		this.isAdmin = info.isAdmin;
+		if (info.displayName && info.displayName !== info.userId) {
+			this.name = info.displayName;
+		}
+		// Falls lokal ein Name aus "Bericht & E-Mail" hinterlegt ist, der Server ihn aber noch nicht hat:
+		const localName = app.settings.senderName.trim();
+		if (localName && localName !== info.displayName && (info.displayName === info.userId || !info.displayName)) {
+			void this.updateDisplayName(localName);
+		}
 		return info;
+	}
+
+	/** Den Anzeigenamen auf dem Server und lokal aktualisieren. */
+	async updateDisplayName(name: string): Promise<void> {
+		if (!this.#api || !this.linked) return;
+		const trimmed = name.trim();
+		if (!trimmed) return;
+		try {
+			const res = await this.#api.updateMe({ displayName: trimmed });
+			this.name = res.displayName;
+			const info = await loadDevice();
+			if (info) await saveDevice({ ...info, accountName: res.displayName });
+		} catch (e) {
+			logWarn("Anzeigename konnte nicht aktualisiert werden", e);
+		}
 	}
 
 	// ---------- Passkeys ----------

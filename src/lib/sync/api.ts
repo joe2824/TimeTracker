@@ -159,6 +159,13 @@ export class Api {
 		return this.#call<AccountInfo>("/api/me");
 	}
 
+	updateMe(data: { displayName?: string }): Promise<{ ok: boolean; displayName: string }> {
+		return this.#call<{ ok: boolean; displayName: string }>("/api/me", {
+			method: "PATCH",
+			body: JSON.stringify(data)
+		});
+	}
+
 	logout(): Promise<{ ok: boolean }> {
 		return this.#call("/api/auth/logout", { method: "POST" });
 	}

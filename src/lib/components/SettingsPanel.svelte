@@ -46,8 +46,13 @@
 	import AdminPanel from "$lib/components/AdminPanel.svelte";
 	import PasskeyPanel from "$lib/components/PasskeyPanel.svelte";
 	import LogPanel from "$lib/components/LogPanel.svelte";
+	import { account } from "$lib/sync/account.svelte";
 
 	const REPO_URL = "https://github.com/joe2824/TimeTracker";
+
+	onMount(() => {
+		void account.accountInfo().catch(() => {});
+	});
 
 	/** Rundungsstufen des Berichts: Wert (Stunden) -> Beschriftung. */
 	const ROUNDINGS: Record<string, string> = {
@@ -190,6 +195,9 @@
 	async function saveReport() {
 		await save(REPORT_KEYS);
 		savedReport = Date.now();
+		if (form.senderName.trim()) {
+			void account.updateDisplayName(form.senderName.trim());
+		}
 	}
 
 	async function saveErrorReports() {
