@@ -24,6 +24,8 @@
 	import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
 	import Trash2Icon from "@lucide/svelte/icons/trash-2";
 	import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
+	import EyeIcon from "@lucide/svelte/icons/eye";
+	import EyeOffIcon from "@lucide/svelte/icons/eye-off";
 	import { Skeleton } from "$lib/components/ui/skeleton";
 
 	// ---------- State ----------
@@ -247,9 +249,34 @@
 		};
 	}
 
-	const openInvites = $derived(
-		invites.filter((i) => !i.usedAt && !i.revokedAt && (!i.expiresAt || i.expiresAt > Date.now()))
-	);
+	// Benutzte/inaktive Einladungen standardmäßig ausblenden (kann umgeschaltet werden)
+	let showUsedInvites = $state(false);
+
+	function isInviteOpen(i: Invite): boolean {
+		return !i.usedAt && !i.revokedAt && (!i.expiresAt || i.expiresAt > Date.now());
+	}
+
+	const openInvites = $derived(invites.filter(isInviteOpen));
+	const usedInvites = $derived(invites.filter((i) => !isInviteOpen(i)));
+
+	const sortedAndFilteredInvites = $derived.by(() => {
+		// 1. Offene Einladungen (neueste zuerst nach Erstellung)
+		const openSorted = [...openInvites].sort((a, b) => b.createdAt - a.createdAt);
+
+		// Wenn benutzte ausgeblendet sind: nur die offenen anzeigen
+		if (!showUsedInvites) {
+			return openSorted;
+		}
+
+		// 2. Benutzte / inaktive Einladungen (nach Verwendungs-/Widerrufszeit bzw. Erstellung absteigend)
+		const usedSorted = [...usedInvites].sort((a, b) => {
+			const timeA = a.usedAt ?? a.revokedAt ?? a.expiresAt ?? a.createdAt;
+			const timeB = b.usedAt ?? b.revokedAt ?? b.expiresAt ?? b.createdAt;
+			return timeB - timeA;
+		});
+
+		return [...openSorted, ...usedSorted];
+	});
 </script>
 
 {#if account.isAdmin}
@@ -530,13 +557,30 @@
 
 				<!-- Liste der Einladungen -->
 				<div class="space-y-2 pt-1">
-					<div class="flex items-center justify-between">
+					<div class="flex flex-wrap items-center justify-between gap-2">
 						<Label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
 							Ausgestellte Einladungen ({invites.length})
 							{#if openInvites.length > 0}
 								<span class="text-emerald-600 dark:text-emerald-400 font-normal"> · {openInvites.length} offen</span>
 							{/if}
 						</Label>
+
+						{#if usedInvites.length > 0}
+							<Button
+								variant="ghost"
+								size="sm"
+								class="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+								onclick={() => (showUsedInvites = !showUsedInvites)}
+							>
+								{#if showUsedInvites}
+									<EyeOffIcon class="size-3.5" />
+									Benutzte ausblenden ({usedInvites.length})
+								{:else}
+									<EyeIcon class="size-3.5" />
+									Benutzte anzeigen ({usedInvites.length})
+								{/if}
+							</Button>
+						{/if}
 					</div>
 
 					{#if !isLoaded}
@@ -558,9 +602,23 @@
 						<div class="rounded-lg border bg-card p-6 text-center text-sm text-muted-foreground">
 							Noch keine Einladungen ausgestellt.
 						</div>
+					{:else if sortedAndFilteredInvites.length === 0}
+						<div class="rounded-lg border bg-card p-6 text-center text-sm text-muted-foreground space-y-2">
+							<p>Keine offenen Einladungen vorhanden.</p>
+							<p class="text-xs opacity-80">{usedInvites.length} genutzte oder abgelaufene Einladungen sind ausgeblendet.</p>
+							<Button
+								variant="outline"
+								size="sm"
+								class="gap-1.5 text-xs mt-1"
+								onclick={() => (showUsedInvites = true)}
+							>
+								<EyeIcon class="size-3.5" />
+								Benutzte Einladungen einblenden
+							</Button>
+						</div>
 					{:else}
 						<div class="divide-y rounded-lg border bg-card">
-							{#each invites as i (i.code)}
+							{#each sortedAndFilteredInvites as i (i.code)}
 								{@const status = getInviteStatus(i)}
 								<div class="flex flex-wrap items-center justify-between gap-3 p-3 text-sm">
 									<div class="min-w-0">
