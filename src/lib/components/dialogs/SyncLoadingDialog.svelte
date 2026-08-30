@@ -60,7 +60,7 @@
 				<p id="sync-modal-title" class="text-base font-semibold">Daten werden synchronisiert</p>
 				<p class="text-muted-foreground text-sm">
 					{pulled}
-					{pulled === 1 ? "Eintrag" : "Eintraege"} geladen …
+					{pulled === 1 ? "Eintrag" : "Einträge"} geladen …
 				</p>
 			</div>
 		</div>

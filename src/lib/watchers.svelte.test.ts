@@ -27,7 +27,8 @@ const meldungen = vi.hoisted(() => ({ send: vi.fn() }));
 // in keine der beiden Aeste.
 vi.mock("./platform/notify", () => ({
 	notify: meldungen.send,
-	ensureNotificationPermission: async () => true
+	ensureNotificationPermission: async () => true,
+	installNotificationClickListener: async () => () => {}
 }));
 // Die Berechtigung ist hier nicht der Gegenstand: immer erteilt.
 vi.mock("./reminders", () => ({ ensureNotificationPermission: async () => true }));

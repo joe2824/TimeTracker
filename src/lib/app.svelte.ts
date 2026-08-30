@@ -1186,7 +1186,14 @@ class AppState {
 		}
 
 		// Alle bisher noch offenen Einträge verlässlich schließen, bevor der neue startet.
+		// Einträge, die planBackdate bereits in truncate/remove erfasst hat, überspringen –
+		// sonst wird endTs zweimal gesetzt (einmal oben, einmal hier).
+		const schonErfasst = new Set([
+			...plan.truncate.map((t) => t.entry.id),
+			...plan.remove.map((r) => r.id)
+		]);
 		for (const open of this.#openEntries()) {
+			if (schonErfasst.has(open.id)) continue;
 			const parts = splitAtMidnight(open.startTs, start);
 			open.endTs = parts[0].endTs;
 			for (const p of parts.slice(1)) followUps.push({ from: open, ...p });
