@@ -28,12 +28,19 @@
 					<RefreshCwIcon class="h-7 w-7 animate-spin" />
 				</div>
 
-				<div class="space-y-1.5 text-center">
-					<p id="sync-modal-title" class="text-base font-semibold">Daten werden synchronisiert</p>
-					<p class="text-muted-foreground text-sm">
-						{pulled}
-						{pulled === 1 ? "Eintrag" : "Einträge"} geladen …
-					</p>
+				<div class="w-full space-y-3 text-center">
+					<div class="space-y-1">
+						<p id="sync-modal-title" class="text-base font-semibold">Daten werden synchronisiert</p>
+						<p class="text-muted-foreground text-sm">
+							{pulled}
+							{pulled === 1 ? "Eintrag" : "Einträge"} geladen …
+						</p>
+					</div>
+
+					<!-- Animierter Ladebalken -->
+					<div class="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+						<div class="animate-sync-bar h-full w-2/5 rounded-full bg-primary"></div>
+					</div>
 				</div>
 			{:else}
 				<div
@@ -42,19 +49,43 @@
 					<CheckIcon class="h-7 w-7" />
 				</div>
 
-				<div class="space-y-1.5 text-center">
-					<p
-						id="sync-modal-title"
-						class="text-base font-semibold text-emerald-600 dark:text-emerald-400"
-					>
-						Synchronisiert
-					</p>
-					<p class="text-muted-foreground text-sm">
-						{pulled}
-						{pulled === 1 ? "Eintrag" : "Einträge"} erfolgreich geladen.
-					</p>
+				<div class="w-full space-y-3 text-center">
+					<div class="space-y-1">
+						<p
+							id="sync-modal-title"
+							class="text-base font-semibold text-emerald-600 dark:text-emerald-400"
+						>
+							Synchronisiert
+						</p>
+						<p class="text-muted-foreground text-sm">
+							{pulled}
+							{pulled === 1 ? "Eintrag" : "Einträge"} erfolgreich geladen.
+						</p>
+					</div>
+
+					<!-- Vollständiger Ladebalken -->
+					<div class="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+						<div class="h-full w-full rounded-full bg-emerald-500 transition-all duration-300"></div>
+					</div>
 				</div>
 			{/if}
 		</div>
 	</div>
 {/if}
+
+<style>
+	@keyframes sync-bar-anim {
+		0% {
+			transform: translateX(-100%);
+		}
+		50% {
+			transform: translateX(100%);
+		}
+		100% {
+			transform: translateX(250%);
+		}
+	}
+	.animate-sync-bar {
+		animation: sync-bar-anim 1.4s ease-in-out infinite;
+	}
+</style>
