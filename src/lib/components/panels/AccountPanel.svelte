@@ -58,7 +58,15 @@
 		if (account.state === "fehler") return { text: "Getrennt", dot: "bg-destructive" };
 		if (account.phase === "offline") return { text: "Server nicht erreichbar", dot: "bg-amber-500" };
 		if (account.phase === "fehler") return { text: "Server nicht erreichbar", dot: "bg-destructive" };
-		if (account.phase === "laeuft") return { text: "Gleicht ab…", dot: "bg-emerald-500" };
+		if (account.phase === "laeuft") {
+			if (account.syncProgress && account.syncProgress.pulled > 0) {
+				return { text: `Lade Daten… (${account.syncProgress.pulled})`, dot: "bg-blue-500" };
+			}
+			if (account.syncProgress && account.syncProgress.pushed > 0) {
+				return { text: `Sende Daten… (${account.syncProgress.pushed})`, dot: "bg-blue-500" };
+			}
+			return { text: "Gleicht ab…", dot: "bg-emerald-500" };
+		}
 		return { text: "Verbunden", dot: "bg-emerald-500" };
 	});
 
@@ -316,7 +324,13 @@
 					onclick={() => account.syncNow()}
 				>
 					<RefreshCwIcon class="size-3.5 {account.phase === 'laeuft' ? 'animate-spin' : ''}" />
-					{account.phase === "laeuft" ? "Gleicht ab…" : "Jetzt abgleichen"}
+					{account.phase === "laeuft"
+						? account.syncProgress?.pulled
+							? `Lade (${account.syncProgress.pulled})…`
+							: account.syncProgress?.pushed
+								? `Sende (${account.syncProgress.pushed})…`
+								: "Gleicht ab…"
+						: "Jetzt abgleichen"}
 				</Button>
 			{:else if account.state === "fehler"}
 				<Button

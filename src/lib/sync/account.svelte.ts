@@ -97,6 +97,8 @@ class AccountState {
 	 * Ein Kopplungscode, der ueber einen "timetracker://"-Link hereinkam.
 	 */
 	pairCodeFromLink = $state<string>("");
+	/** Fortschritt des aktuellen Synchronisationsvorgangs (z.B. wie viele Datensätze geladen wurden). */
+	syncProgress = $state<{ phase: "idle" | "pulling" | "pushing"; pulled: number; pushed: number } | null>(null);
 	/** Ob die Initialisierung des Kontos (Lesen lokaler Zugangsdaten) abgeschlossen ist. */
 	ready = $state<boolean>(false);
 
@@ -209,6 +211,9 @@ class AccountState {
 				saveActivities,
 				settings: loadSettings,
 				saveSettings
+			},
+			onProgress: (p) => {
+				this.syncProgress = p.phase === "idle" ? null : p;
 			}
 		});
 		this.#engine.setMonthLister(listEntryMonths);

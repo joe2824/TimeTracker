@@ -77,6 +77,12 @@ function contentOf<T extends { updatedAt?: number; rev?: number; deviceId?: stri
 	return rest;
 }
 
+export interface SyncProgress {
+	phase: "idle" | "pulling" | "pushing";
+	pulled: number;
+	pushed: number;
+}
+
 export class SyncEngine {
 	#api: Api;
 	#key: CryptoKey;
@@ -84,6 +90,7 @@ export class SyncEngine {
 	#deviceId: string;
 	#state: SyncState;
 	#saveState: (s: SyncState) => Promise<void>;
+	#onProgress?: (p: SyncProgress) => void;
 	/** Laeuft gerade ein Durchgang? Zwei gleichzeitig wuerden sich ins Gehege kommen. */
 	#running = false;
 	/** Kam waehrend eines Durchgangs eine Anforderung? Dann gleich noch einmal. */
@@ -98,6 +105,7 @@ export class SyncEngine {
 		deviceId: string;
 		state: SyncState;
 		saveState: (s: SyncState) => Promise<void>;
+		onProgress?: (p: SyncProgress) => void;
 	}) {
 		this.#api = opts.api;
 		this.#key = opts.key;
@@ -105,6 +113,7 @@ export class SyncEngine {
 		this.#deviceId = opts.deviceId;
 		this.#state = opts.state;
 		this.#saveState = opts.saveState;
+		this.#onProgress = opts.onProgress;
 	}
 
 	get seq(): number {
@@ -134,6 +143,7 @@ export class SyncEngine {
 		} finally {
 			this.#running = false;
 			this.#again = false;
+			this.#onProgress?.({ phase: "idle", pulled: 0, pushed: 0 });
 		}
 	}
 
@@ -141,7 +151,7 @@ export class SyncEngine {
 		// Die Monatsliste gilt je Durchgang - siehe #knownMonths.
 		this.#months = null;
 		const hoch = await this.#pushAll();
-		const runter = await this.#pullAll();
+		const runter = await this.#pullAll(hoch.pushed);
 		return {
 			pushed: hoch.pushed,
 			pulled: hoch.pulled + runter.pulled,
@@ -170,8 +180,10 @@ export class SyncEngine {
 				continue;
 			}
 
+			this.#onProgress?.({ phase: "pushing", pulled, pushed: gesamt });
 			const antwort = await this.#api.push(records);
 			gesamt += antwort.accepted.length;
+			this.#onProgress?.({ phase: "pushing", pulled, pushed: gesamt });
 
 			// Nur das Angenommene abhaken. Was im Konflikt steckt, bleibt offen und
 			// geht in die naechste Runde - dann auf dem inzwischen bekannten Stand.
@@ -193,7 +205,7 @@ export class SyncEngine {
 				// Die Konflikte aufloesen heisst: den Serverstand holen und
 				// zusammenfuehren. Danach steht die Aenderung auf der richtigen
 				// Fassung und kommt in der naechsten Runde durch.
-				const aufgeloest = await this.#pullAll();
+				const aufgeloest = await this.#pullAll(gesamt);
 				pulled += aufgeloest.pulled;
 				lostEdits += aufgeloest.lostEdits;
 				continue;
@@ -278,14 +290,16 @@ export class SyncEngine {
 
 	// ---------- Herunterladen ----------
 
-	async #pullAll(): Promise<{ pulled: number; lostEdits: number }> {
+	async #pullAll(pushed = 0): Promise<{ pulled: number; lostEdits: number }> {
 		let pulled = 0;
 		let lostEdits = 0;
+		this.#onProgress?.({ phase: "pulling", pulled, pushed });
 		for (;;) {
 			const seite = await this.#api.pull(this.#state.seq, { limit: BATCH });
 			if (seite.records.length > 0) {
-				const r = await this.#apply(seite.records);
 				pulled += seite.records.length;
+				this.#onProgress?.({ phase: "pulling", pulled, pushed });
+				const r = await this.#apply(seite.records);
 				lostEdits += r.lostEdits;
 			}
 			this.#state = { seq: seite.nextSeq };
