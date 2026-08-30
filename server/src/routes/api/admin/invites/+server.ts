@@ -4,9 +4,11 @@ import type { RequestHandler } from "./$types";
 import {
 	envInvitesDeaktiviert,
 	erstelleInvite,
+	istRegistrierungOffen,
 	istVerwalter,
 	listeInvites,
 	setzeEnvInvitesDeaktiviert,
+	setzeRegistrierungOffen,
 	zieheInviteZurueck
 } from "$lib/server/invites";
 import { INVITE_CODES } from "$lib/server/config";
@@ -23,7 +25,8 @@ export const GET: RequestHandler = ({ locals }) => {
 	return json({
 		invites: listeInvites(locals.db),
 		envInvitesConfigured: INVITE_CODES.length > 0,
-		envInvitesActive: INVITE_CODES.length > 0 && !envInvitesDeaktiviert(locals.db)
+		envInvitesActive: INVITE_CODES.length > 0 && !envInvitesDeaktiviert(locals.db),
+		openRegistration: istRegistrierungOffen(locals.db)
 	});
 };
 
@@ -46,11 +49,16 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 export const PATCH: RequestHandler = async ({ locals, request }) => {
 	nurVerwalter(locals);
 	const body = await request.json().catch(() => null);
-	const active = Boolean(body?.active);
-	setzeEnvInvitesDeaktiviert(locals.db, !active);
+	if (typeof body?.openRegistration === "boolean") {
+		setzeRegistrierungOffen(locals.db, body.openRegistration);
+	}
+	if (typeof body?.active === "boolean") {
+		setzeEnvInvitesDeaktiviert(locals.db, !body.active);
+	}
 	return json({
 		ok: true,
-		envInvitesActive: INVITE_CODES.length > 0 && active
+		envInvitesActive: INVITE_CODES.length > 0 && !envInvitesDeaktiviert(locals.db),
+		openRegistration: istRegistrierungOffen(locals.db)
 	});
 };
 

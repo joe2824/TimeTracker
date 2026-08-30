@@ -2,6 +2,10 @@ import { defineConfig } from "vite";
 import { sveltekit } from "@sveltejs/kit/vite";
 import tailwindcss from "@tailwindcss/vite";
 
+import { readFileSync } from "node:fs";
+
+const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf-8"));
+
 // process ist ein Node-Global – seit @types/node im Projekt liegt, ist es typisiert.
 const host = process.env.TAURI_DEV_HOST;
 
@@ -16,6 +20,7 @@ export default defineConfig(async ({ command }) => ({
   // landen. Diese eine Adresse ist kein Geheimnis - sie hier ausdruecklich
   // einzusetzen ist genauer, als den Praefix-Schutz fuer alle aufzuweichen.
   define: {
+    __APP_VERSION__: JSON.stringify(pkg.version ?? ""),
     // Im Entwicklungsmodus zeigt die Vorgabe auf den Server aus docker-compose:
     // dort laeuft er beim Entwickeln, und ihn jedes Mal von Hand einzutippen ist
     // ein Schritt, den niemand braucht. DEFAULT_SERVER sticht das aus, und

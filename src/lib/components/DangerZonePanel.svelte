@@ -143,8 +143,18 @@
 	</Card.Root>
 
 	<!-- Modal 1: Lokal entkoppeln -->
-	<Dialog.Root open={loesenModalOffen} onOpenChange={(o) => !o && (loesenModalOffen = false)}>
-		<Dialog.Content class="sm:max-w-md">
+	<Dialog.Root
+		open={loesenModalOffen}
+		onOpenChange={(o) => {
+			if (!o && !laeuft) loesenModalOffen = false;
+		}}
+	>
+		<Dialog.Content
+			class="sm:max-w-md"
+			showCloseButton={!laeuft}
+			interactOutsideBehavior={laeuft ? "ignore" : "close"}
+			escapeKeydownBehavior={laeuft ? "ignore" : "close"}
+		>
 			<Dialog.Header>
 				<Dialog.Title>Dieses Gerät lokal entkoppeln?</Dialog.Title>
 				<Dialog.Description class="space-y-2 pt-2 text-left">
@@ -170,8 +180,18 @@
 	</Dialog.Root>
 
 	<!-- Modal 2: Gerätezugang auf Server widerrufen -->
-	<Dialog.Root open={revokeModalOffen} onOpenChange={(o) => !o && (revokeModalOffen = false)}>
-		<Dialog.Content class="sm:max-w-md">
+	<Dialog.Root
+		open={revokeModalOffen}
+		onOpenChange={(o) => {
+			if (!o && !laeuft) revokeModalOffen = false;
+		}}
+	>
+		<Dialog.Content
+			class="sm:max-w-md"
+			showCloseButton={!laeuft}
+			interactOutsideBehavior={laeuft ? "ignore" : "close"}
+			escapeKeydownBehavior={laeuft ? "ignore" : "close"}
+		>
 			<Dialog.Header>
 				<Dialog.Title>Gerätezugang auf dem Server widerrufen?</Dialog.Title>
 				<Dialog.Description class="space-y-2 pt-2 text-left">
@@ -197,8 +217,18 @@
 	</Dialog.Root>
 
 	<!-- Modal 3: Server-Konto endgültig auflösen -->
-	<Dialog.Root open={aufloesenModalOffen} onOpenChange={(o) => !o && (aufloesenModalOffen = false)}>
-		<Dialog.Content class="sm:max-w-md">
+	<Dialog.Root
+		open={aufloesenModalOffen}
+		onOpenChange={(o) => {
+			if (!o && !laeuft) aufloesenModalOffen = false;
+		}}
+	>
+		<Dialog.Content
+			class="sm:max-w-md"
+			showCloseButton={!laeuft}
+			interactOutsideBehavior={laeuft ? "ignore" : "close"}
+			escapeKeydownBehavior={laeuft ? "ignore" : "close"}
+		>
 			<Dialog.Header>
 				<Dialog.Title class="text-destructive flex items-center gap-2">
 					<TriangleAlertIcon class="size-5 shrink-0" />

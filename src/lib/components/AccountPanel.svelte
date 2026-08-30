@@ -20,6 +20,11 @@
 	import { anlegenLink } from "$lib/invite";
 	import { openExternal } from "$lib/platform/open";
 	import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
+	import CloudIcon from "@lucide/svelte/icons/cloud";
+	import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
+	import LaptopIcon from "@lucide/svelte/icons/laptop";
+	import SmartphoneIcon from "@lucide/svelte/icons/smartphone";
+	import ShieldAlertIcon from "@lucide/svelte/icons/shield-alert";
 
 	/** Text zu einem geworfenen Wert, sonst der eigene Standard. */
 	const fehlertext = (e: unknown, standard: string) =>
@@ -251,9 +256,16 @@
 
 <Card.Root>
 	<Card.Header>
-		<Card.Title>Konto & Synchronisation</Card.Title>
+		<div class="flex items-center gap-2">
+			<CloudIcon class="size-5 text-primary shrink-0" />
+			<Card.Title>Synchronisation & Geräte</Card.Title>
+		</div>
 		<Card.Description>
-			Optional. Ohne verknüpftes Konto bleibt alles auf diesem Rechner – so wie bisher.
+			{#if account.linked}
+				Ende-zu-Ende verschlüsselte Synchronisation mit deinem Server.
+			{:else}
+				Optional. Ohne verknüpftes Konto bleibt alles auf diesem Rechner.
+			{/if}
 		</Card.Description>
 	</Card.Header>
 
@@ -262,7 +274,7 @@
 			<!-- Kein Wegklick-Button, sondern ein Haekchen: ohne zweites Geraet oder
 			     Passkey sind diese 24 Woerter der einzige Weg zu den Daten - auch der
 			     Betreiber kann nichts entschluesseln. -->
-			<div class="border-primary/40 space-y-3 rounded-lg border p-4">
+			<div class="border-primary/40 space-y-3 rounded-lg border bg-primary/5 p-4">
 				<div>
 					<p class="font-medium">Deine Wiederherstellungs-Phrase</p>
 					<p class="text-muted-foreground text-sm">
@@ -293,89 +305,128 @@
 			</div>
 		{/if}
 
-		<!-- Nur Verknuepfung + Status; wann zuletzt abgeglichen wurde, steht schon oben in der Kopfzeile. -->
-		<div class="bg-muted/40 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-lg px-3 py-2.5">
-			<div class="flex min-w-0 items-center gap-2 text-sm">
-				<span class="size-2 shrink-0 rounded-full {zustand.punkt}"></span>
-				<div class="min-w-0">
-					<div class="font-medium">{zustand.text}</div>
-					{#if account.linked && account.serverUrl}
-						<div class="text-muted-foreground truncate text-xs">{account.serverUrl}</div>
+		<!-- Status-Box -->
+		<div class="flex flex-col gap-3 rounded-lg border bg-muted/30 p-3.5 sm:flex-row sm:items-center sm:justify-between">
+			<div class="flex items-center gap-3 min-w-0">
+				<div class="relative flex size-3 shrink-0 items-center justify-center">
+					{#if account.linked && (zustand.text === "Verbunden" || zustand.text === "Gleicht ab…")}
+						<span class="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
 					{/if}
-					{#if account.linked && account.pending > 0}
-						<div class="text-muted-foreground text-xs">
-							{account.pending} Änderung{account.pending === 1 ? "" : "en"} noch nicht übertragen.
-						</div>
+					<span class="relative inline-flex size-2.5 rounded-full {zustand.punkt}"></span>
+				</div>
+				<div class="min-w-0">
+					<div class="flex flex-wrap items-center gap-2">
+						<span class="font-medium text-sm text-foreground">{zustand.text}</span>
+						{#if account.linked && account.pending > 0}
+							<Badge variant="outline" class="text-xs font-normal">
+								{account.pending} {account.pending === 1 ? "Änderung ausstehend" : "Änderungen ausstehend"}
+							</Badge>
+						{/if}
+					</div>
+					{#if account.linked && account.serverUrl}
+						<p class="text-muted-foreground truncate text-xs font-mono mt-0.5">{account.serverUrl}</p>
 					{/if}
 				</div>
 			</div>
 			{#if account.linked}
-				<Button variant="outline" size="sm" onclick={() => account.syncNow()}>Jetzt abgleichen</Button>
+				<Button
+					variant="outline"
+					size="sm"
+					class="shrink-0 self-start sm:self-center gap-1.5"
+					disabled={account.phase === "laeuft"}
+					onclick={() => account.syncNow()}
+				>
+					<RefreshCwIcon class="size-3.5 {account.phase === 'laeuft' ? 'animate-spin' : ''}" />
+					{account.phase === "laeuft" ? "Gleicht ab…" : "Jetzt abgleichen"}
+				</Button>
 			{/if}
 		</div>
 
 		{#if account.linked}
-
 			{#if !account.secretsProtected}
-				<p class="text-muted-foreground border-t pt-3 text-xs">
-					Schlüssel und Zugang liegen hier <strong>ungeschützt</strong> im Datenordner – das
-					Betriebssystem bietet keine geschützte Ablage.
-				</p>
-			{/if}
-
-			{#if account.lostEdits > 0}
-				<p class="border-t pt-3 text-xs text-amber-700 dark:text-amber-300">
-					{account.lostEdits} eigene Änderung{account.lostEdits === 1 ? "" : "en"} wurde{account.lostEdits === 1 ? "" : "n"}
-					von einer neueren Fassung eines anderen Geräts überschrieben.
-				</p>
-			{/if}
-
-			{#if geraeteGeladen && geraete.length > 0}
-				<div class="space-y-1 border-t pt-3">
-					<p class="text-sm font-medium">Verknüpfte Geräte</p>
-					{#each geraete as g (g.id)}
-						<div class="flex items-center justify-between gap-2 border-b py-2 text-sm last:border-0">
-							<div class="min-w-0">
-								<p class="flex items-center gap-1.5 truncate font-medium">
-									<span class="truncate">{g.label}</span>
-									{#if g.id === account.thisDeviceId}
-										<Badge variant="secondary">dieses Gerät</Badge>
-									{/if}
-								</p>
-								<p class="text-muted-foreground text-xs">
-									{g.lastSeenAt ? `zuletzt ${fmtDateHuman(g.lastSeenAt)}` : "noch nie verbunden"}
-								</p>
-							</div>
-							{#if g.id !== account.thisDeviceId}
-								<!-- Das eigene Geraet nicht: dafuer gibt es „Entkoppeln“, das auch
-								     lokal aufraeumt. Hier waere es ein Zugang, der sich selbst zusperrt. -->
-								<Button variant="ghost" size="sm" onclick={() => (trenntGeraet = g)}>Trennen</Button>
-							{/if}
-						</div>
-					{/each}
+				<div class="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200">
+					<ShieldAlertIcon class="size-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+					<div>
+						<p class="font-medium">Lokale Schlüsselablage nicht geschützt</p>
+						<p class="mt-0.5 opacity-90 leading-relaxed">
+							Schlüssel und Zugang liegen ungeschützt im Datenordner – das Betriebssystem bietet hier keine geschützte Ablage.
+						</p>
+					</div>
 				</div>
 			{/if}
 
-			<div class="space-y-2 border-t pt-3">
-				<Label for="fremdcode">Weiteres Gerät verknüpfen</Label>
-				<p class="text-muted-foreground text-xs">
-					Code vom neuen Gerät hier eintragen.
-				</p>
-				{#if capabilities.tray && account.serverUrl}
-					<!-- Nur auf dem Rechner: im Browser sitzt man schon dort, wo der Code
-					     entsteht - der Knopf zeigte dann auf die eigene Seite. -->
-					<Button variant="outline" size="sm" onclick={() => openExternal(account.serverUrl)}>
-						Im Browser öffnen
-					</Button>
-				{/if}
-				<div class="flex flex-wrap gap-2">
+			{#if account.lostEdits > 0}
+				<div class="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200">
+					<ShieldAlertIcon class="size-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+					<p>
+						{account.lostEdits} eigene {account.lostEdits === 1 ? "Änderung wurde" : "Änderungen wurden"} von einer neueren Fassung eines anderen Geräts überschrieben.
+					</p>
+				</div>
+			{/if}
+
+			{#if geraeteGeladen && geraete.length > 0}
+				<div class="space-y-2 pt-1">
+					<Label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+						Verknüpfte Geräte ({geraete.length})
+					</Label>
+					<div class="divide-y rounded-lg border bg-card">
+						{#each geraete as g (g.id)}
+							<div class="flex items-center justify-between gap-3 p-3 text-sm">
+								<div class="flex items-center gap-3 min-w-0">
+									<div class="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+										{#if g.label.toLowerCase().includes("handy") || g.label.toLowerCase().includes("phone") || g.label.toLowerCase().includes("mobile")}
+											<SmartphoneIcon class="size-4" />
+										{:else}
+											<LaptopIcon class="size-4" />
+										{/if}
+									</div>
+									<div class="min-w-0">
+										<div class="flex items-center gap-2">
+											<p class="font-medium text-foreground truncate">{g.label}</p>
+											{#if g.id === account.thisDeviceId}
+												<Badge variant="secondary" class="text-[10px] px-1.5 py-0 h-4 font-normal">dieses Gerät</Badge>
+											{/if}
+										</div>
+										<p class="text-muted-foreground text-xs">
+											{g.lastSeenAt ? `Zuletzt aktiv: ${fmtDateHuman(g.lastSeenAt)}` : "Noch nie verbunden"}
+										</p>
+									</div>
+								</div>
+								{#if g.id !== account.thisDeviceId}
+									<Button
+										variant="ghost"
+										size="sm"
+										class="shrink-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10 text-xs"
+										onclick={() => (trenntGeraet = g)}
+									>
+										Trennen
+									</Button>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/if}
+
+			<div class="space-y-2 rounded-lg border bg-muted/20 p-3.5">
+				<div>
+					<p class="font-medium text-sm text-foreground">Weiteres Gerät verknüpfen</p>
+					<p class="text-muted-foreground text-xs">
+						Auf dem neuen Gerät den Kopplungscode anzeigen lassen und hier bestätigen.
+					</p>
+				</div>
+				<div class="flex flex-wrap gap-2 pt-1">
 					<Input
 						id="fremdcode"
 						bind:value={fremderCode}
 						placeholder="ABCD-EFGH-JKLM"
 						maxlength={14}
 						class="w-52 font-mono tracking-wider uppercase"
+						onkeydown={(e) => e.key === "Enter" && fremderCode.trim() && !laeuft && bestaetigen()}
 					/>
+					<Button onclick={bestaetigen} disabled={laeuft || !fremderCode.trim()}>
+						{laeuft ? "Verknüpft…" : "Verknüpfen"}
+					</Button>
 				</div>
 			</div>
 		{:else if warten}

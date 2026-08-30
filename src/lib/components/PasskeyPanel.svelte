@@ -11,6 +11,12 @@
 	import { fmtDateHuman } from "$lib/time";
 	import { isTauri } from "$lib/platform/env";
 	import { openExternal } from "$lib/platform/open";
+	import KeyRoundIcon from "@lucide/svelte/icons/key-round";
+	import FingerprintIcon from "@lucide/svelte/icons/fingerprint";
+	import ShieldAlertIcon from "@lucide/svelte/icons/shield-alert";
+	import PencilIcon from "@lucide/svelte/icons/pencil";
+	import Trash2Icon from "@lucide/svelte/icons/trash-2";
+	import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
 
 	let liste = $state<Passkey[]>([]);
 	let geladen = $state(false);
@@ -43,9 +49,6 @@
 			if (prfAvailable) {
 				toast.success("Passkey hinzugefügt. Er öffnet die Daten allein.");
 			} else {
-				// Ehrlich sein: er meldet an, aber der Tresor braucht dann noch die
-				// Phrase oder ein entsperrtes Gerät. Wer das nicht weiss, glaubt sich
-				// abgesichert und ist es nicht.
 				toast.success(
 					"Passkey hinzugefügt. Dieses Gerät kann die Daten nicht allein entsperren – " +
 						"dafür braucht es zusätzlich die Wiederherstellungs-Phrase."
@@ -87,8 +90,6 @@
 	/** Wie viele koennen den Tresor allein oeffnen? Daran haengt die Warnung. */
 	const mitPrf = $derived(liste.filter((p) => p.hasPrf).length);
 
-	/** Gekoppelt wird in der Konto-Karte; angelegt wird der Passkey im Browser. */
-
 	async function imBrowserOeffnen() {
 		try {
 			await openExternal(account.serverUrl);
@@ -96,16 +97,17 @@
 			toast.error(e instanceof Error ? e.message : "Browser konnte nicht geöffnet werden");
 		}
 	}
-
 </script>
 
 {#if account.linked}
 	<Card.Root>
 		<Card.Header>
-			<Card.Title>Passkeys</Card.Title>
+			<div class="flex items-center gap-2">
+				<KeyRoundIcon class="size-5 text-primary shrink-0" />
+				<Card.Title>Passkeys & Authentifizierung</Card.Title>
+			</div>
 			<Card.Description>
-				Die Wege in dein Konto. Mehr als einer ist keine Bequemlichkeit, sondern die
-				Absicherung gegen den Tag, an dem ein Gerät kaputtgeht.
+				Biometrische Zugänge (Touch ID, Face ID, Windows Hello oder YubiKey) für dein Konto.
 			</Card.Description>
 		</Card.Header>
 
@@ -114,70 +116,98 @@
 				<p class="text-muted-foreground text-sm">Lädt…</p>
 			{:else}
 				{#if liste.length === 1}
-					<div class="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
-						<p class="font-medium">Nur ein Passkey.</p>
-						<p class="text-muted-foreground mt-1 text-xs">
-							Geht dieses Gerät verloren oder wird getauscht, kommst du nur noch über die
-							Wiederherstellungs-Phrase hinein. Leg jetzt einen zweiten an – auf dem Handy oder
-							einem Sicherheitsschlüssel.
-						</p>
+					<div class="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs text-amber-900 dark:text-amber-200">
+						<ShieldAlertIcon class="size-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+						<div>
+							<p class="font-semibold text-sm">Nur ein Passkey hinterlegt</p>
+							<p class="mt-0.5 opacity-90 leading-relaxed">
+								Geht dieses Gerät verloren oder wird getauscht, kommst du nur noch über die Wiederherstellungs-Phrase hinein.
+								Wir empfehlen, einen zweiten Passkey anzulegen (z. B. auf dem Smartphone oder einem Sicherheitsschlüssel).
+							</p>
+						</div>
 					</div>
 				{/if}
 
-				<div class="space-y-1">
-					{#each liste as p (p.id)}
-						<div class="flex items-center justify-between gap-2 border-b py-2 text-sm last:border-0">
-							<div class="min-w-0">
-								{#if benennt === p.id}
-									<div class="flex flex-wrap gap-1">
-										<Input bind:value={neuerName} class="h-8 w-40 sm:w-48" placeholder="z. B. Handy" />
-										<Button size="sm" onclick={() => umbenennen(p.id)}>Speichern</Button>
-										<Button variant="ghost" size="sm" onclick={() => (benennt = null)}>
-											Abbrechen
-										</Button>
+				<div class="space-y-2">
+					<Label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+						Registrierte Passkeys ({liste.length})
+					</Label>
+					<div class="divide-y rounded-lg border bg-card">
+						{#each liste as p (p.id)}
+							<div class="flex items-center justify-between gap-3 p-3 text-sm">
+								<div class="flex items-center gap-3 min-w-0">
+									<div class="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+										<FingerprintIcon class="size-4" />
 									</div>
-								{:else}
-									<p class="flex flex-wrap items-center gap-1.5 font-medium">
-										<span class="truncate">{p.label ?? "Unbenannt"}</span>
-										{#if !p.hasPrf}
-											<Badge
-												variant="outline"
-												title="Ohne die Passkey-Erweiterung PRF: die Anmeldung klappt, den Tresor öffnet dieser Passkey aber nicht von allein."
-											>
-												öffnet die Daten nicht allein
-											</Badge>
-										{/if}
-									</p>
-									<p class="text-muted-foreground text-xs">
-										angelegt {fmtDateHuman(p.createdAt)}
-										{#if p.lastUsedAt}
-											· zuletzt benutzt {fmtDateHuman(p.lastUsedAt)}
+									<div class="min-w-0">
+										{#if benennt === p.id}
+											<div class="flex items-center gap-1.5 py-0.5">
+												<Input
+													bind:value={neuerName}
+													class="h-8 w-44 sm:w-56 text-xs"
+													placeholder="z. B. Handy"
+													onkeydown={(e) => e.key === "Enter" && neuerName.trim() && umbenennen(p.id)}
+												/>
+												<Button size="sm" class="h-8 text-xs" onclick={() => umbenennen(p.id)}>Speichern</Button>
+												<Button variant="ghost" size="sm" class="h-8 text-xs" onclick={() => (benennt = null)}>
+													Abbrechen
+												</Button>
+											</div>
 										{:else}
-											· noch nie benutzt
+											<div class="flex flex-wrap items-center gap-2">
+												<p class="font-medium text-foreground truncate">{p.label ?? "Unbenannt"}</p>
+												{#if !p.hasPrf}
+													<Badge
+														variant="outline"
+														class="text-[10px] px-1.5 py-0 h-4 font-normal text-muted-foreground"
+														title="Ohne die Passkey-Erweiterung PRF: die Anmeldung klappt, den Tresor öffnet dieser Passkey aber nicht von allein."
+													>
+														ohne direkte Entschlüsselung
+													</Badge>
+												{/if}
+											</div>
+											<p class="text-muted-foreground text-xs">
+												Angelegt {fmtDateHuman(p.createdAt)}
+												{#if p.lastUsedAt}
+													· Zuletzt aktiv {fmtDateHuman(p.lastUsedAt)}
+												{:else}
+													· Noch nie benutzt
+												{/if}
+											</p>
 										{/if}
-									</p>
+									</div>
+								</div>
+
+								{#if benennt !== p.id}
+									<div class="flex shrink-0 items-center gap-1">
+										<Button
+											variant="ghost"
+											size="icon-sm"
+											class="text-muted-foreground hover:text-foreground"
+											title="Umbenennen"
+											onclick={() => {
+												benennt = p.id;
+												neuerName = p.label ?? "";
+											}}
+										>
+											<PencilIcon class="size-3.5" />
+										</Button>
+										{#if liste.length > 1}
+											<Button
+												variant="ghost"
+												size="icon-sm"
+												class="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+												title="Passkey entfernen"
+												onclick={() => (entfernt = p)}
+											>
+												<Trash2Icon class="size-3.5" />
+											</Button>
+										{/if}
+									</div>
 								{/if}
 							</div>
-
-							{#if benennt !== p.id}
-								<div class="flex shrink-0 gap-1">
-									<Button
-										variant="ghost"
-										size="sm"
-										onclick={() => {
-											benennt = p.id;
-											neuerName = p.label ?? "";
-										}}
-									>
-										Umbenennen
-									</Button>
-									{#if liste.length > 1}
-										<Button variant="ghost" size="sm" onclick={() => (entfernt = p)}>Entfernen</Button>
-									{/if}
-								</div>
-							{/if}
-						</div>
-					{/each}
+						{/each}
+					</div>
 				</div>
 
 				{#if mitPrf === 0 && liste.length > 0}
@@ -188,27 +218,44 @@
 				{/if}
 
 				{#if isTauri()}
-					<div class="space-y-2 border-t pt-3">
-						<p class="text-muted-foreground text-sm">
-							Ein Passkey lässt sich nur im Browser einrichten, nicht in dieser Anwendung.
-							Erstelle dazu dein Konto im Browser.
-						</p>
-						<Button variant="outline" size="sm" onclick={imBrowserOeffnen} disabled={!account.serverUrl}>
+					<div class="flex flex-col gap-2 rounded-lg border bg-muted/20 p-3.5 sm:flex-row sm:items-center sm:justify-between">
+						<div class="space-y-0.5">
+							<p class="font-medium text-sm text-foreground">Weiteren Passkey hinzufügen</p>
+							<p class="text-muted-foreground text-xs">
+								Passkeys werden im Web-Browser eingerichtet und direkt mit deinem Server synchronisiert.
+							</p>
+						</div>
+						<Button
+							variant="outline"
+							size="sm"
+							class="shrink-0 self-start sm:self-center gap-1.5"
+							onclick={imBrowserOeffnen}
+							disabled={!account.serverUrl}
+						>
+							<ExternalLinkIcon class="size-3.5" />
 							Im Browser öffnen
 						</Button>
 					</div>
 				{:else}
-					<div class="space-y-2 border-t pt-3">
-						<Label for="pkname">Namen für den neuen Passkey</Label>
-						<div class="flex gap-2">
-							<Input id="pkname" bind:value={name} placeholder="z. B. Handy" class="w-56" />
+					<div class="space-y-2 rounded-lg border bg-muted/20 p-3.5">
+						<div>
+							<Label for="pkname" class="font-medium text-sm text-foreground">Weiteren Passkey hinzufügen</Label>
+							<p class="text-muted-foreground text-xs">
+								Erstelle einen neuen biometrischen Passkey auf diesem Gerät.
+							</p>
+						</div>
+						<div class="flex flex-wrap gap-2 pt-1">
+							<Input
+								id="pkname"
+								bind:value={name}
+								placeholder="z. B. Touch ID"
+								class="w-56 text-sm"
+								onkeydown={(e) => e.key === "Enter" && name.trim() && !laeuft && hinzufuegen()}
+							/>
 							<Button onclick={hinzufuegen} disabled={laeuft}>
 								{laeuft ? "Wartet auf Bestätigung…" : "Passkey hinzufügen"}
 							</Button>
 						</div>
-						<p class="text-muted-foreground text-xs">
-							Am besten auf einem anderen Gerät als diesem.
-						</p>
 					</div>
 				{/if}
 			{/if}

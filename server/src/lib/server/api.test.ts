@@ -1067,6 +1067,7 @@ describe("Verwaltung", () => {
 		const get1 = await (await api(annaToken, "/api/admin/invites")).json();
 		expect(get1).toHaveProperty("envInvitesConfigured");
 		expect(get1).toHaveProperty("envInvitesActive");
+		expect(get1).toHaveProperty("openRegistration");
 
 		// Deaktivieren
 		const patch1 = await api(annaToken, "/api/admin/invites", {
@@ -1085,6 +1086,27 @@ describe("Verwaltung", () => {
 		expect(patch2.status).toBe(200);
 		const res2 = await patch2.json();
 		expect(res2.ok).toBe(true);
+	});
+
+	it("laesst offene Registrierung per PATCH aktivieren und deaktivieren", async () => {
+		zumVerwalter(ANNA);
+		// Aktivieren
+		const patch1 = await api(annaToken, "/api/admin/invites", {
+			method: "PATCH",
+			body: JSON.stringify({ openRegistration: true })
+		});
+		expect(patch1.status).toBe(200);
+		const res1 = await patch1.json();
+		expect(res1.openRegistration).toBe(true);
+
+		// Deaktivieren
+		const patch2 = await api(annaToken, "/api/admin/invites", {
+			method: "PATCH",
+			body: JSON.stringify({ openRegistration: false })
+		});
+		expect(patch2.status).toBe(200);
+		const res2 = await patch2.json();
+		expect(res2.openRegistration).toBe(false);
 	});
 });
 

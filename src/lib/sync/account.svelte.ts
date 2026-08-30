@@ -667,14 +667,22 @@ class AccountState {
 		invites: Invite[];
 		envInvitesConfigured: boolean;
 		envInvitesActive: boolean;
+		openRegistration: boolean;
 	}> {
 		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
 		const res = await this.#api.invites();
 		return {
 			invites: res.invites,
 			envInvitesConfigured: Boolean(res.envInvitesConfigured),
-			envInvitesActive: res.envInvitesActive ?? true
+			envInvitesActive: res.envInvitesActive ?? true,
+			openRegistration: Boolean(res.openRegistration)
 		};
+	}
+
+	async setOpenRegistration(open: boolean): Promise<boolean> {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		const res = await this.#api.setOpenRegistration(open);
+		return res.openRegistration;
 	}
 
 	async setEnvInvites(active: boolean): Promise<boolean> {

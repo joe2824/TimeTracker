@@ -48,6 +48,7 @@
 	import DangerZonePanel from "$lib/components/DangerZonePanel.svelte";
 	import LogPanel from "$lib/components/LogPanel.svelte";
 	import { account } from "$lib/sync/account.svelte";
+	import { APP_VERSION } from "$lib/defaults";
 
 	const REPO_URL = "https://github.com/joe2824/TimeTracker";
 
@@ -61,7 +62,7 @@
 		"0.5": "Halbe Stunde (0:30)",
 		"1": "Volle Stunde (1:00)"
 	};
-	let appVersion = $state("");
+	let appVersion = $state(APP_VERSION);
 
 	// Versteckter Dev-Modus: 10× schnell (≤3 s) aufs Logo tippen.
 	// Der Schalter selbst liegt im App-Zustand, damit er das Vorfuehren des
@@ -323,48 +324,60 @@
 		}
 	}
 
+	type Bereich = "erfassung" | "bericht" | "erinnerungen" | "konto" | "system" | "ueber";
+
+	type BereichInfo = {
+		id: Bereich;
+		titel: string;
+		icon: typeof TimerIcon;
+		hinweis: string;
+	};
+
 	// Symbol und Untertitel gehoeren zum Bereich, nicht in die Navigation: die
 	// Ueberschrift ueber den Karten zieht beides von hier.
-	const BEREICHE = [
-		{
-			id: "erfassung",
-			titel: "Zeiterfassung",
-			icon: TimerIcon,
-			hinweis: "Wie der Timer sich verhält und woraus sich ein Arbeitstag rechnet."
-		},
-		{
-			id: "bericht",
-			titel: "Bericht",
-			icon: FileTextIcon,
-			hinweis: "Empfänger, Betreff und was außer den Zeiten noch angezeigt wird."
-		},
-		{
-			id: "erinnerungen",
-			titel: "Erinnerungen",
-			icon: BellIcon,
-			hinweis: "Wann die App sich von selbst meldet."
-		},
-		{
-			id: "konto",
-			titel: "Konto",
-			icon: UserRoundIcon,
-			hinweis: "Anmeldung, Geräte und der Abgleich zwischen ihnen."
-		},
-		{
-			id: "system",
-			titel: "System",
-			icon: MonitorCogIcon,
-			hinweis: "Start mit Windows, Updates und die Daten auf diesem Gerät."
-		},
-		{
+	const BEREICHE = $derived.by(() => {
+		const list: BereichInfo[] = [
+			{
+				id: "erfassung",
+				titel: "Zeiterfassung",
+				icon: TimerIcon,
+				hinweis: "Wie der Timer sich verhält und woraus sich ein Arbeitstag rechnet."
+			},
+			{
+				id: "bericht",
+				titel: "Bericht",
+				icon: FileTextIcon,
+				hinweis: "Empfänger, Betreff und was außer den Zeiten noch angezeigt wird."
+			},
+			{
+				id: "erinnerungen",
+				titel: "Erinnerungen",
+				icon: BellIcon,
+				hinweis: "Wann die App sich von selbst meldet."
+			},
+			{
+				id: "konto",
+				titel: "Konto",
+				icon: UserRoundIcon,
+				hinweis: "Anmeldung, Geräte und der Abgleich zwischen ihnen."
+			}
+		];
+		if (capabilities.autostart || capabilities.updater || isTauri()) {
+			list.push({
+				id: "system",
+				titel: "System",
+				icon: MonitorCogIcon,
+				hinweis: "Start mit Windows, Updates und die Daten auf diesem Gerät."
+			});
+		}
+		list.push({
 			id: "ueber",
 			titel: "Über",
 			icon: InfoIcon,
 			hinweis: "Version, Datenschutz und Protokoll."
-		}
-	] as const;
-
-	type Bereich = (typeof BEREICHE)[number]["id"];
+		});
+		return list;
+	});
 
 	let bereich = $state<Bereich>("erfassung");
 

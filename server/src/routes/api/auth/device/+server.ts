@@ -1,8 +1,7 @@
 // Ein Konto von einem GERAET aus anlegen - ohne Passkey.
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
-import { REGISTRATION_OPEN } from "$lib/server/config";
-import { entwerteCode, gueltigerCode } from "$lib/server/invites";
+import { entwerteCode, gueltigerCode, istRegistrierungOffen } from "$lib/server/invites";
 import { createDevice } from "$lib/server/auth";
 import { createUser } from "$lib/server/webauthn";
 
@@ -17,7 +16,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	if (gewuenscht.length > 64) error(400, "Anzeigename ist zu lang");
 	const displayName = gewuenscht || userId;
 	const code = String(body?.invite ?? "").trim();
-	if (!REGISTRATION_OPEN && !gueltigerCode(locals.db, code)) {
+	if (!istRegistrierungOffen(locals.db) && !gueltigerCode(locals.db, code)) {
 		error(403, "Einladungscode ungültig");
 	}
 
@@ -28,7 +27,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	// dem man sich stattdessen anmelden koennte.
 	const geraet = locals.db.transaction((tx) => {
 		createUser(tx, userId, displayName, email);
-		if (!REGISTRATION_OPEN) entwerteCode(tx, code, userId);
+		if (!istRegistrierungOffen(locals.db) && code) entwerteCode(tx, code, userId);
 		return createDevice(tx, userId, label);
 	});
 

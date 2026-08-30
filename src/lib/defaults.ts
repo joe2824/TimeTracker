@@ -2,6 +2,12 @@
 
 /** Setzt vite.config.js ein. Im Test steht er nicht - daher die Pruefung unten. */
 declare const __DEFAULT_SERVER__: string;
+declare const __APP_VERSION__: string;
+
+/**
+ * Die Anwendungsversion aus package.json.
+ */
+export const APP_VERSION = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "0.9.0-beta.7";
 
 /**
  * Der Server, der ohne Zutun eingetragen ist.

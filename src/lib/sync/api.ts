@@ -311,8 +311,16 @@ export class Api {
 		invites: Invite[];
 		envInvitesConfigured?: boolean;
 		envInvitesActive?: boolean;
+		openRegistration?: boolean;
 	}> {
 		return this.#call("/api/admin/invites");
+	}
+
+	setOpenRegistration(openRegistration: boolean): Promise<{ ok: boolean; openRegistration: boolean }> {
+		return this.#call("/api/admin/invites", {
+			method: "PATCH",
+			body: JSON.stringify({ openRegistration })
+		});
 	}
 
 	setEnvInvites(active: boolean): Promise<{ ok: boolean; envInvitesActive: boolean }> {

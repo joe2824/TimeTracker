@@ -3,8 +3,7 @@ import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { verifyRegistration, createUser, storeCredential } from "$lib/server/webauthn";
 import { createSession, takeChallenge } from "$lib/server/auth";
-import { REGISTRATION_OPEN } from "$lib/server/config";
-import { entwerteCode, gueltigerCode } from "$lib/server/invites";
+import { entwerteCode, gueltigerCode, istRegistrierungOffen } from "$lib/server/invites";
 import { setSessionCookie } from "$lib/server/session";
 
 export const POST: RequestHandler = async ({ locals, request, cookies }) => {
@@ -27,7 +26,7 @@ export const POST: RequestHandler = async ({ locals, request, cookies }) => {
 	// Erst pruefen, entwertet wird unten IN der Transaktion. Andersherum waere die
 	// Einladung verbraucht, wenn das Anlegen danach scheitert - und niemand haette
 	// ein Konto dafuer.
-	if (!REGISTRATION_OPEN && !gueltigerCode(locals.db, code)) {
+	if (!istRegistrierungOffen(locals.db) && !gueltigerCode(locals.db, code)) {
 		error(403, "Einladungscode ungültig");
 	}
 
@@ -40,7 +39,7 @@ export const POST: RequestHandler = async ({ locals, request, cookies }) => {
 		createUser(tx, taken.userId!, displayName, email);
 		// Ein Code aus der Tabelle gilt genau einmal. Hier drin, damit "Konto
 		// entstanden" und "Einladung verbraucht" nicht auseinanderfallen koennen.
-		if (!REGISTRATION_OPEN) entwerteCode(tx, code, taken.userId!);
+		if (!istRegistrierungOffen(locals.db) && code) entwerteCode(tx, code, taken.userId!);
 		storeCredential(
 			tx,
 			taken.userId!,

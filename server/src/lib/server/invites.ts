@@ -2,7 +2,7 @@
 import { and, desc, eq, isNull } from "drizzle-orm";
 import type { Db, DbLike } from "./db";
 import { invites, serverSettings, users } from "./db/schema";
-import { INVITE_CODES } from "./config";
+import { INVITE_CODES, REGISTRATION_OPEN } from "./config";
 import { randomInt } from "node:crypto";
 
 /** Das Alphabet fuer ausgestellte Codes. */
@@ -73,6 +73,30 @@ export function zieheInviteZurueck(db: Db, code: string): boolean {
 	return r.changes > 0;
 }
 
+/** Ob offene Registrierung (ohne Einladungscode) aktiv ist. */
+export function istRegistrierungOffen(db: DbLike): boolean {
+	const zeile = db
+		.select()
+		.from(serverSettings)
+		.where(eq(serverSettings.key, "open_registration"))
+		.get();
+	if (zeile) return zeile.value === "true";
+	return REGISTRATION_OPEN;
+}
+
+/** Offene Registrierung zur Laufzeit aktivieren oder deaktivieren. */
+export function setzeRegistrierungOffen(db: DbLike, offen: boolean): void {
+	const wert = offen ? "true" : "false";
+	const jetzt = Date.now();
+	db.insert(serverSettings)
+		.values({ key: "open_registration", value: wert, updatedAt: jetzt })
+		.onConflictDoUpdate({
+			target: serverSettings.key,
+			set: { value: wert, updatedAt: jetzt }
+		})
+		.run();
+}
+
 /** Ob statische Einladungscodes aus INVITE_CODES per Servereinstellung deaktiviert wurden. */
 export function envInvitesDeaktiviert(db: DbLike): boolean {
 	const zeile = db
@@ -98,6 +122,7 @@ export function setzeEnvInvitesDeaktiviert(db: DbLike, deaktiviert: boolean): vo
 
 /** Gilt dieser Code? */
 export function gueltigerCode(db: DbLike, code: string): boolean {
+	if (istRegistrierungOffen(db)) return true;
 	if (!code) return false;
 	// Die Tuerklinke aus der Umgebung (sofern nicht zur Laufzeit deaktiviert).
 	if (!envInvitesDeaktiviert(db) && INVITE_CODES.includes(code)) return true;
