@@ -131,14 +131,19 @@
 				</a>
 			</nav>
 
-			<div class="ml-auto flex items-center gap-2">
+			<div class="ml-auto flex items-center gap-1.5 sm:gap-2">
+				<Button
+					variant="outline"
+					size="sm"
+					href="#download"
+					class="gap-1.5 font-medium border-primary/30 bg-primary/[0.04] hover:bg-primary/[0.08] hover:border-primary/50 transition-colors shadow-xs"
+				>
+					<DownloadIcon class="size-3.5 text-primary" />
+					<span>{desktop ? "Download" : "Windows-App"}</span>
+				</Button>
 				<Button size="sm" href="#anmelden" class="font-medium gap-1.5 shadow-sm">
 					<KeyRoundIcon class="size-3.5" />
 					<span>Anmelden</span>
-				</Button>
-				<Button variant="outline" size="sm" href="#download" class="hidden sm:inline-flex gap-1.5">
-					<DownloadIcon class="size-3.5" />
-					<span>{desktop ? "Download" : "Download (Windows)"}</span>
 				</Button>
 				<Button
 					variant="ghost"
@@ -147,6 +152,7 @@
 					target="_blank"
 					rel="noreferrer noopener"
 					aria-label="Quelltext auf GitHub"
+					class="hidden sm:inline-flex"
 				>
 					<GithubIcon class="size-4" />
 				</Button>
