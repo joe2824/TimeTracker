@@ -139,58 +139,118 @@ Hier ist es nicht eingebaut; wer es braucht, sagt Bescheid.
 
 ---
 
-## Verwalter und Einladungen
+## Verwaltung mit dem `tt`-Kommandozeilen-Helfer
 
-Ein Verwalter darf **Einladungen vergeben — sonst nichts.** Insbesondere kann er
-keine fremden Daten lesen; das kann der Server selbst nicht. Die Rolle regelt,
-wer hereindarf, nicht wer etwas sieht.
-
-Den ersten Verwalter gibt es nur im Container. Das ist die Henne-und-Ei-Frage
-jeder Rechteverwaltung, und sie wird dort beantwortet, wo ohnehin nur hinkommt,
-wer den Server betreibt:
+Auf dem Host-System steht das Skript `./tt` bereit, mit dem alle administrativen Aufgaben schnell und ohne lange Docker-Befehle erledigt werden können.
 
 ```bash
-# 1. Container starten, im Browser mit einem Code aus INVITE_CODES registrieren
-# 2. Nachsehen, wer da ist:
-docker compose exec timetracker node admin.mjs liste
-
-# 3. Ernennen — über den Anzeigenamen oder die Kennung:
-docker compose exec timetracker node admin.mjs ernenne "Anna"
-
-# 4. INVITE_CODES in der .env leeren und neu starten
+# Optional: Einmalig systemweit verfügbar machen:
+sudo ln -sf $(pwd)/tt /usr/local/bin/tt
 ```
 
-Danach vergibt der Verwalter Einladungen in den Einstellungen unter „Konto".
-Jeder ausgestellte Code gilt **genau einmal**, hat einen Aussteller, auf Wunsch
-eine Frist und eine Notiz, wofür er gedacht war — und lässt sich zurückziehen,
-solange ihn niemand benutzt hat.
+### Übersicht aller `tt`-Befehle
 
-Weitere Befehle:
-
-```bash
-docker compose exec timetracker node admin.mjs entziehe "Anna"
-docker compose exec timetracker node admin.mjs einladung "für den Kollegen" --tage 14
-```
-
-Der letzte ist der Notausgang: Einladungen lassen sich auch ohne Oberfläche
-ausstellen, falls gerade kein Verwalter erreichbar ist.
+| Befehl | Beschreibung |
+|---|---|
+| **`tt invite [Notiz] [--days N]`** | Erstellt einen neuen Einladungscode (z. B. `tt invite "Für Alex" --days 14`). |
+| **`tt users`** *(oder `tt list`)* | Zeigt alle registrierten Konten, Geräte und aktiven Einladungen. |
+| **`tt admin <Name\|ID>`** | Ernennt einen Nutzer zum Verwalter (Admin). |
+| **`tt unadmin <Name\|ID>`** | Entzieht einem Nutzer die Verwalterrolle. |
+| **`tt backup [Zieldatei]`** | Erstellt sofort eine manuelle, konsistente Online-Sicherung der Datenbank. |
+| **`tt backups`** | Listet alle vorhandenen automatischen und manuellen Sicherungen auf. |
+| **`tt status`** | Zeigt den Zustand und die Health-Prüfung des Docker-Containers. |
+| **`tt logs [-f]`** | Zeigt die Server-Logs (mit `-f` als Live-Stream). |
+| **`tt restart`** | Startet den Server-Container neu (z. B. nach Änderung der `.env`). |
+| **`tt update`** | Führt `git pull` aus, erstellt ein Sicherheits-Backup und baut/startet den Container neu. |
+| **`tt shell`** | Öffnet eine interaktive Shell (`sh`) im Container. |
 
 ---
 
-## Sichern
+## Benutzer- & Einladungs-Verwaltung
 
-Der gesamte Zustand ist eine SQLite-Datei im Volume. Im laufenden Betrieb:
+Der Server arbeitet standardmäßig **geschlossen**: Niemand kann ohne Einladung ein Konto anlegen.
 
+### 1. Schritt: Ersteinrichtung & erster Verwalter (Die Türklinke)
+
+Beim allerersten Start gibt es noch keinen Verwalter, der Einladungen ausstellen könnte. Dafür dient `INVITE_CODES` in der `.env`:
+
+1. In der `.env` einen temporären Einladungscode eintragen:
+   ```env
+   INVITE_CODES=start-geheim-1234
+   ```
+2. Container starten:
+   ```bash
+   ./tt up
+   ```
+3. Im Browser auf `https://tracker.example.de` gehen, auf **„Konto anlegen“** klicken und den Code `start-geheim-1234` eingeben.
+4. Im Terminal nachsehen, wie das neue Konto heißt:
+   ```bash
+   ./tt users
+   ```
+5. Das Konto zum Verwalter ernennen:
+   ```bash
+   ./tt admin "MeinName"
+   ```
+
+### 2. Schritt: Statische Invite-Codes abschalten (Wichtig!)
+
+Der Code in `INVITE_CODES` ist eine statische Türklinke (mehrfach nutzbar, ohne Frist). Sobald ein Verwalter existiert, sollte diese Türklinke **deaktiviert** werden:
+
+1. In der `.env` die Zeile leeren:
+   ```env
+   INVITE_CODES=
+   ```
+2. Server neu starten, um die Änderung zu übernehmen:
+   ```bash
+   ./tt restart
+   ```
+
+Ab jetzt ist die statische Türklinke abgeschaltet. Niemand kann sich mehr unbefugt registrieren.
+
+### 3. Schritt: Reguläre Einladungen vergeben
+
+Ab jetzt werden Einladungen individuell vergeben. Jede Einladung gilt **genau einmal** und verfällt nach Benutzung oder Ablauf der Frist:
+
+* **Über das Terminal:**
+  ```bash
+  tt invite "Kollege Alex" --days 14
+  ```
+* **Über die Weboberfläche:** Der Verwalter kann direkt in der Web-App unter **Einstellungen $\rightarrow$ Konto $\rightarrow$ Einladungen** Codes generieren, kopieren und bei Bedarf vorzeitig zurückziehen.
+
+### Öffentliche Registrierung (`REGISTRATION_OPEN`)
+
+* `REGISTRATION_OPEN=false` *(Standard)*: Registrierung erfordert zwingend einen gültigen Einladungscode.
+* `REGISTRATION_OPEN=true`: Die Registrierung ist für jeden komplett offen, der die URL kennt (kein Einladungscode nötig). *Hinweis: Bringt Betreiberpflichten wie Impressum und Datenschutzerklärung mit sich.*
+
+---
+
+## Datensicherung & Wiederherstellung
+
+### Automatische Sicherungen
+Der Server führt im laufenden Betrieb **alle 24 Stunden vollautomatisch** ein atomares SQLite-Online-Backup durch (`BACKUP_INTERVAL_HOURS=24`).
+* **Speicherort:** `/data/backups/timetracker-backup-YYYY-MM-DD_HH-mm-ss.db` im Docker-Volume.
+* **Aufbewahrung:** Die letzten 7 Sicherungen werden aufbewahrt (`BACKUP_KEEP=7`), ältere werden automatisch gelöscht.
+
+Vorhandene Backups ansehen:
 ```bash
-docker compose exec timetracker \
-	node -e "require('better-sqlite3')('/data/timetracker.db').backup('/data/sicherung.db')"
+./tt backups
 ```
 
-Das ist konsistent, auch während geschrieben wird. Ein blosses `cp` der Datei
-kann eine halbe Transaktion erwischen.
+Manuelles Backup erstellen:
+```bash
+./tt backup
+```
 
-Zurückspielen: Container stoppen, `sicherung.db` nach `timetracker.db`
-umbenennen, starten. Die `-wal`- und `-shm`-Dateien daneben können weg.
+### Wiederherstellung (Restore)
+1. Container stoppen:
+   ```bash
+   ./tt down
+   ```
+2. Die gewünschte Sicherungsdatei aus dem Backup-Ordner als `timetracker.db` im Datenverzeichnis einsetzen (vorhandene `-wal`- und `-shm`-Dateien löschen).
+3. Server wieder starten:
+   ```bash
+   ./tt up
+   ```
 
 ---
 

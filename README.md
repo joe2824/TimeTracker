@@ -65,13 +65,22 @@ Ausführlich im Wiki: [Pausenabzug](https://github.com/joe2824/TimeTracker/wiki/
 
 ## Server
 
-Ein Container, ein Volume. Simples Setup. Simples Setup. Das Docker-Image enthält Oberfläche und Server.
+Ein Container, ein Volume. Das Docker-Image enthält Oberfläche und Server.
 
 ```bash
 docker pull ghcr.io/joe2824/timetracker-server:latest
 ```
 
-Läuft auf `linux/amd64` und `linux/arm64` (Raspberry Pi). Den Tag `:latest` erhalten ausschließlich stabile Versionen. Das Base-Image wird wöchentlich über GitHub Actions aktualisiert, um Security-Patches automatisch einzuspielen.
+Läuft auf `linux/amd64` und `linux/arm64` (Raspberry Pi).
+
+### Schnelle Verwaltung mit `tt`:
+```bash
+./tt invite "Für Alex" --days 14   # Einladung ausstellen
+./tt users                        # Konten & Einladungen anzeigen
+./tt admin "Anna"                 # Zum Verwalter ernennen
+./tt backups                      # Vorhandene Sicherungen anzeigen
+./tt update                       # Neuesten Code ziehen, sichern & aktualisieren
+```
 
 Pflicht-Umgebungsvariablen:
 
@@ -79,11 +88,9 @@ Pflicht-Umgebungsvariablen:
 |---|---|
 | `ORIGIN` | Adresse im Browser, z. B. `https://tracker.example.de`. Muss exakt stimmen, WebAuthn prüft sie. |
 | `RP_ID` | Hostname ohne Schema und Port. Passkeys hängen daran und überleben keinen Wechsel. |
-| `INVITE_CODES` | Einladungscodes für den ersten Zugang. Leeren, sobald es einen Verwalter gibt. |
+| `INVITE_CODES` | Temporärer Einladungscode für den ersten Admin-Zugang. **Wichtig:** Nach Ersteinrichtung leeren und `./tt restart` ausführen, um statische Codes zu deaktivieren. |
 
-Vorlage: `docker-compose.yml` im Wurzelverzeichnis, `.env` nach `server/.env.example` anlegen.
-Alle Variablen, Signaturprüfung und `DEFAULT_SERVER`:
-[Server betreiben](https://github.com/joe2824/TimeTracker/wiki/Server-betreiben).
+Ausführliche Anleitung: [server/README.md](server/README.md) und im Wiki unter [Server betreiben](https://github.com/joe2824/TimeTracker/wiki/Server-betreiben).
 
 ## Entwicklung
 

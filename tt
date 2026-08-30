@@ -1,0 +1,171 @@
+#!/usr/bin/env bash
+# TimeTracker Server CLI (tt)
+# Einfache Verwaltung für den TimeTracker-Server
+
+set -e
+
+# Verzeichnis des TimeTracker-Projekts ermitteln (folgt Symlinks)
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+  DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+PROJECT_DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
+
+# Prüfen, ob Docker Compose v2 ("docker compose") oder v1 ("docker-compose") vorhanden ist
+if docker compose version >/dev/null 2>&1; then
+  DOCKER_COMPOSE="docker compose"
+elif command -v docker-compose >/dev/null 2>&1; then
+  DOCKER_COMPOSE="docker-compose"
+else
+  DOCKER_COMPOSE=""
+fi
+
+# Befehl innerhalb des Containers oder lokal ausführen
+run_admin() {
+  if [ -f "$PROJECT_DIR/docker-compose.yml" ] && [ -n "$DOCKER_COMPOSE" ]; then
+    # Prüfen, ob der Container läuft
+    if (cd "$PROJECT_DIR" && $DOCKER_COMPOSE ps --status running --format '{{.Service}}' 2>/dev/null | grep -q "timetracker"); then
+      (cd "$PROJECT_DIR" && $DOCKER_COMPOSE exec -T timetracker node admin.mjs "$@")
+      return $?
+    fi
+  fi
+
+  # Fallback: Falls wir direkt im Container sind oder node lokal aufrufen
+  if [ -f "$PROJECT_DIR/admin.mjs" ]; then
+    (cd "$PROJECT_DIR" && node admin.mjs "$@")
+  elif [ -f "$PROJECT_DIR/server/admin.mjs" ]; then
+    (cd "$PROJECT_DIR/server" && node admin.mjs "$@")
+  elif [ -n "$DOCKER_COMPOSE" ] && [ -f "$PROJECT_DIR/docker-compose.yml" ]; then
+    echo "Container 'timetracker' läuft aktuell nicht. Starte temporär..."
+    (cd "$PROJECT_DIR" && $DOCKER_COMPOSE run --rm -T timetracker node admin.mjs "$@")
+  else
+    echo "Fehler: Weder Docker Compose noch admin.mjs gefunden." >&2
+    exit 1
+  fi
+}
+
+show_help() {
+  cat <<'EOF'
+TimeTracker Server CLI (tt)
+
+Befehle für Benutzer & Einladungen:
+  tt invite [Notiz] [--days 14]     Erstellt einen neuen Einladungscode (z.B. tt invite "Für Alex" -d 7)
+  tt users / tt list               Zeigt alle registrierten Konten und aktiven Einladungen
+  tt admin <Name|ID>               Ernennen eines Nutzers zum Verwalter
+  tt unadmin <Name|ID>             Entziehen der Verwalterrolle
+  tt env-invites [disable|enable]  Statische .env-Codes ein-/ausschalten
+  tt backup [Zieldatei]            Erstellt ein Online-Backup der SQLite-Datenbank
+  tt backups                       Zeigt alle vorhandenen automatischen und manuellen Sicherungen
+
+Befehle für Server & Container:
+  tt status / tt ps                Zeigt den aktuellen Container-Status
+  tt logs [-f]                     Zeigt die Server-Logs an (optional live mit -f)
+  tt restart                       Startet den TimeTracker-Server neu
+  tt update                        Aktualisiert das Image und startet den Server neu
+  tt shell                         Öffnet eine interaktive Shell im Container
+  tt up / tt down                  Startet bzw. stoppt den Server per Docker Compose
+
+Tipp: Um 'tt' systemweit von überall ausführen zu können:
+  sudo ln -sf $(pwd)/tt /usr/local/bin/tt
+EOF
+}
+
+CMD="$1"
+shift || true
+
+case "$CMD" in
+  invite|einladung|code)
+    run_admin invite "$@"
+    ;;
+  users|list|liste|konten)
+    run_admin list "$@"
+    ;;
+  admin|promote|ernenne)
+    run_admin admin "$@"
+    ;;
+  unadmin|demote|entziehe)
+    run_admin unadmin "$@"
+    ;;
+  env-invites|tuerklinke)
+    run_admin env-invites "$@"
+    ;;
+  backup|sicherung)
+    run_admin backup "$@"
+    ;;
+  backups|sicherungen)
+    run_admin backups "$@"
+    ;;
+  status|ps)
+    if [ -n "$DOCKER_COMPOSE" ] && [ -f "$PROJECT_DIR/docker-compose.yml" ]; then
+      (cd "$PROJECT_DIR" && $DOCKER_COMPOSE ps "$@")
+    else
+      echo "Kein docker-compose.yml gefunden."
+    fi
+    ;;
+  logs)
+    if [ -n "$DOCKER_COMPOSE" ] && [ -f "$PROJECT_DIR/docker-compose.yml" ]; then
+      (cd "$PROJECT_DIR" && $DOCKER_COMPOSE logs "$@")
+    else
+      echo "Kein docker-compose.yml gefunden."
+    fi
+    ;;
+  restart)
+    if [ -n "$DOCKER_COMPOSE" ] && [ -f "$PROJECT_DIR/docker-compose.yml" ]; then
+      (cd "$PROJECT_DIR" && $DOCKER_COMPOSE restart timetracker "$@")
+    else
+      echo "Kein docker-compose.yml gefunden."
+    fi
+    ;;
+  update)
+    if [ -n "$DOCKER_COMPOSE" ] && [ -f "$PROJECT_DIR/docker-compose.yml" ]; then
+      echo "=== TimeTracker Update ==="
+      # 1. Neuesten Code abrufen (falls Git-Repository)
+      if [ -d "$PROJECT_DIR/.git" ]; then
+        echo "1/3 Hole aktuellen Code (git pull)..."
+        (cd "$PROJECT_DIR" && git pull)
+      fi
+
+      # 2. Sicherheits-Backup vor dem Update erstellen
+      echo "2/3 Erstelle Sicherheits-Backup..."
+      run_admin backup >/dev/null 2>&1 || true
+
+      # 3. Docker-Container neu bauen und starten
+      echo "3/3 Baue und starte Container..."
+      (cd "$PROJECT_DIR" && $DOCKER_COMPOSE build && $DOCKER_COMPOSE up -d)
+
+      echo ""
+      echo "Update erfolgreich abgeschlossen!"
+      (cd "$PROJECT_DIR" && $DOCKER_COMPOSE ps)
+    else
+      echo "Hinweis: 'tt update' muss auf dem Host-System (außerhalb des Containers) im TimeTracker-Verzeichnis ausgeführt werden." >&2
+      exit 1
+    fi
+    ;;
+  shell|sh)
+    if [ -n "$DOCKER_COMPOSE" ] && [ -f "$PROJECT_DIR/docker-compose.yml" ]; then
+      (cd "$PROJECT_DIR" && $DOCKER_COMPOSE exec timetracker sh)
+    else
+      echo "Kein docker-compose.yml gefunden."
+    fi
+    ;;
+  up)
+    if [ -n "$DOCKER_COMPOSE" ] && [ -f "$PROJECT_DIR/docker-compose.yml" ]; then
+      (cd "$PROJECT_DIR" && $DOCKER_COMPOSE up -d "$@")
+    fi
+    ;;
+  down|stop)
+    if [ -n "$DOCKER_COMPOSE" ] && [ -f "$PROJECT_DIR/docker-compose.yml" ]; then
+      (cd "$PROJECT_DIR" && $DOCKER_COMPOSE "$CMD" "$@")
+    fi
+    ;;
+  help|--help|-h|"")
+    show_help
+    ;;
+  *)
+    # Alle weiteren Befehle direkt an admin.mjs weiterleiten
+    run_admin "$CMD" "$@"
+    ;;
+esac
+

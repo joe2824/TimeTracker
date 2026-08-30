@@ -636,9 +636,24 @@ class AccountState {
 	// Nur fuer Verwalter, und der Server entscheidet das - nicht dieses Modul.
 	// Hier steht bloss der Draht dorthin.
 
-	async invites(): Promise<Invite[]> {
+	async invites(): Promise<{
+		invites: Invite[];
+		envInvitesConfigured: boolean;
+		envInvitesActive: boolean;
+	}> {
 		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		return (await this.#api.invites()).invites;
+		const res = await this.#api.invites();
+		return {
+			invites: res.invites,
+			envInvitesConfigured: Boolean(res.envInvitesConfigured),
+			envInvitesActive: res.envInvitesActive ?? true
+		};
+	}
+
+	async setEnvInvites(active: boolean): Promise<boolean> {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		const res = await this.#api.setEnvInvites(active);
+		return res.envInvitesActive;
 	}
 
 	async createInvite(opts: { note?: string; gueltigTage?: number } = {}): Promise<Invite> {

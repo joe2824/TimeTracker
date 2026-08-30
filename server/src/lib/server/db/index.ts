@@ -109,7 +109,12 @@ const MIGRATIONS: string[] = [
 	// Der Kopplungscode allein reicht nicht mehr zum Abholen: er ist der Abdruck
 	// des Geraeteschluessels, also zwangslaeufig sichtbar. Das Abhol-Geheimnis
 	// bleibt dagegen auf dem Geraet, das die Kopplung begonnen hat.
-	`ALTER TABLE pairings ADD COLUMN claim_hash TEXT`
+	`ALTER TABLE pairings ADD COLUMN claim_hash TEXT`,
+	`CREATE TABLE IF NOT EXISTS server_settings (
+		key TEXT PRIMARY KEY,
+		value TEXT NOT NULL,
+		updated_at INTEGER NOT NULL
+	)`
 ];
 
 export type Db = ReturnType<typeof drizzle<typeof schema>>;

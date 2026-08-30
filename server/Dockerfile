@@ -24,7 +24,7 @@ RUN npm ci
 
 # Die Oberflaeche - dieselbe Quelle wie fuer die Desktop-Anwendung, nur ein
 # anderes Ziel.
-COPY svelte.config.js vite.config.js tsconfig.json ./
+COPY svelte.config.js vite.config.js tsconfig.json tt ./
 COPY src ./src
 COPY static ./static
 RUN BUILD_TARGET=web npx vite build
@@ -62,6 +62,7 @@ COPY --from=build --chown=tt:tt /app/server/package.json ./package.json
 # der erste Verwalter laesst sich nur hier ernennen, und wer den Container hat,
 # soll das koennen, ohne erst etwas hineinzukopieren.
 COPY --from=build --chown=tt:tt /app/server/admin.mjs ./admin.mjs
+COPY --from=build --chmod=755 /app/tt /usr/local/bin/tt
 
 RUN mkdir -p /data && chown tt:tt /data
 VOLUME ["/data"]

@@ -1049,6 +1049,31 @@ describe("Verwaltung", () => {
 		expect(seite.records).toHaveLength(0);
 		expect((await (await api(annaToken, "/api/me")).json()).userId).toBe(ANNA);
 	});
+
+	it("laesst statische Einladungscodes per PATCH deaktivieren und aktivieren", async () => {
+		zumVerwalter(ANNA);
+		const get1 = await (await api(annaToken, "/api/admin/invites")).json();
+		expect(get1).toHaveProperty("envInvitesConfigured");
+		expect(get1).toHaveProperty("envInvitesActive");
+
+		// Deaktivieren
+		const patch1 = await api(annaToken, "/api/admin/invites", {
+			method: "PATCH",
+			body: JSON.stringify({ active: false })
+		});
+		expect(patch1.status).toBe(200);
+		const res1 = await patch1.json();
+		expect(res1.ok).toBe(true);
+
+		// Wieder aktivieren
+		const patch2 = await api(annaToken, "/api/admin/invites", {
+			method: "PATCH",
+			body: JSON.stringify({ active: true })
+		});
+		expect(patch2.status).toBe(200);
+		const res2 = await patch2.json();
+		expect(res2.ok).toBe(true);
+	});
 });
 
 /** Eine Anfrage mit selbst gesetzter Host-Kopfzeile. */

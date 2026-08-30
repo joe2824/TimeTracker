@@ -173,5 +173,12 @@ export const pairings = sqliteTable(
 	(t) => [index("pairings_user").on(t.userId)]
 );
 
+/** Servereinstellungen, die zur Laufzeit vom Verwalter geändert werden können. */
+export const serverSettings = sqliteTable("server_settings", {
+	key: text("key").primaryKey(),
+	value: text("value").notNull(),
+	updatedAt: integer("updated_at").notNull()
+});
+
 /** Der Zeitpunkt "jetzt" in der Einheit, die alle Tabellen benutzen. */
 export const now = () => Date.now();

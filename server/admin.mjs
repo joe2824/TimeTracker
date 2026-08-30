@@ -9,6 +9,8 @@
 //   docker compose exec timetracker node admin.mjs einladung [notiz] [--tage 14]
 import Database from "better-sqlite3";
 import { randomInt } from "node:crypto";
+import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 
 const DATEI = process.env.DB_FILE ?? `${process.env.DATA_DIR ?? "/data"}/timetracker.db`;
 const db = new Database(DATEI);
@@ -93,12 +95,34 @@ function liste() {
 
 	const ausUmgebung = (process.env.INVITE_CODES ?? "").split(",").filter(Boolean);
 	if (ausUmgebung.length > 0) {
-		console.log(`\nAchtung: ${ausUmgebung.length} Code(s) stehen in INVITE_CODES.`);
-		console.log("Die gelten unbegrenzt und mehrfach. Sobald es einen Verwalter gibt,");
-		console.log("sollten sie aus der .env verschwinden – dann wird jede Einladung einzeln");
-		console.log("vergeben und ist nachvollziehbar.");
+		const deaktiviert = envInvitesDeaktiviert();
+		if (deaktiviert) {
+			console.log(`\nHinweis: ${ausUmgebung.length} Code(s) in INVITE_CODES (.env) sind DEAKTIVIERT (gesperrt).`);
+		} else {
+			console.log(`\nAchtung: ${ausUmgebung.length} Code(s) stehen in INVITE_CODES (.env) und sind AKTIV.`);
+			console.log("Sie können in der App oder mit 'tt env-invites disable' deaktiviert werden.");
+		}
 	}
 	console.log("");
+}
+
+function envInvitesDeaktiviert() {
+	try {
+		const zeile = db.prepare("SELECT value FROM server_settings WHERE key = 'env_invites_disabled'").get();
+		return zeile?.value === "true";
+	} catch {
+		return false;
+	}
+}
+
+function setzeEnvInvitesDeaktiviert(deaktiviert) {
+	try {
+		db.prepare("CREATE TABLE IF NOT EXISTS server_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL)").run();
+		db.prepare("INSERT INTO server_settings (key, value, updated_at) VALUES ('env_invites_disabled', ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at").run(deaktiviert ? "true" : "false", Date.now());
+		console.log(`\n  Statische Einladungscodes (.env) sind jetzt ${deaktiviert ? "DEAKTIVIERT" : "AKTIVIERT"}.\n`);
+	} catch (e) {
+		console.error("Fehler beim Ändern der Servereinstellung:", e.message);
+	}
 }
 
 function setzeRolle(suche, wert) {
@@ -143,9 +167,16 @@ function setzeRolle(suche, wert) {
 }
 
 function einladung(argv) {
-	const tageIndex = argv.indexOf("--tage");
-	const tage = tageIndex >= 0 ? Number(argv[tageIndex + 1]) : 0;
-	const notiz = argv.filter((a, i) => i !== tageIndex && i !== tageIndex + 1).join(" ") || null;
+	let tage = 0;
+	const bereinigt = [];
+	for (let i = 0; i < argv.length; i++) {
+		if (argv[i] === "--tage" || argv[i] === "--days" || argv[i] === "-d") {
+			tage = Number(argv[++i]) || 0;
+		} else {
+			bereinigt.push(argv[i]);
+		}
+	}
+	const notiz = bereinigt.join(" ") || null;
 
 	const code = neuerCode();
 	db.prepare(
@@ -157,34 +188,120 @@ function einladung(argv) {
 	console.log("");
 }
 
+function formatBytes(bytes) {
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+	return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function zeigeSicherungen() {
+	const dir = process.env.BACKUP_DIR ?? `${process.env.DATA_DIR ?? "/data"}/backups`;
+	if (!existsSync(dir)) {
+		console.log("\nNoch keine Sicherungen vorhanden.\n");
+		return;
+	}
+	const dateien = readdirSync(dir)
+		.filter((f) => f.endsWith(".db"))
+		.map((f) => {
+			const voll = join(dir, f);
+			const st = statSync(voll);
+			return { name: f, pfad: voll, bytes: st.size, mtime: st.mtimeMs };
+		})
+		.sort((a, b) => b.mtime - a.mtime);
+
+	if (dateien.length === 0) {
+		console.log("\nNoch keine Sicherungen vorhanden.\n");
+		return;
+	}
+	console.log(`\nVorhandene Sicherungen in ${dir} (${dateien.length}):\n`);
+	for (const d of dateien) {
+		console.log(`  ${d.name.padEnd(46)}  ${datum(d.mtime)}   ${formatBytes(d.bytes)}`);
+	}
+	console.log("");
+}
+
+async function backup(argv) {
+	if (argv[0] === "list" || argv[0] === "liste") {
+		zeigeSicherungen();
+		return;
+	}
+	const dir = process.env.BACKUP_DIR ?? `${process.env.DATA_DIR ?? "/data"}/backups`;
+	mkdirSync(dir, { recursive: true });
+
+	const pad = (n) => String(n).padStart(2, "0");
+	const d = new Date();
+	const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+	const standardPfad = join(dir, `timetracker-backup-${stamp}.db`);
+	const ziel = argv[0] || standardPfad;
+	try {
+		await db.backup(ziel);
+		console.log(`\n  Sicherung erfolgreich erstellt:\n  ${ziel}\n`);
+	} catch (err) {
+		console.error(`\n  Fehler bei der Sicherung: ${err.message}\n`);
+		process.exit(1);
+	}
+}
+
 const [befehl, ...rest] = process.argv.slice(2);
 switch (befehl) {
 	case "liste":
+	case "list":
+	case "users":
+	case "konten":
 		liste();
 		break;
 	case "ernenne":
-		setzeRolle(rest[0], true);
+	case "promote":
+	case "admin":
+		if (rest[0] === "remove" || rest[0] === "revoke" || rest[0] === "entziehe") {
+			setzeRolle(rest[1], false);
+		} else {
+			const ziel = rest[0] === "add" ? rest[1] : rest[0];
+			setzeRolle(ziel, true);
+		}
 		break;
 	case "entziehe":
+	case "demote":
+	case "unadmin":
 		setzeRolle(rest[0], false);
 		break;
 	case "einladung":
+	case "invite":
+	case "code":
 		einladung(rest);
+		break;
+	case "backup":
+	case "sicherung":
+		await backup(rest);
+		break;
+	case "backups":
+	case "sicherungen":
+		zeigeSicherungen();
+		break;
+	case "env-invites":
+	case "tuerklinke":
+		if (rest[0] === "disable" || rest[0] === "aus" || rest[0] === "deaktivieren") {
+			setzeEnvInvitesDeaktiviert(true);
+		} else if (rest[0] === "enable" || rest[0] === "an" || rest[0] === "aktivieren") {
+			setzeEnvInvitesDeaktiviert(false);
+		} else {
+			const aus = envInvitesDeaktiviert();
+			console.log(`\nStatische Einladungscodes (.env) sind aktuell: ${aus ? "DEAKTIVIERT" : "AKTIV"}`);
+			console.log(`  Befehle: tt env-invites disable | tt env-invites enable\n`);
+		}
 		break;
 	default:
 		console.log(`
 Verwaltung des TimeTracker-Servers.
 
-  node admin.mjs liste                     Konten und Einladungen zeigen
-  node admin.mjs ernenne <wen>             Zum Verwalter machen
-  node admin.mjs entziehe <wen>            Verwalterrolle nehmen
-  node admin.mjs einladung [notiz] [--tage 14]   Einen Code ausstellen
+  tt invite [notiz] [--days 14]            Einladungscode erstellen
+  tt list / tt users                       Konten und Einladungen anzeigen
+  tt admin <wer> / tt promote <wer>        Zum Verwalter ernennen
+  tt unadmin <wer> / tt demote <wer>       Verwalterrolle entziehen
+  tt env-invites [disable|enable]          Statische .env-Codes de-/aktivieren
+  tt backup [zieldatei]                    Datenbank online und atomar sichern
+  tt backups                               Vorhandene Datenbanksicherungen anzeigen
 
-  <wen> ist die Kennung, ihr Anfang (ab vier Zeichen) oder der Anzeigename.
-  Heissen zwei Leute gleich, passiert nichts - dann zeigt die Meldung, woran
-  sie sich unterscheiden, und man nimmt den Anfang der Kennung.
-
-Ein Verwalter darf Einladungen vergeben – sonst nichts. Fremde Daten lesen kann
-auch er nicht: der Server selbst kann es nicht.
+  <wer> ist die Benutzerkennung (oder Präfix ab 4 Zeichen) oder der Anzeigename.
 `);
 }

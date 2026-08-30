@@ -64,6 +64,13 @@ export const ORIGINS_OHNE_PASSKEY = ALLOWED_ORIGINS.filter((o) => !passtZurKennu
 export const DATA_DIR = process.env.DATA_DIR ?? "./data";
 export const DB_FILE = process.env.DB_FILE ?? `${DATA_DIR}/timetracker.db`;
 
+/** Automatische Sicherungen: Intervall in Stunden (0 = aus, Standard 24h). */
+export const BACKUP_INTERVAL_HOURS = Number(process.env.BACKUP_INTERVAL_HOURS ?? 24);
+/** Wie viele automatische Sicherungen aufgehoben werden (Standard: 7). */
+export const BACKUP_KEEP = Number(process.env.BACKUP_KEEP ?? 7);
+/** Ordner fuer Sicherungen. */
+export const BACKUP_DIR = process.env.BACKUP_DIR ?? `${DATA_DIR}/backups`;
+
 /** Einladungscodes, durch Komma getrennt. */
 export const INVITE_CODES = (process.env.INVITE_CODES ?? "")
 	.split(",")

@@ -1,7 +1,7 @@
 // Einladungen: ausstellen, pruefen, entwerten.
 import { and, desc, eq, isNull } from "drizzle-orm";
 import type { Db, DbLike } from "./db";
-import { invites, users } from "./db/schema";
+import { invites, serverSettings, users } from "./db/schema";
 import { INVITE_CODES } from "./config";
 import { randomInt } from "node:crypto";
 
@@ -73,11 +73,34 @@ export function zieheInviteZurueck(db: Db, code: string): boolean {
 	return r.changes > 0;
 }
 
+/** Ob statische Einladungscodes aus INVITE_CODES per Servereinstellung deaktiviert wurden. */
+export function envInvitesDeaktiviert(db: DbLike): boolean {
+	const zeile = db
+		.select()
+		.from(serverSettings)
+		.where(eq(serverSettings.key, "env_invites_disabled"))
+		.get();
+	return zeile?.value === "true";
+}
+
+/** Statische Einladungscodes zur Laufzeit aktivieren oder deaktivieren. */
+export function setzeEnvInvitesDeaktiviert(db: DbLike, deaktiviert: boolean): void {
+	const wert = deaktiviert ? "true" : "false";
+	const jetzt = Date.now();
+	db.insert(serverSettings)
+		.values({ key: "env_invites_disabled", value: wert, updatedAt: jetzt })
+		.onConflictDoUpdate({
+			target: serverSettings.key,
+			set: { value: wert, updatedAt: jetzt }
+		})
+		.run();
+}
+
 /** Gilt dieser Code? */
 export function gueltigerCode(db: DbLike, code: string): boolean {
 	if (!code) return false;
-	// Die Tuerklinke aus der Umgebung.
-	if (INVITE_CODES.includes(code)) return true;
+	// Die Tuerklinke aus der Umgebung (sofern nicht zur Laufzeit deaktiviert).
+	if (!envInvitesDeaktiviert(db) && INVITE_CODES.includes(code)) return true;
 
 	const zeile = db.select().from(invites).where(eq(invites.code, code)).get();
 	if (!zeile) return false;

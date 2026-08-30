@@ -3,6 +3,7 @@
 import type { Handle } from "@sveltejs/kit";
 import { openDb } from "$lib/server/db";
 import { cleanupExpired, deviceFromToken, userFromSession } from "$lib/server/auth";
+import { startBackupScheduler } from "$lib/server/backup";
 import { DB_FILE } from "$lib/server/config";
 import { SESSION_COOKIE } from "$lib/server/session";
 import {
@@ -32,7 +33,8 @@ const BREMSEN: [string, LimitOptions][] = [
 	["/api/auth/recover", LIMIT_RECOVER]
 ];
 
-const { db } = openDb(DB_FILE);
+const { db, raw } = openDb(DB_FILE);
+startBackupScheduler(raw);
 
 /** Methoden, die etwas veraendern - nur fuer die zaehlt die Herkunft. */
 const SCHREIBEND = new Set(["POST", "PUT", "PATCH", "DELETE"]);

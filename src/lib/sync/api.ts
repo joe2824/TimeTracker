@@ -300,8 +300,19 @@ export class Api {
 
 	// ---------- Verwaltung ----------
 
-	invites(): Promise<{ invites: Invite[] }> {
+	invites(): Promise<{
+		invites: Invite[];
+		envInvitesConfigured?: boolean;
+		envInvitesActive?: boolean;
+	}> {
 		return this.#call("/api/admin/invites");
+	}
+
+	setEnvInvites(active: boolean): Promise<{ ok: boolean; envInvitesActive: boolean }> {
+		return this.#call("/api/admin/invites", {
+			method: "PATCH",
+			body: JSON.stringify({ active })
+		});
 	}
 
 	createInvite(opts: { note?: string; gueltigTage?: number } = {}): Promise<Invite> {

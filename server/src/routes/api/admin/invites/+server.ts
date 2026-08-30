@@ -1,7 +1,15 @@
 // Einladungen verwalten - nur fuer Verwalter.
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
-import { erstelleInvite, istVerwalter, listeInvites, zieheInviteZurueck } from "$lib/server/invites";
+import {
+	envInvitesDeaktiviert,
+	erstelleInvite,
+	istVerwalter,
+	listeInvites,
+	setzeEnvInvitesDeaktiviert,
+	zieheInviteZurueck
+} from "$lib/server/invites";
+import { INVITE_CODES } from "$lib/server/config";
 
 /** Verwalter sein - und zwar frisch geprueft, nicht aus einem Token geglaubt. */
 function nurVerwalter(locals: App.Locals): string {
@@ -12,7 +20,11 @@ function nurVerwalter(locals: App.Locals): string {
 
 export const GET: RequestHandler = ({ locals }) => {
 	nurVerwalter(locals);
-	return json({ invites: listeInvites(locals.db) });
+	return json({
+		invites: listeInvites(locals.db),
+		envInvitesConfigured: INVITE_CODES.length > 0,
+		envInvitesActive: INVITE_CODES.length > 0 && !envInvitesDeaktiviert(locals.db)
+	});
 };
 
 export const POST: RequestHandler = async ({ locals, request }) => {
@@ -29,6 +41,17 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		expiresAt
 	});
 	return json(zeile, { status: 201 });
+};
+
+export const PATCH: RequestHandler = async ({ locals, request }) => {
+	nurVerwalter(locals);
+	const body = await request.json().catch(() => null);
+	const active = Boolean(body?.active);
+	setzeEnvInvitesDeaktiviert(locals.db, !active);
+	return json({
+		ok: true,
+		envInvitesActive: INVITE_CODES.length > 0 && active
+	});
 };
 
 export const DELETE: RequestHandler = async ({ locals, request }) => {

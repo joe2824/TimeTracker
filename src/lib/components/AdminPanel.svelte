@@ -12,10 +12,15 @@
 	import LinkIcon from "@lucide/svelte/icons/link";
 	import CopyIcon from "@lucide/svelte/icons/copy";
 	import CheckIcon from "@lucide/svelte/icons/check";
+	import ShieldAlertIcon from "@lucide/svelte/icons/shield-alert";
+	import ShieldCheckIcon from "@lucide/svelte/icons/shield-check";
 
 	let liste = $state<Invite[]>([]);
 	let geladen = $state(false);
 	let laeuft = $state(false);
+	let envConfigured = $state(false);
+	let envActive = $state(true);
+	let envLaeuft = $state(false);
 	let notiz = $state("");
 	let tage = $state("");
 	/** Der zuletzt ausgestellte Code - gross, zum Abschreiben oder Vorlesen. */
@@ -46,7 +51,10 @@
 
 	async function laden() {
 		try {
-			liste = await account.invites();
+			const res = await account.invites();
+			liste = res.invites;
+			envConfigured = res.envInvitesConfigured;
+			envActive = res.envInvitesActive;
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Einladungen nicht abrufbar");
 		} finally {
@@ -57,6 +65,23 @@
 	$effect(() => {
 		if (account.isAdmin && !geladen) void laden();
 	});
+
+	async function toggleEnvInvites() {
+		envLaeuft = true;
+		const ziel = !envActive;
+		try {
+			envActive = await account.setEnvInvites(ziel);
+			if (!envActive) {
+				toast.success("Statische Einladungscodes (.env) wurden deaktiviert.");
+			} else {
+				toast.success("Statische Einladungscodes (.env) wurden wieder aktiviert.");
+			}
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : "Änderung fehlgeschlagen");
+		} finally {
+			envLaeuft = false;
+		}
+	}
 
 	async function ausstellen() {
 		laeuft = true;
@@ -113,6 +138,52 @@
 		</Card.Header>
 
 		<Card.Content class="space-y-4">
+			{#if envConfigured}
+				{#if envActive}
+					<div class="border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-200 flex flex-col gap-2 rounded-lg border p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+						<div class="flex items-start gap-2">
+							<ShieldAlertIcon class="text-amber-600 dark:text-amber-400 mt-0.5 size-5 shrink-0" />
+							<div>
+								<p class="font-medium">Statische Einladungscodes (.env) sind aktiv</p>
+								<p class="text-xs opacity-90">
+									Der Server akzeptiert noch statische Codes aus der Konfiguration. Sobald alle Administratoren eingerichtet sind, sollten diese deaktiviert werden.
+								</p>
+							</div>
+						</div>
+						<Button
+							variant="destructive"
+							size="sm"
+							class="shrink-0 self-start sm:self-center"
+							onclick={toggleEnvInvites}
+							disabled={envLaeuft}
+						>
+							{envLaeuft ? "Wird deaktiviert…" : "Codes jetzt deaktivieren"}
+						</Button>
+					</div>
+				{:else}
+					<div class="border-emerald-500/30 bg-emerald-500/10 text-emerald-900 dark:text-emerald-200 flex flex-col gap-2 rounded-lg border p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+						<div class="flex items-start gap-2">
+							<ShieldCheckIcon class="text-emerald-600 dark:text-emerald-400 mt-0.5 size-5 shrink-0" />
+							<div>
+								<p class="font-medium">Statische Einladungscodes (.env) sind deaktiviert</p>
+								<p class="text-xs opacity-90">
+									Nur noch individuell erstellte Einladungen aus der Liste unten werden akzeptiert.
+								</p>
+							</div>
+						</div>
+						<Button
+							variant="outline"
+							size="sm"
+							class="shrink-0 self-start sm:self-center"
+							onclick={toggleEnvInvites}
+							disabled={envLaeuft}
+						>
+							{envLaeuft ? "Wird aktiviert…" : "Wieder aktivieren"}
+						</Button>
+					</div>
+				{/if}
+			{/if}
+
 			{#if frisch}
 				<div class="border-primary/30 bg-primary/[0.06] space-y-2 rounded-lg border p-3">
 					<p class="text-sm">Neue Einladung – gilt genau einmal:</p>
