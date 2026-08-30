@@ -215,7 +215,9 @@ class AccountState {
 			},
 			onProgress: (p) => {
 				this.syncProgress = p.phase === "idle" ? null : p;
-				if (p.phase === "pulling" && p.pulled >= 20) {
+				// Im Browser: das SyncLoadingDialog-Modal reagiert auf syncProgress.
+				// In Tauri: kein Modal – dort zeigt der Toast die Meldung.
+				if (isTauri() && p.phase === "pulling" && p.pulled >= 20) {
 					toast.loading(`Lade Daten (${p.pulled} Einträge)…`, { id: "sync-bulk" });
 				}
 			}

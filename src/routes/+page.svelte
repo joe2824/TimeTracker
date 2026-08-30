@@ -51,6 +51,7 @@
 	import AbsenceOverrideDialog from "$lib/components/dialogs/AbsenceOverrideDialog.svelte";
 	import UpdateDialog from "$lib/components/dialogs/UpdateDialog.svelte";
 	import WhatsNewDialog from "$lib/components/dialogs/WhatsNewDialog.svelte";
+	import SyncLoadingDialog from "$lib/components/dialogs/SyncLoadingDialog.svelte";
 	import { whatsNew } from "$lib/whatsNew.svelte";
 
 	let tab = $state("tracking");
@@ -590,6 +591,7 @@
 	<BackdateDialog />
 	<AbsenceOverrideDialog />
 	<UpdateDialog />
+	<SyncLoadingDialog />
 
 	{#if app.showOnboarding}
 		<OnboardingWizard />
