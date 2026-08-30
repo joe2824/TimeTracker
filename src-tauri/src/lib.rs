@@ -128,7 +128,7 @@ fn use_beta_channel(context: &mut tauri::Context) {
     log_line("INFO", "Update-Kanal: Beta");
 }
 
-#[derive(serde::Deserialize, Clone)]
+#[derive(serde::Deserialize, Clone, PartialEq, Eq, Debug)]
 pub struct TrayActivity {
     id: String,
     name: String,
@@ -136,7 +136,7 @@ pub struct TrayActivity {
     favorite: bool,
 }
 
-#[derive(serde::Deserialize, Default)]
+#[derive(serde::Deserialize, Default, Clone, PartialEq, Eq, Debug)]
 pub struct TrayState {
     /// Name der laufenden Aktivitaet, falls ein Timer laeuft.
     running: Option<String>,
@@ -366,6 +366,18 @@ fn window_icon(running: bool) -> tauri::image::Image<'static> {
 /// Baut das Tray-Menue neu (laufender Timer + Schnellstart aus Favoriten/zuletzt benutzt).
 #[tauri::command]
 fn set_tray_state(app: tauri::AppHandle, state: TrayState) -> Result<(), String> {
+    #[cfg(desktop)]
+    {
+        static LAST_STATE: std::sync::Mutex<Option<TrayState>> = std::sync::Mutex::new(None);
+        let mut guard = LAST_STATE.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(ref prev) = *guard {
+            if prev == &state {
+                return Ok(());
+            }
+        }
+        *guard = Some(state.clone());
+    }
+
     #[cfg(desktop)]
     if let Some(tray) = app.tray_by_id("main") {
         let menu = build_tray_menu(&app, &state).map_err(|e| e.to_string())?;

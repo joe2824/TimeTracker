@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, tick } from "svelte";
+	import { onMount, tick, untrack } from "svelte";
 	import { listen, emit } from "@tauri-apps/api/event";
 	import { getCurrentWindow } from "@tauri-apps/api/window";
 	import { invoke } from "@tauri-apps/api/core";
@@ -350,12 +350,11 @@
 	// Tray-Menü (OneDrive-Stil) aktuell halten: laufender Timer + Schnellstart (Favoriten, zuletzt benutzt).
 	$effect(() => {
 		if (!app.loaded) return;
-
-		const quick = app
-			.quickActivities(6)
-			.map((a) => ({ id: a.id, name: a.name, favorite: !!a.favorite }));
-		const running = app.running ? app.activityName(app.running.activityId) : null;
-		void invoke("set_tray_state", { state: { running, activities: quick } }).catch(() => {});
+		const _act = app.activities;
+		const _runId = app.running?.activityId;
+		untrack(() => {
+			void app.updateTrayState();
+		});
 	});
 
 	// Chef-Modus abgeschaltet, während der Team-Tab offen war: sonst bliebe eine

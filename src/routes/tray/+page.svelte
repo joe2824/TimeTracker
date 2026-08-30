@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from "svelte";
+	import { onMount, untrack } from "svelte";
 	import { app } from "$lib/app.svelte";
 	import { errorText, logError, logInfo } from "$lib/log";
 	import { fmtClock, fmtHMS, midnightSplitHint } from "$lib/time";
@@ -82,11 +82,11 @@
 	// Tray-Icon und Menü immer aktuell halten, auch wenn das Hauptfenster geschlossen ist.
 	$effect(() => {
 		if (!app.loaded) return;
-		const quick = app
-			.quickActivities(6)
-			.map((a) => ({ id: a.id, name: a.name, favorite: !!a.favorite }));
-		const running = app.running ? app.activityName(app.running.activityId) : null;
-		void invoke("set_tray_state", { state: { running, activities: quick } }).catch(() => {});
+		const _act = app.activities;
+		const _runId = app.running?.activityId;
+		untrack(() => {
+			void app.updateTrayState();
+		});
 	});
 
 	// Startzeit-Auswahl (analog zum Hauptfenster): Preset "vor X min" (0 = jetzt)
