@@ -16,29 +16,36 @@
 		try {
 			await navigator.clipboard.writeText(formatPairingCode(code));
 			kopiert = true;
-			// Zuruecksetzen, damit der Knopf nicht dauerhaft "erledigt" zeigt.
-			setTimeout(() => (kopiert = false), 2000);
+			toast.success("Kopplungscode kopiert.");
+			setTimeout(() => (kopiert = false), 2500);
 		} catch {
-			toast.error("Kopieren nicht möglich – bitte abschreiben.");
+			toast.error("Kopieren nicht möglich – bitte manuell kopieren.");
 		}
 	}
 </script>
 
 <div class="space-y-3">
-	<div class="bg-muted flex flex-col items-center gap-2 rounded-lg p-4">
+	<button
+		type="button"
+		onclick={kopieren}
+		class="bg-muted hover:bg-muted/80 active:scale-[0.99] group relative flex w-full cursor-pointer flex-col items-center gap-2 rounded-xl p-4 transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring/50 border border-transparent hover:border-primary/20 shadow-sm"
+		title="Klicken zum Kopieren"
+	>
 		<!-- In Gruppen und weit gesperrt: abgetippt wird das von einem Bildschirm
 		     auf einen anderen, und dabei verrutscht man in einer langen Kette. -->
-		<p class="font-mono text-2xl font-semibold tracking-[0.25em] select-all sm:text-3xl">
+		<p class="font-mono text-2xl font-semibold tracking-[0.25em] text-primary sm:text-3xl select-all">
 			{formatPairingCode(code)}
 		</p>
-		<Button variant="ghost" size="sm" onclick={kopieren}>
+		<div class="inline-flex items-center gap-1.5 text-xs text-muted-foreground group-hover:text-foreground transition-colors font-medium">
 			{#if kopiert}
-				<CheckIcon class="size-4" /> Kopiert
+				<CheckIcon class="size-3.5 text-emerald-500" />
+				<span class="text-emerald-600 dark:text-emerald-400 font-medium">In die Zwischenablage kopiert!</span>
 			{:else}
-				<CopyIcon class="size-4" /> Kopieren
+				<CopyIcon class="size-3.5" />
+				<span>Klicken zum Kopieren</span>
 			{/if}
-		</Button>
-	</div>
+		</div>
+	</button>
 
 	{#if !isTauri()}
 		<!-- Wer die Anwendung auf demselben Rechner hat, muss nichts abtippen: der

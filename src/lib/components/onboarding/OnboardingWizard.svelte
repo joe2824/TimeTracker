@@ -29,6 +29,7 @@
 	import KeyRoundIcon from "@lucide/svelte/icons/key-round";
 	import SmartphoneIcon from "@lucide/svelte/icons/smartphone";
 	import CheckCircle2Icon from "@lucide/svelte/icons/check-circle-2";
+	import PairingCode from "$lib/components/onboarding/PairingCode.svelte";
 
 	const STEPS = 5;
 	let step = $state(0);
@@ -365,17 +366,8 @@
 							</div>
 						</div>
 					{:else if isWaitingForApproval}
-						<div class="space-y-2 rounded-lg border bg-muted/40 p-3 text-center">
-							<div class="text-xs text-muted-foreground font-medium">Dein Kopplungscode</div>
-							<div class="font-mono text-xl tracking-widest font-semibold text-primary select-all">
-								{pairingCode || "…"}
-							</div>
-							<p class="text-[11px] text-muted-foreground">
-								Bestätige diesen Code im geöffneten Browserfenster oder auf deinem anderen Gerät.
-							</p>
-							<Button variant="ghost" size="sm" onclick={cancelPairingFlow} class="text-xs h-7">
-								Abbrechen
-							</Button>
+						<div class="rounded-lg border bg-muted/20 p-2">
+							<PairingCode code={pairingCode} onCancel={cancelPairingFlow} />
 						</div>
 					{:else}
 						<div class="space-y-2.5 rounded-lg border bg-muted/10 p-3">
