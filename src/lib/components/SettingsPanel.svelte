@@ -10,6 +10,10 @@
 	import ShieldCheckIcon from "@lucide/svelte/icons/shield-check";
 	import MonitorCogIcon from "@lucide/svelte/icons/monitor-cog";
 	import InfoIcon from "@lucide/svelte/icons/info";
+	import MenuIcon from "@lucide/svelte/icons/menu";
+	import XIcon from "@lucide/svelte/icons/x";
+	import CheckIcon from "@lucide/svelte/icons/check";
+	import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
 
 	import TrackingTab from "./settings/TrackingTab.svelte";
 	import ReportTab from "./settings/ReportTab.svelte";
@@ -92,14 +96,77 @@
 	});
 
 	let activeTabId = $state<SettingsTabId>("erfassung");
+	let isMobileMenuOpen = $state(false);
 	const activeTab = $derived(tabs.find((t) => t.id === activeTabId) ?? tabs[0]);
+
+	function selectTab(id: SettingsTabId) {
+		activeTabId = id;
+		isMobileMenuOpen = false;
+	}
 </script>
 
 <div class="flex flex-col gap-5 lg:flex-row lg:items-start lg:gap-8">
-	<!-- Navigation -->
+	<!-- Mobile Burger Navigation Bar (nur auf mobilen Bildschirmen) -->
+	<div class="block lg:hidden">
+		<button
+			type="button"
+			onclick={() => (isMobileMenuOpen = !isMobileMenuOpen)}
+			aria-expanded={isMobileMenuOpen}
+			aria-label="Einstellungsbereich auswählen"
+			class="w-full flex items-center justify-between gap-3 rounded-xl border bg-card p-3 shadow-xs transition-colors hover:bg-accent/40 text-left"
+		>
+			<div class="flex items-center gap-3 min-w-0">
+				<div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+					<svelte:component this={activeTab.icon} class="size-4.5" />
+				</div>
+				<div class="min-w-0">
+					<p class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Einstellungen</p>
+					<p class="font-medium text-sm text-foreground truncate">{activeTab.title}</p>
+				</div>
+			</div>
+			<div class="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+				{#if isMobileMenuOpen}
+					<XIcon class="size-4" />
+				{:else}
+					<MenuIcon class="size-4" />
+				{/if}
+			</div>
+		</button>
+
+		<!-- Mobile Dropdown Menü -->
+		{#if isMobileMenuOpen}
+			<div class="mt-2 rounded-xl border bg-card p-1.5 shadow-lg divide-y divide-border/50 animate-in fade-in-0 zoom-in-95 duration-150">
+				{#each tabs as tab (tab.id)}
+					{@const Icon = tab.icon}
+					{@const isActive = activeTabId === tab.id}
+					<button
+						type="button"
+						onclick={() => selectTab(tab.id)}
+						class={cn(
+							"w-full flex items-center justify-between gap-3 rounded-lg p-2.5 text-left transition-colors",
+							isActive ? "bg-primary/10 text-primary font-medium" : "text-foreground hover:bg-muted/60"
+						)}
+					>
+						<div class="flex items-center gap-3 min-w-0">
+							<Icon class="size-4.5 shrink-0 {isActive ? 'text-primary' : 'text-muted-foreground'}" />
+							<div class="min-w-0">
+								<p class="text-sm leading-snug">{tab.title}</p>
+								<p class="text-xs text-muted-foreground line-clamp-1">{tab.description}</p>
+							</div>
+						</div>
+						{#if isActive}
+							<CheckIcon class="size-4 shrink-0 text-primary" />
+						{/if}
+					</button>
+				{/each}
+			</div>
+		{/if}
+	</div>
+
+	<!-- Desktop Sidebar Navigation (ab lg: Breakpoint) -->
 	<nav
 		aria-label="Einstellungsbereiche"
-		class="scrollbar-lose bg-muted/50 flex shrink-0 gap-1 overflow-x-auto rounded-xl p-1 lg:sticky lg:top-24 lg:w-56 lg:flex-col lg:overflow-visible lg:bg-transparent lg:p-0"
+		class="hidden lg:flex lg:sticky lg:top-24 lg:w-56 lg:flex-col lg:overflow-visible lg:bg-transparent lg:p-0 gap-1 shrink-0"
 	>
 		{#each tabs as tab (tab.id)}
 			{@const Icon = tab.icon}
@@ -108,10 +175,10 @@
 				onclick={() => (activeTabId = tab.id)}
 				aria-current={activeTabId === tab.id ? "page" : undefined}
 				class={cn(
-					"text-muted-foreground hover:text-foreground focus-visible:ring-ring/50 inline-flex h-9 shrink-0 items-center gap-2.5 rounded-lg px-3 text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-3 lg:w-full lg:justify-start",
+					"text-muted-foreground hover:text-foreground focus-visible:ring-ring/50 inline-flex h-9 shrink-0 items-center gap-2.5 rounded-lg px-3 text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-3 w-full justify-start",
 					activeTabId === tab.id
-						? "bg-background text-foreground ring-foreground/10 ring-1 lg:bg-muted lg:ring-0"
-						: "hover:bg-background/60 lg:hover:bg-muted/60"
+						? "bg-muted text-foreground font-semibold"
+						: "hover:bg-muted/60"
 				)}
 			>
 				<Icon class="size-4 shrink-0" />
