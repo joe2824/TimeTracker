@@ -95,16 +95,93 @@ mod imp {
     }
 }
 
-/// Ausserhalb von Windows (macOS/Linux): die Datei liegt bereits im geschützten
-/// Benutzerdatenordner (Application Support bzw. .local/share).
-/// Bewusst keine Keychain-Abfragen auf macOS, die bei jedem Start Dialoge erzeugen.
+/// Authentifizierte AES-256-GCM-Verschlüsselung, gebunden an die Hardware-UUID des Rechners
+/// und das Benutzerkonto. Eine kopierte Datei (device.json) lässt sich auf keinem anderen Rechner
+/// und keinem anderen Benutzerkonto entschlüsseln – ganz ohne aufdringliche Keychain-Passwort-Popups!
 #[cfg(not(windows))]
 mod imp {
-    pub fn protect(_plain: &[u8]) -> Option<Vec<u8>> {
-        None
+    use aes_gcm::{
+        aead::{Aead, KeyInit, OsRng},
+        Aes256Gcm, Nonce,
+    };
+    use sha2::{Digest, Sha256};
+
+    fn get_machine_id() -> String {
+        #[cfg(target_os = "macos")]
+        {
+            use std::process::Command;
+            if let Ok(output) = Command::new("ioreg")
+                .args(["-rd1", "-c", "IOPlatformExpertDevice"])
+                .output()
+            {
+                let text = String::from_utf8_lossy(&output.stdout);
+                for line in text.lines() {
+                    if line.contains("IOPlatformUUID") {
+                        if let Some(uuid) = line.split('"').nth(3) {
+                            return uuid.to_string();
+                        }
+                    }
+                }
+            }
+        }
+        #[cfg(target_os = "linux")]
+        {
+            if let Ok(id) = std::fs::read_to_string("/etc/machine-id") {
+                let trimmed = id.trim();
+                if !trimmed.is_empty() {
+                    return trimmed.to_string();
+                }
+            }
+        }
+        std::env::var("HOSTNAME").unwrap_or_else(|_| "timetracker-desktop-device".to_string())
     }
-    pub fn unprotect(_sealed: &[u8]) -> Option<Vec<u8>> {
-        None
+
+    fn get_user_id() -> String {
+        let user = std::env::var("USER").unwrap_or_default();
+        let home = std::env::var("HOME").unwrap_or_default();
+        format!("{user}:{home}")
+    }
+
+    fn derive_local_key() -> [u8; 32] {
+        let machine = get_machine_id();
+        let user = get_user_id();
+        const SALT: &str = "com.jklein.timetracker.hardware_and_user_bound.v1";
+
+        let mut hasher = Sha256::new();
+        hasher.update(machine.as_bytes());
+        hasher.update(b"|");
+        hasher.update(user.as_bytes());
+        hasher.update(b"|");
+        hasher.update(SALT.as_bytes());
+        let res = hasher.finalize();
+        let mut key = [0u8; 32];
+        key.copy_from_slice(&res);
+        key
+    }
+
+    pub fn protect(plain: &[u8]) -> Option<Vec<u8>> {
+        let key = derive_local_key();
+        let cipher = Aes256Gcm::new_from_slice(&key).ok()?;
+        let mut nonce_bytes = [0u8; 12];
+        use aes_gcm::aead::rand_core::RngCore;
+        OsRng.fill_bytes(&mut nonce_bytes);
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        let ciphertext = cipher.encrypt(nonce, plain).ok()?;
+        let mut out = Vec::with_capacity(12 + ciphertext.len());
+        out.extend_from_slice(&nonce_bytes);
+        out.extend_from_slice(&ciphertext);
+        Some(out)
+    }
+
+    pub fn unprotect(sealed: &[u8]) -> Option<Vec<u8>> {
+        if sealed.len() < 12 + 16 {
+            return None;
+        }
+        let key = derive_local_key();
+        let cipher = Aes256Gcm::new_from_slice(&key).ok()?;
+        let nonce = Nonce::from_slice(&sealed[..12]);
+        cipher.decrypt(nonce, &sealed[12..]).ok()
     }
 }
 
@@ -138,17 +215,17 @@ fn b64_decode(text: &str) -> Option<Vec<u8>> {
     let mut acc: u32 = 0;
     let mut bits = 0;
     let mut out = Vec::with_capacity(text.len() / 4 * 3);
-    for c in text.bytes() {
-        let v = match c {
-            b'A'..=b'Z' => c - b'A',
-            b'a'..=b'z' => c - b'a' + 26,
-            b'0'..=b'9' => c - b'0' + 52,
+    for &b in text.as_bytes() {
+        let val = match b {
+            b'A'..=b'Z' => b - b'A',
+            b'a'..=b'z' => b - b'a' + 26,
+            b'0'..=b'9' => b - b'0' + 52,
             b'+' => 62,
             b'/' => 63,
-            b'=' | b'\n' | b'\r' => continue,
+            b'=' | b'\r' | b'\n' | b' ' => continue,
             _ => return None,
-        } as u32;
-        acc = (acc << 6) | v;
+        };
+        acc = (acc << 6) | val as u32;
         bits += 6;
         if bits >= 8 {
             bits -= 8;
@@ -225,11 +302,10 @@ mod tests {
         assert_eq!(b64_decode(&b64_encode(&alle)).unwrap(), alle);
     }
 
-    #[cfg(windows)]
     #[test]
     fn geschuetzter_wert_kommt_wieder_heraus() {
         let p = protect_secret("geheimer-schlüssel".into());
-        assert!(p.protected, "DPAPI sollte auf Windows greifen");
+        assert!(p.protected, "Schutz sollte auf Desktop greifen");
         // Der Klartext darf in der Ablage nicht mehr zu sehen sein.
         assert!(!p.data.contains("geheimer"));
         assert_eq!(
