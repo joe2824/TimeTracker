@@ -129,7 +129,14 @@ class AccountState {
 			const info = await loadDevice();
 			// Ohne Adresse oder Schluessel gibt es nichts zu verbinden. Das Token darf
 			// fehlen: im Browser weist das Sitzungs-Cookie aus.
-			if (!info?.serverUrl || !info.vaultKey) return;
+			if (!info?.serverUrl || !info.vaultKey) {
+				if (!isTauri()) {
+					// Im Browser ohne verknüpftes Konto: keine Altlasten im Speicher belassen
+					await clearAccountData();
+					app.clearLocalData();
+				}
+				return;
+			}
 
 			this.serverUrl = info.serverUrl;
 			this.name = info.accountName ?? "";
@@ -144,12 +151,33 @@ class AccountState {
 				this.#device = await deviceId();
 				this.hasDeviceToken = token !== null;
 				await this.#startEngine(info.serverUrl, token, info.seq ?? 0);
-				this.state = "verbunden";
+
+				// Im Browser ohne festes Geraetetoken: vor der Freigabe der App prüfen,
+				// ob die Sitzung (Cookie) beim Server noch gueltig ist.
+				if (!isTauri() && !this.hasDeviceToken) {
+					try {
+						await this.accountInfo();
+						this.state = "verbunden";
+					} catch (e) {
+						if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+							// Sitzung abgelaufen: Daten aufräumen und sauber in den Anmeldezustand wechseln
+							logWarn("Sitzung ist abgelaufen - melde lokal ab", e);
+							await this.#forgetLocally();
+							await clearAccountData();
+							app.clearLocalData();
+							this.state = "aus";
+							return;
+						}
+						// Bei Verbindungsabbruch / Offline: offline verbunden bleiben
+						this.state = "verbunden";
+						this.phase = "offline";
+					}
+				} else {
+					this.state = "verbunden";
+					void this.accountInfo().catch(() => {});
+				}
+
 				logInfo("Konto verknüpft", { server: info.serverUrl });
-				// Nebenher: die Rolle steht erst fest, wenn der Server geantwortet hat.
-				// Ein Fehlschlag darf den Start nicht aufhalten - dann fehlt eben der
-				// Verwaltungsbereich, bis der naechste Abgleich laeuft.
-				void this.accountInfo().catch(() => {});
 				void this.abgleichMitNachlese();
 			} catch (e) {
 				// Der haeufigste Grund: die Datei stammt von einem anderen

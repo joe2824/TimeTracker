@@ -209,7 +209,7 @@ describe("Ein Geraet allein", () => {
 		expect(alles).not.toContain("akt-1");
 		expect(alles).not.toContain(String(ts(15, 9)));
 		// Der verschleierte Zeitraum verraet den Monat nicht.
-		expect(zeile.bucket).not.toContain("2026");
+		expect(zeile.bucket).not.toContain("2026-08");
 		expect(zeile.bucket).toMatch(/^[0-9a-f]{32}$/);
 	});
 

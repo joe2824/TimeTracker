@@ -207,6 +207,19 @@ class AppState {
 	}
 
 	/**
+	 * Alle lokalen Daten im Speicher abräumen (z. B. nach Abmeldung im Browser).
+	 */
+	clearLocalData(): void {
+		this.activities = [];
+		this.settings = { ...defaultSettings };
+		this.running = null;
+		this.entriesByMonth = {};
+		this.entriesVersion++;
+		this.backdatePrompt = null;
+		this.absenceOverridePrompt = null;
+	}
+
+	/**
 	 * Liest Aktivitäten/Einstellungen/aktuelle Monate neu von Platte.
 	 * Für das zweite Fenster (Tray-Flyout) und fensterübergreifende Updates,
 	 * da jede Webview ihren eigenen Zustand hat.
