@@ -20,6 +20,7 @@
 	import ClockIcon from "@lucide/svelte/icons/clock";
 	import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
 	import ActivityDot from "$lib/components/shared/ActivityDot.svelte";
+	import { account } from "$lib/sync/account.svelte";
 
 	const win = getCurrentWebviewWindow();
 
@@ -41,12 +42,15 @@
 			logError("Flyout konnte die Daten nicht laden", e);
 			loadError = errorText(e);
 		}
+		// Wenn verknüpft: Datenabgleich beim Einblenden sofort anstoßen.
+		void account.syncSoon(50);
 		// Aktuellen Hinweis-Status beim Hauptfenster anfragen (Antwort via "main-attention").
 		void emit("tray-request-attention").catch(() => {});
 	}
 
 	onMount(() => {
 		logInfo("Tray-Flyout geöffnet");
+		void account.init().then(() => void account.syncSoon(50));
 		void refresh();
 		// Eigener Tick (dieses Fenster ruft app.init() nicht auf) für die Live-Anzeige.
 		const tick = setInterval(() => (app.now = Date.now()), 1000);

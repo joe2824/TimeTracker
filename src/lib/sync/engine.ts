@@ -150,6 +150,7 @@ export class SyncEngine {
 	async #round(): Promise<SyncOutcome> {
 		// Die Monatsliste gilt je Durchgang - siehe #knownMonths.
 		this.#months = null;
+		this.#allMonthsIndexed = false;
 		const hoch = await this.#pushAll();
 		const runter = await this.#pullAll(hoch.pushed);
 		return {
@@ -347,11 +348,17 @@ export class SyncEngine {
 			return karte;
 		};
 
-		for (const r of records) {
-			const entschluesselt = await this.#open<Entry>(r);
-			if (entschluesselt === undefined) continue;
+		const entschluesselt = await Promise.all(
+			records.map(async (r) => {
+				const inhalt = await this.#open<Entry>(r);
+				return { r, inhalt };
+			})
+		);
+
+		for (const { r, inhalt } of entschluesselt) {
+			if (inhalt === undefined) continue;
 			const eintrag: Entry = {
-				...entschluesselt,
+				...inhalt,
 				id: r.id,
 				updatedAt: r.updatedAt,
 				rev: r.rev,
@@ -517,6 +524,8 @@ export class SyncEngine {
 		}
 	}
 
+	#allMonthsIndexed = false;
+
 	/** In welchem Monat liegt ein Eintrag, den wir nur ueber seine Id kennen? */
 	async #findMonth(
 		id: string,
@@ -526,8 +535,15 @@ export class SyncEngine {
 		// Zuerst, was schon auf dem Tisch liegt: ein Monat, den dieser Stapel selbst
 		// angelegt hat, steht in keiner Verzeichnisliste.
 		for (const [monat, karte] of geladen) if (karte.has(id)) return monat;
-		for (const monat of await this.#knownMonths()) {
-			if ((await monatVon(monat)).has(id)) return monat;
+		// Noch nicht alle Monate geladen? Einmalig durchsehen und im Speicher behalten.
+		if (!this.#allMonthsIndexed) {
+			for (const monat of await this.#knownMonths()) {
+				if (!geladen.has(monat)) {
+					const karte = await monatVon(monat);
+					if (karte.has(id)) return monat;
+				}
+			}
+			this.#allMonthsIndexed = true;
 		}
 		return null;
 	}
