@@ -75,6 +75,16 @@
 		};
 	});
 
+	// Tray-Icon und Menü immer aktuell halten, auch wenn das Hauptfenster geschlossen ist.
+	$effect(() => {
+		if (!app.loaded) return;
+		const quick = app
+			.quickActivities(6)
+			.map((a) => ({ id: a.id, name: a.name, favorite: !!a.favorite }));
+		const running = app.running ? app.activityName(app.running.activityId) : null;
+		void invoke("set_tray_state", { state: { running, activities: quick } }).catch(() => {});
+	});
+
 	// Startzeit-Auswahl (analog zum Hauptfenster): Preset "vor X min" (0 = jetzt)
 	// oder freie Uhrzeit. Nützlich, wenn man den Timer verspätet startet.
 	let presetMin = $state(0);

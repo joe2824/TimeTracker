@@ -298,7 +298,7 @@ class AccountState {
 			void this.accountInfo().catch(() => {});
 			// Und das Tray-Fenster liest dieselben Dateien, bekommt davon aber
 			// nichts mit: es haelt seinen eigenen Zustand.
-			if (ergebnis && ergebnis.pulled > 0) void notifyDataChanged();
+			void notifyDataChanged();
 			// Kam beim ersten Abgleich etwas an, war dieses Geraet nie leer - es
 			// wusste es nur noch nicht. Der Willkommensbildschirm hat sich damit
 			// erledigt, und zwar bevor jemand ihn ausfuellt und dabei die echten
