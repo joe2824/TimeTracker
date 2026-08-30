@@ -18,34 +18,33 @@
 	import Trash2Icon from "@lucide/svelte/icons/trash-2";
 	import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
 
-	let liste = $state<Passkey[]>([]);
-	let geladen = $state(false);
-	let laeuft = $state(false);
-	let name = $state("");
-	/** Welchen benennt man gerade um? */
-	let benennt = $state<string | null>(null);
-	let neuerName = $state("");
+	let passkeys = $state<Passkey[]>([]);
+	let isLoaded = $state(false);
+	let isLoading = $state(false);
+	let newPasskeyName = $state("");
+	let editingPasskeyId = $state<string | null>(null);
+	let editingPasskeyName = $state("");
 
-	async function laden() {
+	async function loadPasskeys() {
 		try {
-			liste = await account.passkeys();
+			passkeys = await account.passkeys();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Passkeys nicht abrufbar");
 		} finally {
-			geladen = true;
+			isLoaded = true;
 		}
 	}
 
 	$effect(() => {
-		if (account.linked && !geladen) void laden();
+		if (account.linked && !isLoaded) void loadPasskeys();
 	});
 
-	async function hinzufuegen() {
-		laeuft = true;
+	async function handleAddPasskey() {
+		isLoading = true;
 		try {
-			const { prfAvailable } = await account.addPasskey(name.trim() || "Weiterer Passkey");
-			name = "";
-			await laden();
+			const { prfAvailable } = await account.addPasskey(newPasskeyName.trim() || "Weiterer Passkey");
+			newPasskeyName = "";
+			await loadPasskeys();
 			if (prfAvailable) {
 				toast.success("Passkey hinzugefügt. Er öffnet die Daten allein.");
 			} else {
@@ -57,40 +56,38 @@
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Hinzufügen fehlgeschlagen");
 		} finally {
-			laeuft = false;
+			isLoading = false;
 		}
 	}
 
-	/** Welcher soll weg? Gesetzt heisst: die Rueckfrage steht offen. */
-	let entfernt = $state<Passkey | null>(null);
+	let passkeyToRemove = $state<Passkey | null>(null);
 
-	async function entfernenBestaetigt() {
-		const p = entfernt;
-		if (!p) return;
+	async function handleConfirmRemove() {
+		const target = passkeyToRemove;
+		if (!target) return;
 		try {
-			await account.removePasskey(p.id);
-			entfernt = null;
-			await laden();
+			await account.removePasskey(target.id);
+			passkeyToRemove = null;
+			await loadPasskeys();
 			toast.success("Passkey entfernt.");
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Entfernen fehlgeschlagen");
 		}
 	}
 
-	async function umbenennen(id: string) {
+	async function handleRenamePasskey(id: string) {
 		try {
-			await account.renamePasskey(id, neuerName.trim());
-			benennt = null;
-			await laden();
+			await account.renamePasskey(id, editingPasskeyName.trim());
+			editingPasskeyId = null;
+			await loadPasskeys();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Umbenennen fehlgeschlagen");
 		}
 	}
 
-	/** Wie viele koennen den Tresor allein oeffnen? Daran haengt die Warnung. */
-	const mitPrf = $derived(liste.filter((p) => p.hasPrf).length);
+	const prfCount = $derived(passkeys.filter((p) => p.hasPrf).length);
 
-	async function imBrowserOeffnen() {
+	async function handleOpenInBrowser() {
 		try {
 			await openExternal(account.serverUrl);
 		} catch (e) {
@@ -112,10 +109,10 @@
 		</Card.Header>
 
 		<Card.Content class="space-y-4">
-			{#if !geladen}
+			{#if !isLoaded}
 				<p class="text-muted-foreground text-sm">Lädt…</p>
 			{:else}
-				{#if liste.length === 1}
+				{#if passkeys.length === 1}
 					<div class="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs text-amber-900 dark:text-amber-200">
 						<ShieldAlertIcon class="size-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
 						<div>
@@ -130,26 +127,26 @@
 
 				<div class="space-y-2">
 					<Label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-						Registrierte Passkeys ({liste.length})
+						Registrierte Passkeys ({passkeys.length})
 					</Label>
 					<div class="divide-y rounded-lg border bg-card">
-						{#each liste as p (p.id)}
+						{#each passkeys as p (p.id)}
 							<div class="flex items-center justify-between gap-3 p-3 text-sm">
 								<div class="flex items-center gap-3 min-w-0">
 									<div class="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
 										<FingerprintIcon class="size-4" />
 									</div>
 									<div class="min-w-0">
-										{#if benennt === p.id}
+										{#if editingPasskeyId === p.id}
 											<div class="flex items-center gap-1.5 py-0.5">
 												<Input
-													bind:value={neuerName}
+													bind:value={editingPasskeyName}
 													class="h-8 w-44 sm:w-56 text-xs"
 													placeholder="z. B. Handy"
-													onkeydown={(e) => e.key === "Enter" && neuerName.trim() && umbenennen(p.id)}
+													onkeydown={(e) => e.key === "Enter" && editingPasskeyName.trim() && handleRenamePasskey(p.id)}
 												/>
-												<Button size="sm" class="h-8 text-xs" onclick={() => umbenennen(p.id)}>Speichern</Button>
-												<Button variant="ghost" size="sm" class="h-8 text-xs" onclick={() => (benennt = null)}>
+												<Button size="sm" class="h-8 text-xs" onclick={() => handleRenamePasskey(p.id)}>Speichern</Button>
+												<Button variant="ghost" size="sm" class="h-8 text-xs" onclick={() => (editingPasskeyId = null)}>
 													Abbrechen
 												</Button>
 											</div>
@@ -178,7 +175,7 @@
 									</div>
 								</div>
 
-								{#if benennt !== p.id}
+								{#if editingPasskeyId !== p.id}
 									<div class="flex shrink-0 items-center gap-1">
 										<Button
 											variant="ghost"
@@ -186,19 +183,19 @@
 											class="text-muted-foreground hover:text-foreground"
 											title="Umbenennen"
 											onclick={() => {
-												benennt = p.id;
-												neuerName = p.label ?? "";
+												editingPasskeyId = p.id;
+												editingPasskeyName = p.label ?? "";
 											}}
 										>
 											<PencilIcon class="size-3.5" />
 										</Button>
-										{#if liste.length > 1}
+										{#if passkeys.length > 1}
 											<Button
 												variant="ghost"
 												size="icon-sm"
 												class="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
 												title="Passkey entfernen"
-												onclick={() => (entfernt = p)}
+												onclick={() => (passkeyToRemove = p)}
 											>
 												<Trash2Icon class="size-3.5" />
 											</Button>
@@ -210,7 +207,7 @@
 					</div>
 				</div>
 
-				{#if mitPrf === 0 && liste.length > 0}
+				{#if prfCount === 0 && passkeys.length > 0}
 					<p class="text-muted-foreground text-xs">
 						Keiner dieser Passkeys kann den Tresor allein öffnen – zum Entsperren braucht es
 						zusätzlich die Wiederherstellungs-Phrase oder ein bereits entsperrtes Gerät.
@@ -229,7 +226,7 @@
 							variant="outline"
 							size="sm"
 							class="shrink-0 self-start sm:self-center gap-1.5"
-							onclick={imBrowserOeffnen}
+							onclick={handleOpenInBrowser}
 							disabled={!account.serverUrl}
 						>
 							<ExternalLinkIcon class="size-3.5" />
@@ -247,13 +244,13 @@
 						<div class="flex flex-wrap gap-2 pt-1">
 							<Input
 								id="pkname"
-								bind:value={name}
+								bind:value={newPasskeyName}
 								placeholder="z. B. Touch ID"
 								class="w-56 text-sm"
-								onkeydown={(e) => e.key === "Enter" && name.trim() && !laeuft && hinzufuegen()}
+								onkeydown={(e) => e.key === "Enter" && newPasskeyName.trim() && !isLoading && handleAddPasskey()}
 							/>
-							<Button onclick={hinzufuegen} disabled={laeuft}>
-								{laeuft ? "Wartet auf Bestätigung…" : "Passkey hinzufügen"}
+							<Button onclick={handleAddPasskey} disabled={isLoading}>
+								{isLoading ? "Wartet auf Bestätigung…" : "Passkey hinzufügen"}
 							</Button>
 						</div>
 					</div>
@@ -263,18 +260,18 @@
 	</Card.Root>
 {/if}
 
-<Dialog.Root open={entfernt !== null} onOpenChange={(o) => !o && (entfernt = null)}>
+<Dialog.Root open={passkeyToRemove !== null} onOpenChange={(o) => !o && (passkeyToRemove = null)}>
 	<Dialog.Content>
 		<Dialog.Header>
-			<Dialog.Title>„{entfernt?.label ?? 'Unbenannt'}" entfernen?</Dialog.Title>
+			<Dialog.Title>„{passkeyToRemove?.label ?? 'Unbenannt'}" entfernen?</Dialog.Title>
 			<Dialog.Description>
 				Dieser Weg ins Konto fällt damit weg. Der Passkey selbst bleibt auf dem Gerät liegen,
 				öffnet hier aber nichts mehr – zurückholen lässt er sich nur, indem du ihn neu anlegst.
 			</Dialog.Description>
 		</Dialog.Header>
 		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (entfernt = null)}>Abbrechen</Button>
-			<Button variant="destructive" onclick={entfernenBestaetigt}>Entfernen</Button>
+			<Button variant="outline" onclick={() => (passkeyToRemove = null)}>Abbrechen</Button>
+			<Button variant="destructive" onclick={handleConfirmRemove}>Entfernen</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

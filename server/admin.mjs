@@ -1,191 +1,190 @@
-// Verwaltung von der Kommandozeile - im Container.
+// Command line administration for TimeTracker server (inside container).
 //
-// Bewusst kein Endpunkt: der waere dauerhaft im Netz erreichbar, dieses Skript
-// nur, solange jemand es aufruft.
-//
-//   docker compose exec timetracker node admin.mjs liste
-//   docker compose exec timetracker node admin.mjs ernenne <id-oder-name>
-//   docker compose exec timetracker node admin.mjs entziehe <id-oder-name>
-//   docker compose exec timetracker node admin.mjs einladung [notiz] [--tage 14]
+// Examples:
+//   docker compose exec timetracker node admin.mjs list
+//   docker compose exec timetracker node admin.mjs promote <id-or-name>
+//   docker compose exec timetracker node admin.mjs demote <id-or-name>
+//   docker compose exec timetracker node admin.mjs rename <id-or-name> <new-name>
+//   docker compose exec timetracker node admin.mjs invite [note] [--days 14]
 import Database from "better-sqlite3";
 import { randomInt } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-const DATEI = process.env.DB_FILE ?? `${process.env.DATA_DIR ?? "/data"}/timetracker.db`;
-const db = new Database(DATEI);
+const dbFile = process.env.DB_FILE ?? `${process.env.DATA_DIR ?? "/data"}/timetracker.db`;
+const db = new Database(dbFile);
 
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-const neuerCode = () =>
+const createInviteCode = () =>
 	Array.from({ length: 4 }, () =>
 		Array.from({ length: 4 }, () => ALPHABET[randomInt(ALPHABET.length)]).join("")
 	).join("-");
 
-const datum = (ms) => (ms ? new Date(ms).toISOString().slice(0, 16).replace("T", " ") : "–");
+const formatDate = (ms) => (ms ? new Date(ms).toISOString().slice(0, 16).replace("T", " ") : "–");
 
-/** Die Platzhalter von LIKE entwerten - ein "%" in der Suche traefe sonst alles. */
-const escapeLike = (s) => s.replace(/[\\%_]/g, "\\$&");
+/** Escape LIKE query wildcards (% and _). */
+const escapeLike = (str) => str.replace(/[\\%_]/g, "\\$&");
 
-/** Ein Konto finden - ueber die Kennung, ihren Anfang, oder den Anzeigenamen. */
-function findeKonto(suche) {
-	const genau = db.prepare("SELECT * FROM users WHERE id = ?").get(suche);
-	if (genau) return { treffer: [genau] };
+/** Find user account by exact ID, display name, or ID prefix (>= 4 chars). */
+function findUser(query) {
+	const exactMatch = db.prepare("SELECT * FROM users WHERE id = ?").get(query);
+	if (exactMatch) return { matches: [exactMatch] };
 
-	const nachName = db.prepare("SELECT * FROM users WHERE lower(display_name) = lower(?)").all(suche);
-
-	// Der Anfang der Kennung. Ab vier Zeichen, sonst trifft es zu leicht mehrere.
-	const nachPraefix =
-		suche.length >= 4
+	const byName = db.prepare("SELECT * FROM users WHERE lower(display_name) = lower(?)").all(query);
+	const byPrefix =
+		query.length >= 4
 			? db
 					.prepare("SELECT * FROM users WHERE id LIKE ? ESCAPE '\\'")
-					.all(`${escapeLike(suche)}%`)
+					.all(`${escapeLike(query)}%`)
 			: [];
 
-	const treffer = [...nachName];
-	for (const k of nachPraefix) if (!treffer.some((t) => t.id === k.id)) treffer.push(k);
-	return { treffer };
+	const matches = [...byName];
+	for (const candidate of byPrefix) {
+		if (!matches.some((m) => m.id === candidate.id)) {
+			matches.push(candidate);
+		}
+	}
+	return { matches };
 }
 
-/** Woran man zwei gleichnamige Konten auseinanderhaelt. */
-function merkmale(id) {
-	const geraete = db
+/** Get device and activity characteristics for disambiguating user accounts. */
+function getUserFeatures(userId) {
+	const devices = db
 		.prepare("SELECT label, last_seen_at FROM devices WHERE user_id = ? AND revoked_at IS NULL")
-		.all(id);
-	const datensaetze = db.prepare("SELECT count(*) n FROM records WHERE user_id = ?").get(id).n;
-	const zuletzt = geraete.reduce((m, g) => Math.max(m, g.last_seen_at ?? 0), 0);
+		.all(userId);
+	const recordCount = db.prepare("SELECT count(*) n FROM records WHERE user_id = ?").get(userId).n;
+	const lastSeen = devices.reduce((max, d) => Math.max(max, d.last_seen_at ?? 0), 0);
 	return {
-		geraete: geraete.map((g) => g.label).join(", ") || "keine",
-		datensaetze,
-		zuletzt
+		devices: devices.map((d) => d.label).join(", ") || "keine",
+		recordCount,
+		lastSeen
 	};
 }
 
-function liste() {
-	const konten = db
+function listUsers() {
+	const users = db
 		.prepare("SELECT id, display_name, is_admin, created_at FROM users ORDER BY created_at")
 		.all();
-	if (konten.length === 0) {
+	if (users.length === 0) {
 		console.log("Noch keine Konten. Der erste Mensch registriert sich über die Weboberfläche –");
 		console.log("mit einem Code aus INVITE_CODES. Danach hier zum Verwalter ernennen.");
 		return;
 	}
 	console.log("\nKonten:\n");
-	for (const k of konten) {
-		const m = merkmale(k.id);
-		const name = k.display_name && k.display_name !== k.id ? k.display_name : "–";
+	for (const user of users) {
+		const features = getUserFeatures(user.id);
+		const name = user.display_name && user.display_name !== user.id ? user.display_name : "–";
 		console.log(
-			`  ${k.is_admin ? "[Verwalter]" : "[         ]"}  ${name.padEnd(20)}  ID: ${k.id}`
+			`  ${user.is_admin ? "[Verwalter]" : "[         ]"}  ${name.padEnd(20)}  ID: ${user.id}`
 		);
 		console.log(
-			`                 seit ${datum(k.created_at)}   Geräte: ${m.geraete}   Datensätze: ${m.datensaetze}`
+			`                 seit ${formatDate(user.created_at)}   Geräte: ${features.devices}   Datensätze: ${features.recordCount}`
 		);
 	}
 
 	const codes = db.prepare("SELECT * FROM invites ORDER BY created_at DESC LIMIT 20").all();
 	console.log(`\nEinladungen (${codes.length}):\n`);
-	for (const c of codes) {
-		const stand = c.used_at
-			? `benutzt ${datum(c.used_at)}`
-			: c.revoked_at
+	for (const invite of codes) {
+		const status = invite.used_at
+			? `benutzt ${formatDate(invite.used_at)}`
+			: invite.revoked_at
 				? "zurückgezogen"
-				: c.expires_at && c.expires_at < Date.now()
+				: invite.expires_at && invite.expires_at < Date.now()
 					? "abgelaufen"
 					: "offen";
-		console.log(`  ${c.code}  ${stand.padEnd(22)} ${c.note ?? ""}`);
+		console.log(`  ${invite.code}  ${status.padEnd(22)} ${invite.note ?? ""}`);
 	}
 
-	const ausUmgebung = (process.env.INVITE_CODES ?? "").split(",").filter(Boolean);
-	if (ausUmgebung.length > 0) {
-		const deaktiviert = envInvitesDeaktiviert();
-		if (deaktiviert) {
-			console.log(`\nHinweis: ${ausUmgebung.length} Code(s) in INVITE_CODES (.env) sind DEAKTIVIERT (gesperrt).`);
+	const envCodes = (process.env.INVITE_CODES ?? "").split(",").filter(Boolean);
+	if (envCodes.length > 0) {
+		const isDisabled = isEnvInvitesDisabled();
+		if (isDisabled) {
+			console.log(`\nHinweis: ${envCodes.length} Code(s) in INVITE_CODES (.env) sind DEAKTIVIERT (gesperrt).`);
 		} else {
-			console.log(`\nAchtung: ${ausUmgebung.length} Code(s) stehen in INVITE_CODES (.env) und sind AKTIV.`);
+			console.log(`\nAchtung: ${envCodes.length} Code(s) stehen in INVITE_CODES (.env) und sind AKTIV.`);
 			console.log("Sie können in der App oder mit 'tt env-invites disable' deaktiviert werden.");
 		}
 	}
 	console.log("");
 }
 
-function envInvitesDeaktiviert() {
+function isEnvInvitesDisabled() {
 	try {
-		const zeile = db.prepare("SELECT value FROM server_settings WHERE key = 'env_invites_disabled'").get();
-		return zeile?.value === "true";
+		const row = db.prepare("SELECT value FROM server_settings WHERE key = 'env_invites_disabled'").get();
+		return row?.value === "true";
 	} catch {
 		return false;
 	}
 }
 
-function setzeEnvInvitesDeaktiviert(deaktiviert) {
+function setEnvInvitesDisabled(disabled) {
 	try {
 		db.prepare("CREATE TABLE IF NOT EXISTS server_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL)").run();
-		db.prepare("INSERT INTO server_settings (key, value, updated_at) VALUES ('env_invites_disabled', ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at").run(deaktiviert ? "true" : "false", Date.now());
-		console.log(`\n  Statische Einladungscodes (.env) sind jetzt ${deaktiviert ? "DEAKTIVIERT" : "AKTIVIERT"}.\n`);
+		db.prepare("INSERT INTO server_settings (key, value, updated_at) VALUES ('env_invites_disabled', ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at").run(disabled ? "true" : "false", Date.now());
+		console.log(`\n  Statische Einladungscodes (.env) sind jetzt ${disabled ? "DEAKTIVIERT" : "AKTIVIERT"}.\n`);
 	} catch (e) {
 		console.error("Fehler beim Ändern der Servereinstellung:", e.message);
 	}
 }
 
-function setzeRolle(suche, wert) {
-	const { treffer } = findeKonto(suche);
-	if (treffer.length === 0) {
-		console.error(`Kein Konto gefunden für "${suche}". "node admin.mjs liste" zeigt alle.`);
+function setAdminRole(target, isAdmin) {
+	const { matches } = findUser(target);
+	if (matches.length === 0) {
+		console.error(`Kein Konto gefunden für "${target}". "node admin.mjs list" zeigt alle.`);
 		process.exit(1);
 	}
-	if (treffer.length > 1) {
+	if (matches.length > 1) {
 		console.error("");
-		console.error(`Mehrdeutig – ${treffer.length} Konten passen auf "${suche}".`);
+		console.error(`Mehrdeutig – ${matches.length} Konten passen auf "${target}".`);
 		console.error("");
 		console.error("Welches gemeint ist, sagt am ehesten das Gerät oder der Zeitpunkt:");
 		console.error("");
-		for (const t of treffer) {
-			const m = merkmale(t.id);
-			console.error(`  ${t.display_name}`);
-			console.error(`    Kennung     ${t.id}`);
-			console.error(`    angelegt    ${datum(t.created_at)}`);
-			console.error(`    Geräte      ${m.geraete}`);
-			console.error(`    zuletzt     ${m.zuletzt ? datum(m.zuletzt) : "nie verbunden"}`);
-			console.error(`    Datensätze  ${m.datensaetze}`);
+		for (const match of matches) {
+			const features = getUserFeatures(match.id);
+			console.error(`  ${match.display_name}`);
+			console.error(`    Kennung     ${match.id}`);
+			console.error(`    angelegt    ${formatDate(match.created_at)}`);
+			console.error(`    Geräte      ${features.devices}`);
+			console.error(`    zuletzt     ${features.lastSeen ? formatDate(features.lastSeen) : "nie verbunden"}`);
+			console.error(`    Datensätze  ${features.recordCount}`);
 			console.error("");
 		}
-		// Der Anfang der Kennung genuegt - die ganze UUID tippt niemand ab.
-		console.error(`Dann z. B.:  node admin.mjs ernenne ${treffer[0].id.slice(0, 8)}`);
+		console.error(`Dann z. B.:  node admin.mjs promote ${matches[0].id.slice(0, 8)}`);
 		console.error("");
 		process.exit(1);
 	}
-	const k = treffer[0];
-	db.prepare("UPDATE users SET is_admin = ? WHERE id = ?").run(wert ? 1 : 0, k.id);
+	const user = matches[0];
+	db.prepare("UPDATE users SET is_admin = ? WHERE id = ?").run(isAdmin ? 1 : 0, user.id);
 	console.log(
-		`${k.display_name} (${k.id}) ist ${wert ? "jetzt Verwalter" : "kein Verwalter mehr"}.`
+		`${user.display_name} (${user.id}) ist ${isAdmin ? "jetzt Verwalter" : "kein Verwalter mehr"}.`
 	);
-	if (!wert) {
-		const rest = db.prepare("SELECT count(*) n FROM users WHERE is_admin = 1").get().n;
-		if (rest === 0) {
+	if (!isAdmin) {
+		const remainingAdmins = db.prepare("SELECT count(*) n FROM users WHERE is_admin = 1").get().n;
+		if (remainingAdmins === 0) {
 			console.log("\nHinweis: Es gibt jetzt KEINEN Verwalter mehr. Einladungen lassen sich");
 			console.log("nur noch hier ausstellen, nicht mehr über die Oberfläche.");
 		}
 	}
 }
 
-function einladung(argv) {
-	let tage = 0;
-	const bereinigt = [];
+function createInvite(argv) {
+	let days = 0;
+	const cleanArgs = [];
 	for (let i = 0; i < argv.length; i++) {
 		if (argv[i] === "--tage" || argv[i] === "--days" || argv[i] === "-d") {
-			tage = Number(argv[++i]) || 0;
+			days = Number(argv[++i]) || 0;
 		} else {
-			bereinigt.push(argv[i]);
+			cleanArgs.push(argv[i]);
 		}
 	}
-	const notiz = bereinigt.join(" ") || null;
-
-	const code = neuerCode();
+	const note = cleanArgs.join(" ") || null;
+	const code = createInviteCode();
 	db.prepare(
 		"INSERT INTO invites (code, created_at, created_by, note, expires_at) VALUES (?,?,?,?,?)"
-	).run(code, Date.now(), null, notiz, tage > 0 ? Date.now() + tage * 86_400_000 : null);
+	).run(code, Date.now(), null, note, days > 0 ? Date.now() + days * 86_400_000 : null);
 	console.log(`\n  ${code}\n`);
-	console.log(tage > 0 ? `  Gilt ${tage} Tage, genau einmal.` : "  Gilt unbegrenzt, genau einmal.");
-	if (notiz) console.log(`  Notiz: ${notiz}`);
+	console.log(days > 0 ? `  Gilt ${days} Tage, genau einmal.` : "  Gilt unbegrenzt, genau einmal.");
+	if (note) console.log(`  Notiz: ${note}`);
 	console.log("");
 }
 
@@ -195,124 +194,124 @@ function formatBytes(bytes) {
 	return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
-function zeigeSicherungen() {
-	const dir = process.env.BACKUP_DIR ?? `${process.env.DATA_DIR ?? "/data"}/backups`;
-	if (!existsSync(dir)) {
+function listBackups() {
+	const backupDir = process.env.BACKUP_DIR ?? `${process.env.DATA_DIR ?? "/data"}/backups`;
+	if (!existsSync(backupDir)) {
 		console.log("\nNoch keine Sicherungen vorhanden.\n");
 		return;
 	}
-	const dateien = readdirSync(dir)
+	const backupFiles = readdirSync(backupDir)
 		.filter((f) => f.endsWith(".db"))
 		.map((f) => {
-			const voll = join(dir, f);
-			const st = statSync(voll);
-			return { name: f, pfad: voll, bytes: st.size, mtime: st.mtimeMs };
+			const fullPath = join(backupDir, f);
+			const stat = statSync(fullPath);
+			return { name: f, path: fullPath, size: stat.size, mtime: stat.mtimeMs };
 		})
 		.sort((a, b) => b.mtime - a.mtime);
 
-	if (dateien.length === 0) {
+	if (backupFiles.length === 0) {
 		console.log("\nNoch keine Sicherungen vorhanden.\n");
 		return;
 	}
-	console.log(`\nVorhandene Sicherungen in ${dir} (${dateien.length}):\n`);
-	for (const d of dateien) {
-		console.log(`  ${d.name.padEnd(46)}  ${datum(d.mtime)}   ${formatBytes(d.bytes)}`);
+	console.log(`\nVorhandene Sicherungen in ${backupDir} (${backupFiles.length}):\n`);
+	for (const file of backupFiles) {
+		console.log(`  ${file.name.padEnd(46)}  ${formatDate(file.mtime)}   ${formatBytes(file.size)}`);
 	}
 	console.log("");
 }
 
-async function backup(argv) {
+async function createBackup(argv) {
 	if (argv[0] === "list" || argv[0] === "liste") {
-		zeigeSicherungen();
+		listBackups();
 		return;
 	}
-	const dir = process.env.BACKUP_DIR ?? `${process.env.DATA_DIR ?? "/data"}/backups`;
-	mkdirSync(dir, { recursive: true });
+	const backupDir = process.env.BACKUP_DIR ?? `${process.env.DATA_DIR ?? "/data"}/backups`;
+	mkdirSync(backupDir, { recursive: true });
 
 	const pad = (n) => String(n).padStart(2, "0");
-	const d = new Date();
-	const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
-	const standardPfad = join(dir, `timetracker-backup-${stamp}.db`);
-	const ziel = argv[0] || standardPfad;
+	const now = new Date();
+	const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+	const defaultPath = join(backupDir, `timetracker-backup-${timestamp}.db`);
+	const targetPath = argv[0] || defaultPath;
 	try {
-		await db.backup(ziel);
-		console.log(`\n  Sicherung erfolgreich erstellt:\n  ${ziel}\n`);
+		await db.backup(targetPath);
+		console.log(`\n  Sicherung erfolgreich erstellt:\n  ${targetPath}\n`);
 	} catch (err) {
 		console.error(`\n  Fehler bei der Sicherung: ${err.message}\n`);
 		process.exit(1);
 	}
 }
 
-function benenneUm(suche, neuerName) {
-	if (!suche || !neuerName) {
+function renameUser(target, newName) {
+	if (!target || !newName) {
 		console.error("\nVerwendung: tt rename <id-oder-name> <neuer-name>\n");
 		process.exit(1);
 	}
-	const { treffer } = findeKonto(suche);
-	if (treffer.length === 0) {
-		console.error(`\nKein Konto gefunden für "${suche}". "tt users" zeigt alle.\n`);
+	const { matches } = findUser(target);
+	if (matches.length === 0) {
+		console.error(`\nKein Konto gefunden für "${target}". "tt users" zeigt alle.\n`);
 		process.exit(1);
 	}
-	if (treffer.length > 1) {
-		console.error(`\nMehrdeutig – ${treffer.length} Konten passen auf "${suche}". Bitte eindeutige ID angeben.\n`);
+	if (matches.length > 1) {
+		console.error(`\nMehrdeutig – ${matches.length} Konten passen auf "${target}". Bitte eindeutige ID angeben.\n`);
 		process.exit(1);
 	}
-	const k = treffer[0];
-	const saubererName = neuerName.trim().slice(0, 64);
-	db.prepare("UPDATE users SET display_name = ? WHERE id = ?").run(saubererName, k.id);
-	console.log(`\n  Konto ${k.id} wurde von "${k.display_name}" in "${saubererName}" umbenannt.\n`);
+	const user = matches[0];
+	const cleanName = newName.trim().slice(0, 64);
+	db.prepare("UPDATE users SET display_name = ? WHERE id = ?").run(cleanName, user.id);
+	console.log(`\n  Konto ${user.id} wurde von "${user.display_name}" in "${cleanName}" umbenannt.\n`);
 }
 
-const [befehl, ...rest] = process.argv.slice(2);
-switch (befehl) {
+const [command, ...args] = process.argv.slice(2);
+switch (command) {
 	case "liste":
 	case "list":
 	case "users":
 	case "konten":
-		liste();
+		listUsers();
 		break;
 	case "rename":
 	case "umbenennen":
 	case "name":
-		benenneUm(rest[0], rest.slice(1).join(" "));
+		renameUser(args[0], args.slice(1).join(" "));
 		break;
 	case "ernenne":
 	case "promote":
 	case "admin":
-		if (rest[0] === "remove" || rest[0] === "revoke" || rest[0] === "entziehe") {
-			setzeRolle(rest[1], false);
+		if (args[0] === "remove" || args[0] === "revoke" || args[0] === "entziehe") {
+			setAdminRole(args[1], false);
 		} else {
-			const ziel = rest[0] === "add" ? rest[1] : rest[0];
-			setzeRolle(ziel, true);
+			const target = args[0] === "add" ? args[1] : args[0];
+			setAdminRole(target, true);
 		}
 		break;
 	case "entziehe":
 	case "demote":
 	case "unadmin":
-		setzeRolle(rest[0], false);
+		setAdminRole(args[0], false);
 		break;
 	case "einladung":
 	case "invite":
 	case "code":
-		einladung(rest);
+		createInvite(args);
 		break;
 	case "backup":
 	case "sicherung":
-		await backup(rest);
+		await createBackup(args);
 		break;
 	case "backups":
 	case "sicherungen":
-		zeigeSicherungen();
+		listBackups();
 		break;
 	case "env-invites":
 	case "tuerklinke":
-		if (rest[0] === "disable" || rest[0] === "aus" || rest[0] === "deaktivieren") {
-			setzeEnvInvitesDeaktiviert(true);
-		} else if (rest[0] === "enable" || rest[0] === "an" || rest[0] === "aktivieren") {
-			setzeEnvInvitesDeaktiviert(false);
+		if (args[0] === "disable" || args[0] === "aus" || args[0] === "deaktivieren") {
+			setEnvInvitesDisabled(true);
+		} else if (args[0] === "enable" || args[0] === "an" || args[0] === "aktivieren") {
+			setEnvInvitesDisabled(false);
 		} else {
-			const aus = envInvitesDeaktiviert();
-			console.log(`\nStatische Einladungscodes (.env) sind aktuell: ${aus ? "DEAKTIVIERT" : "AKTIV"}`);
+			const disabled = isEnvInvitesDisabled();
+			console.log(`\nStatische Einladungscodes (.env) sind aktuell: ${disabled ? "DEAKTIVIERT" : "AKTIV"}`);
 			console.log(`  Befehle: tt env-invites disable | tt env-invites enable\n`);
 		}
 		break;

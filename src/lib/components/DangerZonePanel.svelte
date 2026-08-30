@@ -7,66 +7,66 @@
 	import { account } from "$lib/sync/account.svelte";
 	import { errorText } from "$lib/log";
 
-	const fehlertext = (e: unknown, standard: string) =>
-		e instanceof Error ? errorText(e) : standard;
+	const formatError = (e: unknown, fallback: string) =>
+		e instanceof Error ? errorText(e) : fallback;
 
-	let laeuft = $state(false);
-	let loesenModalOffen = $state(false);
-	let revokeModalOffen = $state(false);
-	let aufloesenModalOffen = $state(false);
-	let geraeteAmKonto = $state<number | null>(null);
+	let isLoading = $state(false);
+	let isUnlinkModalOpen = $state(false);
+	let isRevokeModalOpen = $state(false);
+	let isDeleteAccountModalOpen = $state(false);
+	let linkedDeviceCount = $state<number | null>(null);
 
-	async function aufloesenDialogOeffnen() {
-		aufloesenModalOffen = true;
-		geraeteAmKonto = null;
+	async function handleOpenDeleteAccountDialog() {
+		isDeleteAccountModalOpen = true;
+		linkedDeviceCount = null;
 		try {
 			const info = await account.accountInfo();
-			geraeteAmKonto = info ? info.devices.filter((d) => !d.revokedAt).length : null;
+			linkedDeviceCount = info ? info.devices.filter((d) => !d.revokedAt).length : null;
 		} catch {
-			geraeteAmKonto = null;
+			linkedDeviceCount = null;
 		}
 	}
 
-	async function lokalLoesenBestaetigt() {
-		laeuft = true;
+	async function handleConfirmUnlink() {
+		isLoading = true;
 		try {
 			await account.unlink();
-			loesenModalOffen = false;
+			isUnlinkModalOpen = false;
 			toast.success("Verknüpfung gelöst. Deine erfassten Zeiten bleiben auf diesem Gerät erhalten.");
 		} catch (e) {
-			toast.error(fehlertext(e, "Entkoppeln fehlgeschlagen"));
+			toast.error(formatError(e, "Entkoppeln fehlgeschlagen"));
 		} finally {
-			laeuft = false;
+			isLoading = false;
 		}
 	}
 
-	async function revokeBestaetigt() {
-		laeuft = true;
+	async function handleConfirmRevoke() {
+		isLoading = true;
 		try {
 			await account.unlink({ revokeSelf: true });
-			revokeModalOffen = false;
+			isRevokeModalOpen = false;
 			toast.success("Gerät vom Konto getrennt. Deine erfassten Zeiten bleiben auf diesem Gerät erhalten.");
 		} catch (e) {
-			toast.error(fehlertext(e, "Trennen fehlgeschlagen"));
+			toast.error(formatError(e, "Trennen fehlgeschlagen"));
 		} finally {
-			laeuft = false;
+			isLoading = false;
 		}
 	}
 
-	async function aufloesenBestaetigt() {
-		laeuft = true;
+	async function handleConfirmDeleteAccount() {
+		isLoading = true;
 		try {
-			const summe = await account.unlink({ deleteRemote: true });
-			aufloesenModalOffen = false;
+			const summary = await account.unlink({ deleteRemote: true });
+			isDeleteAccountModalOpen = false;
 			toast.success(
-				summe
-					? `Konto aufgelöst. ${summe.records} Datensätze beim Server gelöscht. Die Zeiten bleiben hier.`
+				summary
+					? `Konto aufgelöst. ${summary.records} Datensätze beim Server gelöscht. Die Zeiten bleiben hier.`
 					: "Konto aufgelöst. Die Zeiten bleiben hier."
 			);
 		} catch (e) {
-			toast.error(fehlertext(e, "Auflösen fehlgeschlagen"));
+			toast.error(formatError(e, "Auflösen fehlgeschlagen"));
 		} finally {
-			laeuft = false;
+			isLoading = false;
 		}
 	}
 </script>
@@ -95,8 +95,8 @@
 					variant="outline"
 					size="sm"
 					class="shrink-0 self-start sm:self-center"
-					disabled={laeuft}
-					onclick={() => (loesenModalOffen = true)}
+					disabled={isLoading}
+					onclick={() => (isUnlinkModalOpen = true)}
 				>
 					Entkoppeln…
 				</Button>
@@ -114,8 +114,8 @@
 						variant="outline"
 						size="sm"
 						class="shrink-0 self-start border-destructive/40 text-destructive hover:bg-destructive/10 sm:self-center"
-						disabled={laeuft}
-						onclick={() => (revokeModalOffen = true)}
+						disabled={isLoading}
+						onclick={() => (isRevokeModalOpen = true)}
 					>
 						Zugang widerrufen…
 					</Button>
@@ -133,8 +133,8 @@
 					variant="destructive"
 					size="sm"
 					class="shrink-0 self-start sm:self-center"
-					disabled={laeuft}
-					onclick={aufloesenDialogOeffnen}
+					disabled={isLoading}
+					onclick={handleOpenDeleteAccountDialog}
 				>
 					Konto auflösen…
 				</Button>
@@ -144,16 +144,16 @@
 
 	<!-- Modal 1: Lokal entkoppeln -->
 	<Dialog.Root
-		open={loesenModalOffen}
+		open={isUnlinkModalOpen}
 		onOpenChange={(o) => {
-			if (!o && !laeuft) loesenModalOffen = false;
+			if (!o && !isLoading) isUnlinkModalOpen = false;
 		}}
 	>
 		<Dialog.Content
 			class="sm:max-w-md"
-			showCloseButton={!laeuft}
-			interactOutsideBehavior={laeuft ? "ignore" : "close"}
-			escapeKeydownBehavior={laeuft ? "ignore" : "close"}
+			showCloseButton={!isLoading}
+			interactOutsideBehavior={isLoading ? "ignore" : "close"}
+			escapeKeydownBehavior={isLoading ? "ignore" : "close"}
 		>
 			<Dialog.Header>
 				<Dialog.Title>Dieses Gerät lokal entkoppeln?</Dialog.Title>
@@ -169,11 +169,11 @@
 				</Dialog.Description>
 			</Dialog.Header>
 			<Dialog.Footer class="gap-2 sm:gap-0">
-				<Button variant="outline" disabled={laeuft} onclick={() => (loesenModalOffen = false)}>
+				<Button variant="outline" disabled={isLoading} onclick={() => (isUnlinkModalOpen = false)}>
 					Abbrechen
 				</Button>
-				<Button disabled={laeuft} onclick={lokalLoesenBestaetigt}>
-					{laeuft ? "Trennt…" : "Lokal entkoppeln"}
+				<Button disabled={isLoading} onclick={handleConfirmUnlink}>
+					{isLoading ? "Trennt…" : "Lokal entkoppeln"}
 				</Button>
 			</Dialog.Footer>
 		</Dialog.Content>
@@ -181,16 +181,16 @@
 
 	<!-- Modal 2: Gerätezugang auf Server widerrufen -->
 	<Dialog.Root
-		open={revokeModalOffen}
+		open={isRevokeModalOpen}
 		onOpenChange={(o) => {
-			if (!o && !laeuft) revokeModalOffen = false;
+			if (!o && !isLoading) isRevokeModalOpen = false;
 		}}
 	>
 		<Dialog.Content
 			class="sm:max-w-md"
-			showCloseButton={!laeuft}
-			interactOutsideBehavior={laeuft ? "ignore" : "close"}
-			escapeKeydownBehavior={laeuft ? "ignore" : "close"}
+			showCloseButton={!isLoading}
+			interactOutsideBehavior={isLoading ? "ignore" : "close"}
+			escapeKeydownBehavior={isLoading ? "ignore" : "close"}
 		>
 			<Dialog.Header>
 				<Dialog.Title>Gerätezugang auf dem Server widerrufen?</Dialog.Title>
@@ -206,11 +206,11 @@
 				</Dialog.Description>
 			</Dialog.Header>
 			<Dialog.Footer class="gap-2 sm:gap-0">
-				<Button variant="outline" disabled={laeuft} onclick={() => (revokeModalOffen = false)}>
+				<Button variant="outline" disabled={isLoading} onclick={() => (isRevokeModalOpen = false)}>
 					Abbrechen
 				</Button>
-				<Button variant="destructive" disabled={laeuft} onclick={revokeBestaetigt}>
-					{laeuft ? "Widerruft…" : "Zugang widerrufen"}
+				<Button variant="destructive" disabled={isLoading} onclick={handleConfirmRevoke}>
+					{isLoading ? "Widerruft…" : "Zugang widerrufen"}
 				</Button>
 			</Dialog.Footer>
 		</Dialog.Content>
@@ -218,16 +218,16 @@
 
 	<!-- Modal 3: Server-Konto endgültig auflösen -->
 	<Dialog.Root
-		open={aufloesenModalOffen}
+		open={isDeleteAccountModalOpen}
 		onOpenChange={(o) => {
-			if (!o && !laeuft) aufloesenModalOffen = false;
+			if (!o && !isLoading) isDeleteAccountModalOpen = false;
 		}}
 	>
 		<Dialog.Content
 			class="sm:max-w-md"
-			showCloseButton={!laeuft}
-			interactOutsideBehavior={laeuft ? "ignore" : "close"}
-			escapeKeydownBehavior={laeuft ? "ignore" : "close"}
+			showCloseButton={!isLoading}
+			interactOutsideBehavior={isLoading ? "ignore" : "close"}
+			escapeKeydownBehavior={isLoading ? "ignore" : "close"}
 		>
 			<Dialog.Header>
 				<Dialog.Title class="text-destructive flex items-center gap-2">
@@ -240,8 +240,8 @@
 					</p>
 					<p>
 						Alle verschlüsselten Datensätze, Passkeys und hinterlegten Geräte werden unwiderruflich vom Server gelöscht.
-						{#if geraeteAmKonto && geraeteAmKonto > 1}
-							<strong class="text-foreground block mt-1">Dies betrifft alle {geraeteAmKonto} verknüpften Geräte.</strong>
+						{#if linkedDeviceCount && linkedDeviceCount > 1}
+							<strong class="text-foreground block mt-1">Dies betrifft alle {linkedDeviceCount} verknüpften Geräte.</strong>
 						{/if}
 					</p>
 					<p class="text-foreground text-xs font-medium border-t pt-2">
@@ -250,14 +250,13 @@
 				</Dialog.Description>
 			</Dialog.Header>
 			<Dialog.Footer class="gap-2 sm:gap-0">
-				<Button variant="outline" disabled={laeuft} onclick={() => (aufloesenModalOffen = false)}>
+				<Button variant="outline" disabled={isLoading} onclick={() => (isDeleteAccountModalOpen = false)}>
 					Abbrechen
 				</Button>
-				<Button variant="destructive" disabled={laeuft} onclick={aufloesenBestaetigt}>
-					{laeuft ? "Löscht…" : "Ja, Server-Konto endgültig löschen"}
+				<Button variant="destructive" disabled={isLoading} onclick={handleConfirmDeleteAccount}>
+					{isLoading ? "Löscht…" : "Ja, Server-Konto endgültig löschen"}
 				</Button>
 			</Dialog.Footer>
 		</Dialog.Content>
 	</Dialog.Root>
 {/if}
-
