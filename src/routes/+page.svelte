@@ -244,7 +244,7 @@
 		try {
 			// Erst NACH dem Laden: der Abgleich schreibt in denselben Bestand, und
 			// ein nicht erreichbarer Server darf den Start nicht aufhalten.
-			void account.init();
+			await account.init();
 			whatsNew.checkOnStartup(app.showOnboarding);
 			scheduleReminders();
 			scheduleReportReminder();
@@ -370,7 +370,7 @@
 	});
 </script>
 
-{#if !app.loaded}
+{#if !app.loaded || (!isTauri() && !account.ready)}
 	<!-- Ladebildschirm mit Auskunft: welcher Schritt laeuft, wie lange schon, und
 	     bei einem Fehler die Meldung samt Weg zurueck. -->
 	<div class="flex min-h-screen items-center justify-center p-8">

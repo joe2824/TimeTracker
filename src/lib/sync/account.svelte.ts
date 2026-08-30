@@ -93,7 +93,12 @@ class AccountState {
 	 * ist zu dem Zeitpunkt vielleicht gar nicht aufgebaut. Wer ihn abholt, raeumt
 	 * ihn weg.
 	 */
+	/**
+	 * Ein Kopplungscode, der ueber einen "timetracker://"-Link hereinkam.
+	 */
 	pairCodeFromLink = $state<string>("");
+	/** Ob die Initialisierung des Kontos (Lesen lokaler Zugangsdaten) abgeschlossen ist. */
+	ready = $state<boolean>(false);
 
 	#api: Api | null = null;
 	#engine: SyncEngine | null = null;
@@ -120,37 +125,41 @@ class AccountState {
 
 	/** Beim Programmstart: falls ein Konto verknuepft ist, alles hochfahren. */
 	async init(): Promise<void> {
-		const info = await loadDevice();
-		// Ohne Adresse oder Schluessel gibt es nichts zu verbinden. Das Token darf
-		// fehlen: im Browser weist das Sitzungs-Cookie aus.
-		if (!info?.serverUrl || !info.vaultKey) return;
-
-		this.serverUrl = info.serverUrl;
-		this.name = info.accountName ?? "";
-		this.secretsProtected = info.protected ?? false;
-		this.state = "verbindet";
 		try {
-			const token = info.token
-				? await unprotectSecret(info.token, info.protected ?? false)
-				: null;
-			const rohschluessel = await unprotectSecret(info.vaultKey, info.protected ?? false);
-			this.#key = await importVaultKey(fromBase64(rohschluessel).buffer as ArrayBuffer);
-			this.#device = await deviceId();
-			this.hasDeviceToken = token !== null;
-			await this.#startEngine(info.serverUrl, token, info.seq ?? 0);
-			this.state = "verbunden";
-			logInfo("Konto verknüpft", { server: info.serverUrl });
-			// Nebenher: die Rolle steht erst fest, wenn der Server geantwortet hat.
-			// Ein Fehlschlag darf den Start nicht aufhalten - dann fehlt eben der
-			// Verwaltungsbereich, bis der naechste Abgleich laeuft.
-			void this.accountInfo().catch(() => {});
-			void this.abgleichMitNachlese();
-		} catch (e) {
-			// Der haeufigste Grund: die Datei stammt von einem anderen
-			// Benutzerkonto. Dann ist die Verknuepfung hier nichts mehr wert.
-			this.state = "fehler";
-			this.message = e instanceof Error ? e.message : "Verknüpfung nicht lesbar";
-			logError("Verknüpfung konnte nicht geöffnet werden", e);
+			const info = await loadDevice();
+			// Ohne Adresse oder Schluessel gibt es nichts zu verbinden. Das Token darf
+			// fehlen: im Browser weist das Sitzungs-Cookie aus.
+			if (!info?.serverUrl || !info.vaultKey) return;
+
+			this.serverUrl = info.serverUrl;
+			this.name = info.accountName ?? "";
+			this.secretsProtected = info.protected ?? false;
+			this.state = "verbindet";
+			try {
+				const token = info.token
+					? await unprotectSecret(info.token, info.protected ?? false)
+					: null;
+				const rohschluessel = await unprotectSecret(info.vaultKey, info.protected ?? false);
+				this.#key = await importVaultKey(fromBase64(rohschluessel).buffer as ArrayBuffer);
+				this.#device = await deviceId();
+				this.hasDeviceToken = token !== null;
+				await this.#startEngine(info.serverUrl, token, info.seq ?? 0);
+				this.state = "verbunden";
+				logInfo("Konto verknüpft", { server: info.serverUrl });
+				// Nebenher: die Rolle steht erst fest, wenn der Server geantwortet hat.
+				// Ein Fehlschlag darf den Start nicht aufhalten - dann fehlt eben der
+				// Verwaltungsbereich, bis der naechste Abgleich laeuft.
+				void this.accountInfo().catch(() => {});
+				void this.abgleichMitNachlese();
+			} catch (e) {
+				// Der haeufigste Grund: die Datei stammt von einem anderen
+				// Benutzerkonto. Dann ist die Verknuepfung hier nichts mehr wert.
+				this.state = "fehler";
+				this.message = e instanceof Error ? e.message : "Verknüpfung nicht lesbar";
+				logError("Verknüpfung konnte nicht geöffnet werden", e);
+			}
+		} finally {
+			this.ready = true;
 		}
 	}
 
