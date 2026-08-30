@@ -3,8 +3,8 @@
 	import { Button } from "$lib/components/ui/button";
 	import { Label } from "$lib/components/ui/label";
 	import * as Dialog from "$lib/components/ui/dialog";
-	import DateInput from "$lib/components/DateInput.svelte";
-	import DayFractionSwitch from "$lib/components/DayFractionSwitch.svelte";
+	import DateInput from "$lib/components/shared/DateInput.svelte";
+	import DayFractionSwitch from "$lib/components/shared/DayFractionSwitch.svelte";
 	import { toast } from "svelte-sonner";
 	import { fmtDate } from "$lib/time";
 

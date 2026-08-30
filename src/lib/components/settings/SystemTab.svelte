@@ -6,9 +6,9 @@
 	import { listEntryYears, type StoredYear } from "$lib/store";
 	import { Button } from "$lib/components/ui/button";
 	import * as Dialog from "$lib/components/ui/dialog";
-	import SettingRow from "$lib/components/SettingRow.svelte";
-	import SettingsCard from "$lib/components/SettingsCard.svelte";
-	import SettingToggle from "$lib/components/SettingToggle.svelte";
+	import SettingRow from "$lib/components/shared/SettingRow.svelte";
+	import SettingsCard from "$lib/components/shared/SettingsCard.svelte";
+	import SettingToggle from "$lib/components/shared/SettingToggle.svelte";
 	import { capabilities, isTauri } from "$lib/platform/env";
 	import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 	import { checkForUpdate, updater } from "$lib/updater.svelte";

@@ -1,7 +1,7 @@
 <script lang="ts">
 	// Einstellungs-Zeile mit Schalter. Duenner Aufsatz auf SettingRow, damit die
 	// Zeile selbst nur einmal existiert.
-	import SettingRow from "$lib/components/SettingRow.svelte";
+	import SettingRow from "$lib/components/shared/SettingRow.svelte";
 	import { Switch } from "$lib/components/ui/switch";
 
 	interface Props {

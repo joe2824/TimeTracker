@@ -4,9 +4,9 @@
 	import { formFromSettings, patchFrom, syncForm } from "$lib/settingsSync";
 	import type { Settings } from "$lib/types";
 	import { Button } from "$lib/components/ui/button";
-	import SettingsCard from "$lib/components/SettingsCard.svelte";
-	import SettingToggle from "$lib/components/SettingToggle.svelte";
-	import LogPanel from "$lib/components/LogPanel.svelte";
+	import SettingsCard from "$lib/components/shared/SettingsCard.svelte";
+	import SettingToggle from "$lib/components/shared/SettingToggle.svelte";
+	import LogPanel from "$lib/components/panels/LogPanel.svelte";
 	import { APP_VERSION } from "$lib/defaults";
 	import { getVersion } from "@tauri-apps/api/app";
 	import { invoke } from "@tauri-apps/api/core";

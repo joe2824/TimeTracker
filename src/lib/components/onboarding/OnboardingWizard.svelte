@@ -9,7 +9,7 @@
 	import { Label } from "$lib/components/ui/label";
 	import { Switch } from "$lib/components/ui/switch";
 	import { Textarea } from "$lib/components/ui/textarea";
-	import WorkdayPicker from "$lib/components/WorkdayPicker.svelte";
+	import WorkdayPicker from "$lib/components/shared/WorkdayPicker.svelte";
 	import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 	import TimerIcon from "@lucide/svelte/icons/timer";
 	import MailIcon from "@lucide/svelte/icons/mail";

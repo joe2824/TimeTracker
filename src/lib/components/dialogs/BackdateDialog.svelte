@@ -5,7 +5,7 @@
 	import { Button } from "$lib/components/ui/button";
 	import { app } from "$lib/app.svelte";
 	import { fmtClock, fmtDateHuman, fmtHoursClock } from "$lib/time";
-	import ActivityDot from "$lib/components/ActivityDot.svelte";
+	import ActivityDot from "$lib/components/shared/ActivityDot.svelte";
 
 	interface Props {
 		/** Nach dem tatsaechlichen Start – das Tray meldet damit dem Hauptfenster. */

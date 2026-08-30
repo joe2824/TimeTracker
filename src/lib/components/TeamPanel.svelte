@@ -19,8 +19,8 @@
 	import { errorText, logError, logInfo } from "$lib/log";
 	import { Button } from "$lib/components/ui/button";
 	import { Badge } from "$lib/components/ui/badge";
-	import MonthSelector from "$lib/components/MonthSelector.svelte";
-	import StatTile from "$lib/components/StatTile.svelte";
+	import MonthSelector from "$lib/components/shared/MonthSelector.svelte";
+	import StatTile from "$lib/components/shared/StatTile.svelte";
 	import * as Card from "$lib/components/ui/card";
 	import * as Table from "$lib/components/ui/table";
 	import { toast } from "svelte-sonner";

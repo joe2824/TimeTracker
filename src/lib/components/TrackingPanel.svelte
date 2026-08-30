@@ -24,7 +24,7 @@
 	import StarIcon from "@lucide/svelte/icons/star";
 	import ListIcon from "@lucide/svelte/icons/list";
 	import XIcon from "@lucide/svelte/icons/x";
-	import ActivityDot from "$lib/components/ActivityDot.svelte";
+	import ActivityDot from "$lib/components/shared/ActivityDot.svelte";
 	import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
 	import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
 

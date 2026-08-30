@@ -51,8 +51,8 @@
 	import * as Card from "$lib/components/ui/card";
 	import * as Select from "$lib/components/ui/select";
 	import * as Table from "$lib/components/ui/table";
-	import ActivityCombobox from "$lib/components/ActivityCombobox.svelte";
-	import ProjectSplit from "$lib/components/ProjectSplit.svelte";
+	import ActivityCombobox from "$lib/components/shared/ActivityCombobox.svelte";
+	import ProjectSplit from "$lib/components/shared/ProjectSplit.svelte";
 	import * as Popover from "$lib/components/ui/popover";
 	import FileSpreadsheetIcon from "@lucide/svelte/icons/file-spreadsheet";
 	import UploadIcon from "@lucide/svelte/icons/upload";

@@ -3,7 +3,7 @@
 	// den man im Nachhinein nicht mehr stundengenau auseinandersortieren kann
 	// („grob 60 % MCB, 40 % FFX").
 	import { Button } from "$lib/components/ui/button";
-	import ActivityCombobox from "$lib/components/ActivityCombobox.svelte";
+	import ActivityCombobox from "$lib/components/shared/ActivityCombobox.svelte";
 	import PlusIcon from "@lucide/svelte/icons/plus";
 	import XIcon from "@lucide/svelte/icons/x";
 	import { fmtHoursClock } from "$lib/time";

@@ -6,7 +6,7 @@
 	import { Label } from "$lib/components/ui/label";
 	import { Checkbox } from "$lib/components/ui/checkbox";
 	import { Badge } from "$lib/components/ui/badge";
-	import PairingCode from "$lib/components/PairingCode.svelte";
+	import PairingCode from "$lib/components/onboarding/PairingCode.svelte";
 	import { toast } from "svelte-sonner";
 	import { account } from "$lib/sync/account.svelte";
 	import { ApiError } from "$lib/sync/api";

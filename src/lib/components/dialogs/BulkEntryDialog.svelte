@@ -7,9 +7,9 @@
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
 	import * as Dialog from "$lib/components/ui/dialog";
-	import ActivityCombobox from "$lib/components/ActivityCombobox.svelte";
-	import WorkdayPicker from "$lib/components/WorkdayPicker.svelte";
-	import DateInput from "$lib/components/DateInput.svelte";
+	import ActivityCombobox from "$lib/components/shared/ActivityCombobox.svelte";
+	import WorkdayPicker from "$lib/components/shared/WorkdayPicker.svelte";
+	import DateInput from "$lib/components/shared/DateInput.svelte";
 	import { toast } from "svelte-sonner";
 
 	let {

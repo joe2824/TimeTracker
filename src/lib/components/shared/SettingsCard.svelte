@@ -5,7 +5,7 @@
 	// jeder zweiten Zeile ein handgesetztes "border-t pt-3", mal mit, mal ohne.
 	import type { Snippet } from "svelte";
 	import * as Card from "$lib/components/ui/card";
-	import SavedHint from "$lib/components/SavedHint.svelte";
+	import SavedHint from "$lib/components/shared/SavedHint.svelte";
 	import { cn } from "$lib/utils";
 
 	interface Props {

@@ -28,7 +28,7 @@
 	import * as Chart from "$lib/components/ui/chart";
 	import * as Popover from "$lib/components/ui/popover";
 	import { Skeleton } from "$lib/components/ui/skeleton";
-	import StatTile from "$lib/components/StatTile.svelte";
+	import StatTile from "$lib/components/shared/StatTile.svelte";
 	import { LineChart } from "layerchart";
 	import { scaleTime } from "d3-scale";
 	import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";

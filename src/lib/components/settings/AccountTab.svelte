@@ -1,7 +1,7 @@
 <script lang="ts">
-	import AccountPanel from "$lib/components/AccountPanel.svelte";
-	import PasskeyPanel from "$lib/components/PasskeyPanel.svelte";
-	import DangerZonePanel from "$lib/components/DangerZonePanel.svelte";
+	import AccountPanel from "$lib/components/panels/AccountPanel.svelte";
+	import PasskeyPanel from "$lib/components/panels/PasskeyPanel.svelte";
+	import DangerZonePanel from "$lib/components/panels/DangerZonePanel.svelte";
 </script>
 
 <div class="space-y-4">

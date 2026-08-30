@@ -6,8 +6,8 @@
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
-	import SettingToggle from "$lib/components/SettingToggle.svelte";
-	import SettingsCard from "$lib/components/SettingsCard.svelte";
+	import SettingToggle from "$lib/components/shared/SettingToggle.svelte";
+	import SettingsCard from "$lib/components/shared/SettingsCard.svelte";
 	import { capabilities } from "$lib/platform/env";
 	import PlusIcon from "@lucide/svelte/icons/plus";
 	import Trash2Icon from "@lucide/svelte/icons/trash-2";

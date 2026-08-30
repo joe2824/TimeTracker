@@ -5,11 +5,11 @@
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
-	import WorkdayPicker from "$lib/components/WorkdayPicker.svelte";
-	import SettingRow from "$lib/components/SettingRow.svelte";
-	import SettingsCard from "$lib/components/SettingsCard.svelte";
-	import SettingToggle from "$lib/components/SettingToggle.svelte";
-	import ShortcutKey from "$lib/components/ShortcutKey.svelte";
+	import WorkdayPicker from "$lib/components/shared/WorkdayPicker.svelte";
+	import SettingRow from "$lib/components/shared/SettingRow.svelte";
+	import SettingsCard from "$lib/components/shared/SettingsCard.svelte";
+	import SettingToggle from "$lib/components/shared/SettingToggle.svelte";
+	import ShortcutKey from "$lib/components/shared/ShortcutKey.svelte";
 	import * as Select from "$lib/components/ui/select";
 	import { capabilities } from "$lib/platform/env";
 	import { acceleratorFromEvent, applyShortcuts } from "$lib/shortcuts";

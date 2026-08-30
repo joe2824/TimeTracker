@@ -6,9 +6,9 @@
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
-	import SettingRow from "$lib/components/SettingRow.svelte";
-	import SettingsCard from "$lib/components/SettingsCard.svelte";
-	import SettingToggle from "$lib/components/SettingToggle.svelte";
+	import SettingRow from "$lib/components/shared/SettingRow.svelte";
+	import SettingsCard from "$lib/components/shared/SettingsCard.svelte";
+	import SettingToggle from "$lib/components/shared/SettingToggle.svelte";
 	import { isTauri } from "$lib/platform/env";
 	import { toast } from "svelte-sonner";
 	import BellIcon from "@lucide/svelte/icons/bell";

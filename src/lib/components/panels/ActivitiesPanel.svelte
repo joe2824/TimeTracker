@@ -18,7 +18,7 @@
 	import EyeOffIcon from "@lucide/svelte/icons/eye-off";
 	import KeyboardIcon from "@lucide/svelte/icons/keyboard";
 	import XIcon from "@lucide/svelte/icons/x";
-	import ShortcutKey from "$lib/components/ShortcutKey.svelte";
+	import ShortcutKey from "$lib/components/shared/ShortcutKey.svelte";
 
 	let pasteText = $state("");
 	let newName = $state("");

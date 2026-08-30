@@ -7,7 +7,7 @@
 	import { Button } from "$lib/components/ui/button";
 	import * as ButtonGroup from "$lib/components/ui/button-group";
 	import { Input } from "$lib/components/ui/input";
-	import BackdateDialog from "$lib/components/BackdateDialog.svelte";
+	import BackdateDialog from "$lib/components/dialogs/BackdateDialog.svelte";
 	import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 	import { invoke } from "@tauri-apps/api/core";
 	import { emit, listen } from "@tauri-apps/api/event";
@@ -19,7 +19,7 @@
 	import XIcon from "@lucide/svelte/icons/x";
 	import ClockIcon from "@lucide/svelte/icons/clock";
 	import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
-	import ActivityDot from "$lib/components/ActivityDot.svelte";
+	import ActivityDot from "$lib/components/shared/ActivityDot.svelte";
 
 	const win = getCurrentWebviewWindow();
 

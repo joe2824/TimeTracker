@@ -5,7 +5,7 @@
 	import SearchIcon from "@lucide/svelte/icons/search";
 	import CornerDownRightIcon from "@lucide/svelte/icons/corner-down-right";
 	import SquareIcon from "@lucide/svelte/icons/square";
-	import ActivityDot from "$lib/components/ActivityDot.svelte";
+	import ActivityDot from "$lib/components/shared/ActivityDot.svelte";
 
 	let { open = $bindable(false), onNavigate }: { open?: boolean; onNavigate?: (tab: string) => void } =
 		$props();

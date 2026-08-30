@@ -7,10 +7,10 @@
 	import { capabilities } from "$lib/platform/env";
 	import { logInfo } from "$lib/log";
 	import { Button } from "$lib/components/ui/button";
-	import MonthSelector from "$lib/components/MonthSelector.svelte";
-	import StatTile from "$lib/components/StatTile.svelte";
-	import StatsCard from "$lib/components/StatsCard.svelte";
-	import ArbZgCard from "$lib/components/ArbZgCard.svelte";
+	import MonthSelector from "$lib/components/shared/MonthSelector.svelte";
+	import StatTile from "$lib/components/shared/StatTile.svelte";
+	import StatsCard from "$lib/components/shared/StatsCard.svelte";
+	import ArbZgCard from "$lib/components/shared/ArbZgCard.svelte";
 	import * as Card from "$lib/components/ui/card";
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { toast } from "svelte-sonner";

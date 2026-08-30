@@ -13,8 +13,8 @@
 	import { app } from "$lib/app.svelte";
 	import { ApiError, addPasskeyWrap, login, register, unlockWithPhrase } from "$lib/sync/enroll";
 	import * as Dialog from "$lib/components/ui/dialog";
-	import PairingCode from "$lib/components/PairingCode.svelte";
-	import Landing from "$lib/components/Landing.svelte";
+	import PairingCode from "$lib/components/onboarding/PairingCode.svelte";
+	import Landing from "$lib/components/onboarding/Landing.svelte";
 	import DownloadIcon from "@lucide/svelte/icons/download";
 	import FingerprintIcon from "@lucide/svelte/icons/fingerprint";
 	import UserPlusIcon from "@lucide/svelte/icons/user-plus";
