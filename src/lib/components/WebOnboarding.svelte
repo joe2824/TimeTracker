@@ -400,7 +400,7 @@
 							class="hover:text-foreground underline underline-offset-2"
 							onclick={() => (phraseOffen = true)}
 						>
-							Konto über Recovery-Phrase wiederherstellen
+							Konto wiederherstellen
 						</button>
 					</div>
 				{/if}
@@ -617,7 +617,7 @@
 >
 	<Dialog.Content class="sm:max-w-md">
 		<Dialog.Header>
-			<Dialog.Title>Konto über Recovery-Phrase wiederherstellen</Dialog.Title>
+			<Dialog.Title>Konto wiederherstellen</Dialog.Title>
 			<Dialog.Description>
 				Falls du dein primäres Gerät verloren hast, kannst du hier deinen Account
 				mit deiner 24-Wörter-Phrase wiederherstellen.
