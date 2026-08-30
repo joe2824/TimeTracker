@@ -1,15 +1,18 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # TimeTracker Server CLI (tt)
 # Einfache Verwaltung für den TimeTracker-Server
 
 set -e
 
 # Verzeichnis des TimeTracker-Projekts ermitteln (folgt Symlinks)
-SOURCE="${BASH_SOURCE[0]}"
-while [ -h "$SOURCE" ]; do
+SOURCE="$0"
+while [ -L "$SOURCE" ]; do
   DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
   SOURCE="$(readlink "$SOURCE")"
-  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+  case "$SOURCE" in
+    /*) ;;
+    *) SOURCE="$DIR/$SOURCE" ;;
+  esac
 done
 PROJECT_DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
 
@@ -24,6 +27,12 @@ fi
 
 # Befehl innerhalb des Containers oder lokal ausführen
 run_admin() {
+  # Direkt im Container ausgeführt
+  if [ -f "/app/admin.mjs" ]; then
+    (cd /app && node admin.mjs "$@")
+    return $?
+  fi
+
   if [ -f "$PROJECT_DIR/docker-compose.yml" ] && [ -n "$DOCKER_COMPOSE" ]; then
     # Prüfen, ob der Container läuft
     if (cd "$PROJECT_DIR" && $DOCKER_COMPOSE ps --status running --format '{{.Service}}' 2>/dev/null | grep -q "timetracker"); then
@@ -32,7 +41,7 @@ run_admin() {
     fi
   fi
 
-  # Fallback: Falls wir direkt im Container sind oder node lokal aufrufen
+  # Fallback: Falls wir im Projektverzeichnis sind und node lokal aufrufen
   if [ -f "$PROJECT_DIR/admin.mjs" ]; then
     (cd "$PROJECT_DIR" && node admin.mjs "$@")
   elif [ -f "$PROJECT_DIR/server/admin.mjs" ]; then

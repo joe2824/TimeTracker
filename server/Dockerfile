@@ -49,6 +49,8 @@ RUN rm -rf node_modules 	&& npm ci --workspace server --include-workspace-root=f
 # ---------- Betreiben ----------
 FROM node:22-alpine AS runtime
 
+RUN apk add --no-cache bash
+
 # Nicht als root. Der Datenordner gehoert dem Dienstkonto, damit die Datenbank
 # beschreibbar ist, ohne dass irgendetwas mit vollen Rechten laeuft.
 RUN addgroup -S tt && adduser -S tt -G tt
