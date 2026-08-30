@@ -31,10 +31,30 @@ When reviewing code in Antigravity projects, follow these steps and principles.
 - Is pagination or streaming used for large datasets?
 
 ### 4. Security & Resilience
-- Is all user input properly validated and sanitized?
-- Are secrets (API keys, tokens, passwords) hard-coded?
-- Are errors logged meaningfully rather than swallowed?
-- Are authorization checks explicit and enforced?
+- **Secrets, Credentials & Cryptographic Keys**:
+  - Zero hardcoded secrets (API keys, private certificates, JWT secrets, passwords, cloud credentials).
+  - Dynamic loading via environment variables or secret managers.
+  - Entropy & token checks for high-entropy strings and hex/base64 encoded secrets.
+- **Injection Vulnerabilities (OWASP Top 10)**:
+  - *SQL / NoSQL Injection*: Never build SQL queries with string concatenation or f-strings. Always use parameterized queries or type-safe ORMs (e.g. Drizzle).
+  - *Command Injection*: Avoid `shell=True`, `os.system()`, `eval()`, `exec()`, or `child_process.exec()`. Always pass argument lists directly.
+  - *Cross-Site Scripting (XSS)*: Ensure user-supplied strings are sanitized before HTML insertion (avoid unescaped templates or raw innerHTML).
+  - *Path Traversal*: Validate and sanitize file paths against `../` directory traversal attacks with boundary root checks.
+  - *Template Injection (SSTI)*: Disallow untrusted string formatting inside template engines.
+- **Authentication & Authorization (AuthN / AuthZ)**:
+  - *Broken Object Level Authorization (BOLA / IDOR)*: Verify endpoint logic checks user ownership or role permissions before mutating or fetching records by ID.
+  - *Session & Token Validation*: Ensure tokens verify signatures, expiration (`exp`), issuer (`iss`), and prevent algorithm confusion.
+  - *Role-Based Access Control (RBAC)*: Ensure route guards and middleware intercept unauthorized requests early.
+- **Cryptography & Hashing**:
+  - *Modern Hashing*: Use Argon2id, bcrypt, or PBKDF2 with appropriate work factors for passwords and secrets. MD5/SHA-1 strictly forbidden for security.
+  - *Symmetric Encryption*: Use AES-GCM or ChaCha20-Poly1305 with unique nonces/IVs per encryption. Avoid ECB mode.
+  - *Secure Random Numbers*: Use cryptographically secure random generators (`crypto.getRandomValues`, Node `crypto.randomBytes` / `randomInt`, `secrets`) instead of pseudo-random generators (`Math.random`).
+- **Network & Deserialization Security**:
+  - *Server-Side Request Forgery (SSRF)*: Validate and whitelist target URLs when making outbound HTTP requests based on user input (disallow internal IP ranges `127.0.0.1`, `10.0.0.0/8`, `169.254.169.254`).
+  - *Safe Deserialization*: Disallow unsafe deserialization (`pickle.loads`, unsafe YAML/JSON). Use schema-validated parsers (Zod, Pydantic, TypeScript runtime checks).
+- **Error Handling & Resilience**:
+  - Log errors meaningfully with context, never swallow errors silently without recovery.
+  - Fail closed on security checks.
 
 ### 5. Testing & Documentation
 - Are unit tests added or updated for new behavior?
