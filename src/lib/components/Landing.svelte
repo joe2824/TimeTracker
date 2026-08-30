@@ -136,12 +136,10 @@
 					<KeyRoundIcon class="size-3.5" />
 					<span>Anmelden</span>
 				</Button>
-				{#if desktop}
-					<Button variant="outline" size="sm" href="#download" class="hidden sm:inline-flex gap-1.5">
-						<DownloadIcon class="size-3.5" />
-						<span>Download</span>
-					</Button>
-				{/if}
+				<Button variant="outline" size="sm" href="#download" class="hidden sm:inline-flex gap-1.5">
+					<DownloadIcon class="size-3.5" />
+					<span>{desktop ? "Download" : "Download (Windows)"}</span>
+				</Button>
 				<Button
 					variant="ghost"
 					size="icon"
@@ -216,6 +214,15 @@
 							<DownloadIcon class="size-4" /> Für Windows herunterladen
 						</Button>
 					{:else}
+						<Button
+							variant="outline"
+							class="h-10 gap-2 px-4"
+							href={RELEASES_URL}
+							target="_blank"
+							rel="noreferrer noopener"
+						>
+							<DownloadIcon class="size-4" /> Windows-Download
+						</Button>
 						<Button variant="outline" class="h-10 gap-2 px-4" href="#funktionen">
 							Funktionen ansehen
 						</Button>
@@ -230,6 +237,16 @@
 						<GithubIcon class="size-4" /> Quelltext ansehen
 					</Button>
 				</div>
+
+				{#if os === "macos"}
+					<p class="text-muted-foreground text-xs">
+						<span class="font-medium text-foreground">Hinweis für Mac-Nutzer:</span> Eine native macOS-App wird aktuell nicht unterstützt. Auf dem Mac läuft TimeTracker direkt als Web-App im Browser oder installierte PWA.
+					</p>
+				{:else if !desktop && os !== "mobil"}
+					<p class="text-muted-foreground text-xs">
+						<span class="font-medium text-foreground">Hinweis:</span> Die native Desktop-App ist für Windows verfügbar. Auf anderen Systemen läuft TimeTracker direkt im Browser.
+					</p>
+				{/if}
 			</div>
 		</div>
 	</section>
@@ -352,94 +369,76 @@
 			<div class="mb-10 max-w-2xl">
 				<h2 class="text-2xl font-semibold tracking-tight sm:text-3xl">Wo es läuft</h2>
 				<p class="text-muted-foreground mt-2 text-sm sm:text-base">
-					{#if desktop}
-						Du bist auf Windows. Dafür gibt es die richtige Anwendung mit Tray-Symbol.
+					{#if os === "windows"}
+						Du bist auf Windows. Dafür gibt es die Desktop-Anwendung mit Tray-Symbol und Autostart.
+					{:else if os === "macos"}
+						Du bist auf einem Mac. Eine native macOS-App wird aktuell nicht unterstützt – auf dem Mac läuft TimeTracker direkt als vollwertige Web-App im Browser oder als PWA.
 					{:else}
-						Die Desktop-Anwendung gibt es bisher nur für Windows. Im Browser kannst du
-						trotzdem alles machen, auch als installierte App.
+						Die native Desktop-Anwendung gibt es für Windows. Im Browser kannst du TimeTracker auf jedem System als vollwertige Web-App nutzen.
 					{/if}
 				</p>
 			</div>
 
-			<!-- Der erkannte Weg gross, die uebrigen darunter als Liste. Ein
-			     Kachelraster mit drei gleich grossen Feldern verschweigt, dass eines
-			     davon auf diesem Geraet gar nichts tut. -->
 			<div class="bg-card rounded-xl border p-6 shadow-sm sm:p-8">
-				{#if hauptweg === "windows"}
-					<div class="flex flex-wrap items-start gap-5">
-						<span class="bg-muted flex size-12 shrink-0 items-center justify-center rounded-xl">
-							<MonitorIcon class="size-6" />
-						</span>
-						<div class="min-w-0 flex-1 space-y-3">
-							<div>
-								<h3 class="text-lg font-medium">TimeTracker für Windows</h3>
-								<p class="text-muted-foreground mt-1 text-sm leading-relaxed">
-									Sitzt im Tray, startet mit Windows und merkt, wenn du länger nichts machst.
-									Timer starten und stoppen geht per Tastenkürzel. Updates holt sie sich selbst.
-								</p>
+				<div class="grid gap-6 md:grid-cols-2">
+					<!-- Windows Desktop-App Box -->
+					<div class="bg-background flex flex-col justify-between gap-4 rounded-lg border p-5">
+						<div class="space-y-2">
+							<div class="flex items-center gap-2.5">
+								<span class="bg-muted flex size-10 shrink-0 items-center justify-center rounded-lg">
+									<MonitorIcon class="size-5" />
+								</span>
+								<div>
+									<h3 class="font-medium">TimeTracker für Windows</h3>
+									<Badge variant="outline" class="text-[10px] px-1.5 py-0 h-4">Native Desktop-App</Badge>
+								</div>
 							</div>
-							<Button
-								class="h-10 gap-2 px-4"
-								href={RELEASES_URL}
-								target="_blank"
-								rel="noreferrer noopener"
-							>
-								<DownloadIcon class="size-4" /> Installer herunterladen
-							</Button>
+							<p class="text-muted-foreground text-xs leading-relaxed">
+								Sitzt im Tray, startet mit Windows, globale Tastenkürzel und automatische Updates.
+							</p>
 						</div>
+						<Button
+							class="w-full gap-2 sm:w-auto self-start"
+							href={RELEASES_URL}
+							target="_blank"
+							rel="noreferrer noopener"
+						>
+							<DownloadIcon class="size-4" /> Windows-Installer (.exe)
+						</Button>
 					</div>
-				{:else}
-					<div class="flex flex-wrap items-start gap-5">
-						<span class="bg-muted flex size-12 shrink-0 items-center justify-center rounded-xl">
-							<GlobeIcon class="size-6" />
-						</span>
-						<div class="min-w-0 flex-1 space-y-3">
-							<div>
-								<h3 class="text-lg font-medium">Im Browser</h3>
-								<p class="text-muted-foreground mt-1 text-sm leading-relaxed">
-									Leg oben ein Konto an und fang an. Wenn du sie über „App installieren“
-									beziehungsweise „Zum Startbildschirm hinzufügen“ ablegst, bekommst du ein
-									eigenes Fenster ohne Adresszeile.
-								</p>
-							</div>
-							<Button class="h-10 gap-2 px-4" href="#oben">Konto anlegen</Button>
-						</div>
-					</div>
-				{/if}
 
-				<div class="mt-6 grid gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-2">
-					{#if hauptweg === "windows"}
-						<div class="bg-background flex items-start gap-3 p-4">
-							<GlobeIcon class="text-muted-foreground mt-0.5 size-4 shrink-0" />
-							<p class="text-muted-foreground text-sm">
-								<span class="text-foreground font-medium">Lieber im Browser?</span> Geht genauso.
-								Beide hängen am selben Konto.
+					<!-- Browser / Mac / Mobile Box -->
+					<div class="bg-background flex flex-col justify-between gap-4 rounded-lg border p-5">
+						<div class="space-y-2">
+							<div class="flex items-center gap-2.5">
+								<span class="bg-muted flex size-10 shrink-0 items-center justify-center rounded-lg">
+									<GlobeIcon class="size-5" />
+								</span>
+								<div>
+									<h3 class="font-medium">Web-App (Mac, Linux & Mobile)</h3>
+									<Badge variant="outline" class="text-[10px] px-1.5 py-0 h-4">Browser & PWA</Badge>
+								</div>
+							</div>
+							<p class="text-muted-foreground text-xs leading-relaxed">
+								{#if os === "macos"}
+									Auf dem Mac einfach oben anmelden. Über Safari („Zum Dock hinzufügen“) oder Chrome („App installieren“) als eigenes Fenster ohne Adressleiste nutzbar.
+								{:else}
+									Volle Funktionalität ohne Installation direkt im Browser. Lässt sich auch als App auf den Startbildschirm ablegen.
+								{/if}
 							</p>
 						</div>
-					{:else}
-						<div class="bg-background flex items-start gap-3 p-4">
-							<MonitorIcon class="text-muted-foreground mt-0.5 size-4 shrink-0" />
-							<p class="text-muted-foreground text-sm">
-								<span class="text-foreground font-medium">Windows-Anwendung</span> mit Tray und
-								Tastenkürzel.
-								<a
-									class="hover:text-foreground underline underline-offset-2"
-									href={RELEASES_URL}
-									target="_blank"
-									rel="noreferrer noopener">Releases</a
-								>
-							</p>
-						</div>
-					{/if}
-					<div class="bg-background flex items-start gap-3 p-4">
-						<ServerIcon class="text-muted-foreground mt-0.5 size-4 shrink-0" />
-						<p class="text-muted-foreground text-sm">
-							<span class="text-foreground font-medium">Eigener Server</span>, ein Container.
-							<a class="hover:text-foreground underline underline-offset-2" href="#selbst-hosten"
-								>So geht das</a
-							>
-						</p>
+						<Button variant="outline" class="w-full gap-2 sm:w-auto self-start" href="#anmelden">
+							<KeyRoundIcon class="size-4" /> Jetzt im Browser öffnen
+						</Button>
 					</div>
+				</div>
+
+				<div class="mt-6 flex items-start gap-3 rounded-lg border bg-muted/40 p-4">
+					<ServerIcon class="text-muted-foreground mt-0.5 size-4 shrink-0" />
+					<p class="text-muted-foreground text-xs leading-relaxed">
+						<span class="text-foreground font-medium">Eigener Server:</span> Ein einzelner Docker-Container synchronisiert deine Daten E2E-verschlüsselt zwischen Windows-PC, Mac und Smartphone.
+						<a class="hover:text-foreground underline underline-offset-2 ml-1" href="#selbst-hosten">So geht das</a>
+					</p>
 				</div>
 			</div>
 		</div>
