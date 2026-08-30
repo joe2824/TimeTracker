@@ -684,10 +684,11 @@ class AccountState {
 		// sich nicht beweisen, dass es dieses ist, kommt es weg; der Server hat es.
 		// Auf dem Rechner sind die Zeiten die Sache des Menschen: sie bleiben, gehen
 		// aber nicht hoch (siehe bestandGehoertZu).
-		const fremdeKopie = !isTauri() && Boolean(info.kontoKennung && info.kontoKennung !== kennung);
+		const fremdeKopie = !isTauri() && info.kontoKennung !== kennung;
 		if (fremdeKopie) {
 			await clearAccountData();
-			logInfo("Kontowechsel: lokale Kopie des vorigen Kontos entfernt");
+			app.clearLocalData();
+			logInfo("Kontowechsel / Neuverknüpfung: lokale Kopie entfernt");
 		}
 
 		// Die Merkliste gehoert IMMER dem vorigen Konto - auf beiden Plattformen.
@@ -887,7 +888,10 @@ class AccountState {
 		await this.unlink();
 		// Im Browser war der Bestand nur eine Kopie des Servers. Bliebe er liegen,
 		// sieht der naechste Mensch an diesem Rechner die Zeiten des vorigen.
-		if (!isTauri()) await clearAccountData();
+		if (!isTauri()) {
+			await clearAccountData();
+			app.clearLocalData();
+		}
 	}
 
 	/** Die Verknuepfung loesen. */
@@ -910,6 +914,10 @@ class AccountState {
 		// waere ein Abbruch mittendrin der schlechteste aller Zustaende - Daten
 		// ohne Fassungsnummern, aber ein Konto, das sie noch erwartet.
 		const geloest = await detachLocalData();
+		if (!isTauri()) {
+			await clearAccountData();
+			app.clearLocalData();
+		}
 		logInfo("Verknüpfung gelöst", { ...opts, ...geloest });
 		return summe;
 	}

@@ -126,9 +126,9 @@
 		hilfeOffen = false;
 		laeuft = true;
 		try {
-			// Der Name aus dem Willkommensbildschirm, falls einer dasteht. Kein Pflichtfeld:
-			// ohne ihn setzt der Server die Kontokennung ein.
-			const r = await register(serverUrl, app.settings.senderName.trim(), {
+			// Ohne expliziten Namen setzt der Server die Kontokennung ein;
+			// der Nutzer kann später in den Einstellungen seinen Namen vergeben.
+			const r = await register(serverUrl, "", {
 				invite: code.trim() || undefined
 			});
 			angemeldeterName = r.displayName;
@@ -172,7 +172,8 @@
 		try {
 			const label = await account.approvePairing(c);
 			appCode = "";
-			fertig();
+			onboardingOffen.wert = false;
+			app.dismissOnboarding();
 			toast.success(`„${label}" ist jetzt verknüpft.`);
 		} catch (e) {
 			toast.error(fehlertext(e, "Code konnte nicht bestätigt werden"));
@@ -181,9 +182,10 @@
 		}
 	}
 
-	/** Den Willkommensbildschirm schliessen - ab hier ist die Anwendung dran. */
+	/** Den Willkommensbildschirm schliessen und das Onboarding zur Ersteinrichtung öffnen. */
 	function fertig() {
 		onboardingOffen.wert = false;
+		app.openOnboarding();
 	}
 
 	let appCode = $state("");
@@ -475,7 +477,7 @@
 						</p>
 					{/if}
 
-					<Button variant="ghost" class="w-full" onclick={fertig}>Zum Dashboard</Button>
+					<Button variant="ghost" class="w-full" onclick={fertig}>Direkt im Browser einrichten</Button>
 				</Card.Content>
 			</Card.Root>
 

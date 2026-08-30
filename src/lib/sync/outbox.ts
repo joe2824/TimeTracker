@@ -145,6 +145,9 @@ export async function merkeUngestempeltes(forceAll = false): Promise<void> {
 /** Den Abgleich abschalten – das Programm verhaelt sich danach wieder rein lokal. */
 export function stopTracking(): void {
 	setWriteHook(null);
+	pending = [];
+	loaded = false;
+	deviceId = "";
 }
 
 const hook: WriteHook = {

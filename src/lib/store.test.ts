@@ -4,8 +4,17 @@ import { blockWrites, fakeFs, files, fsFaults, resetFakeFs, written } from "./te
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("./testing/fakeFs")).fakeFs);
 
-const { deleteYear, listEntryMonths, listEntryYears, loadEntries, pruneEmptyMonthFiles, saveEntries } =
-	await import("./store");
+const {
+	clearAccountData,
+	deleteYear,
+	listEntryMonths,
+	listEntryYears,
+	loadEntries,
+	loadSettings,
+	pruneEmptyMonthFiles,
+	saveEntries,
+	saveSettings
+} = await import("./store");
 
 function entry(id: string): Entry {
 	return { id, activityId: "a1", startTs: Date.UTC(2026, 5, 10, 8), endTs: null, note: "", source: "manual" };
@@ -274,5 +283,30 @@ describe("Rundlauf", () => {
 		};
 		await saveEntries("2026-06", [voll]);
 		expect((await loadEntries("2026-06"))[0]).toEqual(voll);
+	});
+});
+
+describe("clearAccountData", () => {
+	it("löscht alle Einträge, Aktivitäten, Outbox, Settings und TimeReports", async () => {
+		await saveEntries("2026-06", [entry("e1")]);
+		await saveEntries("2026-07", [entry("e2")]);
+		files.set("data/activities.json", '[{"id":"a1"}]');
+		files.set("data/outbox.json", '[{"kind":"entry","id":"e1"}]');
+		files.set("data/settings.json", '{"bossEmail":"alt@firma.de","senderName":"Alter Name"}');
+		files.set("data/timereport-2026-06.json", '{"month":"2026-06","days":[]}');
+
+		await clearAccountData();
+
+		expect(files.has(file("2026-06"))).toBe(false);
+		expect(files.has(file("2026-07"))).toBe(false);
+		expect(files.has("data/activities.json")).toBe(false);
+		expect(files.has("data/outbox.json")).toBe(false);
+		expect(files.has("data/settings.json")).toBe(false);
+		expect(files.has("data/timereport-2026-06.json")).toBe(false);
+
+		// Settings fallen nach clearAccountData sauber auf Standardwerte zurück
+		const s = await loadSettings();
+		expect(s.bossEmail).toBe("");
+		expect(s.senderName).toBe("");
 	});
 });

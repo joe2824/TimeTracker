@@ -306,21 +306,24 @@ export interface DeviceInfo {
 }
 
 /**
- * Alles loeschen, was zu einem Konto gehoert - Eintraege, Aktivitaeten, Outbox.
+ * Alles loeschen, was zu einem Konto gehoert – Eintraege, Aktivitaeten, Outbox,
+ * Einstellungen und eingelesene Reports.
  *
- * Fuer den Browser: dort ist der Bestand nur eine Kopie des Servers. Bleibt er
- * beim Kontowechsel liegen, sieht der naechste Mensch die Zeiten des vorigen -
- * und schlimmer: sie wandern beim naechsten Abgleich in SEIN Konto.
- *
- * Die Einstellungen bleiben: sie sind eine Eigenschaft dieses Geraets, kein
- * Inhalt des Kontos.
+ * Fuer den Browser und bei Kontowechsel: dort ist der lokale Bestand nur die
+ * Kopie eines Kontos. Bleiben Daten liegen, sieht der naechste Mensch die Zeiten
+ * und Einstellungen des vorigen – und schlimmer: sie wandern beim naechsten
+ * Abgleich in SEIN Konto.
  */
 export async function clearAccountData(): Promise<void> {
 	for (const monat of await listEntryMonths()) {
 		const pfad = `${DIR}/${entriesFile(monat)}`;
 		if (await storage.exists(pfad)) await storage.remove(pfad);
 	}
-	for (const datei of ["activities.json", "outbox.json"]) {
+	for (const monat of await listTimeReportMonths()) {
+		const pfad = `${DIR}/${reportFile(monat)}`;
+		if (await storage.exists(pfad)) await storage.remove(pfad);
+	}
+	for (const datei of ["activities.json", "outbox.json", "settings.json"]) {
 		const pfad = `${DIR}/${datei}`;
 		if (await storage.exists(pfad)) await storage.remove(pfad);
 	}

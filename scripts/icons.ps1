@@ -144,5 +144,6 @@ for ($i = 0; $i -lt $anzahl; $i++) {
 }
 
 Copy-Item (Join-Path $icons "128x128.png") (Join-Path $repo "static\favicon.png") -Force
+Copy-Item (Join-Path $icons "icon.ico") (Join-Path $repo "static\favicon.ico") -Force
 Remove-Item $tmp -Recurse -Force
-Write-Host "Fertig: icons/tray, icons/window, icon.ico, die PNG/ICNS-Saetze, static/favicon.png"
+Write-Host "Fertig: icons/tray, icons/window, icon.ico, die PNG/ICNS-Saetze, static/favicon.png, static/favicon.ico"
