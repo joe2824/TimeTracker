@@ -303,7 +303,10 @@ class AccountState {
 				}
 				if (ergebnis.pulled >= 20) {
 					this.bulkSync = { phase: "done", pulled: ergebnis.pulled };
-					toast.success(`${ergebnis.pulled} Einträge synchronisiert.`, { id: "sync-bulk" });
+					// Im Browser zeigt das große Modal den Abschluss an – Toast nur in Tauri.
+					if (isTauri()) {
+						toast.success(`${ergebnis.pulled} Einträge synchronisiert.`, { id: "sync-bulk" });
+					}
 					setTimeout(() => {
 						if (this.bulkSync?.phase === "done") {
 							this.bulkSync = null;
