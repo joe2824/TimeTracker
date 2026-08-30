@@ -36,6 +36,7 @@
 	import FileTextIcon from "@lucide/svelte/icons/file-text";
 	import BellIcon from "@lucide/svelte/icons/bell";
 	import UserRoundIcon from "@lucide/svelte/icons/user-round";
+	import ShieldCheckIcon from "@lucide/svelte/icons/shield-check";
 	import MonitorCogIcon from "@lucide/svelte/icons/monitor-cog";
 	import InfoIcon from "@lucide/svelte/icons/info";
 	import WrenchIcon from "@lucide/svelte/icons/wrench";
@@ -324,7 +325,7 @@
 		}
 	}
 
-	type Bereich = "erfassung" | "bericht" | "erinnerungen" | "konto" | "system" | "ueber";
+	type Bereich = "erfassung" | "bericht" | "erinnerungen" | "konto" | "verwaltung" | "system" | "ueber";
 
 	type BereichInfo = {
 		id: Bereich;
@@ -362,6 +363,14 @@
 				hinweis: "Anmeldung, Geräte und der Abgleich zwischen ihnen."
 			}
 		];
+		if (account.isAdmin) {
+			list.push({
+				id: "verwaltung",
+				titel: "Verwaltung",
+				icon: ShieldCheckIcon,
+				hinweis: "Server-Backups, Einladungen und Registrierungsrichtlinien."
+			});
+		}
 		if (capabilities.autostart || capabilities.updater || isTauri()) {
 			list.push({
 				id: "system",
@@ -861,8 +870,9 @@
 		{:else if bereich === "konto"}
 			<AccountPanel />
 			<PasskeyPanel />
-			<AdminPanel />
 			<DangerZonePanel />
+		{:else if bereich === "verwaltung"}
+			<AdminPanel />
 		{:else if bereich === "system"}
 			<!-- Im Browser bleibt von dieser Karte nichts brauchbares - nur Autostart
 			     und Updater gehoeren rein. -->

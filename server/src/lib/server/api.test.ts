@@ -1108,6 +1108,43 @@ describe("Verwaltung", () => {
 		const res2 = await patch2.json();
 		expect(res2.openRegistration).toBe(false);
 	});
+
+	it("erlaubt einem Verwalter Backups aufzulisten, anzulegen, wiederherzustellen und zu löschen", async () => {
+		zumVerwalter(ANNA);
+		// 1. Manuelles Backup erstellen
+		const postRes = await api(annaToken, "/api/admin/backups", { method: "POST" });
+		expect(postRes.status).toBe(201);
+		const postData = await postRes.json();
+		expect(postData.ok).toBe(true);
+		expect(postData.backup.name).toMatch(/^timetracker-backup-/);
+
+		// 2. Backups auflisten
+		const getRes = await api(annaToken, "/api/admin/backups");
+		expect(getRes.status).toBe(200);
+		const getData = await getRes.json();
+		expect(Array.isArray(getData.backups)).toBe(true);
+		expect(getData.backups.some((b: { name: string }) => b.name === postData.backup.name)).toBe(true);
+
+		// 3. Backup wiederherstellen
+		const restoreRes = await api(annaToken, "/api/admin/backups/restore", {
+			method: "POST",
+			body: JSON.stringify({ name: postData.backup.name })
+		});
+		expect(restoreRes.status).toBe(200);
+		const restoreData = await restoreRes.json();
+		expect(restoreData.ok).toBe(true);
+		expect(restoreData.restored).toBe(postData.backup.name);
+
+		// 4. Backup löschen
+		const delRes = await api(annaToken, "/api/admin/backups", {
+			method: "DELETE",
+			body: JSON.stringify({ name: postData.backup.name })
+		});
+		expect(delRes.status).toBe(200);
+
+		// Nicht-Verwalter wird abgewiesen
+		expect((await api(bodoToken, "/api/admin/backups")).status).toBe(403);
+	});
 });
 
 /** Eine Anfrage mit selbst gesetzter Host-Kopfzeile. */

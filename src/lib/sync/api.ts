@@ -37,6 +37,13 @@ export interface PushAnswer {
 	seq: number;
 }
 
+export interface BackupInfo {
+	name: string;
+	size: number;
+	mtime: number;
+	verified: boolean;
+}
+
 export interface Passkey {
 	id: string;
 	/** Wie der Mensch ihn nennt. Null, solange niemand ihn benannt hat. */
@@ -338,6 +345,28 @@ export class Api {
 		return this.#call("/api/admin/invites", {
 			method: "DELETE",
 			body: JSON.stringify({ code })
+		});
+	}
+
+	backups(): Promise<{ backups: BackupInfo[] }> {
+		return this.#call("/api/admin/backups");
+	}
+
+	createBackup(): Promise<{ ok: boolean; backup: BackupInfo }> {
+		return this.#call("/api/admin/backups", { method: "POST" });
+	}
+
+	restoreBackup(name: string): Promise<{ ok: boolean; restored: string; preRestoreBackup: string }> {
+		return this.#call("/api/admin/backups/restore", {
+			method: "POST",
+			body: JSON.stringify({ name })
+		});
+	}
+
+	deleteBackup(name: string): Promise<{ ok: boolean }> {
+		return this.#call("/api/admin/backups", {
+			method: "DELETE",
+			body: JSON.stringify({ name })
 		});
 	}
 

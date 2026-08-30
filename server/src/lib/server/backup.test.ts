@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openDb } from "./db";
-import { cleanupBackups, performBackup, verifyBackupIntegrity } from "./backup";
+import {
+	cleanupBackups,
+	deleteBackupFile,
+	listBackups,
+	performBackup,
+	restoreBackup,
+	verifyBackupIntegrity
+} from "./backup";
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,11 +33,12 @@ describe("Datenbanksicherungen", () => {
 
 	it("erstellt eine atomare Sicherung der SQLite-Datenbank", async () => {
 		const { raw } = openDb(dbFile);
-		const ergebnis = await performBackup(raw, { dir: backupDir, keep: 5 });
+		const result = await performBackup(raw, { dir: backupDir, keep: 5 });
 
-		expect(ergebnis.name).toMatch(/^timetracker-backup-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.db$/);
-		const dateien = readdirSync(backupDir);
-		expect(dateien).toContain(ergebnis.name);
+		expect(result.name).toMatch(/^timetracker-backup-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.db$/);
+		const files = readdirSync(backupDir);
+		expect(files).toContain(result.name);
+		expect(result.verified).toBe(true);
 		raw.close();
 	});
 
@@ -48,12 +56,12 @@ describe("Datenbanksicherungen", () => {
 		}
 
 		// Mit keep=3 ausfuehren -> aelteste muessen aufgeraeumt werden
-		const ergebnis = await performBackup(raw, { dir: backupDir, keep: 3 });
+		const result = await performBackup(raw, { dir: backupDir, keep: 3 });
 
-		const dateien = readdirSync(backupDir).filter((f) => f.startsWith("timetracker-backup-") && f.endsWith(".db"));
-		expect(dateien.length).toBe(3);
-		expect(dateien).toContain(ergebnis.name);
-		expect(ergebnis.pruned).toBeGreaterThanOrEqual(1);
+		const files = readdirSync(backupDir).filter((f) => f.startsWith("timetracker-backup-") && f.endsWith(".db"));
+		expect(files.length).toBe(3);
+		expect(files).toContain(result.name);
+		expect(result.pruned).toBeGreaterThanOrEqual(1);
 
 		raw.close();
 	});
@@ -65,8 +73,8 @@ describe("Datenbanksicherungen", () => {
 			writeFileSync(join(backupDir, `timetracker-backup-2026-08-0${i}_12-00-00.db`), `test-${i}`);
 		}
 
-		const geloescht = cleanupBackups(backupDir, 2);
-		expect(geloescht).toBe(3);
+		const deletedCount = cleanupBackups(backupDir, 2);
+		expect(deletedCount).toBe(3);
 		const rest = readdirSync(backupDir);
 		expect(rest.length).toBe(2);
 	});
@@ -82,10 +90,57 @@ describe("Datenbanksicherungen", () => {
 		expect(ok).toBe(true);
 
 		// Korrupte Datei pruefen
-		const kaputt = join(dir, "kaputt.db");
-		fs.writeFileSync(kaputt, "KEINE_SQLITE_DATENBANK");
-		const nichtOk = verifyBackupIntegrity(kaputt);
+		const corruptedFile = join(dir, "kaputt.db");
+		fs.writeFileSync(corruptedFile, "KEINE_SQLITE_DATENBANK");
+		const nichtOk = verifyBackupIntegrity(corruptedFile);
 		expect(nichtOk).toBe(false);
+	});
+
+	it("listBackups listet vorhandene Backups mit Metadaten auf", async () => {
+		const { raw } = openDb(dbFile);
+		await performBackup(raw, { dir: backupDir });
+		raw.close();
+
+		const list = listBackups(backupDir);
+		expect(list.length).toBe(1);
+		expect(list[0].verified).toBe(true);
+		expect(list[0].size).toBeGreaterThan(0);
+	});
+
+	it("deleteBackupFile loescht existierende Sicherungen und schuetzt vor Traversal", async () => {
+		const { raw } = openDb(dbFile);
+		const b = await performBackup(raw, { dir: backupDir });
+		raw.close();
+
+		expect(deleteBackupFile(backupDir, "../test.db")).toBe(false);
+		expect(deleteBackupFile(backupDir, "invalid.txt")).toBe(false);
+		expect(deleteBackupFile(backupDir, b.name)).toBe(true);
+		expect(listBackups(backupDir).length).toBe(0);
+	});
+
+	it("restoreBackup stellt eine Sicherung wieder her und legt ein Pre-Restore Backup an", async () => {
+		const { raw } = openDb(dbFile);
+		raw.exec("CREATE TABLE custom (val TEXT); INSERT INTO custom VALUES ('zustand_1');");
+
+		// Backup 1 anlegen
+		const b1 = await performBackup(raw, { dir: backupDir, customName: "timetracker-backup-2026-08-30_10-00-00.db" });
+
+		// Zustand in Live-DB aendern
+		raw.exec("UPDATE custom SET val = 'zustand_2';");
+		const rowBefore = raw.prepare("SELECT val FROM custom").get() as { val: string };
+		expect(rowBefore.val).toBe("zustand_2");
+
+		// Backup 1 wiederherstellen
+		const res = await restoreBackup(raw, dbFile, b1.name, { dir: backupDir });
+		expect(res.ok).toBe(true);
+		expect(res.restored).toBe(b1.name);
+		expect(res.preRestoreBackup).toMatch(/^timetracker-backup-pre-restore-/);
+
+		// Pruefen, dass Zustand 1 wieder da ist
+		const rowAfter = raw.prepare("SELECT val FROM custom").get() as { val: string };
+		expect(rowAfter.val).toBe("zustand_1");
+
+		raw.close();
 	});
 });
 

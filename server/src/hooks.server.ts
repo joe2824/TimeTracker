@@ -140,6 +140,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 
 	event.locals.db = db;
+	event.locals.raw = raw;
+	event.locals.dbPath = DB_FILE;
 	event.locals.userId = null;
 	event.locals.deviceId = null;
 

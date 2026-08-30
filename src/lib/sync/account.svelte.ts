@@ -18,7 +18,7 @@ import {
 	setChangeListener,
 	merkeUngestempeltes
 } from "./outbox";
-import { Api, ApiError, type AccountInfo, type DeleteSummary, type Invite, type Passkey } from "./api";
+import { Api, ApiError, type AccountInfo, type BackupInfo, type DeleteSummary, type Invite, type Passkey } from "./api";
 import { detachLocalData } from "./detach";
 import { SyncEngine } from "./engine";
 import {
@@ -699,6 +699,28 @@ class AccountState {
 	async revokeInvite(code: string): Promise<void> {
 		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
 		await this.#api.revokeInvite(code);
+	}
+
+	async backups(): Promise<BackupInfo[]> {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		const res = await this.#api.backups();
+		return res.backups;
+	}
+
+	async createBackup(): Promise<BackupInfo> {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		const res = await this.#api.createBackup();
+		return res.backup;
+	}
+
+	async restoreBackup(name: string): Promise<{ ok: boolean; restored: string; preRestoreBackup: string }> {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		return this.#api.restoreBackup(name);
+	}
+
+	async deleteBackup(name: string): Promise<void> {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		await this.#api.deleteBackup(name);
 	}
 
 	/**

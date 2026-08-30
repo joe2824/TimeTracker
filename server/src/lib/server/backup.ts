@@ -5,12 +5,12 @@ import { join } from "node:path";
 import { BACKUP_DIR, BACKUP_INTERVAL_HOURS, BACKUP_KEEP } from "./config";
 
 /** Formatierter Zeitstempel fuer den Dateinamen (z.B. 2026-08-30_10-00-00). */
-function zeitstempel(): string {
+function formatTimestamp(): string {
 	const d = new Date();
 	const pad = (n: number) => String(n).padStart(2, "0");
-	const datum = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-	const zeit = `${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
-	return `${datum}_${zeit}`;
+	const datePart = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+	const timePart = `${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+	return `${datePart}_${timePart}`;
 }
 
 /** Prueft die Integritaet einer erstellten SQLite-Sicherung. */
@@ -33,7 +33,7 @@ export function verifyBackupIntegrity(backupPath: string): boolean {
 export function cleanupBackups(dir: string, keepCount: number): number {
 	if (keepCount <= 0) return 0;
 	try {
-		const dateien = readdirSync(dir)
+		const files = readdirSync(dir)
 			.filter((f) => f.startsWith("timetracker-backup-") && f.endsWith(".db"))
 			.map((f) => {
 				const full = join(dir, f);
@@ -41,22 +41,118 @@ export function cleanupBackups(dir: string, keepCount: number): number {
 			})
 			.sort((a, b) => b.mtime - a.mtime);
 
-		let geloescht = 0;
-		if (dateien.length > keepCount) {
-			const zuLoeschen = dateien.slice(keepCount);
-			for (const file of zuLoeschen) {
+		let deletedCount = 0;
+		if (files.length > keepCount) {
+			const toDelete = files.slice(keepCount);
+			for (const file of toDelete) {
 				try {
 					unlinkSync(file.path);
-					geloescht++;
+					deletedCount++;
 				} catch (err) {
 					console.warn(`[Backup] Konnte alte Sicherung ${file.name} nicht löschen:`, err);
 				}
 			}
 		}
-		return geloescht;
+		return deletedCount;
 	} catch {
 		return 0;
 	}
+}
+
+export interface BackupInfo {
+	name: string;
+	size: number;
+	mtime: number;
+	verified: boolean;
+}
+
+/** Alle verfuegbaren Sicherungen auflisten (neueste zuerst). */
+export function listBackups(dir: string = BACKUP_DIR): BackupInfo[] {
+	try {
+		mkdirSync(dir, { recursive: true });
+		return readdirSync(dir)
+			.filter((f) => f.startsWith("timetracker-backup-") && f.endsWith(".db"))
+			.map((f) => {
+				const full = join(dir, f);
+				const st = statSync(full);
+				return {
+					name: f,
+					size: st.size,
+					mtime: Math.round(st.mtimeMs),
+					verified: verifyBackupIntegrity(full)
+				};
+			})
+			.sort((a, b) => b.mtime - a.mtime);
+	} catch {
+		return [];
+	}
+}
+
+/** Einzelne Sicherungsdatei loeschen (mit Path-Traversal-Schutz). */
+export function deleteBackupFile(dir: string, name: string): boolean {
+	const cleanName = name.trim();
+	if (!cleanName || cleanName.includes("..") || cleanName.includes("/") || cleanName.includes("\\")) {
+		return false;
+	}
+	if (!cleanName.startsWith("timetracker-backup-") || !cleanName.endsWith(".db")) {
+		return false;
+	}
+	try {
+		const full = join(dir, cleanName);
+		unlinkSync(full);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Stellt eine Sicherung in der aktiven Live-Datenbank wieder her.
+ * Erstellt zur Sicherheit vorab ein Sicherheits-Backup des aktuellen Live-Zustands.
+ */
+export async function restoreBackup(
+	liveDb: Database.Database,
+	dbPath: string,
+	name: string,
+	opts: { dir?: string } = {}
+): Promise<{ ok: boolean; restored: string; preRestoreBackup: string }> {
+	const dir = opts.dir ?? BACKUP_DIR;
+	const cleanName = name.trim();
+	if (!cleanName || cleanName.includes("..") || cleanName.includes("/") || cleanName.includes("\\")) {
+		throw new Error("Ungültiger Dateiname für Sicherung");
+	}
+	if (!cleanName.startsWith("timetracker-backup-") || !cleanName.endsWith(".db")) {
+		throw new Error("Ungültiges Dateiformat der Sicherung");
+	}
+
+	const backupPath = join(dir, cleanName);
+	if (!verifyBackupIntegrity(backupPath)) {
+		throw new Error("Die Sicherungsdatei ist beschädigt oder keine gültige SQLite-Datenbank");
+	}
+
+	// 1. Vorab-Sicherheits-Backup des aktuellen Bestands anlegen
+	const preRestore = await performBackup(liveDb, {
+		dir,
+		customName: `timetracker-backup-pre-restore-${formatTimestamp()}.db`,
+		verify: true
+	});
+
+	// 2. Aus der Sicherung ueber SQLite Backup API in die Live-Datei schreiben
+	const backupDb = new DatabaseConstructor(backupPath, { readonly: true });
+	try {
+		await backupDb.backup(dbPath);
+	} finally {
+		backupDb.close();
+	}
+
+	// 3. WAL checkpointen und Tabellen synchronisieren
+	try {
+		liveDb.pragma("wal_checkpoint(TRUNCATE)");
+	} catch {
+		/* ignore */
+	}
+
+	return { ok: true, restored: cleanName, preRestoreBackup: preRestore.name };
 }
 
 /** Eine Sicherung im laufenden Betrieb durchfuehren (atomar & konsistent). */
@@ -70,7 +166,7 @@ export async function performBackup(
 
 	mkdirSync(dir, { recursive: true });
 
-	const name = opts.customName ?? `timetracker-backup-${zeitstempel()}.db`;
+	const name = opts.customName ?? `timetracker-backup-${formatTimestamp()}.db`;
 	const destPath = join(dir, name);
 
 	await raw.backup(destPath);
@@ -105,11 +201,11 @@ export function startBackupScheduler(raw: Database.Database): void {
 		`[Backup] Automatische Sicherung aktiv: alle ${BACKUP_INTERVAL_HOURS}h in "${BACKUP_DIR}" (max. ${BACKUP_KEEP} Sicherungen).`
 	);
 
-	const fuehreAus = async (anlass: string) => {
+	const triggerBackup = async (reason: string) => {
 		try {
 			const { name, pruned } = await performBackup(raw);
 			const info = pruned > 0 ? ` (${pruned} alte Sicherung(en) gelöscht)` : "";
-			console.log(`[Backup] ${anlass}: ${name}${info}`);
+			console.log(`[Backup] ${reason}: ${name}${info}`);
 		} catch (err) {
 			console.error("[Backup] Fehler bei automatischer Sicherung:", err);
 		}
@@ -118,18 +214,18 @@ export function startBackupScheduler(raw: Database.Database): void {
 	// Erste Sicherung 60 Sekunden nach Serverstart (falls noch nie eine existiert)
 	setTimeout(() => {
 		try {
-			const dateien = readdirSync(BACKUP_DIR).filter((f) => f.endsWith(".db"));
-			if (dateien.length === 0) {
-				fuehreAus("Erste Sicherung nach Serverstart");
+			const files = readdirSync(BACKUP_DIR).filter((f) => f.endsWith(".db"));
+			if (files.length === 0) {
+				triggerBackup("Erste Sicherung nach Serverstart");
 			}
 		} catch {
-			fuehreAus("Erste Sicherung nach Serverstart");
+			triggerBackup("Erste Sicherung nach Serverstart");
 		}
 	}, 60_000).unref();
 
 	// Regelmaessiger Zeitgeber
 	setInterval(() => {
-		fuehreAus("Regelmäßige Sicherung");
+		triggerBackup("Regelmäßige Sicherung");
 	}, intervalMs).unref();
 }
 
