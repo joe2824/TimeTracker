@@ -347,11 +347,13 @@
 		return () => clearInterval(id);
 	});
 
-	// Tray-Menü (OneDrive-Stil) aktuell halten: laufender Timer + Schnellstart (Favoriten, zuletzt benutzt).
+	// Tray-Menü: laufender Timer + Schnellstart (Favoriten, zuletzt benutzt).
+	// Lauscht auf trayVersion (wird nur nach vollständig stabilem Zustand erhöht),
+	// nicht direkt auf running/activities – sonst würde das Icon während reload()
+	// kurz auf „idle" springen (running ist dort kurzzeitig null).
 	$effect(() => {
 		if (!app.loaded) return;
-		const _act = app.activities;
-		const _runId = app.running?.activityId;
+		const _v = app.trayVersion;
 		untrack(() => {
 			void app.updateTrayState();
 		});

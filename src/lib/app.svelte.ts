@@ -104,6 +104,14 @@ class AppState {
 	#tick: ReturnType<typeof setInterval> | null = null;
 
 	/**
+	 * Wird nur erhöht, wenn Tray-Icon und Menü sicher mit dem neuen Zustand
+	 * aktualisiert werden sollen – also NACH einem vollständig abgeschlossenen
+	 * Ladevorgang, nicht zwischendrin (z. B. wenn running kurz null ist).
+	 * Die $effects in den Seiten lauschen NUR hierauf, nicht direkt auf running.
+	 */
+	trayVersion = $state(0);
+
+	/**
 	 * Daten laden und die Uhr starten. Erneut aufrufbar (Knopf "Erneut versuchen").
 	 *
 	 * @returns true = bereit; false = gescheitert, Details stehen in `initError`.
@@ -141,6 +149,7 @@ class AppState {
 				this.showOnboarding = firstRun;
 				this.loaded = true;
 				this.initStep = null;
+				this.trayVersion++;
 				logInfo("Daten geladen", {
 					ms: Date.now() - begonnen,
 					erstStart: firstRun,
@@ -242,7 +251,10 @@ class AppState {
 		this.loaded = true;
 		// Ein anderes Fenster hat geschrieben – abgeleitete Listen neu lesen.
 		this.entriesVersion++;
-		void this.updateTrayState();
+		// Tray-Icon und -Menü erst jetzt aktualisieren, wenn running endgültig
+		// gesetzt ist. Ein Erhöhen mitten in reload (wenn running kurz null war)
+		// würde das Icon kurz auf „idle" wechseln – das sichtbare Flackern.
+		this.trayVersion++;
 		logDebug("Daten neu geladen", { laeuft: this.#runningName() });
 	}
 
@@ -308,6 +320,7 @@ class AppState {
 
 	async persistActivities(): Promise<void> {
 		await saveActivities($state.snapshot(this.activities) as Activity[]);
+		this.trayVersion++;
 		void notifyDataChanged();
 	}
 
@@ -954,6 +967,8 @@ class AppState {
 		}
 		this.running = null;
 		for (const m of months) await this.#saveMonth(m);
+		// Tray-Icon und -Menü aktualisieren, nachdem running stabil null ist.
+		this.trayVersion++;
 	}
 
 	/**
@@ -1190,6 +1205,9 @@ class AppState {
 
 		// Persistieren erst danach (beeinflusst die UI nicht mehr).
 		for (const m of months) await this.#saveMonth(m);
+		// Tray-Icon und -Menü aktualisieren, nachdem running stabil auf den neuen
+		// Eintrag zeigt (kein Zwischenzustand null → running).
+		this.trayVersion++;
 		logInfo(`Timer gestartet: ${this.activityName(activityId)}`, {
 			start: new Date(start).toISOString(),
 			rueckdatiert: Date.now() - start > 60_000 ? Math.round((Date.now() - start) / 60_000) : 0,

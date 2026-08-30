@@ -84,8 +84,7 @@
 	// Tray-Icon und Menü immer aktuell halten, auch wenn das Hauptfenster geschlossen ist.
 	$effect(() => {
 		if (!app.loaded) return;
-		const _act = app.activities;
-		const _runId = app.running?.activityId;
+		const _v = app.trayVersion;
 		untrack(() => {
 			void app.updateTrayState();
 		});
