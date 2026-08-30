@@ -5056,7 +5056,7 @@ dependencies = [
 
 [[package]]
 name = "timetracker"
-version = "0.9.0-beta.5"
+version = "0.9.0-beta.6"
 dependencies = [
  "chrono",
  "keyring",
