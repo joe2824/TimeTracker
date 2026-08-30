@@ -200,8 +200,11 @@ class AccountState {
 	 * Bestands gewaenne sonst jeden Vergleich und ueberschriebe das Konto.
 	 */
 	async abgleichMitNachlese(): Promise<void> {
+		const vorSeq = (await loadDevice())?.seq ?? 0;
 		await this.syncNow();
-		if (await this.#bestandIstUnserer()) await merkeUngestempeltes();
+		if (await this.#bestandIstUnserer()) {
+			await merkeUngestempeltes(vorSeq === 0);
+		}
 		await this.syncNow();
 	}
 
@@ -544,7 +547,7 @@ class AccountState {
 		// sich nicht beweisen, dass es dieses ist, kommt es weg; der Server hat es.
 		// Auf dem Rechner sind die Zeiten die Sache des Menschen: sie bleiben, gehen
 		// aber nicht hoch (siehe bestandGehoertZu).
-		const fremdeKopie = !isTauri() && info.kontoKennung !== kennung;
+		const fremdeKopie = !isTauri() && Boolean(info.kontoKennung && info.kontoKennung !== kennung);
 		if (fremdeKopie) {
 			await clearAccountData();
 			logInfo("Kontowechsel: lokale Kopie des vorigen Kontos entfernt");

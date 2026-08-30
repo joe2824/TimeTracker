@@ -118,24 +118,25 @@ export async function startTracking(device: string): Promise<void> {
  * Erkennbar am fehlenden Stempel: was einmal abgeglichen war, traegt `rev`.
  * Fuer den ersten Abgleich nach dem Verknuepfen - davor lief kein Schreib-Haken,
  * der vorhandene Bestand ginge sonst nie hoch.
+ * Mit `forceAll = true` wird der gesamte lokale Bestand vorgemerkt (z.B. nach Server-Reset oder Neuverknüpfung).
  */
-export async function merkeUngestempeltes(): Promise<void> {
+export async function merkeUngestempeltes(forceAll = false): Promise<void> {
 	const now = Date.now();
 	const changes: PendingChange[] = [];
 
 	for (const month of await listEntryMonths()) {
 		for (const e of await loadEntries(month)) {
-			if (e.rev === undefined) changes.push({ kind: "entry", id: e.id, month, deleted: false, at: now });
+			if (forceAll || e.rev === undefined) changes.push({ kind: "entry", id: e.id, month, deleted: false, at: now });
 		}
 	}
 	for (const a of await loadActivities()) {
-		if (a.rev === undefined) changes.push({ kind: "activity", id: a.id, deleted: false, at: now });
+		if (forceAll || a.rev === undefined) changes.push({ kind: "activity", id: a.id, deleted: false, at: now });
 	}
 	// Nur wenn dieses Geraet ueberhaupt schon Einstellungen hat - sonst entstuende
 	// aus blossen Voreinstellungen ein Datensatz.
 	if (await settingsFileExists()) {
 		const s = (await loadSettings()) as Settings & SyncMeta;
-		if (s.rev === undefined) changes.push({ kind: "settings", id: SETTINGS_ID, deleted: false, at: now });
+		if (forceAll || s.rev === undefined) changes.push({ kind: "settings", id: SETTINGS_ID, deleted: false, at: now });
 	}
 
 	await note(changes);

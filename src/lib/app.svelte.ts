@@ -216,7 +216,8 @@ class AppState {
 		this.settings = await loadSettings();
 		await this.#applyTimeZone();
 		setErrorReportsEnabled(this.settings.errorReportsEnabled);
-		for (const m of [this.currentMonth, prevMonthKey()]) {
+		const months = new Set([this.currentMonth, prevMonthKey(), ...Object.keys(this.entriesByMonth)]);
+		for (const m of months) {
 			this.entriesByMonth[m] = await loadEntries(m);
 		}
 		this.running = null;
