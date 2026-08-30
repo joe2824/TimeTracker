@@ -2,7 +2,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { openDb, type Db } from "./db";
 import { users } from "./db/schema";
-import { createDevice, createSession, hashSecret } from "./auth";
+import { createDevice, createSession, hashSecret, sha256Hex } from "./auth";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -44,7 +44,7 @@ function apiVon(token: string | null, path: string, init: RequestInit = {}) {
 // Server sieht nur den Hash. Der Code darf sichtbar sein - das Geheimnis nicht,
 // und genau das trennt "abholen duerfen" von "den Code kennen".
 const SECRET = "geheim-abholen";
-const SECRET_HASH = hashSecret(SECRET);
+const SECRET_HASH = sha256Hex(SECRET);
 
 /** Schritt 1, mit allem was der Server heute verlangt. */
 const startBody = (publicKey: string, label: string, code: string, hash = SECRET_HASH) =>
@@ -413,7 +413,7 @@ describe("Kopplung", () => {
 
 		const fremd = await apiVon(null, "/api/pair/start", {
 			method: "POST",
-			body: startBody("cHVi", "Handy", code, hashSecret("meins"))
+			body: startBody("cHVi", "Handy", code, sha256Hex("meins"))
 		});
 		expect(fremd.status).toBe(409);
 

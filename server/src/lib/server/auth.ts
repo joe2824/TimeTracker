@@ -19,6 +19,11 @@ export function hashSecret(secret: string): string {
 	return createHash("sha256").update(secret).digest("hex");
 }
 
+/** Reiner SHA-256 Hex-Hash (ohne HMAC) für clientseitig gerechnete Hashes wie claimHash. */
+export function sha256Hex(text: string): string {
+	return createHash("sha256").update(text).digest("hex");
+}
+
 export function newSecret(): string {
 	return randomBytes(32).toString("base64url");
 }

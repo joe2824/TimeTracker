@@ -1,9 +1,11 @@
 <script lang="ts">
+	import { onDestroy } from "svelte";
 	import { app } from "$lib/app.svelte";
 	import { account } from "$lib/sync/account.svelte";
+	import { DEFAULT_SERVER } from "$lib/defaults";
 	import { clockToMin } from "$lib/time";
 	import { scheduleReminders } from "$lib/reminders";
-	import { logInfo, logWarn } from "$lib/log";
+	import { errorText, logInfo, logWarn } from "$lib/log";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
@@ -11,14 +13,24 @@
 	import { Textarea } from "$lib/components/ui/textarea";
 	import WorkdayPicker from "$lib/components/shared/WorkdayPicker.svelte";
 	import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
+	import { capabilities } from "$lib/platform/env";
+	import { openExternal } from "$lib/platform/open";
+	import { anlegenLink } from "$lib/invite";
+	import { toast } from "svelte-sonner";
 	import TimerIcon from "@lucide/svelte/icons/timer";
 	import MailIcon from "@lucide/svelte/icons/mail";
 	import PalmtreeIcon from "@lucide/svelte/icons/palmtree";
 	import BellIcon from "@lucide/svelte/icons/bell";
 	import Trash2Icon from "@lucide/svelte/icons/trash-2";
 	import PlusIcon from "@lucide/svelte/icons/plus";
+	import CloudIcon from "@lucide/svelte/icons/cloud";
+	import ShieldCheckIcon from "@lucide/svelte/icons/shield-check";
+	import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
+	import KeyRoundIcon from "@lucide/svelte/icons/key-round";
+	import SmartphoneIcon from "@lucide/svelte/icons/smartphone";
+	import CheckCircle2Icon from "@lucide/svelte/icons/check-circle-2";
 
-	const STEPS = 4;
+	const STEPS = 5;
 	let step = $state(0);
 	let fileInput = $state<HTMLInputElement>();
 
@@ -39,6 +51,87 @@
 	let activitiesText = $state(""); // Aktivitäten-Import, eine je Zeile
 	let autostart = $state(app.settings.autostart);
 	let saving = $state(false);
+
+	// Server / Cloud Sync im Onboarding
+	let serverUrl = $state(
+		account.serverUrl || (typeof localStorage !== "undefined" && localStorage.getItem("preferred_server_url")) || DEFAULT_SERVER
+	);
+	let isStartingSync = $state(false);
+	let isWaitingForApproval = $state(false);
+	let pairingCode = $state("");
+	let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+	function suggestDeviceName(): string {
+		const p = navigator.platform || "Gerät";
+		return capabilities.tray ? `Rechner (${p})` : `Browser (${p})`;
+	}
+
+	async function handleStartRegistration() {
+		const url = serverUrl.trim();
+		if (!url) {
+			toast.error("Bitte die Adresse des Servers angeben.");
+			return;
+		}
+		if (typeof localStorage !== "undefined") {
+			localStorage.setItem("preferred_server_url", url);
+		}
+		isStartingSync = true;
+		try {
+			pairingCode = await account.startPairing(url, suggestDeviceName());
+			isWaitingForApproval = true;
+			pollTimer = setInterval(checkPairingStatus, 2000);
+			await openExternal(anlegenLink(url));
+		} catch (e) {
+			toast.error(errorText(e));
+		} finally {
+			isStartingSync = false;
+		}
+	}
+
+	async function handleStartPairing() {
+		const url = serverUrl.trim();
+		if (!url) {
+			toast.error("Bitte die Adresse des Servers angeben.");
+			return;
+		}
+		if (typeof localStorage !== "undefined") {
+			localStorage.setItem("preferred_server_url", url);
+		}
+		isStartingSync = true;
+		try {
+			pairingCode = await account.startPairing(url, suggestDeviceName());
+			isWaitingForApproval = true;
+			pollTimer = setInterval(checkPairingStatus, 2000);
+		} catch (e) {
+			toast.error(errorText(e));
+		} finally {
+			isStartingSync = false;
+		}
+	}
+
+	async function checkPairingStatus() {
+		try {
+			if (await account.checkPairing()) {
+				cancelPairingFlow();
+				toast.success("Gerät erfolgreich mit Server verknüpft!");
+			}
+		} catch (e) {
+			cancelPairingFlow();
+			toast.error(errorText(e));
+		}
+	}
+
+	function cancelPairingFlow() {
+		if (pollTimer) clearInterval(pollTimer);
+		pollTimer = null;
+		isWaitingForApproval = false;
+		pairingCode = "";
+		account.cancelPairing();
+	}
+
+	onDestroy(() => {
+		if (pollTimer) clearInterval(pollTimer);
+	});
 
 	/** Aktivitäten aus einer Textdatei ins Eingabefeld übernehmen. */
 	async function onActivityFile(ev: Event) {
@@ -71,6 +164,7 @@
 	}
 
 	async function persist() {
+		cancelPairingFlow();
 		// Aktivitäten importieren (jede Zeile eine; Duplikate ignoriert importActivities).
 		const actLines = activitiesText.split(/\r?\n/);
 		if (actLines.some((l) => l.trim())) await app.importActivities(actLines);
@@ -93,9 +187,7 @@
 			arbeitstage: workdays.length,
 			erinnerungen: cleanTimes.length
 		});
-		// Erinnerungen mit den neuen Zeiten neu planen.
 		scheduleReminders();
-		// Autostart-Wahl direkt anwenden (der Aufruf beim App-Start lief bereits vorher).
 		try {
 			if (autostart) {
 				if (!(await isEnabled())) await enable();
@@ -118,10 +210,6 @@
 	}
 </script>
 
-<!-- items-start + my-auto statt items-center: ein zentriertes Flex-Kind, das
-     hoeher ist als der Bildschirm, laesst sich nach oben nicht mehr scrollen -
-     der Anfang bleibt dann unerreichbar. So wird mittig zentriert, solange es
-     passt, und sonst von oben gescrollt. -->
 <div
 	class="bg-background fixed inset-0 z-50 flex items-start justify-center overflow-y-auto px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]"
 >
@@ -219,6 +307,108 @@
 					Vorhandene bleiben erhalten, Duplikate werden übersprungen. Kannst du auch leer lassen.
 				</p>
 			</div>
+		{:else if step === 3}
+			<div class="space-y-1 text-center">
+				<h1 class="text-xl font-semibold">Cloud & Geräte-Abgleich</h1>
+				<p class="text-muted-foreground text-sm">
+					Optional: Sichere deine Zeiten automatisch und greife von überall darauf zu.
+				</p>
+			</div>
+
+			<!-- Vorteile -->
+			<div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+				<div class="flex items-start gap-2.5 rounded-lg border bg-card/60 p-2.5 text-left">
+					<ShieldCheckIcon class="size-4 text-emerald-500 shrink-0 mt-0.5" />
+					<div>
+						<div class="text-xs font-medium text-foreground">Ende-zu-Ende verschlüsselt</div>
+						<div class="text-[11px] text-muted-foreground leading-snug">Zero-Knowledge: Niemand außer dir kann deine Zeiten im Klartext lesen.</div>
+					</div>
+				</div>
+				<div class="flex items-start gap-2.5 rounded-lg border bg-card/60 p-2.5 text-left">
+					<RefreshCwIcon class="size-4 text-blue-500 shrink-0 mt-0.5" />
+					<div>
+						<div class="text-xs font-medium text-foreground">Nahtloser Multi-Device-Sync</div>
+						<div class="text-[11px] text-muted-foreground leading-snug">Zeiten synchron auf PC, Mac, Smartphone & Web erfassen.</div>
+					</div>
+				</div>
+				<div class="flex items-start gap-2.5 rounded-lg border bg-card/60 p-2.5 text-left">
+					<CloudIcon class="size-4 text-sky-500 shrink-0 mt-0.5" />
+					<div>
+						<div class="text-xs font-medium text-foreground">Automatisches Backup</div>
+						<div class="text-[11px] text-muted-foreground leading-snug">Kein Datenverlust bei Hardware-Defekt oder neuem Computer.</div>
+					</div>
+				</div>
+				<div class="flex items-start gap-2.5 rounded-lg border bg-card/60 p-2.5 text-left">
+					<KeyRoundIcon class="size-4 text-amber-500 shrink-0 mt-0.5" />
+					<div>
+						<div class="text-xs font-medium text-foreground">Passkey-Anmeldung</div>
+						<div class="text-[11px] text-muted-foreground leading-snug">Ohne Passwort per Touch ID, Windows Hello oder Face ID.</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Interaktive Verbindung / Status -->
+			{#if account.linked}
+				<div class="flex items-center gap-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3.5 text-xs text-emerald-900 dark:text-emerald-200">
+					<CheckCircle2Icon class="size-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+					<div>
+						<div class="font-medium text-sm">Bereits erfolgreich verknüpft</div>
+						<div class="opacity-90">{account.serverUrl}</div>
+					</div>
+				</div>
+			{:else if isWaitingForApproval}
+				<div class="space-y-3 rounded-lg border bg-muted/40 p-4 text-center">
+					<div class="text-xs text-muted-foreground font-medium">Dein Kopplungscode</div>
+					<div class="font-mono text-2xl tracking-widest font-semibold text-primary select-all">
+						{pairingCode || "…"}
+					</div>
+					<p class="text-xs text-muted-foreground">
+						Bestätige diesen Code im geöffneten Browserfenster oder auf deinem anderen Gerät.
+					</p>
+					<Button variant="ghost" size="sm" onclick={cancelPairingFlow} class="text-xs">
+						Abbrechen
+					</Button>
+				</div>
+			{:else}
+				<div class="space-y-3 rounded-lg border bg-card p-3.5">
+					<div class="space-y-1 text-left">
+						<Label for="ob-server" class="text-xs">Server-Adresse</Label>
+						<Input
+							id="ob-server"
+							type="url"
+							placeholder="https://tt.example.de"
+							bind:value={serverUrl}
+							class="text-xs font-mono h-8"
+						/>
+					</div>
+
+					<div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+						<Button
+							class="w-full gap-1.5 text-xs"
+							size="sm"
+							disabled={isStartingSync}
+							onclick={handleStartRegistration}
+						>
+							<KeyRoundIcon class="size-3.5 shrink-0" />
+							<span>Konto anlegen / anmelden</span>
+						</Button>
+						<Button
+							variant="outline"
+							class="w-full gap-1.5 text-xs"
+							size="sm"
+							disabled={isStartingSync}
+							onclick={handleStartPairing}
+						>
+							<SmartphoneIcon class="size-3.5 shrink-0" />
+							<span>Gerät koppeln</span>
+						</Button>
+					</div>
+
+					<p class="text-muted-foreground text-[11px] text-center pt-1 border-t">
+						Du kannst diesen Schritt überspringen und TimeTracker rein lokal nutzen.
+					</p>
+				</div>
+			{/if}
 		{:else}
 			<div class="space-y-1 text-center">
 				<h1 class="text-xl font-semibold">Erinnerung & Start</h1>
