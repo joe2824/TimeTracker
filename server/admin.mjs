@@ -262,8 +262,49 @@ function renameUser(target, newName) {
 	console.log(`\n  Konto ${user.id} wurde von "${user.display_name}" in "${cleanName}" umbenannt.\n`);
 }
 
+function showStatus() {
+	console.log("\n=== TimeTracker Server Status ===");
+
+	let dbSize = "–";
+	try {
+		const s = statSync(dbFile);
+		dbSize = `${(s.size / 1024 / 1024).toFixed(2)} MB`;
+	} catch {}
+	console.log(`\nDatenbank:       ${dbFile} (${dbSize})`);
+
+	const userCount = db.prepare("SELECT count(*) n FROM users").get()?.n ?? 0;
+	const adminCount = db.prepare("SELECT count(*) n FROM users WHERE is_admin = 1").get()?.n ?? 0;
+	const deviceCount = db.prepare("SELECT count(*) n FROM devices WHERE revoked_at IS NULL").get()?.n ?? 0;
+	const recordCount = db.prepare("SELECT count(*) n FROM records").get()?.n ?? 0;
+	const openInvites =
+		db
+			.prepare(
+				"SELECT count(*) n FROM invites WHERE used_at IS NULL AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?)"
+			)
+			.get(Date.now())?.n ?? 0;
+
+	console.log(`Benutzer:        ${userCount} (davon ${adminCount} Verwalter)`);
+	console.log(`Aktive Geräte:   ${deviceCount}`);
+	console.log(`Zeitsätze:       ${recordCount}`);
+	console.log(`Offene Codes:    ${openInvites}`);
+	console.log(`Registrierung:   ${isEnvInvitesDisabled() ? "Nur per Einladung (.env aus)" : "Statische .env-Codes aktiv"}`);
+
+	const backupDir = join(process.env.DATA_DIR ?? "/data", "backups");
+	let backupCount = 0;
+	if (existsSync(backupDir)) {
+		backupCount = readdirSync(backupDir).filter((f) => f.endsWith(".db")).length;
+	}
+	console.log(`Sicherungen:     ${backupCount} in ${backupDir}`);
+	console.log(`Node-Version:    ${process.version} (${process.arch})`);
+	console.log(`Speicher (RSS):  ${(process.memoryUsage().rss / 1024 / 1024).toFixed(1)} MB\n`);
+}
+
 const [command, ...args] = process.argv.slice(2);
 switch (command) {
+	case "status":
+	case "info":
+		showStatus();
+		break;
 	case "liste":
 	case "list":
 	case "users":
