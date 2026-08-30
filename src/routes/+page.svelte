@@ -555,8 +555,6 @@
 
 		<PasskeyNudge />
 
-		<!-- pb-12: die letzte Card soll nicht auf der Fensterkante aufsitzen; auf dem
-		     Handy kommt der Streifen der Gestensteuerung obendrauf. -->
 		<div
 			class="mx-auto w-full max-w-6xl px-4 pb-[calc(3rem+env(safe-area-inset-bottom))] sm:px-6"
 		>
