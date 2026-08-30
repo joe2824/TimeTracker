@@ -149,7 +149,7 @@ class AppState {
 				this.showOnboarding = firstRun;
 				this.loaded = true;
 				this.initStep = null;
-				this.trayVersion++;
+				this.trayVersion = (this.trayVersion + 1) % 1000;
 				logInfo("Daten geladen", {
 					ms: Date.now() - begonnen,
 					erstStart: firstRun,
@@ -254,7 +254,7 @@ class AppState {
 		// Tray-Icon und -Menü erst jetzt aktualisieren, wenn running endgültig
 		// gesetzt ist. Ein Erhöhen mitten in reload (wenn running kurz null war)
 		// würde das Icon kurz auf „idle" wechseln – das sichtbare Flackern.
-		this.trayVersion++;
+		this.trayVersion = (this.trayVersion + 1) % 1000;
 		logDebug("Daten neu geladen", { laeuft: this.#runningName() });
 	}
 
@@ -320,7 +320,7 @@ class AppState {
 
 	async persistActivities(): Promise<void> {
 		await saveActivities($state.snapshot(this.activities) as Activity[]);
-		this.trayVersion++;
+		this.trayVersion = (this.trayVersion + 1) % 1000;
 		void notifyDataChanged();
 	}
 
@@ -968,7 +968,7 @@ class AppState {
 		this.running = null;
 		for (const m of months) await this.#saveMonth(m);
 		// Tray-Icon und -Menü aktualisieren, nachdem running stabil null ist.
-		this.trayVersion++;
+		this.trayVersion = (this.trayVersion + 1) % 1000;
 	}
 
 	/**
@@ -1207,7 +1207,7 @@ class AppState {
 		for (const m of months) await this.#saveMonth(m);
 		// Tray-Icon und -Menü aktualisieren, nachdem running stabil auf den neuen
 		// Eintrag zeigt (kein Zwischenzustand null → running).
-		this.trayVersion++;
+		this.trayVersion = (this.trayVersion + 1) % 1000;
 		logInfo(`Timer gestartet: ${this.activityName(activityId)}`, {
 			start: new Date(start).toISOString(),
 			rueckdatiert: Date.now() - start > 60_000 ? Math.round((Date.now() - start) / 60_000) : 0,
