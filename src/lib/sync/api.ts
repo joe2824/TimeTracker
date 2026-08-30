@@ -154,6 +154,9 @@ export class Api {
 				credentials: this.#token ? "omit" : "include"
 			});
 		} catch (e) {
+			if (init.signal?.aborted) {
+				throw new ApiError("Anfrage abgebrochen", 0);
+			}
 			// Kein Netz, Name nicht aufloesbar, Verbindung abgebrochen. Status 0 heisst
 			// "gar nicht erst angekommen" und ist damit immer einen zweiten Versuch wert.
 			throw new ApiError(e instanceof Error ? e.message : "Server nicht erreichbar", 0);
@@ -173,7 +176,14 @@ export class Api {
 			throw new ApiError(message, res.status);
 		}
 
-		return (await res.json()) as T;
+		try {
+			return (await res.json()) as T;
+		} catch (e) {
+			if (init.signal?.aborted) {
+				throw new ApiError("Anfrage abgebrochen", 0);
+			}
+			throw e;
+		}
 	}
 
 	// ---------- Konto ----------
