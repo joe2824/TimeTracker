@@ -45,6 +45,7 @@
 	import AccountPanel from "$lib/components/AccountPanel.svelte";
 	import AdminPanel from "$lib/components/AdminPanel.svelte";
 	import PasskeyPanel from "$lib/components/PasskeyPanel.svelte";
+	import DangerZonePanel from "$lib/components/DangerZonePanel.svelte";
 	import LogPanel from "$lib/components/LogPanel.svelte";
 	import { account } from "$lib/sync/account.svelte";
 
@@ -848,6 +849,7 @@
 			<AccountPanel />
 			<PasskeyPanel />
 			<AdminPanel />
+			<DangerZonePanel />
 		{:else if bereich === "system"}
 			<!-- Im Browser bleibt von dieser Karte nichts brauchbares - nur Autostart
 			     und Updater gehoeren rein. -->
