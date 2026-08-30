@@ -37,6 +37,7 @@ import {
 	vaultProof,
 	type KeyWrap
 } from "../crypto/vault";
+import { toast } from "svelte-sonner";
 import { protectSecret, unprotectSecret } from "../platform/secrets";
 import { isTauri } from "../platform/env";
 import { platformFetch } from "../platform/http";
@@ -291,6 +292,9 @@ class AccountState {
 				this.lostEdits += ergebnis.lostEdits;
 				if (ergebnis.pushed || ergebnis.pulled) {
 					logInfo("Abgeglichen", ergebnis);
+				}
+				if (ergebnis.pulled > 0) {
+					toast.success(`${ergebnis.pulled} ${ergebnis.pulled === 1 ? "Eintrag" : "Einträge"} vom Server geladen.`);
 				}
 			}
 			// Der Bestand kann sich geaendert haben - die Ansichten haengen daran.

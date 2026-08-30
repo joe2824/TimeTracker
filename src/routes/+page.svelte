@@ -546,13 +546,15 @@
 			</div>
 		</header>
 
-		{#if account.phase === "laeuft" && account.syncProgress && (account.syncProgress.pulled > 0 || account.syncProgress.pushed > 0)}
+		{#if account.phase === "laeuft"}
 			<div class="bg-primary/10 border-b border-primary/20 text-primary px-4 py-1.5 text-xs text-center font-medium flex items-center justify-center gap-2">
 				<RefreshCwIcon class="size-3.5 animate-spin shrink-0" />
-				{#if account.syncProgress.pulled > 0}
+				{#if account.syncProgress && account.syncProgress.pulled > 0}
 					<span>Daten werden vom Server geladen ({account.syncProgress.pulled} Einträge)…</span>
-				{:else}
+				{:else if account.syncProgress && account.syncProgress.pushed > 0}
 					<span>Daten werden an den Server übertragen ({account.syncProgress.pushed} Einträge)…</span>
+				{:else}
+					<span>Synchronisiere Daten mit dem Server…</span>
 				{/if}
 			</div>
 		{/if}
