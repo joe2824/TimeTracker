@@ -17,6 +17,7 @@
 	import PencilIcon from "@lucide/svelte/icons/pencil";
 	import Trash2Icon from "@lucide/svelte/icons/trash-2";
 	import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
+	import { Skeleton } from "$lib/components/ui/skeleton";
 
 	let passkeys = $state<Passkey[]>([]);
 	let isLoaded = $state(false);
@@ -110,7 +111,23 @@
 
 		<Card.Content class="space-y-4">
 			{#if !isLoaded}
-				<p class="text-muted-foreground text-sm">Lädt…</p>
+				<div class="space-y-2">
+					<Skeleton class="h-3 w-36" />
+					<div class="divide-y rounded-lg border bg-card">
+						{#each Array(2) as _}
+							<div class="flex items-center justify-between p-3">
+								<div class="flex items-center gap-3 min-w-0">
+									<Skeleton class="size-8 rounded-md shrink-0" />
+									<div class="space-y-1.5 min-w-0">
+										<Skeleton class="h-4 w-36" />
+										<Skeleton class="h-3 w-28" />
+									</div>
+								</div>
+								<Skeleton class="h-8 w-8 rounded-md shrink-0" />
+							</div>
+						{/each}
+					</div>
+				</div>
 			{:else}
 				{#if passkeys.length === 1}
 					<div class="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs text-amber-900 dark:text-amber-200">

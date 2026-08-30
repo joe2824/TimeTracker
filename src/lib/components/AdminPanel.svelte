@@ -24,6 +24,7 @@
 	import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
 	import Trash2Icon from "@lucide/svelte/icons/trash-2";
 	import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
+	import { Skeleton } from "$lib/components/ui/skeleton";
 
 	// ---------- State ----------
 	let isLoaded = $state(false);
@@ -286,7 +287,20 @@
 					</div>
 
 					{#if !isLoaded}
-						<p class="text-muted-foreground text-sm">Lädt Sicherungen…</p>
+						<div class="divide-y rounded-lg border bg-card">
+							{#each Array(3) as _}
+								<div class="flex items-center justify-between p-3">
+									<div class="space-y-1.5 min-w-0 flex-1">
+										<Skeleton class="h-4 w-52" />
+										<Skeleton class="h-3 w-32" />
+									</div>
+									<div class="flex items-center gap-2">
+										<Skeleton class="h-8 w-24" />
+										<Skeleton class="h-8 w-8 rounded-md" />
+									</div>
+								</div>
+							{/each}
+						</div>
 					{:else if backups.length === 0}
 						<div class="rounded-lg border bg-card p-6 text-center text-sm text-muted-foreground">
 							Noch keine Datensicherungen auf dem Server vorhanden.
@@ -526,7 +540,20 @@
 					</div>
 
 					{#if !isLoaded}
-						<p class="text-muted-foreground text-sm">Lädt…</p>
+						<div class="divide-y rounded-lg border bg-card">
+							{#each Array(3) as _}
+								<div class="flex items-center justify-between p-3">
+									<div class="space-y-1.5 min-w-0 flex-1">
+										<Skeleton class="h-4 w-44 font-mono" />
+										<Skeleton class="h-3 w-28" />
+									</div>
+									<div class="flex items-center gap-2">
+										<Skeleton class="h-6 w-16 rounded-full" />
+										<Skeleton class="h-8 w-8 rounded-md" />
+									</div>
+								</div>
+							{/each}
+						</div>
 					{:else if invites.length === 0}
 						<div class="rounded-lg border bg-card p-6 text-center text-sm text-muted-foreground">
 							Noch keine Einladungen ausgestellt.
