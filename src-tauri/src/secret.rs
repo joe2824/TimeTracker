@@ -53,7 +53,7 @@ mod imp {
     }
 
     pub fn protect(plain: &[u8]) -> Option<Vec<u8>> {
-        let mut inp = input(plain);
+        let inp = input(plain);
         let mut out = Blob::empty();
         let ok = unsafe {
             CryptProtectData(
@@ -74,7 +74,7 @@ mod imp {
     }
 
     pub fn unprotect(sealed: &[u8]) -> Option<Vec<u8>> {
-        let mut inp = input(sealed);
+        let inp = input(sealed);
         let mut out = Blob::empty();
         let ok = unsafe {
             CryptUnprotectData(
