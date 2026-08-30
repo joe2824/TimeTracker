@@ -603,18 +603,28 @@ class AccountState {
 	}
 
 	/** Den Anzeigenamen auf dem Server und lokal aktualisieren. */
-	async updateDisplayName(name: string): Promise<void> {
-		if (!this.#api || !this.linked) return;
+	async updateDisplayName(name: string): Promise<string> {
 		const trimmed = name.trim();
-		if (!trimmed) return;
-		try {
-			const res = await this.#api.updateMe({ displayName: trimmed });
-			this.name = res.displayName;
-			const info = await loadDevice();
-			if (info) await saveDevice({ ...info, accountName: res.displayName });
-		} catch (e) {
-			logWarn("Anzeigename konnte nicht aktualisiert werden", e);
+		if (!trimmed) return this.name;
+		if (this.#api && this.linked) {
+			try {
+				const res = await this.#api.updateMe({ displayName: trimmed });
+				this.name = res.displayName;
+				const info = await loadDevice();
+				if (info) await saveDevice({ ...info, accountName: res.displayName });
+				if (app.settings.senderName !== res.displayName) {
+					await app.updateSettings({ senderName: res.displayName });
+				}
+				return res.displayName;
+			} catch (e) {
+				logWarn("Anzeigename konnte nicht aktualisiert werden", e);
+			}
 		}
+		this.name = trimmed;
+		if (app.settings.senderName !== trimmed) {
+			await app.updateSettings({ senderName: trimmed });
+		}
+		return trimmed;
 	}
 
 	// ---------- Passkeys ----------

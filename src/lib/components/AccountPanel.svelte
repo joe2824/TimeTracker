@@ -60,6 +60,29 @@
 		return { text: "Verbunden", punkt: "bg-emerald-500" };
 	});
 
+	let nameInput = $state(account.name || app.settings.senderName || "");
+	let isSavingName = $state(false);
+
+	$effect(() => {
+		if (account.name && nameInput !== account.name && !isSavingName) {
+			nameInput = account.name;
+		}
+	});
+
+	async function saveName() {
+		const trimmed = nameInput.trim();
+		if (!trimmed || trimmed === account.name) return;
+		isSavingName = true;
+		try {
+			await account.updateDisplayName(trimmed);
+			toast.success("Anzeigename aktualisiert.");
+		} catch (e) {
+			toast.error("Name konnte nicht aktualisiert werden.");
+		} finally {
+			isSavingName = false;
+		}
+	}
+
 	function vorschlagName(): string {
 		// Ein Name, den man in der Geraeteliste wiedererkennt, ohne ihn zu tippen.
 		const p = navigator.platform || "Gerät";
@@ -343,6 +366,38 @@
 		</div>
 
 		{#if account.linked}
+			<!-- Profil: Anzeigename -->
+			<div class="rounded-lg border bg-muted/20 p-3.5 space-y-3">
+				<div>
+					<p class="font-medium text-sm text-foreground">Benutzerprofil</p>
+					<p class="text-muted-foreground text-xs">
+						Dein Anzeigename auf dem Server und in der Benutzerliste.
+					</p>
+				</div>
+				<div class="flex flex-wrap items-center gap-2">
+					<div class="space-y-1 flex-1 min-w-[200px]">
+						<Label for="accname" class="text-xs">Anzeigename</Label>
+						<Input
+							id="accname"
+							bind:value={nameInput}
+							placeholder="z. B. Max Mustermann"
+							class="text-sm"
+							onkeydown={(e) => e.key === "Enter" && saveName()}
+							onblur={saveName}
+						/>
+					</div>
+					<Button
+						variant="outline"
+						size="sm"
+						class="self-end h-9"
+						onclick={saveName}
+						disabled={isSavingName}
+					>
+						{isSavingName ? "Speichert…" : "Speichern"}
+					</Button>
+				</div>
+			</div>
+
 			{#if !account.secretsProtected}
 				<div class="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200">
 					<ShieldAlertIcon class="size-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />

@@ -243,6 +243,26 @@ async function backup(argv) {
 	}
 }
 
+function benenneUm(suche, neuerName) {
+	if (!suche || !neuerName) {
+		console.error("\nVerwendung: tt rename <id-oder-name> <neuer-name>\n");
+		process.exit(1);
+	}
+	const { treffer } = findeKonto(suche);
+	if (treffer.length === 0) {
+		console.error(`\nKein Konto gefunden für "${suche}". "tt users" zeigt alle.\n`);
+		process.exit(1);
+	}
+	if (treffer.length > 1) {
+		console.error(`\nMehrdeutig – ${treffer.length} Konten passen auf "${suche}". Bitte eindeutige ID angeben.\n`);
+		process.exit(1);
+	}
+	const k = treffer[0];
+	const saubererName = neuerName.trim().slice(0, 64);
+	db.prepare("UPDATE users SET display_name = ? WHERE id = ?").run(saubererName, k.id);
+	console.log(`\n  Konto ${k.id} wurde von "${k.display_name}" in "${saubererName}" umbenannt.\n`);
+}
+
 const [befehl, ...rest] = process.argv.slice(2);
 switch (befehl) {
 	case "liste":
@@ -250,6 +270,11 @@ switch (befehl) {
 	case "users":
 	case "konten":
 		liste();
+		break;
+	case "rename":
+	case "umbenennen":
+	case "name":
+		benenneUm(rest[0], rest.slice(1).join(" "));
 		break;
 	case "ernenne":
 	case "promote":
@@ -297,6 +322,7 @@ Verwaltung des TimeTracker-Servers.
 
   tt invite [notiz] [--days 14]            Einladungscode erstellen
   tt list / tt users                       Konten und Einladungen anzeigen
+  tt rename <wer> <neuer-name>             Anzeigenamen eines Kontos ändern
   tt admin <wer> / tt promote <wer>        Zum Verwalter ernennen
   tt unadmin <wer> / tt demote <wer>       Verwalterrolle entziehen
   tt env-invites [disable|enable]          Statische .env-Codes de-/aktivieren
