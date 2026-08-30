@@ -8,10 +8,23 @@
 //   docker compose exec timetracker node admin.mjs invite [note] [--days 14]
 import Database from "better-sqlite3";
 import { randomInt } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
+let appVersion = "0.9.0-beta.7";
+try {
+	const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf-8"));
+	if (pkg.version) appVersion = pkg.version;
+} catch {}
+
 const dbFile = process.env.DB_FILE ?? `${process.env.DATA_DIR ?? "/data"}/timetracker.db`;
+
+if (!existsSync(dbFile)) {
+	console.error(`\nFehler: Datenbankdatei nicht gefunden: ${dbFile}`);
+	console.error(`       Pfad prüfen: DB_FILE oder DATA_DIR in .env\n`);
+	process.exit(1);
+}
+
 const db = new Database(dbFile);
 
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -269,8 +282,14 @@ function showStatus() {
 	try {
 		const s = statSync(dbFile);
 		dbSize = `${(s.size / 1024 / 1024).toFixed(2)} MB`;
-	} catch {}
-	console.log(`\nDatenbank:       ${dbFile} (${dbSize})`);
+	} catch (e) {
+		dbSize = `nicht lesbar (${e.code ?? e.message})`;
+	}
+	const origin = process.env.ORIGIN ?? "–";
+	const rpId = process.env.RP_ID ?? "";
+	console.log(`\nVersion:         v${appVersion} (Node ${process.version})`);
+	console.log(`Adresse:         ${origin}${rpId && rpId !== "–" ? ` (RP_ID: ${rpId})` : ""}`);
+	console.log(`Datenbank:       ${dbFile} (${dbSize})`);
 
 	const userCount = db.prepare("SELECT count(*) n FROM users").get()?.n ?? 0;
 	const adminCount = db.prepare("SELECT count(*) n FROM users WHERE is_admin = 1").get()?.n ?? 0;
@@ -283,10 +302,15 @@ function showStatus() {
 			)
 			.get(Date.now())?.n ?? 0;
 
+	const hmacStatus = process.env.HMAC_SECRET
+		? "Aktiv (HMAC-SHA256)"
+		: "Nicht gesetzt (Fallback SHA-256)";
+
 	console.log(`Benutzer:        ${userCount} (davon ${adminCount} Verwalter)`);
 	console.log(`Aktive Geräte:   ${deviceCount}`);
 	console.log(`Zeitsätze:       ${recordCount}`);
 	console.log(`Offene Codes:    ${openInvites}`);
+	console.log(`HMAC-Schlüssel:  ${hmacStatus}`);
 	console.log(`Registrierung:   ${isEnvInvitesDisabled() ? "Nur per Einladung (.env aus)" : "Statische .env-Codes aktiv"}`);
 
 	const backupDir = join(process.env.DATA_DIR ?? "/data", "backups");
@@ -295,7 +319,6 @@ function showStatus() {
 		backupCount = readdirSync(backupDir).filter((f) => f.endsWith(".db")).length;
 	}
 	console.log(`Sicherungen:     ${backupCount} in ${backupDir}`);
-	console.log(`Node-Version:    ${process.version} (${process.arch})`);
 	console.log(`Speicher (RSS):  ${(process.memoryUsage().rss / 1024 / 1024).toFixed(1)} MB\n`);
 }
 

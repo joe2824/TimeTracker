@@ -4,6 +4,7 @@ import type { Db, DbLike } from "./db";
 import { invites, serverSettings, users } from "./db/schema";
 import { INVITE_CODES, REGISTRATION_OPEN } from "./config";
 import { randomInt } from "node:crypto";
+import { safeEqual } from "./auth";
 
 /** Das Alphabet fuer ausgestellte Codes. */
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -125,7 +126,7 @@ export function gueltigerCode(db: DbLike, code: string): boolean {
 	if (istRegistrierungOffen(db)) return true;
 	if (!code) return false;
 	// Die Tuerklinke aus der Umgebung (sofern nicht zur Laufzeit deaktiviert).
-	if (!envInvitesDeaktiviert(db) && INVITE_CODES.includes(code)) return true;
+	if (!envInvitesDeaktiviert(db) && INVITE_CODES.some((c) => safeEqual(c, code))) return true;
 
 	const zeile = db.select().from(invites).where(eq(invites.code, code)).get();
 	if (!zeile) return false;

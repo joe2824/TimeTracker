@@ -13,7 +13,6 @@
 	import MenuIcon from "@lucide/svelte/icons/menu";
 	import XIcon from "@lucide/svelte/icons/x";
 	import CheckIcon from "@lucide/svelte/icons/check";
-	import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
 
 	import TrackingTab from "./settings/TrackingTab.svelte";
 	import ReportTab from "./settings/ReportTab.svelte";
@@ -98,6 +97,7 @@
 	let activeTabId = $state<SettingsTabId>("erfassung");
 	let isMobileMenuOpen = $state(false);
 	const activeTab = $derived(tabs.find((t) => t.id === activeTabId) ?? tabs[0]);
+	const ActiveIcon = $derived(activeTab.icon);
 
 	function selectTab(id: SettingsTabId) {
 		activeTabId = id;
@@ -117,7 +117,7 @@
 		>
 			<div class="flex items-center gap-3 min-w-0">
 				<div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-					<svelte:component this={activeTab.icon} class="size-4.5" />
+					<ActiveIcon class="size-4.5" />
 				</div>
 				<div class="min-w-0">
 					<p class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Einstellungen</p>
@@ -172,7 +172,7 @@
 			{@const Icon = tab.icon}
 			<button
 				type="button"
-				onclick={() => (activeTabId = tab.id)}
+				onclick={() => selectTab(tab.id)}
 				aria-current={activeTabId === tab.id ? "page" : undefined}
 				class={cn(
 					"text-muted-foreground hover:text-foreground focus-visible:ring-ring/50 inline-flex h-9 shrink-0 items-center gap-2.5 rounded-lg px-3 text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-3 w-full justify-start",

@@ -104,8 +104,8 @@ class AccountState {
 	#retryStep = 0;
 	#device = "";
 	#heartbeat: ReturnType<typeof setInterval> | null = null;
-	/** Laeuft eine Weckruf-Schleife? Der Abbruch beendet auch die offene Anfrage. */
 	#listenersInstalled = false;
+	/** Laeuft eine Weckruf-Schleife? Der Abbruch beendet auch die offene Anfrage. */
 	#warten: AbortController | null = null;
 
 	get linked(): boolean {
@@ -315,7 +315,10 @@ class AccountState {
 				if (this.phase === "offline") {
 					this.phase = "ruht";
 				}
-				this.#openStream();
+				// Stream nur neu aufbauen wenn er wirklich weg ist.
+				if (!this.#stream || this.#stream.readyState === EventSource.CLOSED) {
+					this.#openStream();
+				}
 				void this.syncNow();
 			}
 		});
@@ -333,8 +336,10 @@ class AccountState {
 			}
 		});
 
+		// Nur bei reinem Fenster-Fokus reagieren (z. B. Alt+Tab zwischen Fenstern),
+		// nicht wenn das visibilitychange-Event ohnehin schon gefeuert hat.
 		window.addEventListener("focus", () => {
-			this.onVisible();
+			if (document.visibilityState === "visible") this.onVisible();
 		});
 	}
 
@@ -360,10 +365,10 @@ class AccountState {
 				this.#retryStep = 0;
 			};
 			this.#stream.addEventListener("change", (ev) => {
-				const daten = JSON.parse((ev as MessageEvent).data ?? "{}");
+				const data = JSON.parse((ev as MessageEvent).data ?? "{}");
 				// Den eigenen Weckruf ueberspringen: was dieses Geraet gerade
 				// hochgeladen hat, muss es nicht wieder herunterladen.
-				if (daten.deviceId === this.#device) return;
+				if (data.deviceId === this.#device) return;
 				this.syncSoon(300);
 			});
 			this.#stream.onerror = () => {
@@ -395,20 +400,20 @@ class AccountState {
 		// laeuft der Abgleich trotzdem weiter.
 		this.#startHeartbeat();
 
-		let fehler = 0;
+		let errorCount = 0;
 		while (this.#warten === abbruch && this.state === "verbunden") {
 			try {
 				const stand = (await loadDevice())?.seq ?? 0;
 				const antwort = await this.#api!.waitForChange(stand, abbruch.signal);
 				if (this.#warten !== abbruch) return;
-				fehler = 0;
+				errorCount = 0;
 				if (antwort.changed) this.syncSoon(100);
 			} catch (e) {
 				if (abbruch.signal.aborted) return;
 				// Nach einem Fehlschlag wachsend warten, sonst haemmert eine
 				// abgerissene Verbindung gegen den Server.
-				fehler++;
-				const pause = RETRY_MS[Math.min(fehler - 1, RETRY_MS.length - 1)];
+				errorCount++;
+				const pause = RETRY_MS[Math.min(errorCount - 1, RETRY_MS.length - 1)];
 				logWarn("Weckruf-Schleife unterbrochen", e);
 				await new Promise((r) => setTimeout(r, pause));
 			}

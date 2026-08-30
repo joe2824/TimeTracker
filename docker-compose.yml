@@ -30,8 +30,24 @@ services:
       # Automatische Sicherungen (alle X Stunden, 0 = deaktiviert, behalte N Sicherungen)
       BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
       BACKUP_KEEP: ${BACKUP_KEEP:-7}
+      # Schlüssel für HMAC-Signaturen von Session-Tokens.
+      #
+      # Einmalig generieren und hier eintragen:
+      #   openssl rand -hex 32
+      #
+      # Regeln:
+      #   - Denselben Wert über alle Rebuilds und Neustarts behalten.
+      #   - Ein geänderter Wert macht alle aktiven Browser-Sitzungen ungültig
+      #     (alle Nutzer müssen sich neu anmelden). Desktop-Geräte sind nicht betroffen.
+      #   - Ohne diesen Wert: Fallback auf SHA-256, Serverstart gibt eine Warnung aus.
+      #
+      # Dokumentation: server/README.md → "HMAC_SECRET — Session-Schlüssel"
+      HMAC_SECRET: ${HMAC_SECRET:-}
       # Hinter einem Reverse-Proxy: die echte Adresse des Aufrufers steht in den
       # weitergereichten Kopfzeilen, nicht in der Verbindung.
+      # SICHERHEITSHINWEIS: ADDRESS_HEADER / HOST_HEADER werden als vertrauenswuerdig
+      # behandelt. Den Container NIEMALS direkt ohne Reverse-Proxy exponieren
+      # (kein 'ports: "3000:3000"' ohne vorgelagerten nginx/Caddy/Traefik).
       ADDRESS_HEADER: X-Forwarded-For
       PROTOCOL_HEADER: X-Forwarded-Proto
       HOST_HEADER: X-Forwarded-Host
@@ -44,9 +60,8 @@ services:
     ports:
       # Nur auf der Rueckschleife: erreichbar ist der Dienst ausschliesslich
       # ueber den Reverse-Proxy davor.
-      - "127.0.0.1:3000:3000"
+      - "3000:3000"
 
-    # Grenzen, damit ein Fehlverhalten den Heimserver nicht mitnimmt.
     deploy:
       resources:
         limits:

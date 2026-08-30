@@ -16,6 +16,9 @@
 	import PairingCode from "$lib/components/PairingCode.svelte";
 	import Landing from "$lib/components/Landing.svelte";
 	import DownloadIcon from "@lucide/svelte/icons/download";
+	import FingerprintIcon from "@lucide/svelte/icons/fingerprint";
+	import UserPlusIcon from "@lucide/svelte/icons/user-plus";
+	import KeyRoundIcon from "@lucide/svelte/icons/key-round";
 	import { RELEASES_URL, erkenneOS, hatDesktopApp } from "$lib/platform/os";
 	import { errorText, logWarn } from "$lib/log";
 	import { linkParameter } from "$lib/invite";
@@ -312,98 +315,92 @@
 	     suchen. -->
 	<Landing {os}>
 		{#snippet auth()}
-			<Card.Root class="w-full shadow-sm">
-				<Card.Header class="border-b">
-					<Card.Title class="text-base">
+			<Card.Root class="w-full shadow-md border-border/80 bg-card">
+				<Card.Header class="pb-3 border-b">
+					<Card.Title class="text-base font-semibold tracking-tight">
 						{vomLink.neu ? "Konto anlegen" : "Loslegen"}
 					</Card.Title>
-					<Card.Description>
+					<Card.Description class="text-xs leading-relaxed">
 						{#if vomLink.neu}
-							Erstelle ein neues Konto ganz einfach per Fingerabdruck oder Face ID. Komplett ohne Passwort.
+							Erstelle dein Konto per Touch ID, Face ID oder PIN. Ganz ohne Passwort.
 						{:else}
-							Logge dich mit deinem bestehenden Konto ein oder registriere dich neu – alles sicher ohne Passwort.
+							Schnell & sicher per Passkey (Fingerabdruck, Face ID oder PIN).
 						{/if}
 					</Card.Description>
 				</Card.Header>
-				<Card.Content class="space-y-5">
+				<Card.Content class="space-y-4 pt-4">
 					{#if vomLink.neu}
-						<!-- Der Rechner hat hierher geschickt, ausdruecklich zum Anlegen. Dann
-						     ist die Auswahl oben eine Huerde: die Antwort steht schon fest. -->
-						<div class="space-y-2">
-							<Button size="lg" class="w-full" disabled={laeuft} onclick={() => anlegen(invite)}>
-								{laeuft ? "Legt an…" : "Konto anlegen"}
+						<!-- Der Rechner hat hierher geschickt, ausdruecklich zum Anlegen. -->
+						<div class="space-y-2.5">
+							<Button size="lg" class="w-full h-11 font-medium gap-2 shadow-xs" disabled={laeuft} onclick={() => anlegen(invite)}>
+								<KeyRoundIcon class="size-4.5" />
+								<span>{laeuft ? "Legt an…" : "Konto anlegen"}</span>
 							</Button>
-							<p class="text-muted-foreground text-center text-xs">
-								Dein Gerät generiert gleich einen sicheren Passkey. Danach kannst du dieses Gerät mit deiner PC-App koppeln.
-								
-							</p>
 							<button
 								type="button"
-								class="text-muted-foreground hover:text-foreground w-full text-xs underline underline-offset-2"
+								class="text-muted-foreground hover:text-foreground w-full text-center text-xs underline underline-offset-4 pt-1"
 								onclick={() => (vomLink.neu = false)}
 							>
 								Ich habe bereits ein Konto
 							</button>
 						</div>
 					{:else}
-					<!-- Drei Faelle, alle sichtbar. -->
-					<div class="space-y-2">
-						<Button size="lg" class="w-full" disabled={laeuft} onclick={anmelden}>
-							{laeuft ? "Logge ein..." : "Login mit Passkey"}
-						</Button>
-						<p class="text-muted-foreground text-center text-xs">
-							Logge dich mit deinem registrierten Gerät (Fingerabdruck, Face ID, PIN) ein.
-						</p>
-					</div>
+						<!-- Login & Registrieren fokussiert und ohne Textwüsten -->
+						<div class="space-y-2.5">
+							<Button
+								size="lg"
+								class="w-full h-11 text-sm font-medium gap-2 shadow-xs transition-all active:scale-[0.99]"
+								disabled={laeuft}
+								onclick={anmelden}
+							>
+								<FingerprintIcon class="size-4.5" />
+								<span>{laeuft ? "Logge ein…" : "Login mit Passkey"}</span>
+							</Button>
+						</div>
 
-					{#if hilfeOffen}
-						<p class="border-primary/40 bg-muted/40 rounded-md border p-3 text-center text-xs">
-							Login fehlgeschlagen. Wähle eine der folgenden Optionen, um fortzufahren.
-						</p>
-					{/if}
+						{#if hilfeOffen}
+							<div class="border-primary/30 bg-primary/5 rounded-lg border p-2.5 text-center text-xs text-foreground animate-in fade-in-0 duration-150">
+								<p class="font-medium">Kein Passkey gefunden?</p>
+								<p class="text-muted-foreground mt-0.5">Erstelle unten ein neues Konto oder koppele ein bestehendes Gerät.</p>
+							</div>
+						{/if}
 
-					<div class="flex items-center gap-3">
-						<span class="bg-border h-px flex-1"></span>
-						<span class="text-muted-foreground text-xs">oder</span>
-						<span class="bg-border h-px flex-1"></span>
-					</div>
+						<div class="relative flex items-center justify-center my-1">
+							<span class="bg-border h-px w-full"></span>
+							<span class="bg-card px-2.5 text-[11px] text-muted-foreground uppercase tracking-wider font-medium">oder</span>
+						</div>
 
-					<!-- Kein Feld fuer den Einladungscode: ob es einen braucht, sagt der
-					     Server. Siehe anlegen(). -->
-					<div class="space-y-1">
-						<Button variant="outline" class="w-full" disabled={laeuft} onclick={() => anlegen(invite)}>
-							Neues Konto erstellen
-						</Button>
-						<p class="text-muted-foreground text-center text-xs">
-							{#if ausLink}
-								Einladungscode erkannt – du kannst dich direkt registrieren.
-							{:else}
-								Erstellt einen neuen sicheren Passkey für dein Konto.
-							{/if}
-						</p>
-					</div>
-
-					<!-- Die zwei selteneren Wege, klein. Beide setzen ein Konto voraus, das
-					     es schon gibt - gross angeboten waeren sie fuer Neue eine Sackgasse. -->
-					<div class="text-muted-foreground border-t pt-4 flex flex-wrap items-center justify-center gap-x-1 text-xs">
-						<button
-							type="button"
-							class="hover:text-foreground underline underline-offset-2"
+						<!-- Neues Konto erstellen -->
+						<Button
+							variant="outline"
+							class="w-full h-10 text-sm font-medium gap-2 hover:bg-accent/60 transition-colors"
 							disabled={laeuft}
-							onclick={koppelnStarten}
+							onclick={() => anlegen(invite)}
 						>
-							Bestehendes Konto koppeln
-						</button>
-						<span aria-hidden="true">·</span>
-						<button
-							type="button"
-							class="hover:text-foreground underline underline-offset-2"
-							onclick={() => (phraseOffen = true)}
-						>
-							Konto wiederherstellen
-						</button>
-					</div>
-				{/if}
+							<UserPlusIcon class="size-4" />
+							<span>{laeuft ? "Erstelle Konto…" : (ausLink ? "Mit Einladung registrieren" : "Neues Konto erstellen")}</span>
+						</Button>
+
+						<!-- Die zwei selteneren Wege, klein und sauber zentriert -->
+						<div class="text-muted-foreground border-t pt-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs">
+							<button
+								type="button"
+								class="hover:text-foreground transition-colors underline-offset-4 hover:underline"
+								disabled={laeuft}
+								onclick={koppelnStarten}
+							>
+								Gerät koppeln
+							</button>
+							<span aria-hidden="true" class="text-border">•</span>
+							<button
+								type="button"
+								class="hover:text-foreground transition-colors underline-offset-4 hover:underline"
+								onclick={() => (phraseOffen = true)}
+							>
+								Wiederherstellen
+							</button>
+						</div>
+					{/if}
 				</Card.Content>
 			</Card.Root>
 		{/snippet}

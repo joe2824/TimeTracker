@@ -14,7 +14,7 @@
     "test:watch": "vitest",
     "tauri": "tauri",
     "server:dev": "npm --workspace server run dev",
-    "server:build": "npm --workspace server run build",
+    "server:build": "npm run pwa:bundle && npm --workspace server run build",
     "server:test": "npm --workspace server run test",
     "build:web": "cross-env BUILD_TARGET=web vite build",
     "dev:web": "cross-env BUILD_TARGET=web vite dev",

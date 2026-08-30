@@ -634,7 +634,7 @@
 			</Dialog.Description>
 		</Dialog.Header>
 
-		<Dialog.Footer class="gap-2 sm:gap-0">
+		<Dialog.Footer class="gap-3">
 			<Button
 				variant="outline"
 				onclick={() => (backupToRestore = null)}

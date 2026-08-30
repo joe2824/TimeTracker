@@ -2,7 +2,11 @@
 import type { Cookies } from "@sveltejs/kit";
 import { SESSION_TTL_MS } from "./config";
 
-export const SESSION_COOKIE = "tt_session";
+// In Produktion erzwingt das __Host--Praefix auf Browserebene:
+// Secure, HttpOnly, kein Domain-Attribut, kein Subdomain-Cookie-Theft.
+// In der Entwicklung (localhost/HTTP) ist das Praefix unzulaessig - daher konditionell.
+export const SESSION_COOKIE =
+	process.env.NODE_ENV === "production" ? "__Host-tt_session" : "tt_session";
 
 export function setSessionCookie(cookies: Cookies, secret: string): void {
 	cookies.set(SESSION_COOKIE, secret, {

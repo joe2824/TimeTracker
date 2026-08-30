@@ -65,10 +65,10 @@ export function resetLimitsForTests(): void {
 // ---------- Die Saetze ----------
 
 /** Kopplung abfragen - gezaehlt werden nur FEHLGRIFFE (die Oberflaeche pollt im 2-Sekunden-Takt). */
-export const LIMIT_PAIR_CLAIM: LimitOptions = { burst: 15, perMinute: 10 };
+export const LIMIT_PAIR_CLAIM: LimitOptions = { burst: 8, perMinute: 5 };
 /** Kopplung beginnen: legt eine Zeile an, ist also teurer als eine Abfrage. */
-export const LIMIT_PAIR_START: LimitOptions = { burst: 10, perMinute: 5 };
-/** Anmelden und Registrieren. */
-export const LIMIT_AUTH: LimitOptions = { burst: 15, perMinute: 10 };
-/** Wiederherstellung mit der Phrase - zwei Anfragen je Vorgang. */
-export const LIMIT_RECOVER: LimitOptions = { burst: 12, perMinute: 6 };
+export const LIMIT_PAIR_START: LimitOptions = { burst: 5, perMinute: 2 };
+/** Anmelden und Registrieren. Ein echter Nutzer braucht 1–2 Versuche. */
+export const LIMIT_AUTH: LimitOptions = { burst: 5, perMinute: 3 };
+/** Wiederherstellung mit der Phrase - zwei Anfragen je Vorgang, also 2 volle Versuche. */
+export const LIMIT_RECOVER: LimitOptions = { burst: 4, perMinute: 2 };

@@ -4,13 +4,18 @@
 //   - Browser: Passkey -> Sitzungs-Cookie
 //   - Desktop: einmalige Kopplung -> langlebiges Geraete-Token
 import { and, eq, isNull, lt } from "drizzle-orm";
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { Db, DbLike } from "./db";
 import { challenges, devices, pairings, sessions, users } from "./db/schema";
-import { CHALLENGE_TTL_MS, SESSION_TTL_MS } from "./config";
+import { CHALLENGE_TTL_MS, HMAC_SECRET, SESSION_TTL_MS } from "./config";
 
-/** Geheimnisse werden nur als Hash abgelegt. */
+/** Geheimnisse werden nur als Hash abgelegt.
+ *  Mit HMAC_SECRET: sicher gegen DB-Exfil (serverseitiger Schluessel noetig).
+ *  Ohne HMAC_SECRET: Fallback auf SHA-256 (bisheriges Verhalten, keine Regression). */
 export function hashSecret(secret: string): string {
+	if (HMAC_SECRET) {
+		return createHmac("sha256", HMAC_SECRET).update(secret).digest("hex");
+	}
 	return createHash("sha256").update(secret).digest("hex");
 }
 

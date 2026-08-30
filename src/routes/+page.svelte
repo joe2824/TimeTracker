@@ -49,6 +49,8 @@
 	import BackdateDialog from "$lib/components/BackdateDialog.svelte";
 	import AbsenceOverrideDialog from "$lib/components/AbsenceOverrideDialog.svelte";
 	import UpdateDialog from "$lib/components/UpdateDialog.svelte";
+	import WhatsNewDialog from "$lib/components/WhatsNewDialog.svelte";
+	import { whatsNew } from "$lib/whatsNew.svelte";
 
 	let tab = $state("tracking");
 
@@ -243,6 +245,7 @@
 			// Erst NACH dem Laden: der Abgleich schreibt in denselben Bestand, und
 			// ein nicht erreichbarer Server darf den Start nicht aufhalten.
 			void account.init();
+			whatsNew.checkOnStartup(app.showOnboarding);
 			scheduleReminders();
 			scheduleReportReminder();
 
@@ -428,14 +431,10 @@
 		<header
 			class="bg-background/80 supports-backdrop-filter:bg-background/60 sticky top-0 z-30 border-b pt-[env(safe-area-inset-top)] backdrop-blur"
 		>
-			<!-- Auf schmalen Displays zwei Reihen: oben Logo und Status, darunter die
-			     Navigation ueber die volle Breite. Drei Spalten nebeneinander gehen
-			     sich dort nicht aus - die Tabs wurden auf ein paar Pixel gequetscht.
-			     Jedes Feld steht ausdruecklich im Raster: bei automatischer Verteilung
-			     richtet sich die Reihenfolge nach dem Dokument, und dort liegen die
-			     Tabs zwischen Logo und Status. -->
+			<!-- Ab sm: drei Spalten nebeneinander (Logo | Tabs | Status).
+			     Auf sehr schmalen Displays (xs) bleiben zwei Reihen als Fallback. -->
 			<div
-				class="mx-auto grid max-w-6xl grid-cols-[auto_1fr] items-center gap-x-6 gap-y-1 px-4 py-2 sm:px-6 sm:py-2.5 lg:grid-cols-[1fr_auto_1fr]"
+				class="mx-auto grid max-w-6xl grid-cols-[auto_1fr] items-center gap-x-4 gap-y-1 px-4 py-2 sm:grid-cols-[1fr_auto_1fr] sm:px-6 sm:py-2.5"
 			>
 				<div class="col-start-1 row-start-1 flex items-center gap-2 justify-self-start">
 					<button
@@ -450,7 +449,7 @@
 						<img
 							src={app.running ? "/logo-running.svg" : "/logo.svg"}
 							alt="TimeTracker"
-							class="h-9 w-auto transition-transform hover:scale-105 sm:h-12"
+							class="h-9 w-auto transition-transform hover:scale-105 sm:h-10"
 						/>
 					</button>
 					{#if isBeta}
@@ -460,14 +459,11 @@
 					{/if}
 				</div>
 
-				<!-- Schmal: eigene Reihe, waagerecht scrollbar statt umbrechend, und die
-				     Beschriftung weicht dem Symbol. Ein Tab, der nicht mehr passt,
-				     verschwindet damit nicht - man scrollt zu ihm. -->
-				<!-- h-11 auf schmalen Displays: 32px sind mit dem Daumen nicht sicher zu
-				     treffen. Ab sm zurueck auf die kompakte Hoehe, dort zeigt ein Zeiger. -->
+				<!-- Ab sm: Tabs zentriert in Spalte 2, Reihe 1 – nicht mehr in einer
+				     eigenen zweiten Reihe. Scrollbar falls die Tabs nicht alle passen. -->
 				<Tabs.List
 					variant="line"
-					class="scrollbar-lose col-span-2 col-start-1 row-start-2 w-full justify-start gap-1 overflow-x-auto group-data-horizontal/tabs:h-11 sm:group-data-horizontal/tabs:h-8 lg:col-span-1 lg:col-start-2 lg:row-start-1 lg:w-auto lg:justify-self-center lg:gap-2"
+					class="scrollbar-lose col-span-2 col-start-1 row-start-2 w-full justify-evenly gap-0 overflow-x-auto group-data-horizontal/tabs:h-12 sm:col-span-1 sm:col-start-2 sm:row-start-1 sm:w-auto sm:justify-self-center sm:justify-start sm:gap-2 sm:group-data-horizontal/tabs:h-8"
 				>
 					<Tabs.Trigger value="tracking" title="Tracking">
 						<TimerIcon /><span class="hidden sm:inline">Tracking</span>
@@ -593,6 +589,8 @@
 	{/if}
 	<CommandPalette bind:open={paletteOpen} onNavigate={(t) => (tab = t)} />
 {/if}
+
+<WhatsNewDialog />
 
 <svelte:window
 	onkeydown={onGlobalKey}

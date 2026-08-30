@@ -16,20 +16,22 @@ export const GET: RequestHandler = async ({ params }) => {
 	if (params.pfad?.startsWith("api/")) error(404, "Unbekannter Endpunkt");
 
 	try {
-		// Einmal lesen und behalten: die Datei aendert sich zur Laufzeit nicht, und
-		// jeder Seitenaufruf liesse sonst die Platte arbeiten.
-		cached ??= await readFile(join(CLIENT_DIR, "index.html"), "utf-8");
+		// In Produktion im Speicher cachen, in Entwicklung frisch von Platte lesen,
+		// damit ein Rebuild (npm run pwa:bundle) sofort ohne Server-Neustart greift.
+		const html =
+			process.env.NODE_ENV === "production"
+				? (cached ??= await readFile(join(CLIENT_DIR, "index.html"), "utf-8"))
+				: await readFile(join(CLIENT_DIR, "index.html"), "utf-8");
+
+		return new Response(html, {
+			headers: {
+				"content-type": "text/html; charset=utf-8",
+				// Nicht zwischenspeichern: die Datei verweist auf Bau-Dateien mit
+				// Fassungsnummer im Namen.
+				"cache-control": "no-cache"
+			}
+		});
 	} catch {
 		error(503, "Die Anwendung ist in diesem Abbild nicht enthalten");
 	}
-
-	return new Response(cached, {
-		headers: {
-			"content-type": "text/html; charset=utf-8",
-			// Nicht zwischenspeichern: die Datei verweist auf Bau-Dateien mit
-			// Fassungsnummer im Namen. Ein alter Verweis zeigt auf Dateien, die es
-			// nach einem Update nicht mehr gibt - die Anwendung bliebe weiss.
-			"cache-control": "no-cache"
-		}
-	});
 };

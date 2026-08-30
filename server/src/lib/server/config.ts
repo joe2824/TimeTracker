@@ -80,6 +80,21 @@ export const INVITE_CODES = (process.env.INVITE_CODES ?? "")
 /** Ob sich jeder registrieren darf, der die Adresse kennt. */
 export const REGISTRATION_OPEN = /^(1|true|ja|yes)$/i.test(process.env.REGISTRATION_OPEN ?? "");
 
+declare const __SERVER_VERSION__: string;
+export const SERVER_VERSION =
+	typeof __SERVER_VERSION__ === "string" && __SERVER_VERSION__ !== ""
+		? __SERVER_VERSION__
+		: (process.env.npm_package_version ?? "0.9.0-beta.7");
+
+/**
+ * Geheimer Schluessel fuer HMAC-Signaturen von Session-Tokens.
+ * Wenn gesetzt: Session-Hashes sind nur mit diesem Schluessel gueltig (sicherer).
+ * Wenn nicht gesetzt: Fallback auf einfaches SHA-256 (bisheriges Verhalten).
+ * WICHTIG: Denselben Wert in docker-compose.yml / .env setzen und nie aendern -
+ * sonst werden alle aktiven Sitzungen beim Neustart unguelig.
+ */
+export const HMAC_SECRET = process.env.HMAC_SECRET?.trim() || null;
+
 // ---------- Grenzen ----------
 //
 // Von Anfang an da, nicht nachtraeglich: ein Konto ohne Obergrenze ist im

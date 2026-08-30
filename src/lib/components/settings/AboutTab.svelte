@@ -11,6 +11,7 @@
 	import { getVersion } from "@tauri-apps/api/app";
 	import { invoke } from "@tauri-apps/api/core";
 	import { openExternal } from "$lib/platform/open";
+	import { isTauri } from "$lib/platform/env";
 	import { errorText } from "$lib/log";
 	import { toast } from "svelte-sonner";
 	import {
@@ -20,6 +21,8 @@
 	} from "$lib/watchers.svelte";
 	import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
 	import WrenchIcon from "@lucide/svelte/icons/wrench";
+	import SparklesIcon from "@lucide/svelte/icons/sparkles";
+	import { whatsNew } from "$lib/whatsNew.svelte";
 
 	const REPO_URL = "https://github.com/joe2824/TimeTracker";
 
@@ -124,9 +127,16 @@
 					<div class="text-muted-foreground text-xs">Version {appVersion || "—"}</div>
 				</div>
 			</div>
-			<Button variant="outline" size="sm" onclick={() => openExternal(REPO_URL)}>
-				<ExternalLinkIcon class="size-4" /> GitHub
-			</Button>
+			<div class="flex items-center gap-2">
+				{#if isTauri()}
+					<Button variant="outline" size="sm" class="gap-1.5" onclick={() => whatsNew.open()}>
+						<SparklesIcon class="size-3.5 text-primary" /> Neuerungen
+					</Button>
+				{/if}
+				<Button variant="outline" size="sm" class="gap-1.5" onclick={() => openExternal(REPO_URL)}>
+					<ExternalLinkIcon class="size-3.5" /> GitHub
+				</Button>
+			</div>
 		</div>
 
 		{#if app.devMode}

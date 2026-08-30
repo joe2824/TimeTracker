@@ -1,6 +1,7 @@
 // Was vor jeder Anfrage passiert: Datenbank bereitstellen und feststellen, wem
 // die Anfrage gehoert.
 import type { Handle } from "@sveltejs/kit";
+import { randomBytes } from "node:crypto";
 import { openDb } from "$lib/server/db";
 import { cleanupExpired, deviceFromToken, userFromSession } from "$lib/server/auth";
 import { startBackupScheduler } from "$lib/server/backup";
@@ -18,9 +19,12 @@ import {
 } from "$lib/server/limit";
 import {
 	ALLOWED_ORIGINS,
+	HMAC_SECRET,
 	istGueltigeKennung,
+	ORIGIN,
 	ORIGINS_OHNE_PASSKEY,
 	RP_ID,
+	SERVER_VERSION,
 	WEBAUTHN_ORIGINS
 } from "$lib/server/config";
 
@@ -38,6 +42,16 @@ startBackupScheduler(raw);
 
 /** Methoden, die etwas veraendern - nur fuer die zaehlt die Herkunft. */
 const SCHREIBEND = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+// Beim Start Version, Erreichbarkeits-Adresse und Sicherheitsstatus melden.
+console.log(`[Server] TimeTracker Server v${SERVER_VERSION} (Node ${process.version})`);
+console.log(`[Server] Adresse:        ${ORIGIN} (RP_ID: ${RP_ID})`);
+if (HMAC_SECRET) {
+	console.log(`[Server] HMAC_SECRET:   Aktiv (Session-Tokens werden per HMAC-SHA256 signiert)`);
+} else {
+	console.log(`[Server] HMAC_SECRET:   Nicht gesetzt (Fallback auf SHA-256 ohne Schlüssel)`);
+	console.warn(`[Security] Empfehlung: HMAC_SECRET=$(openssl rand -hex 32) in .env hinterlegen.`);
+}
 
 // Beim Start sagen, was mit den Adressen ist.
 if (ORIGINS_OHNE_PASSKEY.length > 0) {

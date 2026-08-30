@@ -168,7 +168,7 @@
 					</p>
 				</Dialog.Description>
 			</Dialog.Header>
-			<Dialog.Footer class="gap-2 sm:gap-0">
+			<Dialog.Footer class="gap-3">
 				<Button variant="outline" disabled={isLoading} onclick={() => (isUnlinkModalOpen = false)}>
 					Abbrechen
 				</Button>
@@ -205,7 +205,7 @@
 					</p>
 				</Dialog.Description>
 			</Dialog.Header>
-			<Dialog.Footer class="gap-2 sm:gap-0">
+			<Dialog.Footer class="gap-3">
 				<Button variant="outline" disabled={isLoading} onclick={() => (isRevokeModalOpen = false)}>
 					Abbrechen
 				</Button>
@@ -249,7 +249,7 @@
 					</p>
 				</Dialog.Description>
 			</Dialog.Header>
-			<Dialog.Footer class="gap-2 sm:gap-0">
+			<Dialog.Footer class="gap-3">
 				<Button variant="outline" disabled={isLoading} onclick={() => (isDeleteAccountModalOpen = false)}>
 					Abbrechen
 				</Button>
