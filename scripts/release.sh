@@ -127,13 +127,15 @@ else
     echo "→ Releasing v${VERSION}"
 fi
 
-# ── Update version in all three manifests ────────────────────────────────────
+# ── Update version in all manifests ─────────────────────────────────────────
 # Das Suffix muss mit ins Muster: steht in den Dateien schon eine Vorabversion,
 # ersetzte ein Muster ohne Suffix nur den Zahlenteil und zurueck bliebe
 # "0.8.0-beta.2-beta.1".
 SEMVER='[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?'
 sed -i '' -E "s/\"version\": \"${SEMVER}\"/\"version\": \"${VERSION}\"/" package.json
 echo "  ✓ package.json"
+sed -i '' -E "s/\"version\": \"${SEMVER}\"/\"version\": \"${VERSION}\"/" server/package.json
+echo "  ✓ server/package.json"
 sed -i '' -E "s/\"version\": \"${SEMVER}\"/\"version\": \"${VERSION}\"/" src-tauri/tauri.conf.json
 echo "  ✓ src-tauri/tauri.conf.json"
 sed -i '' -E "s/^version = \"${SEMVER}\"/version = \"${VERSION}\"/" src-tauri/Cargo.toml
@@ -144,23 +146,33 @@ echo "  ✓ src-tauri/Cargo.toml"
 
 # ── Verify all match ──────────────────────────────────────────────────────────
 PKG=$(grep '"version"' package.json | head -1 | grep -Eo "${SEMVER}")
+SERVER_PKG=$(grep '"version"' server/package.json | head -1 | grep -Eo "${SEMVER}")
 TAURI=$(grep '"version"' src-tauri/tauri.conf.json | head -1 | grep -Eo "${SEMVER}")
 CARGO=$(grep '^version' src-tauri/Cargo.toml | head -1 | grep -Eo "${SEMVER}")
 
-if [[ "$PKG" != "$VERSION" || "$TAURI" != "$VERSION" || "$CARGO" != "$VERSION" ]]; then
+if [[ "$PKG" != "$VERSION" || "$SERVER_PKG" != "$VERSION" || "$TAURI" != "$VERSION" || "$CARGO" != "$VERSION" ]]; then
     echo "Error: version mismatch after update"
-    echo "  package.json:    $PKG"
-    echo "  tauri.conf.json: $TAURI"
-    echo "  Cargo.toml:      $CARGO"
+    echo "  package.json:        $PKG"
+    echo "  server/package.json: $SERVER_PKG"
+    echo "  tauri.conf.json:     $TAURI"
+    echo "  Cargo.toml:          $CARGO"
     exit 1
 fi
 
 # ── Commit + tag + push ───────────────────────────────────────────────────────
-git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
-git commit -m "chore: release v${VERSION}"
+git add package.json server/package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+if ! git diff --cached --quiet; then
+    git commit -m "chore: release v${VERSION}"
+fi
+
+if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
+    echo "  Tag v${VERSION} existiert bereits lokal — wird überschrieben..."
+    git tag -d "v${VERSION}"
+fi
+
 git tag "v${VERSION}"
 git push origin HEAD
-git push origin "v${VERSION}"
+git push origin "v${VERSION}" --force
 
 echo ""
 echo "✓ Released v${VERSION} — CI build triggered."

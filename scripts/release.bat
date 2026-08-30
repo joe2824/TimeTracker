@@ -141,6 +141,8 @@ if "%BETA%"=="1" (
 REM -- Update versions via PowerShell regex replace ----------------------------
 powershell -NoProfile -Command "(Get-Content package.json -Raw) -replace '\"version\": \"[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?\"', '\"version\": \"%VERSION%\"' | Set-Content -NoNewline package.json"
 echo   ok package.json
+powershell -NoProfile -Command "(Get-Content server/package.json -Raw) -replace '\"version\": \"[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?\"', '\"version\": \"%VERSION%\"' | Set-Content -NoNewline server/package.json"
+echo   ok server/package.json
 powershell -NoProfile -Command "(Get-Content src-tauri/tauri.conf.json -Raw) -replace '\"version\": \"[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?\"', '\"version\": \"%VERSION%\"' | Set-Content -NoNewline src-tauri/tauri.conf.json"
 echo   ok tauri.conf.json
 powershell -NoProfile -Command "(Get-Content src-tauri/Cargo.toml -Raw) -replace '(?m)^version = \"[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?\"', 'version = \"%VERSION%\"' | Set-Content -NoNewline src-tauri/Cargo.toml"
@@ -154,21 +156,25 @@ popd
 REM -- Verify all match --------------------------------------------------------
 set "PKG="
 for /f "tokens=2 delims=:, " %%v in ('findstr /R /C:"\"version\"" package.json') do if not defined PKG set "PKG=%%~v"
+set "SERVER_PKG="
+for /f "tokens=2 delims=:, " %%v in ('findstr /R /C:"\"version\"" server\package.json') do if not defined SERVER_PKG set "SERVER_PKG=%%~v"
 set "TAURI="
 for /f "tokens=2 delims=:, " %%v in ('findstr /R /C:"\"version\"" src-tauri\tauri.conf.json') do if not defined TAURI set "TAURI=%%~v"
 set "CARGO="
 for /f "tokens=2 delims== " %%v in ('findstr /R /C:"^version = " src-tauri\Cargo.toml') do if not defined CARGO set "CARGO=%%~v"
 
 if not "%PKG%"=="%VERSION%" goto :mismatch
+if not "%SERVER_PKG%"=="%VERSION%" goto :mismatch
 if not "%TAURI%"=="%VERSION%" goto :mismatch
 if not "%CARGO%"=="%VERSION%" goto :mismatch
 
 REM -- Commit + tag + push -----------------------------------------------------
-git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
-git commit -m "chore: release v%VERSION%"
+git add package.json server/package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+git diff --cached --quiet || git commit -m "chore: release v%VERSION%"
+git tag -d "v%VERSION%" >nul 2>&1
 git tag "v%VERSION%"
 git push origin HEAD
-git push origin "v%VERSION%"
+git push origin "v%VERSION%" --force
 
 echo.
 echo Released v%VERSION% - CI build triggered.
