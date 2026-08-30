@@ -20,11 +20,12 @@ WORKDIR /app
 # statt Minuten.
 COPY package.json package-lock.json ./
 COPY server/package.json ./server/
-RUN npm ci
+RUN npm ci --ignore-scripts
 
 # Die Oberflaeche - dieselbe Quelle wie fuer die Desktop-Anwendung, nur ein
 # anderes Ziel.
 COPY svelte.config.js vite.config.js tsconfig.json tt ./
+COPY scripts ./scripts
 COPY src ./src
 COPY static ./static
 RUN BUILD_TARGET=web npx vite build
