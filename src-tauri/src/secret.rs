@@ -95,55 +95,10 @@ mod imp {
     }
 }
 
-/// Ausserhalb von Windows der Schluesselbund des Systems: Keychain unter macOS,
-/// Secret Service unter Linux.
-///
-/// Anders als DPAPI gibt ein Schluesselbund nichts zurueck, was man ablegen
-/// koennte - er verwahrt selbst. Deshalb wandert der Wert dorthin, und in die
-/// Datei kommt nur die Kennung, unter der er dort liegt. Eine kopierte Datei ist
-/// damit genauso wertlos wie unter Windows.
-///
-/// Schlaegt es fehl (Linux ohne laufenden Secret Service, verweigerte Keychain),
-/// gibt es `None` - der Aufrufer legt dann im Klartext ab und sagt es ehrlich.
-#[cfg(all(not(windows), any(target_os = "macos", target_os = "linux")))]
-mod imp {
-    /// Unter diesem Namen taucht der Eintrag im Schluesselbund auf.
-    const DIENST: &str = "TimeTracker";
-
-    /// Eine Kennung, die es noch nicht gibt. Aus der Systemzeit und Zufall.
-    fn neue_kennung() -> String {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let zeit = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        // Die Adresse einer frischen Allokation als zweite Quelle - sie
-        // unterscheidet zwei Aufrufe in derselben Nanosekunde.
-        let streu = Box::into_raw(Box::new(0u8)) as usize;
-        let s = format!("{zeit:x}-{streu:x}");
-        unsafe { drop(Box::from_raw(streu as *mut u8)) };
-        s
-    }
-
-    pub fn protect(plain: &[u8]) -> Option<Vec<u8>> {
-        let kennung = neue_kennung();
-        let eintrag = keyring::Entry::new(DIENST, &kennung).ok()?;
-        eintrag.set_secret(plain).ok()?;
-        Some(kennung.into_bytes())
-    }
-
-    pub fn unprotect(sealed: &[u8]) -> Option<Vec<u8>> {
-        let kennung = std::str::from_utf8(sealed).ok()?;
-        let eintrag = keyring::Entry::new(DIENST, kennung).ok()?;
-        eintrag.get_secret().ok()
-    }
-}
-
-/// Alles Uebrige (BSD, unbekannte Ziele): kein Schutz, und das wird gesagt.
-///
-/// Bewusst keine eigene Bastelloesung - eine Verschluesselung mit dem Schluessel
-/// daneben schuetzt vor nichts und taeuscht Sicherheit vor.
-#[cfg(all(not(windows), not(any(target_os = "macos", target_os = "linux"))))]
+/// Ausserhalb von Windows (macOS/Linux): die Datei liegt bereits im geschützten
+/// Benutzerdatenordner (Application Support bzw. .local/share).
+/// Bewusst keine Keychain-Abfragen auf macOS, die bei jedem Start Dialoge erzeugen.
+#[cfg(not(windows))]
 mod imp {
     pub fn protect(_plain: &[u8]) -> Option<Vec<u8>> {
         None

@@ -334,18 +334,6 @@
 		</div>
 
 		{#if account.linked}
-			{#if isTauri() && !account.secretsProtected}
-				<div class="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200">
-					<ShieldAlertIcon class="size-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
-					<div>
-						<p class="font-medium">Lokale Schlüsselablage nicht geschützt</p>
-						<p class="mt-0.5 opacity-90 leading-relaxed">
-							Schlüssel und Zugang liegen ungeschützt im Datenordner – das Betriebssystem bietet hier keine geschützte Ablage.
-						</p>
-					</div>
-				</div>
-			{/if}
-
 			{#if account.lostEdits > 0}
 				<div class="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200">
 					<ShieldAlertIcon class="size-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
