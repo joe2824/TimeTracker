@@ -114,12 +114,17 @@ fi
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
-# ── Check clean working tree ──────────────────────────────────────────────────
+# ── Check clean working tree & run pre-flight tests ───────────────────────────
 if [[ -n "$(git status --porcelain)" ]]; then
     echo "Error: uncommitted changes present. Commit or stash first."
     git status --short
     exit 1
 fi
+
+echo "→ Running pre-flight checks (svelte-check & test suites)..."
+npm run check
+npm --workspace server run check
+npm test -- --run
 
 if [[ "$BETA" == true ]]; then
     echo "→ Releasing v${VERSION} (beta channel)"
