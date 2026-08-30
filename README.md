@@ -65,14 +65,13 @@ Ausführlich im Wiki: [Pausenabzug](https://github.com/joe2824/TimeTracker/wiki/
 
 ## Server
 
-Ein Container, ein Volume. Das Abbild enthält Oberfläche und Server.
+Ein Container, ein Volume. Simples Setup. Simples Setup. Das Docker-Image enthält Oberfläche und Server.
 
 ```bash
 docker pull ghcr.io/joe2824/timetracker-server:latest
 ```
 
-Für `linux/amd64` und `linux/arm64`. `:latest` bekommen nur stabile Versionen, nie eine Beta.
-Wöchentlich neu gebaut, damit Lücken im Grundabbild geflickt ankommen.
+Läuft auf `linux/amd64` und `linux/arm64` (Raspberry Pi). Den Tag `:latest` erhalten ausschließlich stabile Versionen. Das Base-Image wird wöchentlich über GitHub Actions aktualisiert, um Security-Patches automatisch einzuspielen.
 
 Pflicht-Umgebungsvariablen:
 

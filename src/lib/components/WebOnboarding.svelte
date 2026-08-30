@@ -319,9 +319,9 @@
 					</Card.Title>
 					<Card.Description>
 						{#if vomLink.neu}
-							Dein Gerät legt dazu einen Passkey an.
+							Erstelle ein neues Konto ganz einfach per Fingerabdruck oder Face ID. Komplett ohne Passwort.
 						{:else}
-							Anmelden oder neu anfangen. Für beides brauchst du kein Passwort.
+							Logge dich mit deinem bestehenden Konto ein oder registriere dich neu – alles sicher ohne Passwort.
 						{/if}
 					</Card.Description>
 				</Card.Header>
@@ -334,31 +334,31 @@
 								{laeuft ? "Legt an…" : "Konto anlegen"}
 							</Button>
 							<p class="text-muted-foreground text-center text-xs">
-								Ein Klick, dann fragt dein Gerät nach Fingerabdruck, Gesicht oder PIN.
-								Danach trägst du den Kopplungscode ein, der auf dem Rechner steht.
+								Dein Gerät generiert gleich einen sicheren Passkey. Danach kannst du dieses Gerät mit deiner PC-App koppeln.
+								
 							</p>
 							<button
 								type="button"
 								class="text-muted-foreground hover:text-foreground w-full text-xs underline underline-offset-2"
 								onclick={() => (vomLink.neu = false)}
 							>
-								Ich habe doch schon ein Konto
+								Ich habe bereits ein Konto
 							</button>
 						</div>
 					{:else}
 					<!-- Drei Faelle, alle sichtbar. -->
 					<div class="space-y-2">
 						<Button size="lg" class="w-full" disabled={laeuft} onclick={anmelden}>
-							{laeuft ? "Warte auf Bestätigung…" : "Mit Passkey anmelden"}
+							{laeuft ? "Logge ein..." : "Login mit Passkey"}
 						</Button>
 						<p class="text-muted-foreground text-center text-xs">
-							Wenn du hier schon einmal angemeldet warst. Fingerabdruck, Gesicht oder PIN.
+							Logge dich mit deinem registrierten Gerät (Fingerabdruck, Face ID, PIN) ein.
 						</p>
 					</div>
 
 					{#if hilfeOffen}
 						<p class="border-primary/40 bg-muted/40 rounded-md border p-3 text-center text-xs">
-							Das hat nicht geklappt. Wähle unten, was auf dich zutrifft.
+							Login fehlgeschlagen. Wähle eine der folgenden Optionen, um fortzufahren.
 						</p>
 					{/if}
 
@@ -372,13 +372,13 @@
 					     Server. Siehe anlegen(). -->
 					<div class="space-y-1">
 						<Button variant="outline" class="w-full" disabled={laeuft} onclick={() => anlegen(invite)}>
-							Ich bin neu – Konto anlegen
+							Neues Konto erstellen
 						</Button>
 						<p class="text-muted-foreground text-center text-xs">
 							{#if ausLink}
-								Einladung erkannt – du kannst direkt anlegen.
+								Einladungscode erkannt – du kannst dich direkt registrieren.
 							{:else}
-								Legt einen Passkey auf diesem Gerät an. Dauert zehn Sekunden.
+								Erstellt einen neuen sicheren Passkey für dein Konto.
 							{/if}
 						</p>
 					</div>
@@ -392,7 +392,7 @@
 							disabled={laeuft}
 							onclick={koppelnStarten}
 						>
-							App auf dem PC verknüpfen
+							Bestehendes Konto koppeln
 						</button>
 						<span aria-hidden="true">·</span>
 						<button
@@ -400,7 +400,7 @@
 							class="hover:text-foreground underline underline-offset-2"
 							onclick={() => (phraseOffen = true)}
 						>
-							Account wiederherstellen
+							Konto über Recovery-Phrase wiederherstellen
 						</button>
 					</div>
 				{/if}
@@ -409,9 +409,7 @@
 		{/snippet}
 	</Landing>
 {:else}
-	<!-- Die Schritte NACH dem Anlegen. Sie tragen keine Werbung mehr: wer hier
-	     steht, hat sich entschieden. max(): der Abstand waechst nur dort, wo
-	     Statusleiste oder Gestenstreifen Platz brauchen. -->
+	<!-- Die Schritte NACH dem Anlegen. -->
 	<div
 		class="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-6 px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]"
 	>
@@ -420,21 +418,21 @@
 			<header class="flex flex-col items-center gap-3 text-center">
 				<img src="/logo.svg" alt="" class="h-14 w-auto drop-shadow-sm" />
 				<div class="space-y-1">
-					<h1 class="text-2xl font-semibold tracking-tight">Konto steht.</h1>
-					<p class="text-muted-foreground text-sm">Eine Sache noch.</p>
+					<h1 class="text-2xl font-semibold tracking-tight">Erfolgreich registriert!</h1>
+					<p class="text-muted-foreground text-sm">Fast geschafft.</p>
 				</div>
 			</header>
 
 			<Card.Root class="w-full">
 				<Card.Content class="space-y-5 pt-6">
 					<div class="space-y-2">
-						<p class="text-sm font-medium">Hast du TimeTracker schon auf dem Rechner?</p>
+						<p class="text-sm font-medium">Nutzt du TimeTracker bereits auf deinem PC?</p>
 						<!-- Der Code steht drueben auf dem Bildschirm und wird hier abgetippt.
 						     Genau dieses Abtippen ist die Pruefung: es gibt keinen Weg, auf dem
 						     ein fremder Code unbemerkt in dieses Feld kaeme. -->
 						<Label for="appcode" class="text-muted-foreground text-xs font-normal">
-							Dort steht der Kopplungscode – beim Verknüpfen oder unter Einstellungen →
-							Konto. Trag ihn hier ein.
+							Gib hier den 12-stelligen Kopplungscode aus der Windows-App (unter Einstellungen → Konto) ein, um die Geräte zu synchronisieren.
+							
 						</Label>
 						<div class="flex gap-2">
 							<Input
@@ -466,32 +464,32 @@
 								target="_blank"
 								rel="noreferrer noopener"
 							>
-								<DownloadIcon class="size-4" /> App für Windows herunterladen
+								<DownloadIcon class="size-4" /> Download für Windows
 							</Button>
 							<p class="text-muted-foreground text-center text-xs">
-								Tray-Symbol, globales Kürzel, Leerlauf-Erkennung. Verknüpfen kannst du sie
-								später jederzeit.
+								Inklusive Tray-Icon, globalen Hotkeys und automatischer Leerlauf-Erkennung. Du kannst deine Geräte auch später noch koppeln.
+								
 							</p>
 						</div>
 					{:else}
 						<p class="text-muted-foreground text-center text-xs">
-							Die Desktop-Anwendung gibt es bisher nur für Windows. Im Browser funktioniert
-							alles Wesentliche.
+							Aktuell gibt es die Desktop-App nur für Windows. Alle wichtigen Funktionen stehen dir aber direkt hier im Browser zur Verfügung.
+							
 						</p>
 					{/if}
 
-					<Button variant="ghost" class="w-full" onclick={fertig}>Weiter zur App</Button>
+					<Button variant="ghost" class="w-full" onclick={fertig}>Zum Dashboard</Button>
 				</Card.Content>
 			</Card.Root>
 
 		{:else if schritt === "phrase"}
 			<Card.Root class="w-full">
 				<Card.Header>
-					<Card.Title>Wiederherstellungs-Phrase sichern</Card.Title>
+					<Card.Title>Recovery-Phrase sichern</Card.Title>
 					<Card.Description>
-						Diese 24 Wörter sind der einzige Weg zurück zu deinen Daten, wenn du alle Geräte
-						verlierst. Sie werden <strong>nur jetzt</strong> angezeigt – der Server kennt sie
-						nicht und kann sie nicht noch einmal zeigen.
+						Diese 24 Wörter sind dein einziges Backup, falls du den Zugriff auf deine Geräte verlierst.
+						Speichere sie sicher ab. <strong>Wir zeigen diese Wörter nur jetzt an</strong>.
+						Wir können sie später nicht für dich wiederherstellen.
 					</Card.Description>
 				</Card.Header>
 				<Card.Content class="space-y-4">
@@ -514,9 +512,9 @@
 						<p
 							class="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-700 dark:text-amber-300"
 						>
-							Dieses Gerät unterstützt die Passkey-Erweiterung nicht, mit der sich der Tresor
-							beim Anmelden von selbst öffnet. Du wirst die Phrase bei jeder Anmeldung auf
-							diesem Gerät brauchen.
+							Dein Browser unterstützt leider keine automatische Tresor-Entschlüsselung (PRF).
+							Du wirst diese Recovery-Phrase daher bei jedem Login auf diesem Gerät eingeben müssen.
+							
 						</p>
 					{/if}
 
@@ -526,8 +524,8 @@
 					>
 						<Checkbox id="phrase-ok" bind:checked={bestaetigt} class="mt-0.5" />
 						<span>
-							Ich habe die 24 Wörter an einem sicheren Ort gesichert. Mir ist klar, dass meine
-							Daten ohne sie bei Verlust aller Geräte unwiederbringlich weg sind.
+							Ich habe die 24 Wörter sicher notiert. Mir ist bewusst, dass bei einem Verlust dieser Phrase
+							auch meine Daten unwiederbringlich verloren sind.
 						</span>
 					</Label>
 
@@ -541,7 +539,7 @@
 				<Card.Header>
 					<Card.Title>Tresor entsperren</Card.Title>
 					<Card.Description>
-						Dieses Gerät kann den Tresor nicht allein öffnen. Bitte die 24 Wörter eingeben.
+						Bitte gib deine 24 Wörter ein, um deinen lokalen Daten-Tresor zu entschlüsseln.
 					</Card.Description>
 				</Card.Header>
 				<Card.Content class="space-y-3">
@@ -580,9 +578,9 @@
 	     ein Code, der mitten in der Kette umbricht, wird beim Abtippen falsch. -->
 	<Dialog.Content class="sm:max-w-md">
 		<Dialog.Header>
-			<Dialog.Title>App auf dem PC verknüpfen</Dialog.Title>
+			<Dialog.Title>Bestehendes Konto koppeln</Dialog.Title>
 			<Dialog.Description>
-				Dieser Browser hängt noch an keinem Konto. Mit dem Code holst du ihn dazu.
+				Dieser Browser ist noch mit keinem Konto verknüpft. Gib den folgenden Code in deiner TimeTracker App ein, um ihn zu autorisieren.
 			</Dialog.Description>
 		</Dialog.Header>
 
@@ -591,7 +589,7 @@
 			     zweimal derselbe Knopf untereinander stiftet nur Verwirrung. -->
 			<PairingCode code={kopplungscode} />
 		{:else}
-			<p class="text-muted-foreground py-8 text-center text-sm">Code wird geholt…</p>
+			<p class="text-muted-foreground py-8 text-center text-sm">Lade Code...</p>
 		{/if}
 
 		<Dialog.Footer>
@@ -619,10 +617,10 @@
 >
 	<Dialog.Content class="sm:max-w-md">
 		<Dialog.Header>
-			<Dialog.Title>Account wiederherstellen</Dialog.Title>
+			<Dialog.Title>Konto über Recovery-Phrase wiederherstellen</Dialog.Title>
 			<Dialog.Description>
-				Für den Fall, dass du auf keinem Gerät mehr angemeldet bist. Gib die 24 Wörter ein,
-				die du beim Anlegen bekommen hast.
+				Falls du dein primäres Gerät verloren hast, kannst du hier deinen Account
+				mit deiner 24-Wörter-Phrase wiederherstellen.
 			</Dialog.Description>
 		</Dialog.Header>
 		<textarea
@@ -648,8 +646,8 @@
 		<Dialog.Header>
 			<Dialog.Title>Einladungscode</Dialog.Title>
 			<Dialog.Description>
-				Dieser Server nimmt keine offenen Registrierungen an. Wer ihn betreibt, kann dir
-				einen Code ausstellen.
+				Dieser Server erlaubt keine öffentliche Registrierung.
+				Bitte gib deinen Einladungscode ein.
 			</Dialog.Description>
 		</Dialog.Header>
 		<Input
