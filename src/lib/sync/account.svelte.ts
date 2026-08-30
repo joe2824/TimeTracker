@@ -100,6 +100,8 @@ class AccountState {
 	pairCodeFromLink = $state<string>("");
 	/** Fortschritt des aktuellen Synchronisationsvorgangs (z.B. wie viele Datensätze geladen wurden). */
 	syncProgress = $state<{ phase: "idle" | "pulling" | "pushing"; pulled: number; pushed: number } | null>(null);
+	/** Status des Massen-Imports für die UI (z.B. Modal im Browser). */
+	bulkSync = $state<{ phase: "pulling" | "done"; pulled: number } | null>(null);
 	/** Ob die Initialisierung des Kontos (Lesen lokaler Zugangsdaten) abgeschlossen ist. */
 	ready = $state<boolean>(false);
 
@@ -215,10 +217,11 @@ class AccountState {
 			},
 			onProgress: (p) => {
 				this.syncProgress = p.phase === "idle" ? null : p;
-				// Im Browser: das SyncLoadingDialog-Modal reagiert auf syncProgress.
-				// In Tauri: kein Modal – dort zeigt der Toast die Meldung.
-				if (isTauri() && p.phase === "pulling" && p.pulled >= 20) {
-					toast.loading(`Lade Daten (${p.pulled} Einträge)…`, { id: "sync-bulk" });
+				if (p.phase === "pulling" && p.pulled >= 20) {
+					this.bulkSync = { phase: "pulling", pulled: p.pulled };
+					if (isTauri()) {
+						toast.loading(`Lade Daten (${p.pulled} Einträge)…`, { id: "sync-bulk" });
+					}
 				}
 			}
 		});
@@ -299,11 +302,23 @@ class AccountState {
 					logInfo("Abgeglichen", ergebnis);
 				}
 				if (ergebnis.pulled >= 20) {
+					this.bulkSync = { phase: "done", pulled: ergebnis.pulled };
 					toast.success(`${ergebnis.pulled} Einträge synchronisiert.`, { id: "sync-bulk" });
+					setTimeout(() => {
+						if (this.bulkSync?.phase === "done") {
+							this.bulkSync = null;
+						}
+					}, 1500);
 				} else {
+					if (this.bulkSync && this.bulkSync.phase !== "done") {
+						this.bulkSync = null;
+					}
 					toast.dismiss("sync-bulk");
 				}
 			} else {
+				if (this.bulkSync && this.bulkSync.phase !== "done") {
+					this.bulkSync = null;
+				}
 				toast.dismiss("sync-bulk");
 			}
 			// Der Bestand kann sich geaendert haben - die Ansichten haengen daran.
@@ -320,6 +335,7 @@ class AccountState {
 				app.dismissOnboarding();
 			}
 		} catch (e) {
+			this.bulkSync = null;
 			toast.dismiss("sync-bulk");
 			this.#onSyncError(e);
 		}

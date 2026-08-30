@@ -826,4 +826,25 @@ describe("onProgress – Ladeanzeige beim Massenimport", () => {
 		// Letztes Event muss idle sein.
 		expect(events.at(-1)?.phase).toBe("idle");
 	});
+
+	it("meldet Fortschritt bei über 200 Einträgen (voller Batch)", async () => {
+		const sender = new Geraet("sender-bulk");
+		const eintraege250 = Array.from({ length: 250 }, (_, i) =>
+			eintrag(`bulk-${i}`, { startTs: ts(1 + (i % 20), 8 + (i % 8)) })
+		);
+		await auf(sender, async (engine) => {
+			await store.saveEntries(MONAT, eintraege250);
+			return engine.sync();
+		});
+
+		const empfaenger = new Geraet("empfaenger-bulk");
+		const { events } = await syncMitProgress(empfaenger);
+
+		// Mindestens zwei pulling-Schritte (bei BATCH=200):
+		const pullingEvents = events.filter((e) => e.phase === "pulling");
+		expect(pullingEvents.length).toBeGreaterThanOrEqual(2);
+
+		const maxPulled = Math.max(...pullingEvents.map((e) => e.pulled));
+		expect(maxPulled).toBe(250);
+	});
 });

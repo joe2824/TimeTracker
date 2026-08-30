@@ -3,6 +3,7 @@
 	import { onMount } from "svelte";
 	import { ModeWatcher } from "mode-watcher";
 	import { Toaster } from "$lib/components/ui/sonner";
+	import SyncLoadingDialog from "$lib/components/dialogs/SyncLoadingDialog.svelte";
 	import { flushLog, installErrorLogging } from "$lib/log";
 
 	let { children } = $props();
@@ -21,4 +22,5 @@
 
 <ModeWatcher />
 <Toaster richColors closeButton />
+<SyncLoadingDialog />
 {@render children()}
