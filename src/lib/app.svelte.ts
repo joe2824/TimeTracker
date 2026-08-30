@@ -1170,6 +1170,14 @@ class AppState {
 			months.add(m);
 		}
 
+		// Alle bisher noch offenen Einträge verlässlich schließen, bevor der neue startet.
+		for (const open of this.#openEntries()) {
+			const parts = splitAtMidnight(open.startTs, start);
+			open.endTs = parts[0].endTs;
+			for (const p of parts.slice(1)) followUps.push({ from: open, ...p });
+			months.add(monthKey(open.startTs));
+		}
+
 		const entry: Entry = { id: uid(), activityId, startTs: start, endTs: null, note: "", source: "timer" };
 		this.entriesByMonth[month].push(entry);
 		this.running = entry;

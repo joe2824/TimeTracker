@@ -27,7 +27,12 @@ export function planBackdate(
 
 	for (const e of entries) {
 		if (absenceIds.has(e.activityId)) continue;
-		const end = e.endTs ?? now;
+		if (e.endTs === null) {
+			if (e.startTs >= start) remove.push(e);
+			else truncate.push({ entry: e, endTs: start });
+			continue;
+		}
+		const end = e.endTs;
 		if (end <= start) continue;
 		if (e.startTs >= start) remove.push(e);
 		else truncate.push({ entry: e, endTs: start });
