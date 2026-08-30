@@ -18,11 +18,17 @@ When reviewing code in Antigravity projects, follow these steps and principles.
 - Are error conditions handled explicitly?
 
 ### 2. Architecture & Clean Code
-- Is there any unnecessary duplication (DRY violations)?
-- Does each function or class have a single responsibility?
-- Are names intention-revealing and unambiguous?
-- Are functions small, focused, and readable?
-- Is dead or obsolete code removed?
+- **DRY & Anti-Spaghetti (Keine doppelten Funktionen)**:
+  - Prüfe sorgfältig, ob ähnliche oder identische Hilfsfunktionen, Konvertierungen oder Validierungslogiken mehrfach existieren.
+  - Redundante Logik vermeiden und stattdessen in wiederverwendbare, zentrale Module auslagern.
+- **Englische Namenskonventionen**:
+  - Variablen-, Funktions-, Typ- und Dateinamen sollten auf Englisch verfasst werden (z. B. `isRegistrationOpen`, `backupIntegrity`, `formatDate`, `toggleInvite`).
+  - Eindeutige, intention-revealing Namen wählen; kryptische Abkürzungen vermeiden.
+- **Modularität & Single Responsibility**:
+  - Hat jede Funktion/Klasse eine klar abgegrenzte Aufgabe?
+  - Funktionen klein, fokussiert und gut lesbar halten.
+- **Dead Code**:
+  - Nicht mehr genutzte Imports, obsolete Hilfsfunktionen und auskommentierter Code müssen entfernt werden.
 
 ### 3. Performance & Scalability
 - Are there obvious `O(n²)` or worse patterns?
