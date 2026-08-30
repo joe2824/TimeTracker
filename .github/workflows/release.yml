@@ -55,43 +55,47 @@ jobs:
         shell: bash
         run: |
           TAG="${{ github.ref_name }}"
-          # Für ein stabiles Release den letzten STABILEN Tag als Startpunkt: sonst
-          # listete es nur, was seit der letzten Beta dazukam, und alles davor
-          # taucht in keinen Release-Notes je auf. Betas vergleichen gegen den
-          # direkten Vorgänger, egal welcher Kanal.
-          if [ "${{ steps.channel.outputs.beta }}" = "true" ]; then
-            MATCH=(--match 'v*')
+          if [ -f "RELEASE_NOTES.md" ]; then
+            body="$(cat RELEASE_NOTES.md)"$'\n\n'"Installer/Bundles siehe Assets unten."
           else
-            MATCH=(--match 'v*' --exclude '*-beta.*')
+            # Für ein stabiles Release den letzten STABILEN Tag als Startpunkt: sonst
+            # listete es nur, was seit der letzten Beta dazukam, und alles davor
+            # taucht in keinen Release-Notes je auf. Betas vergleichen gegen den
+            # direkten Vorgänger, egal welcher Kanal.
+            if [ "${{ steps.channel.outputs.beta }}" = "true" ]; then
+              MATCH=(--match 'v*')
+            else
+              MATCH=(--match 'v*' --exclude '*-beta.*')
+            fi
+            PREV=$(git describe --tags --abbrev=0 "${MATCH[@]}" "${TAG}^" 2>/dev/null || echo "")
+            if [ -n "$PREV" ]; then RANGE="${PREV}..${TAG}"; else RANGE="${TAG}"; fi
+            echo "Changelog-Bereich: ${RANGE:-<alle>}"
+
+            # Commits seit dem letzten Tag (ohne Merge- und Release-Commits).
+            commits=$(git log --no-merges --pretty=format:'%s|%h' "$RANGE" | grep -viE '^chore(\(.*\))?: release' || true)
+
+            feats=""; fixes=""; others=""
+            while IFS='|' read -r subject hash; do
+              [ -z "$subject" ] && continue
+              clean=$(printf '%s' "$subject" | sed -E 's/^[a-z]+(\([^)]*\))?!?: //')
+              line="- ${clean} (${hash})"
+              case "$subject" in
+                feat*) feats="${feats}${line}"$'\n' ;;
+                fix*)  fixes="${fixes}${line}"$'\n' ;;
+                *)     others="${others}${line}"$'\n' ;;
+              esac
+            done <<< "$commits"
+
+            body="## TimeTracker ${TAG}"$'\n'
+            [ -n "$feats" ]  && body="${body}"$'\n'"### Neue Funktionen"$'\n'"${feats}"
+            [ -n "$fixes" ]  && body="${body}"$'\n'"### Fehlerbehebungen"$'\n'"${fixes}"
+            [ -n "$others" ] && body="${body}"$'\n'"### Sonstiges"$'\n'"${others}"
+            [ -z "$feats$fixes$others" ] && body="${body}"$'\n'"_Keine nennenswerten Änderungen._"$'\n'
+            if [ -n "$PREV" ]; then
+              body="${body}"$'\n'"**Vollständiges Changelog**: ${{ github.server_url }}/${{ github.repository }}/compare/${PREV}...${TAG}"$'\n'
+            fi
+            body="${body}"$'\n'"Installer/Bundles siehe Assets unten."
           fi
-          PREV=$(git describe --tags --abbrev=0 "${MATCH[@]}" "${TAG}^" 2>/dev/null || echo "")
-          if [ -n "$PREV" ]; then RANGE="${PREV}..${TAG}"; else RANGE="${TAG}"; fi
-          echo "Changelog-Bereich: ${RANGE:-<alle>}"
-
-          # Commits seit dem letzten Tag (ohne Merge- und Release-Commits).
-          commits=$(git log --no-merges --pretty=format:'%s|%h' "$RANGE" | grep -viE '^chore(\(.*\))?: release' || true)
-
-          feats=""; fixes=""; others=""
-          while IFS='|' read -r subject hash; do
-            [ -z "$subject" ] && continue
-            clean=$(printf '%s' "$subject" | sed -E 's/^[a-z]+(\([^)]*\))?!?: //')
-            line="- ${clean} (${hash})"
-            case "$subject" in
-              feat*) feats="${feats}${line}"$'\n' ;;
-              fix*)  fixes="${fixes}${line}"$'\n' ;;
-              *)     others="${others}${line}"$'\n' ;;
-            esac
-          done <<< "$commits"
-
-          body="## TimeTracker ${TAG}"$'\n'
-          [ -n "$feats" ]  && body="${body}"$'\n'"### ✨ Neue Funktionen"$'\n'"${feats}"
-          [ -n "$fixes" ]  && body="${body}"$'\n'"### 🐛 Fehlerbehebungen"$'\n'"${fixes}"
-          [ -n "$others" ] && body="${body}"$'\n'"### 🔧 Sonstiges"$'\n'"${others}"
-          [ -z "$feats$fixes$others" ] && body="${body}"$'\n'"_Keine nennenswerten Änderungen._"$'\n'
-          if [ -n "$PREV" ]; then
-            body="${body}"$'\n'"**Vollständiges Changelog**: ${{ github.server_url }}/${{ github.repository }}/compare/${PREV}...${TAG}"$'\n'
-          fi
-          body="${body}"$'\n'"Installer/Bundles siehe Assets unten."
 
           {
             echo "body<<CHANGELOG_EOF"
