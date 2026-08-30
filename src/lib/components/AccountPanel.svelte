@@ -19,6 +19,7 @@
 	import { DEFAULT_SERVER } from "$lib/defaults";
 	import { anlegenLink } from "$lib/invite";
 	import { openExternal } from "$lib/platform/open";
+	import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
 
 	/** Text zu einem geworfenen Wert, sonst der eigene Standard. */
 	const fehlertext = (e: unknown, standard: string) =>
@@ -181,22 +182,17 @@
 		}
 	}
 
-	/** Entkoppeln - in drei Stufen, weil das Wort drei Dinge heissen kann. */
-	let loesenOffen = $state(false);
 	let aufloesenOffen = $state(false);
 	/** Wie viele Geraete am Konto haengen - entscheidet, was das Aufloesen bedeutet. */
 	let geraeteAmKonto = $state<number | null>(null);
 
-	async function dialogOeffnen() {
-		loesenOffen = true;
+	async function aufloesenStarten() {
+		aufloesenOffen = true;
 		geraeteAmKonto = null;
 		try {
 			const info = await account.accountInfo();
 			geraeteAmKonto = info ? info.devices.filter((d) => !d.revokedAt).length : null;
 		} catch {
-			// Nicht erreichbar - dann steht die Zahl eben nicht da. Das lokale Loesen
-			// muss trotzdem gehen: ein Server, der gerade weg ist, darf niemanden an
-			// sein Konto fesseln.
 			geraeteAmKonto = null;
 		}
 	}
@@ -259,7 +255,6 @@
 		laeuft = true;
 		try {
 			await account.unlink(opts);
-			loesenOffen = false;
 			toast.success(
 				opts.revokeSelf
 					? "Gerät vom Konto getrennt. Die erfassten Zeiten bleiben hier."
@@ -277,7 +272,6 @@
 		try {
 			const summe = await account.unlink({ deleteRemote: true });
 			aufloesenOffen = false;
-			loesenOffen = false;
 			toast.success(
 				summe
 					? `Konto aufgelöst. ${summe.records} Datensätze beim Server gelöscht. Die Zeiten bleiben hier.`
@@ -432,108 +426,7 @@
 						maxlength={14}
 						class="w-52 font-mono tracking-wider uppercase"
 					/>
-					<Button onclick={bestaetigen} disabled={laeuft}>Bestätigen</Button>
 				</div>
-			</div>
-
-			<div class="border-t pt-3">
-				{#if !loesenOffen}
-					<Button variant="outline" size="sm" onclick={dialogOeffnen}>Entkoppeln…</Button>
-					<p class="text-muted-foreground mt-1 text-xs">
-						Die Zeiten auf diesem Gerät bleiben in jedem Fall. Was beim Server passiert,
-						wählst du gleich.
-					</p>
-				{:else}
-					<div class="space-y-3">
-						<p class="text-sm font-medium">Wie weit soll es gehen?</p>
-
-						<div class="space-y-1">
-							<Button variant="outline" size="sm" disabled={laeuft} onclick={() => loesen()}>
-								Nur hier vergessen
-							</Button>
-							<p class="text-muted-foreground text-xs">
-								Kein Abgleich mehr. Wieder koppeln geht jederzeit.
-							</p>
-						</div>
-
-						<!-- Nur mit eigenem Geraete-Token: eine Browser-Sitzung ist beim Server
-						     kein Geraet und laesst sich hier nicht trennen (400). -->
-						{#if account.hasDeviceToken}
-							<div class="space-y-1">
-								<Button
-									variant="outline"
-									size="sm"
-									disabled={laeuft}
-									onclick={() => loesen({ revokeSelf: true })}
-								>
-									Gerät vom Konto trennen
-								</Button>
-								<p class="text-muted-foreground text-xs">
-									Der Zugang dieses Geräts erlischt auch beim Server. Das Konto und alle anderen
-									Geräte bleiben.
-								</p>
-							</div>
-						{/if}
-
-						<div class="space-y-1">
-							{#if !aufloesenOffen}
-								<Button
-									variant="destructive"
-									size="sm"
-									disabled={laeuft}
-									onclick={() => (aufloesenOffen = true)}
-								>
-									Konto auflösen
-								</Button>
-								<p class="text-muted-foreground text-xs">
-									Alles beim Server wird gelöscht – auch für
-									{#if geraeteAmKonto === null}
-										alle anderen Geräte.
-									{:else if geraeteAmKonto <= 1}
-										dieses eine Gerät.
-									{:else}
-										die {geraeteAmKonto} verknüpften Geräte.
-									{/if}
-									Die Datensätze dort werden gelöscht; die Zeiten auf diesem Gerät bleiben.
-								</p>
-							{:else}
-								<div class="border-destructive/40 bg-destructive/5 space-y-2 rounded-lg border p-3">
-									<p class="text-sm">
-										Das lässt sich nicht rückgängig machen. Alle verschlüsselten Datensätze,
-										Passkeys und Geräte dieses Kontos werden beim Server gelöscht.
-									</p>
-									<p class="text-muted-foreground text-xs">
-										Die erfassten Zeiten auf diesem Rechner bleiben vollständig erhalten – der
-										Server war nie ihre einzige Kopie.
-									</p>
-									<div class="flex gap-2">
-										<Button variant="destructive" size="sm" disabled={laeuft} onclick={aufloesen}>
-											{laeuft ? "Löscht…" : "Endgültig auflösen"}
-										</Button>
-										<Button
-											variant="ghost"
-											size="sm"
-											disabled={laeuft}
-											onclick={() => (aufloesenOffen = false)}
-										>
-											Zurück
-										</Button>
-									</div>
-								</div>
-							{/if}
-						</div>
-
-						<Button
-							variant="ghost"
-							size="sm"
-							disabled={laeuft}
-							onclick={() => {
-								loesenOffen = false;
-								aufloesenOffen = false;
-							}}>Abbrechen</Button
-						>
-					</div>
-				{/if}
 			</div>
 		{:else if warten}
 			<div class="border-t pt-3">
@@ -634,6 +527,105 @@
 		{/if}
 	</Card.Content>
 </Card.Root>
+
+{#if account.linked}
+	<Card.Root class="border-destructive/30 bg-destructive/5 dark:bg-destructive/10 mt-4">
+		<Card.Header>
+			<div class="flex items-center gap-2">
+				<TriangleAlertIcon class="text-destructive size-5 shrink-0" />
+				<Card.Title class="text-destructive">Gefahrenbereich</Card.Title>
+			</div>
+			<Card.Description>
+				Verbindung trennen, Gerätezugang widerrufen oder das Server-Konto endgültig löschen. Die lokal erfassten Zeiten bleiben in jedem Fall vollständig auf diesem Rechner erhalten.
+			</Card.Description>
+		</Card.Header>
+
+		<Card.Content class="space-y-3">
+			<div class="flex flex-col gap-3 rounded-lg border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+				<div class="space-y-1">
+					<p class="font-medium text-foreground text-sm">Lokal entkoppeln (Nur dieses Gerät)</p>
+					<p class="text-muted-foreground text-xs leading-relaxed">
+						Trennt dieses Gerät vom Server-Konto und stoppt die automatische Synchronisierung. Alle Zeiten und Einstellungen auf diesem Rechner bleiben unverändert erhalten. Das Server-Konto und alle anderen Geräte bleiben aktiv. Du kannst dieses Gerät jederzeit wieder neu verbinden.
+					</p>
+				</div>
+				<Button
+					variant="outline"
+					size="sm"
+					class="shrink-0 self-start sm:self-center"
+					disabled={laeuft}
+					onclick={() => loesen()}
+				>
+					Verbindung trennen
+				</Button>
+			</div>
+
+			{#if account.hasDeviceToken}
+				<div class="flex flex-col gap-3 rounded-lg border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+					<div class="space-y-1">
+						<p class="font-medium text-foreground text-sm">Gerätezugang auf dem Server widerrufen</p>
+						<p class="text-muted-foreground text-xs leading-relaxed">
+							Entzieht diesem Gerät die Autorisierung beim Server (das Geräte-Token wird auf dem Server gelöscht) und entfernt die lokale Verknüpfung. Deine lokalen Zeiten bleiben vollständig erhalten. Das Server-Konto und andere verbundene Geräte laufen weiter.
+						</p>
+					</div>
+					<Button
+						variant="outline"
+						size="sm"
+						class="shrink-0 self-start border-destructive/40 text-destructive hover:bg-destructive/10 sm:self-center"
+						disabled={laeuft}
+						onclick={() => loesen({ revokeSelf: true })}
+					>
+						Zugang widerrufen
+					</Button>
+				</div>
+			{/if}
+
+			<div class="flex flex-col gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+				<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+					<div class="space-y-1">
+						<p class="font-medium text-destructive text-sm">Server-Konto & alle Daten endgültig löschen</p>
+						<p class="text-muted-foreground text-xs leading-relaxed">
+							Löscht alle verschlüsselten Datensätze, Passkeys und hinterlegten Geräte unwiderruflich vom Server (für alle verbundenen Geräte). Deine lokal erfassten Arbeitszeiten bleiben als Kopie auf diesem Rechner erhalten.
+						</p>
+					</div>
+					{#if !aufloesenOffen}
+						<Button
+							variant="destructive"
+							size="sm"
+							class="shrink-0 self-start sm:self-center"
+							disabled={laeuft}
+							onclick={aufloesenStarten}
+						>
+							Konto auflösen
+						</Button>
+					{/if}
+				</div>
+
+				{#if aufloesenOffen}
+					<div class="border-t border-destructive/20 pt-3 mt-1 space-y-3">
+						<div class="rounded-md border border-destructive/40 bg-background/80 p-3 text-sm space-y-1.5">
+							<p class="font-semibold text-destructive">Bist du sicher? Dies kann nicht rückgängig gemacht werden.</p>
+							<p class="text-muted-foreground text-xs leading-relaxed">
+								Alle verschlüsselten Datensätze auf dem Server werden unwiderruflich gelöscht.
+								{#if geraeteAmKonto && geraeteAmKonto > 1}
+									Dies betrifft auch alle weiteren {geraeteAmKonto} mit diesem Konto verknüpften Geräte.
+								{/if}
+								Die Arbeitszeiten auf diesem lokalen Rechner bleiben vollständig erhalten.
+							</p>
+						</div>
+						<div class="flex gap-2">
+							<Button variant="destructive" size="sm" disabled={laeuft} onclick={aufloesen}>
+								{laeuft ? "Löscht…" : "Ja, Server-Konto endgültig löschen"}
+							</Button>
+							<Button variant="ghost" size="sm" disabled={laeuft} onclick={() => (aufloesenOffen = false)}>
+								Abbrechen
+							</Button>
+						</div>
+					</div>
+				{/if}
+			</div>
+		</Card.Content>
+	</Card.Root>
+{/if}
 
 <Dialog.Root open={trenntGeraet !== null} onOpenChange={(o) => !o && (trenntGeraet = null)}>
 	<Dialog.Content>
