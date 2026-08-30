@@ -18,6 +18,7 @@ import { dayConflict, overlapConflict } from "./conflicts";
 import { planBackdate, planNeedsConfirm, type BackdatePlan } from "./backdate";
 import { errorText, logDebug, logError, logInfo, logWarn } from "./log";
 import { setErrorReportsEnabled } from "./analytics";
+import { notifyDataChanged } from "./platform/windows";
 import {
 	deleteYear,
 	listEntryMonths,
@@ -288,6 +289,7 @@ class AppState {
 
 	async persistActivities(): Promise<void> {
 		await saveActivities($state.snapshot(this.activities) as Activity[]);
+		void notifyDataChanged();
 	}
 
 	/** Mehrere Aktivitaetsnamen importieren (jede Zeile = eine). Bestehende bleiben. */
@@ -528,6 +530,7 @@ class AppState {
 		// Einziger Weg, auf dem Eintraege auf die Platte kommen – deshalb sitzt das
 		// Signal hier und nicht bei den Aufrufern.
 		this.entriesVersion++;
+		void notifyDataChanged();
 	}
 
 	/** Ganztags-Abwesenheit an diesem Tag, falls vorhanden. */
@@ -1336,6 +1339,7 @@ class AppState {
 		// mehr beantworten kann. Die Einstellungen sind harmlos – kein Passwort,
 		// keine Zeiten, nur die Konfiguration, die der Benutzer selbst sieht.
 		logDebug("Einstellungen gespeichert", patch);
+		void notifyDataChanged();
 	}
 
 	// ---------- Onboarding ----------

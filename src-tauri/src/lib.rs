@@ -273,6 +273,7 @@ fn toggle_flyout(app: &tauri::AppHandle, click: tauri::PhysicalPosition<f64>) {
         }
         let _ = win.show();
         let _ = win.set_focus();
+        let _ = win.emit("tray-shown", ());
     });
 }
 

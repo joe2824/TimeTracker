@@ -50,16 +50,18 @@
 		void refresh();
 		// Eigener Tick (dieses Fenster ruft app.init() nicht auf) für die Live-Anzeige.
 		const tick = setInterval(() => (app.now = Date.now()), 1000);
-		// Bei jedem Einblenden (Fokus) frische Daten laden.
+		// Bei jedem Einblenden (Fokus oder Tray-Klick) frische Daten laden.
 		const un = win.onFocusChanged(({ payload }) => {
 			if (payload) void refresh();
+		});
+		const unShown = listen("tray-shown", () => {
+			void refresh();
 		});
 		const unAtt = listen<{ active: boolean }>(
 			"main-attention",
 			(e) => (attention = !!e.payload?.active)
 		);
-		// Das Hauptfenster meldet, wenn der Abgleich etwas mitgebracht hat. Ohne
-		// das zeigt ein offenes Flyout den Stand von seinem letzten Einblenden.
+		// Das Hauptfenster meldet, wenn der Abgleich etwas mitgebracht hat oder Daten geändert wurden.
 		const unDaten = listen<DataChanged>("data-reload", (e) => {
 			if (e.payload?.from === "tray") return;
 			void refresh();
@@ -67,6 +69,7 @@
 		return () => {
 			clearInterval(tick);
 			void un.then((f) => f());
+			void unShown.then((f) => f());
 			void unAtt.then((f) => f());
 			void unDaten.then((f) => f());
 		};
