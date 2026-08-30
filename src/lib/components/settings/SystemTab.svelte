@@ -17,6 +17,18 @@
 	import { toast } from "svelte-sonner";
 	import Trash2Icon from "@lucide/svelte/icons/trash-2";
 
+	import DownloadIcon from "@lucide/svelte/icons/download";
+	import UploadIcon from "@lucide/svelte/icons/upload";
+	import FileTextIcon from "@lucide/svelte/icons/file-text";
+	import CheckCircle2Icon from "@lucide/svelte/icons/check-circle-2";
+	import {
+		downloadBackupFile,
+		inspectBackup,
+		restoreBackup,
+		type BackupStats,
+		type TimeTrackerBackup
+	} from "$lib/backup";
+
 	function getCurrentSettings(): Settings {
 		return $state.snapshot(app.settings) as Settings;
 	}
@@ -28,6 +40,71 @@
 	let storedYears = $state<StoredYear[]>([]);
 	let yearToDelete = $state<StoredYear | null>(null);
 	let isDeletingYear = $state(false);
+
+	// Backup & Restore
+	let isExportingBackup = $state(false);
+	let isRestoringBackup = $state(false);
+	let restoreFileInput = $state<HTMLInputElement | null>(null);
+	let pendingBackup = $state<TimeTrackerBackup | null>(null);
+	let pendingBackupStats = $state<BackupStats | null>(null);
+	let restoreMode = $state<"merge" | "replace">("merge");
+
+	async function handleExportBackup() {
+		isExportingBackup = true;
+		try {
+			const res = await downloadBackupFile();
+			if (res.success) {
+				toast.success(res.filename ? `Sicherung gespeichert: ${res.filename}` : "Sicherung erfolgreich exportiert.");
+			}
+		} catch (e) {
+			toast.error(`Sicherung fehlgeschlagen: ${errorText(e)}`);
+		} finally {
+			isExportingBackup = false;
+		}
+	}
+
+	function handleTriggerRestore() {
+		restoreFileInput?.click();
+	}
+
+	async function handleFileSelected(e: Event) {
+		const target = e.target as HTMLInputElement;
+		const file = target.files?.[0];
+		if (!file) return;
+
+		try {
+			const text = await file.text();
+			const result = inspectBackup(text);
+			if (!result.valid || !result.backup || !result.stats) {
+				toast.error(result.error || "Ungültige Sicherungsdatei");
+				return;
+			}
+			pendingBackup = result.backup;
+			pendingBackupStats = result.stats;
+			restoreMode = "merge";
+		} catch (err) {
+			toast.error(`Datei konnte nicht gelesen werden: ${errorText(err)}`);
+		} finally {
+			target.value = "";
+		}
+	}
+
+	async function handleConfirmRestore() {
+		if (!pendingBackup) return;
+		isRestoringBackup = true;
+		try {
+			const result = await restoreBackup(pendingBackup, restoreMode);
+			toast.success(
+				`Sicherung erfolgreich wiederhergestellt (${result.restoredMonths} Monat${result.restoredMonths === 1 ? "" : "e"}, ${result.restoredEntries} Einträge).`
+			);
+			pendingBackup = null;
+			pendingBackupStats = null;
+		} catch (e) {
+			toast.error(`Wiederherstellung fehlgeschlagen: ${errorText(e)}`);
+		} finally {
+			isRestoringBackup = false;
+		}
+	}
 
 	$effect(() => {
 		synced = syncForm(form, synced, getCurrentSettings());
@@ -139,6 +216,56 @@
 	</SettingsCard>
 {/if}
 
+	<SettingsCard
+		title="Sicherung & PC-Wechsel"
+		description="Sichere alle deine Aktivitäten, Einstellungen und erfassten Zeiten als Datei – für den Umzug auf einen neuen Rechner oder als persönliche Sicherheitskopie."
+	>
+		<input
+			type="file"
+			accept=".json,application/json"
+			bind:this={restoreFileInput}
+			onchange={handleFileSelected}
+			class="hidden"
+		/>
+
+		<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+			<div class="space-y-0.5">
+				<div class="text-sm font-medium">Sicherungsdatei erstellen</div>
+				<div class="text-muted-foreground text-xs">
+					Exportiert den gesamten lokalen Datenbestand in eine lesbare .json-Datei.
+				</div>
+			</div>
+			<Button
+				variant="outline"
+				size="sm"
+				class="shrink-0 gap-2 self-start sm:self-center"
+				disabled={isExportingBackup}
+				onclick={handleExportBackup}
+			>
+				<DownloadIcon class="size-4 {isExportingBackup ? 'animate-bounce' : ''}" />
+				{isExportingBackup ? "Erstelle Sicherung…" : "Sicherung exportieren"}
+			</Button>
+		</div>
+
+		<div class="flex flex-col gap-3 border-t pt-3 sm:flex-row sm:items-center sm:justify-between">
+			<div class="space-y-0.5">
+				<div class="text-sm font-medium">Sicherung wiederherstellen</div>
+				<div class="text-muted-foreground text-xs">
+					Liest eine zuvor erstellte Sicherungsdatei ein (z. B. auf einem neuen PC).
+				</div>
+			</div>
+			<Button
+				variant="outline"
+				size="sm"
+				class="shrink-0 gap-2 self-start sm:self-center"
+				onclick={handleTriggerRestore}
+			>
+				<UploadIcon class="size-4" />
+				Sicherung einlesen…
+			</Button>
+		</div>
+	</SettingsCard>
+
 {#if isTauri()}
 	<SettingsCard
 		title="Daten auf diesem Gerät"
@@ -165,6 +292,97 @@
 		{/if}
 	</SettingsCard>
 {/if}
+
+<!-- Dialog: Sicherung wiederherstellen -->
+<Dialog.Root open={pendingBackup !== null} onOpenChange={(o) => !o && (pendingBackup = null)}>
+	<Dialog.Content class="sm:max-w-md">
+		<Dialog.Header>
+			<Dialog.Title class="flex items-center gap-2">
+				<FileTextIcon class="size-5 text-primary" />
+				Sicherung wiederherstellen
+			</Dialog.Title>
+			<Dialog.Description class="pt-2 text-left space-y-3">
+				{#if pendingBackupStats}
+					<div class="rounded-lg border bg-muted/40 p-3 text-xs space-y-1.5">
+						<div class="flex justify-between text-foreground font-medium">
+							<span>Aktivitäten:</span>
+							<span>{pendingBackupStats.activityCount}</span>
+						</div>
+						<div class="flex justify-between text-foreground font-medium">
+							<span>Erfasste Monate:</span>
+							<span>{pendingBackupStats.monthCount} {pendingBackupStats.months.length > 0 ? `(${pendingBackupStats.months[0]} bis ${pendingBackupStats.months[pendingBackupStats.months.length - 1]})` : ""}</span>
+						</div>
+						<div class="flex justify-between text-foreground font-medium">
+							<span>Gesamteinträge:</span>
+							<span>{pendingBackupStats.entryCount}</span>
+						</div>
+						{#if pendingBackupStats.createdAt}
+							<div class="flex justify-between text-muted-foreground pt-1 border-t">
+								<span>Erstellt am:</span>
+								<span>{new Date(pendingBackupStats.createdAt).toLocaleString("de-DE")}</span>
+							</div>
+						{/if}
+					</div>
+				{/if}
+
+				<div class="space-y-2">
+					<div class="text-xs font-medium text-foreground">Wie soll die Sicherung eingespielt werden?</div>
+					<div class="space-y-2">
+						<label
+							class="flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors {restoreMode === 'merge' ? 'border-primary bg-primary/5' : 'hover:bg-muted/30'}"
+						>
+							<input
+								type="radio"
+								name="restoreMode"
+								value="merge"
+								checked={restoreMode === 'merge'}
+								onchange={() => (restoreMode = 'merge')}
+								class="mt-0.5 text-primary"
+							/>
+							<div class="text-xs">
+								<span class="font-medium text-foreground block">Zusammenführen (Empfohlen)</span>
+								<span class="text-muted-foreground">Fügt fehlende Monate, Einträge und Aktivitäten hinzu. Bestehende neuere Zeiten bleiben erhalten.</span>
+							</div>
+						</label>
+
+						<label
+							class="flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors {restoreMode === 'replace' ? 'border-destructive bg-destructive/5' : 'hover:bg-muted/30'}"
+						>
+							<input
+								type="radio"
+								name="restoreMode"
+								value="replace"
+								checked={restoreMode === 'replace'}
+								onchange={() => (restoreMode = 'replace')}
+								class="mt-0.5 text-destructive"
+							/>
+							<div class="text-xs">
+								<span class="font-medium text-foreground block">Vollständig ersetzen</span>
+								<span class="text-muted-foreground">Überschreibt alle lokalen Einstellungen, Aktivitäten und Monate 1:1 mit dem Stand der Datei.</span>
+							</div>
+						</label>
+					</div>
+				</div>
+			</Dialog.Description>
+		</Dialog.Header>
+		<Dialog.Footer class="gap-2 sm:gap-0">
+			<Button variant="outline" disabled={isRestoringBackup} onclick={() => (pendingBackup = null)}>
+				Abbrechen
+			</Button>
+			<Button
+				variant={restoreMode === 'replace' ? 'destructive' : 'default'}
+				disabled={isRestoringBackup}
+				onclick={handleConfirmRestore}
+			>
+				{#if isRestoringBackup}
+					Stelle wieder her…
+				{:else}
+					{restoreMode === 'replace' ? 'Datenbestand ersetzen' : 'Jetzt zusammenführen'}
+				{/if}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
 
 <Dialog.Root open={yearToDelete !== null} onOpenChange={(o) => !o && (yearToDelete = null)}>
 	<Dialog.Content>
