@@ -12,7 +12,7 @@ export function windowName(): "tray" | "main" {
 }
 
 export interface DataChanged {
-	from: "tray" | "main";
+	from: "tray" | "main" | "sync";
 }
 
 /**
@@ -20,13 +20,13 @@ export interface DataChanged {
  *
  * Wirft nie: das ist eine Annehmlichkeit, kein Arbeitsschritt.
  */
-export async function notifyDataChanged(): Promise<void> {
+export async function notifyDataChanged(payload?: Partial<DataChanged>): Promise<void> {
 	if (!isTauri()) return;
 	try {
 		const { emit } = await import("@tauri-apps/api/event");
 		// Tauri stellt auch dem Absender zu. Ohne die Kennung antwortete das
 		// Hauptfenster auf seinen eigenen Ruf und drehte sich im Kreis.
-		await emit("data-reload", { from: windowName() } satisfies DataChanged);
+		await emit("data-reload", { from: payload?.from ?? windowName() } satisfies DataChanged);
 	} catch {
 		// Kein Ereigniskanal - dann aktualisiert das andere Fenster eben beim
 		// naechsten eigenen Anlass.

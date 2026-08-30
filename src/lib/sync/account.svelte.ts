@@ -305,11 +305,11 @@ class AccountState {
 				toast.dismiss("sync-bulk");
 			}
 			// Der Bestand kann sich geaendert haben - die Ansichten haengen daran.
-			await app.reload();
-			void this.accountInfo().catch(() => {});
-			// Und das Tray-Fenster liest dieselben Dateien, bekommt davon aber
-			// nichts mit: es haelt seinen eigenen Zustand.
-			void notifyDataChanged();
+			if (ergebnis && (ergebnis.pulled > 0 || ergebnis.pushed > 0)) {
+				await app.reload();
+				void this.accountInfo().catch(() => {});
+				void notifyDataChanged({ from: "sync" });
+			}
 			// Kam beim ersten Abgleich etwas an, war dieses Geraet nie leer - es
 			// wusste es nur noch nicht. Der Willkommensbildschirm hat sich damit
 			// erledigt, und zwar bevor jemand ihn ausfuellt und dabei die echten

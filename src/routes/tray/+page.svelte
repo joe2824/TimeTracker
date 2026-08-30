@@ -42,8 +42,6 @@
 			logError("Flyout konnte die Daten nicht laden", e);
 			loadError = errorText(e);
 		}
-		// Wenn verknüpft: Datenabgleich beim Einblenden sofort anstoßen.
-		void account.syncSoon(50);
 		// Aktuellen Hinweis-Status beim Hauptfenster anfragen (Antwort via "main-attention").
 		void emit("tray-request-attention").catch(() => {});
 	}
@@ -56,10 +54,14 @@
 		const tick = setInterval(() => (app.now = Date.now()), 1000);
 		// Bei jedem Einblenden (Fokus oder Tray-Klick) frische Daten laden.
 		const un = win.onFocusChanged(({ payload }) => {
-			if (payload) void refresh();
+			if (payload) {
+				void refresh();
+				void account.syncSoon(50);
+			}
 		});
 		const unShown = listen("tray-shown", () => {
 			void refresh();
+			void account.syncSoon(50);
 		});
 		const unAtt = listen<{ active: boolean }>(
 			"main-attention",
@@ -122,12 +124,12 @@
 		// Nach dem Start zurück auf "jetzt", damit der Offset nicht am nächsten Start klebt.
 		presetMin = 0;
 		customStart = "";
-		await notifyDataChanged(); // Hauptfenster aktualisieren + Tray-Menü/Icon
+		await notifyDataChanged({ from: "tray" }); // Hauptfenster aktualisieren + Tray-Menü/Icon
 		// Flyout bleibt offen; schließt erst bei Fokusverlust.
 	}
 	async function stop() {
 		await app.stop();
-		await notifyDataChanged();
+		await notifyDataChanged({ from: "tray" });
 	}
 	async function openMain() {
 		// Derselbe Weg wie „Öffnen" im Tray-Menue (show_main im Rust-Teil), statt
