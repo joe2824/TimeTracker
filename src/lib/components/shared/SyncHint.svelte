@@ -19,19 +19,7 @@
 	}
 
 	const alter = $derived(account.lastSync ? app.now - account.lastSync : null);
-
-	const progressText = $derived.by(() => {
-		if (account.phase !== "laeuft") return "";
-		if (account.syncProgress) {
-			if (account.syncProgress.pulled > 0) {
-				return `Lade Daten… (${account.syncProgress.pulled})`;
-			}
-			if (account.syncProgress.pushed > 0) {
-				return `Sende Daten… (${account.syncProgress.pushed})`;
-			}
-		}
-		return "Gleicht ab…";
-	});
+	const isBulkPull = $derived(account.phase === "laeuft" && (account.syncProgress?.pulled ?? 0) >= 20);
 
 	const zustand = $derived.by(() => {
 		if (!account.linked) return null;
@@ -45,10 +33,10 @@
 				titel: "Keine Verbindung zum Server – Änderungen warten hier."
 			};
 		}
-		if (account.phase === "laeuft") {
+		if (isBulkPull) {
 			return {
 				ton: "bg-blue-500",
-				text: progressText,
+				text: `Lade Daten… (${account.syncProgress!.pulled})`,
 				titel: "Synchronisiere Daten mit dem Server…"
 			};
 		}
@@ -57,9 +45,11 @@
 			// Erst wenn es eine Weile her ist, ist die Zahl eine Information.
 			text: alter !== null && alter >= FRISCH_MS ? vorWieLange(alter) : "",
 			titel:
-				alter === null
-					? "Mit dem Server verbunden"
-					: `Letzter Abgleich ${vorWieLange(alter)}`
+				account.phase === "laeuft"
+					? "Synchronisiere…"
+					: alter === null
+						? "Mit dem Server verbunden"
+						: `Letzter Abgleich ${vorWieLange(alter)}`
 		};
 	});
 </script>
@@ -69,11 +59,13 @@
 		class="text-muted-foreground inline-flex items-center gap-1.5 text-xs whitespace-nowrap"
 		title={zustand.titel}
 	>
-		{#if account.phase === "laeuft"}
+		{#if isBulkPull}
 			<RefreshCwIcon class="size-3 text-primary animate-spin shrink-0" />
 			<span class="text-primary font-medium">{zustand.text}</span>
 		{:else}
-			<span class="size-1.5 shrink-0 rounded-full {zustand.ton}"></span>
+			<span
+				class="size-1.5 shrink-0 rounded-full {zustand.ton} {account.phase === 'laeuft' ? 'animate-pulse ring-2 ring-emerald-500/30' : ''}"
+			></span>
 			{#if zustand.text}{zustand.text}{/if}
 		{/if}
 	</span>

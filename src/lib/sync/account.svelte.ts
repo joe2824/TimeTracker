@@ -293,8 +293,8 @@ class AccountState {
 				if (ergebnis.pushed || ergebnis.pulled) {
 					logInfo("Abgeglichen", ergebnis);
 				}
-				if (ergebnis.pulled > 0) {
-					toast.success(`${ergebnis.pulled} ${ergebnis.pulled === 1 ? "Eintrag" : "Einträge"} vom Server geladen.`);
+				if (ergebnis.pulled >= 20) {
+					toast.success(`${ergebnis.pulled} Einträge vom Server geladen.`);
 				}
 			}
 			// Der Bestand kann sich geaendert haben - die Ansichten haengen daran.
