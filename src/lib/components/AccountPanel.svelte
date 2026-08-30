@@ -395,21 +395,36 @@
 				</div>
 			{/if}
 
-			<div class="space-y-2 rounded-lg border bg-muted/20 p-3.5">
+			<div class="space-y-3 rounded-lg border bg-muted/20 p-3.5">
 				<div>
-					<p class="font-medium text-sm text-foreground">Neues Gerät freigeben</p>
-					<p class="text-muted-foreground text-xs leading-relaxed">
-						Möchtest du TimeTracker auf deinem Smartphone oder einem zweiten Computer nutzen?
-						Wähle dort im Tab <strong>Konto</strong> die Option <em>„Kopplungscode anzeigen“</em> und gib den 12-stelligen Code hier ein:
+					<p class="font-medium text-sm text-foreground">Zweiten PC oder neues Gerät hinzufügen</p>
+					<p class="text-muted-foreground text-xs mt-0.5">
+						So verbindest du einen weiteren Rechner oder ein anderes Gerät mit diesem Konto:
 					</p>
 				</div>
+
+				<div class="grid gap-2 text-xs text-muted-foreground bg-card/60 p-3 rounded-md border">
+					<div class="flex items-start gap-2">
+						<span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-semibold text-[11px]">1</span>
+						<span>Installiere TimeTracker auf deinem <strong>zweiten PC</strong> (oder öffne die App dort).</span>
+					</div>
+					<div class="flex items-start gap-2">
+						<span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-semibold text-[11px]">2</span>
+						<span>Gehe auf dem zweiten PC auf <strong>Einstellungen → Konto</strong> und klicke auf <em>„Kopplungscode anzeigen“</em>.</span>
+					</div>
+					<div class="flex items-start gap-2">
+						<span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-semibold text-[11px]">3</span>
+						<span>Trage den dort angezeigten 12-stelligen Code hier ein:</span>
+					</div>
+				</div>
+
 				<div class="flex flex-wrap items-center gap-2 pt-1">
 					<Input
 						id="fremdcode"
 						bind:value={remotePairingCode}
 						placeholder="ABCD-EFGH-JKLM"
 						maxlength={14}
-						class="w-52 font-mono tracking-wider uppercase"
+						class="w-52 font-mono tracking-wider uppercase bg-background"
 						onkeydown={(e) => e.key === "Enter" && remotePairingCode.trim() && !isLoading && handleApprovePairing()}
 					/>
 					<Button onclick={handleApprovePairing} disabled={isLoading || !remotePairingCode.trim()}>
