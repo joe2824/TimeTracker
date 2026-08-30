@@ -1,53 +1,52 @@
+# syntax=docker/dockerfile:1
 # Ein Abbild, ein Prozess, ein Volume.
 #
-# Es baut BEIDES: die Oberflaeche (PWA) und den Server. Ein Abbild, das nur den
-# halben Dienst enthaelt und den Rest von aussen erwartet, geht irgendwann
-# unbemerkt kaputt - dann laeuft der Server, aber die Anwendung fehlt.
-#
-# Mehrstufig, damit die Bauwerkzeuge nicht im Ergebnis landen.
+# Mehrstufig optimiert:
+# 1. js-builder: Baut die Web-Oberflaeche (PWA) und den Server-JS-Code auf der nativen
+#    Host-Architektur ($BUILDPLATFORM) in wenigen Sekunden, anstatt ihn in langsamer
+#    QEMU-Emulation auszufuehren.
+# 2. build: Installiert ausschliesslich die Server-Produktionsabhaengigkeiten auf der
+#    Zielarchitektur ($TARGETPLATFORM) und kompiliert better-sqlite3.
+# 3. runtime: Minimales Alpine-Produktionsabbild.
 
-# ---------- Bauen ----------
-FROM node:22-alpine AS build
-
-# better-sqlite3 ist eine native Erweiterung. Auf Alpine gibt es kein fertiges
-# Paket, sie wird also uebersetzt - dafuer braucht es kurzzeitig eine Werkzeugkette.
-RUN apk add --no-cache python3 make g++
+# ---------- 1. Plattformunabhaengiger JS/PWA Bau (Host-Geschwindigkeit) ----------
+FROM --platform=$BUILDPLATFORM node:22-alpine AS js-builder
 
 WORKDIR /app
 
-# Erst die Manifeste, dann der Rest: solange sich die Abhaengigkeiten nicht
-# aendern, bleibt diese Schicht im Zwischenspeicher und der Bau dauert Sekunden
-# statt Minuten.
+# Abhaengigkeiten mit BuildKit-Cache installieren
 COPY package.json package-lock.json ./
 COPY server/package.json ./server/
-RUN npm ci --ignore-scripts
+RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts
 
-# Die Oberflaeche - dieselbe Quelle wie fuer die Desktop-Anwendung, nur ein
-# anderes Ziel.
+# Quelltext kopieren und Frontend (PWA) bauen
 COPY svelte.config.js vite.config.js tsconfig.json tt ./
 COPY scripts ./scripts
 COPY src ./src
 COPY static ./static
 RUN BUILD_TARGET=web npx vite build
 
-# Der Server. Die gebaute Oberflaeche kommt in seinen static-Ordner, damit er
-# sie ausliefert.
+# Server-JS bauen und statische PWA-Dateien einbetten
 COPY server ./server
 RUN cp -r build-web/. server/static/ && npm --workspace server run build
 
-# Die Abhaengigkeiten fuer den Betrieb noch einmal frisch, ohne die des Baus.
-#
-# --ignore-scripts ist noetig, nicht Vorsicht: das Wurzelpaket hat ein
-# prepare-Skript, das "svelte-kit sync" ruft - und svelte-kit ist gerade als
-# Bauwerkzeug mit --omit=dev entfernt worden. Ohne das Auslassen scheitert der
-# Schritt an einem Werkzeug, das im fertigen Abbild ohnehin nichts zu suchen hat.
-#
-# better-sqlite3 braucht sein Skript aber wirklich: es ist eine native
-# Erweiterung und muss uebersetzt werden. Deshalb danach gezielt genau dieses
-# eine Paket bauen - der Grund, aus dem die Werkzeugkette oben installiert wurde.
-RUN rm -rf node_modules 	&& npm ci --workspace server --include-workspace-root=false --omit=dev --ignore-scripts 	&& npm rebuild better-sqlite3
+# ---------- 2. Native Abhaengigkeiten (Zielarchitektur) ----------
+FROM node:22-alpine AS build
 
-# ---------- Betreiben ----------
+RUN --mount=type=cache,target=/var/cache/apk \
+    apk add --no-cache python3 make g++
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+COPY server/package.json ./server/
+
+# Nur die schlanken Server-Produktions-Abhaengigkeiten installieren und better-sqlite3 uebersetzen
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --workspace server --include-workspace-root=false --omit=dev --ignore-scripts && \
+    npm rebuild better-sqlite3
+
+# ---------- 3. Betreiben ----------
 FROM node:22-alpine AS runtime
 
 RUN apk add --no-cache bash
@@ -57,15 +56,12 @@ RUN apk add --no-cache bash
 RUN addgroup -S tt && adduser -S tt -G tt
 
 WORKDIR /app
-COPY --from=build --chown=tt:tt /app/server/build ./build
-COPY --from=build --chown=tt:tt /app/server/static ./static
+COPY --from=js-builder --chown=tt:tt /app/server/build ./build
+COPY --from=js-builder --chown=tt:tt /app/server/static ./static
 COPY --from=build --chown=tt:tt /app/node_modules ./node_modules
 COPY --from=build --chown=tt:tt /app/server/package.json ./package.json
-# Die Verwaltung von der Kommandozeile. Sie gehoert ins Abbild, nicht daneben:
-# der erste Verwalter laesst sich nur hier ernennen, und wer den Container hat,
-# soll das koennen, ohne erst etwas hineinzukopieren.
-COPY --from=build --chown=tt:tt /app/server/admin.mjs ./admin.mjs
-COPY --from=build --chmod=755 /app/tt /usr/local/bin/tt
+COPY --from=js-builder --chown=tt:tt /app/server/admin.mjs ./admin.mjs
+COPY --from=js-builder --chmod=755 /app/tt /usr/local/bin/tt
 
 RUN mkdir -p /data && chown tt:tt /data
 VOLUME ["/data"]

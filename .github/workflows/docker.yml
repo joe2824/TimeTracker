@@ -178,8 +178,10 @@ jobs:
           # Lauf better-sqlite3 fuer beide Architekturen neu, und das dauert.
           # Aendert sich node:22-alpine nicht, faellt der woechentliche Lauf
           # dadurch auf denselben Digest zurueck und kostet fast nichts.
-          cache-from: type=registry,ref=${{ needs.ziel.outputs.image }}:buildcache
-          cache-to: type=registry,ref=${{ needs.ziel.outputs.image }}:buildcache,mode=max
+          cache-from: |
+            type=gha
+            type=registry,ref=${{ needs.ziel.outputs.image }}:buildcache
+          cache-to: type=gha,mode=max
 
       # Beglaubigung von GitHub selbst - nachpruefbar mit
       # `gh attestation verify oci://<abbild> --repo <repo>`.
