@@ -131,7 +131,17 @@
 				</a>
 			</nav>
 
-			<div class="ml-auto flex items-center gap-1.5">
+			<div class="ml-auto flex items-center gap-2">
+				<Button size="sm" href="#anmelden" class="font-medium gap-1.5 shadow-sm">
+					<KeyRoundIcon class="size-3.5" />
+					<span>Anmelden</span>
+				</Button>
+				{#if desktop}
+					<Button variant="outline" size="sm" href="#download" class="hidden sm:inline-flex gap-1.5">
+						<DownloadIcon class="size-3.5" />
+						<span>Download</span>
+					</Button>
+				{/if}
 				<Button
 					variant="ghost"
 					size="icon"
@@ -141,10 +151,6 @@
 					aria-label="Quelltext auf GitHub"
 				>
 					<GithubIcon class="size-4" />
-				</Button>
-				<Button size="sm" href="#download">
-					<DownloadIcon class="size-3.5" />
-					<span class="hidden sm:inline">Download</span>
 				</Button>
 			</div>
 		</div>
@@ -161,25 +167,34 @@
 		></div>
 
 		<div
-			class="relative mx-auto grid max-w-6xl gap-10 px-4 py-14 sm:px-6 sm:py-20 lg:grid-cols-[1.05fr_minmax(0,26rem)] lg:items-start lg:gap-16"
+			class="relative mx-auto grid max-w-6xl gap-8 px-4 py-8 sm:px-6 sm:py-16 lg:grid-cols-[1.05fr_minmax(0,26rem)] lg:items-start lg:gap-16"
 		>
-			<div class="flex flex-col items-start gap-6">
+			<!-- 1. Intro & Titel: Auf Desktop links, auf Mobile direkt oben -->
+			<div class="flex flex-col items-start gap-4 sm:gap-6 lg:col-start-1 lg:row-start-1">
 				<Badge variant="outline" class="h-6 gap-1.5 px-2.5">
 					<LockIcon class="size-3" />
 					Open Source, verschlüsselt
 				</Badge>
 
-				<h1 class="text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
+				<h1 class="text-3xl font-semibold tracking-tight text-balance sm:text-5xl">
 					Projektzeiten erfassen und am Monatsende abschicken
 				</h1>
 
-				<p class="text-muted-foreground max-w-prose text-base leading-relaxed text-pretty sm:text-lg">
-					TimeTracker läuft nebenbei im Tray. Du klickst auf eine Aktivität, der Timer läuft.
+				<p class="text-muted-foreground max-w-prose text-sm leading-relaxed text-pretty sm:text-lg">
+					TimeTracker läuft nebenbei im Tray oder im Browser. Du klickst auf eine Aktivität, der Timer läuft.
 					Am Monatsende hast du die Stunden je Projekt beisammen und schickst sie deiner
 					Chefin oder deinem Chef als Mail. Was dabei auf dem Server landet, ist
 					verschlüsselt.
 				</p>
+			</div>
 
+			<!-- 2. Die Anmeldung: Auf Mobile DIREKT unter der Überschrift, auf Desktop rechts -->
+			<div id="anmelden" class="w-full scroll-mt-20 lg:col-start-2 lg:row-span-2 lg:row-start-1">
+				{@render auth()}
+			</div>
+
+			<!-- 3. Details, Checkliste & Buttons: Auf Mobile unter der Anmeldung, auf Desktop links unten -->
+			<div class="flex flex-col items-start gap-6 lg:col-start-1 lg:row-start-2">
 				<ul class="grid gap-2.5 text-sm sm:grid-cols-2">
 					{#each ["Anmelden per Passkey", "Keine E-Mail nötig", "Eigener Server möglich", "Windows-App und Browser"] as punkt (punkt)}
 						<li class="flex items-center gap-2">
@@ -202,7 +217,7 @@
 						</Button>
 					{:else}
 						<Button variant="outline" class="h-10 gap-2 px-4" href="#funktionen">
-							Was es kann
+							Funktionen ansehen
 						</Button>
 					{/if}
 					<Button
@@ -215,15 +230,6 @@
 						<GithubIcon class="size-4" /> Quelltext ansehen
 					</Button>
 				</div>
-			</div>
-
-			<!-- Die Anmeldung. Auf breiten Displays rechts neben dem Text, darunter
-			     sobald es eng wird - sie ist der eigentliche Knopf dieser Seite.
-			     Bewusst NICHT sticky: die Karte waechst je nach Lage, und eine
-			     klebende Karte, die hoeher wird als das Fenster, laesst sich unten
-			     nicht mehr erreichen. -->
-			<div class="w-full">
-				{@render auth()}
 			</div>
 		</div>
 	</section>
@@ -500,7 +506,7 @@
     volumes:
       - timetracker-data:/data
     ports:
-      - "127.0.0.1:3000:3000"
+      - "3000:3000"
 
 volumes:
   timetracker-data:</code
