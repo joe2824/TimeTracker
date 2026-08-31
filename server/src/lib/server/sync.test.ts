@@ -76,8 +76,8 @@ describe("Ablegen", () => {
 		expect(r.conflicts.map((c) => c.id)).toEqual(["e1"]);
 	});
 
-	it("legt bei einer Loeschung einen Grabstein an, statt die Zeile zu entfernen", () => {
-		// Ohne Grabstein haelt ein Geraet, das die Loeschung verpasst hat, seinen
+	it("legt bei einer Loeschung einen Loeschmarker an, statt die Zeile zu entfernen", () => {
+		// Ohne Loeschmarker haelt ein Geraet, das die Loeschung verpasst hat, seinen
 		// alten Stand fuer gueltig und laedt ihn beim naechsten Mal wieder hoch.
 		pushRecords(db, ANNA, "g1", [rec("e1")]);
 		pushRecords(db, ANNA, "g1", [rec("e1", { baseRev: 1, deletedAt: 5000 })]);
@@ -152,7 +152,7 @@ describe("Abholen", () => {
 		expect(new Set(seen).size).toBe(25);
 	});
 
-	it("liefert einen Grabstein mit aus", () => {
+	it("liefert einen Loeschmarker mit aus", () => {
 		pushRecords(db, ANNA, "g1", [rec("e1")]);
 		pushRecords(db, ANNA, "g1", [rec("e1", { baseRev: 1, deletedAt: 5000 })]);
 		const fetched = pullRecords(db, ANNA, { since: 1 }).records;

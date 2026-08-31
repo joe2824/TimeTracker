@@ -460,7 +460,7 @@ describe("Ueber Monatsgrenzen hinweg", () => {
 		expect(july.find((e) => e.id === "h1")!.endTs).toBe(tsAug(2, 10));
 	});
 
-	it("findet den Monat eines Grabsteins, den es beim Start noch nicht gab", async () => {
+	it("findet den Monat eines Loeschmarkers, den es beim Start noch nicht gab", async () => {
 		// Ein Programm, das laeuft und laeuft. Die Monatsliste darf ihm nicht
 		// einfrieren: sonst faende die Loeschung ihren Monat nicht, wuerde still
 		// verworfen - und `seq` liefe trotzdem weiter. Endgueltig verloren.
@@ -469,7 +469,7 @@ describe("Ueber Monatsgrenzen hinweg", () => {
 			await store.saveEntries(MONTH, [entry("e1")]);
 			return engine.sync();
 		});
-		// Ein Grabstein fuer etwas, das der Rechner nie hatte. Er ist der Grund,
+		// Ein Loeschmarker fuer etwas, das der Rechner nie hatte. Er ist der Grund,
 		// weshalb die Monatsliste im ersten Durchgang ueberhaupt gezogen wird - zu
 		// einem Zeitpunkt, an dem es noch keine Monatsdatei gibt.
 		tombstone("nie-gesehen", 1);

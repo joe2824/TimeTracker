@@ -173,7 +173,7 @@ export function pushRecords(
 				deviceId,
 				deletedAt: r.deletedAt ?? null,
 				// Bei einer Loeschung faellt das Chiffrat weg. Was bleibt, ist der
-				// Grabstein: ohne ihn haelt ein Geraet, das die Loeschung verpasst hat,
+				// Loeschmarker: ohne ihn haelt ein Geraet, das die Loeschung verpasst hat,
 				// seinen alten Stand fuer gueltig und laedt ihn wieder hoch.
 				payload: r.deletedAt ? null : (r.payload ?? null)
 			};

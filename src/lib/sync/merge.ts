@@ -42,7 +42,7 @@ export function mergeRecord<T extends { id: string } & SyncMeta>(
 	if (!remote) return { value: local ?? null, changed: false, lostLocalEdit: false };
 
 	if (!local) {
-		// Kennen wir nicht. Ein Grabstein fuer etwas, das wir ohnehin nicht haben,
+		// Kennen wir nicht. Ein Loeschmarker fuer etwas, das wir ohnehin nicht haben,
 		// ist ein Nichts - er darf keine leere Zeile anlegen.
 		if (isTombstone(remote)) return { value: null, changed: false, lostLocalEdit: false };
 		return { value: remote, changed: true, lostLocalEdit: false };
@@ -53,7 +53,7 @@ export function mergeRecord<T extends { id: string } & SyncMeta>(
 		// Gleiche Zeit heisst sonst: derselbe Stand, es bleibt nur die Fassung
 		// mitzunehmen.
 		//
-		// Fuer einen Grabstein gilt das NICHT. Anlegen und Loeschen koennen in
+		// Fuer einen Loeschmarker gilt das NICHT. Anlegen und Loeschen koennen in
 		// dieselbe Millisekunde fallen - deleteYear stempelt alle Eintraege eines
 		// Jahres mit demselben Date.now(), und auf einem schnellen Rechner trifft
 		// das den Eintrag, der gerade erst entstanden ist. Die Abkuerzung
