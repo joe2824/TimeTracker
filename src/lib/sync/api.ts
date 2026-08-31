@@ -50,6 +50,8 @@ export interface Passkey {
 	label: string | null;
 	/** Ob er den Tresor allein oeffnen kann - sonst braucht es Phrase oder Gerät. */
 	hasPrf: boolean;
+	/** Ob der Tresorschluessel fuer ihn verpackt vorliegt. */
+	hasWrap: boolean;
 	createdAt: number;
 	lastUsedAt: number | null;
 }

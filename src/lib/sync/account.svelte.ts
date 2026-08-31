@@ -783,6 +783,14 @@ class AccountState {
 		return { prfAvailable: ergebnis.prfAvailable };
 	}
 
+	/** Einen vorhandenen Passkey nachtraeglich den Tresor oeffnen lassen - ohne die 24 Woerter. */
+	async repairPasskeyWrap(credentialId?: string): Promise<boolean> {
+		if (!this.#key) throw new Error("Das Konto ist nicht entsperrt");
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		const { harvestPrfWrap } = await import("./enroll");
+		return harvestPrfWrap(this.#api, this.#key, credentialId);
+	}
+
 	/** Die Kennung dieses Geraets - damit die Liste das eigene erkennt. */
 	get thisDeviceId(): string {
 		return this.#device;

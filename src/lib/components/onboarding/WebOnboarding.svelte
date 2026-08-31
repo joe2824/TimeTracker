@@ -42,7 +42,6 @@
 	let phrase = $state("");
 	let eingabe = $state("");
 	let bestaetigt = $state(false);
-	let prfVorhanden = $state(false);
 	let angemeldeterName = $state("");
 	let schluessel: CryptoKey | null = null;
 	/**
@@ -134,7 +133,6 @@
 			angemeldeterName = r.displayName;
 			schluessel = r.key;
 			phrase = r.recoveryPhrase!;
-			prfVorhanden = r.prfAvailable;
 			inviteOffen = false;
 			schritt = "phrase";
 		} catch (e) {
@@ -203,7 +201,9 @@
 			// anlegen. Ohne das verlangte dieses Gerät die 24 Wörter bei JEDER
 			// Anmeldung erneut - obwohl der Passkey den Tresor allein öffnen könnte.
 			if (prfWert) {
-				await addPasskeyWrap(serverUrl, key, passkeyId, prfWert).catch(() => {});
+				await addPasskeyWrap(serverUrl, key, passkeyId, prfWert).catch((e) =>
+					logWarn("Passkey-Verpackung konnte nicht abgelegt werden", e)
+				);
 			}
 			await account.linkWithSession(serverUrl, key, angemeldeterName);
 			toast.success("Entsperrt.");
@@ -363,7 +363,19 @@
 						{#if hilfeOffen}
 							<div class="border-primary/30 bg-primary/5 rounded-lg border p-2.5 text-center text-xs text-foreground animate-in fade-in-0 duration-150">
 								<p class="font-medium">Kein Passkey gefunden?</p>
-								<p class="text-muted-foreground mt-0.5">Erstelle unten ein neues Konto oder koppele ein bestehendes Gerät.</p>
+								<p class="text-muted-foreground mt-0.5">
+									Erstelle unten ein neues Konto – oder hol dir dein Konto von einem Gerät, auf dem
+									TimeTracker schon läuft.
+								</p>
+								<Button
+									variant="outline"
+									size="sm"
+									class="mt-2.5 h-8 w-full text-xs"
+									disabled={laeuft}
+									onclick={koppelnStarten}
+								>
+									Konto von einem anderen Gerät holen
+								</Button>
 							</div>
 						{/if}
 
@@ -383,17 +395,7 @@
 							<span>{laeuft ? "Erstelle Konto…" : (ausLink ? "Mit Einladung registrieren" : "Neues Konto erstellen")}</span>
 						</Button>
 
-						<!-- Die zwei selteneren Wege, klein und sauber zentriert -->
-						<div class="text-muted-foreground border-t pt-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs">
-							<button
-								type="button"
-								class="hover:text-foreground transition-colors underline-offset-4 hover:underline"
-								disabled={laeuft}
-								onclick={koppelnStarten}
-							>
-								Gerät koppeln
-							</button>
-							<span aria-hidden="true" class="text-border">•</span>
+						<div class="text-muted-foreground border-t pt-3 flex items-center justify-center text-xs">
 							<button
 								type="button"
 								class="hover:text-foreground transition-colors underline-offset-4 hover:underline"
@@ -503,20 +505,6 @@
 
 					<Button variant="outline" size="sm" onclick={kopieren}>In Zwischenablage kopieren</Button>
 
-					{#if !prfVorhanden}
-						<!--
-							Ohne PRF öffnet der Passkey den Tresor nicht allein. Dann ist die
-							Phrase nicht das Netz, sondern der Alltagsweg - das gehört gesagt.
-						-->
-						<p
-							class="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-700 dark:text-amber-300"
-						>
-							Dein Browser unterstützt leider keine automatische Tresor-Entschlüsselung (PRF).
-							Du wirst diese Recovery-Phrase daher bei jedem Login auf diesem Gerät eingeben müssen.
-							
-						</p>
-					{/if}
-
 					<Label
 						for="phrase-ok"
 						class="bg-muted/40 items-start gap-2.5 rounded-lg p-3 text-sm leading-relaxed font-normal"
@@ -536,19 +524,33 @@
 		{:else}
 			<Card.Root class="w-full">
 				<Card.Header>
-					<Card.Title>Tresor entsperren</Card.Title>
+					<Card.Title>Daten entsperren</Card.Title>
 					<Card.Description>
-						Bitte gib deine 24 Wörter ein, um deinen lokalen Daten-Tresor zu entschlüsseln.
+						Dein Passkey hat dich angemeldet, kann deine Daten hier aber nicht öffnen. Nimm dafür ein
+						Gerät, auf dem TimeTracker schon läuft – oder deine 24 Wörter.
 					</Card.Description>
 				</Card.Header>
 				<Card.Content class="space-y-3">
+					<Button variant="outline" class="w-full" disabled={laeuft} onclick={koppelnStarten}>
+						Mit einem anderen Gerät entsperren
+					</Button>
+
+					<div class="relative flex items-center justify-center">
+						<span class="bg-border h-px w-full"></span>
+						<span class="bg-card text-muted-foreground px-2.5 text-[11px] tracking-wider uppercase">
+							oder
+						</span>
+					</div>
+
 					<textarea
 						bind:value={eingabe}
 						rows="4"
 						class="border-input bg-background w-full rounded-md border p-2 font-mono text-sm"
 						placeholder="wort1 wort2 wort3 …"
 					></textarea>
-					<Button class="w-full" disabled={laeuft} onclick={entsperren}>Entsperren</Button>
+					<Button class="w-full" disabled={laeuft} onclick={entsperren}>
+						Mit den 24 Wörtern entsperren
+					</Button>
 					<Button variant="ghost" size="sm" onclick={() => (schritt = "start")}>Zurück</Button>
 				</Card.Content>
 			</Card.Root>
@@ -577,9 +579,10 @@
 	     ein Code, der mitten in der Kette umbricht, wird beim Abtippen falsch. -->
 	<Dialog.Content class="sm:max-w-md">
 		<Dialog.Header>
-			<Dialog.Title>Bestehendes Konto koppeln</Dialog.Title>
+			<Dialog.Title>Konto von einem anderen Gerät holen</Dialog.Title>
 			<Dialog.Description>
-				Dieser Browser ist noch mit keinem Konto verknüpft. Gib den folgenden Code in deiner TimeTracker App ein, um ihn zu autorisieren.
+				Du nutzt TimeTracker schon auf einem anderen Gerät? Öffne es dort und gib diesen Code unter
+				Einstellungen → Konto ein. Danach sind deine Daten auch hier.
 			</Dialog.Description>
 		</Dialog.Header>
 

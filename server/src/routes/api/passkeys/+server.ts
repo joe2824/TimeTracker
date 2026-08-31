@@ -9,16 +9,29 @@ import { and, eq } from "drizzle-orm";
 
 export const GET: RequestHandler = ({ locals }) => {
 	if (!locals.userId) error(401, "Nicht angemeldet");
+	const userId = locals.userId;
+
+	// `has_prf` sagt nur, was der Authentifikator koennte - die Verpackung, ob er es tut.
+	const wrapped = new Set(
+		locals.db
+			.select()
+			.from(keyWraps)
+			.where(and(eq(keyWraps.userId, userId), eq(keyWraps.kind, "passkey")))
+			.all()
+			.map((w) => w.credentialId)
+	);
+
 	return json({
 		passkeys: locals.db
 			.select()
 			.from(credentials)
-			.where(eq(credentials.userId, locals.userId))
+			.where(eq(credentials.userId, userId))
 			.all()
 			.map((c) => ({
 				id: c.id,
 				label: c.label,
 				hasPrf: c.hasPrf,
+				hasWrap: wrapped.has(c.id),
 				createdAt: c.createdAt,
 				lastUsedAt: c.lastUsedAt
 			}))

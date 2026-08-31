@@ -267,6 +267,37 @@ describe("Verpackungen", () => {
 		expect(wraps[0].payload).toBe("enZlaXRl");
 	});
 
+	it("meldet einen Passkey mit Verpackung als solchen", async () => {
+		db.$client
+			.prepare(
+				"INSERT INTO credentials (id, user_id, public_key, counter, has_prf, label, created_at) VALUES (?,?,?,0,0,?,?)"
+			)
+			.run("annas-schluessel", ANNA, Buffer.from([1, 2, 3]), null, Date.now());
+
+		await api(annaToken, "/api/wraps", {
+			method: "POST",
+			body: JSON.stringify({
+				kind: "passkey",
+				payload: "dmVycGFja3Q=",
+				credentialId: "annas-schluessel"
+			})
+		});
+
+		const { passkeys } = await (await api(annaToken, "/api/passkeys")).json();
+		expect(passkeys[0].hasWrap).toBe(true);
+	});
+
+	it("meldet einen Passkey ohne Verpackung als solchen", async () => {
+		db.$client
+			.prepare(
+				"INSERT INTO credentials (id, user_id, public_key, counter, has_prf, label, created_at) VALUES (?,?,?,0,1,?,?)"
+			)
+			.run("annas-schluessel", ANNA, Buffer.from([1, 2, 3]), null, Date.now());
+
+		const { passkeys } = await (await api(annaToken, "/api/passkeys")).json();
+		expect(passkeys[0].hasWrap).toBe(false);
+	});
+
 	it("weist eine unbekannte Art ab", async () => {
 		const r = await api(annaToken, "/api/wraps", {
 			method: "POST",

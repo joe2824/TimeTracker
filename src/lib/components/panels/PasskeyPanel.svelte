@@ -86,7 +86,28 @@
 		}
 	}
 
-	const prfCount = $derived(passkeys.filter((p) => p.hasPrf).length);
+	const wrapCount = $derived(passkeys.filter((p) => p.hasWrap).length);
+
+	let repairing = $state<string | null>(null);
+
+	async function handleRepair(p: Passkey) {
+		repairing = p.id;
+		try {
+			await account.repairPasskeyWrap(p.id);
+			await loadPasskeys();
+			// Wer bei der Nachfrage einen anderen Passkey nimmt, hat diesen nicht repariert.
+			const ok = passkeys.find((k) => k.id === p.id)?.hasWrap === true;
+			toast[ok ? "success" : "error"](
+				ok
+					? "Erledigt. Dieser Passkey entsperrt deine Daten jetzt allein."
+					: "Unverändert. Bestätige mit genau dem Passkey, der in der Zeile steht."
+			);
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : "Einrichten fehlgeschlagen");
+		} finally {
+			repairing = null;
+		}
+	}
 
 	async function handleOpenInBrowser() {
 		try {
@@ -170,11 +191,11 @@
 										{:else}
 											<div class="flex flex-wrap items-center gap-2">
 												<p class="font-medium text-foreground truncate">{p.label ?? "Unbenannt"}</p>
-												{#if !p.hasPrf}
+												{#if !p.hasWrap}
 													<Badge
 														variant="outline"
 														class="text-[10px] px-1.5 py-0 h-4 font-normal text-muted-foreground"
-														title="Ohne die Passkey-Erweiterung PRF: die Anmeldung klappt, den Tresor öffnet dieser Passkey aber nicht von allein."
+														title="Die Anmeldung klappt, die Daten öffnet dieser Passkey aber nicht von allein."
 													>
 														ohne direkte Entschlüsselung
 													</Badge>
@@ -194,6 +215,18 @@
 
 								{#if editingPasskeyId !== p.id}
 									<div class="flex shrink-0 items-center gap-1">
+										{#if !p.hasWrap && !isTauri()}
+											<Button
+												variant="outline"
+												size="sm"
+												class="h-8 text-xs"
+												disabled={repairing === p.id}
+												title="Einmal bestätigen – danach entsperrt dieser Passkey deine Daten ohne die 24 Wörter."
+												onclick={() => handleRepair(p)}
+											>
+												{repairing === p.id ? "…" : "Einrichten"}
+											</Button>
+										{/if}
 										<Button
 											variant="ghost"
 											size="icon-sm"
@@ -224,10 +257,10 @@
 					</div>
 				</div>
 
-				{#if prfCount === 0 && passkeys.length > 0}
+				{#if wrapCount === 0 && passkeys.length > 0}
 					<p class="text-muted-foreground text-xs">
-						Keiner dieser Passkeys kann den Tresor allein öffnen – zum Entsperren braucht es
-						zusätzlich die Wiederherstellungs-Phrase oder ein bereits entsperrtes Gerät.
+						Keiner dieser Passkeys öffnet deine Daten allein – zum Entsperren braucht es zusätzlich
+						die Wiederherstellungs-Phrase oder ein bereits entsperrtes Gerät.
 					</p>
 				{/if}
 
