@@ -175,7 +175,7 @@ describe("buildReport – offene Einträge", () => {
 	};
 	/** Feste Uhr: 17.07.2026, 08:30 – sonst prüfte der Test die Wanduhr. */
 	const NOW = wallToTs(2026, 7, 17, 8, 30, 0);
-	const offen = (start: number): Entry => ({
+	const openEntry = (start: number): Entry => ({
 		id: "x",
 		activityId: "p1",
 		startTs: start,
@@ -190,7 +190,7 @@ describe("buildReport – offene Einträge", () => {
 		const r = buildReport(
 			"2026-06",
 			[P1],
-			[offen(wallToTs(2026, 6, 1, 8, 0, 0))],
+			[openEntry(wallToTs(2026, 6, 1, 8, 0, 0))],
 			0.5,
 			7.5,
 			[1, 2, 3, 4, 5],
@@ -203,7 +203,7 @@ describe("buildReport – offene Einträge", () => {
 		const r = buildReport(
 			"2026-07",
 			[P1],
-			[offen(wallToTs(2026, 7, 17, 6, 30, 0))],
+			[openEntry(wallToTs(2026, 7, 17, 6, 30, 0))],
 			0.5,
 			7.5,
 			[1, 2, 3, 4, 5],
@@ -216,7 +216,7 @@ describe("buildReport – offene Einträge", () => {
 		const r = buildReport(
 			"2026-06",
 			[P1],
-			[offen(wallToTs(2026, 6, 1, 8, 0, 0))],
+			[openEntry(wallToTs(2026, 6, 1, 8, 0, 0))],
 			0.5,
 			7.5,
 			[1, 2, 3, 4, 5]

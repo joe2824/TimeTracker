@@ -95,17 +95,17 @@ describe.each([true, false])("Durchstich mit Pausenabzug=%s", (deductBreaks) => 
 			// Vorher gab es wirklich etwas zu tun – sonst prueft der Test nichts.
 			expect(before.missing + before.partial).toBeGreaterThan(0);
 
-			const offen = after.days.filter((d) => d.status !== "ok" && d.status !== "free");
+			const unresolved = after.days.filter((d) => d.status !== "ok" && d.status !== "free");
 			if (!deductBreaks) {
 				// Ohne eigenen Abzug ist die LOGA-Zahl direkt erreichbar.
-				expect(offen.map((d) => `${d.date} ${d.status}`)).toEqual([]);
+				expect(unresolved.map((d) => `${d.date} ${d.status}`)).toEqual([]);
 				continue;
 			}
 			// Mit Abzug bleibt ein Rest, wo LOGAs tatsaechlicher Abzug von der
 			// Hausregel abweicht – im echten Report rund 11 % der Tage (gestempelte
 			// Zusatzpausen, Korrekturbuchungen). Diese Tage sind nicht fuellbar,
 			// ohne Anwesenheit zu erfinden; sie bleiben sichtbar stehen.
-			for (const d of offen) {
+			for (const d of unresolved) {
 				const gross = grossHours(d.report);
 				const logaDeduction = gross - d.report.hours;
 				expect(Math.abs(logaDeduction - ruleBreakHours(gross))).toBeGreaterThan(0.25);

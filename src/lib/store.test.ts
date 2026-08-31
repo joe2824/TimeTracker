@@ -154,8 +154,8 @@ describe("deleteYear", () => {
 		// beim naechsten Start wieder in der Auswahl.
 		await saveEntries("2026-01", [entry("a")]);
 
-		const freigeben = blockWrites();
-		const speichern = saveEntries("2026-01", [entry("a"), entry("b")]);
+		const release = blockWrites();
+		const saving = saveEntries("2026-01", [entry("a"), entry("b")]);
 		// Das Loeschen startet, waehrend oben nachweislich noch geschrieben wird.
 		const remove = deleteYear(2026);
 		// Erst laufen lassen, bis es an der Datei ist: alles am Fake-Dateisystem ist
@@ -164,8 +164,8 @@ describe("deleteYear", () => {
 		// beim Verzeichnis-Lesen – dann treffen die beiden gar nicht aufeinander und
 		// der Test wuerde auch ohne die Warteschlange gruen.
 		await new Promise((resolve) => setTimeout(resolve, 0));
-		freigeben();
-		await Promise.all([speichern, remove]);
+		release();
+		await Promise.all([saving, remove]);
 
 		expect(files.has(file("2026-01"))).toBe(false);
 		expect(await listEntryMonths()).toEqual([]);
@@ -273,7 +273,7 @@ describe("Rundlauf", () => {
 	it("erhält alle Felder unverändert", async () => {
 		// Der Standard-entry() deckt nur eine Form ab; dayFraction, ein gesetztes
 		// endTs und Sonderzeichen in der Notiz gingen bisher durch keinen Test.
-		const voll: Entry = {
+		const complete: Entry = {
 			id: "e1",
 			activityId: "a1",
 			startTs: Date.UTC(2026, 5, 10, 8),
@@ -282,8 +282,8 @@ describe("Rundlauf", () => {
 			source: "calendar",
 			dayFraction: 0.5
 		};
-		await saveEntries("2026-06", [voll]);
-		expect((await loadEntries("2026-06"))[0]).toEqual(voll);
+		await saveEntries("2026-06", [complete]);
+		expect((await loadEntries("2026-06"))[0]).toEqual(complete);
 	});
 });
 

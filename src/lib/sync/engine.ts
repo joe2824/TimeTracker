@@ -340,12 +340,12 @@ export class SyncEngine {
 		const loaded = new Map<string, Map<string, Entry>>();
 		const touched = new Set<string>();
 		const monthOf = async (m: string) => {
-			let karte = loaded.get(m);
-			if (!karte) {
-				karte = new Map((await this.#store.entriesOfMonth(m)).map((e) => [e.id, e]));
-				loaded.set(m, karte);
+			let monthMap = loaded.get(m);
+			if (!monthMap) {
+				monthMap = new Map((await this.#store.entriesOfMonth(m)).map((e) => [e.id, e]));
+				loaded.set(m, monthMap);
 			}
-			return karte;
+			return monthMap;
 		};
 
 		const decrypted = await Promise.all(
@@ -437,14 +437,14 @@ export class SyncEngine {
 		for (const month of await this.#knownMonths()) await monthOf(month);
 
 		const all: Entry[] = [];
-		for (const karte of loaded.values()) all.push(...karte.values());
+		for (const monthMap of loaded.values()) all.push(...monthMap.values());
 		const toClose = resolveOpenEntries(all);
 		if (toClose.length === 0) return;
 
 		for (const e of toClose) {
-			for (const [month, karte] of loaded) {
-				if (!karte.has(e.id)) continue;
-				karte.set(e.id, e);
+			for (const [month, monthMap] of loaded) {
+				if (!monthMap.has(e.id)) continue;
+				monthMap.set(e.id, e);
 				touched.add(month);
 			}
 		}
@@ -534,13 +534,13 @@ export class SyncEngine {
 	): Promise<string | null> {
 		// Zuerst, was schon auf dem Tisch liegt: ein Monat, den dieser Stapel selbst
 		// angelegt hat, steht in keiner Verzeichnisliste.
-		for (const [month, karte] of loaded) if (karte.has(id)) return month;
+		for (const [month, monthMap] of loaded) if (monthMap.has(id)) return month;
 		// Noch nicht alle Monate geladen? Einmalig durchsehen und im Speicher behalten.
 		if (!this.#allMonthsIndexed) {
 			for (const month of await this.#knownMonths()) {
 				if (!loaded.has(month)) {
-					const karte = await monthOf(month);
-					if (karte.has(id)) return month;
+					const monthMap = await monthOf(month);
+					if (monthMap.has(id)) return month;
 				}
 			}
 			this.#allMonthsIndexed = true;

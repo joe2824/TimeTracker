@@ -1167,7 +1167,7 @@ describe("Verwaltung", () => {
 async function rawRequest(headers: Record<string, string>): Promise<number> {
 	const { request } = await import("node:http");
 	const bodyText = JSON.stringify({ records: [rec("roh")] });
-	return new Promise<number>((auf, ab) => {
+	return new Promise<number>((resolve, reject) => {
 		const req = request(
 			{
 				hostname: "127.0.0.1",
@@ -1178,10 +1178,10 @@ async function rawRequest(headers: Record<string, string>): Promise<number> {
 			},
 			(res) => {
 				res.resume();
-				res.on("end", () => auf(res.statusCode ?? 0));
+				res.on("end", () => resolve(res.statusCode ?? 0));
 			}
 		);
-		req.on("error", ab);
+		req.on("error", reject);
 		req.end(bodyText);
 	});
 }

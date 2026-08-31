@@ -137,7 +137,7 @@
 	 * heisst (frueher zwei getrennte <style>-Bloecke mit denselben Werten).
 	 */
 	const HINT_FORM = "flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-xs";
-	const hintTon = $derived(
+	const hintTone = $derived(
 		arbzgVerdict?.level === "crit"
 			? "border-destructive/50 bg-destructive/6 text-destructive"
 			: "border-amber-500/55 bg-amber-500/7 text-amber-700 dark:text-amber-400"
@@ -165,7 +165,7 @@
 		     kein Klick. -->
 		{#if app.settings.arbzgEnabled}
 			<button
-				class={[HINT_FORM, hintTon, "text-left transition-colors hover:brightness-[0.97]"]}
+				class={[HINT_FORM, hintTone, "text-left transition-colors hover:brightness-[0.97]"]}
 				onclick={() => onShowReport?.()}
 			>
 				<TriangleAlertIcon class="size-3.5 shrink-0" />
@@ -174,7 +174,7 @@
 				<ChevronRightIcon class="ml-auto size-3.5 shrink-0 opacity-60" />
 			</button>
 		{:else}
-			<div class={[HINT_FORM, hintTon]}>
+			<div class={[HINT_FORM, hintTone]}>
 				<TriangleAlertIcon class="size-3.5 shrink-0" />
 				<span class="font-medium">{arbzgVerdict.headline}</span>
 				<span class="text-muted-foreground hidden truncate sm:inline">· Arbeitszeit-Check</span>

@@ -208,12 +208,12 @@ describe("Kopplung eines neuen Geraets", () => {
 	it("das neue Geraet oeffnet, was das entsperrte fuer es verpackt hat", async () => {
 		const vault = await createVaultKey();
 		// Auf dem NEUEN Geraet:
-		const neu = await createPairingKeyPair();
-		const publicSide = await exportPairingPublicKey(neu);
+		const freshPair = await createPairingKeyPair();
+		const publicSide = await exportPairingPublicKey(freshPair);
 		// Auf dem ENTSPERRTEN Geraet:
 		const packet = await wrapForDevice(vault, publicSide);
 		// Zurueck auf dem neuen Geraet:
-		expect(await sameKey(await unwrapForDevice(packet, neu.privateKey), vault)).toBe(true);
+		expect(await sameKey(await unwrapForDevice(packet, freshPair.privateKey), vault)).toBe(true);
 	});
 
 	it("ein fremdes Geraet oeffnet das Paket nicht", async () => {
@@ -226,16 +226,16 @@ describe("Kopplung eines neuen Geraets", () => {
 
 	it("weist ein Paket ohne oeffentlichen Schluessel ab", async () => {
 		const vault = await createVaultKey();
-		const neu = await createPairingKeyPair();
-		const packet = await wrapForDevice(vault, await exportPairingPublicKey(neu));
+		const freshPair = await createPairingKeyPair();
+		const packet = await wrapForDevice(vault, await exportPairingPublicKey(freshPair));
 		delete packet.ephemeralPublicKey;
-		await expect(unwrapForDevice(packet, neu.privateKey)).rejects.toThrow(/öffentlichen Schlüssel/);
+		await expect(unwrapForDevice(packet, freshPair.privateKey)).rejects.toThrow(/öffentlichen Schlüssel/);
 	});
 
 	it("jede Kopplung nimmt ein neues fluechtiges Paar", async () => {
 		const vault = await createVaultKey();
-		const neu = await createPairingKeyPair();
-		const pub = await exportPairingPublicKey(neu);
+		const freshPair = await createPairingKeyPair();
+		const pub = await exportPairingPublicKey(freshPair);
 		const a = await wrapForDevice(vault, pub);
 		const b = await wrapForDevice(vault, pub);
 		expect(toHex(a.ephemeralPublicKey!)).not.toBe(toHex(b.ephemeralPublicKey!));

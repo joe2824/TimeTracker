@@ -493,10 +493,10 @@
 				</Card.Header>
 				<Card.Content class="space-y-4">
 					<ol class="bg-muted grid grid-cols-2 gap-x-4 gap-y-1 rounded-md p-3 text-sm sm:grid-cols-3">
-						{#each phrase.split(" ") as wort, i (i)}
+						{#each phrase.split(" ") as word, i (i)}
 							<li class="flex gap-2">
 								<span class="text-muted-foreground w-5 text-right tabular-nums">{i + 1}.</span>
-								<span class="font-mono">{wort}</span>
+								<span class="font-mono">{word}</span>
 							</li>
 						{/each}
 					</ol>

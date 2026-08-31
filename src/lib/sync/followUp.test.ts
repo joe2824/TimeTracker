@@ -121,7 +121,7 @@ async function withoutAccount(g: Device, fn: () => Promise<void>): Promise<void>
 }
 
 /** Etwas MIT verknuepftem Konto tun. */
-async function auf<T>(g: Device, fn: (engine: InstanceType<typeof SyncEngine>) => Promise<T>): Promise<T> {
+async function on<T>(g: Device, fn: (engine: InstanceType<typeof SyncEngine>) => Promise<T>): Promise<T> {
 	resetFakeFs();
 	for (const [k, v] of g.files) files.set(k, v);
 	resetOutboxForTests();
@@ -156,7 +156,7 @@ async function auf<T>(g: Device, fn: (engine: InstanceType<typeof SyncEngine>) =
 
 /** Was AccountState bei jedem Start tut: holen, Ungestempeltes vormerken, hochladen. */
 async function link(g: Device, opts: { nurEigenes?: boolean } = {}): Promise<void> {
-	await auf(g, async (engine) => {
+	await on(g, async (engine) => {
 		await engine.sync();
 		// Was AccountState prueft, bevor es nachliest: gehoert der ungestempelte
 		// Bestand ueberhaupt zu DIESEM Konto?
@@ -227,11 +227,11 @@ describe("Nachlese: was der Schreib-Haken nie gesehen hat", () => {
 		const browser = new Device("browser");
 		await link(browser);
 
-		const loaded = await auf(browser, () => store.loadActivities());
+		const loaded = await on(browser, () => store.loadActivities());
 		expect(loaded.map((a) => a.name)).toEqual(["Projekt A"]);
-		const s = await auf(browser, () => store.loadSettings());
+		const s = await on(browser, () => store.loadSettings());
 		expect(s.hoursPerDay).toBe(7);
-		const e = await auf(browser, () => store.loadEntries(MONTH));
+		const e = await on(browser, () => store.loadEntries(MONTH));
 		expect(e).toHaveLength(1);
 	});
 
@@ -250,10 +250,10 @@ describe("Nachlese: was der Schreib-Haken nie gesehen hat", () => {
 		});
 		await link(browser);
 
-		expect((await auf(browser, () => store.loadSettings())).hoursPerDay).toBe(7);
+		expect((await on(browser, () => store.loadSettings())).hoursPerDay).toBe(7);
 		// Und der Rechner bekommt seinen eigenen Wert nicht zerschossen zurueck.
 		await link(desktop);
-		expect((await auf(desktop, () => store.loadSettings())).hoursPerDay).toBe(7);
+		expect((await on(desktop, () => store.loadSettings())).hoursPerDay).toBe(7);
 	});
 
 	it("traegt den Bestand NICHT in ein fremdes Konto", async () => {
@@ -272,7 +272,7 @@ describe("Nachlese: was der Schreib-Haken nie gesehen hat", () => {
 		const oldServer = server;
 		server = foreign;
 		key = await createVaultKey();
-		await auf(desktop, async () => {
+		await on(desktop, async () => {
 			// Was #persistLink beim Kontowechsel vermerkt: der Bestand gehoert noch
 			// dem alten Konto.
 			const info = (await store.loadDevice()) ?? { id: desktop.id };
@@ -296,20 +296,20 @@ describe("Nachlese: was der Schreib-Haken nie gesehen hat", () => {
 
 		// Vormerken, aber NICHT hochladen - so sieht es aus, wenn ein Abgleich
 		// mittendrin abbricht oder der Server gerade weg ist.
-		await auf(desktop, async () => {
+		await on(desktop, async () => {
 			await rememberUnstamped();
 		});
-		expect(await auf(desktop, async () => (await store.loadOutbox()).length)).toBeGreaterThan(0);
+		expect(await on(desktop, async () => (await store.loadOutbox()).length)).toBeGreaterThan(0);
 
 		// Jetzt ein anderes Konto. Was AccountState beim Wechsel tut: Merkliste weg.
-		await auf(desktop, async () => {
+		await on(desktop, async () => {
 			await store.clearOutbox();
 		});
 
 		const foreign = new FakeServer();
 		server = foreign;
 		key = await createVaultKey();
-		await auf(desktop, async () => {
+		await on(desktop, async () => {
 			const info = (await store.loadDevice()) ?? { id: desktop.id };
 			await store.saveDevice({ ...info, accountFingerprint: "neu", dataOwner: "alt" });
 		});
@@ -321,7 +321,7 @@ describe("Nachlese: was der Schreib-Haken nie gesehen hat", () => {
 	it("laedt spaeter Angelegtes weiterhin hoch", async () => {
 		const desktop = new Device("rechner");
 		await link(desktop);
-		await auf(desktop, async (engine) => {
+		await on(desktop, async (engine) => {
 			await store.saveActivities([activity("akt-9", "Danach", "#0000ff")]);
 			await engine.sync();
 		});
