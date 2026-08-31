@@ -1,5 +1,4 @@
 // Verwaltung des „Was ist neu"-Dialogs für Haupt-Releases.
-import { APP_VERSION } from "./defaults";
 import { isTauri } from "./platform/env";
 
 const STORAGE_KEY = "timetracker:last_seen_release";
@@ -17,8 +16,17 @@ export interface ReleaseInfo {
 	highlights: ReleaseHighlight[];
 }
 
+/**
+ * Das Release, das dieser Inhalt beschreibt - NICHT die laufende App-Version.
+ *
+ * `checkOnStartup` vergleicht nur diese Zeichenkette mit dem, was zuletzt
+ * gesehen wurde. Sie mit jedem Release mitzuziehen, zeigt allen denselben
+ * Dialog erneut; ein Bugfix-Release laesst sie deshalb unangetastet. Erst wenn
+ * es hier wirklich Neues zu erzaehlen gibt, werden Text UND Nummer zusammen
+ * geaendert - dann, und nur dann, geht der Dialog wieder auf.
+ */
 export const CURRENT_RELEASE: ReleaseInfo = {
-	version: "0.9.1",
+	version: "0.9.0",
 	title: "Multi-Geräte-Synchronisation",
 	summary: "TimeTracker synchronisiert deine Arbeitszeiten ab sofort nahtlos und sicher zwischen all deinen Geräten.",
 	highlights: [
