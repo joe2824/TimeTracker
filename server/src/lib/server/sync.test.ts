@@ -9,7 +9,7 @@ let db: Db;
 const ANNA = "user-anna";
 const BODO = "user-bodo";
 
-function anlegen(id: string) {
+function create(id: string) {
 	db.insert(users).values({ id, displayName: id, createdAt: 1, seqCounter: 0 }).run();
 }
 
@@ -25,8 +25,8 @@ const rec = (id: string, over: Partial<IncomingRecord> = {}): IncomingRecord => 
 
 beforeEach(() => {
 	db = openDb(":memory:").db;
-	anlegen(ANNA);
-	anlegen(BODO);
+	create(ANNA);
+	create(BODO);
 });
 
 describe("Ablegen", () => {
@@ -54,11 +54,11 @@ describe("Ablegen", () => {
 		pushRecords(db, ANNA, "g1", [rec("e1")]);
 		pushRecords(db, ANNA, "g1", [rec("e1", { baseRev: 1, payload: "bmV1" })]);
 
-		const spaet = pushRecords(db, ANNA, "g2", [rec("e1", { baseRev: 1, payload: "YWx0" })]);
-		expect(spaet.accepted).toEqual([]);
-		expect(spaet.conflicts).toHaveLength(1);
-		expect(spaet.conflicts[0].current.rev).toBe(2);
-		expect(spaet.conflicts[0].current.payload).toBe("bmV1");
+		const late = pushRecords(db, ANNA, "g2", [rec("e1", { baseRev: 1, payload: "YWx0" })]);
+		expect(late.accepted).toEqual([]);
+		expect(late.conflicts).toHaveLength(1);
+		expect(late.conflicts[0].current.rev).toBe(2);
+		expect(late.conflicts[0].current.payload).toBe("bmV1");
 	});
 
 	it("meldet einen leeren Stand, wenn der Datensatz beim Server fehlt", () => {
@@ -82,14 +82,14 @@ describe("Ablegen", () => {
 		pushRecords(db, ANNA, "g1", [rec("e1")]);
 		pushRecords(db, ANNA, "g1", [rec("e1", { baseRev: 1, deletedAt: 5000 })]);
 
-		const zeile = db.select().from(records).where(eq(records.id, "e1")).get()!;
-		expect(zeile.deletedAt).toBe(5000);
-		expect(zeile.payload).toBeNull();
+		const rowText = db.select().from(records).where(eq(records.id, "e1")).get()!;
+		expect(rowText.deletedAt).toBe(5000);
+		expect(rowText.payload).toBeNull();
 	});
 
 	it("weist ein zu grosses Chiffrat ab", () => {
-		const riesig = "x".repeat(64 * 1024 + 1);
-		expect(() => pushRecords(db, ANNA, "g1", [rec("e1", { payload: riesig })])).toThrow(SyncError);
+		const huge = "x".repeat(64 * 1024 + 1);
+		expect(() => pushRecords(db, ANNA, "g1", [rec("e1", { payload: huge })])).toThrow(SyncError);
 	});
 
 	it("weist einen Datensatz ohne id oder Art ab", () => {
@@ -99,9 +99,9 @@ describe("Ablegen", () => {
 
 	it("prueft die Groesse VOR dem Schreiben, nicht mittendrin", () => {
 		// Sonst laege der erste Datensatz schon da, wenn der zweite auffliegt.
-		const riesig = "x".repeat(64 * 1024 + 1);
+		const huge = "x".repeat(64 * 1024 + 1);
 		expect(() =>
-			pushRecords(db, ANNA, "g1", [rec("e1"), rec("e2", { payload: riesig })])
+			pushRecords(db, ANNA, "g1", [rec("e1"), rec("e2", { payload: huge })])
 		).toThrow(SyncError);
 		expect(currentSeq(db, ANNA)).toBe(0);
 		expect(pullRecords(db, ANNA).records).toEqual([]);
@@ -127,37 +127,37 @@ describe("Abholen", () => {
 
 	it("blaettert und meldet ehrlich, ob noch etwas kommt", () => {
 		pushRecords(db, ANNA, "g1", [rec("e1"), rec("e2"), rec("e3")]);
-		const erste = pullRecords(db, ANNA, { limit: 2 });
-		expect(erste.records).toHaveLength(2);
-		expect(erste.hasMore).toBe(true);
+		const first = pullRecords(db, ANNA, { limit: 2 });
+		expect(first.records).toHaveLength(2);
+		expect(first.hasMore).toBe(true);
 
-		const zweite = pullRecords(db, ANNA, { since: erste.nextSeq, limit: 2 });
-		expect(zweite.records.map((r) => r.id)).toEqual(["e3"]);
-		expect(zweite.hasMore).toBe(false);
+		const secondB = pullRecords(db, ANNA, { since: first.nextSeq, limit: 2 });
+		expect(secondB.records.map((r) => r.id)).toEqual(["e3"]);
+		expect(secondB.hasMore).toBe(false);
 	});
 
 	it("blaettert vollstaendig durch, ohne etwas zu ueberspringen", () => {
-		const viele = Array.from({ length: 25 }, (_, i) => rec(`e${i}`));
-		pushRecords(db, ANNA, "g1", viele);
+		const many = Array.from({ length: 25 }, (_, i) => rec(`e${i}`));
+		pushRecords(db, ANNA, "g1", many);
 
-		const gesehen: string[] = [];
+		const seen: string[] = [];
 		let since = 0;
 		for (;;) {
-			const seite = pullRecords(db, ANNA, { since, limit: 7 });
-			gesehen.push(...seite.records.map((r) => r.id));
-			since = seite.nextSeq;
-			if (!seite.hasMore) break;
+			const pageNo = pullRecords(db, ANNA, { since, limit: 7 });
+			seen.push(...pageNo.records.map((r) => r.id));
+			since = pageNo.nextSeq;
+			if (!pageNo.hasMore) break;
 		}
-		expect(gesehen).toHaveLength(25);
-		expect(new Set(gesehen).size).toBe(25);
+		expect(seen).toHaveLength(25);
+		expect(new Set(seen).size).toBe(25);
 	});
 
 	it("liefert einen Grabstein mit aus", () => {
 		pushRecords(db, ANNA, "g1", [rec("e1")]);
 		pushRecords(db, ANNA, "g1", [rec("e1", { baseRev: 1, deletedAt: 5000 })]);
-		const geholt = pullRecords(db, ANNA, { since: 1 }).records;
-		expect(geholt).toHaveLength(1);
-		expect(geholt[0].deletedAt).toBe(5000);
+		const fetched = pullRecords(db, ANNA, { since: 1 }).records;
+		expect(fetched).toHaveLength(1);
+		expect(fetched[0].deletedAt).toBe(5000);
 	});
 
 	it("laedt einen einzelnen Zeitraum gezielt nach", () => {
@@ -166,8 +166,8 @@ describe("Abholen", () => {
 			rec("e2", { bucket: "august" }),
 			rec("e3", { bucket: "juli" })
 		]);
-		const juli = pullRecords(db, ANNA, { bucket: "juli" }).records;
-		expect(juli.map((r) => r.id).sort()).toEqual(["e1", "e3"]);
+		const july = pullRecords(db, ANNA, { bucket: "juli" }).records;
+		expect(july.map((r) => r.id).sort()).toEqual(["e1", "e3"]);
 	});
 
 	it("deckelt eine masslose Seitengroesse", () => {
@@ -220,17 +220,17 @@ describe("Zwei Geraete am selben Konto", () => {
 		pushRecords(db, ANNA, "handy", [rec("e1", { payload: "ZXJzdA==" })]);
 
 		// Der Rechner kennt nur Fassung 1 und wird abgewiesen.
-		const abgelehnt = pushRecords(db, ANNA, "rechner", [
+		const rejected = pushRecords(db, ANNA, "rechner", [
 			rec("e1", { baseRev: 0, payload: "cmVjaG5lcg==" })
 		]);
-		expect(abgelehnt.conflicts).toHaveLength(1);
+		expect(rejected.conflicts).toHaveLength(1);
 
 		// Er uebernimmt den Serverstand und schickt auf dessen Fassung erneut.
-		const stand = abgelehnt.conflicts[0].current;
-		const zweiter = pushRecords(db, ANNA, "rechner", [
-			rec("e1", { baseRev: stand.rev, payload: "enVzYW1tZW4=" })
+		const knownSeq = rejected.conflicts[0].current;
+		const secondC = pushRecords(db, ANNA, "rechner", [
+			rec("e1", { baseRev: knownSeq.rev, payload: "enVzYW1tZW4=" })
 		]);
-		expect(zweiter.accepted).toEqual([{ id: "e1", rev: 2, seq: 2 }]);
+		expect(secondC.accepted).toEqual([{ id: "e1", rev: 2, seq: 2 }]);
 		expect(pullRecords(db, ANNA).records[0].payload).toBe("enVzYW1tZW4=");
 	});
 

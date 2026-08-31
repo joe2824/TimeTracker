@@ -13,7 +13,7 @@ import { eq } from "drizzle-orm";
 export const POST: RequestHandler = async ({ locals }) => {
 	if (!locals.userId) error(401, "Nicht angemeldet");
 
-	const eigene = locals.db
+	const own = locals.db
 		.select()
 		.from(credentials)
 		.where(eq(credentials.userId, locals.userId))
@@ -21,7 +21,7 @@ export const POST: RequestHandler = async ({ locals }) => {
 	// Ohne Passkey gibt es nichts zu bestaetigen. Das kann nur ein Konto sein, das
 	// ueber ein Geraet gekoppelt wurde und nie einen eigenen angelegt hat - der
 	// Aufrufer muss dann den Weg ueber das Geraete-Token gehen.
-	if (eigene.length === 0) error(409, "Für dieses Konto ist kein Passkey hinterlegt");
+	if (own.length === 0) error(409, "Für dieses Konto ist kein Passkey hinterlegt");
 
 	const options = await confirmationOptions(locals.db, locals.userId);
 	const challengeId = storeChallenge(locals.db, options.challenge, "delete", locals.userId);

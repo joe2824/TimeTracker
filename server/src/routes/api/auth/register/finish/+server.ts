@@ -3,7 +3,7 @@ import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { verifyRegistration, createUser, storeCredential } from "$lib/server/webauthn";
 import { createSession, takeChallenge } from "$lib/server/auth";
-import { entwerteCode, gueltigerCode, istRegistrierungOffen } from "$lib/server/invites";
+import { consumeCode, validCode, isRegistrationOpen } from "$lib/server/invites";
 import { setSessionCookie } from "$lib/server/session";
 
 export const POST: RequestHandler = async ({ locals, request, cookies }) => {
@@ -12,10 +12,10 @@ export const POST: RequestHandler = async ({ locals, request, cookies }) => {
 	const taken = takeChallenge(locals.db, challengeId, "register");
 	if (!taken?.userId) error(400, "Aufgabe abgelaufen – bitte erneut versuchen");
 
-	const gewuenscht = String(body?.displayName ?? "").trim();
-	if (gewuenscht.length > 64) error(400, "Anzeigename ist zu lang");
+	const requested = String(body?.displayName ?? "").trim();
+	if (requested.length > 64) error(400, "Anzeigename ist zu lang");
 	// Ohne Namen die Kennung - dieselbe Regel wie beim Anlegen vom Geraet aus.
-	const displayName = gewuenscht || taken.userId;
+	const displayName = requested || taken.userId;
 
 	const verification = await verifyRegistration(body?.response, taken.challenge);
 	if (!verification.verified || !verification.registrationInfo) {
@@ -26,7 +26,7 @@ export const POST: RequestHandler = async ({ locals, request, cookies }) => {
 	// Erst pruefen, entwertet wird unten IN der Transaktion. Andersherum waere die
 	// Einladung verbraucht, wenn das Anlegen danach scheitert - und niemand haette
 	// ein Konto dafuer.
-	if (!istRegistrierungOffen(locals.db) && !gueltigerCode(locals.db, code)) {
+	if (!isRegistrationOpen(locals.db) && !validCode(locals.db, code)) {
 		error(403, "Einladungscode ungültig");
 	}
 
@@ -39,7 +39,7 @@ export const POST: RequestHandler = async ({ locals, request, cookies }) => {
 		createUser(tx, taken.userId!, displayName, email);
 		// Ein Code aus der Tabelle gilt genau einmal. Hier drin, damit "Konto
 		// entstanden" und "Einladung verbraucht" nicht auseinanderfallen koennen.
-		if (!istRegistrierungOffen(locals.db) && code) entwerteCode(tx, code, taken.userId!);
+		if (!isRegistrationOpen(locals.db) && code) consumeCode(tx, code, taken.userId!);
 		storeCredential(
 			tx,
 			taken.userId!,

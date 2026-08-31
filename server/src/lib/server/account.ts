@@ -27,14 +27,14 @@ export interface DeleteSummary {
 
 /** Alles zu diesem Konto entfernen. */
 export function deleteAccount(db: DbLike, userId: string): DeleteSummary {
-	const zaehle = (tabelle: typeof records | typeof devices | typeof credentials | typeof keyWraps) =>
-		db.select().from(tabelle).where(eq(tabelle.userId, userId)).all().length;
+	const countRows = (table: typeof records | typeof devices | typeof credentials | typeof keyWraps) =>
+		db.select().from(table).where(eq(table.userId, userId)).all().length;
 
-	const summe: DeleteSummary = {
-		records: zaehle(records),
-		devices: zaehle(devices),
-		passkeys: zaehle(credentials),
-		wraps: zaehle(keyWraps)
+	const summary: DeleteSummary = {
+		records: countRows(records),
+		devices: countRows(devices),
+		passkeys: countRows(credentials),
+		wraps: countRows(keyWraps)
 	};
 
 	db.delete(records).where(eq(records.userId, userId)).run();
@@ -55,11 +55,11 @@ export function deleteAccount(db: DbLike, userId: string): DeleteSummary {
 
 	db.delete(users).where(eq(users.id, userId)).run();
 
-	return summe;
+	return summary;
 }
 
 /** Das Schreibprotokoll in die Datenbank schieben und abschneiden. */
-export function raeumeSpuren(raw: { pragma(s: string): unknown }): void {
+export function cleanupTraces(raw: { pragma(s: string): unknown }): void {
 	try {
 		raw.pragma("wal_checkpoint(TRUNCATE)");
 	} catch {

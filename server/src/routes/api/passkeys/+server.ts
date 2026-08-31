@@ -29,13 +29,13 @@ export const GET: RequestHandler = ({ locals }) => {
 export const PATCH: RequestHandler = async ({ locals, request }) => {
 	if (!locals.userId) error(401, "Nicht angemeldet");
 	const body = await request.json().catch(() => null);
-	const kennung = String(body?.id ?? "");
+	const hostId = String(body?.id ?? "");
 	const label = String(body?.label ?? "").trim().slice(0, 64) || null;
 
 	const r = locals.db
 		.update(credentials)
 		.set({ label })
-		.where(and(eq(credentials.id, kennung), eq(credentials.userId, locals.userId)))
+		.where(and(eq(credentials.id, hostId), eq(credentials.userId, locals.userId)))
 		.run();
 	if (r.changes === 0) error(404, "Passkey unbekannt");
 	return json({ ok: true, label });
@@ -45,24 +45,24 @@ export const PATCH: RequestHandler = async ({ locals, request }) => {
 export const DELETE: RequestHandler = async ({ locals, request }) => {
 	if (!locals.userId) error(401, "Nicht angemeldet");
 	const body = await request.json().catch(() => null);
-	const kennung = String(body?.id ?? "");
+	const hostId = String(body?.id ?? "");
 	const userId = locals.userId;
 
-	const alle = locals.db.select().from(credentials).where(eq(credentials.userId, userId)).all();
-	if (!alle.some((c) => c.id === kennung)) error(404, "Passkey unbekannt");
-	if (alle.length <= 1) {
+	const all = locals.db.select().from(credentials).where(eq(credentials.userId, userId)).all();
+	if (!all.some((c) => c.id === hostId)) error(404, "Passkey unbekannt");
+	if (all.length <= 1) {
 		error(409, "Das ist der letzte Passkey – ohne ihn käme niemand mehr in das Konto");
 	}
 
 	locals.db.transaction((tx) => {
 		tx.delete(credentials)
-			.where(and(eq(credentials.id, kennung), eq(credentials.userId, userId)))
+			.where(and(eq(credentials.id, hostId), eq(credentials.userId, userId)))
 			.run();
 		// Die Verpackung, die an diesem Passkey hing, laesst sich ohne ihn nicht
 		// mehr oeffnen. Sie stehen zu lassen hiesse, eine Tuer ohne Schluessel zu
 		// verwahren.
 		tx.delete(keyWraps)
-			.where(and(eq(keyWraps.userId, userId), eq(keyWraps.credentialId, kennung)))
+			.where(and(eq(keyWraps.userId, userId), eq(keyWraps.credentialId, hostId)))
 			.run();
 	});
 

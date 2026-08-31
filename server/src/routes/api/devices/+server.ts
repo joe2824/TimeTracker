@@ -8,8 +8,8 @@ export const DELETE: RequestHandler = async ({ locals, request }) => {
 	if (!locals.userId) error(401, "Nicht angemeldet");
 
 	const body = await request.json().catch(() => null);
-	const gewuenscht = String(body?.deviceId ?? "");
-	const deviceId = gewuenscht || locals.deviceId;
+	const requested = String(body?.deviceId ?? "");
+	const deviceId = requested || locals.deviceId;
 
 	// Kein Token, keine ID: dann ist das eine Browser-Sitzung, die sich selbst
 	// loesen will - und die hat kein Geraet, sondern ein Cookie. Dafuer ist

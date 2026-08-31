@@ -36,12 +36,12 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	}
 
 	const label = String(body?.label ?? "Wiederhergestelltes Gerät").trim().slice(0, 64);
-	const geraet = createDevice(locals.db, user.id, label);
+	const deviceRow = createDevice(locals.db, user.id, label);
 
 	return json({
 		userId: user.id,
 		displayName: user.displayName,
-		deviceId: geraet.id,
-		deviceToken: geraet.token
+		deviceId: deviceRow.id,
+		deviceToken: deviceRow.token
 	});
 };

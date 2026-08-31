@@ -4,7 +4,7 @@ import type { RequestHandler } from "./$types";
 import { credentials, devices, keyWraps, users } from "$lib/server/db/schema";
 import { eq } from "drizzle-orm";
 import { currentSeq } from "$lib/server/sync";
-import { deleteAccount, raeumeSpuren } from "$lib/server/account";
+import { deleteAccount, cleanupTraces } from "$lib/server/account";
 import { clearSessionCookie } from "$lib/server/session";
 import { takeChallenge } from "$lib/server/auth";
 import { verifyAuthentication } from "$lib/server/webauthn";
@@ -70,33 +70,33 @@ export const DELETE: RequestHandler = async ({ locals, cookies, request }) => {
 	// Mensch gerade eben zugestimmt haben.
 	if (!locals.deviceId) {
 		const body = await request.json().catch(() => null);
-		const aufgabe = takeChallenge(locals.db, String(body?.challengeId ?? ""), "delete");
-		if (!aufgabe) error(400, "Bestätigung abgelaufen – bitte erneut versuchen");
+		const task = takeChallenge(locals.db, String(body?.challengeId ?? ""), "delete");
+		if (!task) error(400, "Bestätigung abgelaufen – bitte erneut versuchen");
 		// Die Aufgabe wurde fuer DIESES Konto ausgegeben. Ohne diese Zeile liesse
 		// sich eine anderswo abgeholte Aufgabe hier einloesen.
-		if (aufgabe.userId !== user.id) error(403, "Bestätigung gehört zu einem anderen Konto");
+		if (task.userId !== user.id) error(403, "Bestätigung gehört zu einem anderen Konto");
 
-		const geprueft = await verifyAuthentication(
+		const checked = await verifyAuthentication(
 			locals.db,
 			body?.response,
-			aufgabe.challenge,
+			task.challenge,
 			// Nutzerpruefung ist Pflicht: der Passkey allein wuerde nur beweisen,
 			// dass das Geraet da ist, nicht dass ein Mensch zugestimmt hat.
 			true
 		);
-		if (!geprueft) error(401, "Bestätigung fehlgeschlagen");
+		if (!checked) error(401, "Bestätigung fehlgeschlagen");
 		// Und der Passkey muss zu diesem Konto gehoeren - ein gueltiger Passkey
 		// eines FREMDEN Kontos ist ebenfalls ein gueltiger Passkey.
-		if (geprueft.userId !== user.id) error(403, "Passkey gehört zu einem anderen Konto");
+		if (checked.userId !== user.id) error(403, "Passkey gehört zu einem anderen Konto");
 	}
 
 	// Alles oder nichts: ein halb geloeschtes Konto haette keinen Zugang mehr,
 	// aber die Daten laegen noch da - und niemand koennte sie noch loeschen lassen.
-	const summe = locals.db.transaction((tx) => deleteAccount(tx, user.id));
+	const summary = locals.db.transaction((tx) => deleteAccount(tx, user.id));
 	// Erst NACH der Transaktion: waehrend sie laeuft, laesst sich das
 	// Schreibprotokoll nicht abschneiden.
-	raeumeSpuren(locals.db.$client);
+	cleanupTraces(locals.db.$client);
 
 	clearSessionCookie(cookies);
-	return json({ ok: true, ...summe });
+	return json({ ok: true, ...summary });
 };

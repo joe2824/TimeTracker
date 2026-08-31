@@ -134,9 +134,9 @@ export function revokeDevice(db: Db, userId: string, deviceId: string): boolean 
 
 /** Abgelaufenes wegraeumen. */
 export function cleanupExpired(db: Db): void {
-	const jetzt = Date.now();
-	db.delete(challenges).where(lt(challenges.expiresAt, jetzt)).run();
-	db.delete(sessions).where(lt(sessions.expiresAt, jetzt)).run();
+	const nowMs = Date.now();
+	db.delete(challenges).where(lt(challenges.expiresAt, nowMs)).run();
+	db.delete(sessions).where(lt(sessions.expiresAt, nowMs)).run();
 
 	// Abgelaufene Kopplungen. Wer abholt, loescht seine Zeile dabei selbst (siehe
 	// /api/pair/claim) - was hier abgelaufen liegen bleibt, wurde also nie
@@ -144,15 +144,15 @@ export function cleanupExpired(db: Db): void {
 	// neue Geraet ist nie erschienen. Dann gehoert dieses Geraet widerrufen: das
 	// Token ist gueltig, aber niemand hatte es je in den Haenden, und es stuende
 	// sonst bis zur Handarbeit in der Geraeteliste seines Kontos.
-	const liegengeblieben = db.select().from(pairings).where(lt(pairings.expiresAt, jetzt)).all();
-	for (const p of liegengeblieben) {
+	const stale = db.select().from(pairings).where(lt(pairings.expiresAt, nowMs)).all();
+	for (const p of stale) {
 		if (!p.deviceToken) continue;
 		db.update(devices)
-			.set({ revokedAt: jetzt })
+			.set({ revokedAt: nowMs })
 			.where(and(eq(devices.tokenHash, hashSecret(p.deviceToken)), isNull(devices.revokedAt)))
 			.run();
 	}
-	db.delete(pairings).where(lt(pairings.expiresAt, jetzt)).run();
+	db.delete(pairings).where(lt(pairings.expiresAt, nowMs)).run();
 }
 
 /** Ob es das Konto (noch) gibt - nach einem Widerruf oder einer Loeschung. */

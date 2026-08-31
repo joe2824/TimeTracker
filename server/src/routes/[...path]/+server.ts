@@ -34,7 +34,7 @@ export const GET: RequestHandler = async ({ params }) => {
 	// Die API antwortet selbst. Landet eine /api-Adresse hier, gibt es sie
 	// wirklich nicht - und dann ist "nicht gefunden" die richtige Antwort, nicht
 	// eine HTML-Seite, mit der ein Client nichts anfangen kann.
-	if (params.pfad?.startsWith("api/")) error(404, "Unbekannter Endpunkt");
+	if (params.path?.startsWith("api/")) error(404, "Unbekannter Endpunkt");
 
 	try {
 		// In Produktion im Speicher cachen, in Entwicklung frisch von Platte lesen,

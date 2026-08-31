@@ -31,12 +31,12 @@ function api(token: string | null, path: string, init: RequestInit = {}) {
 }
 
 /** Anfrage aus einer eigenen Adresse - so verbraucht kein Test den Vorrat des naechsten. */
-let adressZaehler = 0;
-function apiVon(token: string | null, path: string, init: RequestInit = {}) {
-	adressZaehler++;
+let addressCounter = 0;
+function apiFrom(token: string | null, path: string, init: RequestInit = {}) {
+	addressCounter++;
 	return api(token, path, {
 		...init,
-		headers: { "x-echte-adresse": `10.0.0.${adressZaehler}`, ...(init.headers ?? {}) }
+		headers: { "x-echte-adresse": `10.0.0.${addressCounter}`, ...(init.headers ?? {}) }
 	});
 }
 
@@ -81,8 +81,8 @@ beforeAll(async () => {
 	// dieselbe Datei - beide Seiten sehen damit denselben Bestand.
 	// Der GEBAUTE Server, nicht die Quellen: nur so ist geprueft, was spaeter
 	// wirklich laeuft - samt Adapter, Kompilat und Aufloesung der Abhaengigkeiten.
-	const handlerPfad = new URL("../../../build/handler.js", import.meta.url).href;
-	const built = (await import(/* @vite-ignore */ handlerPfad)) as {
+	const handlerPath = new URL("../../../build/handler.js", import.meta.url).href;
+	const built = (await import(/* @vite-ignore */ handlerPath)) as {
 		handler: (req: IncomingMessage, res: ServerResponse, next: () => void) => void;
 	};
 	const { createServer } = await import("node:http");
@@ -141,11 +141,11 @@ describe("Zugang", () => {
 	it("weist ein widerrufenes Geraet ab", async () => {
 		const me = await (await api(annaToken, "/api/me")).json();
 		const deviceId = me.devices[0].id;
-		const weg = await api(annaToken, "/api/devices", {
+		const gone = await api(annaToken, "/api/devices", {
 			method: "DELETE",
 			body: JSON.stringify({ deviceId })
 		});
-		expect(weg.status).toBe(200);
+		expect(gone.status).toBe(200);
 		expect((await api(annaToken, "/api/sync")).status).toBe(401);
 	});
 
@@ -185,20 +185,20 @@ describe("Abgleich ueber HTTP", () => {
 			method: "POST",
 			body: JSON.stringify({ records: [rec("e1")] })
 		});
-		const zweit = await api(annaToken, "/api/sync", {
+		const second = await api(annaToken, "/api/sync", {
 			method: "POST",
 			body: JSON.stringify({ records: [rec("e1", { baseRev: 0 })] })
 		});
-		const body = await zweit.json();
+		const body = await second.json();
 		expect(body.accepted).toEqual([]);
 		expect(body.conflicts).toHaveLength(1);
 	});
 
 	it("weist einen masslosen Stapel ab", async () => {
-		const zuViele = Array.from({ length: 501 }, (_, i) => rec(`e${i}`));
+		const tooMany = Array.from({ length: 501 }, (_, i) => rec(`e${i}`));
 		const r = await api(annaToken, "/api/sync", {
 			method: "POST",
-			body: JSON.stringify({ records: zuViele })
+			body: JSON.stringify({ records: tooMany })
 		});
 		expect(r.status).toBe(413);
 	});
@@ -296,17 +296,17 @@ describe("Kopplung", () => {
 		expect(start.code).toBe(CODE);
 
 		// Noch nichts abzuholen.
-		const frueh = await (
+		const early = await (
 			await api(null, "/api/pair/claim", {
 				method: "POST",
 				body: claimBody(start.code)
 			})
 		).json();
-		expect(frueh.pending).toBe(true);
+		expect(early.pending).toBe(true);
 
 		// Schritt 2 auf dem entsperrten Geraet.
-		const gesehen = await (await api(annaToken, `/api/pair/approve?code=${start.code}`)).json();
-		expect(gesehen.publicKey).toBe("b2VmZmVudGxpY2g=");
+		const seen = await (await api(annaToken, `/api/pair/approve?code=${start.code}`)).json();
+		expect(seen.publicKey).toBe("b2VmZmVudGxpY2g=");
 		const ok = await api(annaToken, "/api/pair/approve", {
 			method: "POST",
 			body: JSON.stringify({ code: start.code, wrappedKey: "cGFrZXQ=" })
@@ -370,25 +370,25 @@ describe("Kopplung", () => {
 	// Vorrat der uebrigen Tests aufgebraucht.
 	it("gibt ohne Abhol-Geheimnis nichts heraus", async () => {
 		const code = "AAAABBBBCCCC";
-		await apiVon(null, "/api/pair/start", { method: "POST", body: startBody("cHVi", "Handy", code) });
+		await apiFrom(null, "/api/pair/start", { method: "POST", body: startBody("cHVi", "Handy", code) });
 		await api(annaToken, "/api/pair/approve", {
 			method: "POST",
 			body: JSON.stringify({ code, wrappedKey: "cGFrZXQ=" })
 		});
 
 		// Nur der Code - wie ihn jemand vom Bildschirm ablesen koennte.
-		const ohne = await apiVon(null, "/api/pair/claim", {
+		const without = await apiFrom(null, "/api/pair/claim", {
 			method: "POST",
 			body: JSON.stringify({ code })
 		});
-		expect(ohne.status).toBe(404);
+		expect(without.status).toBe(404);
 
 		// Und das Paket liegt noch da: der Fehlgriff hat den Vorgang nicht verbraucht.
-		const echt = await (
-			await apiVon(null, "/api/pair/claim", { method: "POST", body: claimBody(code) })
+		const real = await (
+			await apiFrom(null, "/api/pair/claim", { method: "POST", body: claimBody(code) })
 		).json();
-		expect(echt.pending).toBe(false);
-		expect(echt.wrappedKey).toBe("cGFrZXQ=");
+		expect(real.pending).toBe(false);
+		expect(real.wrappedKey).toBe("cGFrZXQ=");
 	});
 
 	it("weist ein falsches Abhol-Geheimnis wie einen unbekannten Code ab", async () => {
@@ -396,12 +396,12 @@ describe("Kopplung", () => {
 		// gibt. So sieht Raten aus wie Raten - und die Bremse zaehlt es als
 		// Fehlgriff (siehe hooks.server.ts).
 		const code = "DDDDEEEEFFFF";
-		await apiVon(null, "/api/pair/start", { method: "POST", body: startBody("cHVi", "Handy", code) });
-		const falsch = await apiVon(null, "/api/pair/claim", {
+		await apiFrom(null, "/api/pair/start", { method: "POST", body: startBody("cHVi", "Handy", code) });
+		const wrong = await apiFrom(null, "/api/pair/claim", {
 			method: "POST",
 			body: claimBody(code, "danebengeraten")
 		});
-		expect(falsch.status).toBe(404);
+		expect(wrong.status).toBe(404);
 	});
 
 	it("laesst kein fremdes Abhol-Geheimnis nachschieben", async () => {
@@ -409,23 +409,23 @@ describe("Kopplung", () => {
 		// samt Code hat, duerfte sonst mit einem eigenen Geheimnis noch einmal
 		// starten und dem echten Geraet das Token wegnehmen.
 		const code = "GGGGHHHHJJJJ";
-		await apiVon(null, "/api/pair/start", { method: "POST", body: startBody("cHVi", "Handy", code) });
+		await apiFrom(null, "/api/pair/start", { method: "POST", body: startBody("cHVi", "Handy", code) });
 
-		const fremd = await apiVon(null, "/api/pair/start", {
+		const foreign = await apiFrom(null, "/api/pair/start", {
 			method: "POST",
 			body: startBody("cHVi", "Handy", code, sha256Hex("meins"))
 		});
-		expect(fremd.status).toBe(409);
+		expect(foreign.status).toBe(409);
 
 		// Das echte Geheimnis gilt weiterhin.
 		await api(annaToken, "/api/pair/approve", {
 			method: "POST",
 			body: JSON.stringify({ code, wrappedKey: "cGFrZXQ=" })
 		});
-		const echt = await (
-			await apiVon(null, "/api/pair/claim", { method: "POST", body: claimBody(code) })
+		const real = await (
+			await apiFrom(null, "/api/pair/claim", { method: "POST", body: claimBody(code) })
 		).json();
-		expect(echt.pending).toBe(false);
+		expect(real.pending).toBe(false);
 	});
 
 	it("rechnet denselben Hash wie das Geraet", () => {
@@ -438,7 +438,7 @@ describe("Kopplung", () => {
 	it("beginnt keine Kopplung ohne Abhol-Geheimnis", async () => {
 		// Aeltere Fassungen der Anwendung schicken keinen mit. Der Vorgang wird
 		// abgewiesen, statt still auf die schwaechere Regel zurueckzufallen.
-		const r = await apiVon(null, "/api/pair/start", {
+		const r = await apiFrom(null, "/api/pair/start", {
 			method: "POST",
 			body: JSON.stringify({ publicKey: "cHVi", label: "Alt", code: "KKKKLLLLMMMM" })
 		});
@@ -467,15 +467,15 @@ describe("Kopplung", () => {
 			body: startBody("ZWNodA==", "Echt", code)
 		});
 
-		const fremd = await api(null, "/api/pair/start", {
+		const foreign = await api(null, "/api/pair/start", {
 			method: "POST",
 			body: startBody("ZmFsc2No", "Untergeschoben", code)
 		});
-		expect(fremd.status).toBe(409);
+		expect(foreign.status).toBe(409);
 
 		// Und der echte Schluessel steht noch da.
-		const gesehen = await (await api(annaToken, `/api/pair/approve?code=${code}`)).json();
-		expect(gesehen.publicKey).toBe("ZWNodA==");
+		const seen = await (await api(annaToken, `/api/pair/approve?code=${code}`)).json();
+		expect(seen.publicKey).toBe("ZWNodA==");
 	});
 
 	it("nimmt denselben Vorgang noch einmal an, ohne das Paket zu verlieren", async () => {
@@ -502,26 +502,26 @@ describe("Kopplung", () => {
 describe("Ereigniskanal", () => {
 	it("meldet den aktuellen Stand und weckt bei einer Aenderung", async () => {
 		const ac = new AbortController();
-		const antwort = await fetch(`${base}/api/sync/stream`, {
+		const answer = await fetch(`${base}/api/sync/stream`, {
 			headers: { authorization: `Bearer ${annaToken}` },
 			signal: ac.signal
 		});
-		expect(antwort.headers.get("content-type")).toContain("text/event-stream");
+		expect(answer.headers.get("content-type")).toContain("text/event-stream");
 
-		const reader = antwort.body!.getReader();
+		const reader = answer.body!.getReader();
 		const dec = new TextDecoder();
-		const lies = async () => dec.decode((await reader.read()).value);
+		const read = async () => dec.decode((await reader.read()).value);
 
-		expect(await lies()).toContain("event: hello");
+		expect(await read()).toContain("event: hello");
 
 		// Ein zweites Geraet schreibt - der Kanal muss davon erzaehlen.
 		await api(annaToken, "/api/sync", {
 			method: "POST",
 			body: JSON.stringify({ records: [rec("e1")] })
 		});
-		const nachricht = await lies();
-		expect(nachricht).toContain("event: change");
-		expect(nachricht).toContain('"seq":1');
+		const msg = await read();
+		expect(msg).toContain("event: change");
+		expect(msg).toContain('"seq":1');
 
 		ac.abort();
 		await reader.cancel().catch(() => {});
@@ -529,11 +529,11 @@ describe("Ereigniskanal", () => {
 
 	it("erzaehlt nicht von den Aenderungen eines fremden Kontos", async () => {
 		const ac = new AbortController();
-		const antwort = await fetch(`${base}/api/sync/stream`, {
+		const answer = await fetch(`${base}/api/sync/stream`, {
 			headers: { authorization: `Bearer ${bodoToken}` },
 			signal: ac.signal
 		});
-		const reader = antwort.body!.getReader();
+		const reader = answer.body!.getReader();
 		const dec = new TextDecoder();
 		expect(dec.decode((await reader.read()).value)).toContain("event: hello");
 
@@ -566,23 +566,23 @@ describe("Warteschleife statt Ereigniskanal", () => {
 			body: JSON.stringify({ records: [rec("e1")] })
 		});
 
-		const begonnen = Date.now();
-		const antwort = await api(annaToken, "/api/sync/wait?since=0");
-		const daten = await antwort.json();
+		const started = Date.now();
+		const answer = await api(annaToken, "/api/sync/wait?since=0");
+		const payloadData = await answer.json();
 
-		expect(antwort.status).toBe(200);
-		expect(daten.changed).toBe(true);
-		expect(daten.seq).toBeGreaterThan(0);
+		expect(answer.status).toBe(200);
+		expect(payloadData.changed).toBe(true);
+		expect(payloadData.seq).toBeGreaterThan(0);
 		// Nicht gewartet: sonst verpasst ein Client jede Aenderung, die zwischen
 		// seinem Abgleich und dieser Anfrage passiert ist.
-		expect(Date.now() - begonnen).toBeLessThan(1000);
+		expect(Date.now() - started).toBeLessThan(1000);
 	});
 
 	it("haelt offen und antwortet, sobald geschrieben wird", async () => {
-		const stand = await (await api(annaToken, "/api/sync/wait?since=0")).json().catch(() => null);
-		const seit = stand?.seq ?? 0;
+		const knownSeq = await (await api(annaToken, "/api/sync/wait?since=0")).json().catch(() => null);
+		const sinceTs = knownSeq?.seq ?? 0;
 
-		const wartet = api(annaToken, `/api/sync/wait?since=${seit}`);
+		const waiting = api(annaToken, `/api/sync/wait?since=${sinceTs}`);
 		// Erst schreiben, wenn die Anfrage wirklich haengt - sonst faengt sie der
 		// Schnellweg oben ab und der Test prueft nichts.
 		await new Promise((r) => setTimeout(r, 150));
@@ -591,14 +591,14 @@ describe("Warteschleife statt Ereigniskanal", () => {
 			body: JSON.stringify({ records: [rec("e2")] })
 		});
 
-		const daten = await (await wartet).json();
-		expect(daten.changed).toBe(true);
-		expect(daten.seq).toBeGreaterThan(seit);
+		const payloadData = await (await waiting).json();
+		expect(payloadData.changed).toBe(true);
+		expect(payloadData.seq).toBeGreaterThan(sinceTs);
 	});
 
 	it("weckt nicht bei der Aenderung eines fremden Kontos", async () => {
-		const seit = (await (await api(bodoToken, "/api/sync/wait?since=0")).json()).seq;
-		const wartet = api(bodoToken, `/api/sync/wait?since=${seit}`);
+		const sinceTs = (await (await api(bodoToken, "/api/sync/wait?since=0")).json()).seq;
+		const waiting = api(bodoToken, `/api/sync/wait?since=${sinceTs}`);
 		await new Promise((r) => setTimeout(r, 150));
 		await api(annaToken, "/api/sync", {
 			method: "POST",
@@ -606,7 +606,7 @@ describe("Warteschleife statt Ereigniskanal", () => {
 		});
 
 		// Sie kommt nach Ablauf der Wartezeit zurueck - aber ohne Aenderung.
-		expect((await (await wartet).json()).changed).toBe(false);
+		expect((await (await waiting).json()).changed).toBe(false);
 	});
 
 	it("verlangt eine Anmeldung", async () => {
@@ -616,7 +616,7 @@ describe("Warteschleife statt Ereigniskanal", () => {
 
 describe("Konto aufloesen", () => {
 	/** Was Anna alles beim Server hat, bevor sie es aufloest. */
-	async function annaFuellen() {
+	async function fillAnna() {
 		await api(annaToken, "/api/sync", {
 			method: "POST",
 			body: JSON.stringify({ records: [rec("e1"), rec("e2"), rec("e3")] })
@@ -636,10 +636,10 @@ describe("Konto aufloesen", () => {
 		// Der Kern der Sache: ein Cookie faehrt bei jeder Anfrage automatisch mit.
 		// Es beweist, dass irgendwann jemand angemeldet war - nicht, dass gerade
 		// jetzt jemand zustimmt. Ohne frische Bestaetigung passiert nichts.
-		const sitzung = createSession(db, ANNA);
+		const session = createSession(db, ANNA);
 		const res = await fetch(`${base}/api/me`, {
 			method: "DELETE",
-			headers: { "content-type": "application/json", cookie: `tt_session=${sitzung}` },
+			headers: { "content-type": "application/json", cookie: `tt_session=${session}` },
 			body: "{}"
 		});
 		expect(res.status).toBe(400);
@@ -649,10 +649,10 @@ describe("Konto aufloesen", () => {
 	});
 
 	it("weist eine erfundene Bestaetigung ab", async () => {
-		const sitzung = createSession(db, ANNA);
+		const session = createSession(db, ANNA);
 		const start = await fetch(`${base}/api/me/confirm`, {
 			method: "POST",
-			headers: { cookie: `tt_session=${sitzung}` }
+			headers: { cookie: `tt_session=${session}` }
 		});
 		// Anna hat keinen Passkey (die Konten entstehen hier direkt in der
 		// Datenbank) - dann gibt es auch nichts zu bestaetigen, und der Weg ueber
@@ -663,7 +663,7 @@ describe("Konto aufloesen", () => {
 		// Eine zusammengereimte Antwort wird ebenfalls nicht angenommen.
 		const res = await fetch(`${base}/api/me`, {
 			method: "DELETE",
-			headers: { "content-type": "application/json", cookie: `tt_session=${sitzung}` },
+			headers: { "content-type": "application/json", cookie: `tt_session=${session}` },
 			body: JSON.stringify({ challengeId: "ausgedacht", response: { id: "x" } })
 		});
 		expect(res.status).toBe(400);
@@ -690,26 +690,26 @@ describe("Konto aufloesen", () => {
 	});
 
 	it("entfernt alles, was zum Konto gehoert", async () => {
-		await annaFuellen();
+		await fillAnna();
 
 		const res = await api(annaToken, "/api/me", { method: "DELETE", body: "{}" });
 		expect(res.status).toBe(200);
-		const summe = await res.json();
-		expect(summe).toMatchObject({ ok: true, records: 3, wraps: 1, devices: 1 });
+		const summary = await res.json();
+		expect(summary).toMatchObject({ ok: true, records: 3, wraps: 1, devices: 1 });
 
 		// Nicht der Meldung glauben, sondern nachsehen: in der Datenbank selbst
 		// darf zu diesem Konto keine einzige Zeile mehr stehen.
-		const zaehle = (tabelle: string) =>
+		const countRows = (table: string) =>
 			(
-				db.$client.prepare(`SELECT count(*) AS n FROM ${tabelle} WHERE user_id = ?`).get(ANNA) as {
+				db.$client.prepare(`SELECT count(*) AS n FROM ${table} WHERE user_id = ?`).get(ANNA) as {
 					n: number;
 				}
 			).n;
-		expect(zaehle("records")).toBe(0);
-		expect(zaehle("key_wraps")).toBe(0);
-		expect(zaehle("devices")).toBe(0);
-		expect(zaehle("credentials")).toBe(0);
-		expect(zaehle("sessions")).toBe(0);
+		expect(countRows("records")).toBe(0);
+		expect(countRows("key_wraps")).toBe(0);
+		expect(countRows("devices")).toBe(0);
+		expect(countRows("credentials")).toBe(0);
+		expect(countRows("sessions")).toBe(0);
 		expect(
 			(db.$client.prepare(`SELECT count(*) AS n FROM users WHERE id = ?`).get(ANNA) as { n: number })
 				.n
@@ -717,7 +717,7 @@ describe("Konto aufloesen", () => {
 	});
 
 	it("laesst das Konto daneben unangetastet", async () => {
-		await annaFuellen();
+		await fillAnna();
 		await api(bodoToken, "/api/sync", {
 			method: "POST",
 			body: JSON.stringify({ records: [rec("b1"), rec("b2")] })
@@ -727,8 +727,8 @@ describe("Konto aufloesen", () => {
 
 		// Bodo merkt von alldem nichts. Das ist der Punkt, an dem sich zeigt, ob
 		// die Loeschung wirklich auf ein Konto eingeschraenkt war.
-		const seite = await (await api(bodoToken, "/api/sync?since=0")).json();
-		expect(seite.records.map((r: { id: string }) => r.id).sort()).toEqual(["b1", "b2"]);
+		const pageNo = await (await api(bodoToken, "/api/sync?since=0")).json();
+		expect(pageNo.records.map((r: { id: string }) => r.id).sort()).toEqual(["b1", "b2"]);
 		expect((await api(bodoToken, "/api/me")).status).toBe(200);
 	});
 
@@ -755,10 +755,10 @@ describe("Konto aufloesen", () => {
 			method: "POST",
 			body: JSON.stringify({ records: [rec("e1", { baseRev: 7 })] })
 		});
-		const antwort = await res.json();
-		expect(antwort.accepted).toHaveLength(0);
-		expect(antwort.conflicts).toHaveLength(1);
-		expect(antwort.conflicts[0].current.rev).toBe(0);
+		const answer = await res.json();
+		expect(answer.accepted).toHaveLength(0);
+		expect(answer.conflicts).toHaveLength(1);
+		expect(answer.conflicts[0].current.rev).toBe(0);
 	});
 });
 
@@ -776,14 +776,14 @@ describe("Geraet loesen", () => {
 			method: "POST",
 			body: JSON.stringify({ records: [rec("e1")] })
 		});
-		const zweites = createDevice(db, ANNA, "Annas Handy").token;
+		const secondD = createDevice(db, ANNA, "Annas Handy").token;
 
 		await api(annaToken, "/api/devices", { method: "DELETE", body: "{}" });
 
 		// Das andere Geraet arbeitet weiter, und die Daten sind vollstaendig da.
 		// Genau hierin unterscheidet sich "Geraet loesen" vom Aufloesen.
-		const seite = await (await api(zweites, "/api/sync?since=0")).json();
-		expect(seite.records).toHaveLength(1);
+		const pageNo = await (await api(secondD, "/api/sync?since=0")).json();
+		expect(pageNo.records).toHaveLength(1);
 	});
 
 	it("gibt eine Sitzung ohne Geraet nicht als Geraet aus", async () => {
@@ -804,11 +804,11 @@ describe("Warten beim Koppeln", () => {
 		// hat, und ein Kopplungscode gilt zehn Minuten. Das sind bis zu
 		// dreihundert Anfragen fuer einen voellig normalen Vorgang.
 		const code = "WWWWXXXXYYYY";
-		const gestartet = await api(null, "/api/pair/start", {
+		const started = await api(null, "/api/pair/start", {
 			method: "POST",
 			body: startBody("AAAA", "Wartendes Gerät", code)
 		});
-		expect(gestartet.status).toBe(200);
+		expect(started.status).toBe(200);
 
 		for (let i = 0; i < 60; i++) {
 			const res = await api(null, "/api/pair/claim", {
@@ -822,18 +822,18 @@ describe("Warten beim Koppeln", () => {
 
 	it("bremst das Raten weiterhin", async () => {
 		// Ein Fehlgriff ist ein Fehlgriff - egal wie oft jemand es versucht.
-		let gebremst = false;
+		let throttled = false;
 		for (let i = 0; i < 40; i++) {
 			const res = await api(null, "/api/pair/claim", {
 				method: "POST",
 				body: JSON.stringify({ code: `RATEVERSUCH${i}` })
 			});
 			if (res.status === 429) {
-				gebremst = true;
+				throttled = true;
 				break;
 			}
 		}
-		expect(gebremst).toBe(true);
+		expect(throttled).toBe(true);
 	});
 });
 
@@ -843,29 +843,29 @@ describe("Bremse und Herkunft", () => {
 		// Geraete-Token heraus. Der Code hat vierzig Bit - rechnerisch nicht zu
 		// raten. Aber "rechnerisch nicht" ist eine Aussage ueber einen Angreifer,
 		// der ehrlich rechnet, nicht ueber einen, der oft fragt.
-		let gebremst = false;
+		let throttled = false;
 		for (let i = 0; i < 40; i++) {
 			const res = await api(null, "/api/pair/claim", {
 				method: "POST",
 				body: JSON.stringify({ code: `RATEN${i}` })
 			});
 			if (res.status === 429) {
-				gebremst = true;
+				throttled = true;
 				expect(res.headers.get("retry-after")).toBeTruthy();
 				break;
 			}
 		}
-		expect(gebremst).toBe(true);
+		expect(throttled).toBe(true);
 	});
 
 	it("weist eine schreibende Anfrage von fremder Herkunft ab", async () => {
-		const sitzung = createSession(db, ANNA);
+		const session = createSession(db, ANNA);
 		const res = await fetch(`${base}/api/sync`, {
 			method: "POST",
 			headers: {
 				"content-type": "application/json",
 				origin: "https://boeswillig.example",
-				cookie: `tt_session=${sitzung}`
+				cookie: `tt_session=${session}`
 			},
 			body: JSON.stringify({ records: [rec("x")] })
 		});
@@ -873,13 +873,13 @@ describe("Bremse und Herkunft", () => {
 	});
 
 	it("laesst die eigene Herkunft durch", async () => {
-		const sitzung = createSession(db, ANNA);
+		const session = createSession(db, ANNA);
 		const res = await fetch(`${base}/api/sync`, {
 			method: "POST",
 			headers: {
 				"content-type": "application/json",
 				origin: "http://localhost:5199",
-				cookie: `tt_session=${sitzung}`
+				cookie: `tt_session=${session}`
 			},
 			body: JSON.stringify({ records: [rec("x")] })
 		});
@@ -923,14 +923,14 @@ describe("Herkunft unter verschiedenen Namen", () => {
 	// von der eigenen Seite dieselbe Seite - und muss durchkommen. Sonst kann
 	// sich niemand registrieren, der die Adresse anders tippt als ORIGIN.
 	it("laesst die eigene Adresse durch, auch wenn sie nicht ORIGIN ist", async () => {
-		const sitzung = createSession(db, ANNA);
+		const session = createSession(db, ANNA);
 		const res = await fetch(`${base}/api/sync`, {
 			method: "POST",
 			headers: {
 				"content-type": "application/json",
 				// Genau die Adresse, unter der diese Anfrage hereinkommt.
 				origin: base,
-				cookie: `tt_session=${sitzung}`
+				cookie: `tt_session=${session}`
 			},
 			body: JSON.stringify({ records: [rec("x")] })
 		});
@@ -938,13 +938,13 @@ describe("Herkunft unter verschiedenen Namen", () => {
 	});
 
 	it("weist eine wirklich fremde Seite weiterhin ab", async () => {
-		const sitzung = createSession(db, ANNA);
+		const session = createSession(db, ANNA);
 		const res = await fetch(`${base}/api/sync`, {
 			method: "POST",
 			headers: {
 				"content-type": "application/json",
 				origin: "https://boeswillig.example",
-				cookie: `tt_session=${sitzung}`
+				cookie: `tt_session=${session}`
 			},
 			body: JSON.stringify({ records: [rec("x")] })
 		});
@@ -953,7 +953,7 @@ describe("Herkunft unter verschiedenen Namen", () => {
 });
 
 describe("Verwaltung", () => {
-	function zumVerwalter(id: string) {
+	function makeAdmin(id: string) {
 		db.$client.prepare("UPDATE users SET is_admin = 1 WHERE id = ?").run(id);
 	}
 
@@ -968,31 +968,31 @@ describe("Verwaltung", () => {
 	});
 
 	it("laesst einen Verwalter ausstellen und ansehen", async () => {
-		zumVerwalter(ANNA);
+		makeAdmin(ANNA);
 		const res = await api(annaToken, "/api/admin/invites", {
 			method: "POST",
-			body: JSON.stringify({ note: "für Bodo", gueltigTage: 7 })
+			body: JSON.stringify({ note: "für Bodo", validDays: 7 })
 		});
 		expect(res.status).toBe(201);
 		const code = (await res.json()).code as string;
 		// Vier Gruppen zu vier Zeichen - vorlesbar, ohne verwechselbare Zeichen.
 		expect(code).toMatch(/^[A-HJ-NP-Z2-9]{4}(-[A-HJ-NP-Z2-9]{4}){3}$/);
 
-		const liste = await (await api(annaToken, "/api/admin/invites")).json();
-		expect(liste.invites.some((i: { code: string }) => i.code === code)).toBe(true);
+		const listed = await (await api(annaToken, "/api/admin/invites")).json();
+		expect(listed.invites.some((i: { code: string }) => i.code === code)).toBe(true);
 	});
 
 	it("der ausgestellte Code oeffnet die Registrierung genau einmal", async () => {
-		zumVerwalter(ANNA);
+		makeAdmin(ANNA);
 		const { code } = await (
 			await api(annaToken, "/api/admin/invites", { method: "POST", body: "{}" })
 		).json();
 
-		const erste = await api(null, "/api/auth/register/start", {
+		const first = await api(null, "/api/auth/register/start", {
 			method: "POST",
 			body: JSON.stringify({ displayName: "Neuling", invite: code })
 		});
-		expect(erste.status).toBe(200);
+		expect(first.status).toBe(200);
 
 		// Entwertet wird erst beim Anlegen des Kontos - ein abgebrochener Versuch
 		// darf die Einladung nicht verbrauchen.
@@ -1001,34 +1001,34 @@ describe("Verwaltung", () => {
 			"irgendwer",
 			code
 		);
-		const zweite = await api(null, "/api/auth/register/start", {
+		const secondB = await api(null, "/api/auth/register/start", {
 			method: "POST",
 			body: JSON.stringify({ displayName: "Noch einer", invite: code })
 		});
-		expect(zweite.status).toBe(403);
+		expect(secondB.status).toBe(403);
 	});
 
 	it("ein zurueckgezogener Code gilt nicht mehr", async () => {
-		zumVerwalter(ANNA);
+		makeAdmin(ANNA);
 		const { code } = await (
 			await api(annaToken, "/api/admin/invites", { method: "POST", body: "{}" })
 		).json();
 
-		const weg = await api(annaToken, "/api/admin/invites", {
+		const gone = await api(annaToken, "/api/admin/invites", {
 			method: "DELETE",
 			body: JSON.stringify({ code })
 		});
-		expect(weg.status).toBe(200);
+		expect(gone.status).toBe(200);
 
-		const versuch = await api(null, "/api/auth/register/start", {
+		const attempt = await api(null, "/api/auth/register/start", {
 			method: "POST",
 			body: JSON.stringify({ displayName: "Zu spät", invite: code })
 		});
-		expect(versuch.status).toBe(403);
+		expect(attempt.status).toBe(403);
 	});
 
 	it("ein abgelaufener Code gilt nicht mehr", async () => {
-		zumVerwalter(ANNA);
+		makeAdmin(ANNA);
 		const { code } = await (
 			await api(annaToken, "/api/admin/invites", { method: "POST", body: "{}" })
 		).json();
@@ -1036,34 +1036,34 @@ describe("Verwaltung", () => {
 			.prepare("UPDATE invites SET expires_at = ? WHERE code = ?")
 			.run(Date.now() - 1000, code);
 
-		const versuch = await api(null, "/api/auth/register/start", {
+		const attempt = await api(null, "/api/auth/register/start", {
 			method: "POST",
 			body: JSON.stringify({ displayName: "Zu spät", invite: code })
 		});
-		expect(versuch.status).toBe(403);
+		expect(attempt.status).toBe(403);
 	});
 
 	it("meldet die Rolle in /api/me", async () => {
 		expect((await (await api(annaToken, "/api/me")).json()).isAdmin).toBe(false);
-		zumVerwalter(ANNA);
+		makeAdmin(ANNA);
 		expect((await (await api(annaToken, "/api/me")).json()).isAdmin).toBe(true);
 	});
 
 	it("ein Verwalter kommt trotzdem nicht an fremde Daten", async () => {
-		zumVerwalter(ANNA);
+		makeAdmin(ANNA);
 		await api(bodoToken, "/api/sync", {
 			method: "POST",
 			body: JSON.stringify({ records: [rec("b1")] })
 		});
 		// Die Rolle regelt, wer hereindarf - nicht, wer etwas sieht. Auch als
 		// Verwalter sieht Anna ausschliesslich ihr eigenes Konto.
-		const seite = await (await api(annaToken, "/api/sync?since=0")).json();
-		expect(seite.records).toHaveLength(0);
+		const pageNo = await (await api(annaToken, "/api/sync?since=0")).json();
+		expect(pageNo.records).toHaveLength(0);
 		expect((await (await api(annaToken, "/api/me")).json()).userId).toBe(ANNA);
 	});
 
 	it("laesst statische Einladungscodes per PATCH deaktivieren und aktivieren", async () => {
-		zumVerwalter(ANNA);
+		makeAdmin(ANNA);
 		const get1 = await (await api(annaToken, "/api/admin/invites")).json();
 		expect(get1).toHaveProperty("envInvitesConfigured");
 		expect(get1).toHaveProperty("envInvitesActive");
@@ -1089,7 +1089,7 @@ describe("Verwaltung", () => {
 	});
 
 	it("laesst offene Registrierung per PATCH aktivieren und deaktivieren", async () => {
-		zumVerwalter(ANNA);
+		makeAdmin(ANNA);
 		// Aktivieren
 		const patch1 = await api(annaToken, "/api/admin/invites", {
 			method: "PATCH",
@@ -1110,7 +1110,7 @@ describe("Verwaltung", () => {
 	});
 
 	it("erlaubt einem Verwalter Backups aufzulisten, anzulegen, wiederherzustellen und zu löschen", async () => {
-		zumVerwalter(ANNA);
+		makeAdmin(ANNA);
 		// 1. Manuelles Backup erstellen
 		const postRes = await api(annaToken, "/api/admin/backups", { method: "POST" });
 		expect(postRes.status).toBe(201);
@@ -1148,9 +1148,9 @@ describe("Verwaltung", () => {
 });
 
 /** Eine Anfrage mit selbst gesetzter Host-Kopfzeile. */
-async function roheAnfrage(headers: Record<string, string>): Promise<number> {
+async function rawRequest(headers: Record<string, string>): Promise<number> {
 	const { request } = await import("node:http");
-	const rumpf = JSON.stringify({ records: [rec("roh")] });
+	const bodyText = JSON.stringify({ records: [rec("roh")] });
 	return new Promise<number>((auf, ab) => {
 		const req = request(
 			{
@@ -1158,7 +1158,7 @@ async function roheAnfrage(headers: Record<string, string>): Promise<number> {
 				port: 5199,
 				path: "/api/sync",
 				method: "POST",
-				headers: { "content-type": "application/json", "content-length": rumpf.length, ...headers }
+				headers: { "content-type": "application/json", "content-length": bodyText.length, ...headers }
 			},
 			(res) => {
 				res.resume();
@@ -1166,7 +1166,7 @@ async function roheAnfrage(headers: Record<string, string>): Promise<number> {
 			}
 		);
 		req.on("error", ab);
-		req.end(rumpf);
+		req.end(bodyText);
 	});
 }
 
@@ -1174,27 +1174,27 @@ describe("Herkunft unter einem fremden Namen", () => {
 	// ORIGIN sagt "localhost:5199". Jemand erreicht den Dienst aber ueber den
 	// Rechnernamen im Heimnetz - und ist damit trotzdem auf der eigenen Seite.
 	it("laesst durch, wenn Origin und Host zueinander passen", async () => {
-		const sitzung = createSession(db, ANNA);
+		const session = createSession(db, ANNA);
 		// Mit `fetch` geht das nicht: die Host-Kopfzeile ist geschuetzt und wird
 		// immer auf die tatsaechliche Zieladresse gesetzt. Genau die soll hier aber
 		// eine andere sein - also von Hand.
-		const res = await roheAnfrage({
+		const res = await rawRequest({
 			host: "tracker.fritz.box",
 			origin: "http://tracker.fritz.box",
-			cookie: `tt_session=${sitzung}`
+			cookie: `tt_session=${session}`
 		});
 		expect(res).toBe(200);
 	});
 
 	it("weist ab, wenn Origin nicht zum Host passt", async () => {
-		const sitzung = createSession(db, ANNA);
+		const session = createSession(db, ANNA);
 		const res = await fetch(`${base}/api/sync`, {
 			method: "POST",
 			headers: {
 				"content-type": "application/json",
 				host: "tracker.fritz.box",
 				origin: "https://boeswillig.example",
-				cookie: `tt_session=${sitzung}`
+				cookie: `tt_session=${session}`
 			},
 			body: JSON.stringify({ records: [rec("x")] })
 		});
@@ -1202,14 +1202,14 @@ describe("Herkunft unter einem fremden Namen", () => {
 	});
 
 	it("beruecksichtigt die weitergereichte Kopfzeile hinter einem Proxy", async () => {
-		const sitzung = createSession(db, ANNA);
+		const session = createSession(db, ANNA);
 		const res = await fetch(`${base}/api/sync`, {
 			method: "POST",
 			headers: {
 				"content-type": "application/json",
 				"x-forwarded-host": "tracker.example.de",
 				origin: "https://tracker.example.de",
-				cookie: `tt_session=${sitzung}`
+				cookie: `tt_session=${session}`
 			},
 			body: JSON.stringify({ records: [rec("x")] })
 		});
@@ -1219,7 +1219,7 @@ describe("Herkunft unter einem fremden Namen", () => {
 
 describe("Passkeys verwalten", () => {
 	/** Einen Passkey direkt eintragen - ohne Authentifikator geht es nicht anders. */
-	function legePasskeyAn(userId: string, id: string, label: string | null = null) {
+	function addPasskey(userId: string, id: string, label: string | null = null) {
 		db.$client
 			.prepare(
 				"INSERT INTO credentials (id, user_id, public_key, counter, has_prf, label, created_at) VALUES (?,?,?,0,1,?,?)"
@@ -1234,8 +1234,8 @@ describe("Passkeys verwalten", () => {
 	});
 
 	it("listet nur die eigenen", async () => {
-		legePasskeyAn(ANNA, "annas-schluessel", "Annas Laptop");
-		legePasskeyAn(BODO, "bodos-schluessel", "Bodos Handy");
+		addPasskey(ANNA, "annas-schluessel", "Annas Laptop");
+		addPasskey(BODO, "bodos-schluessel", "Bodos Handy");
 
 		const { passkeys } = await (await api(annaToken, "/api/passkeys")).json();
 		expect(passkeys).toHaveLength(1);
@@ -1246,7 +1246,7 @@ describe("Passkeys verwalten", () => {
 		// Sonst legt derselbe Authentifikator einen zweiten Passkey fuer dasselbe
 		// Konto an - und der Mensch glaubt, er haette jetzt zwei Wege, obwohl beide
 		// an demselben Geraet haengen.
-		legePasskeyAn(ANNA, "schon-da");
+		addPasskey(ANNA, "schon-da");
 		const { options } = await (
 			await api(annaToken, "/api/passkeys/start", { method: "POST" })
 		).json();
@@ -1254,7 +1254,7 @@ describe("Passkeys verwalten", () => {
 	});
 
 	it("laesst sich umbenennen", async () => {
-		legePasskeyAn(ANNA, "annas-schluessel", "Alt");
+		addPasskey(ANNA, "annas-schluessel", "Alt");
 		const res = await api(annaToken, "/api/passkeys", {
 			method: "PATCH",
 			body: JSON.stringify({ id: "annas-schluessel", label: "Der alte Rechner" })
@@ -1265,7 +1265,7 @@ describe("Passkeys verwalten", () => {
 	});
 
 	it("laesst KEINEN fremden umbenennen", async () => {
-		legePasskeyAn(BODO, "bodos-schluessel", "Bodos Handy");
+		addPasskey(BODO, "bodos-schluessel", "Bodos Handy");
 		const res = await api(annaToken, "/api/passkeys", {
 			method: "PATCH",
 			body: JSON.stringify({ id: "bodos-schluessel", label: "gekapert" })
@@ -1274,8 +1274,8 @@ describe("Passkeys verwalten", () => {
 	});
 
 	it("entfernt einen von mehreren - samt seiner Verpackung", async () => {
-		legePasskeyAn(ANNA, "alter-rechner", "Alter Rechner");
-		legePasskeyAn(ANNA, "neues-handy", "Neues Handy");
+		addPasskey(ANNA, "alter-rechner", "Alter Rechner");
+		addPasskey(ANNA, "neues-handy", "Neues Handy");
 		await api(annaToken, "/api/wraps", {
 			method: "POST",
 			body: JSON.stringify({ kind: "passkey", payload: "verpackt", credentialId: "alter-rechner" })
@@ -1302,7 +1302,7 @@ describe("Passkeys verwalten", () => {
 		// Die Grenze, die nicht verhandelbar ist: ohne Passkey kommt niemand mehr
 		// in das Konto. Die Phrase entsperrt die DATEN, aber sie meldet niemanden
 		// an - und der Betreiber kann auch nicht helfen.
-		legePasskeyAn(ANNA, "der-einzige", "Der einzige");
+		addPasskey(ANNA, "der-einzige", "Der einzige");
 		const res = await api(annaToken, "/api/passkeys", {
 			method: "DELETE",
 			body: JSON.stringify({ id: "der-einzige" })
@@ -1314,9 +1314,9 @@ describe("Passkeys verwalten", () => {
 	});
 
 	it("laesst KEINEN fremden entfernen", async () => {
-		legePasskeyAn(ANNA, "annas-eigener");
-		legePasskeyAn(BODO, "bodos-erster");
-		legePasskeyAn(BODO, "bodos-zweiter");
+		addPasskey(ANNA, "annas-eigener");
+		addPasskey(BODO, "bodos-erster");
+		addPasskey(BODO, "bodos-zweiter");
 
 		const res = await api(annaToken, "/api/passkeys", {
 			method: "DELETE",
@@ -1342,7 +1342,7 @@ describe("Passkeys verwalten", () => {
 
 describe("Konto von einem Geraet aus anlegen", () => {
 	/** Die Registrierung ist geschlossen - also braucht jeder Versuch eine Einladung. */
-	function einladung(): string {
+	function inviteRow(): string {
 		const code = `TEST-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 		db.$client
 			.prepare("INSERT INTO invites (code, created_at) VALUES (?, ?)")
@@ -1361,7 +1361,7 @@ describe("Konto von einem Geraet aus anlegen", () => {
 	it("weist einen masslosen Namen ab", async () => {
 		const res = await api(null, "/api/auth/device", {
 			method: "POST",
-			body: JSON.stringify({ displayName: "x".repeat(200), label: "R", invite: einladung() })
+			body: JSON.stringify({ displayName: "x".repeat(200), label: "R", invite: inviteRow() })
 		});
 		expect(res.status).toBe(400);
 	});
@@ -1369,7 +1369,7 @@ describe("Konto von einem Geraet aus anlegen", () => {
 	it("legt Konto und Geraet in einem Zug an", async () => {
 		const res = await api(null, "/api/auth/device", {
 			method: "POST",
-			body: JSON.stringify({ displayName: "Neuling", label: "Neulings Rechner", invite: einladung() })
+			body: JSON.stringify({ displayName: "Neuling", label: "Neulings Rechner", invite: inviteRow() })
 		});
 		expect(res.status).toBe(200);
 		const { userId, deviceToken } = await res.json();
@@ -1377,11 +1377,11 @@ describe("Konto von einem Geraet aus anlegen", () => {
 
 		// Das Token traegt sofort - ohne das waere das Konto unerreichbar, denn
 		// einen Passkey gibt es hier nicht.
-		const ich = await (await api(deviceToken, "/api/me")).json();
-		expect(ich.userId).toBe(userId);
-		expect(ich.displayName).toBe("Neuling");
-		expect(ich.passkeys).toHaveLength(0);
-		expect(ich.devices).toHaveLength(1);
+		const self = await (await api(deviceToken, "/api/me")).json();
+		expect(self.userId).toBe(userId);
+		expect(self.displayName).toBe("Neuling");
+		expect(self.passkeys).toHaveLength(0);
+		expect(self.devices).toHaveLength(1);
 	});
 
 	it("kann sofort abgleichen", async () => {
@@ -1390,23 +1390,23 @@ describe("Konto von einem Geraet aus anlegen", () => {
 		const { deviceToken } = await (
 			await api(null, "/api/auth/device", {
 				method: "POST",
-				body: JSON.stringify({ displayName: "Neuling", label: "Rechner", invite: einladung() })
+				body: JSON.stringify({ displayName: "Neuling", label: "Rechner", invite: inviteRow() })
 			})
 		).json();
 
-		const hoch = await api(deviceToken, "/api/sync", {
+		const up = await api(deviceToken, "/api/sync", {
 			method: "POST",
 			body: JSON.stringify({ records: [rec("e1"), rec("e2")] })
 		});
-		expect(hoch.status).toBe(200);
-		expect((await hoch.json()).accepted).toHaveLength(2);
+		expect(up.status).toBe(200);
+		expect((await up.json()).accepted).toHaveLength(2);
 	});
 
 	it("nimmt die Verpackung der Phrase an", async () => {
 		const { deviceToken } = await (
 			await api(null, "/api/auth/device", {
 				method: "POST",
-				body: JSON.stringify({ displayName: "Neuling", label: "Rechner", invite: einladung() })
+				body: JSON.stringify({ displayName: "Neuling", label: "Rechner", invite: inviteRow() })
 			})
 		).json();
 
@@ -1438,13 +1438,13 @@ describe("Herkunft ohne Sitzung", () => {
 
 	it("weist eine fremde Seite MIT Sitzung weiterhin ab", async () => {
 		// Hier faehrt der Ausweis automatisch mit - und genau darum geht es.
-		const sitzung = createSession(db, ANNA);
+		const session = createSession(db, ANNA);
 		const res = await fetch(`${base}/api/sync`, {
 			method: "POST",
 			headers: {
 				"content-type": "application/json",
 				origin: "https://boeswillig.example",
-				cookie: `tt_session=${sitzung}`
+				cookie: `tt_session=${session}`
 			},
 			body: JSON.stringify({ records: [rec("x")] })
 		});
@@ -1470,28 +1470,28 @@ describe("Anlegen ohne Namen", () => {
 		expect(displayName).toBe(userId);
 
 		// Und das Konto ist sofort brauchbar.
-		const ich = await (await api(deviceToken, "/api/me")).json();
-		expect(ich.devices[0].label).toBe("Rechner");
+		const self = await (await api(deviceToken, "/api/me")).json();
+		expect(self.devices[0].label).toBe("Rechner");
 	});
 });
 
 describe("Wiederherstellung mit der Phrase", () => {
 	/** Kennung und Nachweis hinterlegen - genau so, wie die Anwendung es tut. */
-	function legeAb(token: string, felder: Record<string, unknown>) {
+	function store(token: string, fields: Record<string, unknown>) {
 		return api(token, "/api/wraps", {
 			method: "POST",
-			body: JSON.stringify({ kind: "recovery", payload: "verpacktes-chiffrat", ...felder })
+			body: JSON.stringify({ kind: "recovery", payload: "verpacktes-chiffrat", ...fields })
 		});
 	}
 
-	function konto(id: string) {
+	function account(id: string) {
 		return db.$client.prepare("SELECT recovery_id, vault_proof FROM users WHERE id = ?").get(id) as {
 			recovery_id: string | null;
 			vault_proof: string | null;
 		};
 	}
 
-	function zaehleWraps(id: string) {
+	function countWraps(id: string) {
 		return (
 			db.$client
 				.prepare("SELECT count(*) AS n FROM key_wraps WHERE user_id = ?")
@@ -1500,8 +1500,8 @@ describe("Wiederherstellung mit der Phrase", () => {
 	}
 
 	it("gibt die Verpackung zu einer bekannten Kennung heraus", async () => {
-		await legeAb(annaToken, { recoveryId: "kennung-anna", vaultProof: "beweis-anna" });
-		const res = await apiVon(null, "/api/auth/recover", {
+		await store(annaToken, { recoveryId: "kennung-anna", vaultProof: "beweis-anna" });
+		const res = await apiFrom(null, "/api/auth/recover", {
 			method: "POST",
 			body: JSON.stringify({ recoveryId: "kennung-anna" })
 		});
@@ -1512,7 +1512,7 @@ describe("Wiederherstellung mit der Phrase", () => {
 	it("verraet nicht, ob es ein Konto gibt", async () => {
 		// Dieselbe Meldung fuer "kenne ich nicht" und "hat keine Verpackung" -
 		// sonst laesst sich durchprobieren, welche Konten existieren.
-		const res = await apiVon(null, "/api/auth/recover", {
+		const res = await apiFrom(null, "/api/auth/recover", {
 			method: "POST",
 			body: JSON.stringify({ recoveryId: "gibt-es-nicht" })
 		});
@@ -1522,19 +1522,19 @@ describe("Wiederherstellung mit der Phrase", () => {
 	it("gibt OHNE Nachweis kein Geraete-Token", async () => {
 		// Der Kern: wer die Kennung aus einer gestohlenen Datenbank abliest,
 		// bekommt die Verpackung - die er nicht oeffnen kann - und sonst nichts.
-		await legeAb(annaToken, { recoveryId: "kennung-anna", vaultProof: "beweis-anna" });
-		const res = await apiVon(null, "/api/auth/recover", {
+		await store(annaToken, { recoveryId: "kennung-anna", vaultProof: "beweis-anna" });
+		const res = await apiFrom(null, "/api/auth/recover", {
 			method: "POST",
 			body: JSON.stringify({ recoveryId: "kennung-anna" })
 		});
-		const antwort = await res.json();
-		expect(antwort.deviceToken).toBeUndefined();
-		expect(antwort.wrap).toBeTruthy();
+		const answer = await res.json();
+		expect(answer.deviceToken).toBeUndefined();
+		expect(answer.wrap).toBeTruthy();
 	});
 
 	it("weist einen falschen Nachweis ab", async () => {
-		await legeAb(annaToken, { recoveryId: "kennung-anna", vaultProof: "beweis-anna" });
-		const res = await apiVon(null, "/api/auth/recover", {
+		await store(annaToken, { recoveryId: "kennung-anna", vaultProof: "beweis-anna" });
+		const res = await apiFrom(null, "/api/auth/recover", {
 			method: "POST",
 			body: JSON.stringify({ recoveryId: "kennung-anna", proof: "erfunden", label: "Neu" })
 		});
@@ -1542,8 +1542,8 @@ describe("Wiederherstellung mit der Phrase", () => {
 	});
 
 	it("meldet mit richtigem Nachweis ein Geraet an", async () => {
-		await legeAb(annaToken, { recoveryId: "kennung-anna", vaultProof: "beweis-anna" });
-		const res = await apiVon(null, "/api/auth/recover", {
+		await store(annaToken, { recoveryId: "kennung-anna", vaultProof: "beweis-anna" });
+		const res = await apiFrom(null, "/api/auth/recover", {
 			method: "POST",
 			body: JSON.stringify({
 				recoveryId: "kennung-anna",
@@ -1557,15 +1557,15 @@ describe("Wiederherstellung mit der Phrase", () => {
 
 		// Und das Token traegt sofort - die Daten sind ja noch da, nur der Zugang
 		// war weg.
-		const ich = await (await api(deviceToken, "/api/me")).json();
-		expect(ich.userId).toBe(ANNA);
-		expect(ich.devices.some((d: { label: string }) => d.label === "Neuer Rechner")).toBe(true);
+		const self = await (await api(deviceToken, "/api/me")).json();
+		expect(self.userId).toBe(ANNA);
+		expect(self.devices.some((d: { label: string }) => d.label === "Neuer Rechner")).toBe(true);
 	});
 
 	it("fuehrt nicht zu einem fremden Konto", async () => {
-		await legeAb(annaToken, { recoveryId: "kennung-anna", vaultProof: "beweis-anna" });
-		await legeAb(bodoToken, { recoveryId: "kennung-bodo", vaultProof: "beweis-bodo" });
-		const res = await apiVon(null, "/api/auth/recover", {
+		await store(annaToken, { recoveryId: "kennung-anna", vaultProof: "beweis-anna" });
+		await store(bodoToken, { recoveryId: "kennung-bodo", vaultProof: "beweis-bodo" });
+		const res = await apiFrom(null, "/api/auth/recover", {
 			method: "POST",
 			body: JSON.stringify({ recoveryId: "kennung-anna", proof: "beweis-bodo", label: "X" })
 		});
@@ -1574,51 +1574,51 @@ describe("Wiederherstellung mit der Phrase", () => {
 
 	it("legt den Nachweis nur als Hash ab", async () => {
 		// Sonst genuegte ein Datenbankabzug: abschreiben, zurueckschicken, Token.
-		await legeAb(annaToken, { recoveryId: "kennung-anna", vaultProof: "beweis" });
-		expect(konto(ANNA).vault_proof).toBe(hashSecret("beweis"));
+		await store(annaToken, { recoveryId: "kennung-anna", vaultProof: "beweis" });
+		expect(account(ANNA).vault_proof).toBe(hashSecret("beweis"));
 	});
 
 	it("nimmt Kennung und Nachweis nur zusammen an", async () => {
 		// Eines allein wuerde das andere ueberschreiben.
-		await legeAb(annaToken, { recoveryId: "kennung-anna", vaultProof: "beweis" });
-		expect((await legeAb(annaToken, { recoveryId: "andere-kennung" })).status).toBe(400);
-		expect((await legeAb(annaToken, { vaultProof: "anderer-beweis" })).status).toBe(400);
-		expect(konto(ANNA)).toEqual({ recovery_id: "kennung-anna", vault_proof: hashSecret("beweis") });
+		await store(annaToken, { recoveryId: "kennung-anna", vaultProof: "beweis" });
+		expect((await store(annaToken, { recoveryId: "andere-kennung" })).status).toBe(400);
+		expect((await store(annaToken, { vaultProof: "anderer-beweis" })).status).toBe(400);
+		expect(account(ANNA)).toEqual({ recovery_id: "kennung-anna", vault_proof: hashSecret("beweis") });
 	});
 
 	it("weist eine bereits vergebene Kennung ab - und schreibt dabei nichts", async () => {
-		await legeAb(annaToken, { recoveryId: "kennung-anna", vaultProof: "beweis-anna" });
-		const res = await legeAb(bodoToken, { recoveryId: "kennung-anna", vaultProof: "beweis-bodo" });
+		await store(annaToken, { recoveryId: "kennung-anna", vaultProof: "beweis-anna" });
+		const res = await store(bodoToken, { recoveryId: "kennung-anna", vaultProof: "beweis-bodo" });
 		expect(res.status).toBe(409);
 		// Der Abbruch nimmt alles mit: keine halbe Zeile, keine Verpackung.
-		expect(konto(BODO)).toEqual({ recovery_id: null, vault_proof: null });
-		expect(zaehleWraps(BODO)).toBe(0);
+		expect(account(BODO)).toEqual({ recovery_id: null, vault_proof: null });
+		expect(countWraps(BODO)).toBe(0);
 	});
 
 	it("laesst eine neue Phrase die alte ersetzen", async () => {
-		await legeAb(annaToken, { recoveryId: "kennung-alt", vaultProof: "beweis-alt" });
-		await legeAb(annaToken, { recoveryId: "kennung-neu", vaultProof: "beweis-neu" });
-		expect(zaehleWraps(ANNA)).toBe(1);
-		const alt = await apiVon(null, "/api/auth/recover", {
+		await store(annaToken, { recoveryId: "kennung-alt", vaultProof: "beweis-alt" });
+		await store(annaToken, { recoveryId: "kennung-neu", vaultProof: "beweis-neu" });
+		expect(countWraps(ANNA)).toBe(1);
+		const old = await apiFrom(null, "/api/auth/recover", {
 			method: "POST",
 			body: JSON.stringify({ recoveryId: "kennung-alt" })
 		});
-		expect(alt.status).toBe(404);
+		expect(old.status).toBe(404);
 	});
 
 	it("bremst das Durchprobieren des Nachweises", async () => {
 		// Eine feste Adresse fuer alle Versuche - die Bremse zaehlt je Aufrufer.
-		await legeAb(annaToken, { recoveryId: "kennung-anna", vaultProof: "beweis-anna" });
-		let gebremst = false;
-		for (let i = 0; i < 30 && !gebremst; i++) {
+		await store(annaToken, { recoveryId: "kennung-anna", vaultProof: "beweis-anna" });
+		let throttled = false;
+		for (let i = 0; i < 30 && !throttled; i++) {
 			const res = await api(null, "/api/auth/recover", {
 				method: "POST",
 				headers: { "x-echte-adresse": "10.9.9.9" },
 				body: JSON.stringify({ recoveryId: "kennung-anna", proof: `versuch-${i}`, label: "X" })
 			});
-			gebremst = res.status === 429;
-			if (gebremst) expect(res.headers.get("retry-after")).toBeTruthy();
+			throttled = res.status === 429;
+			if (throttled) expect(res.headers.get("retry-after")).toBeTruthy();
 		}
-		expect(gebremst).toBe(true);
+		expect(throttled).toBe(true);
 	});
 });

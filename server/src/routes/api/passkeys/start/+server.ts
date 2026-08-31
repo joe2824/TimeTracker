@@ -11,7 +11,7 @@ export const POST: RequestHandler = async ({ locals }) => {
 	const user = locals.db.select().from(users).where(eq(users.id, locals.userId)).get();
 	if (!user) error(401, "Nicht angemeldet");
 
-	const vorhandene = locals.db
+	const existing = locals.db
 		.select()
 		.from(credentials)
 		.where(eq(credentials.userId, user.id))
@@ -21,7 +21,7 @@ export const POST: RequestHandler = async ({ locals }) => {
 	// Was schon da ist, ausschliessen. Sonst legt derselbe Authentifikator einen
 	// zweiten Passkey fuer dasselbe Konto an - und der Mensch glaubt, er haette
 	// jetzt zwei Wege, obwohl beide an demselben Geraet haengen.
-	options.excludeCredentials = vorhandene.map((c) => ({
+	options.excludeCredentials = existing.map((c) => ({
 		type: "public-key" as const,
 		id: c.id,
 		transports: c.transports ? JSON.parse(c.transports) : undefined
