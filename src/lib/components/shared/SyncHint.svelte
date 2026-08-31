@@ -19,14 +19,14 @@
 	}
 
 	const alter = $derived(account.lastSync ? app.now - account.lastSync : null);
-	const isBulkPull = $derived(account.phase === "laeuft" && (account.syncProgress?.pulled ?? 0) >= 20);
+	const isBulkPull = $derived(account.phase === "running" && (account.syncProgress?.pulled ?? 0) >= 20);
 
 	const zustand = $derived.by(() => {
 		if (!account.linked) return null;
-		if (account.state === "fehler") {
+		if (account.state === "error") {
 			return { ton: "bg-destructive", text: "Getrennt", titel: account.message };
 		}
-		if (account.phase === "fehler" || account.phase === "offline") {
+		if (account.phase === "error" || account.phase === "offline") {
 			return {
 				ton: "bg-amber-500",
 				text: alter === null ? "Offline" : `Offline · ${vorWieLange(alter)}`,
@@ -45,7 +45,7 @@
 			// Erst wenn es eine Weile her ist, ist die Zahl eine Information.
 			text: alter !== null && alter >= FRISCH_MS ? vorWieLange(alter) : "",
 			titel:
-				account.phase === "laeuft"
+				account.phase === "running"
 					? "Synchronisiere…"
 					: alter === null
 						? "Mit dem Server verbunden"
@@ -64,7 +64,7 @@
 			<span class="text-primary font-medium">{zustand.text}</span>
 		{:else}
 			<span
-				class="size-1.5 shrink-0 rounded-full {zustand.ton} {account.phase === 'laeuft' ? 'animate-pulse ring-2 ring-emerald-500/30' : ''}"
+				class="size-1.5 shrink-0 rounded-full {zustand.ton} {account.phase === 'running' ? 'animate-pulse ring-2 ring-emerald-500/30' : ''}"
 			></span>
 			{#if zustand.text}{zustand.text}{/if}
 		{/if}

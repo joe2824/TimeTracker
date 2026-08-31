@@ -549,7 +549,7 @@
 			</div>
 		</header>
 
-		{#if account.phase === "laeuft" && account.syncProgress && account.syncProgress.pulled >= 20}
+		{#if account.phase === "running" && account.syncProgress && account.syncProgress.pulled >= 20}
 			<div class="bg-primary/10 border-b border-primary/20 text-primary px-4 py-1.5 text-xs text-center font-medium flex items-center justify-center gap-2 animate-in fade-in duration-150">
 				<RefreshCwIcon class="size-3.5 animate-spin shrink-0" />
 				<span>Daten werden vom Server geladen ({account.syncProgress.pulled} Einträge)…</span>

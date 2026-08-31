@@ -52,13 +52,13 @@
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 	const connectionStatus = $derived.by(() => {
-		if (account.state === "aus")
+		if (account.state === "off")
 			return { text: "Nicht verknüpft", dot: "bg-muted-foreground" };
-		if (account.state === "verbindet") return { text: "Verbinde…", dot: "bg-muted-foreground" };
-		if (account.state === "fehler") return { text: "Getrennt", dot: "bg-destructive" };
+		if (account.state === "connecting") return { text: "Verbinde…", dot: "bg-muted-foreground" };
+		if (account.state === "error") return { text: "Getrennt", dot: "bg-destructive" };
 		if (account.phase === "offline") return { text: "Server nicht erreichbar", dot: "bg-amber-500" };
-		if (account.phase === "fehler") return { text: "Server nicht erreichbar", dot: "bg-destructive" };
-		if (account.phase === "laeuft") {
+		if (account.phase === "error") return { text: "Server nicht erreichbar", dot: "bg-destructive" };
+		if (account.phase === "running") {
 			if (account.syncProgress && account.syncProgress.pulled > 0) {
 				return { text: `Lade Daten… (${account.syncProgress.pulled})`, dot: "bg-blue-500" };
 			}
@@ -320,11 +320,11 @@
 					variant="outline"
 					size="sm"
 					class="shrink-0 self-start sm:self-center gap-1.5"
-					disabled={account.phase === "laeuft"}
+					disabled={account.phase === "running"}
 					onclick={() => account.syncNow()}
 				>
-					<RefreshCwIcon class="size-3.5 {account.phase === 'laeuft' ? 'animate-spin' : ''}" />
-					{account.phase === "laeuft"
+					<RefreshCwIcon class="size-3.5 {account.phase === 'running' ? 'animate-spin' : ''}" />
+					{account.phase === "running"
 						? account.syncProgress?.pulled
 							? `Lade (${account.syncProgress.pulled})…`
 							: account.syncProgress?.pushed
@@ -332,7 +332,7 @@
 								: "Gleicht ab…"
 						: "Jetzt abgleichen"}
 				</Button>
-			{:else if account.state === "fehler"}
+			{:else if account.state === "error"}
 				<Button
 					variant="outline"
 					size="sm"

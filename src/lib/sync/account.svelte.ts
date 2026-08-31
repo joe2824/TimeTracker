@@ -43,7 +43,7 @@ import { isTauri } from "../platform/env";
 import { platformFetch } from "../platform/http";
 import { notifyDataChanged } from "../platform/windows";
 
-export type LinkState = "aus" | "verbindet" | "verbunden" | "fehler";
+export type LinkState = "off" | "connecting" | "connected" | "error";
 
 /** Wie weit das Entkoppeln gehen soll - siehe `AccountState.unlink`. */
 export interface UnlinkOptions {
@@ -54,7 +54,7 @@ export interface UnlinkOptions {
 }
 
 /** Wie es dem Abgleich gerade geht - genau das, was die Oberflaeche zeigt. */
-export type SyncPhase = "ruht" | "laeuft" | "offline" | "fehler";
+export type SyncPhase = "idle" | "running" | "offline" | "error";
 
 /**
  * Wie lange nach einer Aenderung gewartet wird, bevor hochgeladen wird.
@@ -71,8 +71,8 @@ const RETRY_MS = [1_000, 3_000, 5_000, 10_000, 20_000, 30_000];
 const HEARTBEAT_MS = 5 * 60 * 1000;
 
 class AccountState {
-	state = $state<LinkState>("aus");
-	phase = $state<SyncPhase>("ruht");
+	state = $state<LinkState>("off");
+	phase = $state<SyncPhase>("idle");
 	/** Anzeigename des Kontos, sobald bekannt. */
 	name = $state<string>("");
 	serverUrl = $state<string>("");
@@ -119,7 +119,7 @@ class AccountState {
 	#wait: AbortController | null = null;
 
 	get linked(): boolean {
-		return this.state === "verbunden";
+		return this.state === "connected";
 	}
 
 	get pending(): number {
@@ -146,7 +146,7 @@ class AccountState {
 			this.serverUrl = info.serverUrl;
 			this.name = info.accountName ?? "";
 			this.secretsProtected = info.protected ?? false;
-			this.state = "verbindet";
+			this.state = "connecting";
 			try {
 				const token = info.token
 					? await unprotectSecret(info.token, info.protected ?? false)
@@ -162,7 +162,7 @@ class AccountState {
 				if (!isTauri() && !this.hasDeviceToken) {
 					try {
 						await this.accountInfo();
-						this.state = "verbunden";
+						this.state = "connected";
 					} catch (e) {
 						if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
 							// Sitzung abgelaufen: Daten aufräumen und sauber in den Anmeldezustand wechseln
@@ -170,15 +170,15 @@ class AccountState {
 							await this.#forgetLocally();
 							await clearAccountData();
 							app.clearLocalData();
-							this.state = "aus";
+							this.state = "off";
 							return;
 						}
 						// Bei Verbindungsabbruch / Offline: offline verbunden bleiben
-						this.state = "verbunden";
+						this.state = "connected";
 						this.phase = "offline";
 					}
 				} else {
-					this.state = "verbunden";
+					this.state = "connected";
 					void this.accountInfo().catch(() => {});
 				}
 
@@ -187,7 +187,7 @@ class AccountState {
 			} catch (e) {
 				// Der haeufigste Grund: die Datei stammt von einem anderen
 				// Benutzerkonto. Dann ist die Verknuepfung hier nichts mehr wert.
-				this.state = "fehler";
+				this.state = "error";
 				this.message = e instanceof Error ? e.message : "Verknüpfung nicht lesbar";
 				logError("Verknüpfung konnte nicht geöffnet werden", e);
 			}
@@ -289,11 +289,11 @@ class AccountState {
 	}
 
 	async syncNow(): Promise<void> {
-		if (!this.#engine || this.state !== "verbunden") return;
-		this.phase = "laeuft";
+		if (!this.#engine || this.state !== "connected") return;
+		this.phase = "running";
 		try {
 			const result = await this.#engine.sync();
-			this.phase = "ruht";
+			this.phase = "idle";
 			this.lastSync = Date.now();
 			this.#retryStep = 0;
 			if (result) {
@@ -348,8 +348,8 @@ class AccountState {
 		if (e instanceof ApiError && e.status === 401) {
 			// Das Geraet wurde widerrufen oder das Token ist ungueltig. Weiter zu
 			// versuchen hat keinen Zweck und wuerde nur Anfragen erzeugen.
-			this.state = "fehler";
-			this.phase = "fehler";
+			this.state = "error";
+			this.phase = "error";
 			this.message = "Dieses Gerät wurde vom Konto getrennt.";
 			this.#closeStream();
 			logWarn("Gerät ist nicht mehr berechtigt");
@@ -360,7 +360,7 @@ class AccountState {
 			this.#scheduleRetry();
 			return;
 		}
-		this.phase = "fehler";
+		this.phase = "error";
 		this.message = e instanceof Error ? e.message : "Abgleich fehlgeschlagen";
 		logError("Abgleich fehlgeschlagen", e);
 		this.#scheduleRetry();
@@ -381,14 +381,14 @@ class AccountState {
 
 		window.addEventListener("online", () => {
 			logInfo("Netzwerkverbindung wieder verfügbar (online Event)");
-			if (this.state === "verbunden") {
+			if (this.state === "connected") {
 				this.#retryStep = 0;
 				if (this.#retry) {
 					clearTimeout(this.#retry);
 					this.#retry = null;
 				}
 				if (this.phase === "offline") {
-					this.phase = "ruht";
+					this.phase = "idle";
 				}
 				// Stream nur neu aufbauen wenn er wirklich weg ist.
 				if (!this.#stream || this.#stream.readyState === EventSource.CLOSED) {
@@ -400,7 +400,7 @@ class AccountState {
 
 		window.addEventListener("offline", () => {
 			logWarn("Netzwerkverbindung unterbrochen (offline Event)");
-			if (this.phase !== "laeuft") {
+			if (this.phase !== "running") {
 				this.phase = "offline";
 			}
 		});
@@ -435,7 +435,7 @@ class AccountState {
 			this.#stream = new EventSource(this.#api.streamUrl(), { withCredentials: true });
 			this.#stream.onopen = () => {
 				if (this.phase === "offline") {
-					this.phase = "ruht";
+					this.phase = "idle";
 				}
 				this.#retryStep = 0;
 			};
@@ -447,7 +447,7 @@ class AccountState {
 				this.syncSoon(300);
 			});
 			this.#stream.onerror = () => {
-				if (this.phase !== "laeuft") this.phase = "offline";
+				if (this.phase !== "running") this.phase = "offline";
 				// Falls EventSource geschlossen wurde (z. B. Netzwerk-Drop auf Mobile):
 				if (this.#stream && this.#stream.readyState === EventSource.CLOSED) {
 					this.#closeStream();
@@ -476,7 +476,7 @@ class AccountState {
 		this.#startHeartbeat();
 
 		let errorCount = 0;
-		while (this.#wait === abort && this.state === "verbunden") {
+		while (this.#wait === abort && this.state === "connected") {
 			try {
 				const knownSeq = (await loadDevice())?.seq ?? 0;
 				const answer = await this.#api!.waitForChange(knownSeq, abort.signal);
@@ -508,7 +508,7 @@ class AccountState {
 
 	/** Das Fenster kommt in den Vordergrund oder wird wieder aktiv. */
 	onVisible(): void {
-		if (this.state === "verbunden") {
+		if (this.state === "connected") {
 			if (this.phase === "offline" || !this.#stream) {
 				this.#retryStep = 0;
 				this.#openStream();
@@ -718,7 +718,7 @@ class AccountState {
 		this.serverUrl = url;
 		this.secretsProtected = protectedKey.protected;
 		this.hasDeviceToken = token !== null;
-		this.state = "verbunden";
+		this.state = "connected";
 		await this.#startEngine(url, token, 0);
 		void this.abgleichMitNachlese();
 	}
@@ -949,8 +949,8 @@ class AccountState {
 			// dieselbe bleiben, falls jemand erneut koppelt.
 			await saveDevice({ id: info.id });
 		}
-		this.state = "aus";
-		this.phase = "ruht";
+		this.state = "off";
+		this.phase = "idle";
 		this.serverUrl = "";
 		this.name = "";
 		this.message = "";
