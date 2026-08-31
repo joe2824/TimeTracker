@@ -119,7 +119,7 @@ class AppState {
 	async init(): Promise<boolean> {
 		if (!this.loaded) {
 			this.initError = null;
-			const begonnen = Date.now();
+			const started = Date.now();
 			try {
 				// Erster Start? (settings.json noch nicht vorhanden – vor dem ersten Speichern pruefen)
 				const firstRun = !(await this.#step("Einstellungen suchen", settingsFileExists));
@@ -151,10 +151,10 @@ class AppState {
 				this.initStep = null;
 				this.trayVersion = (this.trayVersion + 1) % 1000;
 				logInfo("Daten geladen", {
-					ms: Date.now() - begonnen,
-					erstStart: firstRun,
-					aktivitaeten: this.activities.length,
-					eintraege: this.monthEntries(month).length + this.monthEntries(prev).length,
+					ms: Date.now() - started,
+					firstStart: firstRun,
+					activities: this.activities.length,
+					entries: this.monthEntries(month).length + this.monthEntries(prev).length,
 					laeuft: this.#runningName()
 				});
 			} catch (e) {
@@ -475,7 +475,7 @@ class AppState {
 		this.activities = this.activities.filter((x) => x.id !== id);
 		await this.persistActivities();
 		// Unwiderruflich – hinterher will man wissen, was da genau verschwunden ist.
-		logWarn(`Aktivität gelöscht: ${name}`, { id, eintraege: removed });
+		logWarn(`Aktivität gelöscht: ${name}`, { id, entries: removed });
 		return removed;
 	}
 
@@ -543,7 +543,7 @@ class AppState {
 	 */
 	async deleteYearEntries(year: number): Promise<number> {
 		const deleted = await deleteYear(year);
-		logWarn(`Jahr ${year} gelöscht`, { monate: deleted });
+		logWarn(`Jahr ${year} gelöscht`, { months: deleted });
 		for (const m of deleted) delete this.entriesByMonth[m];
 		if (this.running && monthKey(this.running.startTs).startsWith(`${year}-`)) {
 			this.running = null;
@@ -729,8 +729,8 @@ class AppState {
 	quickActivities(limit: number): Activity[] {
 		const seen = new Set<string>();
 		const out: Activity[] = [];
-		const favoriten = this.trackableActivities.filter((a) => a.favorite);
-		for (const a of [...favoriten, ...this.recentActivities(limit)]) {
+		const favorites = this.trackableActivities.filter((a) => a.favorite);
+		for (const a of [...favorites, ...this.recentActivities(limit)]) {
 			if (seen.has(a.id)) continue;
 			seen.add(a.id);
 			out.push(a);
@@ -887,7 +887,7 @@ class AppState {
 		const seen = new Set([entry.id]);
 		for (;;) {
 			const cur = chain[0];
-			const passend = all.filter(
+			const matching = all.filter(
 				(e) =>
 					!seen.has(e.id) &&
 					e.activityId === cur.activityId &&
@@ -899,7 +899,7 @@ class AppState {
 			// Zeile vor dem echten Vorgaenger, gewaenne sie – und der Lauf saehe je
 			// nach Dateireihenfolge anders aus.
 			const prev =
-				passend.find((e) => e.endTs === cur.startTs) ?? passend.find((e) => e.endTs === null);
+				matching.find((e) => e.endTs === cur.startTs) ?? matching.find((e) => e.endTs === null);
 			if (!prev) return chain;
 			seen.add(prev.id);
 			chain.unshift(prev);
@@ -922,14 +922,14 @@ class AppState {
 		const offen = this.#openEntries();
 		if (offen.length > 0) {
 			logInfo(`Timer gestoppt: ${offen.map((e) => this.activityName(e.activityId)).join(", ")}`, {
-				ende: new Date(endTs).toISOString(),
-				sekunden: offen.map((e) => Math.round((Math.max(e.startTs, endTs) - e.startTs) / 1000))
+				end: new Date(endTs).toISOString(),
+				seconds: offen.map((e) => Math.round((Math.max(e.startTs, endTs) - e.startTs) / 1000))
 			});
 		}
 		// Der ganze Lauf, nicht nur das letzte Tagesstueck: eine Endzeit vor
 		// Mitternacht muss die schon abgetrennten Stuecke mitnehmen.
 		const chains = offen.map((open) => this.runChain(open)).sort((a, b) => b.length - a.length);
-		const erledigt = new Set<string>();
+		const done = new Set<string>();
 
 		const months = new Set<string>();
 		for (const chain of chains) {
@@ -937,8 +937,8 @@ class AppState {
 			const end = Math.max(chain[0].startTs, endTs);
 			for (let i = 0; i < chain.length; i++) {
 				const piece = chain[i];
-				if (erledigt.has(piece.id)) continue;
-				erledigt.add(piece.id);
+				if (done.has(piece.id)) continue;
+				done.add(piece.id);
 				// Ein Stueck endet spaetestens dort, wo das naechste des Laufs beginnt.
 				// Sonst zerlegte ein offen gebliebenes Vorgaengerstueck den Folgetag
 				// noch einmal – neben dem Stueck, das ihn schon abdeckt.
@@ -1049,8 +1049,8 @@ class AppState {
 			months.add(m);
 			for (const mm of months) await this.#saveMonth(mm);
 			logInfo(`Timer über Mitternacht geteilt: ${this.activityName(cur.activityId)}`, {
-				tage: parts.length,
-				weiterAb: new Date(last.startTs).toISOString()
+				days: parts.length,
+				continueFrom: new Date(last.startTs).toISOString()
 			});
 		});
 	}
@@ -1066,31 +1066,31 @@ class AppState {
 		if (open.length <= 1) return;
 
 		const months = new Set<string>();
-		let geschaetzt = 0;
+		let estimated = 0;
 		// open[i-1] ist der naechstjuengere: dessen Start beendete open[i].
 		for (let i = 1; i < open.length; i++) {
 			const e = open[i];
 			const end = Math.min(open[i - 1].startTs, startOfNextDay(e.startTs));
 			e.endTs = Math.max(e.startTs, end);
-			if (e.endTs > e.startTs) geschaetzt++;
+			if (e.endTs > e.startTs) estimated++;
 			months.add(monthKey(e.startTs));
 		}
 		for (const m of months) await this.#saveMonth(m);
 
 		// Melden statt still korrigieren: die Zeiten sind geraten, nur der Benutzer
 		// weiss, ob sie stimmen.
-		if (geschaetzt > 0) {
-			logWarn(`${geschaetzt} offene Einträge geschätzt geschlossen`, {
-				eintraege: open.slice(1).map((e) => ({
-					aktivitaet: this.activityName(e.activityId),
+		if (estimated > 0) {
+			logWarn(`${estimated} offene Einträge geschätzt geschlossen`, {
+				entries: open.slice(1).map((e) => ({
+					activity: this.activityName(e.activityId),
 					von: new Date(e.startTs).toISOString(),
 					bis: e.endTs ? new Date(e.endTs).toISOString() : null
 				}))
 			});
 			toast.warning(
-				geschaetzt === 1
+				estimated === 1
 					? "Ein Eintrag lief noch – das Ende wurde geschätzt. Bitte prüfen."
-					: `${geschaetzt} Einträge liefen noch – die Enden wurden geschätzt. Bitte prüfen.`
+					: `${estimated} Einträge liefen noch – die Enden wurden geschätzt. Bitte prüfen.`
 			);
 		}
 	}
@@ -1188,12 +1188,12 @@ class AppState {
 		// Alle bisher noch offenen Einträge verlässlich schließen, bevor der neue startet.
 		// Einträge, die planBackdate bereits in truncate/remove erfasst hat, überspringen –
 		// sonst wird endTs zweimal gesetzt (einmal oben, einmal hier).
-		const schonErfasst = new Set([
+		const alreadyRecorded = new Set([
 			...plan.truncate.map((t) => t.entry.id),
 			...plan.remove.map((r) => r.id)
 		]);
 		for (const open of this.#openEntries()) {
-			if (schonErfasst.has(open.id)) continue;
+			if (alreadyRecorded.has(open.id)) continue;
 			const parts = splitAtMidnight(open.startTs, start);
 			open.endTs = parts[0].endTs;
 			for (const p of parts.slice(1)) followUps.push({ from: open, ...p });
@@ -1217,9 +1217,9 @@ class AppState {
 		this.trayVersion = (this.trayVersion + 1) % 1000;
 		logInfo(`Timer gestartet: ${this.activityName(activityId)}`, {
 			start: new Date(start).toISOString(),
-			rueckdatiert: Date.now() - start > 60_000 ? Math.round((Date.now() - start) / 60_000) : 0,
-			gekuerzt: plan.truncate.length,
-			entfernt: plan.remove.length
+			backdated: Date.now() - start > 60_000 ? Math.round((Date.now() - start) / 60_000) : 0,
+			trimmed: plan.truncate.length,
+			removed: plan.remove.length
 		});
 	}
 

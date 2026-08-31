@@ -1,6 +1,6 @@
 // Was ein Link an die Anmeldeseite mitbringt.
 import { describe, expect, it } from "vitest";
-import { anlegenLink, inviteLink } from "./invite";
+import { createLink, inviteLink } from "./invite";
 
 describe("inviteLink", () => {
 	it("haengt den Code an die Serveradresse", () => {
@@ -22,7 +22,7 @@ describe("inviteLink", () => {
 
 describe("anlegenLink", () => {
 	it("springt direkt zum Anlegen", () => {
-		expect(anlegenLink("https://tracker.example.de")).toBe("https://tracker.example.de/?neu=1");
+		expect(createLink("https://tracker.example.de")).toBe("https://tracker.example.de/?neu=1");
 	});
 
 	it("traegt den Kopplungscode NICHT mit", () => {
@@ -31,7 +31,7 @@ describe("anlegenLink", () => {
 		// untergeschobenen Vorgang unterscheidet. In einer Adresse landete er in
 		// der Chronik - und der Vergleich waere zur Formsache geworden, weil der
 		// Code schon im Feld stuende. Er wird abgetippt.
-		expect(anlegenLink("http://localhost:3000")).toBe("http://localhost:3000/?neu=1");
-		expect(anlegenLink("http://localhost:3000")).not.toContain("pair");
+		expect(createLink("http://localhost:3000")).toBe("http://localhost:3000/?neu=1");
+		expect(createLink("http://localhost:3000")).not.toContain("pair");
 	});
 });

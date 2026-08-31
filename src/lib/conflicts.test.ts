@@ -140,7 +140,7 @@ describe("overlapConflict", () => {
 	});
 
 	it("laesst Zeiten an verschiedenen Tagen zu", () => {
-		const morgen = { activityId: "p2", startTs: NEXT + 8 * H, endTs: NEXT + 12 * H };
-		expect(overlapConflict([span("a", 8, 12)], morgen, ABSENCES)).toBeNull();
+		const tomorrow = { activityId: "p2", startTs: NEXT + 8 * H, endTs: NEXT + 12 * H };
+		expect(overlapConflict([span("a", 8, 12)], tomorrow, ABSENCES)).toBeNull();
 	});
 });

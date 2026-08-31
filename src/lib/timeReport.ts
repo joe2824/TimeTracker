@@ -4,7 +4,7 @@ import { minToClock } from "./time";
 
 /** Ein gesetzter Verstoss-Hinweis aus dem Report. */
 export interface TimeReportFlag {
-	key: "ruhepause" | "ueber10" | "soll10" | "wiedereingliederung" | "sonntag" | "feiertag";
+	key: "restBreak" | "over10" | "target10" | "gradualReturn" | "sunday" | "holiday";
 	/** Kurzform fuer ein Badge, z.B. "> 10 h" */
 	label: string;
 	/** Inhalt der Zelle – manche Spalten tragen Stunden statt eines Kreuzes. */
@@ -66,24 +66,24 @@ const COLUMNS = {
 	firstIn: ["erstes kommen"],
 	lastOut: ["letztes gehen"],
 	hours: ["arbeitszeit täglich"],
-	ruhepause: ["verstoß ruhepause", "verstoss ruhepause"],
-	ueber10: ["arbeitszeit täglich > 10h", "arbeitszeit täglich >10h"],
-	soll10: ["soll arbeitszeit > 10h", "soll arbeitszeit >10h"],
-	wiedereingliederung: ["wiedereingliederung"],
-	sonntag: ["arbeit am sonntag"],
-	feiertag: ["arbeit am feiertag"]
+	restBreak: ["verstoß ruhepause", "verstoss ruhepause"],
+	over10: ["arbeitszeit täglich > 10h", "arbeitszeit täglich >10h"],
+	target10: ["soll arbeitszeit > 10h", "soll arbeitszeit >10h"],
+	gradualReturn: ["wiedereingliederung"],
+	sunday: ["arbeit am sonntag"],
+	holiday: ["arbeit am feiertag"]
 } as const;
 
 type ColumnKey = keyof typeof COLUMNS;
 type ColumnMap = Partial<Record<ColumnKey, number>>;
 
 const FLAG_LABELS: Record<TimeReportFlag["key"], string> = {
-	ruhepause: "Ruhepause",
-	ueber10: "> 10 h",
-	soll10: "Soll > 10 h",
-	wiedereingliederung: "Wiedereingliederung",
-	sonntag: "Sonntag",
-	feiertag: "Feiertag"
+	restBreak: "Ruhepause",
+	over10: "> 10 h",
+	target10: "Soll > 10 h",
+	gradualReturn: "Wiedereingliederung",
+	sunday: "Sonntag",
+	holiday: "Feiertag"
 };
 
 const FLAG_KEYS = Object.keys(FLAG_LABELS) as TimeReportFlag["key"][];

@@ -16,7 +16,7 @@
 	import { capabilities, isTauri } from "$lib/platform/env";
 	import { errorText } from "$lib/log";
 	import { DEFAULT_SERVER } from "$lib/defaults";
-	import { anlegenLink } from "$lib/invite";
+	import { createLink } from "$lib/invite";
 	import { openExternal } from "$lib/platform/open";
 	import CloudIcon from "@lucide/svelte/icons/cloud";
 	import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
@@ -86,7 +86,7 @@
 			pairingCode = await account.startPairing(url, suggestDeviceName());
 			isWaitingForApproval = true;
 			pollTimer = setInterval(checkPairingStatus, 2000);
-			await openExternal(anlegenLink(url));
+			await openExternal(createLink(url));
 		} catch (e) {
 			toast.error(formatError(e, "Konnte nicht beginnen"));
 		} finally {

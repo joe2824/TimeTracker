@@ -279,7 +279,7 @@ const CODE_LENGTH = 12;
 
 /** Der Kopplungscode zu einem oeffentlichen Schluessel - dessen Abdruck. */
 export async function pairingCode(publicKey: Uint8Array): Promise<string> {
-	const abdruck = new Uint8Array(
+	const imprint = new Uint8Array(
 		await crypto.subtle.digest("SHA-256", publicKey as BufferSource)
 	);
 	let out = "";
@@ -288,9 +288,9 @@ export async function pairingCode(publicKey: Uint8Array): Promise<string> {
 		// einmal, weil eine Stelle ueber eine Byte-Grenze reichen kann.
 		const bit = i * 5;
 		const byte = bit >> 3;
-		const versatz = bit & 7;
-		const fenster = (abdruck[byte] << 8) | abdruck[byte + 1];
-		out += CODE_ALPHABET[(fenster >> (11 - versatz)) & 31];
+		const offset = bit & 7;
+		const window = (imprint[byte] << 8) | imprint[byte + 1];
+		out += CODE_ALPHABET[(window >> (11 - offset)) & 31];
 	}
 	return out;
 }
@@ -323,19 +323,19 @@ export async function createClaimSecret(): Promise<{ secret: string; hash: strin
 
 /** SHA-256 einer Zeichenkette, hexadezimal - die Form, in der der Server ablegt. */
 export async function sha256Hex(text: string): Promise<string> {
-	const roh = new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(text)));
-	return [...roh].map((b) => b.toString(16).padStart(2, "0")).join("");
+	const raw = new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(text)));
+	return [...raw].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 /** Der hinterlegte Schluessel - aber nur, wenn er zu diesem Code gehoert. */
 export async function checkedPairingKey(code: string, publicKeyBase64: string): Promise<Uint8Array> {
-	const roh = fromBase64(publicKeyBase64);
-	if ((await pairingCode(roh)) !== normalizePairingCode(code)) {
+	const raw = fromBase64(publicKeyBase64);
+	if ((await pairingCode(raw)) !== normalizePairingCode(code)) {
 		throw new Error(
 			"Der hinterlegte Schlüssel passt nicht zu diesem Code. Die Kopplung wurde abgebrochen – bitte auf dem neuen Gerät einen neuen Code anzeigen lassen."
 		);
 	}
-	return roh;
+	return raw;
 }
 
 /** Fuer die Anzeige: Vierergruppen, wie beim Einladungscode. */

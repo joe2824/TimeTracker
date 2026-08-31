@@ -6,7 +6,7 @@
 //   data/timereport-YYYY-MM.json  (eingelesener LOGA-Report, eine Datei pro Monat)
 import { storage } from "./platform/fs";
 import type { Activity, Entry, Settings } from "./types";
-import type { TimeReportDay } from "./timeReport";
+import type { TimeReportDay, TimeReportFlag } from "./timeReport";
 import { defaultSettings } from "./types";
 import { logError, logWarn } from "./log";
 
@@ -247,11 +247,34 @@ function reportFile(month: string): string {
 	return `timereport-${month}.json`;
 }
 
+/** Die Flag-Namen vor 0.9.2. Zum Lesen alter Reports, nicht zum Schreiben. */
+const LEGACY_FLAG_KEYS: Record<string, TimeReportFlag["key"]> = {
+	ruhepause: "restBreak",
+	ueber10: "over10",
+	soll10: "target10",
+	wiedereingliederung: "gradualReturn",
+	sonntag: "sunday",
+	feiertag: "holiday"
+};
+
 /** Den gespeicherten Report eines Monats lesen. Null, wenn keiner vorliegt. */
 export async function loadTimeReport(month: string): Promise<StoredTimeReport | null> {
 	const stored = await readJson<StoredTimeReport | null>(reportFile(month), null);
 	// Eine Datei aus einer aelteren/kaputten Fassung soll die Ansicht nicht kippen.
-	return stored && Array.isArray(stored.days) ? stored : null;
+	if (!stored || !Array.isArray(stored.days)) return null;
+
+	// Reports, die vor der Umbenennung eingelesen wurden, tragen die alten
+	// Flag-Namen. Ohne die Uebersetzung faellt jeder Hinweis stumm aus der Ansicht.
+	return {
+		...stored,
+		days: stored.days.map((day) => ({
+			...day,
+			flags: (day.flags ?? []).map((flag) => ({
+				...flag,
+				key: LEGACY_FLAG_KEYS[flag.key] ?? flag.key
+			}))
+		}))
+	};
 }
 
 export async function saveTimeReport(report: StoredTimeReport): Promise<void> {
@@ -315,17 +338,17 @@ export interface DeviceInfo {
  * Abgleich in SEIN Konto.
  */
 export async function clearAccountData(): Promise<void> {
-	for (const monat of await listEntryMonths()) {
-		const pfad = `${DIR}/${entriesFile(monat)}`;
-		if (await storage.exists(pfad)) await storage.remove(pfad);
+	for (const month of await listEntryMonths()) {
+		const path = `${DIR}/${entriesFile(month)}`;
+		if (await storage.exists(path)) await storage.remove(path);
 	}
-	for (const monat of await listTimeReportMonths()) {
-		const pfad = `${DIR}/${reportFile(monat)}`;
-		if (await storage.exists(pfad)) await storage.remove(pfad);
+	for (const month of await listTimeReportMonths()) {
+		const path = `${DIR}/${reportFile(month)}`;
+		if (await storage.exists(path)) await storage.remove(path);
 	}
-	for (const datei of ["activities.json", "outbox.json", "settings.json"]) {
-		const pfad = `${DIR}/${datei}`;
-		if (await storage.exists(pfad)) await storage.remove(pfad);
+	for (const file of ["activities.json", "outbox.json", "settings.json"]) {
+		const path = `${DIR}/${file}`;
+		if (await storage.exists(path)) await storage.remove(path);
 	}
 }
 
@@ -336,8 +359,8 @@ export async function clearAccountData(): Promise<void> {
  * bleiben sollen: der Abgleich liest die Outbox und fragt dabei keinen Stempel.
  */
 export async function clearOutbox(): Promise<void> {
-	const pfad = `${DIR}/outbox.json`;
-	if (await storage.exists(pfad)) await storage.remove(pfad);
+	const path = `${DIR}/outbox.json`;
+	if (await storage.exists(path)) await storage.remove(path);
 }
 
 /** Die Feldnamen vor 0.9.2. Zum Lesen alter Dateien, nicht zum Schreiben. */
@@ -399,25 +422,25 @@ export async function listEntryYears(): Promise<StoredYear[]> {
 
 /** Alle Monatsdateien eines Jahres loeschen. Gibt die geloeschten Monate zurueck. */
 export async function deleteYear(year: number): Promise<string[]> {
-	const desJahres = async (re: RegExp) =>
+	const ofYear = async (re: RegExp) =>
 		(await dataFiles(re)).filter(([, month]) => month.startsWith(`${year}-`));
 
 	// Die Monate gehen ueber saveEntries(month, []) und NICHT ueber ein direktes
 	// storage.remove(): nur so laeuft die Loeschung durch den Haken und landet in
 	// der Outbox - sonst faende der naechste Abgleich die Monate beim Server
 	// unveraendert vor und laedt das geloeschte Jahr wieder herunter.
-	const monate = (await desJahres(MONTH_FILE_RE)).map(([, month]) => month);
-	for (const month of monate) await saveEntries(month, []);
+	const months = (await ofYear(MONTH_FILE_RE)).map(([, month]) => month);
+	for (const month of months) await saveEntries(month, []);
 
 	// Die eingelesenen LOGA-Reports gleicht niemand ab; sie duerfen direkt weg -
 	// aber durch die Warteschlange, aus demselben Grund wie das Leeren eines Monats
 	// in saveEntries: ein noch anstehendes saveTimeReport derselben Datei legte sie
 	// sonst NACH dem Loeschen wieder an, unsichtbar bis zum naechsten Start.
-	for (const [name] of await desJahres(REPORT_FILE_RE)) {
+	for (const [name] of await ofYear(REPORT_FILE_RE)) {
 		await queued(name, async () => {
 			const path = `${DIR}/${name}`;
 			if (await storage.exists(path)) await storage.remove(path);
 		});
 	}
-	return monate.sort();
+	return months.sort();
 }

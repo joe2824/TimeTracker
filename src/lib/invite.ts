@@ -6,11 +6,11 @@
 
 export const INVITE_PARAM = "invite";
 /** Direkt zum Anlegen springen, statt die Auswahl zu zeigen. */
-export const NEU_PARAM = "neu";
+export const NEW_PARAM = "neu";
 
 /** Der Link, der die Anmeldeseite mit vorbereitetem Code oeffnet. */
 export function inviteLink(baseUrl: string, code: string): string {
-	return mitParametern(baseUrl, { [INVITE_PARAM]: code });
+	return withParams(baseUrl, { [INVITE_PARAM]: code });
 }
 
 /**
@@ -23,13 +23,13 @@ export function inviteLink(baseUrl: string, code: string): string {
  * Browsers - und der Vergleich waere zur Formsache geworden, weil der Code schon
  * im Feld stand. Er steht jetzt nur auf dem Rechner und wird abgetippt.
  */
-export function anlegenLink(baseUrl: string): string {
-	return mitParametern(baseUrl, { [NEU_PARAM]: "1" });
+export function createLink(baseUrl: string): string {
+	return withParams(baseUrl, { [NEW_PARAM]: "1" });
 }
 
-function mitParametern(baseUrl: string, werte: Record<string, string>): string {
+function withParams(baseUrl: string, values: Record<string, string>): string {
 	const url = new URL(baseUrl.replace(/\/+$/, "") || "/", "http://ungenutzt");
-	for (const [k, v] of Object.entries(werte)) url.searchParams.set(k, v);
+	for (const [k, v] of Object.entries(values)) url.searchParams.set(k, v);
 	return baseUrl ? url.toString() : `${url.pathname}${url.search}`;
 }
 
@@ -43,13 +43,13 @@ function mitParametern(baseUrl: string, werte: Record<string, string>): string {
 export function linkParameter(): { invite: string; neu: boolean } {
 	if (typeof location === "undefined") return { invite: "", neu: false };
 	const url = new URL(location.href);
-	const lies = (name: string) => {
-		const wert = url.searchParams.get(name)?.trim() ?? "";
-		if (wert) url.searchParams.delete(name);
-		return wert;
+	const readIt = (name: string) => {
+		const value = url.searchParams.get(name)?.trim() ?? "";
+		if (value) url.searchParams.delete(name);
+		return value;
 	};
-	const invite = lies(INVITE_PARAM);
-	const neu = lies(NEU_PARAM) !== "";
+	const invite = readIt(INVITE_PARAM);
+	const neu = readIt(NEW_PARAM) !== "";
 
 	if (invite || neu) {
 		try {

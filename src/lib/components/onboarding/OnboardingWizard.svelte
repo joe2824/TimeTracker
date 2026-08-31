@@ -15,7 +15,7 @@
 	import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 	import { capabilities } from "$lib/platform/env";
 	import { openExternal } from "$lib/platform/open";
-	import { anlegenLink } from "$lib/invite";
+	import { createLink } from "$lib/invite";
 	import { toast } from "svelte-sonner";
 	import TimerIcon from "@lucide/svelte/icons/timer";
 	import MailIcon from "@lucide/svelte/icons/mail";
@@ -81,7 +81,7 @@
 			pairingCode = await account.startPairing(url, suggestDeviceName());
 			isWaitingForApproval = true;
 			pollTimer = setInterval(checkPairingStatus, 2000);
-			await openExternal(anlegenLink(url));
+			await openExternal(createLink(url));
 		} catch (e) {
 			toast.error(errorText(e));
 		} finally {

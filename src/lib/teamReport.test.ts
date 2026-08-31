@@ -129,7 +129,7 @@ describe("buildTeamSummary", () => {
 
 	it("erkennt das Teammitglied, egal wo sein Name im Betreff steht", () => {
 		// Der reale Fall: Absender gesperrt, Name vorne, Teameintrag nur "Anna".
-		const eigenes: TeamMember[] = [
+		const own: TeamMember[] = [
 			{ id: "j", name: "Anna", email: "anna.meier@firma.de" },
 			{ id: "h", name: "Bernd", email: "bernd.mueller@firma.de" }
 		];
@@ -142,7 +142,7 @@ describe("buildTeamSummary", () => {
 					senderEmail: ""
 				})
 			],
-			eigenes,
+			own,
 			"Stundenerfassung"
 		);
 		expect(s.entries[0].memberId).toBe("j");
@@ -195,12 +195,12 @@ describe("buildTeamSummary", () => {
 		// Gesperrter Absender UND kein Name im Betreff: dann ist nichts bekannt,
 		// woran sich die Personen unterscheiden liessen – zwei Mails muessen
 		// trotzdem zwei Zeilen bleiben, sonst verschwindet stillschweigend eine.
-		const anonym = { subject: "Stundenerfassung Juli 2026", senderName: "", senderEmail: "" };
+		const anonymous = { subject: "Stundenerfassung Juli 2026", senderName: "", senderEmail: "" };
 		const s = buildTeamSummary(
 			"2026-07",
 			[
-				mail({ ...anonym, received: new Date(wallToTs(2026, 8, 1, 9, 0, 0)).toISOString() }),
-				mail({ ...anonym, received: new Date(wallToTs(2026, 8, 2, 9, 0, 0)).toISOString() })
+				mail({ ...anonymous, received: new Date(wallToTs(2026, 8, 1, 9, 0, 0)).toISOString() }),
+				mail({ ...anonymous, received: new Date(wallToTs(2026, 8, 2, 9, 0, 0)).toISOString() })
 			],
 			team
 		);
@@ -251,8 +251,8 @@ describe("buildTeamSummary", () => {
 	it("faellt ohne Monat im Betreff auf das Empfangsdatum zurueck und sagt es", () => {
 		const s = buildTeamSummary("2026-07", [mail({ subject: "Stundenerfassung" })], team);
 		expect(s.entries[0].monthSource).toBe("received");
-		const mitMonat = buildTeamSummary("2026-07", [mail()], team);
-		expect(mitMonat.entries[0].monthSource).toBe("subject");
+		const withMonth = buildTeamSummary("2026-07", [mail()], team);
+		expect(withMonth.entries[0].monthSource).toBe("subject");
 	});
 });
 

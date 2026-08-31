@@ -207,26 +207,26 @@ describe("pruneEmptyMonthFiles", () => {
 
 describe("beschädigte Monatsdatei", () => {
 	/** Halb geschriebene Datei, z.B. nach Stromausfall im Fallback-Zweig. */
-	const kaputt = '[{"id":"e1","activityId":"a1","startTs":123';
+	const broken = '[{"id":"e1","activityId":"a1","startTs":123';
 
 	it("wird nicht als leer gelesen, sondern zur Seite gelegt", async () => {
-		files.set(file("2026-06"), kaputt);
+		files.set(file("2026-06"), broken);
 		expect(await loadEntries("2026-06")).toEqual([]);
 		// Original weg, Inhalt aber unter neuem Namen erhalten.
 		expect(files.has(file("2026-06"))).toBe(false);
-		const abgelegt = [...files.entries()].find(([p]) => p.includes("beschaedigt"));
-		expect(abgelegt?.[1]).toBe(kaputt);
+		const stored = [...files.entries()].find(([p]) => p.includes("beschaedigt"));
+		expect(stored?.[1]).toBe(broken);
 	});
 
 	it("überlebt pruneEmptyMonthFiles – der Monat wird nicht gelöscht", async () => {
-		files.set(file("2026-06"), kaputt);
+		files.set(file("2026-06"), broken);
 		await pruneEmptyMonthFiles();
 		// Eine beschaedigte Datei darf prune nicht faelschlich als leer lesen und loeschen.
 		expect([...files.keys()].some((p) => p.includes("beschaedigt"))).toBe(true);
 	});
 
 	it("taucht danach nicht mehr in der Monatsliste auf", async () => {
-		files.set(file("2026-06"), kaputt);
+		files.set(file("2026-06"), broken);
 		await saveEntries("2026-07", [entry("e1")]);
 		await loadEntries("2026-06"); // legt die kaputte Datei ab
 		expect(await listEntryMonths()).toEqual(["2026-07"]);
@@ -248,9 +248,9 @@ describe("Speichern, wenn rename fehlschlägt", () => {
 
 	it("schreibt trotzdem eine vollständige, lesbare Datei", async () => {
 		await saveEntries("2026-06", [entry("e1"), entry("e2")]);
-		const roh = files.get(file("2026-06"));
-		expect(roh).toBeDefined();
-		expect(() => JSON.parse(roh!)).not.toThrow();
+		const raw = files.get(file("2026-06"));
+		expect(raw).toBeDefined();
+		expect(() => JSON.parse(raw!)).not.toThrow();
 		expect(await loadEntries("2026-06")).toHaveLength(2);
 	});
 

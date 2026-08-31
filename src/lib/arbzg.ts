@@ -83,15 +83,15 @@ export const MAX_STRETCH_HOURS = 6;
 export type AvgBasis = "legal" | "strict";
 
 export type ArbZgRule =
-	| "ueber10"
-	| "ueber9_5"
-	| "ueber8"
-	| "ruhepause"
-	| "pause6h"
-	| "ruhezeit"
-	| "sonntag";
+	| "over10"
+	| "over9_5"
+	| "over8"
+	| "restBreak"
+	| "break6h"
+	| "restPeriod"
+	| "sunday";
 
-export type ArbZgLevel = "verstoss" | "risiko" | "hinweis";
+export type ArbZgLevel = "violation" | "risk" | "hint";
 
 export interface ArbZgFinding {
 	rule: ArbZgRule;
@@ -803,21 +803,21 @@ export function dayFindings(
 
 		if (f.hours > 0) {
 			if (f.hours > MAX_DAILY) {
-				add("ueber10", "verstoss", "> 10 h",
+				add("over10", "violation", "> 10 h",
 					`${fmtHoursClock(f.hours)} h Arbeitszeit – über der absoluten Tagesgrenze von 10 h. Das lässt sich nicht über den Durchschnitt ausgleichen.`,
 					f.hours, MAX_DAILY);
 			} else if (f.hours > RISK_DAILY) {
-				add("ueber9_5", "risiko", "≈ 10 h",
+				add("over9_5", "risk", "≈ 10 h",
 					`${fmtHoursClock(f.hours)} h Arbeitszeit – knapp unter der Tagesgrenze von 10 h.`,
 					f.hours, MAX_DAILY);
 			} else if (f.hours > NORM_DAILY) {
-				add("ueber8", "hinweis", "> 8 h",
+				add("over8", "hint", "> 8 h",
 					`${fmtHoursClock(f.hours)} h Arbeitszeit – zulässig, muss aber im 24-Wochen-Schnitt ausgeglichen werden.`,
 					f.hours, NORM_DAILY);
 			}
 
 			if (f.weekday === 0) {
-				add("sonntag", "hinweis", "Sonntag",
+				add("sunday", "hint", "Sonntag",
 					`${fmtHoursClock(f.hours)} h an einem Sonntag – Sonntagsarbeit ist nur in Ausnahmefällen zulässig.`,
 					f.hours);
 			}
@@ -826,12 +826,12 @@ export function dayFindings(
 				const pause = f.pauseMinutes ?? 0;
 				const required = f.hours > 9 ? 45 : f.hours > 6 ? 30 : 0;
 				if (required > 0 && pause < required) {
-					add("ruhepause", "verstoss", "Ruhepause",
+					add("restBreak", "violation", "Ruhepause",
 						`${fmtHoursClock(f.hours)} h Arbeitszeit bei ${pause} min Pause – erforderlich sind ${required} min.`,
 						pause / 60, required / 60);
 				}
 				if ((f.longestStretch ?? 0) > MAX_STRETCH_HOURS) {
-					add("pause6h", "verstoss", "6 h am Stück",
+					add("break6h", "violation", "6 h am Stück",
 						`${fmtHoursClock(f.longestStretch ?? 0)} h ohne Unterbrechung von mindestens 15 Minuten – nach 6 h muss eine Pause liegen.`,
 						f.longestStretch ?? 0, MAX_STRETCH_HOURS);
 				}
@@ -841,11 +841,11 @@ export function dayFindings(
 		if (f.firstStart !== null && prevEnd !== null && f.firstStart > prevEnd) {
 			const rest = (f.firstStart - prevEnd) / 3600000;
 			if (rest < REST_HOURS) {
-				add("ruhezeit", "verstoss", "Ruhezeit",
+				add("restPeriod", "violation", "Ruhezeit",
 					`Nur ${fmtHoursClock(rest)} h zwischen Feierabend am Vortag und Arbeitsbeginn – vorgeschrieben sind 11 h.`,
 					rest, REST_HOURS);
 			} else if (rest < RISK_REST_HOURS) {
-				add("ruhezeit", "risiko", "Ruhezeit knapp",
+				add("restPeriod", "risk", "Ruhezeit knapp",
 					`${fmtHoursClock(rest)} h Ruhezeit – knapp über den vorgeschriebenen 11 h.`,
 					rest, REST_HOURS);
 			}
@@ -897,7 +897,7 @@ export function checkArbZg(entries: Entry[], opts: ArbZgOptions): ArbZgResult {
 		strict: forecast(facts, "strict", forecastOpts, pre)
 	};
 
-	const counts: Record<ArbZgLevel, number> = { verstoss: 0, risiko: 0, hinweis: 0 };
+	const counts: Record<ArbZgLevel, number> = { violation: 0, risk: 0, hint: 0 };
 	for (const f of findings) counts[f.level]++;
 
 	return {

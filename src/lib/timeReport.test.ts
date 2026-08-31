@@ -40,12 +40,12 @@ function sheet(rows: string[][], name = "Ergebnisse"): XlsxSheet {
 /** Datenzeile: Personalnr., Name, Vorname, Serial, kommen, gehen, Stunden. */
 function row(
 	serial: string,
-	kommen: string,
+	arrive: string,
 	gehen: string,
-	stunden: string,
+	hours: string,
 	person: [string, string, string] = ["00123456", "Meier", "Anna"]
 ): string[] {
-	return [...person, serial, kommen, gehen, "", stunden, "", "", "", "", "", ""];
+	return [...person, serial, arrive, gehen, "", hours, "", "", "", "", "", ""];
 }
 
 describe("serialToDate", () => {
@@ -205,7 +205,7 @@ describe("parseTimeReport", () => {
 		r[8] = "1,5"; // Arbeitszeit täglich > 10h
 		const day = parseTimeReport(sheet([r])).people[0].days[0];
 		expect(day.hours).toBe(10);
-		expect(day.flags).toEqual([{ key: "ueber10", label: "> 10 h", value: "1,5" }]);
+		expect(day.flags).toEqual([{ key: "over10", label: "> 10 h", value: "1,5" }]);
 	});
 
 	it("sammelt alle gesetzten Verstoss-Hinweise", () => {
@@ -213,7 +213,7 @@ describe("parseTimeReport", () => {
 		r[6] = "X"; // Verstoß Ruhepause
 		r[11] = "X"; // Arbeit am Sonntag
 		const day = parseTimeReport(sheet([r])).people[0].days[0];
-		expect(day.flags.map((f) => f.key)).toEqual(["ruhepause", "sonntag"]);
+		expect(day.flags.map((f) => f.key)).toEqual(["restBreak", "sunday"]);
 		expect(day.flags.map((f) => f.label)).toEqual(["Ruhepause", "Sonntag"]);
 	});
 
@@ -301,13 +301,13 @@ describe("echter Report (anonymisiertes Fixture)", () => {
 
 	it("unterscheidet Arbeitstage, freie Tage und Abwesenheiten", async () => {
 		const days = (await load()).people[0].days;
-		const gestempelt = days.filter(hasStamps);
+		const stamped = days.filter(hasStamps);
 		const abwesend = days.filter((d) => !hasStamps(d) && d.hours > 0);
-		const frei = days.filter((d) => d.hours === 0);
+		const free = days.filter((d) => d.hours === 0);
 
-		expect(gestempelt.length + abwesend.length + frei.length).toBe(days.length);
+		expect(stamped.length + abwesend.length + free.length).toBe(days.length);
 		// Kein Werktag faellt durchs Raster: freie Tage sind ausschliesslich Wochenenden.
-		for (const d of frei) {
+		for (const d of free) {
 			const wd = new Date(`${d.date}T12:00:00Z`).getUTCDay();
 			expect([0, 6]).toContain(wd);
 		}
@@ -321,15 +321,15 @@ describe("echter Report (anonymisiertes Fixture)", () => {
 		const report = await load();
 		const erika = report.people[0];
 		expect(erika.days.find((d) => d.date === "2026-01-13")!.flags.map((f) => f.key)).toEqual([
-			"ruhepause"
+			"restBreak"
 		]);
 		expect(erika.days.find((d) => d.date === "2026-01-22")!.flags).toEqual([
-			{ key: "ueber10", label: "> 10 h", value: "0,95" }
+			{ key: "over10", label: "> 10 h", value: "0,95" }
 		]);
 		// Zweite Person: Sonntagsarbeit am 04.01.
 		const max = report.people[1];
 		expect(max.days.find((d) => d.date === "2026-01-04")!.flags.map((f) => f.key)).toEqual([
-			"sonntag"
+			"sunday"
 		]);
 	});
 });

@@ -60,7 +60,7 @@
 	// Das Onboarding bleibt auch nach dem Verknuepfen stehen, solange es noch
 	// einen Schritt zu zeigen hat - sonst waere es weg, bevor jemand sagen konnte,
 	// ob er seine App noch dazuholen will.
-	const brauchtAnmeldung = $derived(!isTauri() && (!account.linked || onboardingOffen.wert));
+	const brauchtAnmeldung = $derived(!isTauri() && (!account.linked || onboardingOffen.value));
 	let paletteOpen = $state(false);
 
 	/** Laufende Version, sobald der Start sie gelesen hat ("" bis dahin). */

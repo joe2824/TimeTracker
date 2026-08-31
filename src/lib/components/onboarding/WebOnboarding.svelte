@@ -155,7 +155,7 @@
 		// VOR dem Verknuepfen: in dem Moment, in dem das Konto haengt, baut die
 		// Seite diesen Bildschirm ab - und der letzte Schritt ginge mit ihm. Wer
 		// das Flag erst danach setzt, sieht ihn nie.
-		onboardingOffen.wert = true;
+		onboardingOffen.value = true;
 		await account.linkWithSession(serverUrl, schluessel, angemeldeterName);
 
 		schritt = "geraet";
@@ -172,7 +172,7 @@
 		try {
 			const label = await account.approvePairing(c);
 			appCode = "";
-			onboardingOffen.wert = false;
+			onboardingOffen.value = false;
 			app.dismissOnboarding();
 			toast.success(`„${label}" ist jetzt verknüpft.`);
 		} catch (e) {
@@ -184,7 +184,7 @@
 
 	/** Den Willkommensbildschirm schliessen und das Onboarding zur Ersteinrichtung öffnen. */
 	function fertig() {
-		onboardingOffen.wert = false;
+		onboardingOffen.value = false;
 		app.openOnboarding();
 	}
 

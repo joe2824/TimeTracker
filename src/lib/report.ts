@@ -110,15 +110,15 @@ export function buildReport(
 
 	let breakHours = 0;
 	for (const perActivity of workByDay.values()) {
-		let brutto = 0;
-		for (const h of perActivity.values()) brutto += h;
-		const netto = deductBreaks ? deductBreakFromDay(perActivity) : perActivity;
+		let gross = 0;
+		for (const h of perActivity.values()) gross += h;
+		const net = deductBreaks ? deductBreakFromDay(perActivity) : perActivity;
 		let sum = 0;
-		for (const [id, h] of netto) {
+		for (const [id, h] of net) {
 			add(id, h);
 			sum += h;
 		}
-		breakHours += brutto - sum;
+		breakHours += gross - sum;
 	}
 
 	// Aktive Aktivitäten immer; archivierte nur, wenn sie in diesem Monat Stunden haben
