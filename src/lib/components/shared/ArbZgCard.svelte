@@ -344,11 +344,11 @@
 					xScale={scaleTime()}
 					{yDomain}
 					series={[
-						{ key: "schnitt", label: "Schnitt", color: "var(--color-schnitt)" },
+						{ key: "average", label: "Schnitt", color: "var(--color-average)" },
 						{
-							key: "grenze",
+							key: "limit",
 							label: "Grenze",
-							color: "var(--color-grenze)",
+							color: "var(--color-limit)",
 							// SVG-Schreibweise, nicht camelCase: Spline reicht die Props
 							// unveraendert an das <path> durch.
 							props: { "stroke-dasharray": "4 4" }
