@@ -40,8 +40,8 @@ function withParams(baseUrl: string, values: Record<string, string>): string {
  * sie landeten in der Chronik, in geteilten Bildschirmfotos und im naechsten
  * Neuladen, wo sie dann nicht mehr gelten und wie ein Fehler aussehen.
  */
-export function linkParameter(): { invite: string; neu: boolean } {
-	if (typeof location === "undefined") return { invite: "", neu: false };
+export function linkParameter(): { invite: string; fresh: boolean } {
+	if (typeof location === "undefined") return { invite: "", fresh: false };
 	const url = new URL(location.href);
 	const readIt = (name: string) => {
 		const value = url.searchParams.get(name)?.trim() ?? "";
@@ -49,9 +49,9 @@ export function linkParameter(): { invite: string; neu: boolean } {
 		return value;
 	};
 	const invite = readIt(INVITE_PARAM);
-	const neu = readIt(NEW_PARAM) !== "";
+	const fresh = readIt(NEW_PARAM) !== "";
 
-	if (invite || neu) {
+	if (invite || fresh) {
 		try {
 			history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
 		} catch {
@@ -59,5 +59,5 @@ export function linkParameter(): { invite: string; neu: boolean } {
 			// die Anmeldung daran scheitern zu lassen.
 		}
 	}
-	return { invite, neu };
+	return { invite, fresh };
 }

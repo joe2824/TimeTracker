@@ -356,8 +356,8 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 			expect(app.activities).toEqual([]);
 
 			// 2. Im Tresor auf dem Server darf KEIN Datensatz von den Altdaten liegen
-			const vaultNeu = freshServer.userVaults.get("user-neu");
-			expect(vaultNeu?.size ?? 0).toBe(0);
+			const vaultNew = freshServer.userVaults.get("user-neu");
+			expect(vaultNew?.size ?? 0).toBe(0);
 		} finally {
 			globalThis.fetch = originalFetch;
 			await account.unlink();

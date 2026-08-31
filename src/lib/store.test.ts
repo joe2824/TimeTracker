@@ -48,8 +48,8 @@ describe("saveEntries", () => {
 		// zu - mit einem fuehrenden Punkt im Namen schiede jeder Versuch mit
 		// "forbidden path", und die App schriebe dauerhaft ungeschuetzt direkt.
 		await saveEntries("2026-06", [entry("e1")]);
-		const versteckt = written.filter((p) => (p.split("/").pop() ?? "").startsWith("."));
-		expect(versteckt).toEqual([]);
+		const hidden = written.filter((p) => (p.split("/").pop() ?? "").startsWith("."));
+		expect(hidden).toEqual([]);
 		expect(written).toContain("data/entries-2026-06.json.tmp");
 	});
 
@@ -157,7 +157,7 @@ describe("deleteYear", () => {
 		const freigeben = blockWrites();
 		const speichern = saveEntries("2026-01", [entry("a"), entry("b")]);
 		// Das Loeschen startet, waehrend oben nachweislich noch geschrieben wird.
-		const loeschen = deleteYear(2026);
+		const remove = deleteYear(2026);
 		// Erst laufen lassen, bis es an der Datei ist: alles am Fake-Dateisystem ist
 		// eine Microtask, ein Durchlauf der Warteschlange bringt das Loeschen also
 		// bis zu seinem remove. Ohne dieses Warten stuende es beim Freigeben noch
@@ -165,7 +165,7 @@ describe("deleteYear", () => {
 		// der Test wuerde auch ohne die Warteschlange gruen.
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		freigeben();
-		await Promise.all([speichern, loeschen]);
+		await Promise.all([speichern, remove]);
 
 		expect(files.has(file("2026-01"))).toBe(false);
 		expect(await listEntryMonths()).toEqual([]);

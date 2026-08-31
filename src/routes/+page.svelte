@@ -13,7 +13,7 @@
 	import type { DataChanged } from "$lib/platform/windows";
 	import { onPairLink } from "$lib/platform/deeplink";
 	import WebOnboarding from "$lib/components/onboarding/WebOnboarding.svelte";
-	import { onboardingOffen } from "$lib/onboarding.svelte";
+	import { onboardingOpen } from "$lib/onboarding.svelte";
 	import PasskeyNudge from "$lib/components/onboarding/PasskeyNudge.svelte";
 	import { errorText, logError, logFile, logInfo, logWarn, pruneOldLogs } from "$lib/log";
 	import { appDataDir, join } from "@tauri-apps/api/path";
@@ -60,7 +60,7 @@
 	// Das Onboarding bleibt auch nach dem Verknuepfen stehen, solange es noch
 	// einen Schritt zu zeigen hat - sonst waere es weg, bevor jemand sagen konnte,
 	// ob er seine App noch dazuholen will.
-	const needsLogin = $derived(!isTauri() && (!account.linked || onboardingOffen.value));
+	const needsLogin = $derived(!isTauri() && (!account.linked || onboardingOpen.value));
 	let paletteOpen = $state(false);
 
 	/** Laufende Version, sobald der Start sie gelesen hat ("" bis dahin). */
@@ -275,7 +275,7 @@
 						void app.reload();
 						// Das Tray schreibt ohne Haken - erst hier wird daraus etwas,
 						// das den Server erreicht.
-						void account.nachlese();
+						void account.followUp();
 					}),
 					// Tray-Flyout wurde geöffnet und fragt den aktuellen Hinweis-Status ab.
 					await listen("tray-request-attention", () => {

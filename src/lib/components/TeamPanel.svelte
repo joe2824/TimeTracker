@@ -116,7 +116,7 @@
 				teamReminderSubject(summary.label),
 				teamReminderHtml(summary.label)
 			);
-			logInfo(`Chef-Modus: Erinnerung für ${month} erstellt`, { anzahl: reachableMissing.length });
+			logInfo(`Chef-Modus: Erinnerung für ${month} erstellt`, { count: reachableMissing.length });
 			toast.success("Outlook-Entwurf geöffnet. Bitte prüfen und senden.");
 		} catch (e) {
 			toast.error(await reportOutlookError("Chef-Modus: Erinnerung fehlgeschlagen", e));

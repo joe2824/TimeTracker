@@ -26,7 +26,7 @@ let person: TimeReportPerson;
 let months: string[];
 
 beforeAll(async () => {
-	const url = new URL("./testing/zeitwirtschaftsreport.fixture.xlsx", import.meta.url);
+	const url = new URL("./testing/timeReport.fixture.xlsx", import.meta.url);
 	const report = parseTimeReport(await readXlsx(readFileSync(url)));
 	person = report.people[0];
 	months = report.months;

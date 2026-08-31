@@ -183,7 +183,7 @@ class AccountState {
 				}
 
 				logInfo("Konto verknüpft", { server: info.serverUrl });
-				void this.abgleichMitNachlese();
+				void this.syncWithFollowUp();
 			} catch (e) {
 				// Der haeufigste Grund: die Datei stammt von einem anderen
 				// Benutzerkonto. Dann ist die Verknuepfung hier nichts mehr wert.
@@ -252,10 +252,10 @@ class AccountState {
 	 * Erst holen, dann vormerken: der frische Zeitstempel des ungestempelten
 	 * Bestands gewaenne sonst jeden Vergleich und ueberschriebe das Konto.
 	 */
-	async abgleichMitNachlese(): Promise<void> {
+	async syncWithFollowUp(): Promise<void> {
 		const beforeSeq = (await loadDevice())?.seq ?? 0;
 		await this.syncNow();
-		if (await this.#bestandIstUnserer()) {
+		if (await this.#dataIsOurs()) {
 			await rememberUnstamped(beforeSeq === 0);
 		}
 		await this.syncNow();
@@ -268,7 +268,7 @@ class AccountState {
 	 * Kontos. Sie bleiben - aber sie gehen nicht hoch. Ohne diese Frage haette
 	 * jedes neue Konto den Bestand des vorigen geerbt.
 	 */
-	async #bestandIstUnserer(): Promise<boolean> {
+	async #dataIsOurs(): Promise<boolean> {
 		const info = await loadDevice();
 		if (!info?.dataOwner || !info.accountFingerprint) return true;
 		return info.dataOwner === info.accountFingerprint;
@@ -281,9 +281,9 @@ class AccountState {
 	 * Modulzustand; der Schreib-Haken laeuft dort nicht. Was es schreibt, traegt
 	 * deshalb keinen Stempel und stuende ohne diesen Schritt nur lokal da.
 	 */
-	async nachlese(): Promise<void> {
+	async followUp(): Promise<void> {
 		if (!this.linked) return;
-		if (!(await this.#bestandIstUnserer())) return;
+		if (!(await this.#dataIsOurs())) return;
 		await rememberUnstamped();
 		this.syncSoon(0);
 	}
@@ -646,7 +646,7 @@ class AccountState {
 		const wrap = await wrapForDevice(this.#key, raw);
 		await this.#api.pairApprove(typed, JSON.stringify(serializeWrap(wrap)));
 		logInfo("Gerät gekoppelt", { label });
-		void this.abgleichMitNachlese();
+		void this.syncWithFollowUp();
 		return label;
 	}
 
@@ -720,7 +720,7 @@ class AccountState {
 		this.hasDeviceToken = token !== null;
 		this.state = "connected";
 		await this.#startEngine(url, token, 0);
-		void this.abgleichMitNachlese();
+		void this.syncWithFollowUp();
 	}
 
 	/** Nachsehen, was am Konto haengt - vor allem, wie viele Geraete und die Verwalterrolle. */

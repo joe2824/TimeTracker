@@ -155,7 +155,7 @@ class AppState {
 					firstStart: firstRun,
 					activities: this.activities.length,
 					entries: this.monthEntries(month).length + this.monthEntries(prev).length,
-					laeuft: this.#runningName()
+					running: this.#runningName()
 				});
 			} catch (e) {
 				// Merken statt werfen: eine abgewiesene Promise landet nur in der
@@ -255,7 +255,7 @@ class AppState {
 		// gesetzt ist. Ein Erhöhen mitten in reload (wenn running kurz null war)
 		// würde das Icon kurz auf „idle" wechseln – das sichtbare Flackern.
 		this.trayVersion = (this.trayVersion + 1) % 1000;
-		logDebug("Daten neu geladen", { laeuft: this.#runningName() });
+		logDebug("Daten neu geladen", { running: this.#runningName() });
 	}
 
 	/** Aktualisiert das native OS Tray Icon und Menü sofort imperativ. */
@@ -919,16 +919,16 @@ class AppState {
 
 	/** Schließt ALLE offenen Einträge (egal welches Fenster sie öffnete). running = null. */
 	async #closeAllOpen(endTs = Date.now()): Promise<void> {
-		const offen = this.#openEntries();
-		if (offen.length > 0) {
-			logInfo(`Timer gestoppt: ${offen.map((e) => this.activityName(e.activityId)).join(", ")}`, {
+		const openOnes = this.#openEntries();
+		if (openOnes.length > 0) {
+			logInfo(`Timer gestoppt: ${openOnes.map((e) => this.activityName(e.activityId)).join(", ")}`, {
 				end: new Date(endTs).toISOString(),
-				seconds: offen.map((e) => Math.round((Math.max(e.startTs, endTs) - e.startTs) / 1000))
+				seconds: openOnes.map((e) => Math.round((Math.max(e.startTs, endTs) - e.startTs) / 1000))
 			});
 		}
 		// Der ganze Lauf, nicht nur das letzte Tagesstueck: eine Endzeit vor
 		// Mitternacht muss die schon abgetrennten Stuecke mitnehmen.
-		const chains = offen.map((open) => this.runChain(open)).sort((a, b) => b.length - a.length);
+		const chains = openOnes.map((open) => this.runChain(open)).sort((a, b) => b.length - a.length);
 		const done = new Set<string>();
 
 		const months = new Set<string>();

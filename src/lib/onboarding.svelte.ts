@@ -3,4 +3,4 @@
 // Nach dem Anlegen ist das Konto verknuepft - die Anmeldeseite waere damit weg.
 // Es fehlt aber noch eine Frage: gibt es die Anwendung schon auf dem Rechner?
 // Solange die offen ist, bleibt der Bildschirm stehen.
-export const onboardingOffen = $state({ value: false });
+export const onboardingOpen = $state({ value: false });

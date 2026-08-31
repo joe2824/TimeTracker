@@ -252,12 +252,12 @@ describe("Rückdatierter Start kürzt einen Eintrag über mehrere Tage", () => {
 
 			await app.startActivity(P2, at(18, 9));
 
-			const alt = onDisk("2026-07")
+			const old = onDisk("2026-07")
 				.filter((e) => e.activityId === P1)
 				.sort((a, b) => a.startTs - b.startTs);
-			expect(alt).toHaveLength(3); // 16., 17., 18. statt einer 49-Stunden-Zeile
-			expect(alt[0].endTs).toBe(at(17, 0));
-			expect(alt[2].endTs).toBe(at(18, 9));
+			expect(old).toHaveLength(3); // 16., 17., 18. statt einer 49-Stunden-Zeile
+			expect(old[0].endTs).toBe(at(17, 0));
+			expect(old[2].endTs).toBe(at(18, 9));
 			expect(app.running?.activityId).toBe(P2);
 		} finally {
 			vi.useRealTimers();
@@ -332,8 +332,8 @@ describe("Zurückgebliebene offene Einträge (Absturz)", () => {
 		// muss eine echte Dauer behalten, nicht endTs = startTs.
 		await reloadAt(at(17, 15), [entry("alt", P1, at(17, 9), null), entry("neu", P2, at(17, 12), null)]);
 
-		const alt = onDisk("2026-07").find((e) => e.id === "alt")!;
-		expect(alt.endTs).toBe(at(17, 12)); // nicht at(17, 9)
+		const old = onDisk("2026-07").find((e) => e.id === "alt")!;
+		expect(old.endTs).toBe(at(17, 12)); // nicht at(17, 9)
 		expect(app.running?.id).toBe("neu"); // der neueste läuft weiter
 	});
 

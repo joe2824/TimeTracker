@@ -41,11 +41,11 @@ function sheet(rows: string[][], name = "Ergebnisse"): XlsxSheet {
 function row(
 	serial: string,
 	arrive: string,
-	gehen: string,
+	leaving: string,
 	hours: string,
 	person: [string, string, string] = ["00123456", "Meier", "Anna"]
 ): string[] {
-	return [...person, serial, arrive, gehen, "", hours, "", "", "", "", "", ""];
+	return [...person, serial, arrive, leaving, "", hours, "", "", "", "", "", ""];
 }
 
 describe("serialToDate", () => {
@@ -283,7 +283,7 @@ describe("parseTimeReport", () => {
 
 describe("echter Report (anonymisiertes Fixture)", () => {
 	async function load() {
-		const url = new URL("./testing/zeitwirtschaftsreport.fixture.xlsx", import.meta.url);
+		const url = new URL("./testing/timeReport.fixture.xlsx", import.meta.url);
 		return parseTimeReport(await readXlsx(readFileSync(url)));
 	}
 
@@ -302,17 +302,17 @@ describe("echter Report (anonymisiertes Fixture)", () => {
 	it("unterscheidet Arbeitstage, freie Tage und Abwesenheiten", async () => {
 		const days = (await load()).people[0].days;
 		const stamped = days.filter(hasStamps);
-		const abwesend = days.filter((d) => !hasStamps(d) && d.hours > 0);
+		const absent = days.filter((d) => !hasStamps(d) && d.hours > 0);
 		const free = days.filter((d) => d.hours === 0);
 
-		expect(stamped.length + abwesend.length + free.length).toBe(days.length);
+		expect(stamped.length + absent.length + free.length).toBe(days.length);
 		// Kein Werktag faellt durchs Raster: freie Tage sind ausschliesslich Wochenenden.
 		for (const d of free) {
 			const wd = new Date(`${d.date}T12:00:00Z`).getUTCDay();
 			expect([0, 6]).toContain(wd);
 		}
 		// Abwesenheiten stehen im Report immer mit dem vollen Tagessatz.
-		for (const d of abwesend) expect(d.hours).toBe(7.5);
+		for (const d of absent) expect(d.hours).toBe(7.5);
 		// 01.01. ist Neujahr, also ohne Stempel.
 		expect(days[0]).toMatchObject({ firstIn: null, lastOut: null, hours: 7.5 });
 	});

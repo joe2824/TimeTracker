@@ -22,14 +22,14 @@
 	import { RELEASES_URL, detectOs, hasDesktopApp } from "$lib/platform/os";
 	import { errorText, logWarn } from "$lib/log";
 	import { linkParameter } from "$lib/invite";
-	import { onboardingOffen } from "$lib/onboarding.svelte";
+	import { onboardingOpen } from "$lib/onboarding.svelte";
 	import {
 		isPairingCode,
 		isValidRecoveryPhrase,
 		normalizePairingCode
 	} from "$lib/crypto/vault";
 
-	type Step = "start" | "phrase" | "entsperren" | "geraet";
+	type Step = "start" | "phrase" | "unlock" | "device";
 
 	let stepIndex = $state<Step>("start");
 	let running = $state(false);
@@ -75,7 +75,7 @@
 				toast.error("Für dieses Konto ist kein Weg hinterlegt, den Tresor zu öffnen.");
 				return;
 			}
-			stepIndex = "entsperren";
+			stepIndex = "unlock";
 		} catch (e) {
 			// Kein Sackgassen-Toast. WebAuthn sagt nicht, OB es einen Passkey gibt -
 			// abgebrochen und "gar keiner da" kommen als derselbe Fehler an. Statt zu
@@ -155,10 +155,10 @@
 		// VOR dem Verknuepfen: in dem Moment, in dem das Konto haengt, baut die
 		// Seite diesen Bildschirm ab - und der letzte Schritt ginge mit ihm. Wer
 		// das Flag erst danach setzt, sieht ihn nie.
-		onboardingOffen.value = true;
+		onboardingOpen.value = true;
 		await account.linkWithSession(serverUrl, keyValue, loggedInName);
 
-		stepIndex = "geraet";
+		stepIndex = "device";
 	}
 
 	/** Den Code aus der Desktop-Anwendung bestaetigen. */
@@ -172,7 +172,7 @@
 		try {
 			const label = await account.approvePairing(c);
 			appCode = "";
-			onboardingOffen.value = false;
+			onboardingOpen.value = false;
 			app.dismissOnboarding();
 			toast.success(`„${label}" ist jetzt verknüpft.`);
 		} catch (e) {
@@ -184,7 +184,7 @@
 
 	/** Den Willkommensbildschirm schliessen und das Onboarding zur Ersteinrichtung öffnen. */
 	function isDone() {
-		onboardingOffen.value = false;
+		onboardingOpen.value = false;
 		app.openOnboarding();
 	}
 
@@ -320,10 +320,10 @@
 			<Card.Root class="w-full shadow-md border-border/80 bg-card">
 				<Card.Header class="pb-3 border-b">
 					<Card.Title class="text-base font-semibold tracking-tight">
-						{linkValue.neu ? "Konto anlegen" : "Loslegen"}
+						{linkValue.fresh ? "Konto anlegen" : "Loslegen"}
 					</Card.Title>
 					<Card.Description class="text-xs leading-relaxed">
-						{#if linkValue.neu}
+						{#if linkValue.fresh}
 							Erstelle dein Konto per Touch ID, Face ID oder PIN. Ganz ohne Passwort.
 						{:else}
 							Schnell & sicher per Passkey (Fingerabdruck, Face ID oder PIN).
@@ -331,7 +331,7 @@
 					</Card.Description>
 				</Card.Header>
 				<Card.Content class="space-y-4 pt-4">
-					{#if linkValue.neu}
+					{#if linkValue.fresh}
 						<!-- Der Rechner hat hierher geschickt, ausdruecklich zum Anlegen. -->
 						<div class="space-y-2.5">
 							<Button size="lg" class="w-full h-11 font-medium gap-2 shadow-xs" disabled={running} onclick={() => create(invite)}>
@@ -341,7 +341,7 @@
 							<button
 								type="button"
 								class="text-muted-foreground hover:text-foreground w-full text-center text-xs underline underline-offset-4 pt-1"
-								onclick={() => (linkValue.neu = false)}
+								onclick={() => (linkValue.fresh = false)}
 							>
 								Ich habe bereits ein Konto
 							</button>
@@ -412,7 +412,7 @@
 	<div
 		class="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-6 px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]"
 	>
-		{#if stepIndex === "geraet"}
+		{#if stepIndex === "device"}
 			<!-- Der eine Schritt nach dem Anlegen. -->
 			<header class="flex flex-col items-center gap-3 text-center">
 				<img src="/logo.svg" alt="" class="h-14 w-auto drop-shadow-sm" />
