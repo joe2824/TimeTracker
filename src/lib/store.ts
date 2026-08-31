@@ -236,10 +236,14 @@ export interface StoredTimeReport {
 	month: string;
 	/** Wann die Datei eingelesen wurde (Epoch-ms) */
 	importedAt: number;
-	/** Person aus der Datei – bei einem Team-Export gibt es mehrere zur Auswahl. */
-	personKey: string;
-	personName: string;
-	/** Nur die Tage DIESES Monats, aufsteigend. */
+	/**
+	 * Nur die Tage DIESES Monats, aufsteigend.
+	 *
+	 * Bewusst ohne Personalnummer und Namen: gerechnet wird damit nirgends, und
+	 * was nicht abgelegt wird, kann auch nicht in eine Sicherung oder auf einen
+	 * Server wandern. Wem der Report gehoert, steht in den Einstellungen unter
+	 * "Bericht & E-Mail" - beim Einlesen wird dagegen geprueft.
+	 */
 	days: TimeReportDay[];
 }
 
@@ -263,10 +267,15 @@ export async function loadTimeReport(month: string): Promise<StoredTimeReport | 
 	// Eine Datei aus einer aelteren/kaputten Fassung soll die Ansicht nicht kippen.
 	if (!stored || !Array.isArray(stored.days)) return null;
 
-	// Reports, die vor der Umbenennung eingelesen wurden, tragen die alten
-	// Flag-Namen. Ohne die Uebersetzung faellt jeder Hinweis stumm aus der Ansicht.
+	// Ausdruecklich Feld fuer Feld statt `...stored`: aeltere Dateien tragen noch
+	// Personalnummer und Namen. Ueber den Spread landeten sie beim naechsten
+	// Speichern wieder auf der Platte - und spaeter im Abgleich.
+	//
+	// Die Flag-Namen von vor der Umbenennung werden dabei uebersetzt; ohne das
+	// faellt jeder Hinweis stumm aus der Ansicht.
 	return {
-		...stored,
+		month: stored.month,
+		importedAt: stored.importedAt,
 		days: stored.days.map((day) => ({
 			...day,
 			flags: (day.flags ?? []).map((flag) => ({

@@ -176,8 +176,11 @@
 			}));
 	});
 
+	/** Wem die eingelesenen Reports gehoeren – der Name aus "Bericht & E-Mail". */
+	const ownName = $derived(app.settings.senderName.trim());
+
 	/** Die Person, um die es gerade geht – nur bekannt, wenn eine Datei offen ist. */
-	const activePerson = $derived(parsed?.people.find((p) => p.key === active?.personKey) ?? null);
+	const activePerson = $derived(parsed?.people.find((p) => p.key === personKey) ?? null);
 	/**
 	 * Monate, die sich hier direkt aufrufen lassen: die DIESER Person aus der
 	 * offenen Datei plus alles, was schon eingelesen auf der Platte liegt.
@@ -307,8 +310,16 @@
 		try {
 			const report = parseTimeReport(await readXlsx(await file.arrayBuffer()));
 			parsed = report;
-			// Bei genau einer Person gibt es nichts zu waehlen.
-			personKey = report.people.length === 1 ? report.people[0].key : (matchOwnPerson(report) ?? "");
+			// Eine Datei mit genau einer Person wurde bisher ungefragt uebernommen.
+			// Die Anzeige weist den Report ab hier mit DEM eigenen Namen aus - bei
+			// der Datei eines Kollegen stuende er also ueber fremden Zahlen, und
+			// abgeglichen wuerde gegen die eigenen Zeiten. Steht dort ein anderer
+			// Name, wird deshalb gefragt statt gemeldet: eine Meldung uebersieht man.
+			if (report.people.length === 1) {
+				personKey = isOwnPerson(report.people[0]) ? report.people[0].key : "";
+			} else {
+				personKey = matchOwnPerson(report) ?? "";
+			}
 			logInfo("Zeitwirtschaftsreport eingelesen", {
 				fileName: file.name,
 				people: report.people.length,
@@ -349,6 +360,18 @@
 		return hit?.key ?? null;
 	}
 
+	/**
+	 * Gehoert diese Person zu diesem Konto?
+	 *
+	 * Ohne eigenen Namen in den Einstellungen laesst sich nichts vergleichen -
+	 * dann wird uebernommen wie bisher, und die Anzeige nennt mangels Namen auch
+	 * niemanden.
+	 */
+	function isOwnPerson(person: TimeReportPerson): boolean {
+		if (!ownName || !person.name) return true;
+		return person.name.toLowerCase() === ownName.toLowerCase();
+	}
+
 	/** Person + Monat festlegen, speichern und in den Abgleich wechseln. */
 	async function useReport(key: string, targetMonth: string) {
 		const person = parsed?.people.find((p) => p.key === key);
@@ -364,13 +387,7 @@
 		// Ohne das bliebe bei einem Team-Export die Personenauswahl stehen und der
 		// Klick sähe aus, als passiere nichts.
 		personKey = person.key;
-		const report: StoredTimeReport = {
-			month: targetMonth,
-			importedAt: Date.now(),
-			personKey: person.key,
-			personName: person.name,
-			days
-		};
+		const report: StoredTimeReport = { month: targetMonth, importedAt: Date.now(), days };
 		month = targetMonth;
 		await app.ensureMonth(targetMonth);
 		try {
@@ -406,9 +423,7 @@
 		await app.ensureMonth(target);
 		// `parsed` bleibt stehen: sonst verschwaenden die uebrigen Monate der noch
 		// offenen Datei aus der Auswahl und waeren nur ueber einen neuen Import
-		// wieder zu erreichen. Stammt der gespeicherte Report von jemand anderem,
-		// faellt `activePerson` von selbst weg – es haengt an `active.personKey`.
-		personKey = report.personKey;
+		// wieder zu erreichen.
 		active = report;
 		stored = report;
 		resetSelection();
@@ -703,8 +718,8 @@
 						<div class="min-w-0">
 							<p class="truncate text-sm font-medium">
 								{monthLabel(stored.month)}
-								{#if stored.personName}
-									<span class="text-muted-foreground font-normal">· {stored.personName}</span>
+								{#if ownName}
+									<span class="text-muted-foreground font-normal">· {ownName}</span>
 								{/if}
 							</p>
 							<p class="text-muted-foreground truncate text-xs">
@@ -727,7 +742,14 @@
 
 	{:else if parsed && !personKey}
 		<Card.Content class="space-y-3">
-			<p class="text-sm">Die Datei enthält mehrere Personen. Wessen Zeiten sollen abgeglichen werden?</p>
+			<p class="text-sm">
+				{#if parsed.people.length === 1}
+					Diese Datei enthält die Zeiten von {parsed.people[0].name} – nicht von {ownName}.
+					Trotzdem abgleichen?
+				{:else}
+					Die Datei enthält mehrere Personen. Wessen Zeiten sollen abgeglichen werden?
+				{/if}
+			</p>
 			<div class="flex flex-wrap gap-2">
 				{#each parsed.people as p (p.key)}
 					<Button variant="outline" size="sm" onclick={() => useReport(p.key, preferredMonth(p))}>
@@ -787,8 +809,8 @@
 						{:else}
 							<span class="font-medium">{monthLabel(active.month)}</span>
 						{/if}
-						{#if active.personName}
-							<Badge variant="secondary">{active.personName}</Badge>
+						{#if ownName}
+							<Badge variant="secondary">{ownName}</Badge>
 						{/if}
 					</div>
 					<div class="text-muted-foreground flex flex-wrap items-center gap-3 text-sm">

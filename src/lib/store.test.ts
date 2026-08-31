@@ -12,6 +12,7 @@ const {
 	loadEntries,
 	loadDevice,
 	loadSettings,
+	loadTimeReport,
 	pruneEmptyMonthFiles,
 	saveEntries,
 	saveSettings
@@ -347,5 +348,52 @@ describe("loadDevice", () => {
 
 	it("gibt null zurueck, wenn es noch keine device.json gibt", async () => {
 		expect(await loadDevice()).toBeNull();
+	});
+});
+
+describe("loadTimeReport", () => {
+	it("laesst Personalnummer und Namen aus aelteren Dateien fallen", async () => {
+		// Vor 0.9.2 wurden beide mitgespeichert. Ueber einen Spread landeten sie
+		// beim naechsten Speichern wieder auf der Platte - und spaeter im Abgleich.
+		files.set(
+			"data/timereport-2026-06.json",
+			JSON.stringify({
+				month: "2026-06",
+				importedAt: 1,
+				personKey: "00123456",
+				personName: "Anna Meier",
+				days: [{ date: "2026-06-01", firstIn: null, lastOut: null, hours: 0, flags: [] }]
+			})
+		);
+
+		const report = (await loadTimeReport("2026-06")) as Record<string, unknown> | null;
+
+		expect(report).not.toHaveProperty("personKey");
+		expect(report).not.toHaveProperty("personName");
+		expect(report?.month).toBe("2026-06");
+		expect((report?.days as unknown[]).length).toBe(1);
+	});
+
+	it("uebersetzt die alten Flag-Namen weiter", async () => {
+		files.set(
+			"data/timereport-2026-06.json",
+			JSON.stringify({
+				month: "2026-06",
+				importedAt: 1,
+				days: [
+					{
+						date: "2026-06-01",
+						firstIn: null,
+						lastOut: null,
+						hours: 0,
+						flags: [{ key: "ruhepause", label: "Ruhepause", value: "x" }]
+					}
+				]
+			})
+		);
+
+		const report = await loadTimeReport("2026-06");
+
+		expect(report?.days[0].flags[0].key).toBe("restBreak");
 	});
 });
