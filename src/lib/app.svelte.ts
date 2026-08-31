@@ -1,7 +1,13 @@
 // Zentraler, reaktiver App-Zustand (Svelte 5 Runes).
 import { toast } from "svelte-sonner";
 import type { Activity, Entry, EntrySource, Settings } from "./types";
-import { BUILTIN_ABSENCE, BUILTIN_OTHERS, defaultSettings } from "./types";
+import {
+	BUILTIN_ABSENCE,
+	BUILTIN_ABSENCE_ID,
+	BUILTIN_OTHERS,
+	BUILTIN_OTHERS_ID,
+	defaultSettings
+} from "./types";
 import {
 	fmtClock,
 	fmtDate,
@@ -247,6 +253,10 @@ class AppState {
 		}
 		this.running = null;
 		await this.#findRunning();
+		// Auch hier, nicht nur beim Start: ein Abgleich kann waehrend einer offenen
+		// Sitzung eine zweite "Others"-Zeile hereinspielen, und dann steht sie da,
+		// bis jemand die Anwendung neu startet.
+		await this.#seedBuiltins();
 		this.now = Date.now();
 		this.loaded = true;
 		// Ein anderes Fenster hat geschrieben – abgeleitete Listen neu lesen.
@@ -299,23 +309,97 @@ class AppState {
 		return this.activities.find((a) => a.id === id)?.name ?? "(gelöscht)";
 	}
 
+	/**
+	 * Die eingebauten Zeilen herstellen: genau eine je Art, unter fester Id.
+	 *
+	 * Laeuft bei jedem Start, VOR dem ersten Abgleich - und raeumt dabei auch auf.
+	 * Aeltere Fassungen vergaben hier Zufalls-Ids; weil jedes Geraet anlegt, bevor
+	 * es die Liste vom Server kennt, entstanden so Duplikate. Die werden hier
+	 * zusammengefuehrt: erst haengen die Eintraege um, dann verschwinden die
+	 * ueberzaehligen Zeilen. Weil die Ziel-Id fest ist, waehlen alle Geraete
+	 * unabhaengig voneinander dasselbe Ziel und laufen zusammen.
+	 */
 	async #seedBuiltins(): Promise<void> {
 		let changed = false;
-		const ensure = (name: string, isAbsence: boolean) => {
-			if (!this.activities.some((a) => a.name === name)) {
+		const kinds = [
+			{ id: BUILTIN_OTHERS_ID, name: BUILTIN_OTHERS, isAbsence: false },
+			{ id: BUILTIN_ABSENCE_ID, name: BUILTIN_ABSENCE, isAbsence: true }
+		];
+
+		for (const kind of kinds) {
+			const matches = this.activities.filter((a) =>
+				kind.isAbsence ? a.isAbsence : !a.isAbsence && a.name === kind.name
+			);
+
+			if (matches.length === 0) {
 				this.activities.push({
-					id: uid(),
-					name,
+					id: kind.id,
+					name: kind.name,
 					sortOrder: this.activities.length,
 					archived: false,
-					isAbsence
+					isAbsence: kind.isAbsence
 				});
 				changed = true;
+				continue;
 			}
-		};
-		ensure(BUILTIN_OTHERS, false);
-		ensure(BUILTIN_ABSENCE, true);
-		if (changed) await this.persistActivities();
+
+			// Nichts zu tun: genau eine, und sie sitzt schon auf der festen Id.
+			if (matches.length === 1 && matches[0].id === kind.id) continue;
+
+			// Wer ueberlebt: die auf der festen Id, sonst die kleinste - eine Regel,
+			// die auf jedem Geraet dieselbe Zeile waehlt.
+			const survivor =
+				matches.find((a) => a.id === kind.id) ??
+				[...matches].sort((a, b) => a.id.localeCompare(b.id))[0];
+
+			const oldIds = new Set(matches.map((a) => a.id).filter((id) => id !== kind.id));
+			const moved = await this.#repointEntries(oldIds, kind.id);
+
+			const rest = this.activities.filter((a) => !matches.includes(a));
+			this.activities = [
+				...rest,
+				{ ...survivor, id: kind.id, name: kind.name, isAbsence: kind.isAbsence }
+			];
+			changed = true;
+			logWarn(`Eingebaute Zeile "${kind.name}" zusammengeführt`, {
+				removed: oldIds.size,
+				entries: moved
+			});
+		}
+
+		if (changed) {
+			this.#reindexBuiltinsLast();
+			await this.persistActivities();
+		}
+	}
+
+	/**
+	 * Eintraege aller Monate von `oldIds` auf `toId` umhaengen. Liefert die Anzahl.
+	 *
+	 * Muss VOR dem Loeschen der alten Zeilen laufen: sonst zeigen die Eintraege auf
+	 * eine Aktivitaet, die es nicht mehr gibt, und heissen in der Liste "(gelöscht)".
+	 */
+	async #repointEntries(oldIds: Set<string>, toId: string): Promise<number> {
+		if (oldIds.size === 0) return 0;
+		let moved = 0;
+
+		for (const month of await listEntryMonths()) {
+			await this.ensureMonth(month);
+			const list = this.entriesByMonth[month];
+			if (!list) continue;
+			let touched = false;
+			for (const e of list) {
+				if (oldIds.has(e.activityId)) {
+					e.activityId = toId;
+					touched = true;
+					moved++;
+				}
+			}
+			if (touched) await this.#saveMonth(month);
+		}
+
+		if (this.running && oldIds.has(this.running.activityId)) this.running.activityId = toId;
+		return moved;
 	}
 
 	async persistActivities(): Promise<void> {

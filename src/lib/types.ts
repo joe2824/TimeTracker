@@ -182,3 +182,15 @@ export const defaultSettings: Settings = {
 /** Namen der eingebauten Zeilen, die immer im Bericht erscheinen. */
 export const BUILTIN_OTHERS = "Others";
 export const BUILTIN_ABSENCE = "Abwesenheiten";
+
+/**
+ * Feste Ids der eingebauten Zeilen.
+ *
+ * Bewusst KEINE Zufalls-Id: sie werden auf jedem Geraet angelegt, und zwar
+ * bevor der erste Abgleich gelaufen ist. Mit einer Zufalls-Id legt jedes Geraet
+ * eine eigene Fassung an, der Abgleich vergleicht nach Id, findet keine
+ * Uebereinstimmung - und die Liste haette "Others" und "Abwesenheiten" doppelt
+ * und dreifach. Mit einer festen Id entsteht ueberall derselbe Datensatz.
+ */
+export const BUILTIN_OTHERS_ID = "builtin-others";
+export const BUILTIN_ABSENCE_ID = "builtin-absence";

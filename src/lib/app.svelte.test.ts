@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Activity, Entry } from "./types";
-import { defaultSettings } from "./types";
+import { BUILTIN_ABSENCE_ID, BUILTIN_OTHERS_ID, defaultSettings } from "./types";
 import { fakeFs, files, fsFaults, resetFakeFs } from "./testing/fakeFs";
 import { appTimeZone, wallToTs } from "./tz";
 
@@ -700,5 +700,97 @@ describe("ensureMonth", () => {
 		expect(app.settings.pomodoroBreakMin).toBe(5);
 		expect(app.running?.activityId).toBe(P1);
 		expect(app.pomodoro?.phase).toBe("focus");
+	});
+});
+
+describe("Eingebaute Zeilen: Duplikate zusammenfuehren", () => {
+	/** Aktivitaeten auf die Platte legen und die App neu einlesen lassen. */
+	async function withActivities(list: Activity[], entries: Record<string, Entry[]> = {}) {
+		reset(entries);
+		files.set("data/activities.json", JSON.stringify(list));
+		await app.reload();
+	}
+
+	const row = (id: string, name: string, isAbsence: boolean, sortOrder = 0): Activity => ({
+		id,
+		name,
+		sortOrder,
+		archived: false,
+		isAbsence
+	});
+
+	it("macht aus drei 'Others' und drei 'Abwesenheiten' je eine", async () => {
+		// Genau der gemeldete Zustand: jedes Geraet hatte eigene Zufalls-Ids vergeben.
+		await withActivities([
+			row("zufall-1", "Others", false, 0),
+			row("zufall-2", "Others", false, 1),
+			row("zufall-3", "Others", false, 2),
+			row("zufall-4", "Abwesenheiten", true, 3),
+			row("zufall-5", "Abwesenheiten", true, 4),
+			row("zufall-6", "Abwesenheiten", true, 5),
+			row(P1, "Projekt 1", false, 6)
+		]);
+
+		expect(app.activities.filter((a) => a.name === "Others")).toHaveLength(1);
+		expect(app.activities.filter((a) => a.isAbsence)).toHaveLength(1);
+		expect(app.activities.find((a) => a.name === "Others")?.id).toBe(BUILTIN_OTHERS_ID);
+		expect(app.activities.find((a) => a.isAbsence)?.id).toBe(BUILTIN_ABSENCE_ID);
+		// Die echte Aktivitaet bleibt unangetastet.
+		expect(app.activities.find((a) => a.id === P1)).toBeDefined();
+	});
+
+	it("haengt die Eintraege der Duplikate um, statt sie zu loeschen", async () => {
+		await withActivities(
+			[row("alt-a", "Abwesenheiten", true, 0), row("alt-b", "Abwesenheiten", true, 1)],
+			{
+				"2026-08": [
+					entry("e1", "alt-a", at(3, 9), at(3, 17)),
+					entry("e2", "alt-b", at(4, 9), at(4, 17))
+				]
+			}
+		);
+
+		const stored = onDisk("2026-08");
+		expect(stored).toHaveLength(2);
+		expect(stored.every((e) => e.activityId === BUILTIN_ABSENCE_ID)).toBe(true);
+	});
+
+	it("zieht auch eine einzelne Zeile mit Alt-Id auf die feste Id", async () => {
+		// Sonst legte ein frisch aufgesetztes Geraet die feste Id an und der
+		// Abgleich brachte prompt wieder ein Duplikat.
+		await withActivities([row("alt-einzeln", "Abwesenheiten", true, 0)], {
+			"2026-08": [entry("e1", "alt-einzeln", at(3, 9), at(3, 17))]
+		});
+
+		expect(app.activities.filter((a) => a.isAbsence)).toHaveLength(1);
+		expect(app.activities.find((a) => a.isAbsence)?.id).toBe(BUILTIN_ABSENCE_ID);
+		expect(onDisk("2026-08")[0].activityId).toBe(BUILTIN_ABSENCE_ID);
+	});
+
+	it("behaelt Farbe und Favorit der ueberlebenden Zeile", async () => {
+		await withActivities([
+			{ ...row("aaa", "Others", false, 0), color: "#22c55e", favorite: true },
+			row("bbb", "Others", false, 1)
+		]);
+
+		const others = app.activities.find((a) => a.name === "Others");
+		expect(others?.color).toBe("#22c55e");
+		expect(others?.favorite).toBe(true);
+	});
+
+	it("legt fehlende Zeilen mit fester Id an", async () => {
+		await withActivities([row(P1, "Projekt 1", false, 0)]);
+
+		expect(app.activities.find((a) => a.name === "Others")?.id).toBe(BUILTIN_OTHERS_ID);
+		expect(app.activities.find((a) => a.isAbsence)?.id).toBe(BUILTIN_ABSENCE_ID);
+	});
+
+	it("aendert beim zweiten Durchlauf nichts mehr", async () => {
+		await withActivities([row("zufall-1", "Others", false, 0), row("zufall-2", "Others", false, 1)]);
+		const after = JSON.stringify(app.activities);
+
+		await app.reload();
+
+		expect(JSON.stringify(app.activities)).toBe(after);
 	});
 });
