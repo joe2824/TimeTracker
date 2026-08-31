@@ -794,3 +794,44 @@ describe("Eingebaute Zeilen: Duplikate zusammenfuehren", () => {
 		expect(JSON.stringify(app.activities)).toBe(after);
 	});
 });
+
+describe("Reparatur der eingebauten Zeilen erreicht den Abgleich", () => {
+	it("merkt umgehaengte Eintraege und geloeschte Zeilen in der Outbox vor", async () => {
+		const { startTracking, stopTracking, pendingChanges, resetOutboxForTests } = await import(
+			"./sync/outbox"
+		);
+
+		reset();
+		// Ein bereits abgeglichener Eintrag: er traegt `rev`. Genau solche sammelt
+		// rememberUnstamped() NICHT mehr ein - ohne Schreib-Haken bliebe das
+		// Umhaengen also auf diesem Geraet stehen.
+		files.set(
+			"data/activities.json",
+			JSON.stringify([
+				{ id: "alt-a", name: "Abwesenheiten", sortOrder: 0, archived: false, isAbsence: true, rev: 7 },
+				{ id: "alt-b", name: "Abwesenheiten", sortOrder: 1, archived: false, isAbsence: true, rev: 8 }
+			])
+		);
+		files.set(
+			"data/entries-2026-08.json",
+			JSON.stringify([{ ...entry("e1", "alt-a", at(3, 9), at(3, 17)), rev: 3 }])
+		);
+
+		resetOutboxForTests();
+		await startTracking("geraet-test");
+		try {
+			await app.reload();
+
+			const marked = pendingChanges();
+			expect(marked.some((c) => c.kind === "entry" && c.id === "e1")).toBe(true);
+			expect(marked.some((c) => c.kind === "activity" && c.id === BUILTIN_ABSENCE_ID)).toBe(true);
+			// Die Duplikate muessen als Loeschung hochgehen, sonst holt sie der
+			// naechste Abgleich zurueck.
+			const deletions = marked.filter((c) => c.kind === "activity" && c.deleted).map((c) => c.id);
+			expect(deletions).toEqual(expect.arrayContaining(["alt-a", "alt-b"]));
+		} finally {
+			stopTracking();
+			resetOutboxForTests();
+		}
+	});
+});

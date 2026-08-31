@@ -29,6 +29,7 @@ import { isTauri } from "./platform/env";
 import {
 	deleteYear,
 	listEntryMonths,
+	loadDevice,
 	loadActivities,
 	loadEntries,
 	loadSettings,
@@ -146,7 +147,15 @@ class AppState {
 						logWarn("Aufräumen leerer Monatsdateien fehlgeschlagen", e);
 					}
 				});
-				await this.#step("Aktivitäten prüfen", () => this.#seedBuiltins());
+				await this.#step("Aktivitäten prüfen", async () => {
+					await this.#seedBuiltins();
+					// Ohne Konto gibt es keinen Schreib-Haken und niemanden, den die
+					// Reparatur erreichen muesste - dann darf sie gleich hier laufen.
+					// Mit Konto uebernimmt das der Abgleich, sobald er steht.
+					if (!(await loadDevice())?.accountFingerprint) {
+						await this.mergeDuplicateBuiltins();
+					}
+				});
 				const month = this.currentMonth;
 				await this.#step(`Einträge ${month} laden`, () => this.ensureMonth(month));
 				const prev = prevMonthKey();
@@ -255,8 +264,10 @@ class AppState {
 		await this.#findRunning();
 		// Auch hier, nicht nur beim Start: ein Abgleich kann waehrend einer offenen
 		// Sitzung eine zweite "Others"-Zeile hereinspielen, und dann steht sie da,
-		// bis jemand die Anwendung neu startet.
+		// bis jemand die Anwendung neu startet. Hier steht der Schreib-Haken, die
+		// Reparatur wird also mitgeschrieben und erreicht die anderen Geraete.
 		await this.#seedBuiltins();
+		await this.mergeDuplicateBuiltins();
 		this.now = Date.now();
 		this.loaded = true;
 		// Ein anderes Fenster hat geschrieben – abgeleitete Listen neu lesen.
@@ -319,29 +330,67 @@ class AppState {
 	 * ueberzaehligen Zeilen. Weil die Ziel-Id fest ist, waehlen alle Geraete
 	 * unabhaengig voneinander dasselbe Ziel und laufen zusammen.
 	 */
-	async #seedBuiltins(): Promise<void> {
-		let changed = false;
-		const kinds = [
+	/** Die eingebauten Zeilen, je Art eine feste Id. */
+	get #builtinKinds() {
+		return [
 			{ id: BUILTIN_OTHERS_ID, name: BUILTIN_OTHERS, isAbsence: false },
 			{ id: BUILTIN_ABSENCE_ID, name: BUILTIN_ABSENCE, isAbsence: true }
 		];
+	}
 
-		for (const kind of kinds) {
-			const matches = this.activities.filter((a) =>
-				kind.isAbsence ? a.isAbsence : !a.isAbsence && a.name === kind.name
-			);
+	#builtinsOfKind(kind: { name: string; isAbsence: boolean }): Activity[] {
+		return this.activities.filter((a) =>
+			kind.isAbsence ? a.isAbsence : !a.isAbsence && a.name === kind.name
+		);
+	}
 
-			if (matches.length === 0) {
-				this.activities.push({
-					id: kind.id,
-					name: kind.name,
-					sortOrder: this.activities.length,
-					archived: false,
-					isAbsence: kind.isAbsence
-				});
-				changed = true;
-				continue;
-			}
+	/**
+	 * Fehlende eingebaute Zeilen anlegen - mehr nicht.
+	 *
+	 * Bewusst harmlos: das laeuft beim Start, also bevor der Abgleich seinen
+	 * Schreib-Haken gesetzt hat. Eine neu angelegte Zeile traegt noch kein `rev`
+	 * und wird von rememberUnstamped() eingesammelt; alles Weitere - Eintraege
+	 * umhaengen, Zeilen loeschen - wuerde hier dagegen spurlos passieren.
+	 */
+	async #seedBuiltins(): Promise<void> {
+		let changed = false;
+		for (const kind of this.#builtinKinds) {
+			if (this.#builtinsOfKind(kind).length > 0) continue;
+			this.activities.push({
+				id: kind.id,
+				name: kind.name,
+				sortOrder: this.activities.length,
+				archived: false,
+				isAbsence: kind.isAbsence
+			});
+			changed = true;
+		}
+		if (changed) {
+			this.#reindexBuiltinsLast();
+			await this.persistActivities();
+		}
+	}
+
+	/**
+	 * Doppelte eingebaute Zeilen zusammenfuehren.
+	 *
+	 * Aeltere Fassungen vergaben hier Zufalls-Ids; weil jedes Geraet anlegt, bevor
+	 * es die Liste vom Server kennt, entstanden Duplikate. Erst haengen die
+	 * Eintraege auf die feste Id um, dann verschwinden die ueberzaehligen Zeilen.
+	 * Weil die Ziel-Id fest ist, waehlt jedes Geraet dasselbe Ziel.
+	 *
+	 * Laeuft NUR dort, wo der Schreib-Haken steht (nach dem Start des Abgleichs)
+	 * oder wo es keinen Abgleich gibt. Die umgehaengten Eintraege tragen bereits
+	 * ein `rev`, rememberUnstamped() wuerde sie nicht mehr aufsammeln - ohne Haken
+	 * bliebe die Reparatur also auf diesem Geraet stehen und erreichte den Server
+	 * nie.
+	 */
+	async mergeDuplicateBuiltins(): Promise<void> {
+		let changed = false;
+
+		for (const kind of this.#builtinKinds) {
+			const matches = this.#builtinsOfKind(kind);
+			if (matches.length === 0) continue;
 
 			// Nichts zu tun: genau eine, und sie sitzt schon auf der festen Id.
 			if (matches.length === 1 && matches[0].id === kind.id) continue;

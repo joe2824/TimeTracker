@@ -227,6 +227,11 @@ class AccountState {
 		});
 		this.#engine.setMonthLister(listEntryMonths);
 		await startTracking(this.#device);
+		// Ab hier steht der Schreib-Haken. Erst jetzt darf die Reparatur der
+		// eingebauten Zeilen laufen: sie haengt Eintraege um, die bereits ein `rev`
+		// tragen - ohne Haken wuerde rememberUnstamped() sie nicht aufsammeln und
+		// die Umhaengung erreichte den Server nie.
+		await app.mergeDuplicateBuiltins();
 		// Jede lokale Aenderung stoesst einen Abgleich an - gesammelt, nicht sofort.
 		setChangeListener(() => this.syncSoon());
 		this.#installNetworkListeners();
