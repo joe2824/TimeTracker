@@ -9,10 +9,12 @@
 // Die Herkunftsspuren bleiben aus dem Chiffrat draussen: der Server braucht sie im
 // Klartext fuer die Reihenfolge.
 import type { Entry, Activity, Settings } from "../types";
+import type { StoredTimeReport } from "../store";
 import { Api, ApiError, type OutgoingRecord, type ServerRecord } from "./api";
 import {
 	applyingRemote,
 	clearChanges,
+	monthOfTimeReportId,
 	pendingChanges,
 	SETTINGS_ID,
 	type PendingChange
@@ -41,6 +43,9 @@ export interface LocalStore {
 	saveActivities(list: Activity[]): Promise<void>;
 	settings(): Promise<Settings>;
 	saveSettings(s: Settings): Promise<void>;
+	timeReport(month: string): Promise<StoredTimeReport | null>;
+	saveTimeReport(report: StoredTimeReport): Promise<void>;
+	deleteTimeReport(month: string): Promise<void>;
 }
 
 export interface SyncState {
@@ -236,6 +241,10 @@ export class SyncEngine {
 				} else if (c.kind === "activity") {
 					activities ??= await this.#store.activities();
 					out.push(await this.#record(c, activities.find((a) => a.id === c.id)));
+				} else if (c.kind === "timereport") {
+					const month = monthOfTimeReportId(c.id);
+					const report = month ? await this.#store.timeReport(month) : null;
+					out.push(await this.#record(c, report ? { ...report, id: c.id } : undefined));
 				} else {
 					out.push(await this.#record(c, { ...(await this.#store.settings()), id: SETTINGS_ID }));
 				}
@@ -323,10 +332,12 @@ export class SyncEngine {
 		const entries = records.filter((r) => r.kind === "entry");
 		const activities = records.filter((r) => r.kind === "activity");
 		const settings = records.filter((r) => r.kind === "settings");
+		const reports = records.filter((r) => r.kind === "timereport");
 
 		lostEdits += await this.#applyEntries(entries, open);
 		if (activities.length > 0) lostEdits += await this.#applyActivities(activities, open);
 		if (settings.length > 0) lostEdits += await this.#applySettings(settings[settings.length - 1], open);
+		for (const r of reports) lostEdits += await this.#applyTimeReport(r, open);
 		return { lostEdits };
 	}
 
@@ -506,6 +517,46 @@ export class SyncEngine {
 		if (!result.changed || !result.value) return result.lostLocalEdit ? 1 : 0;
 		const { id: _id, ...rest } = result.value;
 		await this.#store.saveSettings(rest as Settings);
+		return result.lostLocalEdit ? 1 : 0;
+	}
+
+	/**
+	 * Einen Report einspielen - ein Datensatz je Monat, als Ganzes.
+	 *
+	 * Anders als bei den Eintraegen gibt es hier nichts feldweise zusammenzufuehren:
+	 * ein Report ist die Abschrift EINER Datei, entweder die eine oder die andere.
+	 */
+	async #applyTimeReport(record: ServerRecord, open: Set<string>): Promise<number> {
+		const month = monthOfTimeReportId(record.id);
+		// Eine Id ohne erkennbaren Monat gehoert zu einer Fassung, die wir nicht
+		// kennen - dann lieber nichts tun als in die falsche Datei schreiben.
+		if (!month) return 0;
+		const content = await this.#open<StoredTimeReport & { id?: string }>(record);
+		if (content === undefined) return 0;
+		const local = await this.#store.timeReport(month);
+		const deleted = record.deletedAt !== null;
+		const result = mergeRecord<StoredTimeReport & { id: string; deletedAt?: number }>(
+			{
+				local: local ? { ...local, id: record.id } : undefined,
+				remote: {
+					...content,
+					id: record.id,
+					month,
+					updatedAt: record.updatedAt,
+					rev: record.rev,
+					deviceId: record.deviceId ?? undefined,
+					...(deleted ? { deletedAt: record.updatedAt } : {})
+				},
+				localPending: open.has(`timereport:${record.id}`)
+			},
+			(v) => v.deletedAt !== undefined
+		);
+		if (!result.changed) return result.lostLocalEdit ? 1 : 0;
+		if (result.value === null) await this.#store.deleteTimeReport(month);
+		else {
+			const { id: _id, deletedAt: _deletedAt, ...rest } = result.value;
+			await this.#store.saveTimeReport(rest as StoredTimeReport);
+		}
 		return result.lostLocalEdit ? 1 : 0;
 	}
 

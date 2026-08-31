@@ -5,7 +5,7 @@
 //   data/entries-YYYY-MM.json     (eine Datei pro Monat)
 //   data/timereport-YYYY-MM.json  (eingelesener LOGA-Report, eine Datei pro Monat)
 import { storage } from "./platform/fs";
-import type { Activity, Entry, Settings } from "./types";
+import type { Activity, Entry, Settings, SyncMeta } from "./types";
 import type { TimeReportDay, TimeReportFlag } from "./timeReport";
 import { defaultSettings } from "./types";
 import { logError, logWarn } from "./log";
@@ -67,6 +67,12 @@ export interface WriteHook {
 	entries(month: string, before: Entry[], after: Entry[]): Promise<Entry[]>;
 	activities(before: Activity[], after: Activity[]): Promise<Activity[]>;
 	settings(before: Settings | null, after: Settings): Promise<Settings>;
+	/** `after === null` heisst: der Report dieses Monats faellt weg. */
+	timeReport(
+		month: string,
+		before: StoredTimeReport | null,
+		after: StoredTimeReport | null
+	): Promise<StoredTimeReport | null>;
 }
 
 let writeHook: WriteHook | null = null;
@@ -231,7 +237,7 @@ export async function pruneEmptyMonthFiles(): Promise<string[]> {
 // ---- Zeitwirtschaftsreport (pro Monat) ----
 
 /** Ein eingelesener LOGA-Report, auf einen Monat und eine Person eingedampft. */
-export interface StoredTimeReport {
+export interface StoredTimeReport extends SyncMeta {
 	/** "YYYY-MM" */
 	month: string;
 	/** Wann die Datei eingelesen wurde (Epoch-ms) */
@@ -276,6 +282,11 @@ export async function loadTimeReport(month: string): Promise<StoredTimeReport | 
 	return {
 		month: stored.month,
 		importedAt: stored.importedAt,
+		// Die Stempel gehoeren mitgenommen: ohne sie hielte der Abgleich jeden
+		// gespeicherten Report fuer nie hochgeladen und schriebe ihn endlos neu.
+		updatedAt: stored.updatedAt,
+		rev: stored.rev,
+		deviceId: stored.deviceId,
 		days: stored.days.map((day) => ({
 			...day,
 			flags: (day.flags ?? []).map((flag) => ({
@@ -287,7 +298,33 @@ export async function loadTimeReport(month: string): Promise<StoredTimeReport | 
 }
 
 export async function saveTimeReport(report: StoredTimeReport): Promise<void> {
-	return writeJson(reportFile(report.month), report);
+	const file = reportFile(report.month);
+	if (!writeHook) return writeJson(file, report);
+	return queued(file, async () => {
+		const before = await loadTimeReportRaw(report.month);
+		const stamped = await writeHook!.timeReport(report.month, before, report);
+		await writeJsonNow(file, stamped ?? report);
+	});
+}
+
+/**
+ * Den Report eines Monats entfernen.
+ *
+ * Geht durch den Haken, damit die Loeschung auch auf den anderen Geraeten
+ * ankommt - eine bloss geloeschte Datei bliebe dort stehen.
+ */
+export async function deleteTimeReport(month: string): Promise<void> {
+	const file = reportFile(month);
+	return queued(file, async () => {
+		if (writeHook) await writeHook.timeReport(month, await loadTimeReportRaw(month), null);
+		const path = `${DIR}/${file}`;
+		if (await storage.exists(path)) await storage.remove(path);
+	});
+}
+
+/** Der Stand einer Reportdatei, wie er auf der Platte liegt. */
+async function loadTimeReportRaw(month: string): Promise<StoredTimeReport | null> {
+	return readJson<StoredTimeReport | null>(reportFile(month), null);
 }
 
 /** Monate, zu denen ein eingelesener Report auf der Platte liegt, aufsteigend. */
@@ -316,6 +353,15 @@ export interface DeviceInfo {
 	protected?: boolean;
 	/** Bis zu welchem Serverstand dieses Geraet alles kennt. */
 	seq?: number;
+	/**
+	 * Welchen Nachlauf dieses Geraet schon hinter sich hat.
+	 *
+	 * Der Stand `seq` wandert weiter, auch ueber Datensatzarten, die diese Fassung
+	 * noch nicht kannte - die sind damit fuer immer uebersprungen. Kommt eine Art
+	 * hinzu, wird die Zahl hier hochgesetzt; jedes Geraet holt dann einmalig von
+	 * vorne. Siehe RESYNC_GENERATION.
+	 */
+	resyncGeneration?: number;
 	/** Anzeigename des Kontos - nur fuer die Oberflaeche. */
 	accountName?: string;
 	/**
@@ -441,15 +487,10 @@ export async function deleteYear(year: number): Promise<string[]> {
 	const months = (await ofYear(MONTH_FILE_RE)).map(([, month]) => month);
 	for (const month of months) await saveEntries(month, []);
 
-	// Die eingelesenen LOGA-Reports gleicht niemand ab; sie duerfen direkt weg -
-	// aber durch die Warteschlange, aus demselben Grund wie das Leeren eines Monats
-	// in saveEntries: ein noch anstehendes saveTimeReport derselben Datei legte sie
-	// sonst NACH dem Loeschen wieder an, unsichtbar bis zum naechsten Start.
-	for (const [name] of await ofYear(REPORT_FILE_RE)) {
-		await queued(name, async () => {
-			const path = `${DIR}/${name}`;
-			if (await storage.exists(path)) await storage.remove(path);
-		});
-	}
+	// Die eingelesenen Reports aus demselben Grund ueber deleteTimeReport und nicht
+	// ueber ein direktes storage.remove(): auch sie werden abgeglichen, seit es sie
+	// als eigene Datensatzart gibt. Direkt geloescht kaemen sie beim naechsten
+	// Abgleich vom Server zurueck.
+	for (const [, month] of await ofYear(REPORT_FILE_RE)) await deleteTimeReport(month);
 	return months.sort();
 }

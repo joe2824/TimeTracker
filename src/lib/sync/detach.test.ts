@@ -127,4 +127,28 @@ describe("Vom Konto loesen", () => {
 		// dem, was gerade weggeraeumt wurde.
 		expect(pendingChanges()).toHaveLength(0);
 	});
+
+	it("streift den Stempel auch von den eingelesenen Reports", async () => {
+		// Bliebe er stehen, hielte rememberUnstamped den Report fuer laengst
+		// hochgeladen - beim naechsten Konto waere er nur noch lokal da.
+		await store.saveTimeReport({
+			month: MONTH,
+			importedAt: 1234,
+			updatedAt: 111,
+			rev: 3,
+			deviceId: "pc",
+			days: [{ date: `${MONTH}-15`, firstIn: "07:30", lastOut: "16:45", hours: 7.5, flags: [] }]
+		});
+
+		const result = await detachLocalData();
+
+		const after = await store.loadTimeReport(MONTH);
+		expect(result.timeReports).toBe(1);
+		expect(after?.rev).toBeUndefined();
+		expect(after?.updatedAt).toBeUndefined();
+		expect(after?.deviceId).toBeUndefined();
+		// Der Inhalt bleibt unangetastet.
+		expect(after?.days).toHaveLength(1);
+		expect(after?.importedAt).toBe(1234);
+	});
 });

@@ -1,13 +1,15 @@
 // Was noch nicht beim Server ist. Gemerkt wird NUR, WAS sich geaendert hat - Art, Id,
 // bei Eintraegen der Monat - nie der Inhalt selbst.
 import type { Activity, Entry, Settings, SyncMeta } from "../types";
-import type { WriteHook } from "../store";
+import type { StoredTimeReport, WriteHook } from "../store";
 import {
 	listEntryMonths,
+	listTimeReportMonths,
 	loadActivities,
 	loadEntries,
 	loadOutbox,
 	loadSettings,
+	loadTimeReport,
 	saveOutbox,
 	setWriteHook,
 	settingsFileExists
@@ -15,10 +17,25 @@ import {
 import { diffAndStamp } from "./stamp";
 import { logWarn } from "../log";
 
-export type RecordKind = "entry" | "activity" | "settings";
+export type RecordKind = "entry" | "activity" | "settings" | "timereport";
 
 /** Die Id des einen Einstellungs-Datensatzes – es gibt genau einen. */
 export const SETTINGS_ID = "settings";
+
+/**
+ * Die Id eines Reports: der Monat mit Vorsatz.
+ *
+ * Der Server fuehrt seine Datensaetze allein ueber die Id, ohne die Art daneben.
+ * Ein blosses "2026-07" koennte deshalb mit einer anderen Art zusammenstossen.
+ */
+export function timeReportId(month: string): string {
+	return `timereport:${month}`;
+}
+
+/** Der Monat zu einer Report-Id; leer, wenn die Id keine ist. */
+export function monthOfTimeReportId(id: string): string {
+	return id.startsWith("timereport:") ? id.slice("timereport:".length) : "";
+}
 
 export interface PendingChange {
 	kind: RecordKind;
@@ -138,6 +155,13 @@ export async function rememberUnstamped(forceAll = false): Promise<void> {
 		const s = (await loadSettings()) as Settings & SyncMeta;
 		if (forceAll || s.rev === undefined) changes.push({ kind: "settings", id: SETTINGS_ID, deleted: false, at: now });
 	}
+	for (const month of await listTimeReportMonths()) {
+		const report = await loadTimeReport(month);
+		if (!report) continue;
+		if (forceAll || report.rev === undefined) {
+			changes.push({ kind: "timereport", id: timeReportId(month), deleted: false, at: now });
+		}
+	}
 
 	await note(changes);
 }
@@ -197,6 +221,29 @@ const hook: WriteHook = {
 		// Die geliehene Id gehoert nicht in die Datei zurueck.
 		const { id: _id, ...rest } = stamped[0];
 		return rest as Settings;
+	},
+
+	async timeReport(month, before, after) {
+		if (suppressed > 0) return after;
+		const now = Date.now();
+		const id = timeReportId(month);
+		// Ein Report je Monat, also derselbe Kniff wie bei den Einstellungen: eine
+		// einelementige Liste mit geliehener Id.
+		const wrap = (r: StoredTimeReport | null) => (r ? [{ ...r, id }] : []);
+		const { changes, stamped } = diffAndStamp(wrap(before), wrap(after), deviceId, now);
+		await note([
+			...changes.changed.map(() => ({ kind: "timereport" as const, id, deleted: false, at: now })),
+			...changes.deleted.map((r) => ({
+				kind: "timereport" as const,
+				id,
+				deleted: true,
+				rev: r.rev,
+				at: now
+			}))
+		]);
+		if (stamped.length === 0) return null;
+		const { id: _id, ...rest } = stamped[0];
+		return rest as StoredTimeReport;
 	}
 };
 

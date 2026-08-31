@@ -1,12 +1,15 @@
 // Die Spuren des Abgleichs aus dem lokalen Bestand nehmen.
 import {
 	listEntryMonths,
+	listTimeReportMonths,
 	loadActivities,
 	loadEntries,
 	loadSettings,
+	loadTimeReport,
 	saveActivities,
 	saveEntries,
-	saveSettings
+	saveSettings,
+	saveTimeReport
 } from "../store";
 import { applyingRemote, clearChanges, pendingChanges } from "./outbox";
 import type { Settings, SyncMeta } from "../types";
@@ -26,12 +29,13 @@ export interface DetachResult {
 	months: number;
 	entries: number;
 	activities: number;
+	timeReports: number;
 }
 
 /** Den lokalen Bestand vom Konto loesen - nur die Stempelfelder, kein einziger Eintrag. */
 export async function detachLocalData(): Promise<DetachResult> {
 	return applyingRemote(async () => {
-		const result: DetachResult = { months: 0, entries: 0, activities: 0 };
+		const result: DetachResult = { months: 0, entries: 0, activities: 0, timeReports: 0 };
 
 		for (const month of await listEntryMonths()) {
 			const entries = await loadEntries(month);
@@ -51,6 +55,16 @@ export async function detachLocalData(): Promise<DetachResult> {
 		// SyncMeta, bekommen aber beim Abgleich dieselben drei Felder angehaengt.
 		const settings = (await loadSettings()) as Settings & SyncMeta;
 		if (stamped(settings)) await saveSettings(withoutStamp(settings));
+
+		// Die eingelesenen Reports ebenso. Bliebe ihr Stempel stehen, hielte
+		// rememberUnstamped sie fuer laengst hochgeladen - beim naechsten Konto
+		// waeren sie nur noch lokal da, ohne dass es jemand bemerkt.
+		for (const month of await listTimeReportMonths()) {
+			const report = await loadTimeReport(month);
+			if (!report || !stamped(report)) continue;
+			await saveTimeReport(withoutStamp(report));
+			result.timeReports++;
+		}
 
 		// Was noch offen war, bezog sich auf ein Konto, das dieses Geraet nicht mehr
 		// hat. Stehen zu lassen hiesse: beim naechsten Koppeln wird als Erstes eine

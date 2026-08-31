@@ -97,7 +97,12 @@
 			// Nicht schlimm: dann steht in der Auswahl nur der offene Monat.
 		}
 	}
-	void refreshReportMonths();
+	// Auch am Abgleich haengen: ein Report von einem anderen Geraet kommt herein,
+	// waehrend diese Karte offen steht.
+	$effect(() => {
+		void app.entriesVersion;
+		void refreshReportMonths();
+	});
 
 	/** Auswahl und Zuordnung je Tag, Schluessel = Datum. */
 	let selected = $state<Record<string, boolean>>({});
@@ -126,6 +131,7 @@
 	// Im Ruhezustand zeigen, ob fuer diesen Monat schon ein Report vorliegt.
 	$effect(() => {
 		const m = month;
+		void app.entriesVersion;
 		if (stage !== "idle") return;
 		void loadTimeReport(m)
 			.then((r) => {

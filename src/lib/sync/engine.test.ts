@@ -126,7 +126,10 @@ async function on<T>(g: Device, fn: (engine: InstanceType<typeof SyncEngine>) =>
 		activities: () => store.loadActivities(),
 		saveActivities: (l) => store.saveActivities(l),
 		settings: () => store.loadSettings(),
-		saveSettings: (s) => store.saveSettings(s)
+		saveSettings: (s) => store.saveSettings(s),
+		timeReport: (m) => store.loadTimeReport(m),
+		saveTimeReport: (r) => store.saveTimeReport(r),
+		deleteTimeReport: (m) => store.deleteTimeReport(m)
 	};
 	const engine = new SyncEngine({
 		api: new Api({ baseUrl: "http://test", token: "t", fetchFn: server.fetchFor(g.id) }),
@@ -761,6 +764,176 @@ describe("Der Server kennt den Bestand nicht mehr", () => {
 	});
 });
 
+describe("Eingelesene Reports", () => {
+	const day = (date: string, hours: number) => ({
+		date,
+		firstIn: "07:30",
+		lastOut: "16:45",
+		hours,
+		flags: []
+	});
+
+	/** Ein Report, wie ihn der Import ablegt. */
+	const report = (month = MONTH, hours = 7.5) => ({
+		month,
+		importedAt: Date.UTC(2026, 6, 20),
+		days: [day(`${month}-15`, hours)]
+	});
+
+	it("traegt einen Report zum anderen Geraet", async () => {
+		const desktop = new Device("rechner");
+		await on(desktop, async (engine) => {
+			await store.saveTimeReport(report());
+			return engine.sync();
+		});
+
+		const laptop = new Device("laptop");
+		await on(laptop, (engine) => engine.sync());
+		const drueben = await on(laptop, () => store.loadTimeReport(MONTH));
+		expect(drueben?.days).toHaveLength(1);
+		expect(drueben?.days[0].hours).toBe(7.5);
+	});
+
+	it("legt beim Server nur Chiffrat ab", async () => {
+		// Ein Report sagt aus, wann jemand gekommen und gegangen ist. Nichts davon
+		// darf im Klartext beim Server liegen.
+		const desktop = new Device("rechner");
+		await on(desktop, async (engine) => {
+			await store.saveTimeReport(report());
+			return engine.sync();
+		});
+		const line = [...server.rows.values()][0];
+		const everything = JSON.stringify(line);
+		expect(everything).not.toContain("07:30");
+		expect(everything).not.toContain("16:45");
+		expect(everything).not.toContain(`${MONTH}-15`);
+	});
+
+	it("stellt die Id dem Monat voran, damit sie mit keiner anderen Art zusammenstoesst", async () => {
+		// Der Server fuehrt seine Datensaetze allein ueber die Id.
+		const desktop = new Device("rechner");
+		await on(desktop, async (engine) => {
+			await store.saveTimeReport(report());
+			return engine.sync();
+		});
+		expect([...server.rows.keys()]).toEqual([`timereport:${MONTH}`]);
+	});
+
+	it("laedt beim zweiten Durchgang nichts erneut hoch", async () => {
+		// Haengt daran, dass loadTimeReport die Fassung mitliest.
+		const desktop = new Device("rechner");
+		await on(desktop, async (engine) => {
+			await store.saveTimeReport(report());
+			return engine.sync();
+		});
+		const zweiter = await on(desktop, (engine) => engine.sync());
+		expect(zweiter!.pushed).toBe(0);
+		expect(await on(desktop, () => store.loadTimeReport(MONTH))).toMatchObject({ rev: 1 });
+	});
+
+	it("ersetzt drueben den Report, wenn er neu eingelesen wird", async () => {
+		const desktop = new Device("rechner");
+		await on(desktop, async (engine) => {
+			await store.saveTimeReport(report());
+			return engine.sync();
+		});
+		const laptop = new Device("laptop");
+		await on(laptop, (engine) => engine.sync());
+
+		// Ein neuer Import legt ein frisches Objekt ohne Fassung an - genau so, wie
+		// es aus der Datei kommt.
+		await afterwards();
+		await on(desktop, async (engine) => {
+			await store.saveTimeReport(report(MONTH, 9));
+			return engine.sync();
+		});
+		await on(laptop, (engine) => engine.sync());
+		const drueben = await on(laptop, () => store.loadTimeReport(MONTH));
+		expect(drueben?.days[0].hours).toBe(9);
+	});
+
+	it("nimmt den Report drueben weg, wenn er hier geloescht wird", async () => {
+		const desktop = new Device("rechner");
+		await on(desktop, async (engine) => {
+			await store.saveTimeReport(report());
+			return engine.sync();
+		});
+		const laptop = new Device("laptop");
+		await on(laptop, (engine) => engine.sync());
+		expect(await on(laptop, () => store.loadTimeReport(MONTH))).not.toBeNull();
+
+		await afterwards();
+		await on(desktop, async (engine) => {
+			await store.deleteTimeReport(MONTH);
+			return engine.sync();
+		});
+		await on(laptop, (engine) => engine.sync());
+		expect(await on(laptop, () => store.loadTimeReport(MONTH))).toBeNull();
+		expect(await on(laptop, () => store.listTimeReportMonths())).toEqual([]);
+	});
+
+	it("bleibt auch im schlimmsten Monat unter der Groessengrenze des Servers", async () => {
+		// Der Server weist einen Datensatz ueber 64 KB mit 413 ab - und zwar den
+		// ganzen Stapel. Ein einziger zu grosser Report legte damit den Abgleich
+		// lahm, nicht nur sich selbst.
+		const MAX_RECORD_BYTES = 64 * 1024;
+		const flags = (["restBreak", "over10", "target10", "gradualReturn", "sunday", "holiday"] as const).map(
+			(key) => ({ key, label: "Verstoß Ruhepause", value: "10,25" })
+		);
+		const days = Array.from({ length: 31 }, (_, i) => ({
+			...day(`2026-07-${String(i + 1).padStart(2, "0")}`, 10.25),
+			flags
+		}));
+
+		const desktop = new Device("rechner");
+		await on(desktop, async (engine) => {
+			await store.saveTimeReport({ month: MONTH, importedAt: Date.now(), days });
+			return engine.sync();
+		});
+		const payload = [...server.rows.values()][0].payload ?? "";
+		expect(payload.length).toBeGreaterThan(0);
+		expect(payload.length).toBeLessThan(MAX_RECORD_BYTES);
+	});
+
+	it("nimmt den Report drueben weg, wenn hier das Jahr geloescht wird", async () => {
+		// „Einstellungen -> Daten -> Jahr loeschen" nimmt die Reports des Jahres
+		// mit. Ginge das am Haken vorbei, holte der naechste Abgleich sie zurueck.
+		const desktop = new Device("rechner");
+		await on(desktop, async (engine) => {
+			await store.saveTimeReport(report());
+			return engine.sync();
+		});
+		const laptop = new Device("laptop");
+		await on(laptop, (engine) => engine.sync());
+
+		await afterwards();
+		await on(desktop, async (engine) => {
+			await store.deleteYear(2026);
+			return engine.sync();
+		});
+		await on(laptop, (engine) => engine.sync());
+		expect(await on(laptop, () => store.listTimeReportMonths())).toEqual([]);
+	});
+
+	it("legt aus einer Loeschung, die wir nie kannten, keine leere Datei an", async () => {
+		const desktop = new Device("rechner");
+		await on(desktop, async (engine) => {
+			await store.saveTimeReport(report());
+			return engine.sync();
+		});
+		await afterwards();
+		await on(desktop, async (engine) => {
+			await store.deleteTimeReport(MONTH);
+			return engine.sync();
+		});
+
+		// Der Laptop war die ganze Zeit weg und sieht nur noch den Loeschmarker.
+		const laptop = new Device("laptop");
+		await on(laptop, (engine) => engine.sync());
+		expect(await on(laptop, () => store.listTimeReportMonths())).toEqual([]);
+	});
+});
+
 describe("onProgress – Ladeanzeige beim Massenimport", () => {
 	/**
 	 * Geraet mit eigenem SyncEngine und onProgress-Callback.
@@ -779,7 +952,10 @@ describe("onProgress – Ladeanzeige beim Massenimport", () => {
 			activities: () => store.loadActivities(),
 			saveActivities: (l) => store.saveActivities(l),
 			settings: () => store.loadSettings(),
-			saveSettings: (s) => store.saveSettings(s)
+			saveSettings: (s) => store.saveSettings(s),
+			timeReport: (m) => store.loadTimeReport(m),
+			saveTimeReport: (r) => store.saveTimeReport(r),
+			deleteTimeReport: (m) => store.deleteTimeReport(m)
 		};
 		const engine = new SyncEngine({
 			api: new Api({ baseUrl: "http://test", token: "t", fetchFn: server.fetchFor(g.id) }),

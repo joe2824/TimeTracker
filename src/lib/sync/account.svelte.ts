@@ -4,10 +4,13 @@ import { logError, logInfo, logWarn } from "../log";
 import {
 	clearAccountData,
 	clearOutbox,
+	deleteTimeReport,
 	loadDevice,
 	loadEntries,
+	loadTimeReport,
 	saveDevice,
-	saveEntries
+	saveEntries,
+	saveTimeReport
 } from "../store";
 import { loadActivities, saveActivities, loadSettings, saveSettings, listEntryMonths } from "../store";
 import { deviceId } from "./device";
@@ -70,6 +73,20 @@ const RETRY_MS = [1_000, 3_000, 5_000, 10_000, 20_000, 30_000];
 /** Der langsame Takt, wo es keinen Weckruf-Kanal gibt. */
 const HEARTBEAT_MS = 5 * 60 * 1000;
 
+/**
+ * Hochzaehlen, sobald eine neue Datensatzart hinzukommt.
+ *
+ * 1 = die eingelesenen Reports (timereport).
+ *
+ * Der Stand `seq` laeuft ueber ALLES, was der Server hat - auch ueber Arten, die
+ * die damals laufende Fassung nicht kannte und deshalb stillschweigend
+ * uebergangen hat. Die sind fuer dieses Geraet fuer immer weg, denn der naechste
+ * Abruf beginnt hinter ihnen. Ein Wechsel dieser Zahl laesst jedes Geraet
+ * einmalig von vorne holen; das Zusammenfuehren aendert dabei nichts an dem, was
+ * schon stimmt.
+ */
+export const RESYNC_GENERATION = 1;
+
 class AccountState {
 	state = $state<LinkState>("off");
 	phase = $state<SyncPhase>("idle");
@@ -117,6 +134,8 @@ class AccountState {
 	#listenersInstalled = false;
 	/** Laeuft eine Weckruf-Schleife? Der Abbruch beendet auch die offene Anfrage. */
 	#wait: AbortController | null = null;
+	/** Wurde der Stand gerade zurueckgesetzt? Siehe #rewindForNewKinds. */
+	#rewound = false;
 
 	get linked(): boolean {
 		return this.state === "connected";
@@ -197,6 +216,7 @@ class AccountState {
 	}
 
 	async #startEngine(url: string, token: string | null, seq: number): Promise<void> {
+		seq = await this.#rewindForNewKinds(seq);
 		this.#api = new Api({ baseUrl: url, token, fetchFn: platformFetch });
 		this.#engine = new SyncEngine({
 			api: this.#api,
@@ -213,7 +233,10 @@ class AccountState {
 				activities: loadActivities,
 				saveActivities,
 				settings: loadSettings,
-				saveSettings
+				saveSettings,
+				timeReport: loadTimeReport,
+				saveTimeReport,
+				deleteTimeReport
 			},
 			onProgress: (p) => {
 				this.syncProgress = p.phase === "idle" ? null : p;
@@ -238,6 +261,27 @@ class AccountState {
 		this.#openStream();
 	}
 
+	/**
+	 * Einmalig von vorne holen, wenn seit dem letzten Start eine Datensatzart
+	 * dazugekommen ist. Siehe RESYNC_GENERATION.
+	 *
+	 * Der Merker wird VOR dem Abrufen gespeichert, zusammen mit dem
+	 * zurueckgesetzten Stand: bricht der Abruf ab, steht der Stand weiterhin auf 0
+	 * und der naechste Versuch holt den Rest - ohne den Nachlauf ein zweites Mal
+	 * auszuloesen.
+	 */
+	async #rewindForNewKinds(seq: number): Promise<number> {
+		const info = await loadDevice();
+		if (!info || info.resyncGeneration === RESYNC_GENERATION) return seq;
+		await saveDevice({ ...info, seq: 0, resyncGeneration: RESYNC_GENERATION });
+		// Stand 0 heisst: es gibt nichts nachzuholen - frisch verknuepft, oder noch
+		// nie abgeglichen. Nur der Merker war faellig.
+		if (seq === 0) return 0;
+		this.#rewound = true;
+		logInfo("Hole den Serverstand einmalig von vorne", { grund: "neue Datensatzart" });
+		return 0;
+	}
+
 	// ---------- Abgleich ----------
 
 	/** Bald abgleichen. */
@@ -259,9 +303,16 @@ class AccountState {
 	 */
 	async syncWithFollowUp(): Promise<void> {
 		const beforeSeq = (await loadDevice())?.seq ?? 0;
+		// Nach einem Nachlauf steht der Stand ebenfalls auf 0 - aber der Server hat
+		// alles. Ihn hier fuer frisch zu halten hiesse: der gesamte lokale Bestand
+		// geht ohne Not noch einmal hoch, und jedes andere Geraet zieht ihn hinter
+		// einer neuen Fassung wieder herunter.
+		const rewound = this.#rewound;
+		this.#rewound = false;
+		const untouchedAccount = beforeSeq === 0 && !rewound;
 		await this.syncNow();
 		if (await this.#dataIsOurs()) {
-			await rememberUnstamped(beforeSeq === 0);
+			await rememberUnstamped(untouchedAccount);
 		}
 		await this.syncNow();
 	}

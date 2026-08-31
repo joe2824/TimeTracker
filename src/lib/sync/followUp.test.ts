@@ -133,7 +133,10 @@ async function on<T>(g: Device, fn: (engine: InstanceType<typeof SyncEngine>) =>
 		activities: () => store.loadActivities(),
 		saveActivities: (l) => store.saveActivities(l),
 		settings: () => store.loadSettings(),
-		saveSettings: (s) => store.saveSettings(s)
+		saveSettings: (s) => store.saveSettings(s),
+		timeReport: (m) => store.loadTimeReport(m),
+		saveTimeReport: (r) => store.saveTimeReport(r),
+		deleteTimeReport: (m) => store.deleteTimeReport(m)
 	};
 	const engine = new SyncEngine({
 		api: new Api({ baseUrl: "http://test", token: "t", fetchFn: server.fetchFor(g.id) }),
