@@ -163,9 +163,9 @@ async function verknuepfe(g: Geraet, opts: { nurEigenes?: boolean } = {}): Promi
 		const info = await store.loadDevice();
 		const eigener =
 			!opts.nurEigenes ||
-			!info?.bestandGehoertZu ||
-			!info.kontoKennung ||
-			info.bestandGehoertZu === info.kontoKennung;
+			!info?.dataOwner ||
+			!info.accountFingerprint ||
+			info.dataOwner === info.accountFingerprint;
 		if (eigener) await merkeUngestempeltes();
 		await engine.sync();
 	});
@@ -276,7 +276,7 @@ describe("Nachlese: was der Schreib-Haken nie gesehen hat", () => {
 			// Was #persistLink beim Kontowechsel vermerkt: der Bestand gehoert noch
 			// dem alten Konto.
 			const info = (await store.loadDevice()) ?? { id: rechner.id };
-			await store.saveDevice({ ...info, kontoKennung: "neu", bestandGehoertZu: "alt" });
+			await store.saveDevice({ ...info, accountFingerprint: "neu", dataOwner: "alt" });
 		});
 		await verknuepfe(rechner, { nurEigenes: true });
 
@@ -311,7 +311,7 @@ describe("Nachlese: was der Schreib-Haken nie gesehen hat", () => {
 		key = await createVaultKey();
 		await auf(rechner, async () => {
 			const info = (await store.loadDevice()) ?? { id: rechner.id };
-			await store.saveDevice({ ...info, kontoKennung: "neu", bestandGehoertZu: "alt" });
+			await store.saveDevice({ ...info, accountFingerprint: "neu", dataOwner: "alt" });
 		});
 		await verknuepfe(rechner, { nurEigenes: true });
 

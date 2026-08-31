@@ -293,16 +293,16 @@ export interface DeviceInfo {
 	 * Damit laesst sich ein Kontowechsel erkennen, ohne die Kontokennung selbst
 	 * abzulegen.
 	 */
-	kontoKennung?: string;
+	accountFingerprint?: string;
 	/**
 	 * Wem der lokale Bestand gehoert.
 	 *
-	 * Weicht das von `kontoKennung` ab, stammen die Daten aus einem ANDEREN
+	 * Weicht das von `accountFingerprint` ab, stammen die Daten aus einem ANDEREN
 	 * Konto - dann duerfen sie nicht in das jetzige hochgeladen werden. Fehlt der
 	 * Wert, hat dieses Geraet noch nie ein Konto gesehen: der Bestand ist dann
 	 * der eigene und gehoert hoch.
 	 */
-	bestandGehoertZu?: string;
+	dataOwner?: string;
 }
 
 /**
@@ -340,8 +340,25 @@ export async function clearOutbox(): Promise<void> {
 	if (await storage.exists(pfad)) await storage.remove(pfad);
 }
 
+/** Die Feldnamen vor 0.9.2. Zum Lesen alter Dateien, nicht zum Schreiben. */
+interface LegacyDeviceInfo {
+	kontoKennung?: string;
+	bestandGehoertZu?: string;
+}
+
 export async function loadDevice(): Promise<DeviceInfo | null> {
-	return readJson<DeviceInfo | null>("device.json", null);
+	const info = await readJson<(DeviceInfo & LegacyDeviceInfo) | null>("device.json", null);
+	if (!info) return null;
+
+	// Geraete aus aelteren Fassungen tragen die alten Feldnamen. Wuerden sie hier
+	// verworfen, saehe der naechste Abgleich ein Geraet ohne Kontozuordnung -
+	// und genau das loest das Loeschen des lokalen Bestands aus.
+	const { kontoKennung, bestandGehoertZu, ...rest } = info;
+	return {
+		...rest,
+		accountFingerprint: info.accountFingerprint ?? kontoKennung,
+		dataOwner: info.dataOwner ?? bestandGehoertZu
+	};
 }
 
 export async function saveDevice(info: DeviceInfo): Promise<void> {

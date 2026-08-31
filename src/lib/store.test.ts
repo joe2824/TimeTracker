@@ -10,6 +10,7 @@ const {
 	listEntryMonths,
 	listEntryYears,
 	loadEntries,
+	loadDevice,
 	loadSettings,
 	pruneEmptyMonthFiles,
 	saveEntries,
@@ -308,5 +309,43 @@ describe("clearAccountData", () => {
 		const s = await loadSettings();
 		expect(s.bossEmail).toBe("");
 		expect(s.senderName).toBe("");
+	});
+});
+
+describe("loadDevice", () => {
+	it("uebernimmt die alten Feldnamen aus device.json vor 0.9.2", async () => {
+		files.set(
+			"data/device.json",
+			JSON.stringify({ id: "d1", kontoKennung: "konto-a", bestandGehoertZu: "konto-a" })
+		);
+
+		const info = await loadDevice();
+
+		// Ohne Uebernahme saehe der Abgleich ein Geraet ohne Kontozuordnung und
+		// wuerde den lokalen Bestand als fremde Kopie loeschen.
+		expect(info?.accountFingerprint).toBe("konto-a");
+		expect(info?.dataOwner).toBe("konto-a");
+	});
+
+	it("laesst die alten Feldnamen nicht stehen", async () => {
+		files.set("data/device.json", JSON.stringify({ id: "d1", kontoKennung: "konto-a" }));
+
+		const info = (await loadDevice()) as Record<string, unknown> | null;
+
+		expect(info).not.toHaveProperty("kontoKennung");
+		expect(info).not.toHaveProperty("bestandGehoertZu");
+	});
+
+	it("bevorzugt die neuen Feldnamen, wenn beide dastehen", async () => {
+		files.set(
+			"data/device.json",
+			JSON.stringify({ id: "d1", kontoKennung: "alt", accountFingerprint: "neu" })
+		);
+
+		expect((await loadDevice())?.accountFingerprint).toBe("neu");
+	});
+
+	it("gibt null zurueck, wenn es noch keine device.json gibt", async () => {
+		expect(await loadDevice()).toBeNull();
 	});
 });

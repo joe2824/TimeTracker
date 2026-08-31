@@ -270,8 +270,8 @@ class AccountState {
 	 */
 	async #bestandIstUnserer(): Promise<boolean> {
 		const info = await loadDevice();
-		if (!info?.bestandGehoertZu || !info.kontoKennung) return true;
-		return info.bestandGehoertZu === info.kontoKennung;
+		if (!info?.dataOwner || !info.accountFingerprint) return true;
+		return info.dataOwner === info.accountFingerprint;
 	}
 
 	/**
@@ -677,14 +677,14 @@ class AccountState {
 		// Wessen Konto ist das? Zwei Konten haben verschiedene Tresorschluessel,
 		// also verschiedene Nachweise.
 		const kennung = await vaultProof(key);
-		const wechsel = Boolean(info.kontoKennung && info.kontoKennung !== kennung);
+		const wechsel = Boolean(info.accountFingerprint && info.accountFingerprint !== kennung);
 
 		// Im Browser gibt es keinen Bestand ohne Konto - man kommt ohne Anmeldung
 		// gar nicht hinein. Was hier liegt, ist die Kopie IRGENDEINES Kontos. Laesst
 		// sich nicht beweisen, dass es dieses ist, kommt es weg; der Server hat es.
 		// Auf dem Rechner sind die Zeiten die Sache des Menschen: sie bleiben, gehen
-		// aber nicht hoch (siehe bestandGehoertZu).
-		const fremdeKopie = !isTauri() && info.kontoKennung !== kennung;
+		// aber nicht hoch (siehe dataOwner).
+		const fremdeKopie = !isTauri() && info.accountFingerprint !== kennung;
 		if (fremdeKopie) {
 			await clearAccountData();
 			app.clearLocalData();
@@ -699,7 +699,7 @@ class AccountState {
 		// Wem der Bestand gehoert: nach einem Wechsel weiterhin dem alten Konto
 		// (dann bleibt er hier liegen), sonst diesem. Wer noch nie ein Konto hatte,
 		// dessen Bestand ist der eigene und gehoert hoch.
-		const bestandGehoertZu = wechsel && isTauri() ? info.bestandGehoertZu : kennung;
+		const dataOwner = wechsel && isTauri() ? info.dataOwner : kennung;
 
 		await saveDevice({
 			...info,
@@ -709,8 +709,8 @@ class AccountState {
 			vaultKey: geschuetzterSchluessel.data,
 			protected: geschuetzterSchluessel.protected && (geschuetztesToken?.protected ?? true),
 			accountName: name || info.accountName,
-			kontoKennung: kennung,
-			bestandGehoertZu,
+			accountFingerprint: kennung,
+			dataOwner,
 			seq: 0
 		});
 		this.name = name || this.name;
