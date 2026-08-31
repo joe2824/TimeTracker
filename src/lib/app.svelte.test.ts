@@ -835,3 +835,39 @@ describe("Reparatur der eingebauten Zeilen erreicht den Abgleich", () => {
 		}
 	});
 });
+
+describe("Reparatur laeuft nicht zweimal ueber dieselbe Liste", () => {
+	it("erzeugt bei gleichzeitigen Durchlaeufen keine neuen Duplikate", async () => {
+		// reload() wird an mehreren Stellen ohne await angestossen (Fenster-Signal,
+		// Abgleich, Tray). Zwei Durchlaeufe lesen dann dieselbe Liste, und der
+		// zweite haengt seine Zeile an die des ersten an - dasselbe Duplikat, das
+		// hier eigentlich verschwinden soll.
+		reset();
+		app.activities = [
+			{ id: "alt-a", name: "Abwesenheiten", sortOrder: 0, archived: false, isAbsence: true },
+			{ id: "alt-b", name: "Abwesenheiten", sortOrder: 1, archived: false, isAbsence: true }
+		];
+
+		await Promise.all([app.mergeDuplicateBuiltins(), app.mergeDuplicateBuiltins()]);
+
+		expect(app.activities.filter((a) => a.isAbsence)).toHaveLength(1);
+		expect(app.activities.filter((a) => a.id === BUILTIN_ABSENCE_ID)).toHaveLength(1);
+	});
+
+	it("gibt der zusammengefuehrten Zeile keinen fremden Stempel mit", async () => {
+		// Unter der festen Id entsteht ein NEUER Datensatz. Mit dem `rev` der alten
+		// Zeile meldete das Geraet eine Aenderung an einer Fassung, die der Server
+		// nie hatte - der erste Abgleich nach dem Update liefe in einen Konflikt.
+		reset();
+		app.activities = [
+			{ id: "alt-a", name: "Abwesenheiten", sortOrder: 0, archived: false, isAbsence: true, rev: 7, updatedAt: 123 },
+			{ id: "alt-b", name: "Abwesenheiten", sortOrder: 1, archived: false, isAbsence: true, rev: 8 }
+		];
+
+		await app.mergeDuplicateBuiltins();
+
+		const merged = app.activities.find((a) => a.id === BUILTIN_ABSENCE_ID);
+		expect(merged?.rev).toBeUndefined();
+		expect(merged?.updatedAt).toBeUndefined();
+	});
+});

@@ -58,6 +58,8 @@ interface BlockedDay {
 
 class AppState {
 	activities = $state<Activity[]>([]);
+	/** Serialisiert mergeDuplicateBuiltins() - siehe dort. */
+	#builtinRepair: Promise<void> = Promise.resolve();
 	settings = $state<Settings>({ ...defaultSettings });
 	/** laufender Eintrag (endTs === null) oder null */
 	running = $state<Entry | null>(null);
@@ -386,6 +388,17 @@ class AppState {
 	 * nie.
 	 */
 	async mergeDuplicateBuiltins(): Promise<void> {
+		// Nacheinander, nie nebeneinander: reload() wird an mehreren Stellen ohne
+		// await angestossen (Fenster-Signal, Abgleich, Tray). Zwei Durchlaeufe
+		// laesen dieselbe Liste, und der zweite haengt seine Zeile an die des
+		// ersten an - ausgerechnet dasselbe Duplikat, das hier verschwinden soll.
+		this.#builtinRepair = this.#builtinRepair
+			.catch(() => {})
+			.then(() => this.#mergeDuplicateBuiltinsNow());
+		return this.#builtinRepair;
+	}
+
+	async #mergeDuplicateBuiltinsNow(): Promise<void> {
 		let changed = false;
 
 		for (const kind of this.#builtinKinds) {
@@ -404,10 +417,15 @@ class AppState {
 			const oldIds = new Set(matches.map((a) => a.id).filter((id) => id !== kind.id));
 			const moved = await this.#repointEntries(oldIds, kind.id);
 
+			// Ohne Stempel: unter der festen Id entsteht ein NEUER Datensatz. Traegt
+			// er das `rev` der alten Zeile, meldet das Geraet dem Server eine
+			// Aenderung an einer Fassung, die es dort nie gab - der erste Abgleich
+			// nach dem Update liefe garantiert in einen Konflikt.
+			const { rev: _rev, updatedAt: _updatedAt, deviceId: _deviceId, ...carried } = survivor;
 			const rest = this.activities.filter((a) => !matches.includes(a));
 			this.activities = [
 				...rest,
-				{ ...survivor, id: kind.id, name: kind.name, isAbsence: kind.isAbsence }
+				{ ...carried, id: kind.id, name: kind.name, isAbsence: kind.isAbsence }
 			];
 			changed = true;
 			logWarn(`Eingebaute Zeile "${kind.name}" zusammengeführt`, {
