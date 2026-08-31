@@ -52,12 +52,12 @@ class MockServer {
 			deletedAt?: number | null;
 			payload?: string | null;
 		}[]) {
-			const vorhanden = rows.get(raw.id);
-			const serverRev = vorhanden?.rev ?? 0;
+			const present = rows.get(raw.id);
+			const serverRev = present?.rev ?? 0;
 			if (serverRev !== raw.baseRev) {
 				conflicts.push({
 					id: raw.id,
-					current: vorhanden ?? {
+					current: present ?? {
 						id: raw.id,
 						kind: raw.kind,
 						bucket: null,
@@ -92,12 +92,12 @@ class MockServer {
 
 	pull(since: number, limit = 200, user = this.currentUser) {
 		const rows = this.getRows(user);
-		const alle = [...rows.values()].filter((r) => r.seq > since).sort((a, b) => a.seq - b.seq);
-		const seite = alle.slice(0, limit);
+		const all = [...rows.values()].filter((r) => r.seq > since).sort((a, b) => a.seq - b.seq);
+		const page = all.slice(0, limit);
 		return {
-			records: seite,
-			nextSeq: seite.length > 0 ? seite[seite.length - 1].seq : since,
-			hasMore: alle.length > limit
+			records: page,
+			nextSeq: page.length > 0 ? page[page.length - 1].seq : since,
+			hasMore: all.length > limit
 		};
 	}
 
@@ -187,18 +187,18 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 		);
 
 		// 2. Neuer Server mit komplett frischer Datenbank
-		const neuerServer = new MockServer();
+		const newServer = new MockServer();
 		const originalFetch = globalThis.fetch;
-		globalThis.fetch = neuerServer.fetchFor("browser-device");
+		globalThis.fetch = newServer.fetchFor("browser-device");
 
 		try {
 			// 3. Neuer User registriert sich und verknüpft Session im Browser
-			const keyNeu = await createVaultKey();
-			await account.linkWithSession("http://test-server", keyNeu, "Neuer Nutzer");
+			const keyNew = await createVaultKey();
+			await account.linkWithSession("http://test-server", keyNew, "Neuer Nutzer");
 
 			// 4. Prüfungen:
 			// a) Der Server-Tresor von User 2 darf KEINE Zeilen mit den alten Einstellungen oder Einträgen von User 1 enthalten!
-			expect(neuerServer.userVaults.size).toBe(0);
+			expect(newServer.userVaults.size).toBe(0);
 
 			// b) Im lokalen State von User 2 müssen saubere defaultSettings stehen
 			expect(app.settings.bossEmail).toBe("");
@@ -211,9 +211,9 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 			expect(await store.loadEntries("2026-08")).toEqual([]);
 
 			// d) Auf der Platte darf keine alte settings.json herumliegen
-			const gespeicherteSettings = await store.loadSettings();
-			expect(gespeicherteSettings.bossEmail).toBe("");
-			expect(gespeicherteSettings.senderName).toBe("");
+			const savedSettings = await store.loadSettings();
+			expect(savedSettings.bossEmail).toBe("");
+			expect(savedSettings.senderName).toBe("");
 		} finally {
 			globalThis.fetch = originalFetch;
 			await account.unlink();
@@ -329,10 +329,10 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 		);
 
 		// Neuer Server, neue DB
-		const frischerServer = new MockServer();
-		frischerServer.currentUser = "user-neu";
+		const freshServer = new MockServer();
+		freshServer.currentUser = "user-neu";
 		const originalFetch = globalThis.fetch;
-		globalThis.fetch = frischerServer.fetchFor("device-neu");
+		globalThis.fetch = freshServer.fetchFor("device-neu");
 
 		try {
 			// Vor dem Linken: account.init() läuft beim Aufruf der Seite
@@ -344,8 +344,8 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 			expect(app.settings.senderName).toBe("");
 
 			// Neuer User registriert sich und verknüpft Session
-			const keyNeu = await createVaultKey();
-			await account.linkWithSession("http://frischer-server", keyNeu, "");
+			const keyNew = await createVaultKey();
+			await account.linkWithSession("http://frischer-server", keyNew, "");
 			await account.syncNow();
 
 			// 1. Lokale Einstellungen müssen 100% jungfräulich sein
@@ -356,7 +356,7 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 			expect(app.activities).toEqual([]);
 
 			// 2. Im Tresor auf dem Server darf KEIN Datensatz von den Altdaten liegen
-			const vaultNeu = frischerServer.userVaults.get("user-neu");
+			const vaultNeu = freshServer.userVaults.get("user-neu");
 			expect(vaultNeu?.size ?? 0).toBe(0);
 		} finally {
 			globalThis.fetch = originalFetch;
@@ -372,8 +372,8 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 
 		try {
 			// 1. Neuer User registriert sich im Browser
-			const keyNeu = await createVaultKey();
-			await account.linkWithSession("http://test-server/frischer-user", keyNeu, "Mein Account");
+			const keyNew = await createVaultKey();
+			await account.linkWithSession("http://test-server/frischer-user", keyNew, "Mein Account");
 
 			// 2. Er entscheidet sich gegen Desktop-Kopplung
 			app.openOnboarding();

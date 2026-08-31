@@ -16,7 +16,7 @@ import {
 	stopTracking,
 	pendingChanges,
 	setChangeListener,
-	merkeUngestempeltes
+	rememberUnstamped
 } from "./outbox";
 import { Api, ApiError, type AccountInfo, type BackupInfo, type DeleteSummary, type Invite, type Passkey } from "./api";
 import { detachLocalData } from "./detach";
@@ -116,7 +116,7 @@ class AccountState {
 	#heartbeat: ReturnType<typeof setInterval> | null = null;
 	#listenersInstalled = false;
 	/** Laeuft eine Weckruf-Schleife? Der Abbruch beendet auch die offene Anfrage. */
-	#warten: AbortController | null = null;
+	#wait: AbortController | null = null;
 
 	get linked(): boolean {
 		return this.state === "verbunden";
@@ -151,8 +151,8 @@ class AccountState {
 				const token = info.token
 					? await unprotectSecret(info.token, info.protected ?? false)
 					: null;
-				const rohschluessel = await unprotectSecret(info.vaultKey, info.protected ?? false);
-				this.#key = await importVaultKey(fromBase64(rohschluessel).buffer as ArrayBuffer);
+				const rawKey = await unprotectSecret(info.vaultKey, info.protected ?? false);
+				this.#key = await importVaultKey(fromBase64(rawKey).buffer as ArrayBuffer);
 				this.#device = await deviceId();
 				this.hasDeviceToken = token !== null;
 				await this.#startEngine(info.serverUrl, token, info.seq ?? 0);
@@ -253,10 +253,10 @@ class AccountState {
 	 * Bestands gewaenne sonst jeden Vergleich und ueberschriebe das Konto.
 	 */
 	async abgleichMitNachlese(): Promise<void> {
-		const vorSeq = (await loadDevice())?.seq ?? 0;
+		const beforeSeq = (await loadDevice())?.seq ?? 0;
 		await this.syncNow();
 		if (await this.#bestandIstUnserer()) {
-			await merkeUngestempeltes(vorSeq === 0);
+			await rememberUnstamped(beforeSeq === 0);
 		}
 		await this.syncNow();
 	}
@@ -284,7 +284,7 @@ class AccountState {
 	async nachlese(): Promise<void> {
 		if (!this.linked) return;
 		if (!(await this.#bestandIstUnserer())) return;
-		await merkeUngestempeltes();
+		await rememberUnstamped();
 		this.syncSoon(0);
 	}
 
@@ -292,20 +292,20 @@ class AccountState {
 		if (!this.#engine || this.state !== "verbunden") return;
 		this.phase = "laeuft";
 		try {
-			const ergebnis = await this.#engine.sync();
+			const result = await this.#engine.sync();
 			this.phase = "ruht";
 			this.lastSync = Date.now();
 			this.#retryStep = 0;
-			if (ergebnis) {
-				this.lostEdits += ergebnis.lostEdits;
-				if (ergebnis.pushed || ergebnis.pulled) {
-					logInfo("Abgeglichen", ergebnis);
+			if (result) {
+				this.lostEdits += result.lostEdits;
+				if (result.pushed || result.pulled) {
+					logInfo("Abgeglichen", result);
 				}
-				if (ergebnis.pulled >= 20) {
-					this.bulkSync = { phase: "done", pulled: ergebnis.pulled };
+				if (result.pulled >= 20) {
+					this.bulkSync = { phase: "done", pulled: result.pulled };
 					// Im Browser zeigt das große Modal den Abschluss an – Toast nur in Tauri.
 					if (isTauri()) {
-						toast.success(`${ergebnis.pulled} Einträge synchronisiert.`, { id: "sync-bulk" });
+						toast.success(`${result.pulled} Einträge synchronisiert.`, { id: "sync-bulk" });
 					}
 					setTimeout(() => {
 						if (this.bulkSync?.phase === "done") {
@@ -325,7 +325,7 @@ class AccountState {
 				toast.dismiss("sync-bulk");
 			}
 			// Der Bestand kann sich geaendert haben - die Ansichten haengen daran.
-			if (ergebnis && (ergebnis.pulled > 0 || ergebnis.pushed > 0)) {
+			if (result && (result.pulled > 0 || result.pushed > 0)) {
 				await app.reload();
 				void this.accountInfo().catch(() => {});
 				void notifyDataChanged({ from: "sync" });
@@ -334,7 +334,7 @@ class AccountState {
 			// wusste es nur noch nicht. Der Willkommensbildschirm hat sich damit
 			// erledigt, und zwar bevor jemand ihn ausfuellt und dabei die echten
 			// Einstellungen ueberschreibt.
-			if (ergebnis && ergebnis.pulled > 0 && app.showOnboarding) {
+			if (result && result.pulled > 0 && app.showOnboarding) {
 				app.dismissOnboarding();
 			}
 		} catch (e) {
@@ -368,9 +368,9 @@ class AccountState {
 
 	#scheduleRetry(): void {
 		if (this.#retry) clearTimeout(this.#retry);
-		const wartezeit = RETRY_MS[Math.min(this.#retryStep, RETRY_MS.length - 1)];
+		const waitMs = RETRY_MS[Math.min(this.#retryStep, RETRY_MS.length - 1)];
 		this.#retryStep++;
-		this.#retry = setTimeout(() => void this.syncNow(), wartezeit);
+		this.#retry = setTimeout(() => void this.syncNow(), waitMs);
 	}
 
 	// ---------- Weckruf-Kanal ----------
@@ -469,22 +469,22 @@ class AccountState {
 	 * Adresse wandern muesste.
 	 */
 	async #warteschleife(): Promise<void> {
-		const abbruch = new AbortController();
-		this.#warten = abbruch;
+		const abort = new AbortController();
+		this.#wait = abort;
 		// Der langsame Takt bleibt als Netz darunter: faellt die Schleife aus,
 		// laeuft der Abgleich trotzdem weiter.
 		this.#startHeartbeat();
 
 		let errorCount = 0;
-		while (this.#warten === abbruch && this.state === "verbunden") {
+		while (this.#wait === abort && this.state === "verbunden") {
 			try {
-				const stand = (await loadDevice())?.seq ?? 0;
-				const antwort = await this.#api!.waitForChange(stand, abbruch.signal);
-				if (this.#warten !== abbruch) return;
+				const knownSeq = (await loadDevice())?.seq ?? 0;
+				const answer = await this.#api!.waitForChange(knownSeq, abort.signal);
+				if (this.#wait !== abort) return;
 				errorCount = 0;
-				if (antwort.changed) this.syncSoon(50);
+				if (answer.changed) this.syncSoon(50);
 			} catch (e) {
-				if (abbruch.signal.aborted) return;
+				if (abort.signal.aborted) return;
 				// Nach einem Fehlschlag wachsend warten, sonst haemmert eine
 				// abgerissene Verbindung gegen den Server.
 				errorCount++;
@@ -520,8 +520,8 @@ class AccountState {
 	#closeStream(): void {
 		this.#stream?.close();
 		this.#stream = null;
-		this.#warten?.abort();
-		this.#warten = null;
+		this.#wait?.abort();
+		this.#wait = null;
 		this.#stopHeartbeat();
 	}
 
@@ -564,25 +564,25 @@ class AccountState {
 		const url = serverUrl.replace(/\/+$/, "");
 		const api = new Api({ baseUrl: url, fetchFn: platformFetch });
 		const pair = await createPairingKeyPair();
-		const roh = await exportPairingPublicKey(pair);
-		const publicKey = toBase64(roh);
+		const raw = await exportPairingPublicKey(pair);
+		const publicKey = toBase64(raw);
 
 		// Der Code wird HIER gerechnet, aus dem eigenen oeffentlichen Schluessel -
 		// er ist dessen Abdruck (siehe pairingCode). Der Server bekommt ihn nur
 		// mitgeteilt und legt den Vorgang darunter ab.
-		const code = await pairingCode(roh);
+		const code = await pairingCode(raw);
 
 		// Der Code ist zum Vergleichen da und steht deshalb offen herum. Das
 		// Abholen des Geraete-Tokens haengt an diesem Geheimnis, das dieses Geraet
 		// behaelt - sonst genuegte ein mitgelesener Code.
 		const { secret: claimSecret, hash: claimHash } = await createClaimSecret();
-		const antwort = await api.pairStart(publicKey, label, code, claimHash);
+		const answer = await api.pairStart(publicKey, label, code, claimHash);
 
 		// Und was er zurueckgibt, muss dasselbe sein. Ein Server, der einen anderen
 		// Code herausgibt, brauchte ihn nur, um ihn auf den Bildschirm zu bekommen:
 		// der Mensch traegt ihn drueben ein, drueben liegt dann ein Schluessel, der
 		// zu DIESEM Code passt - und das waere nicht mehr unserer.
-		if (antwort.code !== code) {
+		if (answer.code !== code) {
 			throw new Error("Der Server hat einen anderen Kopplungscode zurückgegeben.");
 		}
 
@@ -595,12 +595,12 @@ class AccountState {
 		if (!this.#pairing) return false;
 		const { pair, code, url, claimSecret } = this.#pairing;
 		const api = new Api({ baseUrl: url, fetchFn: platformFetch });
-		const antwort = await api.pairClaim(code, claimSecret);
-		if (antwort.pending) return false;
+		const answer = await api.pairClaim(code, claimSecret);
+		if (answer.pending) return false;
 
 		// Das Paket oeffnen - das kann nur dieses Geraet, mit seinem privaten
 		// Schluessel. Der Server hatte nie mehr als Chiffrat in der Hand.
-		const wrap = JSON.parse(antwort.wrappedKey) as {
+		const wrap = JSON.parse(answer.wrappedKey) as {
 			salt: string;
 			iv: string;
 			wrapped: string;
@@ -617,7 +617,7 @@ class AccountState {
 			pair.privateKey
 		);
 
-		await this.#persistLink(url, antwort.deviceToken, key);
+		await this.#persistLink(url, answer.deviceToken, key);
 		this.#pairing = null;
 		return true;
 	}
@@ -631,20 +631,20 @@ class AccountState {
 	/** Einen Code bestaetigen. */
 	async approvePairing(code: string): Promise<string> {
 		if (!this.#api || !this.#key) throw new Error("Dieses Gerät ist nicht verknüpft");
-		const getippt = normalizePairingCode(code);
-		const { publicKey, label } = await this.#api.pairLookup(getippt);
+		const typed = normalizePairingCode(code);
+		const { publicKey, label } = await this.#api.pairLookup(typed);
 
 		// Wirft, wenn unter diesem Code ein anderer Schluessel liegt als der, dessen
 		// Abdruck er ist. Dann wird NICHTS verpackt: wer immer den Schluessel
 		// hinterlegt hat, bekaeme sonst den Tresorschluessel.
-		const roh = await checkedPairingKey(getippt, publicKey).catch((e) => {
+		const raw = await checkedPairingKey(typed, publicKey).catch((e) => {
 			logWarn("Kopplung abgebrochen: hinterlegter Schlüssel passt nicht zum Code");
 			throw e;
 		});
 
 		const { wrapForDevice } = await import("../crypto/vault");
-		const wrap = await wrapForDevice(this.#key, roh);
-		await this.#api.pairApprove(getippt, JSON.stringify(serializeWrap(wrap)));
+		const wrap = await wrapForDevice(this.#key, raw);
+		await this.#api.pairApprove(typed, JSON.stringify(serializeWrap(wrap)));
 		logInfo("Gerät gekoppelt", { label });
 		void this.abgleichMitNachlese();
 		return label;
@@ -665,27 +665,27 @@ class AccountState {
 	): Promise<void> {
 		this.#key = key;
 		this.#device = await deviceId();
-		const roh = toBase64(new Uint8Array(await exportVaultKey(key)));
-		const geschuetzterSchluessel = await protectSecret(roh);
+		const raw = toBase64(new Uint8Array(await exportVaultKey(key)));
+		const protectedKey = await protectSecret(raw);
 		// Im Browser gibt es kein Geraete-Token: dort weist das Sitzungs-Cookie
 		// aus. Der Tresorschluessel wird trotzdem abgelegt, damit die Anwendung
 		// nach einem Neuladen nicht wieder nach der Anmeldung fragen muss.
-		const geschuetztesToken = token ? await protectSecret(token) : null;
+		const protectedToken = token ? await protectSecret(token) : null;
 
 		const info = (await loadDevice()) ?? { id: this.#device };
 
 		// Wessen Konto ist das? Zwei Konten haben verschiedene Tresorschluessel,
 		// also verschiedene Nachweise.
-		const kennung = await vaultProof(key);
-		const wechsel = Boolean(info.accountFingerprint && info.accountFingerprint !== kennung);
+		const fingerprint = await vaultProof(key);
+		const switched = Boolean(info.accountFingerprint && info.accountFingerprint !== fingerprint);
 
 		// Im Browser gibt es keinen Bestand ohne Konto - man kommt ohne Anmeldung
 		// gar nicht hinein. Was hier liegt, ist die Kopie IRGENDEINES Kontos. Laesst
 		// sich nicht beweisen, dass es dieses ist, kommt es weg; der Server hat es.
 		// Auf dem Rechner sind die Zeiten die Sache des Menschen: sie bleiben, gehen
 		// aber nicht hoch (siehe dataOwner).
-		const fremdeKopie = !isTauri() && info.accountFingerprint !== kennung;
-		if (fremdeKopie) {
+		const foreignCopy = !isTauri() && info.accountFingerprint !== fingerprint;
+		if (foreignCopy) {
 			await clearAccountData();
 			app.clearLocalData();
 			logInfo("Kontowechsel / Neuverknüpfung: lokale Kopie entfernt");
@@ -694,29 +694,29 @@ class AccountState {
 		// Die Merkliste gehoert IMMER dem vorigen Konto - auf beiden Plattformen.
 		// Ohne diese Zeile laedt sie der naechste Abgleich ins neue Konto: `#pushAll`
 		// liest die Outbox, nicht den Stempel.
-		if (wechsel || fremdeKopie) await clearOutbox();
+		if (switched || foreignCopy) await clearOutbox();
 
 		// Wem der Bestand gehoert: nach einem Wechsel weiterhin dem alten Konto
 		// (dann bleibt er hier liegen), sonst diesem. Wer noch nie ein Konto hatte,
 		// dessen Bestand ist der eigene und gehoert hoch.
-		const dataOwner = wechsel && isTauri() ? info.dataOwner : kennung;
+		const dataOwner = switched && isTauri() ? info.dataOwner : fingerprint;
 
 		await saveDevice({
 			...info,
 			id: this.#device,
 			serverUrl: url,
-			token: geschuetztesToken?.data,
-			vaultKey: geschuetzterSchluessel.data,
-			protected: geschuetzterSchluessel.protected && (geschuetztesToken?.protected ?? true),
+			token: protectedToken?.data,
+			vaultKey: protectedKey.data,
+			protected: protectedKey.protected && (protectedToken?.protected ?? true),
 			accountName: name || info.accountName,
-			accountFingerprint: kennung,
+			accountFingerprint: fingerprint,
 			dataOwner,
 			seq: 0
 		});
 		this.name = name || this.name;
 
 		this.serverUrl = url;
-		this.secretsProtected = geschuetzterSchluessel.protected;
+		this.secretsProtected = protectedKey.protected;
 		this.hasDeviceToken = token !== null;
 		this.state = "verbunden";
 		await this.#startEngine(url, token, 0);
@@ -779,8 +779,8 @@ class AccountState {
 		if (!this.#key) throw new Error("Das Konto ist nicht entsperrt");
 		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
 		const { addPasskey } = await import("./enroll");
-		const ergebnis = await addPasskey(this.#api, this.#key, label);
-		return { prfAvailable: ergebnis.prfAvailable };
+		const result = await addPasskey(this.#api, this.#key, label);
+		return { prfAvailable: result.prfAvailable };
 	}
 
 	/** Die Kennung dieses Geraets - damit die Liste das eigene erkennt. */
@@ -896,14 +896,14 @@ class AccountState {
 
 	/** Die Verknuepfung loesen. */
 	async unlink(opts: UnlinkOptions = {}): Promise<DeleteSummary | null> {
-		let summe: DeleteSummary | null = null;
+		let summary: DeleteSummary | null = null;
 
 		if (opts.deleteRemote || opts.revokeSelf) {
 			if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
 			// Zuerst der Server, solange Zugang und Token noch stehen. Danach ist
 			// beides weg und der Vorgang liesse sich nicht mehr nachholen.
 			if (opts.deleteRemote) {
-				summe = await this.#api.deleteAccount(await this.#bestaetigung());
+				summary = await this.#api.deleteAccount(await this.#bestaetigung());
 			} else {
 				await this.#api.revokeDevice();
 			}
@@ -913,13 +913,13 @@ class AccountState {
 		// Erst nachdem der Zugang wirklich weg ist: die Stempel abstreifen. Vorher
 		// waere ein Abbruch mittendrin der schlechteste aller Zustaende - Daten
 		// ohne Fassungsnummern, aber ein Konto, das sie noch erwartet.
-		const geloest = await detachLocalData();
+		const unlinked = await detachLocalData();
 		if (!isTauri()) {
 			await clearAccountData();
 			app.clearLocalData();
 		}
-		logInfo("Verknüpfung gelöst", { ...opts, ...geloest });
-		return summe;
+		logInfo("Verknüpfung gelöst", { ...opts, ...unlinked });
+		return summary;
 	}
 
 	/** Den Menschen bestaetigen lassen - mit dem Passkey, nicht mit einem Haken. */

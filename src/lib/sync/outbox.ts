@@ -120,7 +120,7 @@ export async function startTracking(device: string): Promise<void> {
  * der vorhandene Bestand ginge sonst nie hoch.
  * Mit `forceAll = true` wird der gesamte lokale Bestand vorgemerkt (z.B. nach Server-Reset oder Neuverknüpfung).
  */
-export async function merkeUngestempeltes(forceAll = false): Promise<void> {
+export async function rememberUnstamped(forceAll = false): Promise<void> {
 	const now = Date.now();
 	const changes: PendingChange[] = [];
 

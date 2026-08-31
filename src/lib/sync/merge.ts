@@ -59,8 +59,8 @@ export function mergeRecord<T extends { id: string } & SyncMeta>(
 		// das den Eintrag, der gerade erst entstanden ist. Die Abkuerzung
 		// verschluckte die Loeschung dann: das andere Geraet behielt den Eintrag,
 		// erfuhr nie davon und schob ihn beim naechsten Abgleich wieder hoch.
-		const gleich = (local.updatedAt ?? 0) === (remote.updatedAt ?? 0);
-		if (gleich && !isTombstone(remote)) return adoptRev(local, remote);
+		const equal = (local.updatedAt ?? 0) === (remote.updatedAt ?? 0);
+		if (equal && !isTombstone(remote)) return adoptRev(local, remote);
 		return {
 			value: isTombstone(remote) ? null : remote,
 			changed: true,
@@ -87,10 +87,10 @@ export function mergeRecord<T extends { id: string } & SyncMeta>(
 
 /** Denselben Inhalt behalten, aber die Fassung des Servers uebernehmen. */
 function adoptRev<T extends SyncMeta>(local: T, remote: T): MergeResult<T> {
-	const neu = (remote.rev ?? 0) > (local.rev ?? 0);
+	const fresh = (remote.rev ?? 0) > (local.rev ?? 0);
 	return {
-		value: neu ? { ...local, rev: remote.rev } : local,
-		changed: neu,
+		value: fresh ? { ...local, rev: remote.rev } : local,
+		changed: fresh,
 		lostLocalEdit: false
 	};
 }
@@ -101,14 +101,14 @@ function adoptRev<T extends SyncMeta>(local: T, remote: T): MergeResult<T> {
  * @returns die zu aendernden Eintraege; eine leere Liste heisst "alles in Ordnung"
  */
 export function resolveOpenEntries(entries: Entry[]): Entry[] {
-	const offen = entries.filter((e) => e.endTs === null);
-	if (offen.length <= 1) return [];
+	const open = entries.filter((e) => e.endTs === null);
+	if (open.length <= 1) return [];
 
-	const gewinner = offen.reduce((a, b) => (pickWinner(a, b) === "local" ? a : b));
+	const winner = open.reduce((a, b) => (pickWinner(a, b) === "local" ? a : b));
 	const out: Entry[] = [];
-	for (const e of offen) {
-		if (e.id === gewinner.id) continue;
-		out.push({ ...e, endTs: Math.max(e.startTs, gewinner.startTs) });
+	for (const e of open) {
+		if (e.id === winner.id) continue;
+		out.push({ ...e, endTs: Math.max(e.startTs, winner.startTs) });
 	}
 	return out;
 }

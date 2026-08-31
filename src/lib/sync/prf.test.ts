@@ -13,8 +13,8 @@ describe("prfBytes", () => {
 	});
 
 	it("beachtet den Versatz einer Ansicht", () => {
-		const voll = new Uint8Array([0, 0, 7, 7]);
-		expect(prfBytes(voll.subarray(2))).toEqual(new Uint8Array([7, 7]));
+		const full = new Uint8Array([0, 0, 7, 7]);
+		expect(prfBytes(full.subarray(2))).toEqual(new Uint8Array([7, 7]));
 	});
 
 	it("nimmt base64 und base64url", () => {

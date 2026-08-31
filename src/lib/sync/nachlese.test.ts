@@ -6,7 +6,7 @@ vi.mock("@tauri-apps/plugin-fs", async () => (await import("../testing/fakeFs"))
 const { SyncEngine } = await import("./engine");
 const { Api } = await import("./api");
 const { createVaultKey } = await import("../crypto/vault");
-const { resetOutboxForTests, startTracking, merkeUngestempeltes } = await import("./outbox");
+const { resetOutboxForTests, startTracking, rememberUnstamped } = await import("./outbox");
 const { files, resetFakeFs } = await import("../testing/fakeFs");
 const store = await import("../store");
 const { defaultSettings } = await import("../types");
@@ -14,8 +14,8 @@ import type { Activity, Entry } from "../types";
 import type { LocalStore } from "./engine";
 import type { ServerRecord } from "./api";
 
-const MONAT = "2026-07";
-const ts = (tag: number, stunde: number) => Date.UTC(2026, 6, tag, stunde) + 2 * 3600_000;
+const MONTH = "2026-07";
+const ts = (day: number, hour: number) => Date.UTC(2026, 6, day, hour) + 2 * 3600_000;
 
 class FakeServer {
 	rows = new Map<string, ServerRecord>();
@@ -33,12 +33,12 @@ class FakeServer {
 			deletedAt?: number | null;
 			payload?: string | null;
 		}[]) {
-			const vorhanden = this.rows.get(raw.id);
-			const serverRev = vorhanden?.rev ?? 0;
+			const present = this.rows.get(raw.id);
+			const serverRev = present?.rev ?? 0;
 			if (serverRev !== raw.baseRev) {
 				conflicts.push({
 					id: raw.id,
-					current: vorhanden ?? {
+					current: present ?? {
 						id: raw.id,
 						kind: raw.kind,
 						bucket: null,
@@ -71,16 +71,16 @@ class FakeServer {
 	}
 
 	pull(since: number, limit = 200) {
-		const alle = [...this.rows.values()].filter((r) => r.seq > since).sort((a, b) => a.seq - b.seq);
-		const seite = alle.slice(0, limit);
+		const all = [...this.rows.values()].filter((r) => r.seq > since).sort((a, b) => a.seq - b.seq);
+		const page = all.slice(0, limit);
 		return {
-			records: seite,
-			nextSeq: seite.length > 0 ? seite[seite.length - 1].seq : since,
-			hasMore: alle.length > limit
+			records: page,
+			nextSeq: page.length > 0 ? page[page.length - 1].seq : since,
+			hasMore: all.length > limit
 		};
 	}
 
-	arten(): Record<string, number> {
+	kinds(): Record<string, number> {
 		const out: Record<string, number> = {};
 		for (const r of this.rows.values()) out[r.kind] = (out[r.kind] ?? 0) + 1;
 		return out;
@@ -102,8 +102,8 @@ class FakeServer {
 	}
 }
 
-class Geraet {
-	dateien = new Map<string, string>();
+class Device {
+	files = new Map<string, string>();
 	state = { seq: 0 };
 	constructor(readonly id: string) {}
 }
@@ -112,18 +112,18 @@ let server: FakeServer;
 let key: CryptoKey;
 
 /** Etwas tun, BEVOR ein Konto verknuepft ist - also ohne Schreib-Haken. */
-async function ohneKonto(g: Geraet, fn: () => Promise<void>): Promise<void> {
+async function withoutAccount(g: Device, fn: () => Promise<void>): Promise<void> {
 	resetFakeFs();
-	for (const [k, v] of g.dateien) files.set(k, v);
+	for (const [k, v] of g.files) files.set(k, v);
 	resetOutboxForTests();
 	await fn();
-	g.dateien = new Map(files);
+	g.files = new Map(files);
 }
 
 /** Etwas MIT verknuepftem Konto tun. */
-async function auf<T>(g: Geraet, fn: (engine: InstanceType<typeof SyncEngine>) => Promise<T>): Promise<T> {
+async function auf<T>(g: Device, fn: (engine: InstanceType<typeof SyncEngine>) => Promise<T>): Promise<T> {
 	resetFakeFs();
-	for (const [k, v] of g.dateien) files.set(k, v);
+	for (const [k, v] of g.files) files.set(k, v);
 	resetOutboxForTests();
 	await startTracking(g.id);
 
@@ -150,28 +150,28 @@ async function auf<T>(g: Geraet, fn: (engine: InstanceType<typeof SyncEngine>) =
 	try {
 		return await fn(engine);
 	} finally {
-		g.dateien = new Map(files);
+		g.files = new Map(files);
 	}
 }
 
 /** Was AccountState bei jedem Start tut: holen, Ungestempeltes vormerken, hochladen. */
-async function verknuepfe(g: Geraet, opts: { nurEigenes?: boolean } = {}): Promise<void> {
+async function link(g: Device, opts: { nurEigenes?: boolean } = {}): Promise<void> {
 	await auf(g, async (engine) => {
 		await engine.sync();
 		// Was AccountState prueft, bevor es nachliest: gehoert der ungestempelte
 		// Bestand ueberhaupt zu DIESEM Konto?
 		const info = await store.loadDevice();
-		const eigener =
+		const own =
 			!opts.nurEigenes ||
 			!info?.dataOwner ||
 			!info.accountFingerprint ||
 			info.dataOwner === info.accountFingerprint;
-		if (eigener) await merkeUngestempeltes();
+		if (own) await rememberUnstamped();
 		await engine.sync();
 	});
 }
 
-const aktivitaet = (id: string, name: string, color: string): Activity => ({
+const activity = (id: string, name: string, color: string): Activity => ({
 	id,
 	name,
 	color,
@@ -180,7 +180,7 @@ const aktivitaet = (id: string, name: string, color: string): Activity => ({
 	isAbsence: false
 });
 
-const eintrag = (id: string, activityId: string): Entry => ({
+const entry = (id: string, activityId: string): Entry => ({
 	id,
 	activityId,
 	startTs: ts(15, 9),
@@ -197,134 +197,134 @@ beforeEach(async () => {
 
 describe("Nachlese: was der Schreib-Haken nie gesehen hat", () => {
 	it("laedt den GESAMTEN lokalen Bestand hoch, nicht nur das danach Geaenderte", async () => {
-		const rechner = new Geraet("rechner");
+		const desktop = new Device("rechner");
 
 		// Der Mensch benutzt die App eine Weile ohne Konto.
-		await ohneKonto(rechner, async () => {
+		await withoutAccount(desktop, async () => {
 			await store.saveActivities([
-				aktivitaet("akt-1", "Projekt A", "#ff0000"),
-				aktivitaet("akt-2", "Projekt B", "#00ff00")
+				activity("akt-1", "Projekt A", "#ff0000"),
+				activity("akt-2", "Projekt B", "#00ff00")
 			]);
 			await store.saveSettings({ ...defaultSettings, hoursPerDay: 7 });
-			await store.saveEntries(MONAT, [eintrag("e1", "akt-1"), eintrag("e2", "akt-2")]);
+			await store.saveEntries(MONTH, [entry("e1", "akt-1"), entry("e2", "akt-2")]);
 		});
 
 		// Jetzt verknuepft er ein Konto und gleicht ab.
-		await verknuepfe(rechner);
+		await link(desktop);
 
-		expect(server.arten()).toEqual({ entry: 2, activity: 2, settings: 1 });
+		expect(server.kinds()).toEqual({ entry: 2, activity: 2, settings: 1 });
 	});
 
 	it("bringt einem zweiten Geraet Aktivitaeten UND Einstellungen mit", async () => {
-		const rechner = new Geraet("rechner");
-		await ohneKonto(rechner, async () => {
-			await store.saveActivities([aktivitaet("akt-1", "Projekt A", "#ff0000")]);
+		const desktop = new Device("rechner");
+		await withoutAccount(desktop, async () => {
+			await store.saveActivities([activity("akt-1", "Projekt A", "#ff0000")]);
 			await store.saveSettings({ ...defaultSettings, hoursPerDay: 7 });
-			await store.saveEntries(MONAT, [eintrag("e1", "akt-1")]);
+			await store.saveEntries(MONTH, [entry("e1", "akt-1")]);
 		});
-		await verknuepfe(rechner);
+		await link(desktop);
 
-		const browser = new Geraet("browser");
-		await verknuepfe(browser);
+		const browser = new Device("browser");
+		await link(browser);
 
-		const geladen = await auf(browser, () => store.loadActivities());
-		expect(geladen.map((a) => a.name)).toEqual(["Projekt A"]);
+		const loaded = await auf(browser, () => store.loadActivities());
+		expect(loaded.map((a) => a.name)).toEqual(["Projekt A"]);
 		const s = await auf(browser, () => store.loadSettings());
 		expect(s.hoursPerDay).toBe(7);
-		const e = await auf(browser, () => store.loadEntries(MONAT));
+		const e = await auf(browser, () => store.loadEntries(MONTH));
 		expect(e).toHaveLength(1);
 	});
 
 	it("ueberschreibt die Einstellungen des Kontos NICHT mit den Voreinstellungen des Neulings", async () => {
-		const rechner = new Geraet("rechner");
-		await ohneKonto(rechner, async () => {
+		const desktop = new Device("rechner");
+		await withoutAccount(desktop, async () => {
 			await store.saveSettings({ ...defaultSettings, hoursPerDay: 7 });
 		});
-		await verknuepfe(rechner);
+		await link(desktop);
 
 		// Ein zweites Geraet, das schon einmal lief und dabei Voreinstellungen
 		// weggeschrieben hat - der haeufigste Fall im Browser.
-		const browser = new Geraet("browser");
-		await ohneKonto(browser, async () => {
+		const browser = new Device("browser");
+		await withoutAccount(browser, async () => {
 			await store.saveSettings({ ...defaultSettings });
 		});
-		await verknuepfe(browser);
+		await link(browser);
 
 		expect((await auf(browser, () => store.loadSettings())).hoursPerDay).toBe(7);
 		// Und der Rechner bekommt seinen eigenen Wert nicht zerschossen zurueck.
-		await verknuepfe(rechner);
-		expect((await auf(rechner, () => store.loadSettings())).hoursPerDay).toBe(7);
+		await link(desktop);
+		expect((await auf(desktop, () => store.loadSettings())).hoursPerDay).toBe(7);
 	});
 
 	it("traegt den Bestand NICHT in ein fremdes Konto", async () => {
 		// Abgemeldet, neues Konto angelegt: der alte Bestand darf nicht ins neue
 		// Konto wandern.
-		const rechner = new Geraet("rechner");
-		await ohneKonto(rechner, async () => {
-			await store.saveActivities([aktivitaet("akt-1", "Geheim", "#ff0000")]);
-			await store.saveEntries(MONAT, [eintrag("e1", "akt-1")]);
+		const desktop = new Device("rechner");
+		await withoutAccount(desktop, async () => {
+			await store.saveActivities([activity("akt-1", "Geheim", "#ff0000")]);
+			await store.saveEntries(MONTH, [entry("e1", "akt-1")]);
 		});
-		await verknuepfe(rechner);
-		expect(server.arten()).toEqual({ entry: 1, activity: 1 });
+		await link(desktop);
+		expect(server.kinds()).toEqual({ entry: 1, activity: 1 });
 
 		// Jetzt haengt dasselbe Geraet an einem ANDEREN Konto - anderer Schluessel.
-		const fremd = new FakeServer();
-		const alterServer = server;
-		server = fremd;
+		const foreign = new FakeServer();
+		const oldServer = server;
+		server = foreign;
 		key = await createVaultKey();
-		await auf(rechner, async () => {
+		await auf(desktop, async () => {
 			// Was #persistLink beim Kontowechsel vermerkt: der Bestand gehoert noch
 			// dem alten Konto.
-			const info = (await store.loadDevice()) ?? { id: rechner.id };
+			const info = (await store.loadDevice()) ?? { id: desktop.id };
 			await store.saveDevice({ ...info, accountFingerprint: "neu", dataOwner: "alt" });
 		});
-		await verknuepfe(rechner, { nurEigenes: true });
+		await link(desktop, { nurEigenes: true });
 
-		expect(fremd.arten()).toEqual({});
-		expect(alterServer.arten()).toEqual({ entry: 1, activity: 1 });
+		expect(foreign.kinds()).toEqual({});
+		expect(oldServer.kinds()).toEqual({ entry: 1, activity: 1 });
 	});
 
 	it("nimmt die Merkliste des vorigen Kontos nicht mit", async () => {
 		// Der Stempel-Waechter allein reicht nicht: `#pushAll` liest die OUTBOX -
 		// was dort vom vorigen Konto liegen blieb, ginge sonst hoch, ohne dass je
 		// eine Nachlese lief.
-		const rechner = new Geraet("rechner");
-		await ohneKonto(rechner, async () => {
-			await store.saveActivities([aktivitaet("akt-1", "Geheim", "#ff0000")]);
-			await store.saveEntries(MONAT, [eintrag("e1", "akt-1")]);
+		const desktop = new Device("rechner");
+		await withoutAccount(desktop, async () => {
+			await store.saveActivities([activity("akt-1", "Geheim", "#ff0000")]);
+			await store.saveEntries(MONTH, [entry("e1", "akt-1")]);
 		});
 
 		// Vormerken, aber NICHT hochladen - so sieht es aus, wenn ein Abgleich
 		// mittendrin abbricht oder der Server gerade weg ist.
-		await auf(rechner, async () => {
-			await merkeUngestempeltes();
+		await auf(desktop, async () => {
+			await rememberUnstamped();
 		});
-		expect(await auf(rechner, async () => (await store.loadOutbox()).length)).toBeGreaterThan(0);
+		expect(await auf(desktop, async () => (await store.loadOutbox()).length)).toBeGreaterThan(0);
 
 		// Jetzt ein anderes Konto. Was AccountState beim Wechsel tut: Merkliste weg.
-		await auf(rechner, async () => {
+		await auf(desktop, async () => {
 			await store.clearOutbox();
 		});
 
-		const fremd = new FakeServer();
-		server = fremd;
+		const foreign = new FakeServer();
+		server = foreign;
 		key = await createVaultKey();
-		await auf(rechner, async () => {
-			const info = (await store.loadDevice()) ?? { id: rechner.id };
+		await auf(desktop, async () => {
+			const info = (await store.loadDevice()) ?? { id: desktop.id };
 			await store.saveDevice({ ...info, accountFingerprint: "neu", dataOwner: "alt" });
 		});
-		await verknuepfe(rechner, { nurEigenes: true });
+		await link(desktop, { nurEigenes: true });
 
-		expect(fremd.arten()).toEqual({});
+		expect(foreign.kinds()).toEqual({});
 	});
 
 	it("laedt spaeter Angelegtes weiterhin hoch", async () => {
-		const rechner = new Geraet("rechner");
-		await verknuepfe(rechner);
-		await auf(rechner, async (engine) => {
-			await store.saveActivities([aktivitaet("akt-9", "Danach", "#0000ff")]);
+		const desktop = new Device("rechner");
+		await link(desktop);
+		await auf(desktop, async (engine) => {
+			await store.saveActivities([activity("akt-9", "Danach", "#0000ff")]);
 			await engine.sync();
 		});
-		expect(server.arten()).toEqual({ activity: 1 });
+		expect(server.kinds()).toEqual({ activity: 1 });
 	});
 });
