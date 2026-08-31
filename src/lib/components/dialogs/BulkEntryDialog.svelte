@@ -20,8 +20,8 @@
 	// Keine Vorauswahl – der Nutzer wählt die Aktivität selbst.
 	let activityId = $state("");
 
-	let von = $state("");
-	let bis = $state("");
+	let fromDate = $state("");
+	let toDate = $state("");
 	let days = $state<number[]>([...app.settings.workdays]); // gewählte Wochentage (0=So..6=Sa)
 
 	// Zeit ODER pauschal: sind Von/Bis-Uhrzeit gesetzt -> Zeit wird gerechnet;
@@ -36,7 +36,7 @@
 	$effect(() => {
 		if (!open) return;
 		activityId = "";
-		von = bis = fmtDate(Date.now()); // Default: heute
+		fromDate = toDate = fmtDate(Date.now()); // Default: heute
 		days = [...app.settings.workdays];
 		start = startText = "08:00";
 		end = endText = "16:00";
@@ -70,8 +70,8 @@
 		}
 		commitStart();
 		commitEnd();
-		const a = noonTs(von);
-		const b = noonTs(bis);
+		const a = noonTs(fromDate);
+		const b = noonTs(toDate);
 		if (Number.isNaN(a) || Number.isNaN(b) || a > b) {
 			toast.error("Ungültiger Datumsbereich.");
 			return;
@@ -113,7 +113,7 @@
 		}
 		toast.success(`${count} Eintrag/Einträge angelegt.`);
 		open = false;
-		onsaved(von.slice(0, 7)); // auf den Zeitraum-Monat springen
+		onsaved(fromDate.slice(0, 7)); // auf den Zeitraum-Monat springen
 	}
 
 	function onSubmit(e: SubmitEvent) {
@@ -145,11 +145,11 @@
 				<div class="grid grid-cols-2 gap-2">
 					<div class="space-y-1">
 						<Label for="von">Von</Label>
-						<DateInput id="von" bind:value={von} />
+						<DateInput id="von" bind:value={fromDate} />
 					</div>
 					<div class="space-y-1">
 						<Label for="bis">Bis</Label>
-						<DateInput id="bis" bind:value={bis} />
+						<DateInput id="bis" bind:value={toDate} />
 					</div>
 				</div>
 

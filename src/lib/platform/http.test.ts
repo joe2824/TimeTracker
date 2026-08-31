@@ -10,26 +10,26 @@ afterEach(() => {
 
 describe("Abrufmethode der Umgebung", () => {
 	it("nimmt im Browser das eingebaute fetch", async () => {
-		const eingebaut = vi.fn(async () => new Response("{}", { status: 200 }));
-		vi.stubGlobal("fetch", eingebaut);
+		const builtin = vi.fn(async () => new Response("{}", { status: 200 }));
+		vi.stubGlobal("fetch", builtin);
 
 		const res = await platformFetch("https://example.test/api/health");
 
-		expect(eingebaut).toHaveBeenCalledOnce();
+		expect(builtin).toHaveBeenCalledOnce();
 		expect(res.status).toBe(200);
 	});
 
 	it("reicht Methode und Kopfzeilen unveraendert weiter", async () => {
-		const eingebaut = vi.fn(async () => new Response("{}", { status: 200 }));
-		vi.stubGlobal("fetch", eingebaut);
+		const builtin = vi.fn(async () => new Response("{}", { status: 200 }));
+		vi.stubGlobal("fetch", builtin);
 
 		await platformFetch("https://example.test/api/sync", {
 			method: "POST",
 			headers: { authorization: "Bearer geheim" }
 		});
 
-		const [adresse, init] = eingebaut.mock.calls[0] as unknown as [string, RequestInit];
-		expect(adresse).toBe("https://example.test/api/sync");
+		const [address, init] = builtin.mock.calls[0] as unknown as [string, RequestInit];
+		expect(address).toBe("https://example.test/api/sync");
 		expect(init.method).toBe("POST");
 		expect((init.headers as Record<string, string>).authorization).toBe("Bearer geheim");
 	});
@@ -38,8 +38,8 @@ describe("Abrufmethode der Umgebung", () => {
 		// Das ist der Kern: sobald Tauri sich zu erkennen gibt, darf das eingebaute
 		// fetch nicht mehr angefasst werden - sonst ist man wieder im Browserkern
 		// mit seiner Herkunftspruefung.
-		const eingebaut = vi.fn(async () => new Response("{}", { status: 200 }));
-		vi.stubGlobal("fetch", eingebaut);
+		const builtin = vi.fn(async () => new Response("{}", { status: 200 }));
+		vi.stubGlobal("fetch", builtin);
 		// So gibt Tauri sich zu erkennen - siehe isTauri() in env.ts.
 		vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
 		vi.doMock("@tauri-apps/plugin-http", () => ({
@@ -48,10 +48,10 @@ describe("Abrufmethode der Umgebung", () => {
 
 		// Frisch laden, damit die Attrappe greift und kein gemerkter Wert stoert.
 		vi.resetModules();
-		const { platformFetch: frisch } = await import("./http");
-		const res = await frisch("https://example.test/api/health");
+		const { platformFetch: fresh } = await import("./http");
+		const res = await fresh("https://example.test/api/health");
 
-		expect(eingebaut).not.toHaveBeenCalled();
+		expect(builtin).not.toHaveBeenCalled();
 		expect(res.status).toBe(299);
 	});
 });

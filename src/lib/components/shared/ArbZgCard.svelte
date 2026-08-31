@@ -108,8 +108,8 @@
 	const chartData = $derived(
 		strict.points.map((p) => ({
 			ts: new Date(noonTs(p.date)),
-			schnitt: p.average,
-			grenze: NORM_DAILY
+			average: p.average,
+			limit: NORM_DAILY
 		}))
 	);
 
@@ -146,8 +146,8 @@
 	};
 
 	const chartConfig = {
-		schnitt: { label: "Schnitt", theme: { light: "#2a78d6", dark: "#6ea6ec" } },
-		grenze: { label: "Grenze", theme: { light: "#dc2626", dark: "#f87171" } }
+		average: { label: "Schnitt", theme: { light: "#2a78d6", dark: "#6ea6ec" } },
+		limit: { label: "Grenze", theme: { light: "#dc2626", dark: "#f87171" } }
 	} satisfies Chart.ChartConfig;
 
 	// ---- Befunde ----

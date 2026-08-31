@@ -52,8 +52,8 @@
 		const now = app.now;
 		const ts = resolveStartTs(presetMin, customStart, now);
 		if (ts == null) return "unlesbare Uhrzeit";
-		const geteilt = midnightSplitHint(ts, now);
-		if (geteilt) return `beginnt ${fmtDateHuman(ts)} um ${fmtClock(ts)} – ${geteilt}`;
+		const shared = midnightSplitHint(ts, now);
+		if (shared) return `beginnt ${fmtDateHuman(ts)} um ${fmtClock(ts)} – ${shared}`;
 		return `Timer beginnt um ${fmtClock(ts)}`;
 	});
 

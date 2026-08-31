@@ -5,13 +5,13 @@ import { storage, useBrowserStorage } from "./fs";
 
 useBrowserStorage();
 
-async function leeren(): Promise<void> {
+async function clear(): Promise<void> {
 	for (const e of await storage.readDir("data")) {
 		await storage.remove(`data/${e.name}`);
 	}
 }
 
-beforeEach(leeren);
+beforeEach(clear);
 
 describe("Ablage im Browser", () => {
 	it("schreibt und liest wieder", async () => {
@@ -61,8 +61,8 @@ describe("Ablage im Browser", () => {
 		await storage.writeTextFile("data/a.json", "1");
 		await storage.writeTextFile("data/b.json", "2");
 		await storage.writeTextFile("logs/c.log", "3");
-		const namen = (await storage.readDir("data")).map((e) => e.name).sort();
-		expect(namen).toEqual(["a.json", "b.json"]);
+		const names = (await storage.readDir("data")).map((e) => e.name).sort();
+		expect(names).toEqual(["a.json", "b.json"]);
 	});
 
 	it("misst die Groesse in Bytes, nicht in Zeichen", async () => {
@@ -99,7 +99,7 @@ describe("store.ts auf der Browser-Ablage", () => {
 		// darauf - mit derselben Quarantaene-, Aufraeum- und Loeschlogik wie auf
 		// dem Rechner.
 		const store = await import("../store");
-		const eintrag = {
+		const entry = {
 			id: "e1",
 			activityId: "a",
 			startTs: 1000,
@@ -107,8 +107,8 @@ describe("store.ts auf der Browser-Ablage", () => {
 			note: "Notiz",
 			source: "manual" as const
 		};
-		await store.saveEntries("2026-07", [eintrag]);
-		expect(await store.loadEntries("2026-07")).toEqual([eintrag]);
+		await store.saveEntries("2026-07", [entry]);
+		expect(await store.loadEntries("2026-07")).toEqual([entry]);
 		expect(await store.listEntryMonths()).toEqual(["2026-07"]);
 
 		// Ein leerer Monat hinterlaesst keine Datei.
@@ -143,7 +143,7 @@ describe("store.ts auf der Browser-Ablage", () => {
 		// Der Monat taucht danach nicht mehr in der Liste auf - die Datei heisst
 		// jetzt anders und wird weder gelistet noch aufgeraeumt.
 		expect(await store.listEntryMonths()).toEqual([]);
-		const namen = (await storage.readDir("data")).map((e) => e.name);
-		expect(namen.some((n) => n.includes("beschaedigt"))).toBe(true);
+		const names = (await storage.readDir("data")).map((e) => e.name);
+		expect(names.some((n) => n.includes("beschaedigt"))).toBe(true);
 	});
 });

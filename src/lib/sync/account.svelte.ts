@@ -838,7 +838,7 @@ class AccountState {
 		return res.envInvitesActive;
 	}
 
-	async createInvite(opts: { note?: string; gueltigTage?: number } = {}): Promise<Invite> {
+	async createInvite(opts: { note?: string; validDays?: number } = {}): Promise<Invite> {
 		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
 		return this.#api.createInvite(opts);
 	}

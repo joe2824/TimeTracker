@@ -982,6 +982,22 @@ describe("Verwaltung", () => {
 		expect(listed.invites.some((i: { code: string }) => i.code === code)).toBe(true);
 	});
 
+	it("nimmt den alten Feldnamen gueltigTage weiter an", async () => {
+		makeAdmin(ANNA);
+		// Eine aeltere Desktop-Anwendung schickt noch gueltigTage. Ohne den Rueckfall
+		// bekaeme sie stillschweigend einen Code ganz ohne Frist.
+		const res = await api(annaToken, "/api/admin/invites", {
+			method: "POST",
+			body: JSON.stringify({ note: "alter Client", gueltigTage: 7 })
+		});
+		expect(res.status).toBe(201);
+
+		const code = (await res.json()).code as string;
+		const listed = await (await api(annaToken, "/api/admin/invites")).json();
+		const row = listed.invites.find((i: { code: string }) => i.code === code);
+		expect(row.expiresAt).not.toBeNull();
+	});
+
 	it("der ausgestellte Code oeffnet die Registrierung genau einmal", async () => {
 		makeAdmin(ANNA);
 		const { code } = await (

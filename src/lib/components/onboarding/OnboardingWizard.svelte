@@ -206,10 +206,10 @@
 		});
 		logInfo("Willkommens-Assistent abgeschlossen", {
 			name: senderName.trim(),
-			vorgesetzte: bossEmail.trim(),
-			stundenProTag: hpd,
-			arbeitstage: workdays.length,
-			erinnerungen: cleanTimes.length
+			supervisors: bossEmail.trim(),
+			hoursPerDayValue: hpd,
+			workdayCount: workdays.length,
+			reminders: cleanTimes.length
 		});
 		scheduleReminders();
 		try {

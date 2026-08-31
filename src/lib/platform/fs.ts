@@ -137,8 +137,8 @@ const browserBackend: StorageBackend = {
 	},
 
 	async appendTextFile(path, contents) {
-		const alt = (await tx<string | undefined>("readonly", (s) => s.get(path))) ?? "";
-		await tx("readwrite", (s) => s.put(alt + contents, path));
+		const old = (await tx<string | undefined>("readonly", (s) => s.get(path))) ?? "";
+		await tx("readwrite", (s) => s.put(old + contents, path));
 	},
 
 	async remove(path) {

@@ -34,7 +34,10 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	const who = adminOnly(locals);
 	const body = await request.json().catch(() => null);
 
-	const days = Number(body?.validDays ?? 0);
+	// gueltigTage ist der alte Feldname. Eine Desktop-Anwendung wird unabhaengig
+	// vom Server aktualisiert - ohne den Rueckfall bekaeme eine aeltere Fassung
+	// hier stillschweigend 0 und legte einen Code ganz ohne Frist an.
+	const days = Number(body?.validDays ?? body?.gueltigTage ?? 0);
 	// Eine Frist ist die Voreinstellung des Verwalters, nicht des Servers: ein
 	// Code ohne Frist ist manchmal genau richtig (Familie), meistens aber nicht.
 	const expiresAt = days > 0 ? Date.now() + days * 86_400_000 : null;

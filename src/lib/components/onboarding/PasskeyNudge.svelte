@@ -8,31 +8,31 @@
 	import KeyRoundIcon from "@lucide/svelte/icons/key-round";
 	import XIcon from "@lucide/svelte/icons/x";
 
-	let ohnePasskey = $state(false);
-	let gefragt = $state(false);
-	let laeuft = $state(false);
-	let weggeklickt = $state(false);
+	let withoutPasskey = $state(false);
+	let asked = $state(false);
+	let running = $state(false);
+	let dismissed = $state(false);
 
 	$effect(() => {
 		// Nur im Browser: auf dem Rechner traegt das Geraet ein eigenes Token, und
 		// einen Passkey kann es dort ohnehin nicht anlegen.
-		if (isTauri() || !account.linked || gefragt) return;
-		gefragt = true;
+		if (isTauri() || !account.linked || asked) return;
+		asked = true;
 		void (async () => {
 			try {
-				ohnePasskey = (await account.passkeys()).length === 0;
+				withoutPasskey = (await account.passkeys()).length === 0;
 			} catch {
 				// Server nicht erreichbar - dann ist jetzt nicht der Moment dafuer.
-				ohnePasskey = false;
+				withoutPasskey = false;
 			}
 		})();
 	});
 
-	async function anlegen() {
-		laeuft = true;
+	async function create() {
+		running = true;
 		try {
 			const { prfAvailable } = await account.addPasskey("Dieser Browser");
-			ohnePasskey = false;
+			withoutPasskey = false;
 			toast.success(
 				prfAvailable
 					? "Passkey angelegt. Die nächste Anmeldung ist ein Klick."
@@ -41,12 +41,12 @@
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Passkey konnte nicht angelegt werden");
 		} finally {
-			laeuft = false;
+			running = false;
 		}
 	}
 </script>
 
-{#if ohnePasskey && !weggeklickt}
+{#if withoutPasskey && !dismissed}
 	<div class="border-b border-amber-500/40 bg-amber-500/5">
 		<div class="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 py-2 text-sm sm:px-6">
 			<KeyRoundIcon class="size-4 shrink-0" />
@@ -54,15 +54,15 @@
 				Dieser Browser hat noch keinen Passkey. Ohne ihn brauchst du beim nächsten Mal
 				wieder die Kopplung oder deine 24 Wörter.
 			</p>
-			<Button size="sm" disabled={laeuft} onclick={anlegen}>
-				{laeuft ? "Warte auf Bestätigung…" : "Passkey anlegen"}
+			<Button size="sm" disabled={running} onclick={create}>
+				{running ? "Warte auf Bestätigung…" : "Passkey anlegen"}
 			</Button>
 			<button
 				type="button"
 				title="Ausblenden"
 				aria-label="Ausblenden"
 				class="text-muted-foreground hover:text-foreground shrink-0"
-				onclick={() => (weggeklickt = true)}
+				onclick={() => (dismissed = true)}
 			>
 				<XIcon class="size-4" />
 			</button>

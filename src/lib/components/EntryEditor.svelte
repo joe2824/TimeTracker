@@ -138,8 +138,8 @@
 		if (Number.isNaN(s) || Number.isNaN(e)) return null;
 		if (e < s) e = toTs(fmtDate(startOfNextDay(s)), endText || draft.end);
 		if (Number.isNaN(e) || e <= s) return null;
-		const geteilt = midnightSplitHint(s, e);
-		return geteilt ? `Geht ${geteilt}: ${fmtDateHuman(s)} und ${fmtDateHuman(e)}.` : null;
+		const shared = midnightSplitHint(s, e);
+		return shared ? `Geht ${shared}: ${fmtDateHuman(s)} und ${fmtDateHuman(e)}.` : null;
 	});
 
 	// Die Uhrzeiten, wie sie GERADE im Dialog stehen – auch wenn ein Feld noch nicht
@@ -527,10 +527,10 @@
 		const h = entryHours(e, false, app.settings.hoursPerDay, app.now);
 		// Reicht der Eintrag über seinen Tag hinaus (vergessener Timer), gehört der
 		// Endtag dazu – sonst stünde da "09:00–10:00" neben 73 Stunden.
-		const bis = e.endTs
+		const toDate = e.endTs
 			? fmtClock(e.endTs) + (e.endTs > startOfNextDay(e.startTs) ? ` am ${fmtDateHuman(e.endTs)}` : "")
 			: "…";
-		return `${name} · ${fmtClock(e.startTs)}–${bis} (${fmtHoursClock(h)} h)`;
+		return `${name} · ${fmtClock(e.startTs)}–${toDate} (${fmtHoursClock(h)} h)`;
 	}
 </script>
 
@@ -641,7 +641,7 @@
 						</div>
 						<div class="ml-auto flex items-center gap-2 pt-0.5 sm:ml-0">
 							{#if day.missing > 0 || day.over > 0}
-								{@const fehlt = day.missing > 0}
+								{@const isMissing = day.missing > 0}
 								<!--
 									Aus dem Zeitwirtschaftsreport: der Tag weicht von LOGA ab.
 									„−0:45" allein sagt nichts – was es heisst, stand bisher nur im
@@ -651,18 +651,18 @@
 								-->
 								<Popover.Root>
 									<Popover.Trigger
-										class="focus-visible:ring-ring/50 cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs tabular-nums outline-none transition-opacity hover:opacity-80 focus-visible:ring-3 {fehlt
+										class="focus-visible:ring-ring/50 cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs tabular-nums outline-none transition-opacity hover:opacity-80 focus-visible:ring-3 {isMissing
 											? 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
 											: 'bg-sky-500/15 text-sky-700 dark:text-sky-300'}"
 										aria-label="Abweichung zum Zeitwächter – erklären"
 									>
-										{fehlt ? "−" : "+"}{fmtHoursClock(fehlt ? day.missing : day.over)}
+										{isMissing ? "−" : "+"}{fmtHoursClock(isMissing ? day.missing : day.over)}
 									</Popover.Trigger>
 									<Popover.Content align="end" class="space-y-1">
 										<div class="text-xs font-medium">Abweichung zum Zeitwächter</div>
 										<p class="text-muted-foreground text-xs leading-relaxed">
 											LOGA kennt für diesen Tag {fmtHoursClock(day.reportHours)} h.
-											{#if fehlt}
+											{#if isMissing}
 												Hier fehlen {fmtHoursClock(day.missing)} h.
 											{:else}
 												Hier sind {fmtHoursClock(day.over)} h zu viel erfasst.

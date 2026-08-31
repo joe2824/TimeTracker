@@ -19,7 +19,7 @@
 	import FingerprintIcon from "@lucide/svelte/icons/fingerprint";
 	import UserPlusIcon from "@lucide/svelte/icons/user-plus";
 	import KeyRoundIcon from "@lucide/svelte/icons/key-round";
-	import { RELEASES_URL, erkenneOS, hatDesktopApp } from "$lib/platform/os";
+	import { RELEASES_URL, detectOs, hasDesktopApp } from "$lib/platform/os";
 	import { errorText, logWarn } from "$lib/log";
 	import { linkParameter } from "$lib/invite";
 	import { onboardingOffen } from "$lib/onboarding.svelte";
@@ -29,10 +29,10 @@
 		normalizePairingCode
 	} from "$lib/crypto/vault";
 
-	type Schritt = "start" | "phrase" | "entsperren" | "geraet";
+	type Step = "start" | "phrase" | "entsperren" | "geraet";
 
-	let schritt = $state<Schritt>("start");
-	let laeuft = $state(false);
+	let stepIndex = $state<Step>("start");
+	let running = $state(false);
 
 	// Die Adresse ist im Browser immer die eigene - die PWA wird ja vom Server
 	// ausgeliefert. Sie steht trotzdem hier, damit klar ist, wohin die Daten gehen.
@@ -40,25 +40,25 @@
 
 	let invite = $state("");
 	let phrase = $state("");
-	let eingabe = $state("");
-	let bestaetigt = $state(false);
-	let prfVorhanden = $state(false);
-	let angemeldeterName = $state("");
-	let schluessel: CryptoKey | null = null;
+	let inputValue = $state("");
+	let confirmed = $state(false);
+	let prfPresent = $state(false);
+	let loggedInName = $state("");
+	let keyValue: CryptoKey | null = null;
 	/**
 	 * Was die Anmeldung an PRF hergab - fuer den Fall, dass gleich die Phrase
 	 * gebraucht wird. Danach kann eine PRF-Verpackung nachgelegt werden, und die
 	 * naechste Anmeldung kommt ohne die 24 Wörter aus.
 	 */
-	let prfWert: Uint8Array | null = null;
+	let prfValue: Uint8Array | null = null;
 	let passkeyId = "";
 
-	async function anmelden() {
-		laeuft = true;
+	async function signIn() {
+		running = true;
 		try {
 			const r = await login(serverUrl);
-			angemeldeterName = r.displayName;
-			prfWert = r.prf;
+			loggedInName = r.displayName;
+			prfValue = r.prf;
 			passkeyId = r.credentialId;
 			if (r.key) {
 				await account.linkWithSession(serverUrl, r.key, r.displayName);
@@ -75,32 +75,32 @@
 				toast.error("Für dieses Konto ist kein Weg hinterlegt, den Tresor zu öffnen.");
 				return;
 			}
-			schritt = "entsperren";
+			stepIndex = "entsperren";
 		} catch (e) {
 			// Kein Sackgassen-Toast. WebAuthn sagt nicht, OB es einen Passkey gibt -
 			// abgebrochen und "gar keiner da" kommen als derselbe Fehler an. Statt zu
 			// raten, zeigen wir die Wege, die es von hier aus gibt.
-			hilfeOffen = true;
+			helpOpen = true;
 			logWarn("Anmeldung fehlgeschlagen", e);
 		} finally {
-			laeuft = false;
+			running = false;
 		}
 	}
 
 	/** Nach einer gescheiterten Anmeldung: wie geht es weiter? */
-	let hilfeOffen = $state(false);
+	let helpOpen = $state(false);
 
 	/** Steht die Frage nach dem Einladungscode offen? */
-	let inviteOffen = $state(false);
+	let inviteOpen = $state(false);
 
 	/** Einmal ermitteln - das aendert sich waehrend einer Sitzung nicht. */
-	const os = erkenneOS();
+	const os = detectOs();
 
 	// Was der Link mitgebracht hat. Wird dabei aus der Adresszeile entfernt - alles
 	// davon gilt genau einmal und nuetzt in der Chronik niemandem.
-	const vomLink = $state(linkParameter());
-	const ausLink = vomLink.invite;
-	if (ausLink) invite = ausLink;
+	const linkValue = $state(linkParameter());
+	const fromLink = linkValue.invite;
+	if (fromLink) invite = fromLink;
 
 	/**
 	 * Der Kopplungscode, den der Link mitgebracht hat - zum Bestaetigen, nicht
@@ -122,53 +122,53 @@
 	 * erstes im Weg. Verlangt der Server einen, kommt er mit 403 zurueck - dann
 	 * ist der richtige Moment, danach zu fragen.
 	 */
-	async function anlegen(code = "") {
-		hilfeOffen = false;
-		laeuft = true;
+	async function create(code = "") {
+		helpOpen = false;
+		running = true;
 		try {
 			// Ohne expliziten Namen setzt der Server die Kontokennung ein;
 			// der Nutzer kann später in den Einstellungen seinen Namen vergeben.
 			const r = await register(serverUrl, "", {
 				invite: code.trim() || undefined
 			});
-			angemeldeterName = r.displayName;
-			schluessel = r.key;
+			loggedInName = r.displayName;
+			keyValue = r.key;
 			phrase = r.recoveryPhrase!;
-			prfVorhanden = r.prfAvailable;
-			inviteOffen = false;
-			schritt = "phrase";
+			prfPresent = r.prfAvailable;
+			inviteOpen = false;
+			stepIndex = "phrase";
 		} catch (e) {
 			if (e instanceof ApiError && e.status === 403) {
 				// Beim ersten Mal ist das keine Fehlermeldung, sondern eine Frage.
 				if (code.trim()) toast.error("Dieser Einladungscode gilt nicht.");
-				inviteOffen = true;
+				inviteOpen = true;
 				return;
 			}
-			toast.error(fehlertext(e, "Konto konnte nicht angelegt werden"));
+			toast.error(errorMessage(e, "Konto konnte nicht angelegt werden"));
 		} finally {
-			laeuft = false;
+			running = false;
 		}
 	}
 
-	async function phraseUebernehmen() {
-		if (!schluessel) return;
+	async function applyPhrase() {
+		if (!keyValue) return;
 		// VOR dem Verknuepfen: in dem Moment, in dem das Konto haengt, baut die
 		// Seite diesen Bildschirm ab - und der letzte Schritt ginge mit ihm. Wer
 		// das Flag erst danach setzt, sieht ihn nie.
 		onboardingOffen.value = true;
-		await account.linkWithSession(serverUrl, schluessel, angemeldeterName);
+		await account.linkWithSession(serverUrl, keyValue, loggedInName);
 
-		schritt = "geraet";
+		stepIndex = "geraet";
 	}
 
 	/** Den Code aus der Desktop-Anwendung bestaetigen. */
-	async function appDazuholen() {
+	async function addApp() {
 		const c = normalizePairingCode(appCode);
 		if (!isPairingCode(c)) {
 			toast.error("Ein Kopplungscode hat zwölf Zeichen.");
 			return;
 		}
-		laeuft = true;
+		running = true;
 		try {
 			const label = await account.approvePairing(c);
 			appCode = "";
@@ -176,45 +176,45 @@
 			app.dismissOnboarding();
 			toast.success(`„${label}" ist jetzt verknüpft.`);
 		} catch (e) {
-			toast.error(fehlertext(e, "Code konnte nicht bestätigt werden"));
+			toast.error(errorMessage(e, "Code konnte nicht bestätigt werden"));
 		} finally {
-			laeuft = false;
+			running = false;
 		}
 	}
 
 	/** Den Willkommensbildschirm schliessen und das Onboarding zur Ersteinrichtung öffnen. */
-	function fertig() {
+	function isDone() {
 		onboardingOffen.value = false;
 		app.openOnboarding();
 	}
 
 	let appCode = $state("");
 
-	async function entsperren() {
-		if (!isValidRecoveryPhrase(eingabe)) {
+	async function unlock() {
+		if (!isValidRecoveryPhrase(inputValue)) {
 			// Die Prüfsumme von BIP39 fängt genau das ab, was beim Abtippen passiert.
 			toast.error("Diese Phrase stimmt nicht – bitte alle 24 Wörter prüfen.");
 			return;
 		}
-		laeuft = true;
+		running = true;
 		try {
-			const key = await unlockWithPhrase(serverUrl, eingabe);
+			const key = await unlockWithPhrase(serverUrl, inputValue);
 			// Kann der Passkey PRF, fehlte aber die passende Verpackung: jetzt eine
 			// anlegen. Ohne das verlangte dieses Gerät die 24 Wörter bei JEDER
 			// Anmeldung erneut - obwohl der Passkey den Tresor allein öffnen könnte.
-			if (prfWert) {
-				await addPasskeyWrap(serverUrl, key, passkeyId, prfWert).catch(() => {});
+			if (prfValue) {
+				await addPasskeyWrap(serverUrl, key, passkeyId, prfValue).catch(() => {});
 			}
-			await account.linkWithSession(serverUrl, key, angemeldeterName);
+			await account.linkWithSession(serverUrl, key, loggedInName);
 			toast.success("Entsperrt.");
 		} catch (e) {
-			toast.error(fehlertext(e, "Die Phrase passt nicht zu diesem Konto"));
+			toast.error(errorMessage(e, "Die Phrase passt nicht zu diesem Konto"));
 		} finally {
-			laeuft = false;
+			running = false;
 		}
 	}
 
-	function fehlertext(e: unknown, standard: string): string {
+	function errorMessage(e: unknown, fallback: string): string {
 		// Ein abgebrochener Passkey-Dialog ist keine Störung, sondern eine
 		// Entscheidung - dafür braucht es keine Fehlermeldung mit Ausrufezeichen.
 		if (e instanceof Error && /NotAllowed|abort/i.test(e.name + e.message)) {
@@ -222,85 +222,85 @@
 		}
 		// `errorText` und nicht `e.message`: WebCrypto wirft beim Entsperren einen
 		// OperationError, dessen Meldung in Chromium-Laufzeiten LEER ist.
-		return e instanceof Error ? errorText(e) : standard;
+		return e instanceof Error ? errorText(e) : fallback;
 	}
 
 	// ---------- Mit der Phrase zurueckholen ----------
 
-	let phraseOffen = $state(false);
-	let phraseEingabe = $state("");
+	let phraseOpen = $state(false);
+	let phraseInput = $state("");
 
-	async function zurueckholen() {
-		laeuft = true;
+	async function restore() {
+		running = true;
 		try {
-			await account.recoverWithPhrase(serverUrl, phraseEingabe, "Browser");
-			phraseOffen = false;
-			phraseEingabe = "";
+			await account.recoverWithPhrase(serverUrl, phraseInput, "Browser");
+			phraseOpen = false;
+			phraseInput = "";
 			toast.success("Konto zurückgeholt. Leg jetzt einen Passkey an, dann geht es künftig schneller.");
 		} catch (e) {
-			toast.error(fehlertext(e, "Zurückholen fehlgeschlagen"));
+			toast.error(errorMessage(e, "Zurückholen fehlgeschlagen"));
 		} finally {
-			laeuft = false;
+			running = false;
 		}
 	}
 
 	// ---------- Der Browser koppelt sich wie ein neues Geraet ----------
 
-	let kopplungscode = $state("");
+	let pairingCodeInput = $state("");
 	let poll: ReturnType<typeof setInterval> | null = null;
 
 	/** Steht der Kopplungs-Dialog offen? */
-	let koppelnOffen = $state(false);
+	let pairingOpen = $state(false);
 
-	async function koppelnStarten() {
-		hilfeOffen = false;
-		laeuft = true;
+	async function startPairing() {
+		helpOpen = false;
+		running = true;
 		// Vor dem Holen aufmachen. Der Server braucht einen Moment, und ein Klick,
 		// nach dem sichtbar nichts passiert, sieht aus wie ein kaputter Knopf.
-		koppelnOffen = true;
+		pairingOpen = true;
 		try {
-			kopplungscode = await account.startPairing(serverUrl, "Browser");
+			pairingCodeInput = await account.startPairing(serverUrl, "Browser");
 			// Alle zwei Sekunden nachsehen. Der Server bremst das nicht aus - gezaehlt
 			// werden dort nur Fehlgriffe, nicht das Warten.
-			poll = setInterval(pruefen, 2000);
+			poll = setInterval(runCheck, 2000);
 		} catch (e) {
 			// Ohne Code hat der Dialog nichts zu zeigen.
-			koppelnOffen = false;
-			toast.error(fehlertext(e, "Kopplung konnte nicht begonnen werden"));
+			pairingOpen = false;
+			toast.error(errorMessage(e, "Kopplung konnte nicht begonnen werden"));
 		} finally {
-			laeuft = false;
+			running = false;
 		}
 	}
 
-	async function pruefen() {
+	async function runCheck() {
 		try {
 			if (await account.checkPairing()) {
-				koppelnAufraeumen();
+				cleanupPairing();
 				toast.success("Verbunden. Deine Zeiten werden geladen.");
 			}
 		} catch (e) {
-			koppelnAufraeumen();
-			toast.error(fehlertext(e, "Kopplung fehlgeschlagen"));
+			cleanupPairing();
+			toast.error(errorMessage(e, "Kopplung fehlgeschlagen"));
 		}
 	}
 
-	function koppelnAbbrechen() {
+	function cancelPairing() {
 		account.cancelPairing();
-		koppelnAufraeumen();
+		cleanupPairing();
 	}
 
-	function koppelnAufraeumen() {
+	function cleanupPairing() {
 		if (poll) clearInterval(poll);
 		poll = null;
-		kopplungscode = "";
-		koppelnOffen = false;
+		pairingCodeInput = "";
+		pairingOpen = false;
 	}
 
 	$effect(() => () => {
 		if (poll) clearInterval(poll);
 	});
 
-	async function kopieren() {
+	async function copy() {
 		try {
 			await navigator.clipboard.writeText(phrase);
 			toast.success("In die Zwischenablage kopiert.");
@@ -310,7 +310,7 @@
 	}
 </script>
 
-{#if schritt === "start"}
+{#if stepIndex === "start"}
 	<!-- Der Startschritt IST die Landing Page: Werbung und Anmeldung auf einer
 	     Seite. Landing traegt nur die Seite, die Karte kommt als Snippet von
 	     hier - der Tresorschluessel hat in einer Marketingkomponente nichts zu
@@ -320,10 +320,10 @@
 			<Card.Root class="w-full shadow-md border-border/80 bg-card">
 				<Card.Header class="pb-3 border-b">
 					<Card.Title class="text-base font-semibold tracking-tight">
-						{vomLink.neu ? "Konto anlegen" : "Loslegen"}
+						{linkValue.neu ? "Konto anlegen" : "Loslegen"}
 					</Card.Title>
 					<Card.Description class="text-xs leading-relaxed">
-						{#if vomLink.neu}
+						{#if linkValue.neu}
 							Erstelle dein Konto per Touch ID, Face ID oder PIN. Ganz ohne Passwort.
 						{:else}
 							Schnell & sicher per Passkey (Fingerabdruck, Face ID oder PIN).
@@ -331,17 +331,17 @@
 					</Card.Description>
 				</Card.Header>
 				<Card.Content class="space-y-4 pt-4">
-					{#if vomLink.neu}
+					{#if linkValue.neu}
 						<!-- Der Rechner hat hierher geschickt, ausdruecklich zum Anlegen. -->
 						<div class="space-y-2.5">
-							<Button size="lg" class="w-full h-11 font-medium gap-2 shadow-xs" disabled={laeuft} onclick={() => anlegen(invite)}>
+							<Button size="lg" class="w-full h-11 font-medium gap-2 shadow-xs" disabled={running} onclick={() => create(invite)}>
 								<KeyRoundIcon class="size-4.5" />
-								<span>{laeuft ? "Legt an…" : "Konto anlegen"}</span>
+								<span>{running ? "Legt an…" : "Konto anlegen"}</span>
 							</Button>
 							<button
 								type="button"
 								class="text-muted-foreground hover:text-foreground w-full text-center text-xs underline underline-offset-4 pt-1"
-								onclick={() => (vomLink.neu = false)}
+								onclick={() => (linkValue.neu = false)}
 							>
 								Ich habe bereits ein Konto
 							</button>
@@ -352,15 +352,15 @@
 							<Button
 								size="lg"
 								class="w-full h-11 text-sm font-medium gap-2 shadow-xs transition-all active:scale-[0.99]"
-								disabled={laeuft}
-								onclick={anmelden}
+								disabled={running}
+								onclick={signIn}
 							>
 								<FingerprintIcon class="size-4.5" />
-								<span>{laeuft ? "Logge ein…" : "Login mit Passkey"}</span>
+								<span>{running ? "Logge ein…" : "Login mit Passkey"}</span>
 							</Button>
 						</div>
 
-						{#if hilfeOffen}
+						{#if helpOpen}
 							<div class="border-primary/30 bg-primary/5 rounded-lg border p-2.5 text-center text-xs text-foreground animate-in fade-in-0 duration-150">
 								<p class="font-medium">Kein Passkey gefunden?</p>
 								<p class="text-muted-foreground mt-0.5">Erstelle unten ein neues Konto oder koppele ein bestehendes Gerät.</p>
@@ -376,11 +376,11 @@
 						<Button
 							variant="outline"
 							class="w-full h-10 text-sm font-medium gap-2 hover:bg-accent/60 transition-colors"
-							disabled={laeuft}
-							onclick={() => anlegen(invite)}
+							disabled={running}
+							onclick={() => create(invite)}
 						>
 							<UserPlusIcon class="size-4" />
-							<span>{laeuft ? "Erstelle Konto…" : (ausLink ? "Mit Einladung registrieren" : "Neues Konto erstellen")}</span>
+							<span>{running ? "Erstelle Konto…" : (fromLink ? "Mit Einladung registrieren" : "Neues Konto erstellen")}</span>
 						</Button>
 
 						<!-- Die zwei selteneren Wege, klein und sauber zentriert -->
@@ -388,8 +388,8 @@
 							<button
 								type="button"
 								class="hover:text-foreground transition-colors underline-offset-4 hover:underline"
-								disabled={laeuft}
-								onclick={koppelnStarten}
+								disabled={running}
+								onclick={startPairing}
 							>
 								Gerät koppeln
 							</button>
@@ -397,7 +397,7 @@
 							<button
 								type="button"
 								class="hover:text-foreground transition-colors underline-offset-4 hover:underline"
-								onclick={() => (phraseOffen = true)}
+								onclick={() => (phraseOpen = true)}
 							>
 								Wiederherstellen
 							</button>
@@ -412,7 +412,7 @@
 	<div
 		class="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-6 px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]"
 	>
-		{#if schritt === "geraet"}
+		{#if stepIndex === "geraet"}
 			<!-- Der eine Schritt nach dem Anlegen. -->
 			<header class="flex flex-col items-center gap-3 text-center">
 				<img src="/logo.svg" alt="" class="h-14 w-auto drop-shadow-sm" />
@@ -440,10 +440,10 @@
 								placeholder="ABCD-EFGH-JKLM"
 								maxlength={14}
 								class="font-mono tracking-wider uppercase"
-								onkeydown={(e) => e.key === "Enter" && appDazuholen()}
+								onkeydown={(e) => e.key === "Enter" && addApp()}
 							/>
-							<Button disabled={laeuft || !appCode.trim()} onclick={appDazuholen}>
-								{laeuft ? "…" : "Verknüpfen"}
+							<Button disabled={running || !appCode.trim()} onclick={addApp}>
+								{running ? "…" : "Verknüpfen"}
 							</Button>
 						</div>
 					</div>
@@ -454,7 +454,7 @@
 						<span class="bg-border h-px flex-1"></span>
 					</div>
 
-					{#if hatDesktopApp(os)}
+					{#if hasDesktopApp(os)}
 						<div class="space-y-1">
 							<Button
 								variant="outline"
@@ -477,11 +477,11 @@
 						</p>
 					{/if}
 
-					<Button variant="ghost" class="w-full" onclick={fertig}>Direkt im Browser einrichten</Button>
+					<Button variant="ghost" class="w-full" onclick={isDone}>Direkt im Browser einrichten</Button>
 				</Card.Content>
 			</Card.Root>
 
-		{:else if schritt === "phrase"}
+		{:else if stepIndex === "phrase"}
 			<Card.Root class="w-full">
 				<Card.Header>
 					<Card.Title>Recovery-Phrase sichern</Card.Title>
@@ -501,9 +501,9 @@
 						{/each}
 					</ol>
 
-					<Button variant="outline" size="sm" onclick={kopieren}>In Zwischenablage kopieren</Button>
+					<Button variant="outline" size="sm" onclick={copy}>In Zwischenablage kopieren</Button>
 
-					{#if !prfVorhanden}
+					{#if !prfPresent}
 						<!--
 							Ohne PRF öffnet der Passkey den Tresor nicht allein. Dann ist die
 							Phrase nicht das Netz, sondern der Alltagsweg - das gehört gesagt.
@@ -521,14 +521,14 @@
 						for="phrase-ok"
 						class="bg-muted/40 items-start gap-2.5 rounded-lg p-3 text-sm leading-relaxed font-normal"
 					>
-						<Checkbox id="phrase-ok" bind:checked={bestaetigt} class="mt-0.5" />
+						<Checkbox id="phrase-ok" bind:checked={confirmed} class="mt-0.5" />
 						<span>
 							Ich habe die 24 Wörter sicher notiert. Mir ist bewusst, dass bei einem Verlust dieser Phrase
 							auch meine Daten unwiederbringlich verloren sind.
 						</span>
 					</Label>
 
-					<Button class="w-full" disabled={!bestaetigt} onclick={phraseUebernehmen}>
+					<Button class="w-full" disabled={!confirmed} onclick={applyPhrase}>
 						Weiter
 					</Button>
 				</Card.Content>
@@ -543,13 +543,13 @@
 				</Card.Header>
 				<Card.Content class="space-y-3">
 					<textarea
-						bind:value={eingabe}
+						bind:value={inputValue}
 						rows="4"
 						class="border-input bg-background w-full rounded-md border p-2 font-mono text-sm"
 						placeholder="wort1 wort2 wort3 …"
 					></textarea>
-					<Button class="w-full" disabled={laeuft} onclick={entsperren}>Entsperren</Button>
-					<Button variant="ghost" size="sm" onclick={() => (schritt = "start")}>Zurück</Button>
+					<Button class="w-full" disabled={running} onclick={unlock}>Entsperren</Button>
+					<Button variant="ghost" size="sm" onclick={() => (stepIndex = "start")}>Zurück</Button>
 				</Card.Content>
 			</Card.Root>
 		{/if}
@@ -564,12 +564,12 @@
 	Karte zu ragen.
 -->
 <Dialog.Root
-	open={koppelnOffen}
+	open={pairingOpen}
 	onOpenChange={(o) => {
-		koppelnOffen = o;
+		pairingOpen = o;
 		// Zuklappen heisst abbrechen - sonst liefe die Abfrage im Hintergrund
 		// weiter und der Vorgang bliebe auf dem Server stehen.
-		if (!o) koppelnAbbrechen();
+		if (!o) cancelPairing();
 	}}
 >
 	<!-- max-w-md, nicht -sm: der Code ist 14 Zeichen weit gesperrt und braucht
@@ -583,16 +583,16 @@
 			</Dialog.Description>
 		</Dialog.Header>
 
-		{#if kopplungscode}
+		{#if pairingCodeInput}
 			<!-- Ohne onCancel: das Abbrechen steht unten im Fuss des Dialogs, und
 			     zweimal derselbe Knopf untereinander stiftet nur Verwirrung. -->
-			<PairingCode code={kopplungscode} />
+			<PairingCode code={pairingCodeInput} />
 		{:else}
 			<p class="text-muted-foreground py-8 text-center text-sm">Lade Code...</p>
 		{/if}
 
 		<Dialog.Footer>
-			<Button variant="outline" onclick={koppelnAbbrechen}>Abbrechen</Button>
+			<Button variant="outline" onclick={cancelPairing}>Abbrechen</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
@@ -606,12 +606,12 @@
 	haette er nichts getan.
 -->
 <Dialog.Root
-	open={phraseOffen}
+	open={phraseOpen}
 	onOpenChange={(o) => {
-		phraseOffen = o;
+		phraseOpen = o;
 		// Beim Schliessen mitnehmen, nicht bloss ausblenden: sonst stehen die
 		// Woerter beim naechsten Oeffnen wieder sichtbar im Feld.
-		if (!o) phraseEingabe = "";
+		if (!o) phraseInput = "";
 	}}
 >
 	<Dialog.Content class="sm:max-w-md">
@@ -623,24 +623,24 @@
 			</Dialog.Description>
 		</Dialog.Header>
 		<textarea
-			bind:value={phraseEingabe}
+			bind:value={phraseInput}
 			rows="3"
 			class="border-input bg-background w-full rounded-md border p-2 font-mono text-sm"
 			placeholder="wort eins wort zwei wort drei …"
 		></textarea>
 		<Dialog.Footer>
-			<Button variant="outline" disabled={laeuft} onclick={() => (phraseOffen = false)}>
+			<Button variant="outline" disabled={running} onclick={() => (phraseOpen = false)}>
 				Abbrechen
 			</Button>
-			<Button disabled={laeuft || !phraseEingabe.trim()} onclick={zurueckholen}>
-				{laeuft ? "Einen Moment…" : "Wiederherstellen"}
+			<Button disabled={running || !phraseInput.trim()} onclick={restore}>
+				{running ? "Einen Moment…" : "Wiederherstellen"}
 			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
 
 <!-- Erst wenn der Server einen verlangt. Siehe anlegen(). -->
-<Dialog.Root open={inviteOffen} onOpenChange={(o) => (inviteOffen = o)}>
+<Dialog.Root open={inviteOpen} onOpenChange={(o) => (inviteOpen = o)}>
 	<Dialog.Content class="sm:max-w-sm">
 		<Dialog.Header>
 			<Dialog.Title>Einladungscode</Dialog.Title>
@@ -653,12 +653,12 @@
 			bind:value={invite}
 			placeholder="ABCD-EFGH-JKLM-NPQR"
 			class="font-mono tracking-wider uppercase"
-			onkeydown={(e) => e.key === "Enter" && anlegen(invite)}
+			onkeydown={(e) => e.key === "Enter" && create(invite)}
 		/>
 		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (inviteOffen = false)}>Abbrechen</Button>
-			<Button disabled={laeuft || !invite.trim()} onclick={() => anlegen(invite)}>
-				{laeuft ? "Legt an…" : "Konto anlegen"}
+			<Button variant="outline" onclick={() => (inviteOpen = false)}>Abbrechen</Button>
+			<Button disabled={running || !invite.trim()} onclick={() => create(invite)}>
+				{running ? "Legt an…" : "Konto anlegen"}
 			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>

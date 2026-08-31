@@ -310,9 +310,9 @@
 			// Bei genau einer Person gibt es nichts zu waehlen.
 			personKey = report.people.length === 1 ? report.people[0].key : (matchOwnPerson(report) ?? "");
 			logInfo("Zeitwirtschaftsreport eingelesen", {
-				datei: file.name,
-				personen: report.people.length,
-				monate: report.months
+				fileName: file.name,
+				people: report.people.length,
+				monthList: report.months
 			});
 			const person = report.people.find((p) => p.key === personKey);
 			if (person) await useReport(person.key, preferredMonth(person));
@@ -529,9 +529,9 @@
 
 		if (days > 0) {
 			logInfo("Zeiten aus dem Zeitwirtschaftsreport nachgetragen", {
-				monat: active?.month,
-				tage: days,
-				eintraege: created
+				monthValue: active?.month,
+				dayCount: days,
+				entryList: created
 			});
 			toast.success(`${days} Tag${days === 1 ? "" : "e"} nachgetragen.`);
 		}
@@ -555,12 +555,12 @@
 	};
 
 	const FLAG_HINT: Record<string, string> = {
-		ruhepause: "Die gesetzliche Ruhepause wurde an diesem Tag nicht eingehalten.",
-		ueber10: "Die tägliche Arbeitszeit lag über 10 Stunden.",
-		soll10: "Die Soll-Arbeitszeit liegt über 10 Stunden.",
-		wiedereingliederung: "Tag im Rahmen einer Wiedereingliederung.",
-		sonntag: "An diesem Sonntag wurde gearbeitet.",
-		feiertag: "An diesem Feiertag wurde gearbeitet."
+		restBreak: "Die gesetzliche Ruhepause wurde an diesem Tag nicht eingehalten.",
+		over10: "Die tägliche Arbeitszeit lag über 10 Stunden.",
+		target10: "Die Soll-Arbeitszeit liegt über 10 Stunden.",
+		gradualReturn: "Tag im Rahmen einer Wiedereingliederung.",
+		sunday: "An diesem Sonntag wurde gearbeitet.",
+		holiday: "An diesem Feiertag wurde gearbeitet."
 	};
 
 	/** "Mo 12.01." – kurz genug fuer die Tabellenspalte. */
@@ -590,8 +590,8 @@
 	 */
 	function ruleMismatch(day: ReconcileDay): boolean {
 		if (!app.settings.breakDeduction || !hasStamps(day.report)) return false;
-		const brutto = grossHours(day.report);
-		return Math.abs(brutto - day.report.hours - ruleBreakHours(brutto)) > TOLERANCE;
+		const gross = grossHours(day.report);
+		return Math.abs(gross - day.report.hours - ruleBreakHours(gross)) > TOLERANCE;
 	}
 
 	function stampLabel(day: ReconcileDay): string {
@@ -684,17 +684,17 @@
 			</button>
 
 			{#if stored}
-				{@const offen = storedSummary ? storedSummary.missing + storedSummary.partial : 0}
+				{@const openState = storedSummary ? storedSummary.missing + storedSummary.partial : 0}
 				<!-- Der gespeicherte Report sagt hier gleich, ob noch etwas offen ist –
 				     sonst müsste man den Abgleich öffnen, nur um „alles gut" zu sehen. -->
 				<div class="flex items-center justify-between gap-3 rounded-lg border p-3">
 					<div class="flex min-w-0 items-start gap-2.5">
 						<span
-							class="flex size-8 shrink-0 items-center justify-center rounded-md {offen > 0
+							class="flex size-8 shrink-0 items-center justify-center rounded-md {openState > 0
 								? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
 								: 'bg-muted text-muted-foreground'}"
 						>
-							{#if offen > 0}
+							{#if openState > 0}
 								<TriangleAlertIcon class="size-4" />
 							{:else}
 								<CheckIcon class="size-4" />
@@ -708,8 +708,8 @@
 								{/if}
 							</p>
 							<p class="text-muted-foreground truncate text-xs">
-								{#if storedSummary && offen > 0}
-									{offen} Tag{offen === 1 ? "" : "e"} offen · {fmtHoursClock(storedSummary.missingHours)} h
+								{#if storedSummary && openState > 0}
+									{openState} Tag{openState === 1 ? "" : "e"} offen · {fmtHoursClock(storedSummary.missingHours)} h
 									fehlen ·
 								{:else if storedSummary}
 									alles erfasst ·
@@ -718,7 +718,7 @@
 							</p>
 						</div>
 					</div>
-					<Button variant={offen > 0 ? "default" : "outline"} size="sm" onclick={openStored}>
+					<Button variant={openState > 0 ? "default" : "outline"} size="sm" onclick={openStored}>
 						Abgleich öffnen
 					</Button>
 				</div>
