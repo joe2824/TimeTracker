@@ -28,7 +28,9 @@ RUN BUILD_TARGET=web npx vite build
 
 # Server-JS bauen und statische PWA-Dateien einbetten
 COPY server ./server
-RUN cp -r build-web/. server/static/ && npm --workspace server run build
+# Die Shell heisst app-shell.html, damit der statische Dateiserver sie nicht
+# unter "/" ausliefert - siehe routes/[...pfad]/+server.ts.
+RUN cp -r build-web/. server/static/ && mv server/static/index.html server/static/app-shell.html && npm --workspace server run build
 
 # ---------- 2. Native Abhaengigkeiten (Zielarchitektur) ----------
 FROM node:22-alpine AS build
