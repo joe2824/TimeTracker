@@ -44,6 +44,18 @@ describe("checkOnStartup", () => {
 		expect(startup()).toBe(false);
 	});
 
+	it("zeigt ihn nicht, wenn schon eine SPAETERE Fassung gesehen wurde", () => {
+		// Der Fall nach dem Zurueckstellen der Nummer: wer 0.9.1 bereits weggeklickt
+		// hat, kennt diesen Inhalt. Ein Vergleich auf Ungleichheit zeigte ihn erneut.
+		localStorage.setItem(KEY, "0.9.1");
+		expect(startup()).toBe(false);
+	});
+
+	it("zeigt ihn auch nach einer Vorabfassung derselben Nummer nicht", () => {
+		localStorage.setItem(KEY, "0.9.0-beta.3");
+		expect(startup()).toBe(false);
+	});
+
 	it("zeigt ihn bei einer frischen Erstinstallation nicht - dort laeuft das Onboarding", () => {
 		expect(startup(true)).toBe(false);
 		expect(localStorage.getItem(KEY)).toBe(CURRENT_RELEASE.version);
