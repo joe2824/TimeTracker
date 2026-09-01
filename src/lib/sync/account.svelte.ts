@@ -21,7 +21,8 @@ import {
 	setChangeListener,
 	rememberUnstamped
 } from "./outbox";
-import { Api, ApiError, type AccountInfo, type BackupInfo, type DeleteSummary, type Invite, type Passkey } from "./api";
+import { Api, ApiError, type AccountInfo, type BackupInfo, type DeleteSummary, type Invite, type Passkey, type ServerStats } from "./api";
+
 import { detachLocalData } from "./detach";
 import { monthKey, prevMonthKey, shiftMonthKey } from "../time";
 import { SyncEngine, type SyncState } from "./engine";
@@ -1049,7 +1050,13 @@ class AccountState {
 		await this.#api.deleteBackup(name);
 	}
 
+	async stats(days = 30): Promise<ServerStats> {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		return this.#api.stats(days);
+	}
+
 	/**
+
 	 * Abmelden: die Sitzung beim Server beenden und die Verknuepfung hier vergessen.
 	 *
 	 * Die erfassten Zeiten bleiben liegen - abmelden ist kein Loeschen. Der Passkey

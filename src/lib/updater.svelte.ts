@@ -20,6 +20,8 @@ export const updater = new UpdaterState();
 
 /** Ob die letzte stille Suche schon gescheitert ist. */
 let silentFailureLogged = false;
+/** Version des zuletzt protokollierten Fundes, um stündliche Wiederholungen zu vermeiden. */
+let lastLoggedFoundVersion: string | null = null;
 
 /**
  * Nach einem Update suchen.
@@ -33,10 +35,16 @@ export async function checkForUpdate({ silent = false } = {}): Promise<boolean> 
 		updater.pending = update;
 		silentFailureLogged = false;
 		if (update) {
-			logInfo(`Update ${update.version} gefunden`);
+			if (!silent || lastLoggedFoundVersion !== update.version) {
+				logInfo(`Update ${update.version} gefunden`);
+				lastLoggedFoundVersion = update.version;
+			} else {
+				logDebug(`Update ${update.version} weiterhin verfügbar`);
+			}
 			if (!silent) updater.open = true;
 			return true;
 		}
+		lastLoggedFoundVersion = null;
 		// Im Hintergrund nur als Debug-Zeile: als Info stünde dieselbe Meldung
 		// 24-mal am Tag im Protokoll und verdeckte, was dort wirklich passiert ist.
 		if (silent) {
@@ -47,6 +55,7 @@ export async function checkForUpdate({ silent = false } = {}): Promise<boolean> 
 		}
 		return false;
 	} catch (e) {
+
 		// Offline oder Updater nicht konfiguriert – beim stillen Lauf kein Fall für
 		// den Benutzer, der Grund gehört aber ins Protokoll. Einmal je Ausfall:
 		// die nächste erfolgreiche Suche setzt die Wache zurück.

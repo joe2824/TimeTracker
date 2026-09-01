@@ -220,12 +220,18 @@
 		// Erst zeigen, wenn jemand hinsieht (Autostart!) – und dann lange genug,
 		// dass der Blick auch mal woanders sein darf.
 		await whenWindowVisible();
+		// Wenn inzwischen eine neuere Version ansteht oder der Dialog bereits offen/installiert ist:
+		// den veralteten Hinweis verwerfen.
+		if (!updater.pending || updater.pending.version !== version || updater.open || updater.installing) {
+			return;
+		}
 		logInfo(`Hinweis auf Update ${version} gezeigt`);
 		toast.info(`Update ${version} verfügbar`, {
 			duration: 60000,
 			action: { label: "Installieren", onClick: () => void openUpdateDialog() }
 		});
 	}
+
 
 	/** Alles einrichten, was die App zum Laufen braucht. */
 	async function startup() {

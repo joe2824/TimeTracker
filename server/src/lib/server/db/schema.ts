@@ -181,5 +181,27 @@ export const serverSettings = sqliteTable("server_settings", {
 	updatedAt: integer("updated_at").notNull()
 });
 
+/**
+ * Anonyme Telemetrie-Meldungen („aktiv"-Pings).
+ * Höchstens ein Eintrag je (date, deviceId). Enthält nur Datum, anonyme Geräte-ID,
+ * Version, Plattform und letzten Zeitstempel.
+ */
+export const telemetryPings = sqliteTable(
+	"telemetry_pings",
+	{
+		id: integer("id").primaryKey({ autoIncrement: true }),
+		date: text("date").notNull(), // "YYYY-MM-DD"
+		deviceId: text("device_id").notNull(),
+		version: text("version").notNull(),
+		platform: text("platform").notNull(), // "macos" | "windows" | "linux" | "web"
+		lastSeenAt: integer("last_seen_at").notNull()
+	},
+	(t) => [
+		uniqueIndex("telemetry_pings_date_device").on(t.date, t.deviceId),
+		index("telemetry_pings_date").on(t.date)
+	]
+);
+
 /** Der Zeitpunkt "jetzt" in der Einheit, die alle Tabellen benutzen. */
 export const now = () => Date.now();
+

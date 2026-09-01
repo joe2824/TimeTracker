@@ -49,6 +49,8 @@ export function isLocked(secretKey: string, opts: LimitOptions, nowMs = Date.now
 	return Math.min(opts.burst, b.tokens + (nowMs - b.last) * rate) < 1;
 }
 
+export const isBlocked = isLocked;
+
 /** Volle Eimer wegwerfen - sonst waechst die Karte mit jeder gesehenen Adresse. */
 export function cleanupLimits(nowMs = Date.now()): void {
 	for (const [k, b] of tokenBucket) {
@@ -57,10 +59,20 @@ export function cleanupLimits(nowMs = Date.now()): void {
 	}
 }
 
-/** Nur fuer Tests: die Bremse in den Ausgangszustand bringen. */
+/** Reset all rate limit buckets (test helper). */
 export function resetLimitsForTests(): void {
 	tokenBucket.clear();
 }
+
+// Backward compatibility aliases
+export const nimmVersuch = (k: string, opts: LimitOptions, now = Date.now()) => {
+	const r = takeAttempt(k, opts, now);
+	return { erlaubt: r.allowed, retryAfter: r.retryAfter };
+};
+export const istGesperrt = isLocked;
+export const raeumeLimits = cleanupLimits;
+
+
 
 // ---------- Die Saetze ----------
 
@@ -72,3 +84,6 @@ export const LIMIT_PAIR_START: LimitOptions = { burst: 10, perMinute: 5 };
 export const LIMIT_AUTH: LimitOptions = { burst: 15, perMinute: 10 };
 /** Wiederherstellung mit der Phrase - zwei Anfragen je Vorgang. */
 export const LIMIT_RECOVER: LimitOptions = { burst: 12, perMinute: 6 };
+/** Telemetrie-Ping (täglicher Heartbeat von Clients). */
+export const LIMIT_TELEMETRY: LimitOptions = { burst: 30, perMinute: 15 };
+

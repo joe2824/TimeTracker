@@ -74,13 +74,21 @@ describe("checkForUpdate", () => {
 		expect(updater.checking).toBe(false);
 	});
 
-	it("oeffnet bei der stillen Suche keinen Dialog", async () => {
+	it("oeffnet bei der stillen Suche keinen Dialog und wiederholt das Info-Log nicht stuendlich", async () => {
 		plugin.check.mockResolvedValue(update("0.9.1"));
 
 		await checkForUpdate({ silent: true });
-
+		expect(log.logInfo).toHaveBeenCalledWith("Update 0.9.1 gefunden");
 		expect(updater.pending).not.toBeNull();
 		expect(updater.open).toBe(false);
+
+		log.logInfo.mockClear();
+		log.logDebug.mockClear();
+
+		// Zweite stille Suche zur selben Version: nur logDebug, kein erneutes logInfo
+		await checkForUpdate({ silent: true });
+		expect(log.logInfo).not.toHaveBeenCalled();
+		expect(log.logDebug).toHaveBeenCalledWith("Update 0.9.1 weiterhin verfügbar");
 	});
 
 	it("meldet „aktuell“ nur, wenn der Benutzer selbst gesucht hat", async () => {

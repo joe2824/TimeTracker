@@ -8,7 +8,8 @@
 	import { toast } from "svelte-sonner";
 	import { account } from "$lib/sync/account.svelte";
 	import { BACKUPS_KEY, INVITES_KEY, invalidate, warm } from "$lib/prefetch";
-	import type { BackupInfo, Invite } from "$lib/sync/api";
+	import type { BackupInfo, Invite, ServerStats } from "$lib/sync/api";
+
 	import { fmtDateHuman } from "$lib/time";
 	import { inviteLink } from "$lib/invite";
 	import LinkIcon from "@lucide/svelte/icons/link";
@@ -21,6 +22,7 @@
 	import GlobeIcon from "@lucide/svelte/icons/globe";
 	import LockIcon from "@lucide/svelte/icons/lock";
 	import DatabaseIcon from "@lucide/svelte/icons/database";
+	import ActivityIcon from "@lucide/svelte/icons/activity";
 	import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
 	import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
 	import Trash2Icon from "@lucide/svelte/icons/trash-2";
@@ -33,8 +35,12 @@
 	let isLoaded = $state(false);
 	let isRefreshing = $state(false);
 
+	// Telemetry Stats
+	let stats = $state<ServerStats | null>(null);
+
 	// Invites & Registration
 	let invites = $state<Invite[]>([]);
+
 	let isCreatingInvite = $state(false);
 	let isEnvConfigured = $state(false);
 	let isEnvActive = $state(true);
@@ -88,15 +94,18 @@
 				invalidate(INVITES_KEY);
 				invalidate(BACKUPS_KEY);
 			}
-			const [invitesRes, backupsRes] = await Promise.all([
+			const [invitesRes, backupsRes, statsRes] = await Promise.all([
 				warm(INVITES_KEY, () => account.invites()),
-				warm(BACKUPS_KEY, () => account.backups()).catch(() => [])
+				warm(BACKUPS_KEY, () => account.backups()).catch(() => []),
+				account.stats(14).catch(() => null)
 			]);
+
 			invites = invitesRes.invites;
 			isEnvConfigured = invitesRes.envInvitesConfigured;
 			isEnvActive = invitesRes.envInvitesActive;
 			isRegistrationOpen = invitesRes.openRegistration;
 			backups = backupsRes;
+			stats = statsRes;
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Verwaltungsdaten nicht abrufbar");
 		} finally {
@@ -104,6 +113,7 @@
 			isRefreshing = false;
 		}
 	}
+
 
 	$effect(() => {
 		if (account.isAdmin && !isLoaded) void loadData();
@@ -287,6 +297,109 @@
 
 {#if account.isAdmin}
 	<div class="space-y-6">
+		<!-- 0. Kachel: Nutzungsstatistik & Telemetrie -->
+		<Card.Root>
+			<Card.Header>
+				<div class="flex items-center justify-between">
+					<div class="flex items-center gap-2">
+						<ActivityIcon class="size-5 text-primary shrink-0" />
+						<Card.Title>Nutzungsstatistik & Telemetrie</Card.Title>
+					</div>
+					{#if stats}
+						<Badge variant="outline" class="text-xs">
+							{stats.summary.totalPings} Ping{stats.summary.totalPings === 1 ? "" : "s"} erfasst
+						</Badge>
+					{/if}
+				</div>
+				<Card.Description>
+					Anonyme Zählung aktiver Installationen (DAU/WAU/MAU), Versionen und Plattformen auf dem eigenen Server.
+				</Card.Description>
+			</Card.Header>
+
+			<Card.Content class="space-y-6">
+				{#if !isLoaded}
+					<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+						{#each Array(4) as _}
+							<Skeleton class="h-20 rounded-lg" />
+						{/each}
+					</div>
+				{:else if stats}
+					<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+						<div class="rounded-lg border bg-muted/30 p-3 text-center">
+							<div class="text-2xl font-bold tracking-tight text-foreground">{stats.summary.today}</div>
+							<div class="text-xs text-muted-foreground mt-0.5">Heute (DAU)</div>
+						</div>
+						<div class="rounded-lg border bg-muted/30 p-3 text-center">
+							<div class="text-2xl font-bold tracking-tight text-foreground">{stats.summary.yesterday}</div>
+							<div class="text-xs text-muted-foreground mt-0.5">Gestern</div>
+						</div>
+						<div class="rounded-lg border bg-muted/30 p-3 text-center">
+							<div class="text-2xl font-bold tracking-tight text-foreground">{stats.summary.wau}</div>
+							<div class="text-xs text-muted-foreground mt-0.5">7 Tage (WAU)</div>
+						</div>
+						<div class="rounded-lg border bg-muted/30 p-3 text-center">
+							<div class="text-2xl font-bold tracking-tight text-foreground">{stats.summary.mau}</div>
+							<div class="text-xs text-muted-foreground mt-0.5">30 Tage (MAU)</div>
+						</div>
+					</div>
+
+					<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+						<div class="rounded-lg border p-3 space-y-2">
+							<div class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Versionen (Gesamt)</div>
+							<div class="flex flex-wrap gap-1.5">
+								{#each Object.entries(stats.summary.versions) as [ver, count]}
+									<Badge variant="secondary" class="font-mono text-xs">
+										{ver}: {count}
+									</Badge>
+								{:else}
+									<span class="text-xs text-muted-foreground">Keine Daten</span>
+								{/each}
+							</div>
+						</div>
+						<div class="rounded-lg border p-3 space-y-2">
+							<div class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Plattformen (Gesamt)</div>
+							<div class="flex flex-wrap gap-1.5">
+								{#each Object.entries(stats.summary.platforms) as [plat, count]}
+									<Badge variant="secondary" class="font-mono text-xs">
+										{plat}: {count}
+									</Badge>
+								{:else}
+									<span class="text-xs text-muted-foreground">Keine Daten</span>
+								{/each}
+							</div>
+						</div>
+					</div>
+
+					{#if stats.history.length > 0}
+						<div class="space-y-2">
+							<Label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+								Tagesverlauf ({stats.history.length} Tage)
+							</Label>
+							<div class="rounded-lg border divide-y overflow-hidden text-xs">
+								{#each stats.history.slice(0, 14) as day}
+									<div class="flex items-center justify-between p-2.5 hover:bg-muted/30">
+										<div class="font-mono font-medium">{day.date}</div>
+										<div class="flex items-center gap-3">
+											<div class="text-muted-foreground">
+												{Object.entries(day.versions).map(([v, c]) => `${v} (${c})`).join(", ")}
+											</div>
+											<Badge variant="outline" class="font-mono text-[11px] font-semibold">
+												{day.dau} {day.dau === 1 ? "Nutzer" : "Nutzer"}
+											</Badge>
+										</div>
+									</div>
+								{/each}
+							</div>
+						</div>
+					{/if}
+				{:else}
+					<div class="rounded-lg border border-dashed p-6 text-center text-xs text-muted-foreground">
+						Noch keine Telemetriedaten vorhanden oder Abruf fehlgeschlagen.
+					</div>
+				{/if}
+			</Card.Content>
+		</Card.Root>
+
 		<!-- 1. Kachel: Server-Datensicherungen -->
 		<Card.Root>
 			<Card.Header>
@@ -295,6 +408,7 @@
 						<DatabaseIcon class="size-5 text-primary shrink-0" />
 						<Card.Title>Server-Datensicherungen</Card.Title>
 					</div>
+
 					<Button
 						variant="outline"
 						size="sm"

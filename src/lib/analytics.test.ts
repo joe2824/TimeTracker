@@ -44,3 +44,21 @@ describe("redact", () => {
 		expect(redact("(a.b@x.co) fehlt")).toBe("(<mail>) fehlt");
 	});
 });
+
+describe("detectPlatform", () => {
+	it("gibt einen gueltigen Plattform-String zurueck", async () => {
+		const { detectPlatform } = await import("./analytics");
+		const plat = detectPlatform();
+		expect(typeof plat).toBe("string");
+		expect(plat.length).toBeGreaterThan(0);
+	});
+});
+
+describe("sendDailyTelemetryPing", () => {
+	it("wirft keine Fehler bei fehlendem Server oder Netzwerkfehlern", async () => {
+		const { sendDailyTelemetryPing } = await import("./analytics");
+		await expect(sendDailyTelemetryPing("http://localhost:99999")).resolves.not.toThrow();
+		await expect(sendDailyTelemetryPing("")).resolves.not.toThrow();
+	});
+});
+

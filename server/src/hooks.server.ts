@@ -12,11 +12,14 @@ import {
 	LIMIT_PAIR_CLAIM,
 	LIMIT_PAIR_START,
 	LIMIT_RECOVER,
+	LIMIT_TELEMETRY,
 	isLocked,
 	takeAttempt,
 	cleanupLimits,
 	type LimitOptions
 } from "$lib/server/limit";
+
+import { cleanupOldTelemetry } from "$lib/server/stats";
 import {
 	ALLOWED_ORIGINS,
 	HMAC_SECRET,
@@ -34,8 +37,10 @@ const RATE_LIMITS: [string, LimitOptions][] = [
 	["/api/pair/start", LIMIT_PAIR_START],
 	["/api/auth/login", LIMIT_AUTH],
 	["/api/auth/register", LIMIT_AUTH],
-	["/api/auth/recover", LIMIT_RECOVER]
+	["/api/auth/recover", LIMIT_RECOVER],
+	["/api/telemetry", LIMIT_TELEMETRY]
 ];
+
 
 const { db, raw } = openDb(DB_FILE);
 startBackupScheduler(raw);
@@ -85,13 +90,17 @@ if (!isValidRpId(RP_ID)) {
 }
 
 cleanupExpired(db);
+cleanupOldTelemetry(raw);
 // Stuendlich, damit abgebrochene Anmeldeversuche und abgelaufene Sitzungen nicht
 // unbegrenzt liegen bleiben. `unref`, damit dieser Zeitgeber den Prozess beim
 // Herunterfahren nicht offenhaelt.
 setInterval(() => {
 	cleanupExpired(db);
 	cleanupLimits();
+	cleanupOldTelemetry(raw);
 }, 3600_000).unref();
+
+
 
 /** Kommt diese Anfrage von der Seite, die dieser Server selbst ausliefert? */
 function isOwnOrigin(originValue: string, headers: Headers): boolean {

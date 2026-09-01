@@ -67,7 +67,9 @@ show_help() {
 TimeTracker Server CLI (tt) - Container-Modus
 
 Befehle für Benutzer, Einladungen & Backups:
+  tt stats [Tage]                  Zeigt tägliche Nutzerzahlen, Versionen & Plattformen
   tt invite [Notiz] [--days 14]     Erstellt einen neuen Einladungscode (z.B. tt invite "Für Alex" -d 7)
+
   tt users / tt list               Zeigt alle registrierten Konten und aktiven Einladungen
   tt rename <Name|ID> <NeuerName>  Anzeigenamen eines Nutzers ändern
   tt admin <Name|ID>               Ernennen eines Nutzers zum Verwalter
@@ -86,6 +88,7 @@ EOF
 TimeTracker Server CLI (tt)
 
 Befehle für Benutzer & Einladungen:
+  tt stats [Tage]                  Zeigt tägliche Nutzerzahlen, Versionen & Plattformen
   tt invite [Notiz] [--days 14]     Erstellt einen neuen Einladungscode (z.B. tt invite "Für Alex" -d 7)
   tt users / tt list               Zeigt alle registrierten Konten und aktiven Einladungen
   tt rename <Name|ID> <NeuerName>  Anzeigenamen eines Nutzers ändern
@@ -113,9 +116,13 @@ CMD="$1"
 shift || true
 
 case "$CMD" in
+  stats|statistiken|telemetrie|telemetry|dau)
+    run_admin stats "$@"
+    ;;
   invite|einladung|code)
     run_admin invite "$@"
     ;;
+
   users|list|liste|konten)
     run_admin list "$@"
     ;;

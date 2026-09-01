@@ -44,6 +44,25 @@ export interface BackupInfo {
 	verified: boolean;
 }
 
+export interface ServerStats {
+	summary: {
+		today: number;
+		yesterday: number;
+		wau: number;
+		mau: number;
+		totalPings: number;
+		versions: Record<string, number>;
+		platforms: Record<string, number>;
+	};
+	history: {
+		date: string;
+		dau: number;
+		versions: Record<string, number>;
+		platforms: Record<string, number>;
+	}[];
+}
+
+
 export interface Passkey {
 	id: string;
 	/** Wie der Mensch ihn nennt. Null, solange niemand ihn benannt hat. */
@@ -415,7 +434,12 @@ export class Api {
 		});
 	}
 
+	stats(days = 30): Promise<ServerStats> {
+		return this.#call(`/api/admin/stats?days=${days}`);
+	}
+
 	// ---------- Kopplung ----------
+
 
 	/**
 	 * Der Code wird MITGESCHICKT, nicht abgeholt: er ist der Abdruck des

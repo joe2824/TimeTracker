@@ -5,9 +5,9 @@
 	import type { Settings } from "$lib/types";
 	import { Button } from "$lib/components/ui/button";
 	import SettingsCard from "$lib/components/shared/SettingsCard.svelte";
-	import SettingToggle from "$lib/components/shared/SettingToggle.svelte";
 	import LogPanel from "$lib/components/panels/LogPanel.svelte";
 	import { APP_VERSION } from "$lib/defaults";
+
 	import { getVersion } from "@tauri-apps/api/app";
 	import { invoke } from "@tauri-apps/api/core";
 	import { openExternal } from "$lib/platform/open";
@@ -47,11 +47,8 @@
 		}
 	});
 
-	async function saveErrorReports() {
-		await app.updateSettings(patchFrom(form, ["errorReportsEnabled"], getCurrentSettings()));
-	}
-
 	function handleTapLogo() {
+
 		const now = Date.now();
 		logoTaps = logoTaps.filter((t) => now - t < 3000);
 		logoTaps.push(now);
@@ -76,33 +73,20 @@
 		title="Datenschutz"
 		description="Was diese App über sich selbst meldet – und was nie."
 	>
-		<SettingToggle
-			id="errreports"
-			title="Anonyme Fehlermeldungen senden"
-			description="Hilft, Abstürze und Fehler zu finden, die nur auf anderen Rechnern auftreten."
-			bind:checked={form.errorReportsEnabled}
-			onCheckedChange={(v) => {
-				form.errorReportsEnabled = v;
-				void saveErrorReports();
-			}}
-		/>
-
 		<div class="text-muted-foreground space-y-2 text-xs leading-relaxed">
 			<p>
-				<span class="text-foreground font-medium">Mit diesem Schalter:</span> der Text von
-				Fehlermeldungen und Abstürzen, bereinigt um Dateipfade, Adressen und lange Zahlen. Nie das
-				Detail dazu – dort stünden Aufruflisten und Dateinamen.
+				<span class="text-foreground font-medium">Anonyme Nutzungszählung:</span> Einmal täglich sendet die App
+				einen anonymen Ping mit Version und Betriebssystem an den TimeTracker-Server, um
+				die Anzahl der aktiven Installationen (DAU) zu erfassen.
 			</p>
 			<p>
 				<span class="text-foreground font-medium">Nie:</span> Aktivitäten, Projekte, Notizen, Zeiten,
-				Namen, E-Mail-Adressen, Dateien – nichts aus deinen Einträgen. Es gibt keine Kennung, die
-				dich über Programmstarts hinweg wiedererkennt, und keine gespeicherte IP-Adresse. Start- und
-				Endzeiten des Programms werden bewusst nicht gemeldet, weil sich daraus deine Arbeitszeiten
-				ablesen ließen.
+				Namen, E-Mail-Adressen, Dateien – nichts aus deinen Einträgen verlässt unverschlüsselt dein Gerät. Es gibt kein Tracking durch Fremdanbieter.
 			</p>
-			<p>Verarbeitet wird über Aptabase (EU-Server). Es fallen keine personenbezogenen Daten an.</p>
+			<p>Alle Telemetriedaten verbleiben vollständig auf deinem TimeTracker-Server.</p>
 		</div>
 	</SettingsCard>
+
 
 	<LogPanel />
 

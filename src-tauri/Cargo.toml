@@ -60,8 +60,5 @@ tauri-plugin-process = "2"
 # Kopplung per Link: der Browser zeigt einen "timetracker://"-Link, ein Klick
 # oeffnet die Anwendung mit dem Code darin (siehe deep_link in lib.rs).
 tauri-plugin-deep-link = "2"
-# Anonyme Nutzungszahlen. Bewusst nur fuer Desktop: das Plugin kennt in sys.rs
-# nur WebKit/WebKitGTK/WebView2 und liesse sich fuer Android/iOS gar nicht erst
-# uebersetzen.
-tauri-plugin-aptabase = "1"
+
 

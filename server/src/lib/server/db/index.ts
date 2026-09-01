@@ -119,8 +119,21 @@ const MIGRATIONS: string[] = [
 	// findet SQLite zwar die Zeilen, muss sie aber jedes Mal nachsortieren.
 	`CREATE INDEX IF NOT EXISTS records_bucket_seq ON records(user_id, bucket, seq)`,
 	// Der alte Index ist damit ein Praefix des neuen und kostet nur noch beim Schreiben.
-	`DROP INDEX IF EXISTS records_bucket`
+	`DROP INDEX IF EXISTS records_bucket`,
+
+	`CREATE TABLE IF NOT EXISTS telemetry_pings (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		date TEXT NOT NULL,
+		device_id TEXT NOT NULL,
+		version TEXT NOT NULL,
+		platform TEXT NOT NULL,
+		last_seen_at INTEGER NOT NULL
+	)`,
+	`CREATE UNIQUE INDEX IF NOT EXISTS telemetry_pings_date_device ON telemetry_pings(date, device_id)`,
+	`CREATE INDEX IF NOT EXISTS telemetry_pings_date ON telemetry_pings(date)`
 ];
+
+
 
 export type Db = ReturnType<typeof drizzle<typeof schema>>;
 

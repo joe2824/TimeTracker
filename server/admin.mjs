@@ -275,6 +275,90 @@ function renameUser(target, newName) {
 	console.log(`\n  Konto ${user.id} wurde von "${user.display_name}" in "${cleanName}" umbenannt.\n`);
 }
 
+function showStats(argv) {
+	let days = 14;
+	if (argv && argv[0]) {
+		const parsed = parseInt(argv[0], 10);
+		if (!isNaN(parsed) && parsed > 0) days = Math.min(parsed, 90);
+	}
+
+	const hasTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='telemetry_pings'").get();
+	if (!hasTable) {
+		console.log("\nNoch keine Telemetrie-Tabelle vorhanden.\n");
+		return;
+	}
+
+	const now = Date.now();
+	const todayDate = new Date(now).toISOString().slice(0, 10);
+	const yesterdayDate = new Date(now - 86_400_000).toISOString().slice(0, 10);
+	const sevenDaysAgo = new Date(now - 7 * 86_400_000).toISOString().slice(0, 10);
+	const cutoffDate = new Date(now - days * 86_400_000).toISOString().slice(0, 10);
+
+	const rows = db.prepare("SELECT date, device_id, version, platform, last_seen_at FROM telemetry_pings WHERE date >= ? ORDER BY date DESC").all(cutoffDate);
+
+	if (rows.length === 0) {
+		console.log(`\nNoch keine Telemetrie-Pings in den letzten ${days} Tagen erfasst.\n`);
+		return;
+	}
+
+	const dayMap = new Map();
+	const wauDevices = new Set();
+	const mauDevices = new Set();
+	const overallVersions = {};
+	const overallPlatforms = {};
+
+	for (const row of rows) {
+		let d = dayMap.get(row.date);
+		if (!d) {
+			d = { devices: new Set(), versions: {}, platforms: {} };
+			dayMap.set(row.date, d);
+		}
+		d.devices.add(row.device_id);
+		d.versions[row.version] = (d.versions[row.version] || 0) + 1;
+		d.platforms[row.platform] = (d.platforms[row.platform] || 0) + 1;
+
+		mauDevices.add(row.device_id);
+		if (row.date >= sevenDaysAgo) {
+			wauDevices.add(row.device_id);
+		}
+		overallVersions[row.version] = (overallVersions[row.version] || 0) + 1;
+		overallPlatforms[row.platform] = (overallPlatforms[row.platform] || 0) + 1;
+	}
+
+	const todayDau = dayMap.get(todayDate)?.devices.size || 0;
+	const yesterdayDau = dayMap.get(yesterdayDate)?.devices.size || 0;
+
+	console.log("\n=== TimeTracker Telemetrie & Nutzungsstatistik ===");
+	console.log(`\nAktive Nutzer:`);
+	console.log(`  Heute:          ${todayDau}`);
+	console.log(`  Gestern:        ${yesterdayDau}`);
+	console.log(`  Letzte 7 Tage:  ${wauDevices.size} (WAU)`);
+	console.log(`  Letzte 30 Tage: ${mauDevices.size} (MAU)`);
+
+	console.log(`\nVerlauf der letzten ${days} Tage:\n`);
+	console.log("  Datum       | DAU | Versionen                  | Plattformen");
+	console.log("  ------------+-----+----------------------------+-------------------------");
+
+	const sortedDates = Array.from(dayMap.keys()).sort((a, b) => b.localeCompare(a));
+	for (const date of sortedDates) {
+		const d = dayMap.get(date);
+		const vStr = Object.entries(d.versions).map(([v, n]) => `${v} (${n})`).join(", ");
+		const pStr = Object.entries(d.platforms).map(([p, n]) => `${p} (${n})`).join(", ");
+		console.log(`  ${date}  | ${String(d.devices.size).padStart(3)} | ${vStr.padEnd(26)} | ${pStr}`);
+	}
+
+	console.log("\nVersionen-Verteilung:");
+	for (const [v, n] of Object.entries(overallVersions).sort((a, b) => b[1] - a[1])) {
+		console.log(`  ${v.padEnd(20)} ${n} Ping(s)`);
+	}
+
+	console.log("\nPlattformen-Verteilung:");
+	for (const [p, n] of Object.entries(overallPlatforms).sort((a, b) => b[1] - a[1])) {
+		console.log(`  ${p.padEnd(20)} ${n} Ping(s)`);
+	}
+	console.log("");
+}
+
 function showStatus() {
 	console.log("\n=== TimeTracker Server Status ===");
 
@@ -302,12 +386,24 @@ function showStatus() {
 			)
 			.get(Date.now())?.n ?? 0;
 
+	let telemetryDau = "–";
+	try {
+		const hasTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='telemetry_pings'").get();
+		if (hasTable) {
+			const today = new Date().toISOString().slice(0, 10);
+			const count = db.prepare("SELECT count(DISTINCT device_id) n FROM telemetry_pings WHERE date = ?").get(today)?.n ?? 0;
+			const count7 = db.prepare("SELECT count(DISTINCT device_id) n FROM telemetry_pings WHERE date >= date('now', '-7 days')").get()?.n ?? 0;
+			telemetryDau = `${count} heute (${count7} in 7 Tagen)`;
+		}
+	} catch {}
+
 	const hmacStatus = process.env.HMAC_SECRET
 		? "Aktiv (HMAC-SHA256)"
 		: "Nicht gesetzt (Fallback SHA-256)";
 
 	console.log(`Benutzer:        ${userCount} (davon ${adminCount} Verwalter)`);
 	console.log(`Aktive Geräte:   ${deviceCount}`);
+	console.log(`Aktive Nutzer:   ${telemetryDau}`);
 	console.log(`Zeitsätze:       ${recordCount}`);
 	console.log(`Offene Codes:    ${openInvites}`);
 	console.log(`HMAC-Schlüssel:  ${hmacStatus}`);
@@ -327,6 +423,13 @@ switch (command) {
 	case "status":
 	case "info":
 		showStatus();
+		break;
+	case "stats":
+	case "statistiken":
+	case "telemetrie":
+	case "telemetry":
+	case "dau":
+		showStats(args);
 		break;
 	case "liste":
 	case "list":
@@ -383,6 +486,7 @@ switch (command) {
 		console.log(`
 Verwaltung des TimeTracker-Servers.
 
+  tt stats [tage]                          Telemetrie & tägliche Nutzerzahlen anzeigen
   tt invite [notiz] [--days 14]            Einladungscode erstellen
   tt list / tt users                       Konten und Einladungen anzeigen
   tt rename <wer> <neuer-name>             Anzeigenamen eines Kontos ändern
@@ -395,3 +499,4 @@ Verwaltung des TimeTracker-Servers.
   <wer> ist die Benutzerkennung (oder Präfix ab 4 Zeichen) oder der Anzeigename.
 `);
 }
+
