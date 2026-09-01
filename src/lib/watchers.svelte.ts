@@ -2,7 +2,8 @@
 // Live-Tray-Tooltip. Läuft per 1-Sekunden-Intervall, solange die App offen ist.
 import { invoke } from "@tauri-apps/api/core";
 import { app } from "./app.svelte";
-import { track } from "./analytics";
+import { sendDailyTelemetryPing } from "./analytics";
+import { account } from "./sync/account.svelte";
 import type { Settings } from "./types";
 import { fmtDate, fmtHMS } from "./time";
 import { zonedParts } from "./tz";
@@ -46,14 +47,21 @@ async function reportIt(title: string, body: string) {
 /**
  * Feste Stunden, zu denen die Tagesmeldung „aktiv" versucht wird. Die erste
  * erreichte gewinnt, danach ist der Tag erledigt.
- *
- * Haengt bewusst NICHT am Fehler-Schalter: das ist die Nutzerzahl, und die waere
- * bei jeder nennenswerten Ablehnquote wertlos statt nur ungenau.
  */
 const PING_HOURS = [9, 12, 15, 17];
 
+/**
+ * Abstand zwischen zwei Versuchen am selben Tag.
+ *
+ * Der Tick kommt jede Sekunde: ohne diese Sperre haemmerte ein Geraet, dessen
+ * Ping abgewiesen wurde, eine volle Stunde lang sekuendlich gegen den Server.
+ */
+const PING_RETRY_MS = 5 * 60 * 1000;
+
 /** Laeuft gerade eine Tagesmeldung? Der Tick kommt jede Sekunde wieder. */
 let pinging = false;
+/** Wann zuletzt versucht - unabhaengig davon, ob es geklappt hat. */
+let lastPingAttempt = 0;
 
 /**
  * Einmal je Kalendertag „aktiv" melden, sobald eine der PING_HOURS erreicht ist
@@ -65,10 +73,16 @@ async function dailyPing(s: Settings): Promise<void> {
 	if (!PING_HOURS.includes(zonedParts(now).hour)) return;
 	const today = fmtDate(now);
 	if (s.usageLastDay === today) return;
+	if (now - lastPingAttempt < PING_RETRY_MS) return;
 	pinging = true;
+	lastPingAttempt = now;
 	try {
-		await track("aktiv");
-		await app.updateSettings({ usageLastDay: today });
+		// Erst vermerken, wenn der Server den Ping wirklich angenommen hat. Wurde
+		// er abgewiesen - kein Netz, Bremse, Fehler -, bliebe das Geraet sonst fuer
+		// diesen Tag ersatzlos aus der Zaehlung.
+		if (await sendDailyTelemetryPing(account.serverUrl)) {
+			await app.updateSettings({ usageLastDay: today });
+		}
 	} finally {
 		pinging = false;
 	}
@@ -179,6 +193,8 @@ async function tick() {
 
 export function startWatchers(): void {
 	if (interval) return;
+	// Ein frischer Lauf darf sofort melden - die Sperre gilt innerhalb eines Laufs.
+	lastPingAttempt = 0;
 	interval = setInterval(() => void tick(), 1000);
 }
 

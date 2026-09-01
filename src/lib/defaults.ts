@@ -3,6 +3,7 @@
 /** Setzt vite.config.js ein. Im Test steht er nicht - daher die Pruefung unten. */
 declare const __DEFAULT_SERVER__: string;
 declare const __APP_VERSION__: string;
+declare const __TELEMETRY_KEY__: string;
 
 /**
  * Die Anwendungsversion aus package.json.
@@ -21,3 +22,17 @@ export const APP_VERSION = typeof __APP_VERSION__ === "string" ? __APP_VERSION__
  */
 export const DEFAULT_SERVER =
 	typeof __DEFAULT_SERVER__ === "string" ? __DEFAULT_SERVER__.trim().replace(/\/+$/, "") : "";
+
+/**
+ * Der Schluessel, mit dem sich die Tagesmeldung beim Server ausweist.
+ *
+ * Kommt aus `TELEMETRY_KEY` und wird beim Bauen eingesetzt. Leer heisst: die
+ * Anwendung meldet nichts, und ein Server ohne den Schluessel nimmt auch nichts
+ * an.
+ *
+ * Er steckt zwangslaeufig im ausgelieferten Bundle und ist damit kein
+ * Geheimnis - er haelt Spam von aussen ab, nicht jemanden, der sich ein Release
+ * ansieht.
+ */
+export const TELEMETRY_KEY =
+	typeof __TELEMETRY_KEY__ === "string" ? __TELEMETRY_KEY__.trim() : "";

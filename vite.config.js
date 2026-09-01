@@ -26,6 +26,8 @@ export default defineConfig(async ({ command }) => ({
     // ein Schritt, den niemand braucht. DEFAULT_SERVER sticht das aus, und
     // eintragen laesst sich ohnehin jederzeit etwas anderes.
     __DEFAULT_SERVER__: JSON.stringify(process.env.DEFAULT_SERVER ?? ""),
+    // Der Ausweis der Tagesmeldung. Leer = die Anwendung meldet nichts.
+    __TELEMETRY_KEY__: JSON.stringify(process.env.TELEMETRY_KEY ?? ""),
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

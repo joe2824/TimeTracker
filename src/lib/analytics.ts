@@ -1,14 +1,9 @@
 // Anonyme Nutzungszaehlung fuer den eigenen TimeTracker-Server.
 // Erfasst ausschliesslich: taegliche Aktivitaet, App-Version und Betriebssystem/Plattform.
 // Keine personenbezogenen Daten, keine Zeiteintraege, keine Fehler-Uploads an Fremdanbieter.
-import { APP_VERSION, DEFAULT_SERVER } from "./defaults";
+import { APP_VERSION, TELEMETRY_KEY } from "./defaults";
 import { deviceId as getDeviceId } from "./sync/device";
-import { account } from "./sync/account.svelte";
-
-export type TrackProps = Record<string, string | number>;
-
-/** Laenge, ab der eine Meldung im lokalen Protokoll abgeschnitten wird. */
-const MAX_LEN = 120;
+import { platformFetch } from "./platform/http";
 
 /**
  * Ermittelt das Betriebssystem bzw. die Plattform fuer die Statistik.
@@ -33,57 +28,40 @@ export function detectPlatform(): string {
 }
 
 /**
- * Sendet einen anonymen Telemetrie-Ping an den konfigurierten TimeTracker-Server.
- * Wirft nie Fehler.
+ * Meldet diesem Server einmal, dass die Anwendung heute lief. Wirft nie; `false`
+ * heisst "nicht angekommen", der Tag bleibt dann offen und wird spaeter erneut
+ * versucht.
+ *
+ * Die Adresse kommt vom Aufrufer und nicht aus `account`: sonst haengt dieses
+ * Modul am ganzen Abgleich-Stapel, und ueber `log.ts` haenge daran fast alle
+ * anderen.
+ *
+ * `platformFetch` und nicht `globalThis.fetch`: das Fenster der
+ * Desktop-Anwendung hat die Herkunft `tauri://localhost`, der Ping waere damit
+ * CORS-pflichtig und kaeme nie an.
  */
-export async function sendDailyTelemetryPing(serverUrl?: string): Promise<void> {
-	const targetServer = (serverUrl || account.serverUrl || DEFAULT_SERVER || "").trim().replace(/\/+$/, "");
-	if (!targetServer) return;
+export async function sendDailyTelemetryPing(serverUrl: string): Promise<boolean> {
+	const targetServer = (serverUrl || "").trim().replace(/\/+$/, "");
+	// Ohne eigenen Server gibt es niemanden, der zaehlen duerfte. Ohne Schluessel
+	// weist der Server den Ping ohnehin ab - dann gar nicht erst fragen.
+	if (!targetServer || !TELEMETRY_KEY) return false;
 
 	try {
-		const deviceId = await getDeviceId();
-		const version = APP_VERSION;
-		const platform = detectPlatform();
-
-		await fetch(`${targetServer}/api/telemetry`, {
+		const answer = await platformFetch(`${targetServer}/api/telemetry`, {
 			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ deviceId, version, platform })
+			headers: {
+				"content-type": "application/json",
+				"x-telemetry-key": TELEMETRY_KEY
+			},
+			body: JSON.stringify({
+				deviceId: await getDeviceId(),
+				version: APP_VERSION,
+				platform: detectPlatform()
+			})
 		});
+		return answer.ok;
 	} catch {
-		// Fehlgeschlagene Zaehlung stoert den Betrieb nicht und wird verworfen.
+		// Kein Netz, kein Server, abgewiesen - alles derselbe Fall: nicht gezaehlt.
+		return false;
 	}
 }
-
-/**
- * Bereinigt Text im lokalen Protokoll um moegliche persönliche Daten wie Pfade und Mailadressen.
- */
-export function redact(text: string): string {
-	return text
-		.replace(/[^\s<>"'(),;]+@[^\s<>"'(),;]+\.[a-z]{2,}/gi, "<mail>")
-		.replace(/(?:[a-z]:\\|\\\\)[^\s"'|]*/gi, "<pfad>")
-		.replace(/\/[\w.-]+\/[^\s"'|]*/g, "<pfad>")
-		.replace(/\d{4,}/g, "<zahl>")
-		.slice(0, MAX_LEN);
-}
-
-/**
- * Ein Ereignis melden. Leitet "aktiv" an den eigenen Server weiter. Wirft nie.
- */
-export async function track(name: string, _props?: TrackProps): Promise<void> {
-	if (name === "aktiv") {
-		await sendDailyTelemetryPing();
-	}
-}
-
-/**
- * Fehler-Uploads zu Drittanbietern wurden entfernt. Diese Funktion ist ein No-Op.
- */
-export function trackError(_name: string, _props?: TrackProps): Promise<void> {
-	return Promise.resolve();
-}
-
-/**
- * Schalter-Stub fuer Rueckwaertskompatibilitaet.
- */
-export function setErrorReportsEnabled(_on: boolean): void {}

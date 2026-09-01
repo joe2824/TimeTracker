@@ -33,6 +33,14 @@ vi.mock("./platform/notify", () => ({
 // Die Berechtigung ist hier nicht der Gegenstand: immer erteilt.
 vi.mock("./reminders", () => ({ ensureNotificationPermission: async () => true }));
 
+// Die Tagesmeldung geht sonst wirklich ins Netz. Der Rueckgabewert entscheidet,
+// ob der Tag als gemeldet gilt - genau darum geht es unten.
+const telemetry = vi.hoisted(() => ({ ping: vi.fn() }));
+vi.mock("./analytics", () => ({
+	sendDailyTelemetryPing: telemetry.ping,
+	detectPlatform: () => "test"
+}));
+
 const { app } = await import("./app.svelte");
 const { resolveIdle, resolveLongTimer, startWatchers, stopWatchers, watchers } = await import(
 	"./watchers.svelte"
@@ -84,6 +92,8 @@ beforeEach(async () => {
 	ipc.idleSeconds = 0;
 	ipc.invoke.mockClear();
 	messages.send.mockClear();
+	telemetry.ping.mockReset();
+	telemetry.ping.mockResolvedValue(true);
 
 	// Einen Takt ohne laufenden Timer: der setzt die modulinternen Merker zurueck,
 	// die sonst aus dem vorigen Test stehen blieben (sie leben am Modul, nicht am
@@ -323,13 +333,50 @@ describe("Tagesmeldung", () => {
 		app.now = Date.now();
 		await tick();
 
+		expect(telemetry.ping).toHaveBeenCalledTimes(1);
 		expect(app.settings.usageLastDay).toBe("2026-08-24");
 	});
 
 	it("laeuft ausserhalb der festen Stunden nicht", async () => {
 		// STILLE_STUNDE ist 10 Uhr.
 		await tick(3);
+		expect(telemetry.ping).not.toHaveBeenCalled();
 		expect(app.settings.usageLastDay).toBe("");
+	});
+
+	// Vorher wurde der Tag auch dann vermerkt, wenn der Server den Ping gar nicht
+	// angenommen hatte - das Geraet fiel damit ersatzlos aus der Zaehlung.
+	it("vermerkt den Tag nicht, wenn der Ping nicht ankam", async () => {
+		telemetry.ping.mockResolvedValue(false);
+		vi.setSystemTime(wallStringToTs("2026-08-24", "12:00"));
+		app.now = Date.now();
+		await tick();
+
+		expect(telemetry.ping).toHaveBeenCalledTimes(1);
+		expect(app.settings.usageLastDay).toBe("");
+	});
+
+	// Der Takt kommt jede Sekunde: ohne Sperre haemmerte ein abgewiesener Ping
+	// eine volle Stunde lang sekuendlich gegen den Server.
+	it("wiederholt einen abgewiesenen Ping erst nach einer Wartezeit", async () => {
+		telemetry.ping.mockResolvedValue(false);
+		const zwoelf = wallStringToTs("2026-08-24", "12:00");
+		vi.setSystemTime(zwoelf);
+		app.now = Date.now();
+		await tick();
+		expect(telemetry.ping).toHaveBeenCalledTimes(1);
+
+		// Eine Minute spaeter: noch gesperrt.
+		vi.setSystemTime(zwoelf + 60_000);
+		await tick(3);
+		expect(telemetry.ping).toHaveBeenCalledTimes(1);
+
+		// Nach fuenf Minuten wieder erlaubt - diesmal nimmt der Server ihn an.
+		telemetry.ping.mockResolvedValue(true);
+		vi.setSystemTime(zwoelf + 6 * 60_000);
+		await tick();
+		expect(telemetry.ping).toHaveBeenCalledTimes(2);
+		expect(app.settings.usageLastDay).toBe("2026-08-24");
 	});
 
 	it("laeuft am selben Tag nur einmal", async () => {
