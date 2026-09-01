@@ -1,12 +1,57 @@
 # Sync: Vorladen statt Voll-Download — Plan
 
-Status: **geplant, nichts umgesetzt** (Stand 2026-08-31).
+Status: **grösstenteils umgesetzt** (Stand 2026-09-01), siehe "Was steht" unten.
 Diese Datei liegt im Repo, damit die Arbeit auf einer anderen Maschine
 (git pull) genau hier weitergehen kann.
 
 Ziel: Nach Login/Pairing sind aktueller Monat, Vormonat, Aktivitaeten und
 Einstellungen sofort da. Alles Aeltere kommt im Hintergrund nach oder wird
 erst geholt, wenn jemand hinsieht. Wichtig vor allem bei schlechter Verbindung.
+
+## Was steht
+
+Umgesetzt in `cc02f7b`, `ec89991`, `dcab713`:
+
+- Schritt 1 (Server-Filter), inkl. `GET /api/sync/buckets` und Index-Migration
+- Schritte 2–4 (zweiter Cursor, gestufte Runde, Monatswechsel)
+- Schritt 5 (`ensureMonthSynced`, angeschlossen ueber `app.setMonthFetcher`)
+- Schritt 6 (Prio beim Verknuepfen)
+- Schritt 8 (`reload` liest nicht mehr alles; Sicherung waehrend des Backfills
+  abgelehnt)
+- Schritt 9 (Hinweisband)
+- Schritt 10 (Tests: Server 181, Client 806)
+- Schritt 11 (`src/lib/prefetch.ts`, Monatsauswahl und Einstellungs-Tab)
+
+Zwei Dinge kamen unterwegs dazu, weil sie sonst gebrochen waeren:
+
+- `#apply` laeuft durch eine Kette. Zwei gleichzeitige Abrufe wuerden sonst
+  dieselbe Monatsdatei lesen, aendern und zurueckschreiben.
+- `sync()` gab bei laufendem Durchgang sofort `null` zurueck. `#persistLink`
+  feuert `void abgleichMitNachlese()`, ein danebenstehendes `await syncNow()`
+  war damit sofort fertig, ohne dass abgeglichen war. Jetzt haengt sich der
+  zweite Aufruf an den laufenden. Ein Test prueft nicht mehr auf `null`.
+
+Aus `use:onIntent` wurde `{...onIntent(...)}`: Svelte-Actions duerfen nur an
+Elemente, die Ziele hier sind aber alle Komponenten (Button, Select.Item,
+Tabs.Trigger).
+
+## Was noch offen ist
+
+- **Schritt 7, Client-Teil.** `Api.buckets()` steht, aber `MonthSelector`
+  benutzt es noch nicht. Waehrend des Backfills fehlen aeltere Monate im
+  Dropdown - die Pfeile gehen weiter, und ueber die laedt der Prefetch auch
+  richtig nach. Zu tun: `bucketFor` fuer die letzten ~60 Monate rechnen und
+  gegen die Liste vom Server halten.
+- **`listEntryYears`** (`src/lib/store.ts`) liest weiterhin jede Monatsdatei
+  nur zum Zaehlen. Wird nur im Jahr-loeschen-Dialog gebraucht.
+- **Prefetch-Bremse nur halb.** `prefetchMonth` haelt sich bei `offline`
+  zurueck; das Backlog-Budget pausiert waehrend eines Prefetch noch nicht.
+- **Konfliktweg im Push.** `#pushAll` loest einen Konflikt weiterhin ueber
+  `#pullBacklog(..., Infinity)` auf, also ungedeckelt. Auf einem frisch
+  verknuepften Geraet kommt das praktisch nicht vor (Ids sind zufaellig, die
+  Outbox ist leer). Sauberer waere, den Datensatz aus `conflicts[].current` zu
+  nehmen - den schickt der Server ohnehin mit.
+- **Deutsche Bestandsnamen** (siehe unten).
 
 ## Namenskonvention (gilt fuer alles hier)
 
