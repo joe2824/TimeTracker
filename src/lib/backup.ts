@@ -22,6 +22,11 @@ export interface TimeTrackerBackup {
 	settings: Settings;
 	activities: Activity[];
 	entries: Record<string, Entry[]>; // "YYYY-MM" -> Entry[]
+	/**
+	 * Dass beim Sichern der ganze Bestand da war. Aelteren Dateien fehlt der
+	 * Vermerk - die koennen aus einer Zeit stammen, in der noch Monate nachkamen.
+	 */
+	complete?: true;
 }
 
 export interface BackupStats {
@@ -30,6 +35,8 @@ export interface BackupStats {
 	entryCount: number;
 	months: string[];
 	createdAt?: string;
+	/** Ob die Datei bezeugt, dass sie den ganzen Bestand enthaelt. */
+	complete: boolean;
 }
 
 export interface RestoreResult {
@@ -69,7 +76,8 @@ export async function createBackupData(): Promise<TimeTrackerBackup> {
 		createdAt: new Date().toISOString(),
 		settings,
 		activities,
-		entries
+		entries,
+		complete: true
 	};
 }
 
@@ -118,7 +126,8 @@ export function inspectBackup(jsonString: string): {
 			monthCount: months.length,
 			entryCount,
 			months,
-			createdAt: backup.createdAt
+			createdAt: backup.createdAt,
+			complete: backup.complete === true
 		};
 
 		return { valid: true, backup, stats };
@@ -134,6 +143,14 @@ export async function restoreBackup(
 	backup: TimeTrackerBackup,
 	mode: "merge" | "replace" = "merge"
 ): Promise<RestoreResult> {
+	// Nachkommende Monate wuerden ueber das Eingespielte laufen: die Zeiten aus der
+	// Datei tragen ihren alten Zeitstempel, der Serverstand gewinnt damit stellenweise.
+	if (account.backfilling) {
+		throw new Error(
+			"Ältere Monate werden gerade noch geladen. Ein Teil der Sicherung würde dabei wieder überschrieben – bitte kurz warten."
+		);
+	}
+
 	let restoredActivities = 0;
 	let restoredMonths = 0;
 	let restoredEntries = 0;

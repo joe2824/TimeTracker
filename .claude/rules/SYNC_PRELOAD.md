@@ -65,9 +65,13 @@ Tabs.Trigger).
   Aufruf faellt also nicht mehr beim Start an. Wer die Zahlen exakt braucht,
   kommt ums Lesen nicht herum - eine Zaehlung im Dateinamen waere der einzige
   Weg, und der ist es nicht wert.
-- **Backup waehrend des Backfills** (`src/lib/backup.ts`): der Knopf ist
-  gesperrt, aber ein Backup, das VOR dem Backfill lief, ist stillschweigend
-  unvollstaendig.
+- ~~**Backup waehrend des Backfills**~~ — erledigt. Der Knopf war NICHT gesperrt,
+  nur die Funktion warf: der Fehler kam als roter Toast, nachdem jemand geklickt
+  und gewartet hatte. Jetzt sind Export UND Einlesen ausgegraut, mit einem Satz
+  darunter, warum. Die Datei traegt `complete: true`; wo der Vermerk fehlt, sagt
+  der Einlese-Dialog das. Das Einlesen war ueberhaupt nicht gesperrt, obwohl es
+  denselben Schaden anrichtet: die Zeiten aus der Datei tragen ihren alten
+  Zeitstempel, nachkommende Monate laufen also stellenweise darueber.
 
 ## Namenskonvention (gilt fuer alles hier)
 
@@ -363,6 +367,5 @@ Schritt 8, 9, 10 laufen nebenher mit.
 
 - ~~Deutsche Bestandsnamen aufraeumen~~ — erledigt durch die Rename-Wellen auf
   `main`.
-- `src/lib/backup.ts` — ein Backup, das vor dem Backfill lief, ist
-  unvollstaendig, ohne dass es jemand merkt.
+- ~~`src/lib/backup.ts`~~ — erledigt, siehe "Was noch offen ist".
 - `src/lib/store.ts` — `listEntryYears` liest jede Monatsdatei nur zum Zaehlen.
