@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
 	import { listEntryMonths } from "$lib/store";
-	import { monthKey, monthLabel } from "$lib/time";
-	import { onIntent, prefetchMonth } from "$lib/prefetch";
+	import { monthLabel, shiftMonthKey } from "$lib/time";
+	import { onIntent, prefetchMonth, prefetchRemoteMonths } from "$lib/prefetch";
+	import { account } from "$lib/sync/account.svelte";
 	import { Button } from "$lib/components/ui/button";
 	import * as ButtonGroup from "$lib/components/ui/button-group";
 	import * as Select from "$lib/components/ui/select";
@@ -28,10 +29,22 @@
 		void listEntryMonths().then((m) => (stored = m));
 	});
 
+	/** Monate, die beim Server liegen und hier noch nicht. */
+	let remote = $state<string[]>([]);
+
+	// Nur solange die Historie noch laeuft. Danach steht alles auf der Platte -
+	// dann waere die Anfrage bei jeder Ansicht mit Monatsauswahl fuer nichts.
+	$effect(() => {
+		if (!account.backfilling) return;
+		void prefetchRemoteMonths().then((m) => (remote = m));
+	});
+
 	// Abgeleitet statt mutiert: dadurch kann sich kein leerer Monat dauerhaft in die
 	// Liste schreiben – er verschwindet, sobald man ihn verlaesst. Aktueller und
 	// ausgewaehlter Monat sind immer dabei, sonst hat der Trigger nichts anzuzeigen.
-	const months = $derived([...new Set([app.currentMonth, month, ...stored])].sort().reverse());
+	const months = $derived(
+		[...new Set([app.currentMonth, month, ...stored, ...remote])].sort().reverse()
+	);
 	const isCurrent = $derived(month === app.currentMonth);
 
 	/** Einen Monat vor/zurück blättern – auch in (noch) leere Monate. */
@@ -40,8 +53,7 @@
 	}
 
 	function neighbour(delta: number): string {
-		const [y, m] = month.split("-").map(Number);
-		return monthKey(new Date(y, m - 1 + delta, 1).getTime());
+		return shiftMonthKey(month, delta);
 	}
 </script>
 

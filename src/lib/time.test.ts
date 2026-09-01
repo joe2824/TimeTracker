@@ -24,7 +24,8 @@ import {
 	stepDate,
 	toTs,
 	MINUTE_MS,
-	quantize
+	quantize,
+	shiftMonthKey
 } from "./time";
 
 describe("stepDate", () => {
@@ -502,5 +503,22 @@ describe("quantize", () => {
 	it("rundet ab, nie auf – eine Rechnung darf nicht in die Zukunft greifen", () => {
 		const t = (wallToTs(2026, 6, 10, 14, 37, 59) + 999);
 		expect(quantize(t, MINUTE_MS)).toBeLessThanOrEqual(t);
+	});
+});
+
+describe("shiftMonthKey", () => {
+	it("geht ueber die Jahresgrenze", () => {
+		expect(shiftMonthKey("2026-01", -1)).toBe("2025-12");
+		expect(shiftMonthKey("2025-12", 1)).toBe("2026-01");
+	});
+
+	it("geht auch weit zurueck richtig", () => {
+		expect(shiftMonthKey("2026-09", -12)).toBe("2025-09");
+		expect(shiftMonthKey("2026-09", -60)).toBe("2021-09");
+		expect(shiftMonthKey("2026-01", -13)).toBe("2024-12");
+	});
+
+	it("laesst einen unbrauchbaren Schluessel stehen", () => {
+		expect(shiftMonthKey("", -1)).toBe("");
 	});
 });

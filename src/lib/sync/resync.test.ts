@@ -39,6 +39,7 @@ class MiniServer {
 		for (const raw of records as {
 			id: string;
 			kind: string;
+			bucket?: string | null;
 			baseRev: number;
 			updatedAt: number;
 			deletedAt?: number | null;
@@ -52,7 +53,7 @@ class MiniServer {
 			this.rows.set(raw.id, {
 				id: raw.id,
 				kind: raw.kind,
-				bucket: null,
+				bucket: raw.bucket ?? null,
 				seq: this.seq,
 				rev,
 				updatedAt: raw.updatedAt,
@@ -83,6 +84,12 @@ class MiniServer {
 			if (url.pathname === "/api/sync" && method === "POST") {
 				const body = JSON.parse(String(init!.body));
 				return new Response(JSON.stringify(this.push(deviceId, body.records)), { status: 200 });
+			}
+			if (url.pathname === "/api/sync/buckets") {
+				const buckets = [...new Set([...this.rows.values()].map((r) => r.bucket))].filter(
+					(b): b is string => b !== null
+				);
+				return new Response(JSON.stringify({ buckets }), { status: 200 });
 			}
 			if (url.pathname === "/api/me") {
 				return new Response(JSON.stringify({ userId: "u1", displayName: "Ich", isAdmin: false }), {
@@ -148,6 +155,36 @@ beforeEach(async () => {
 	server = new MiniServer();
 	originalFetch = globalThis.fetch;
 	globalThis.fetch = server.fetchFor("dieses-geraet");
+});
+
+describe("Monate beim Server", () => {
+	it("erkennt aus den Kennungen, zu welchen Monaten es Daten gibt", async () => {
+		// Waehrend der Backfill laeuft, liegt hier nur ein Teil. Die Auswahl zeigte
+		// sonst ausgerechnet die Monate nicht, die man anklicken muesste.
+		try {
+			await account.linkWithSession("http://test", await createVaultKey(), "Ich");
+			await store.saveEntries("2026-07", [
+				{ id: "e1", activityId: "a1", startTs: Date.UTC(2026, 6, 15, 9), endTs: Date.UTC(2026, 6, 15, 12), note: "", source: "manual" }
+			]);
+			await store.saveEntries("2026-04", [
+				{ id: "e2", activityId: "a1", startTs: Date.UTC(2026, 3, 10, 9), endTs: Date.UTC(2026, 3, 10, 12), note: "", source: "manual" }
+			]);
+			await settled();
+
+			const months = await account.remoteMonths();
+			expect(months).toContain("2026-07");
+			expect(months).toContain("2026-04");
+			// Ein Monat ohne Daten steht nicht drin.
+			expect(months).not.toContain("2026-05");
+		} finally {
+			globalThis.fetch = originalFetch;
+			await account.unlink();
+		}
+	});
+
+	it("liefert ohne Verknuepfung nichts, statt zu fragen", async () => {
+		expect(await account.remoteMonths()).toEqual([]);
+	});
 });
 
 describe("Nachlauf fuer eine neue Datensatzart", () => {

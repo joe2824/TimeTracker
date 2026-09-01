@@ -19,6 +19,21 @@ export function prevMonthKey(now = Date.now()): string {
 	return `${year}-${String(month).padStart(2, "0")}`;
 }
 
+/**
+ * Einen Monatsschluessel um `delta` Monate verschieben.
+ *
+ * Reine Rechnung auf "YYYY-MM", ohne Date: ein Date-Cursor haengt an der Zone
+ * des Geraets, und an einer Sommerzeit-Grenze trifft er den falschen Monat.
+ */
+export function shiftMonthKey(month: string, delta: number): string {
+	const [y, m] = month.split("-").map(Number);
+	if (!y || !m) return month;
+	const total = y * 12 + (m - 1) + delta;
+	const year = Math.floor(total / 12);
+	const index = total - year * 12;
+	return `${year}-${String(index + 1).padStart(2, "0")}`;
+}
+
 /** Dauer eines Eintrags in Sekunden (laufende Eintraege bis `now`). */
 export function durationSeconds(e: Entry, now = Date.now()): number {
 	const end = e.endTs ?? now;

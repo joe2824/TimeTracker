@@ -23,7 +23,7 @@ import {
 } from "./outbox";
 import { Api, ApiError, type AccountInfo, type BackupInfo, type DeleteSummary, type Invite, type Passkey } from "./api";
 import { detachLocalData } from "./detach";
-import { monthKey, prevMonthKey } from "../time";
+import { monthKey, prevMonthKey, shiftMonthKey } from "../time";
 import { SyncEngine, type SyncState } from "./engine";
 import {
 	createPairingKeyPair,
@@ -35,6 +35,7 @@ import {
 	importVaultKey,
 	normalizePairingCode,
 	pairingCode,
+	bucketFor,
 	createClaimSecret,
 	toBase64,
 	unwrapForDevice,
@@ -70,6 +71,14 @@ const DEBOUNCE_MS = 400;
 
 /** Abstand zwischen zwei Verbindungsversuchen, wachsend (maximal 30s). */
 const RETRY_MS = [1_000, 3_000, 5_000, 10_000, 20_000, 30_000];
+
+/**
+ * Wie weit `remoteMonths` zurueckschaut.
+ *
+ * Fuenf Jahre. Die Kennungen sind HMACs, die dieses Geraet selbst rechnet -
+ * sechzig Stueck kosten nichts.
+ */
+const REMOTE_MONTH_LOOKBACK = 60;
 
 /** Der langsame Takt, wo es keinen Weckruf-Kanal gibt. */
 const HEARTBEAT_MS = 5 * 60 * 1000;
@@ -377,6 +386,31 @@ class AccountState {
 	async ensureMonthSynced(month: string): Promise<void> {
 		if (!this.#engine || this.state !== "connected") return;
 		await this.#engine.ensureMonthSynced(month);
+	}
+
+	/**
+	 * Zu welchen Monaten das Konto Daten hat - auch zu solchen, die hier noch
+	 * nicht liegen.
+	 *
+	 * Waehrend der Backfill laeuft, kennt die Platte nur die vorgezogenen Monate;
+	 * die Auswahl zeigte sonst ausgerechnet die alten Monate nicht an, die man
+	 * anklicken muesste, damit sie geholt werden.
+	 *
+	 * Der Server nennt nur Kennungen. Welcher Monat dahintersteckt, rechnet dieses
+	 * Geraet selbst aus - die Kennung ist deterministisch, und der Server erfaehrt
+	 * dabei nichts, was er nicht ohnehin haette.
+	 */
+	async remoteMonths(): Promise<string[]> {
+		if (!this.#api || !this.#key || this.state !== "connected") return [];
+		const { buckets } = await this.#api.buckets();
+		const known = new Set(buckets);
+		const start = monthKey(Date.now());
+		const found: string[] = [];
+		for (let back = 0; back < REMOTE_MONTH_LOOKBACK; back++) {
+			const month = shiftMonthKey(start, -back);
+			if (known.has(await bucketFor(this.#key, month))) found.push(month);
+		}
+		return found;
 	}
 
 	async syncNow(): Promise<void> {

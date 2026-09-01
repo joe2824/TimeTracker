@@ -130,6 +130,21 @@ export async function prefetchSettings(): Promise<void> {
 	await prefetchAdmin();
 }
 
+/** Puffer-Schluessel der Monatsliste vom Server. */
+export const REMOTE_MONTHS_KEY = "months:remote";
+
+/**
+ * Welche Monate der Server kennt - fuer die Auswahl, solange der Backfill laeuft.
+ *
+ * Laenger gepuffert als der Rest: die Liste aendert sich nur, wenn irgendwo ein
+ * neuer Monat entsteht, und sie haengt an einer Auswahl, die auf jeder Ansicht
+ * steht.
+ */
+export function prefetchRemoteMonths(): Promise<string[]> {
+	if (!account.linked) return Promise.resolve([]);
+	return warm(REMOTE_MONTHS_KEY, () => account.remoteMonths(), 5 * 60_000).catch(() => []);
+}
+
 /**
  * Einen Monat bereitlegen: erst vom Server, dann von der Platte in den Speicher.
  *
