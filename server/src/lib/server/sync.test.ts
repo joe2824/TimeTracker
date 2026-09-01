@@ -1,7 +1,15 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { openDb, type Db } from "./db";
 import { records, users } from "./db/schema";
-import { currentSeq, pullRecords, pushRecords, SyncError, type IncomingRecord } from "./sync";
+import {
+	currentSeq,
+	listBuckets,
+	pullRecords,
+	pushRecords,
+	SyncError,
+	type IncomingRecord
+} from "./sync";
+import { MAX_BUCKETS } from "./config";
 import { eq } from "drizzle-orm";
 
 let db: Db;
@@ -166,8 +174,74 @@ describe("Abholen", () => {
 			rec("e2", { bucket: "august" }),
 			rec("e3", { bucket: "juli" })
 		]);
-		const juli = pullRecords(db, ANNA, { bucket: "juli" }).records;
-		expect(juli.map((r) => r.id).sort()).toEqual(["e1", "e3"]);
+		const july = pullRecords(db, ANNA, { buckets: ["juli"] }).records;
+		expect(july.map((r) => r.id).sort()).toEqual(["e1", "e3"]);
+	});
+
+	it("laedt mehrere Zeitraeume in einem Zug", () => {
+		pushRecords(db, ANNA, "g1", [
+			rec("e1", { bucket: "juli" }),
+			rec("e2", { bucket: "august" }),
+			rec("e3", { bucket: "september" })
+		]);
+		const page = pullRecords(db, ANNA, { buckets: ["juli", "september"] }).records;
+		expect(page.map((r) => r.id).sort()).toEqual(["e1", "e3"]);
+	});
+
+	it("nimmt die Datensaetze ohne Zeitraum auf Wunsch mit", () => {
+		pushRecords(db, ANNA, "g1", [
+			rec("e1", { bucket: "juli" }),
+			rec("e2", { bucket: "august" }),
+			rec("s1", { bucket: null })
+		]);
+		const page = pullRecords(db, ANNA, {
+			buckets: ["juli"],
+			includeUnbucketed: true
+		}).records;
+		expect(page.map((r) => r.id).sort()).toEqual(["e1", "s1"]);
+	});
+
+	it("laesst die Datensaetze ohne Zeitraum sonst draussen", () => {
+		pushRecords(db, ANNA, "g1", [rec("e1", { bucket: "juli" }), rec("s1", { bucket: null })]);
+		const page = pullRecords(db, ANNA, { buckets: ["juli"] }).records;
+		expect(page.map((r) => r.id)).toEqual(["e1"]);
+	});
+
+	it("holt nur die Datensaetze ohne Zeitraum, wenn kein Bucket genannt ist", () => {
+		pushRecords(db, ANNA, "g1", [rec("e1", { bucket: "juli" }), rec("s1", { bucket: null })]);
+		const page = pullRecords(db, ANNA, { includeUnbucketed: true }).records;
+		expect(page.map((r) => r.id)).toEqual(["s1"]);
+	});
+
+	it("eine leere Bucket-Liste liefert nichts - nicht alles", () => {
+		// Der Unterschied ist der Punkt: eingeschraenkt auf nichts ist nicht
+		// dasselbe wie gar nicht eingeschraenkt.
+		pushRecords(db, ANNA, "g1", [rec("e1", { bucket: "juli" }), rec("s1", { bucket: null })]);
+		expect(pullRecords(db, ANNA, { buckets: [] }).records).toEqual([]);
+	});
+
+	it("nextSeq und hasMore gelten fuer die gefilterte Menge", () => {
+		pushRecords(db, ANNA, "g1", [
+			rec("e1", { bucket: "juli" }),
+			rec("e2", { bucket: "august" }),
+			rec("e3", { bucket: "juli" }),
+			rec("e4", { bucket: "juli" })
+		]);
+		const first = pullRecords(db, ANNA, { buckets: ["juli"], limit: 2 });
+		expect(first.records.map((r) => r.id)).toEqual(["e1", "e3"]);
+		expect(first.hasMore).toBe(true);
+		const second = pullRecords(db, ANNA, {
+			buckets: ["juli"],
+			since: first.nextSeq,
+			limit: 2
+		});
+		expect(second.records.map((r) => r.id)).toEqual(["e4"]);
+		expect(second.hasMore).toBe(false);
+	});
+
+	it("weist eine masslose Bucket-Liste ab", () => {
+		const many = Array.from({ length: MAX_BUCKETS + 1 }, (_, i) => `b${i}`);
+		expect(() => pullRecords(db, ANNA, { buckets: many })).toThrow(SyncError);
 	});
 
 	it("deckelt eine masslose Seitengroesse", () => {
@@ -203,7 +277,13 @@ describe("Mandantentrennung", () => {
 
 	it("Bodos Zeitraum-Kennung holt nichts von Anna", () => {
 		pushRecords(db, ANNA, "g1", [rec("a1", { bucket: "geteilt" })]);
-		expect(pullRecords(db, BODO, { bucket: "geteilt" }).records).toEqual([]);
+		expect(pullRecords(db, BODO, { buckets: ["geteilt"] }).records).toEqual([]);
+	});
+
+	it("Bodo sieht Annas Zeitraum-Kennungen nicht in der Liste", () => {
+		pushRecords(db, ANNA, "g1", [rec("a1", { bucket: "anna-juli" })]);
+		pushRecords(db, BODO, "g2", [rec("b1", { bucket: "bodo-juli" })]);
+		expect(listBuckets(db, BODO)).toEqual(["bodo-juli"]);
 	});
 
 	it("Bodo kann Annas Datensatz nicht ueberschreiben", () => {
@@ -238,5 +318,25 @@ describe("Zwei Geraete am selben Konto", () => {
 		// Damit ein Geraet nicht auf seinen eigenen Weckruf hin neu laedt.
 		pushRecords(db, ANNA, "handy", [rec("e1")]);
 		expect(pullRecords(db, ANNA).records[0].deviceId).toBe("handy");
+	});
+});
+
+describe("listBuckets", () => {
+	it("nennt jede Kennung genau einmal", () => {
+		pushRecords(db, ANNA, "g1", [
+			rec("e1", { bucket: "juli" }),
+			rec("e2", { bucket: "juli" }),
+			rec("e3", { bucket: "august" })
+		]);
+		expect(listBuckets(db, ANNA).sort()).toEqual(["august", "juli"]);
+	});
+
+	it("laesst die Datensaetze ohne Kennung weg", () => {
+		pushRecords(db, ANNA, "g1", [rec("e1", { bucket: "juli" }), rec("s1", { bucket: null })]);
+		expect(listBuckets(db, ANNA)).toEqual(["juli"]);
+	});
+
+	it("ein leeres Konto liefert eine leere Liste", () => {
+		expect(listBuckets(db, ANNA)).toEqual([]);
 	});
 });

@@ -1,8 +1,14 @@
 // Abholen und Ablegen versiegelter Datensaetze.
-import { and, asc, eq, gt, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import type { Db } from "./db";
 import { records, users } from "./db/schema";
-import { DEFAULT_PAGE, MAX_PAGE, MAX_RECORD_BYTES, MAX_RECORDS_PER_USER } from "./config";
+import {
+	DEFAULT_PAGE,
+	MAX_BUCKETS,
+	MAX_PAGE,
+	MAX_RECORD_BYTES,
+	MAX_RECORDS_PER_USER
+} from "./config";
 
 /** Ein Datensatz, wie ihn der Server ausliefert. */
 export interface StoredRecord {
@@ -73,17 +79,40 @@ const toStored = (r: typeof records.$inferSelect): StoredRecord => ({
 	payload: r.payload
 });
 
+export interface PullOptions {
+	since?: number;
+	limit?: number;
+	/** Nur diese Buckets. Fehlt die Angabe, gilt keine Einschraenkung. */
+	buckets?: string[];
+	/** Aktivitaeten und Einstellungen (bucket IS NULL) mitnehmen. */
+	includeUnbucketed?: boolean;
+}
+
 /** Alles, was seit `since` dazugekommen ist - seitenweise. */
-export function pullRecords(
-	db: Db,
-	userId: string,
-	opts: { since?: number; limit?: number; bucket?: string } = {}
-): PullResult {
+export function pullRecords(db: Db, userId: string, opts: PullOptions = {}): PullResult {
 	const limit = Math.min(Math.max(1, opts.limit ?? DEFAULT_PAGE), MAX_PAGE);
 	const since = Math.max(0, opts.since ?? 0);
 
-	const where = opts.bucket
-		? and(eq(records.userId, userId), eq(records.bucket, opts.bucket), gt(records.seq, since))
+	const buckets = opts.buckets ? [...new Set(opts.buckets)] : undefined;
+	if (buckets && buckets.length > MAX_BUCKETS) {
+		throw new SyncError(`Höchstens ${MAX_BUCKETS} Buckets je Anfrage`, 400);
+	}
+
+	// Erst eine Bucket-Liste schraenkt ein. `includeUnbucketed` allein sagt nur,
+	// dass die Datensaetze ohne Bucket dazugehoeren.
+	const scoped = buckets !== undefined;
+	const scope = [
+		...(buckets?.length ? [inArray(records.bucket, buckets)] : []),
+		...(opts.includeUnbucketed ? [isNull(records.bucket)] : [])
+	];
+	// Eingeschraenkt, aber auf nichts: das ist eine leere Antwort, kein voller
+	// Durchlauf. Ohne diesen Zweig lieferte `or()` von nichts alle Datensaetze.
+	if (scoped && scope.length === 0) {
+		return { records: [], nextSeq: since, hasMore: false };
+	}
+
+	const where = scope.length
+		? and(eq(records.userId, userId), gt(records.seq, since), or(...scope))
 		: and(eq(records.userId, userId), gt(records.seq, since));
 
 	// Eine Zeile mehr holen, als ausgeliefert wird: daran - und nur daran - laesst
@@ -103,6 +132,22 @@ export function pullRecords(
 		nextSeq: page.length > 0 ? page[page.length - 1].seq : since,
 		hasMore
 	};
+}
+
+/**
+ * Welche Buckets dieses Konto ueberhaupt hat.
+ *
+ * Der Client rechnet daraus zurueck, zu welchen Monaten Daten vorliegen - auch
+ * zu denen, die er noch nicht heruntergeladen hat. Der Server erfaehrt dabei
+ * nichts Neues: die Hashes stehen ohnehin in seiner Tabelle.
+ */
+export function listBuckets(db: Db, userId: string): string[] {
+	return db
+		.selectDistinct({ bucket: records.bucket })
+		.from(records)
+		.where(and(eq(records.userId, userId), isNotNull(records.bucket)))
+		.all()
+		.map((r) => r.bucket as string);
 }
 
 /** Geaenderte Datensaetze ablegen. */

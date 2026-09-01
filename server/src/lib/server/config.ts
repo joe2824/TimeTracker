@@ -109,6 +109,13 @@ export const MAX_BATCH = 500;
 /** Datensaetze je Seite beim Abholen. */
 export const DEFAULT_PAGE = 500;
 export const MAX_PAGE = 2000;
+/**
+ * Buckets in einem Filter beim Abholen.
+ *
+ * Die Prio-Menge braucht zwei bis drei; die Grenze haelt die IN-Liste unter dem,
+ * was SQLite an Platzhaltern annimmt.
+ */
+export const MAX_BUCKETS = 64;
 /** Gleichzeitige Ereignis-Verbindungen je Konto. */
 export const MAX_STREAMS_PER_USER = 8;
 /** Wie lange die Warteschleife eine Anfrage offen haelt. */

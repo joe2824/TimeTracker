@@ -103,8 +103,9 @@ export const records = sqliteTable(
 		uniqueIndex("records_pk").on(t.userId, t.id),
 		// Der eine heisse Pfad: jeder Abgleich ist ein Bereichsscan hierueber.
 		index("records_seq").on(t.userId, t.seq),
-		// Gezieltes Nachladen eines Zeitraums beim ersten Abgleich.
-		index("records_bucket").on(t.userId, t.bucket)
+		// Gezieltes Nachladen eines Zeitraums beim ersten Abgleich - mit `seq`, weil
+		// auch der Bucket-Abruf der Reihe nach laeuft.
+		index("records_bucket_seq").on(t.userId, t.bucket, t.seq)
 	]
 );
 
