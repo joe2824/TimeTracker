@@ -1,7 +1,15 @@
 // Der Draht zum Server.
 import type { KeyWrap } from "../crypto/vault";
+import { TELEMETRY_KEY } from "../defaults";
 
 export type FetchFn = (input: string, init?: RequestInit) => Promise<Response>;
+
+/** Was die anonyme Tagesmeldung enthaelt - und sonst nichts. */
+export interface TelemetryPing {
+	deviceId: string;
+	version: string;
+	platform: string;
+}
 
 export interface ServerRecord {
 	id: string;
@@ -205,6 +213,23 @@ export class Api {
 			}
 			throw e;
 		}
+	}
+
+	// ---------- Telemetrie ----------
+
+	/**
+	 * Die anonyme Tagesmeldung. Laeuft ueber denselben Weg wie alles andere und
+	 * weist sich damit genauso aus: mit dem Geraetetoken, sonst mit dem Cookie.
+	 *
+	 * Der Schluessel aus dem Build kommt dazu - die Desktop-Anwendung hat ihn,
+	 * die PWA nicht. Der Server nimmt eines von beidem.
+	 */
+	async telemetry(body: TelemetryPing): Promise<void> {
+		await this.#call<{ ok: boolean }>("/api/telemetry", {
+			method: "POST",
+			body: JSON.stringify(body),
+			headers: TELEMETRY_KEY ? { "x-telemetry-key": TELEMETRY_KEY } : {}
+		});
 	}
 
 	// ---------- Konto ----------

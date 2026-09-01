@@ -34,14 +34,13 @@ vi.mock("./platform/notify", () => ({
 vi.mock("./reminders", () => ({ ensureNotificationPermission: async () => true }));
 
 // Die Tagesmeldung geht sonst wirklich ins Netz. Der Rueckgabewert entscheidet,
-// ob der Tag als gemeldet gilt - genau darum geht es unten.
+// ob der Tag als gemeldet gilt - genau darum geht es unten. Die Adresse zaehlt
+// mit: an ihr haengt, welchem Server eine Absage gilt.
 const telemetry = vi.hoisted(() => ({ ping: vi.fn() }));
-vi.mock("./analytics", () => ({
-	sendDailyTelemetryPing: telemetry.ping,
-	detectPlatform: () => "test"
+const accountMock = vi.hoisted(() => ({
+	serverUrl: "https://tracker.example.de",
+	sendUsagePing: vi.fn()
 }));
-// Nur die Adresse zaehlt hier: an ihr haengt, welchem Server eine Absage gilt.
-const accountMock = vi.hoisted(() => ({ serverUrl: "https://tracker.example.de" }));
 vi.mock("./sync/account.svelte", () => ({ account: accountMock }));
 
 const { app } = await import("./app.svelte");
@@ -106,8 +105,8 @@ beforeEach(async () => {
 	ipc.idleSeconds = 0;
 	ipc.invoke.mockClear();
 	messages.send.mockClear();
-	telemetry.ping.mockReset();
-	telemetry.ping.mockResolvedValue("sent");
+	accountMock.sendUsagePing.mockReset();
+	accountMock.sendUsagePing.mockResolvedValue("sent");
 	accountMock.serverUrl = "https://tracker.example.de";
 
 	// Einen Takt ohne laufenden Timer: der setzt die modulinternen Merker zurueck,
@@ -350,49 +349,49 @@ describe("Tagesmeldung", () => {
 		app.now = Date.now();
 		await tickPing();
 
-		expect(telemetry.ping).toHaveBeenCalledTimes(1);
+		expect(accountMock.sendUsagePing).toHaveBeenCalledTimes(1);
 		expect(app.settings.usageLastDay).toBe("2026-08-24");
 	});
 
 	it("laeuft ausserhalb der festen Stunden nicht", async () => {
 		// STILLE_STUNDE ist 10 Uhr.
 		await tickPing(3);
-		expect(telemetry.ping).not.toHaveBeenCalled();
+		expect(accountMock.sendUsagePing).not.toHaveBeenCalled();
 		expect(app.settings.usageLastDay).toBe("");
 	});
 
 	// Vorher wurde der Tag auch dann vermerkt, wenn der Server den Ping gar nicht
 	// angenommen hatte - das Geraet fiel damit ersatzlos aus der Zaehlung.
 	it("vermerkt den Tag nicht, wenn der Ping nicht ankam", async () => {
-		telemetry.ping.mockResolvedValue("retry");
+		accountMock.sendUsagePing.mockResolvedValue("retry");
 		vi.setSystemTime(wallStringToTs("2026-08-24", "12:00"));
 		app.now = Date.now();
 		await tickPing();
 
-		expect(telemetry.ping).toHaveBeenCalledTimes(1);
+		expect(accountMock.sendUsagePing).toHaveBeenCalledTimes(1);
 		expect(app.settings.usageLastDay).toBe("");
 	});
 
 	// Der Takt kommt jede Sekunde: ohne Sperre haemmerte ein abgewiesener Ping
 	// eine volle Stunde lang sekuendlich gegen den Server.
 	it("wiederholt einen abgewiesenen Ping erst nach einer Wartezeit", async () => {
-		telemetry.ping.mockResolvedValue("retry");
+		accountMock.sendUsagePing.mockResolvedValue("retry");
 		const zwoelf = wallStringToTs("2026-08-24", "12:00");
 		vi.setSystemTime(zwoelf);
 		app.now = Date.now();
 		await tickPing();
-		expect(telemetry.ping).toHaveBeenCalledTimes(1);
+		expect(accountMock.sendUsagePing).toHaveBeenCalledTimes(1);
 
 		// Eine Minute spaeter: noch gesperrt.
 		vi.setSystemTime(zwoelf + 60_000);
 		await tickPing(3);
-		expect(telemetry.ping).toHaveBeenCalledTimes(1);
+		expect(accountMock.sendUsagePing).toHaveBeenCalledTimes(1);
 
 		// Nach fuenf Minuten wieder erlaubt - diesmal nimmt der Server ihn an.
-		telemetry.ping.mockResolvedValue("sent");
+		accountMock.sendUsagePing.mockResolvedValue("sent");
 		vi.setSystemTime(zwoelf + 6 * 60_000);
 		await tickPing();
-		expect(telemetry.ping).toHaveBeenCalledTimes(2);
+		expect(accountMock.sendUsagePing).toHaveBeenCalledTimes(2);
 		expect(app.settings.usageLastDay).toBe("2026-08-24");
 	});
 
@@ -400,12 +399,12 @@ describe("Tagesmeldung", () => {
 	// Riegel klopfte jedes Geraet zu jeder Ping-Stunde alle fuenf Minuten an -
 	// hinter einer gemeinsamen Adresse bis die Bremse anschlaegt.
 	it("fragt nicht weiter, wenn der Server die Meldung ablehnt", async () => {
-		telemetry.ping.mockResolvedValue("declined");
+		accountMock.sendUsagePing.mockResolvedValue("declined");
 		const zwoelf = wallStringToTs("2026-08-24", "12:00");
 		vi.setSystemTime(zwoelf);
 		app.now = Date.now();
 		await tickPing();
-		expect(telemetry.ping).toHaveBeenCalledTimes(1);
+		expect(accountMock.sendUsagePing).toHaveBeenCalledTimes(1);
 
 		// Auch nach der Wartezeit und zur naechsten Ping-Stunde kein zweiter Versuch.
 		vi.setSystemTime(zwoelf + 10 * 60_000);
@@ -413,27 +412,43 @@ describe("Tagesmeldung", () => {
 		vi.setSystemTime(wallStringToTs("2026-08-24", "15:00"));
 		await tickPing(3);
 
-		expect(telemetry.ping).toHaveBeenCalledTimes(1);
+		expect(accountMock.sendUsagePing).toHaveBeenCalledTimes(1);
 		expect(app.settings.usageLastDay).toBe("");
 	});
 
 	// Die Absage gilt dem Server, nicht dem Programmlauf: wer sich danach mit
 	// einem anderen verknuepft, soll dort wieder zaehlen duerfen.
 	it("fragt nach einem Serverwechsel wieder", async () => {
-		telemetry.ping.mockResolvedValue("declined");
+		accountMock.sendUsagePing.mockResolvedValue("declined");
 		const zwoelf = wallStringToTs("2026-08-24", "12:00");
 		vi.setSystemTime(zwoelf);
 		app.now = Date.now();
 		await tickPing();
-		expect(telemetry.ping).toHaveBeenCalledTimes(1);
+		expect(accountMock.sendUsagePing).toHaveBeenCalledTimes(1);
 
 		accountMock.serverUrl = "https://anderer.example.de";
-		telemetry.ping.mockResolvedValue("sent");
+		accountMock.sendUsagePing.mockResolvedValue("sent");
 		vi.setSystemTime(zwoelf + 6 * 60_000);
 		await tickPing();
 
-		expect(telemetry.ping).toHaveBeenLastCalledWith("https://anderer.example.de");
+		expect(accountMock.sendUsagePing).toHaveBeenCalledTimes(2);
 		expect(app.settings.usageLastDay).toBe("2026-08-24");
+	});
+
+	// Nicht jeder Fehlschlag heilt: ein falscher Schluessel bleibt falsch. Ohne
+	// Deckel klopfte so ein Geraet den ganzen Tag alle fuenf Minuten weiter.
+	it("hoert nach fuenf vergeblichen Versuchen fuer heute auf", async () => {
+		accountMock.sendUsagePing.mockResolvedValue("retry");
+		const zwoelf = wallStringToTs("2026-08-24", "12:00");
+
+		// Sieben Anlaeufe im Abstand der Wartezeit - nur fuenf duerfen durch.
+		for (let i = 0; i < 7; i++) {
+			vi.setSystemTime(zwoelf + i * 6 * 60_000);
+			await tickPing();
+		}
+
+		expect(accountMock.sendUsagePing).toHaveBeenCalledTimes(5);
+		expect(app.settings.usageLastDay).toBe("");
 	});
 
 	it("laeuft am selben Tag nur einmal", async () => {

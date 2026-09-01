@@ -48,6 +48,8 @@ import { protectSecret, unprotectSecret } from "../platform/secrets";
 import { isTauri } from "../platform/env";
 import { platformFetch } from "../platform/http";
 import { notifyDataChanged } from "../platform/windows";
+import { APP_VERSION } from "../defaults";
+import { classifyPingFailure, detectPlatform, type PingResult } from "../analytics";
 
 export type LinkState = "off" | "connecting" | "connected" | "error";
 
@@ -282,7 +284,10 @@ class AccountState {
 			},
 			onProgress: (p) => {
 				this.syncProgress = p.phase === "idle" ? null : p;
-				if (p.phase === "pulling" && p.pulled >= 20) {
+				// Die Historie laeuft im Hintergrund - dafuer steht das Hinweisband
+				// oben. Ein Modal davor sperrt die App zu, waehrend daneben steht,
+				// man koenne schon arbeiten.
+				if (p.phase === "pulling" && p.pulled >= 20 && !p.background) {
 					this.bulkSync = { phase: "pulling", pulled: p.pulled };
 					if (isTauri()) {
 						toast.loading(`Lade Daten (${p.pulled} Einträge)…`, { id: "sync-bulk" });
@@ -464,11 +469,15 @@ class AccountState {
 				if (result.pushed || result.pulled) {
 					logInfo("Abgeglichen", result);
 				}
-				if (result.pulled >= 20) {
-					this.bulkSync = { phase: "done", pulled: result.pulled };
+				// Abschluss nur melden, wo vorher auch geladen gemeldet wurde: der
+				// Backfill zaehlt in `result.pulled` mit, wuerde also jede Runde ein
+				// Modal aufblitzen lassen.
+				if (this.bulkSync?.phase === "pulling") {
+					const pulled = this.bulkSync.pulled;
+					this.bulkSync = { phase: "done", pulled };
 					// Im Browser zeigt das große Modal den Abschluss an – Toast nur in Tauri.
 					if (isTauri()) {
-						toast.success(`${result.pulled} Einträge synchronisiert.`, { id: "sync-bulk" });
+						toast.success(`${pulled} Einträge synchronisiert.`, { id: "sync-bulk" });
 					}
 					setTimeout(() => {
 						if (this.bulkSync?.phase === "done") {
@@ -476,15 +485,10 @@ class AccountState {
 						}
 					}, 1500);
 				} else {
-					if (this.bulkSync && this.bulkSync.phase !== "done") {
-						this.bulkSync = null;
-					}
 					toast.dismiss("sync-bulk");
 				}
 			} else {
-				if (this.bulkSync && this.bulkSync.phase !== "done") {
-					this.bulkSync = null;
-				}
+				if (this.bulkSync?.phase === "pulling") this.bulkSync = null;
 				toast.dismiss("sync-bulk");
 			}
 			// Der Bestand kann sich geaendert haben - die Ansichten haengen daran.
@@ -1053,6 +1057,28 @@ class AccountState {
 	async stats(days = 30): Promise<ServerStats> {
 		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
 		return this.#api.stats(days);
+	}
+
+	/**
+	 * Dem eigenen Server anonym melden, dass die Anwendung heute lief. Wirft nie.
+	 *
+	 * Ueber `#api` und nicht mit einem eigenen Aufruf: nur so weist sich die
+	 * Meldung genauso aus wie jeder andere Serveraufruf - mit dem Geraetetoken,
+	 * sonst mit dem Cookie. Die PWA hat keinen Schluessel aus dem Build und
+	 * kaeme sonst gar nicht durch.
+	 */
+	async sendUsagePing(): Promise<PingResult> {
+		if (!this.#api) return "retry";
+		try {
+			await this.#api.telemetry({
+				deviceId: await deviceId(),
+				version: APP_VERSION,
+				platform: detectPlatform()
+			});
+			return "sent";
+		} catch (e) {
+			return classifyPingFailure(e instanceof ApiError ? e.status : 0);
+		}
 	}
 
 	/**

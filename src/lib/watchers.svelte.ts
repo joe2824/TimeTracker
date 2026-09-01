@@ -2,7 +2,6 @@
 // Live-Tray-Tooltip. Läuft per 1-Sekunden-Intervall, solange die App offen ist.
 import { invoke } from "@tauri-apps/api/core";
 import { app } from "./app.svelte";
-import { sendDailyTelemetryPing } from "./analytics";
 import { account } from "./sync/account.svelte";
 import type { Settings } from "./types";
 import { fmtDate, fmtHMS } from "./time";
@@ -71,6 +70,19 @@ let pinging = false;
 /** Wann zuletzt versucht - unabhaengig davon, ob es geklappt hat. */
 let lastPingAttempt = 0;
 /**
+ * Wie oft heute vergeblich versucht wurde, und an welchem Tag.
+ *
+ * Nicht jeder Fehlschlag heilt: ein falscher Schluessel oder eine abgelaufene
+ * Anmeldung bleibt, wie er ist. Ohne Deckel klopfte ein solches Geraet den
+ * ganzen Tag weiter und braechte hinter einer gemeinsamen Adresse die Bremse
+ * zum Anschlagen. Am naechsten Tag faengt die Zaehlung von vorn an - so heilt
+ * es, sobald jemand den Schluessel richtigstellt oder sich neu anmeldet.
+ */
+let failedPingDay = "";
+let failedPingCount = 0;
+/** So viele vergebliche Versuche pro Tag, dann Ruhe. */
+const MAX_PING_FAILURES = 5;
+/**
  * Der Server, der die Meldung abgelehnt hat - dort nicht mehr fragen. Ein
  * Server ohne TELEMETRY_KEY antwortet dauerhaft mit 404, und ein Buero hinter
  * einer gemeinsamen Adresse braechte damit nur die Bremse zum Anschlagen.
@@ -92,16 +104,22 @@ async function dailyPing(s: Settings): Promise<void> {
 	if (!PING_HOURS.includes(zonedParts(now).hour)) return;
 	const today = fmtDate(now);
 	if (s.usageLastDay === today) return;
+	if (failedPingDay !== today) {
+		failedPingDay = today;
+		failedPingCount = 0;
+	}
+	if (failedPingCount >= MAX_PING_FAILURES) return;
 	if (now - lastPingAttempt < PING_RETRY_MS) return;
 	pinging = true;
 	lastPingAttempt = now;
 	try {
-		const result = await sendDailyTelemetryPing(server);
+		const result = await account.sendUsagePing();
 		// Erst vermerken, wenn der Server die Meldung wirklich angenommen hat.
 		// Sonst fiele ein Geraet, das gerade offline oder ausgebremst war, fuer
 		// diesen Tag ersatzlos aus der Zaehlung.
 		if (result === "sent") await app.updateSettings({ usageLastDay: today });
 		else if (result === "declined") declinedServer = server;
+		else failedPingCount++;
 	} finally {
 		pinging = false;
 	}
@@ -231,6 +249,7 @@ export function startUsagePing(): void {
 	// Ein frischer Lauf darf sofort melden - beide Sperren gelten innerhalb eines Laufs.
 	lastPingAttempt = 0;
 	declinedServer = null;
+	failedPingCount = 0;
 	pingInterval = setInterval(() => void dailyPing(app.settings), PING_CHECK_MS);
 }
 
