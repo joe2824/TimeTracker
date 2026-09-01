@@ -1,7 +1,7 @@
 # Sync: Vorladen statt Voll-Download — Plan
 
-Status: **umgesetzt** (Stand 2026-09-02), siehe "Was steht" unten. Offen sind
-nur noch zwei Nebenpunkte.
+Status: **fertig** (Stand 2026-09-01). Alle elf Schritte stehen, siehe "Was
+steht" unten. Offen ist nur noch ein bewusst liegengelassener Nebenpunkt.
 Diese Datei liegt im Repo, damit die Arbeit auf einer anderen Maschine
 (git pull) genau hier weitergehen kann.
 
@@ -39,7 +39,18 @@ Dazugekommen nach dem Merge mit `main`:
 - **Nachlauf fuer neue Datensatzarten** (`RESYNC_GENERATION`, aus dem
   Report-Abgleich). Er arbeitet auf dem ganzen `SyncState`, nicht auf einer
   Zahl: der vorgezogene Teil zaehlt seinen eigenen Stand mit und zeigte sonst
-  hinter Datensaetze, die gerade erst nachkommen.
+  hinter Datensaetze, die gerade erst nachkommen. Der Teil selbst bleibt dabei
+  stehen - nur sein Stand geht auf 0. Ihn wegzunehmen liess ein Geraet mitten im
+  Backfill wieder aeltestes zuerst holen, und `backfilling` fiel auf false,
+  waehrend Monate fehlten: damit gingen die Sperren fuer Sicherung und
+  Monatsauswahl still auf.
+- **Schritt 9, zweite Haelfte.** `account.fetchingMonths` nennt die Monate, die
+  gerade auf Zuruf laufen; der MonthSelector setzt einen Spinner daneben. Nur
+  echte Abrufe stehen drin - liegt der Monat schon vor, gaebe es sonst fuer
+  einen Wimpernschlag einen Spinner, den niemand deuten kann.
+- **Blick nach vorn in `remoteMonths`.** Urlaub wird im Voraus gebucht. Die
+  Liste schaute nur zurueck, ein kuenftiger Monat von einem anderen Geraet
+  fehlte damit in der Auswahl. Jetzt zwoelf Monate voraus dazu.
 - **Deutsche Bestandsnamen** sind weg - die Rename-Wellen auf `main` haben sie
   mitgenommen. `kontoKennung`/`bestandGehoertZu` stehen nur noch als
   Lese-Fallback fuer alte `device.json` in `store.ts`.
@@ -266,7 +277,7 @@ Die `bulkSync`-Anzeige gibt es schon (`src/lib/sync/account.svelte.ts:104` und
 `:220`, Banner in `src/routes/+page.svelte:552`). Text aendern von
 "Daten werden vom Server geladen (N Eintraege)" zu einem Hinweis, dass aeltere
 Monate im Hintergrund nachkommen. Im MonthSelector einen Spinner fuer den Monat,
-dessen Bucket gerade laeuft.
+dessen Bucket gerade laeuft — beides steht.
 
 ### 10. Tests
 

@@ -10,6 +10,7 @@
 	import { Label } from "$lib/components/ui/label";
 	import ChevronLeftIcon from "@lucide/svelte/icons/chevron-left";
 	import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
+	import LoaderCircleIcon from "@lucide/svelte/icons/loader-circle";
 
 	interface Props {
 		/** ausgewaehlter Monat "YYYY-MM" */
@@ -47,6 +48,16 @@
 	);
 	const isCurrent = $derived(month === app.currentMonth);
 
+	/**
+	 * Wird dieser Monat gerade vom Server geholt?
+	 *
+	 * Ohne den Hinweis sieht ein Klick auf einen alten Monat bei schlechter
+	 * Verbindung nach "nichts passiert" aus - dabei laeuft der Abruf gerade.
+	 */
+	function isFetching(m: string): boolean {
+		return account.fetchingMonths.includes(m);
+	}
+
 	/** Einen Monat vor/zurück blättern – auch in (noch) leere Monate. */
 	function shiftMonth(delta: number) {
 		month = neighbour(delta);
@@ -75,12 +86,22 @@
 				<!-- Feste Breite: der laengste Monatsname ("September 2026") passt hinein,
 				     dadurch springt der Pfeil rechts beim Blaettern nicht. -->
 				<Select.Trigger {id} class="w-40">
-					{monthLabel(month)}
+					<span class="flex items-center gap-2">
+						{monthLabel(month)}
+						{#if isFetching(month)}
+							<LoaderCircleIcon class="size-3.5 shrink-0 animate-spin" aria-hidden="true" />
+						{/if}
+					</span>
 				</Select.Trigger>
 				<Select.Content>
 					{#each months as m (m)}
 						<Select.Item value={m} label={monthLabel(m)} {...onIntent(() => prefetchMonth(m))}>
-							{monthLabel(m)}
+							<span class="flex items-center gap-2">
+								{monthLabel(m)}
+								{#if isFetching(m)}
+									<LoaderCircleIcon class="size-3.5 shrink-0 animate-spin" aria-hidden="true" />
+								{/if}
+							</span>
 						</Select.Item>
 					{/each}
 				</Select.Content>

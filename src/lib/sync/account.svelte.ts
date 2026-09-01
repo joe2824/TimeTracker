@@ -80,6 +80,14 @@ const RETRY_MS = [1_000, 3_000, 5_000, 10_000, 20_000, 30_000];
  */
 const REMOTE_MONTH_LOOKBACK = 60;
 
+/**
+ * Wie weit `remoteMonths` vorausschaut.
+ *
+ * Urlaub wird im Voraus gebucht, oft bis ins naechste Jahr. Ohne den Blick nach
+ * vorn fehlten genau diese Monate in der Auswahl, solange die Historie laeuft.
+ */
+const REMOTE_MONTH_LOOKAHEAD = 12;
+
 /** Der langsame Takt, wo es keinen Weckruf-Kanal gibt. */
 const HEARTBEAT_MS = 5 * 60 * 1000;
 
@@ -135,6 +143,8 @@ class AccountState {
 	 * die Oberflaeche bekaeme eine Aenderung daran sonst nie mit.
 	 */
 	backfilling = $state(false);
+	/** Monate, die gerade vom Server nachgeholt werden - die Auswahl zeigt es an. */
+	fetchingMonths = $state<string[]>([]);
 	/** Status des Massen-Imports für die UI (z.B. Modal im Browser). */
 	bulkSync = $state<{ phase: "pulling" | "done"; pulled: number } | null>(null);
 	/** Ob die Initialisierung des Kontos (Lesen lokaler Zugangsdaten) abgeschlossen ist. */
@@ -298,24 +308,23 @@ class AccountState {
 	async #rewindForNewKinds(state: SyncState): Promise<SyncState> {
 		const info = await loadDevice();
 		if (!info || info.resyncGeneration === RESYNC_GENERATION) return state;
+		// Der vorgezogene Teil bleibt stehen, nur sein eigener Stand geht mit auf
+		// 0 - der zeigte sonst hinter Datensaetze, die gerade erst nachkommen.
+		// Ihn wegzunehmen kostet mehr, als es einbringt: der Abruf liefe wieder
+		// aeltestes zuerst, und `backfilling` stuende auf false, obwohl Monate
+		// fehlen. Damit gingen die Sperren fuer Sicherung und Monatsauswahl still
+		// auf, und eine Teilsicherung truege den Vermerk "vollstaendig".
+		const priority = state.priority ? { ...state.priority, seq: 0 } : undefined;
+		const rewound: SyncState = { seq: 0, priority };
 		// Stand 0 heisst: es gibt nichts nachzuholen - frisch verknuepft, oder noch
-		// nie abgeglichen. Nur der Merker war faellig. Der vorgezogene Teil MUSS
-		// hier stehen bleiben: beim Verknuepfen ist er gerade erst gesetzt worden,
-		// und ohne ihn liefe jede Erstverknuepfung wieder aeltestes zuerst.
+		// nie abgeglichen. Nur der Merker war faellig. Der Nachlauf-Vermerk darf
+		// hier NICHT gesetzt werden: sonst gilt das Konto als schon benutzt, und
+		// der lokale Bestand faende nie den Weg hinauf.
 		if (state.seq === 0) {
-			await saveDevice({ ...info, resyncGeneration: RESYNC_GENERATION });
-			return state;
+			await saveDevice({ ...info, priority, resyncGeneration: RESYNC_GENERATION });
+			return rewound;
 		}
-		// Der vorgezogene Teil faellt mit weg: er zaehlt seinen eigenen Stand mit,
-		// und der zeigte sonst hinter Datensaetze, die gerade erst nachkommen.
-		// Hier ist das unbedenklich - dieses Geraet hat alle Monate schon lokal.
-		const rewound: SyncState = { seq: 0 };
-		await saveDevice({
-			...info,
-			seq: 0,
-			priority: undefined,
-			resyncGeneration: RESYNC_GENERATION
-		});
+		await saveDevice({ ...info, seq: 0, priority, resyncGeneration: RESYNC_GENERATION });
 		this.#rewound = true;
 		logInfo("Hole den Serverstand einmalig von vorne", { grund: "neue Datensatzart" });
 		return rewound;
@@ -391,7 +400,18 @@ class AccountState {
 	 */
 	async ensureMonthSynced(month: string): Promise<void> {
 		if (!this.#engine || this.state !== "connected") return;
-		await this.#engine.ensureMonthSynced(month);
+		const running = this.#engine.ensureMonthSynced(month);
+		// Nur melden, wenn wirklich etwas laeuft: liegt der Monat schon vor, kaeme
+		// sonst fuer einen Wimpernschlag ein Spinner, den niemand deuten kann.
+		if (!this.#engine.isFetchingMonth(month) || this.fetchingMonths.includes(month)) {
+			return running;
+		}
+		this.fetchingMonths = [...this.fetchingMonths, month];
+		try {
+			await running;
+		} finally {
+			this.fetchingMonths = this.fetchingMonths.filter((m) => m !== month);
+		}
 	}
 
 	/**
@@ -412,8 +432,8 @@ class AccountState {
 		const known = new Set(buckets);
 		const start = monthKey(Date.now());
 		const found: string[] = [];
-		for (let back = 0; back < REMOTE_MONTH_LOOKBACK; back++) {
-			const month = shiftMonthKey(start, -back);
+		for (let offset = 1 - REMOTE_MONTH_LOOKBACK; offset <= REMOTE_MONTH_LOOKAHEAD; offset++) {
+			const month = shiftMonthKey(start, offset);
 			if (known.has(await bucketFor(this.#key, month))) found.push(month);
 		}
 		return found;
@@ -1091,6 +1111,7 @@ class AccountState {
 		setChangeListener(null);
 		this.#engine = null;
 		this.backfilling = false;
+		this.fetchingMonths = [];
 		app.setMonthFetcher(null);
 		this.#api = null;
 		this.#key = null;

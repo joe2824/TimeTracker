@@ -26,7 +26,7 @@ const { account, RESYNC_GENERATION } = await import("./account.svelte");
 const { app } = await import("../app.svelte");
 const store = await import("../store");
 const { resetOutboxForTests } = await import("./outbox");
-const { monthKey } = await import("../time");
+const { monthKey, shiftMonthKey } = await import("../time");
 
 /** Nur so viel Server, wie der Abgleich anfasst. */
 class MiniServer {
@@ -192,6 +192,33 @@ describe("Monate beim Server", () => {
 		}
 	});
 
+	it("findet auch einen Monat in der Zukunft", async () => {
+		// Urlaub wird im Voraus gebucht - oft bis ins naechste Jahr. Die Liste
+		// schaute nur zurueck; ein kuenftiger Monat von einem anderen Geraet fehlte
+		// damit in der Auswahl, obwohl der Server Daten dazu hat.
+		const future = shiftMonthKey(monthKey(Date.now()), 3);
+		const [year, month] = future.split("-").map(Number);
+		try {
+			await account.linkWithSession("http://test", await createVaultKey(), "Ich");
+			await store.saveEntries(future, [
+				{
+					id: "e3",
+					activityId: "a1",
+					startTs: Date.UTC(year, month - 1, 10, 9),
+					endTs: Date.UTC(year, month - 1, 10, 12),
+					note: "",
+					source: "manual"
+				}
+			]);
+			await settled();
+
+			expect(await account.remoteMonths()).toContain(future);
+		} finally {
+			globalThis.fetch = originalFetch;
+			await account.unlink();
+		}
+	});
+
 	it("liefert ohne Verknuepfung nichts, statt zu fragen", async () => {
 		expect(await account.remoteMonths()).toEqual([]);
 	});
@@ -211,6 +238,46 @@ describe("Erstes Verknuepfen", () => {
 		} finally {
 			server.gate?.open();
 			server.gate = null;
+			globalThis.fetch = originalFetch;
+			await account.unlink();
+		}
+	});
+});
+
+describe("Monat auf Zuruf", () => {
+	it("nennt den Monat, solange er geholt wird", async () => {
+		// Die Auswahl zeigt dazu einen Spinner. Ohne diese Angabe sieht ein Klick
+		// auf einen alten Monat bei schlechter Verbindung nach "nichts passiert"
+		// aus - dabei laeuft der Abruf gerade.
+		const old = "2020-03";
+		server.hold();
+		try {
+			await account.linkWithSession("http://test", await createVaultKey(), "Ich");
+			expect(account.fetchingMonths).not.toContain(old);
+
+			const running = account.ensureMonthSynced(old);
+			await Promise.resolve();
+			expect(account.fetchingMonths).toContain(old);
+
+			server.gate!.open();
+			server.gate = null;
+			await running;
+			expect(account.fetchingMonths).not.toContain(old);
+		} finally {
+			server.gate?.open();
+			server.gate = null;
+			globalThis.fetch = originalFetch;
+			await account.unlink();
+		}
+	});
+
+	it("meldet nichts, wenn der Monat ohnehin schon da ist", async () => {
+		try {
+			await account.linkWithSession("http://test", await createVaultKey(), "Ich");
+			// Der laufende Monat ist vorgezogen - da gibt es nichts nachzuholen.
+			await account.ensureMonthSynced(monthKey(Date.now()));
+			expect(account.fetchingMonths).toEqual([]);
+		} finally {
 			globalThis.fetch = originalFetch;
 			await account.unlink();
 		}
@@ -245,6 +312,40 @@ describe("Nachlauf fuer eine neue Datensatzart", () => {
 			expect(await store.loadTimeReport(MONTH)).not.toBeNull();
 			expect((await store.loadDevice())!.resyncGeneration).toBe(RESYNC_GENERATION);
 		} finally {
+			globalThis.fetch = originalFetch;
+			await account.unlink();
+		}
+	});
+
+	it("laesst dem Geraet mitten im Backfill die vorgezogenen Monate", async () => {
+		// Stand > 0 UND vorgezogene Monate heisst: die Historie fehlt hier noch
+		// zum Teil. Nimmt der Nachlauf ihm den vorgezogenen Teil, laeuft der
+		// Abruf wieder aeltestes zuerst - und `backfilling` faellt auf false,
+		// obwohl Monate fehlen. Damit gehen die Sperren fuer Sicherung und
+		// Monatsauswahl still auf, und eine Teilsicherung traegt "vollstaendig".
+		server.hold();
+		try {
+			await account.linkWithSession("http://test", await createVaultKey(), "Ich");
+			const info = (await store.loadDevice())!;
+			delete (info as { resyncGeneration?: number }).resyncGeneration;
+			await store.saveDevice({
+				...info,
+				seq: 42,
+				priority: { seq: 17, months: [monthKey(Date.now())] }
+			});
+
+			await account.init();
+
+			const after = (await store.loadDevice())!;
+			expect(after.seq).toBe(0);
+			expect(after.priority?.months).toContain(monthKey(Date.now()));
+			// Der eigene Stand des vorgezogenen Teils muss genauso zurueck, sonst
+			// zeigt er hinter die Datensaetze, die der Nachlauf gerade erst holt.
+			expect(after.priority?.seq).toBe(0);
+			expect(account.backfilling).toBe(true);
+		} finally {
+			server.gate?.open();
+			server.gate = null;
 			globalThis.fetch = originalFetch;
 			await account.unlink();
 		}

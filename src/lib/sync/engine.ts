@@ -480,6 +480,11 @@ export class SyncEngine {
 	/** Laufende Nachladungen, damit zweimal Hovern nicht zweimal laedt. */
 	#monthFetches = new Map<string, Promise<void>>();
 
+	/** Laeuft fuer diesen Monat gerade ein Abruf? Die Auswahl zeigt dazu einen Spinner. */
+	isFetchingMonth(month: string): boolean {
+		return this.#monthFetches.has(month);
+	}
+
 	/**
 	 * Einen Monat holen, den der Backfill noch nicht erreicht hat.
 	 *
