@@ -51,6 +51,18 @@ Dazugekommen nach dem Merge mit `main`:
 - **Blick nach vorn in `remoteMonths`.** Urlaub wird im Voraus gebucht. Die
   Liste schaute nur zurueck, ein kuenftiger Monat von einem anderen Geraet
   fehlte damit in der Auswahl. Jetzt zwoelf Monate voraus dazu.
+- **Modal nur fuer das Vorgezogene.** `SyncProgress.background` sagt, ob gerade
+  die Historie laeuft. Das Lade-Modal (`SyncLoadingDialog`) haengt an
+  `bulkSync` und wird nur noch vom vorgezogenen Teil gesetzt - der Backfill
+  hatte die App zugesperrt, waehrend das Band daneben "du kannst schon
+  arbeiten" sagte. Der Abschluss ("Synchronisiert") kommt nur, wo vorher auch
+  "wird geladen" stand; sonst blitzte er jede Backfill-Runde auf.
+- **Nachlauf gibt Prio-Monate aus.** Ein Geraet, das vor dem gestuften Abruf
+  verknuepft wurde, hatte kein `priority`. Der `RESYNC_GENERATION`-Nachlauf
+  setzte seinen Stand auf 0 und zog danach die ganze Historie aeltestes zuerst
+  - aktueller Monat zuletzt, Modal davor. Es bekommt jetzt beim Ruecksetzen
+  einen vorgezogenen Teil.
+
 - **Deutsche Bestandsnamen** sind weg - die Rename-Wellen auf `main` haben sie
   mitgenommen. `kontoKennung`/`bestandGehoertZu` stehen nur noch als
   Lese-Fallback fuer alte `device.json` in `store.ts`.

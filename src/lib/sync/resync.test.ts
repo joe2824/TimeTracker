@@ -351,6 +351,32 @@ describe("Nachlauf fuer eine neue Datensatzart", () => {
 		}
 	});
 
+	it("gibt einem Geraet ohne vorgezogenen Teil einen", async () => {
+		// Verknuepft, bevor es den gestuften Abruf gab: Stand > 0, kein
+		// vorgezogener Teil. Der Nachlauf setzt den Stand auf 0 - ohne Prio-Monate
+		// kaeme danach die ganze Historie aeltestes zuerst, der aktuelle Monat
+		// zuletzt, und davor stuende das Modal.
+		server.hold();
+		try {
+			await account.linkWithSession("http://test", await createVaultKey(), "Ich");
+			const info = (await store.loadDevice())!;
+			delete (info as { resyncGeneration?: number }).resyncGeneration;
+			await store.saveDevice({ ...info, seq: 42, priority: undefined });
+
+			await account.init();
+
+			const after = (await store.loadDevice())!;
+			expect(after.seq).toBe(0);
+			expect(after.priority?.months).toContain(monthKey(Date.now()));
+			expect(after.priority?.seq).toBe(0);
+		} finally {
+			server.gate?.open();
+			server.gate = null;
+			globalThis.fetch = originalFetch;
+			await account.unlink();
+		}
+	});
+
 	it("holt beim naechsten Start nicht noch einmal alles", async () => {
 		try {
 			await account.linkWithSession("http://test", await createVaultKey(), "Ich");

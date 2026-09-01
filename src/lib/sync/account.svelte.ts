@@ -330,7 +330,12 @@ class AccountState {
 		// aeltestes zuerst, und `backfilling` stuende auf false, obwohl Monate
 		// fehlen. Damit gingen die Sperren fuer Sicherung und Monatsauswahl still
 		// auf, und eine Teilsicherung truege den Vermerk "vollstaendig".
-		const priority = state.priority ? { ...state.priority, seq: 0 } : undefined;
+		// Ein Geraet ohne vorgezogenen Teil - verknuepft, bevor es den gab - zoege
+		// sonst die ganze Historie aeltestes zuerst, mit dem aktuellen Monat ganz
+		// am Ende und einem Modal davor. Es bekommt ihn hier.
+		const priority = state.priority
+			? { ...state.priority, seq: 0 }
+			: { seq: 0, months: [monthKey(Date.now()), prevMonthKey()] };
 		const rewound: SyncState = { seq: 0, priority };
 		// Stand 0 heisst: es gibt nichts nachzuholen - frisch verknuepft, oder noch
 		// nie abgeglichen. Nur der Merker war faellig. Der Nachlauf-Vermerk darf

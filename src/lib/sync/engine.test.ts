@@ -1111,6 +1111,30 @@ describe("onProgress – Ladeanzeige beim Massenimport", () => {
 		expect(bulkEvents).toHaveLength(0);
 	});
 
+	it("meldet die Historie als Hintergrund, den vorgezogenen Teil nicht", async () => {
+		// Waehrend des Backfills steht oben das Hinweisband "du kannst schon
+		// arbeiten". Ein Modal, das dabei die App zusperrt, widerspricht dem - der
+		// Client entscheidet das an dieser Angabe.
+		const sender = new Device("sender-hintergrund");
+		const old25 = Array.from({ length: 25 }, (_, i) =>
+			entry(`g${i}`, { startTs: ts(1 + (i % 15), 9 + (i % 8)) })
+		);
+		await on(sender, async (engine) => {
+			await store.saveEntries(MONTH, old25);
+			return engine.sync();
+		});
+
+		const recipient = new Device("empfaenger-hintergrund");
+		recipient.state = { seq: 0, priority: { seq: 0, months: [monthKey(Date.now()), prevMonthKey()] } };
+		const { events } = await syncWithProgress(recipient);
+
+		const bulk = events.filter((e) => e.phase === "pulling" && e.pulled >= 20);
+		expect(bulk.length).toBeGreaterThan(0);
+		expect(bulk.every((e) => e.background === true)).toBe(true);
+		// Der vorgezogene Teil laeuft im Vordergrund - dort gehoert das Modal hin.
+		expect(events.some((e) => e.phase === "pulling" && !e.background)).toBe(true);
+	});
+
 	it("endet immer mit phase=idle", async () => {
 		const sender = new Device("sender3");
 		await on(sender, async (engine) => {

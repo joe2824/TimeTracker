@@ -112,6 +112,11 @@ export interface SyncProgress {
 	phase: "idle" | "pulling" | "pushing";
 	pulled: number;
 	pushed: number;
+	/**
+	 * Laeuft im Hintergrund: die Historie, waehrend die vorgezogenen Monate schon
+	 * dastehen. Dafuer gibt es das Hinweisband - kein Modal, das die App zusperrt.
+	 */
+	background?: boolean;
 }
 
 export class SyncEngine {
@@ -246,7 +251,7 @@ export class SyncEngine {
 		// auf Zuruf, setzt die Historie diese Runde aus. Nur aussetzen, nicht
 		// warten - warten hiesse, dass sich beide gegenseitig aufhalten.
 		const budget = this.#monthFetches.size > 0 ? 0 : BACKLOG_PAGES;
-		const rest = await this.#pullBacklog(pushed + first.pulled, budget);
+		const rest = await this.#pullBacklog(pushed + first.pulled, budget, true);
 		// Die Historie ist durch: ab jetzt reicht der eine Stand wieder fuer alles.
 		if (rest.done && this.#state.priority) {
 			this.#state = { seq: this.#state.seq };
@@ -409,17 +414,18 @@ export class SyncEngine {
 	 */
 	async #pullBacklog(
 		pushed: number,
-		maxPages: number
+		maxPages: number,
+		background = false
 	): Promise<{ pulled: number; lostEdits: number; done: boolean }> {
 		let pulled = 0;
 		let lostEdits = 0;
 		let done = false;
-		this.#onProgress?.({ phase: "pulling", pulled, pushed });
+		this.#onProgress?.({ phase: "pulling", pulled, pushed, background });
 		for (let i = 0; i < maxPages; i++) {
 			const page = await this.#api.pull(this.#state.seq, { limit: BATCH });
 			if (page.records.length > 0) {
 				pulled += page.records.length;
-				this.#onProgress?.({ phase: "pulling", pulled, pushed });
+				this.#onProgress?.({ phase: "pulling", pulled, pushed, background });
 				const r = await this.#apply(page.records);
 				lostEdits += r.lostEdits;
 			}
