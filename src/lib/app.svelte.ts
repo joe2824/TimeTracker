@@ -23,7 +23,6 @@ import { setAppTimeZone, systemTimeZone, weekdayOfDate } from "./tz";
 import { dayConflict, overlapConflict } from "./conflicts";
 import { planBackdate, planNeedsConfirm, type BackdatePlan } from "./backdate";
 import { errorText, logDebug, logError, logInfo, logWarn } from "./log";
-import { setErrorReportsEnabled } from "./analytics";
 import { notifyDataChanged } from "./platform/windows";
 import { isTauri } from "./platform/env";
 import {
@@ -139,9 +138,6 @@ class AppState {
 				// #findRunning haengen alle an der Zeitzone. Stuende sie erst danach,
 				// laedt der Start an einer Tagesgrenze den falschen Monat.
 				await this.#step("Zeitzone bestimmen", () => this.#applyTimeZone());
-				// So frueh wie moeglich: bis hierher haelt analytics.ts alles zurueck,
-				// was seit dem Start anfiel.
-				setErrorReportsEnabled(this.settings.errorReportsEnabled);
 				// Altlasten frueherer Versionen einmalig wegraeumen; darf den Start nie kippen.
 				await this.#step("Datenordner aufräumen", async () => {
 					try {
@@ -257,7 +253,6 @@ class AppState {
 		this.activities = await loadActivities();
 		this.settings = await loadSettings();
 		await this.#applyTimeZone();
-		setErrorReportsEnabled(this.settings.errorReportsEnabled);
 		// Nur die beiden aktuellen Monate und was ohnehin schon im Speicher steht.
 		// Jeden Monat auf der Platte zu lesen kostete bei jedem Fensterwechsel den
 		// gesamten Bestand - bei Jahren Erfassung ist das der spuerbare Teil. Wer
@@ -1583,9 +1578,6 @@ class AppState {
 		// Sofort wirksam machen: alles Weitere in diesem Durchlauf rechnet sonst
 		// noch gegen die alte Zone.
 		if (patch.timeZone !== undefined) setAppTimeZone(patch.timeZone);
-		// Vor dem Speichern: ein Abschalten soll sofort greifen, nicht erst, wenn
-		// das Schreiben durch ist.
-		if (patch.errorReportsEnabled !== undefined) setErrorReportsEnabled(patch.errorReportsEnabled);
 		await saveSettings($state.snapshot(this.settings) as Settings);
 		// Mit Werten: „E-Mail war leer" ist die Art Frage, die hinterher niemand
 		// mehr beantworten kann. Die Einstellungen sind harmlos – kein Passwort,

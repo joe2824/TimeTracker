@@ -147,8 +147,6 @@ export interface Settings {
 	teamSubjectFilter: string;
 	/** Auch Unterordner des Posteingangs durchsuchen (Outlook-Regeln sortieren dorthin) */
 	teamScanSubfolders: boolean;
-	/** Anonyme Fehlermeldungen senden - NUR Fehler und Abstuerze, nicht die Tagesmeldung. */
-	errorReportsEnabled: boolean;
 	/** Vorabversionen beziehen. Liest auch der Rust-Teil aus der settings.json - wirkt erst nach Neustart. */
 	betaUpdates: boolean;
 	/** Zeitzone des Kontos als IANA-Kennung, z.B. "Europe/Berlin". */
@@ -192,7 +190,6 @@ export const defaultSettings: Settings = {
 	team: [],
 	teamSubjectFilter: DEFAULT_TEAM_SUBJECT_FILTER,
 	teamScanSubfolders: true,
-	errorReportsEnabled: true,
 	betaUpdates: false,
 	timeZone: "",
 	usageLastDay: ""

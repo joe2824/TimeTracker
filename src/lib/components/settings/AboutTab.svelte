@@ -1,8 +1,6 @@
 <script lang="ts">
 	import { onMount } from "svelte";
 	import { app } from "$lib/app.svelte";
-	import { formFromSettings, patchFrom, syncForm } from "$lib/settingsSync";
-	import type { Settings } from "$lib/types";
 	import { Button } from "$lib/components/ui/button";
 	import SettingsCard from "$lib/components/shared/SettingsCard.svelte";
 	import LogPanel from "$lib/components/panels/LogPanel.svelte";
@@ -26,18 +24,8 @@
 
 	const REPO_URL = "https://github.com/joe2824/TimeTracker";
 
-	function getCurrentSettings(): Settings {
-		return $state.snapshot(app.settings) as Settings;
-	}
-
-	let form = $state(formFromSettings(getCurrentSettings()));
-	let synced = getCurrentSettings();
 	let appVersion = $state(APP_VERSION);
 	let logoTaps: number[] = [];
-
-	$effect(() => {
-		synced = syncForm(form, synced, getCurrentSettings());
-	});
 
 	onMount(async () => {
 		try {
@@ -48,7 +36,6 @@
 	});
 
 	function handleTapLogo() {
-
 		const now = Date.now();
 		logoTaps = logoTaps.filter((t) => now - t < 3000);
 		logoTaps.push(now);
@@ -75,9 +62,9 @@
 	>
 		<div class="text-muted-foreground space-y-2 text-xs leading-relaxed">
 			<p>
-				<span class="text-foreground font-medium">Anonyme Nutzungszählung:</span> Einmal täglich sendet die App
-				einen anonymen Ping mit Version und Betriebssystem an den TimeTracker-Server, um
-				die Anzahl der aktiven Installationen (DAU) zu erfassen.
+				<span class="text-foreground font-medium">Anonyme Nutzungszählung:</span> Sobald du ein Konto
+				verknüpft hast, meldet die App einmal täglich an genau diesen Server, dass sie heute lief –
+				mit Version und Betriebssystem, sonst nichts. Ohne verknüpftes Konto wird nichts gesendet.
 			</p>
 			<p>
 				<span class="text-foreground font-medium">Nie:</span> Aktivitäten, Projekte, Notizen, Zeiten,
@@ -86,7 +73,6 @@
 			<p>Alle Telemetriedaten verbleiben vollständig auf deinem TimeTracker-Server.</p>
 		</div>
 	</SettingsCard>
-
 
 	<LogPanel />
 
