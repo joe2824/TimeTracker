@@ -1,5 +1,5 @@
 // Welche Adressen einen Passkey tragen koennen.
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 /** Die Einstellungen mit dieser Umgebung frisch laden. */
 async function withEnv(env: Record<string, string>) {
@@ -8,8 +8,20 @@ async function withEnv(env: Record<string, string>) {
 	return import("./config");
 }
 
+// Der Worker-Prozess wird fuer mehrere Test-Dateien wiederverwendet, `process.env`
+// ueberlebt den Wechsel - was hier gesetzt wird, muss also wieder weg.
+const TOUCHED_ENV = ["ORIGIN", "RP_ID", "ALLOWED_ORIGINS"] as const;
+const envBefore = new Map(TOUCHED_ENV.map((k) => [k, process.env[k]] as const));
+
 beforeEach(() => {
 	delete process.env.ALLOWED_ORIGINS;
+});
+
+afterAll(() => {
+	for (const [k, v] of envBefore) {
+		if (v === undefined) delete process.env[k];
+		else process.env[k] = v;
+	}
 });
 
 describe("Adressen und Passkey-Kennung", () => {

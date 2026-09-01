@@ -31,3 +31,7 @@ server/static/
 
 # Arbeitskopie der Wiki-Seiten (eigenes Repo, siehe scripts/wiki-push.sh)
 wiki/
+
+# Server-Datenbank aus Testlaeufen im Repo-Wurzelverzeichnis
+# (vitest --root server, von hier aus gestartet)
+/data/

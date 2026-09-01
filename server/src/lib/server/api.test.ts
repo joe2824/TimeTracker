@@ -11,7 +11,25 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 let base: string;
 let db: Db;
 let dir: string;
-let server: { close(): void };
+let port = 0;
+let closeServer: () => Promise<void> = async () => {};
+
+/**
+ * Was diese Datei an der Umgebung dreht. Vitest verwendet Worker-Prozesse fuer
+ * mehrere Test-Dateien wieder - `process.env` wird dabei NICHT zurueckgesetzt,
+ * stehen gelassene Werte kippen also die naechste Datei.
+ */
+const TOUCHED_ENV = [
+	"DB_FILE",
+	"DATA_DIR",
+	"BACKUP_DIR",
+	"ORIGIN",
+	"RP_ID",
+	"ALLOWED_ORIGINS",
+	"ADDRESS_HEADER",
+	"SYNC_WAIT_MS"
+] as const;
+const envBefore = new Map(TOUCHED_ENV.map((k) => [k, process.env[k]] as const));
 
 const ANNA = "user-anna";
 const BODO = "user-bodo";
@@ -67,9 +85,13 @@ beforeAll(async () => {
 	dir = mkdtempSync(join(tmpdir(), "tt-api-"));
 	const dbFile = join(dir, "test.db");
 	process.env.DB_FILE = dbFile;
-	process.env.ORIGIN = "http://localhost:5199";
+	// Ohne das schreiben die Backup-Tests nach "./data/backups" - also neben das
+	// Repo, aus dem der Lauf gestartet wurde. Der Restore-Endpunkt spielt dort
+	// Gefundenes ueber die laufende Datenbank zurueck: ein Rest aus einem frueheren
+	// Lauf nimmt den Tests mitten im Durchlauf ihre Sitzungen weg.
+	process.env.DATA_DIR = dir;
+	process.env.BACKUP_DIR = join(dir, "backups");
 	process.env.RP_ID = "localhost";
-	process.env.ALLOWED_ORIGINS = "http://localhost:5199";
 	// Damit jeder Test seinen eigenen Bremseimer bekommen kann - siehe `apiVon`.
 	process.env.ADDRESS_HEADER = "x-echte-adresse";
 	// Kurz halten: sonst haengt jeder Wartetest 25 Sekunden.
@@ -81,19 +103,36 @@ beforeAll(async () => {
 	// dieselbe Datei - beide Seiten sehen damit denselben Bestand.
 	// Der GEBAUTE Server, nicht die Quellen: nur so ist geprueft, was spaeter
 	// wirklich laeuft - samt Adapter, Kompilat und Aufloesung der Abhaengigkeiten.
+	// Erst einen freien Port holen, dann ORIGIN setzen: ein fest verdrahteter Port
+	// kollidiert mit einem zweiten Lauf, der ihn noch nicht losgelassen hat. Der
+	// gebaute Server liest ORIGIN beim Import - er darf also erst danach geladen
+	// werden, deshalb der nachgereichte Handler.
+	const { createServer } = await import("node:http");
+	let handle: ((req: IncomingMessage, res: ServerResponse) => void) | null = null;
+	const http = createServer((req, res) => handle?.(req, res));
+	await new Promise<void>((r) => http.listen(0, r));
+	const address = http.address();
+	port = typeof address === "object" && address !== null ? address.port : 0;
+	base = `http://localhost:${port}`;
+	process.env.ORIGIN = base;
+	process.env.ALLOWED_ORIGINS = base;
+
 	const handlerPath = new URL("../../../build/handler.js", import.meta.url).href;
 	const built = (await import(/* @vite-ignore */ handlerPath)) as {
 		handler: (req: IncomingMessage, res: ServerResponse, next: () => void) => void;
 	};
-	const { createServer } = await import("node:http");
-	const http = createServer((req, res) => built.handler(req, res, () => {}));
-	await new Promise<void>((r) => http.listen(5199, r));
-	server = { close: () => http.close() };
-	base = "http://localhost:5199";
+	handle = (req, res) => built.handler(req, res, () => {});
+	closeServer = () => new Promise<void>((r) => http.close(() => r()));
 });
 
-afterAll(() => {
-	server?.close();
+afterAll(async () => {
+	// Abwarten, nicht nur anstossen: ein noch offener Zuhoerer haelt den Port und
+	// die naechste Datei im selben Prozess faende ihn belegt.
+	await closeServer();
+	for (const [k, v] of envBefore) {
+		if (v === undefined) delete process.env[k];
+		else process.env[k] = v;
+	}
 	try {
 		rmSync(dir, { recursive: true, force: true });
 	} catch {
@@ -909,7 +948,7 @@ describe("Bremse und Herkunft", () => {
 			method: "POST",
 			headers: {
 				"content-type": "application/json",
-				origin: "http://localhost:5199",
+				origin: base,
 				cookie: `tt_session=${session}`
 			},
 			body: JSON.stringify({ records: [rec("x")] })
@@ -1202,7 +1241,7 @@ async function rawRequest(headers: Record<string, string>): Promise<number> {
 		const req = request(
 			{
 				hostname: "127.0.0.1",
-				port: 5199,
+				port,
 				path: "/api/sync",
 				method: "POST",
 				headers: { "content-type": "application/json", "content-length": bodyText.length, ...headers }
@@ -1218,7 +1257,7 @@ async function rawRequest(headers: Record<string, string>): Promise<number> {
 }
 
 describe("Herkunft unter einem fremden Namen", () => {
-	// ORIGIN sagt "localhost:5199". Jemand erreicht den Dienst aber ueber den
+	// ORIGIN sagt "localhost:<Port>". Jemand erreicht den Dienst aber ueber den
 	// Rechnernamen im Heimnetz - und ist damit trotzdem auf der eigenen Seite.
 	it("laesst durch, wenn Origin und Host zueinander passen", async () => {
 		const session = createSession(db, ANNA);
