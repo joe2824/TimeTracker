@@ -214,6 +214,29 @@ describe("getTelemetryStats", () => {
 		expect(lang.summary.totalPings).toBe(4);
 	});
 
+	// heute/gestern lasen frueher aus dem Verlauf. Bei days=1 reicht der nur bis
+	// heute, "Gestern" stand damit immer auf 0.
+	it("nennt Gestern auch, wenn der Verlauf nur einen Tag umfasst", () => {
+		const fixedNow = new Date("2026-09-01T12:00:00Z").getTime();
+		recordTelemetryPing(db, {
+			deviceId: "dev-heute",
+			version: "0.9.1",
+			platform: "macos",
+			date: "2026-09-01"
+		});
+		recordTelemetryPing(db, {
+			deviceId: "dev-gestern",
+			version: "0.9.1",
+			platform: "macos",
+			date: "2026-08-31"
+		});
+
+		const stats = getTelemetryStats(db, 1, fixedNow);
+		expect(stats.history.length).toBe(1);
+		expect(stats.summary.today).toBe(1);
+		expect(stats.summary.yesterday).toBe(1);
+	});
+
 	// Sieben Tage sind heute und die sechs davor - nicht acht.
 	it("zählt den siebten Tag noch zur WAU, den achten nicht mehr", () => {
 		const fixedNow = new Date("2026-09-01T12:00:00Z").getTime();

@@ -49,11 +49,15 @@ jobs:
       - name: Version auswaehlen
         id: w
         shell: bash
+        # Die Eingabe ueber die Umgebung und nicht direkt in den Text: sonst
+        # landet fremder Inhalt woertlich im Skript.
+        env:
+          WUNSCH: ${{ inputs.version }}
         run: |
           set -euo pipefail
 
-          if [ -n "${{ inputs.version }}" ]; then
-            TAG="${{ inputs.version }}"
+          if [ -n "${WUNSCH:-}" ]; then
+            TAG="$WUNSCH"
           else
             # Betas sind ausgenommen: ein Neubau soll das ausliefern, was unter
             # `:latest` steht, und dort steht nie eine Vorabversion.

@@ -306,11 +306,6 @@ function showStats(argv) {
 		)
 		.all(historyCutoff);
 
-	if (rows.length === 0) {
-		console.log(`\nNoch keine Telemetrie-Pings in den letzten ${days} Tagen erfasst.\n`);
-		return;
-	}
-
 	const uniqueSince = db.prepare(
 		"SELECT count(DISTINCT device_id) AS n FROM telemetry_pings WHERE date >= ?"
 	);
@@ -343,6 +338,13 @@ function showStats(argv) {
 	console.log(`  Gestern:        ${yesterdayDau}`);
 	console.log(`  Letzte 7 Tage:  ${wau} (WAU)`);
 	console.log(`  Letzte 30 Tage: ${mau} (MAU)`);
+
+	// Der Riegel gilt nur dem Verlauf: WAU und MAU haengen an ihrem eigenen
+	// Fenster und koennen Aktivitaet zeigen, die weiter zurueckliegt als `days`.
+	if (rows.length === 0) {
+		console.log(`\nKeine Pings in den letzten ${days} Tagen - kein Verlauf.\n`);
+		return;
+	}
 
 	console.log(`\nVerlauf der letzten ${days} Tage:\n`);
 	console.log("  Datum       | DAU | Versionen                  | Plattformen");

@@ -1,6 +1,6 @@
 // Anonyme Nutzungsstatistik und Telemetrie auf dem TimeTracker-Server.
 // Erfasst ausschliesslich: Datum, anonyme Geraetekennung, App-Version und Betriebssystem/Plattform.
-import { gte, sql } from "drizzle-orm";
+import { eq, gte, sql } from "drizzle-orm";
 import type { Db, DbLike } from "./db";
 import { telemetryPings } from "./db/schema";
 import type Database from "better-sqlite3";
@@ -117,6 +117,21 @@ export function recordTelemetryPing(
 	return { ok: true, date };
 }
 
+/**
+ * Geraete an genau diesem Tag.
+ *
+ * Eine eigene Abfrage und nicht aus dem Verlauf gelesen: der Verlauf reicht nur
+ * `days` Tage zurueck, und bei `days = 1` faellt gestern heraus.
+ */
+function countDevicesOn(db: DbLike, date: string): number {
+	const row = db
+		.select({ n: sql<number>`count(*)` })
+		.from(telemetryPings)
+		.where(eq(telemetryPings.date, date))
+		.get();
+	return Number(row?.n ?? 0);
+}
+
 /** Eindeutige Geraete ab diesem Datum (einschliesslich). */
 function countDevicesSince(db: DbLike, cutoffDate: string): number {
 	const row = db
@@ -182,8 +197,8 @@ export function getTelemetryStats(db: DbLike, days = 30, now = Date.now()): Tele
 	const history = Array.from(dayMap.values()).sort((a, b) => b.date.localeCompare(a.date));
 
 	const summary: TelemetrySummary = {
-		today: dayMap.get(todayDate)?.dau ?? 0,
-		yesterday: dayMap.get(yesterdayDate)?.dau ?? 0,
+		today: countDevicesOn(db, todayDate),
+		yesterday: countDevicesOn(db, yesterdayDate),
 		wau: countDevicesSince(db, wauCutoff),
 		mau: countDevicesSince(db, mauCutoff),
 		totalPings,
