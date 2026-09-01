@@ -276,7 +276,7 @@ function renameUser(target, newName) {
 }
 
 function showStats(argv) {
-	let days = 14;
+	let days = 30;
 	if (argv && argv[0]) {
 		const parsed = parseInt(argv[0], 10);
 		if (!isNaN(parsed) && parsed > 0) days = Math.min(parsed, 90);
@@ -288,52 +288,61 @@ function showStats(argv) {
 		return;
 	}
 
+	const iso = (ms) => new Date(ms).toISOString().slice(0, 10);
 	const now = Date.now();
-	const todayDate = new Date(now).toISOString().slice(0, 10);
-	const yesterdayDate = new Date(now - 86_400_000).toISOString().slice(0, 10);
-	const sevenDaysAgo = new Date(now - 7 * 86_400_000).toISOString().slice(0, 10);
-	const cutoffDate = new Date(now - days * 86_400_000).toISOString().slice(0, 10);
+	const todayDate = iso(now);
+	const yesterdayDate = iso(now - 86_400_000);
+	// Einschliesslich heute: sieben Tage sind heute und die sechs davor.
+	const wauCutoff = iso(now - 6 * 86_400_000);
+	const mauCutoff = iso(now - 29 * 86_400_000);
+	const historyCutoff = iso(now - (days - 1) * 86_400_000);
 
-	const rows = db.prepare("SELECT date, device_id, version, platform, last_seen_at FROM telemetry_pings WHERE date >= ? ORDER BY date DESC").all(cutoffDate);
+	// Je Geraet und Tag gibt es genau eine Zeile - count(*) je Tag ist damit
+	// schon die Zahl der Geraete. WAU und MAU haengen an ihrem eigenen Fenster,
+	// nicht an `days`: sonst stuende unter "30 Tage" die Zahl eines kuerzeren.
+	const rows = db
+		.prepare(
+			"SELECT date, version, platform, count(*) AS n FROM telemetry_pings WHERE date >= ? GROUP BY date, version, platform"
+		)
+		.all(historyCutoff);
 
 	if (rows.length === 0) {
 		console.log(`\nNoch keine Telemetrie-Pings in den letzten ${days} Tagen erfasst.\n`);
 		return;
 	}
 
+	const uniqueSince = db.prepare(
+		"SELECT count(DISTINCT device_id) AS n FROM telemetry_pings WHERE date >= ?"
+	);
+	const wau = uniqueSince.get(wauCutoff)?.n ?? 0;
+	const mau = uniqueSince.get(mauCutoff)?.n ?? 0;
+
 	const dayMap = new Map();
-	const wauDevices = new Set();
-	const mauDevices = new Set();
 	const overallVersions = {};
 	const overallPlatforms = {};
 
 	for (const row of rows) {
 		let d = dayMap.get(row.date);
 		if (!d) {
-			d = { devices: new Set(), versions: {}, platforms: {} };
+			d = { devices: 0, versions: {}, platforms: {} };
 			dayMap.set(row.date, d);
 		}
-		d.devices.add(row.device_id);
-		d.versions[row.version] = (d.versions[row.version] || 0) + 1;
-		d.platforms[row.platform] = (d.platforms[row.platform] || 0) + 1;
-
-		mauDevices.add(row.device_id);
-		if (row.date >= sevenDaysAgo) {
-			wauDevices.add(row.device_id);
-		}
-		overallVersions[row.version] = (overallVersions[row.version] || 0) + 1;
-		overallPlatforms[row.platform] = (overallPlatforms[row.platform] || 0) + 1;
+		d.devices += row.n;
+		d.versions[row.version] = (d.versions[row.version] || 0) + row.n;
+		d.platforms[row.platform] = (d.platforms[row.platform] || 0) + row.n;
+		overallVersions[row.version] = (overallVersions[row.version] || 0) + row.n;
+		overallPlatforms[row.platform] = (overallPlatforms[row.platform] || 0) + row.n;
 	}
 
-	const todayDau = dayMap.get(todayDate)?.devices.size || 0;
-	const yesterdayDau = dayMap.get(yesterdayDate)?.devices.size || 0;
+	const todayDau = dayMap.get(todayDate)?.devices || 0;
+	const yesterdayDau = dayMap.get(yesterdayDate)?.devices || 0;
 
 	console.log("\n=== TimeTracker Telemetrie & Nutzungsstatistik ===");
 	console.log(`\nAktive Nutzer:`);
 	console.log(`  Heute:          ${todayDau}`);
 	console.log(`  Gestern:        ${yesterdayDau}`);
-	console.log(`  Letzte 7 Tage:  ${wauDevices.size} (WAU)`);
-	console.log(`  Letzte 30 Tage: ${mauDevices.size} (MAU)`);
+	console.log(`  Letzte 7 Tage:  ${wau} (WAU)`);
+	console.log(`  Letzte 30 Tage: ${mau} (MAU)`);
 
 	console.log(`\nVerlauf der letzten ${days} Tage:\n`);
 	console.log("  Datum       | DAU | Versionen                  | Plattformen");
@@ -344,15 +353,15 @@ function showStats(argv) {
 		const d = dayMap.get(date);
 		const vStr = Object.entries(d.versions).map(([v, n]) => `${v} (${n})`).join(", ");
 		const pStr = Object.entries(d.platforms).map(([p, n]) => `${p} (${n})`).join(", ");
-		console.log(`  ${date}  | ${String(d.devices.size).padStart(3)} | ${vStr.padEnd(26)} | ${pStr}`);
+		console.log(`  ${date}  | ${String(d.devices).padStart(3)} | ${vStr.padEnd(26)} | ${pStr}`);
 	}
 
-	console.log("\nVersionen-Verteilung:");
+	console.log(`\nVersionen (${days} Tage):`);
 	for (const [v, n] of Object.entries(overallVersions).sort((a, b) => b[1] - a[1])) {
 		console.log(`  ${v.padEnd(20)} ${n} Ping(s)`);
 	}
 
-	console.log("\nPlattformen-Verteilung:");
+	console.log(`\nPlattformen (${days} Tage):`);
 	for (const [p, n] of Object.entries(overallPlatforms).sort((a, b) => b[1] - a[1])) {
 		console.log(`  ${p.padEnd(20)} ${n} Ping(s)`);
 	}
@@ -392,7 +401,8 @@ function showStatus() {
 		if (hasTable) {
 			const today = new Date().toISOString().slice(0, 10);
 			const count = db.prepare("SELECT count(DISTINCT device_id) n FROM telemetry_pings WHERE date = ?").get(today)?.n ?? 0;
-			const count7 = db.prepare("SELECT count(DISTINCT device_id) n FROM telemetry_pings WHERE date >= date('now', '-7 days')").get()?.n ?? 0;
+			// -6 und nicht -7: sieben Tage sind heute und die sechs davor.
+			const count7 = db.prepare("SELECT count(DISTINCT device_id) n FROM telemetry_pings WHERE date >= date('now', '-6 days')").get()?.n ?? 0;
 			telemetryDau = `${count} heute (${count7} in 7 Tagen)`;
 		}
 	} catch {}

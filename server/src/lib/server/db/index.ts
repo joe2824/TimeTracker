@@ -129,8 +129,9 @@ const MIGRATIONS: string[] = [
 		platform TEXT NOT NULL,
 		last_seen_at INTEGER NOT NULL
 	)`,
-	`CREATE UNIQUE INDEX IF NOT EXISTS telemetry_pings_date_device ON telemetry_pings(date, device_id)`,
-	`CREATE INDEX IF NOT EXISTS telemetry_pings_date ON telemetry_pings(date)`
+	// Deckt auch die Abfragen nach `date` allein ab - `date` ist die erste Spalte.
+	// Ein zweiter Index nur darauf kostete beim Schreiben und braechte nichts.
+	`CREATE UNIQUE INDEX IF NOT EXISTS telemetry_pings_date_device ON telemetry_pings(date, device_id)`
 ];
 
 

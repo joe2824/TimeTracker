@@ -196,10 +196,8 @@ export const telemetryPings = sqliteTable(
 		platform: text("platform").notNull(), // "macos" | "windows" | "linux" | "web"
 		lastSeenAt: integer("last_seen_at").notNull()
 	},
-	(t) => [
-		uniqueIndex("telemetry_pings_date_device").on(t.date, t.deviceId),
-		index("telemetry_pings_date").on(t.date)
-	]
+	// Kein zweiter Index nur auf `date`: der hier faengt diese Abfragen mit ab.
+	(t) => [uniqueIndex("telemetry_pings_date_device").on(t.date, t.deviceId)]
 );
 
 /** Der Zeitpunkt "jetzt" in der Einheit, die alle Tabellen benutzen. */
