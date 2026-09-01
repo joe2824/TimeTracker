@@ -16,6 +16,8 @@ vi.mock("./defaults", () => ({
 	APP_VERSION: "9.9.9",
 	TELEMETRY_KEY: "schluessel-aus-dem-build"
 }));
+// Im Test gibt es kein Tauri-Fenster: der Zweig ist der der PWA.
+vi.mock("./platform/env", () => ({ isTauri: () => false }));
 
 import { sendDailyTelemetryPing } from "./analytics";
 
@@ -36,6 +38,7 @@ describe("sendDailyTelemetryPing", () => {
 		expect(url).toBe("https://tracker.example.de/api/telemetry");
 		expect(init.method).toBe("POST");
 		expect(init.headers["x-telemetry-key"]).toBe("schluessel-aus-dem-build");
+		expect(init.credentials).toBe("include");
 		expect(JSON.parse(init.body)).toEqual({
 			deviceId: "geraet-1234",
 			version: "9.9.9",
@@ -82,13 +85,31 @@ describe("sendDailyTelemetryPing", () => {
 });
 
 describe("sendDailyTelemetryPing ohne Schluessel", () => {
-	it("meldet nichts, wenn der Build keinen Schluessel eingesetzt hat", async () => {
+	// Die PWA liegt im Server-Abbild, das fuer alle Betreiber dasselbe ist - einen
+	// Schluessel kann sie gar nicht mitbekommen. Sie weist sich mit ihrer Sitzung
+	// aus, der Server nimmt beides.
+	it("schickt die Meldung ohne Schluessel, aber mit der Sitzung", async () => {
 		vi.resetModules();
 		vi.doMock("./defaults", () => ({ APP_VERSION: "9.9.9", TELEMETRY_KEY: "" }));
 		const { sendDailyTelemetryPing: ohneSchluessel } = await import("./analytics");
 
+		expect(await ohneSchluessel("https://tracker.example.de")).toBe("sent");
+		const [, init] = fetchMock.mock.calls[0];
+		expect(init.headers["x-telemetry-key"]).toBeUndefined();
+		expect(init.credentials).toBe("include");
+
+		vi.doUnmock("./defaults");
+		vi.resetModules();
+	});
+
+	// Weder Schluessel noch Sitzung: der Server antwortet 401, und dabei bleibt es.
+	it("gibt auf, wenn der Server auch die Sitzung nicht gelten laesst", async () => {
+		vi.resetModules();
+		vi.doMock("./defaults", () => ({ APP_VERSION: "9.9.9", TELEMETRY_KEY: "" }));
+		const { sendDailyTelemetryPing: ohneSchluessel } = await import("./analytics");
+
+		fetchMock.mockResolvedValue({ ok: false, status: 401 });
 		expect(await ohneSchluessel("https://tracker.example.de")).toBe("declined");
-		expect(fetchMock).not.toHaveBeenCalled();
 
 		vi.doUnmock("./defaults");
 		vi.resetModules();

@@ -23,9 +23,16 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	// Ohne konfigurierten Schluessel ist die Zaehlung aus. 404 und nicht 403: ein
 	// abgeschalteter Endpunkt muss sich nicht als vorhanden zu erkennen geben.
 	if (!TELEMETRY_KEY) error(404, "Nicht gefunden");
-	if (!keyMatches(request.headers.get("x-telemetry-key") ?? "", TELEMETRY_KEY)) {
-		error(401, "Nicht berechtigt");
-	}
+
+	// Zwei Wege herein:
+	//
+	// - Der Schluessel aus dem Build. So meldet sich die Desktop-Anwendung.
+	// - Eine angemeldete Sitzung. Die PWA liegt IM Abbild, und das ist fuer alle
+	//   Betreiber dasselbe - einen Schluessel kann sie deshalb gar nicht
+	//   mitbekommen. Wer hier angemeldet ist, ist ohnehin ein echter Nutzer
+	//   dieses Servers.
+	const withKey = keyMatches(request.headers.get("x-telemetry-key") ?? "", TELEMETRY_KEY);
+	if (!withKey && !locals.userId) error(401, "Nicht berechtigt");
 
 	const body = await request.json().catch(() => null);
 	if (!body || typeof body !== "object") {

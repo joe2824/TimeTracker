@@ -1733,8 +1733,19 @@ describe("Telemetrie", () => {
 		expect(await res.json()).toEqual({ ok: true });
 	});
 
-	it("weist einen Ping ohne Schluessel ab", async () => {
+	it("weist einen Ping ohne Schluessel und ohne Anmeldung ab", async () => {
 		expect((await ping(goodPing, null)).status).toBe(401);
+	});
+
+	// Die PWA liegt im Server-Abbild, das fuer alle Betreiber dasselbe ist -
+	// einen Schluessel kann sie gar nicht mitbekommen. Sie weist sich mit ihrer
+	// Anmeldung aus.
+	it("nimmt einen Ping ohne Schluessel an, wenn jemand angemeldet ist", async () => {
+		const res = await apiFrom(annaToken, "/api/telemetry", {
+			method: "POST",
+			body: JSON.stringify({ ...goodPing, deviceId: "geraet-aus-der-pwa" })
+		});
+		expect(res.status).toBe(200);
 	});
 
 	it("weist einen Ping mit falschem Schluessel ab", async () => {

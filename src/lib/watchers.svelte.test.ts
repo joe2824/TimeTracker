@@ -40,6 +40,9 @@ vi.mock("./analytics", () => ({
 	sendDailyTelemetryPing: telemetry.ping,
 	detectPlatform: () => "test"
 }));
+// Nur die Adresse zaehlt hier: an ihr haengt, welchem Server eine Absage gilt.
+const accountMock = vi.hoisted(() => ({ serverUrl: "https://tracker.example.de" }));
+vi.mock("./sync/account.svelte", () => ({ account: accountMock }));
 
 const { app } = await import("./app.svelte");
 const { resolveIdle, resolveLongTimer, startWatchers, stopWatchers, watchers } = await import(
@@ -94,6 +97,7 @@ beforeEach(async () => {
 	messages.send.mockClear();
 	telemetry.ping.mockReset();
 	telemetry.ping.mockResolvedValue("sent");
+	accountMock.serverUrl = "https://tracker.example.de";
 
 	// Einen Takt ohne laufenden Timer: der setzt die modulinternen Merker zurueck,
 	// die sonst aus dem vorigen Test stehen blieben (sie leben am Modul, nicht am
@@ -398,6 +402,25 @@ describe("Tagesmeldung", () => {
 
 		expect(telemetry.ping).toHaveBeenCalledTimes(1);
 		expect(app.settings.usageLastDay).toBe("");
+	});
+
+	// Die Absage gilt dem Server, nicht dem Programmlauf: wer sich danach mit
+	// einem anderen verknuepft, soll dort wieder zaehlen duerfen.
+	it("fragt nach einem Serverwechsel wieder", async () => {
+		telemetry.ping.mockResolvedValue("declined");
+		const zwoelf = wallStringToTs("2026-08-24", "12:00");
+		vi.setSystemTime(zwoelf);
+		app.now = Date.now();
+		await tick();
+		expect(telemetry.ping).toHaveBeenCalledTimes(1);
+
+		accountMock.serverUrl = "https://anderer.example.de";
+		telemetry.ping.mockResolvedValue("sent");
+		vi.setSystemTime(zwoelf + 6 * 60_000);
+		await tick();
+
+		expect(telemetry.ping).toHaveBeenLastCalledWith("https://anderer.example.de");
+		expect(app.settings.usageLastDay).toBe("2026-08-24");
 	});
 
 	it("laeuft am selben Tag nur einmal", async () => {

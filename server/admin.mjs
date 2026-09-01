@@ -312,6 +312,12 @@ function showStats(argv) {
 	const wau = uniqueSince.get(wauCutoff)?.n ?? 0;
 	const mau = uniqueSince.get(mauCutoff)?.n ?? 0;
 
+	// Eigene Abfrage und nicht aus dem Verlauf: der reicht nur `days` Tage
+	// zurueck, bei "stats 1" faellt gestern heraus.
+	const devicesOn = db.prepare("SELECT count(*) AS n FROM telemetry_pings WHERE date = ?");
+	const todayDau = devicesOn.get(todayDate)?.n ?? 0;
+	const yesterdayDau = devicesOn.get(yesterdayDate)?.n ?? 0;
+
 	const dayMap = new Map();
 	const overallVersions = {};
 	const overallPlatforms = {};
@@ -328,9 +334,6 @@ function showStats(argv) {
 		overallVersions[row.version] = (overallVersions[row.version] || 0) + row.n;
 		overallPlatforms[row.platform] = (overallPlatforms[row.platform] || 0) + row.n;
 	}
-
-	const todayDau = dayMap.get(todayDate)?.devices || 0;
-	const yesterdayDau = dayMap.get(yesterdayDate)?.devices || 0;
 
 	console.log("\n=== TimeTracker Telemetrie & Nutzungsstatistik ===");
 	console.log(`\nAktive Nutzer:`);

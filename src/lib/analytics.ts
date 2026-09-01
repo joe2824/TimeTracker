@@ -4,6 +4,7 @@
 import { APP_VERSION, TELEMETRY_KEY } from "./defaults";
 import { deviceId as getDeviceId } from "./sync/device";
 import { platformFetch } from "./platform/http";
+import { isTauri } from "./platform/env";
 
 /**
  * Ermittelt das Betriebssystem bzw. die Plattform fuer die Statistik.
@@ -52,11 +53,13 @@ const DECLINED_STATUS = new Set([401, 403, 404, 405, 410]);
  * `platformFetch` und nicht `globalThis.fetch`: das Fenster der
  * Desktop-Anwendung hat die Herkunft `tauri://localhost`, der Ping waere damit
  * CORS-pflichtig und kaeme nie an.
+ *
+ * Ausgewiesen wird sich mit dem Schluessel aus dem Build ODER - wenn keiner
+ * eingesetzt wurde, wie in der PWA - mit der laufenden Sitzung. Passt weder das
+ * eine noch das andere, antwortet der Server 401 und es bleibt bei diesem einen
+ * Versuch.
  */
 export async function sendDailyTelemetryPing(serverUrl: string): Promise<PingResult> {
-	// Ohne Schluessel im Build weist jeder Server die Meldung ab - das aendert
-	// sich zur Laufzeit nie mehr.
-	if (!TELEMETRY_KEY) return "declined";
 	// Ohne verknuepftes Konto gibt es keinen Server, der zaehlen duerfte. Das kann
 	// sich jederzeit aendern, also "spaeter nochmal" und nicht "nie".
 	const targetServer = (serverUrl || "").trim().replace(/\/+$/, "");
@@ -67,8 +70,14 @@ export async function sendDailyTelemetryPing(serverUrl: string): Promise<PingRes
 			method: "POST",
 			headers: {
 				"content-type": "application/json",
-				"x-telemetry-key": TELEMETRY_KEY
+				...(TELEMETRY_KEY ? { "x-telemetry-key": TELEMETRY_KEY } : {})
 			},
+			// Die PWA hat keinen Schluessel - sie liegt im Abbild, und das ist fuer
+			// alle Betreiber dasselbe. Sie weist sich stattdessen mit ihrer Sitzung
+			// aus; der Server nimmt beides. Nur im Browser: in der Desktop-Huelle
+			// geht der Aufruf durch das HTTP-Plugin, das mit dem Feld nichts anfangen
+			// kann.
+			...(isTauri() ? {} : { credentials: "include" as const }),
 			body: JSON.stringify({
 				deviceId: await getDeviceId(),
 				version: APP_VERSION,

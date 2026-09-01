@@ -63,19 +63,23 @@ let pinging = false;
 /** Wann zuletzt versucht - unabhaengig davon, ob es geklappt hat. */
 let lastPingAttempt = 0;
 /**
- * Dieser Server nimmt keine Meldung an. Fuer den Rest des Laufs nicht mehr
- * fragen: ein Server ohne TELEMETRY_KEY antwortet dauerhaft mit 404, und ein
- * Buero hinter einer gemeinsamen Adresse braechte damit nur die Bremse zum
- * Anschlagen.
+ * Der Server, der die Meldung abgelehnt hat - dort nicht mehr fragen. Ein
+ * Server ohne TELEMETRY_KEY antwortet dauerhaft mit 404, und ein Buero hinter
+ * einer gemeinsamen Adresse braechte damit nur die Bremse zum Anschlagen.
+ *
+ * Die Adresse und nicht bloss ein Ja/Nein: wer sich danach mit einem anderen
+ * Server verknuepft, soll dort wieder zaehlen duerfen.
  */
-let pingDeclined = false;
+let declinedServer: string | null = null;
 
 /**
  * Einmal je Kalendertag „aktiv" melden, sobald eine der PING_HOURS erreicht ist
  * und die App gerade laeuft.
  */
 async function dailyPing(s: Settings): Promise<void> {
-	if (pinging || pingDeclined) return;
+	if (pinging) return;
+	const server = account.serverUrl;
+	if (server && server === declinedServer) return;
 	const now = Date.now();
 	if (!PING_HOURS.includes(zonedParts(now).hour)) return;
 	const today = fmtDate(now);
@@ -84,12 +88,12 @@ async function dailyPing(s: Settings): Promise<void> {
 	pinging = true;
 	lastPingAttempt = now;
 	try {
-		const result = await sendDailyTelemetryPing(account.serverUrl);
+		const result = await sendDailyTelemetryPing(server);
 		// Erst vermerken, wenn der Server die Meldung wirklich angenommen hat.
 		// Sonst fiele ein Geraet, das gerade offline oder ausgebremst war, fuer
 		// diesen Tag ersatzlos aus der Zaehlung.
 		if (result === "sent") await app.updateSettings({ usageLastDay: today });
-		else if (result === "declined") pingDeclined = true;
+		else if (result === "declined") declinedServer = server;
 	} finally {
 		pinging = false;
 	}
@@ -202,7 +206,7 @@ export function startWatchers(): void {
 	if (interval) return;
 	// Ein frischer Lauf darf sofort melden - beide Sperren gelten innerhalb eines Laufs.
 	lastPingAttempt = 0;
-	pingDeclined = false;
+	declinedServer = null;
 	interval = setInterval(() => void tick(), 1000);
 }
 
