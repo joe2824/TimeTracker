@@ -1,7 +1,7 @@
 // Durchstich durch die Endpunkte - gegen einen echten Server, ueber echtes HTTP.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { openDb, type Db } from "./db";
-import { users } from "./db/schema";
+import { telemetryPings, users } from "./db/schema";
 import { createDevice, createSession, hashSecret, sha256Hex } from "./auth";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -27,9 +27,13 @@ const TOUCHED_ENV = [
 	"RP_ID",
 	"ALLOWED_ORIGINS",
 	"ADDRESS_HEADER",
-	"SYNC_WAIT_MS"
+	"SYNC_WAIT_MS",
+	"TELEMETRY_KEY"
 ] as const;
 const envBefore = new Map(TOUCHED_ENV.map((k) => [k, process.env[k]] as const));
+
+/** Derselbe Wert, den der Server beim Start aus der Umgebung liest. */
+const TELEMETRY_KEY = "test-telemetrie-schluessel";
 
 const ANNA = "user-anna";
 const BODO = "user-bodo";
@@ -96,6 +100,8 @@ beforeAll(async () => {
 	process.env.ADDRESS_HEADER = "x-echte-adresse";
 	// Kurz halten: sonst haengt jeder Wartetest 25 Sekunden.
 	process.env.SYNC_WAIT_MS = "800";
+	// Ohne den Schluessel gaebe es den Telemetrie-Endpunkt gar nicht.
+	process.env.TELEMETRY_KEY = TELEMETRY_KEY;
 
 	db = openDb(dbFile).db;
 
@@ -1706,5 +1712,56 @@ describe("Wiederherstellung mit der Phrase", () => {
 			if (throttled) expect(res.headers.get("retry-after")).toBeTruthy();
 		}
 		expect(throttled).toBe(true);
+	});
+});
+
+describe("Telemetrie", () => {
+	/** Ein Ping mit eigener Adresse - sonst nimmt ein Test dem naechsten die Bremse weg. */
+	function ping(body: unknown, key: string | null = TELEMETRY_KEY) {
+		return apiFrom(null, "/api/telemetry", {
+			method: "POST",
+			headers: key === null ? {} : { "x-telemetry-key": key },
+			body: JSON.stringify(body)
+		});
+	}
+
+	const goodPing = { deviceId: "geraet-abcd-1234", version: "0.9.3", platform: "macos" };
+
+	it("nimmt einen Ping mit dem richtigen Schluessel an", async () => {
+		const res = await ping(goodPing);
+		expect(res.status).toBe(200);
+		expect(await res.json()).toEqual({ ok: true });
+	});
+
+	it("weist einen Ping ohne Schluessel ab", async () => {
+		expect((await ping(goodPing, null)).status).toBe(401);
+	});
+
+	it("weist einen Ping mit falschem Schluessel ab", async () => {
+		expect((await ping(goodPing, "falsch")).status).toBe(401);
+		// Gleiche Laenge, anderer Inhalt: der Vergleich darf nicht am Praefix haengen.
+		expect((await ping(goodPing, "x".repeat(TELEMETRY_KEY.length))).status).toBe(401);
+	});
+
+	it("weist zu kurze und zu lange Geraetekennungen ab", async () => {
+		expect((await ping({ ...goodPing, deviceId: "ab" })).status).toBe(400);
+		expect((await ping({ ...goodPing, deviceId: "x".repeat(65) })).status).toBe(400);
+	});
+
+	it("uebernimmt keine erfundenen Versionen und Plattformen", async () => {
+		const res = await ping({
+			deviceId: "geraet-mit-muell",
+			version: "<script>alert(1)</script>",
+			platform: "Erfundenes"
+		});
+		expect(res.status).toBe(200);
+
+		const row = db
+			.select()
+			.from(telemetryPings)
+			.all()
+			.find((r) => r.deviceId === "geraet-mit-muell");
+		expect(row?.version).toBe("unbekannt");
+		expect(row?.platform).toBe("unbekannt");
 	});
 });

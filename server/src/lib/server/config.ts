@@ -95,6 +95,18 @@ export const SERVER_VERSION =
  */
 export const HMAC_SECRET = process.env.HMAC_SECRET?.trim() || null;
 
+/**
+ * Der Ausweis, den die Tagesmeldung mitbringen muss.
+ *
+ * Derselbe Wert wie beim Bauen der Anwendung (`TELEMETRY_KEY`). Nicht gesetzt
+ * heisst: der Endpunkt nimmt gar nichts an - ein offener Zaehler waere ein
+ * Freibrief, DAU und Versionsliste mit Erfundenem zu fuellen.
+ *
+ * Kein echtes Geheimnis: der Schluessel steckt im ausgelieferten Bundle. Er
+ * haelt Spam von aussen ab, nicht jemanden, der sich ein Release ansieht.
+ */
+export const TELEMETRY_KEY = process.env.TELEMETRY_KEY?.trim() || null;
+
 // ---------- Grenzen ----------
 //
 // Von Anfang an da, nicht nachtraeglich: ein Konto ohne Obergrenze ist im

@@ -1,9 +1,37 @@
 // Anonyme Nutzungsstatistik und Telemetrie auf dem TimeTracker-Server.
 // Erfasst ausschliesslich: Datum, anonyme Geraetekennung, App-Version und Betriebssystem/Plattform.
-import { desc, gte, sql } from "drizzle-orm";
+import { gte, sql } from "drizzle-orm";
 import type { Db, DbLike } from "./db";
 import { telemetryPings } from "./db/schema";
 import type Database from "better-sqlite3";
+
+/** Kuerzeste noch brauchbare Geraetekennung. */
+export const MIN_DEVICE_ID_LEN = 4;
+/**
+ * Laengste Geraetekennung. Der Endpunkt weist laengere ab, statt sie hier zu
+ * kuerzen: zwei Geraete mit gleichem Anfang fielen sonst ueber den
+ * Eindeutigkeits-Index zu einer Zeile zusammen.
+ */
+export const MAX_DEVICE_ID_LEN = 64;
+
+/** Plattformen, die die Anwendung meldet. Alles andere wird nicht uebernommen. */
+const KNOWN_PLATFORMS = new Set([
+	"macos",
+	"windows",
+	"linux",
+	"desktop",
+	"web",
+	"web-mac",
+	"web-win",
+	"web-linux",
+	"unknown"
+]);
+
+/** Ziffern, Punkte und die Zusaetze einer Vorabversion - mehr hat eine Version nicht. */
+const VERSION_RE = /^[0-9A-Za-z][0-9A-Za-z.+-]{0,31}$/;
+
+/** Wofuer kein brauchbarer Wert ankam. */
+const UNKNOWN = "unbekannt";
 
 export interface TelemetryPingInput {
 	deviceId: string;
@@ -23,8 +51,11 @@ export interface DayStats {
 export interface TelemetrySummary {
 	today: number;
 	yesterday: number;
-	wau: number; // Letzte 7 Tage (Unique Devices)
-	mau: number; // Letzte 30 Tage (Unique Devices)
+	/** Letzte 7 Tage (eindeutige Geraete), unabhaengig vom abgefragten Verlauf. */
+	wau: number;
+	/** Letzte 30 Tage (eindeutige Geraete), unabhaengig vom abgefragten Verlauf. */
+	mau: number;
+	/** Pings im abgefragten Verlauf - je Geraet und Tag hoechstens einer. */
 	totalPings: number;
 	versions: Record<string, number>;
 	platforms: Record<string, number>;
@@ -35,16 +66,9 @@ export interface TelemetryStatsResult {
 	history: DayStats[];
 }
 
-/** Erzeugt den Datums-String "YYYY-MM-DD" fuer einen Zeitstempel in lokaler / UTC Zeit. */
+/** Erzeugt den Datums-String "YYYY-MM-DD" fuer einen Zeitstempel. */
 export function toIsoDate(timestamp = Date.now()): string {
 	return new Date(timestamp).toISOString().slice(0, 10);
-}
-
-/** Sanitiert einen String fuer sichere Ablage und Anzeige. */
-function sanitize(val: unknown, maxLen = 40): string {
-	if (typeof val !== "string") return "unbekannt";
-	const trimmed = val.trim().slice(0, maxLen);
-	return trimmed.length > 0 ? trimmed : "unbekannt";
 }
 
 /**
@@ -55,13 +79,20 @@ export function recordTelemetryPing(
 	db: DbLike,
 	input: TelemetryPingInput
 ): { ok: boolean; date: string } {
-	const deviceId = sanitize(input.deviceId, 64);
-	if (!deviceId || deviceId === "unbekannt") {
+	const deviceId = typeof input.deviceId === "string" ? input.deviceId.trim() : "";
+	if (deviceId.length < MIN_DEVICE_ID_LEN || deviceId.length > MAX_DEVICE_ID_LEN) {
 		return { ok: false, date: "" };
 	}
 
-	const version = sanitize(input.version, 32);
-	const platform = sanitize(input.platform, 32).toLowerCase();
+	// Beides landet ungefiltert in der Verwaltungsansicht. Was nicht wie eine
+	// Version bzw. eine bekannte Plattform aussieht, wird nicht uebernommen -
+	// sonst genuegen ein paar hundert erfundene Werte, um die Seite unlesbar zu
+	// machen.
+	const rawVersion = typeof input.version === "string" ? input.version.trim() : "";
+	const version = VERSION_RE.test(rawVersion) ? rawVersion : UNKNOWN;
+	const rawPlatform = typeof input.platform === "string" ? input.platform.trim().toLowerCase() : "";
+	const platform = KNOWN_PLATFORMS.has(rawPlatform) ? rawPlatform : UNKNOWN;
+
 	const now = input.now ?? Date.now();
 	const date = input.date && /^\d{4}-\d{2}-\d{2}$/.test(input.date) ? input.date : toIsoDate(now);
 
@@ -86,84 +117,76 @@ export function recordTelemetryPing(
 	return { ok: true, date };
 }
 
+/** Eindeutige Geraete ab diesem Datum (einschliesslich). */
+function countDevicesSince(db: DbLike, cutoffDate: string): number {
+	const row = db
+		.select({ n: sql<number>`count(distinct ${telemetryPings.deviceId})` })
+		.from(telemetryPings)
+		.where(gte(telemetryPings.date, cutoffDate))
+		.get();
+	return Number(row?.n ?? 0);
+}
+
 /**
- * Liest die Telemetrie-Auswertung fuer die letzten `days` Tage aus.
+ * Liest die Telemetrie-Auswertung aus: `days` Tage Verlauf, dazu die
+ * Zusammenfassung.
+ *
+ * WAU und MAU haengen NICHT an `days`, sondern an ihrem eigenen Zeitfenster.
+ * Sonst stuende unter "30 Tage" die Zahl eines kuerzeren Verlaufs, sobald jemand
+ * weniger Tage abfragt.
+ *
+ * Gezaehlt wird in SQLite. Je Geraet und Tag gibt es genau eine Zeile
+ * (Eindeutigkeits-Index), also ist `count(*)` je Tag schon die Zahl der Geraete.
  */
 export function getTelemetryStats(db: DbLike, days = 30, now = Date.now()): TelemetryStatsResult {
 	const todayDate = toIsoDate(now);
 	const yesterdayDate = toIsoDate(now - 86_400_000);
-	const sevenDaysAgoDate = toIsoDate(now - 7 * 86_400_000);
-	const cutoffDate = toIsoDate(now - days * 86_400_000);
+	// Einschliesslich heute: sieben Tage sind heute und die sechs davor.
+	const wauCutoff = toIsoDate(now - 6 * 86_400_000);
+	const mauCutoff = toIsoDate(now - 29 * 86_400_000);
+	const historyCutoff = toIsoDate(now - (Math.max(1, days) - 1) * 86_400_000);
 
 	const rows = db
 		.select({
 			date: telemetryPings.date,
-			deviceId: telemetryPings.deviceId,
 			version: telemetryPings.version,
 			platform: telemetryPings.platform,
-			lastSeenAt: telemetryPings.lastSeenAt
+			devices: sql<number>`count(*)`
 		})
 		.from(telemetryPings)
-		.where(gte(telemetryPings.date, cutoffDate))
-		.orderBy(desc(telemetryPings.date))
+		.where(gte(telemetryPings.date, historyCutoff))
+		.groupBy(telemetryPings.date, telemetryPings.version, telemetryPings.platform)
 		.all();
 
-	const dayMap = new Map<
-		string,
-		{
-			devices: Set<string>;
-			versions: Record<string, number>;
-			platforms: Record<string, number>;
-		}
-	>();
-
+	const dayMap = new Map<string, DayStats>();
 	const overallVersions: Record<string, number> = {};
 	const overallPlatforms: Record<string, number> = {};
-	const wauDevices = new Set<string>();
-	const mauDevices = new Set<string>();
+	let totalPings = 0;
 
 	for (const row of rows) {
-		let dayEntry = dayMap.get(row.date);
-		if (!dayEntry) {
-			dayEntry = {
-				devices: new Set(),
-				versions: {},
-				platforms: {}
-			};
-			dayMap.set(row.date, dayEntry);
+		const n = Number(row.devices);
+		let day = dayMap.get(row.date);
+		if (!day) {
+			day = { date: row.date, dau: 0, versions: {}, platforms: {} };
+			dayMap.set(row.date, day);
 		}
+		day.dau += n;
+		day.versions[row.version] = (day.versions[row.version] ?? 0) + n;
+		day.platforms[row.platform] = (day.platforms[row.platform] ?? 0) + n;
 
-		dayEntry.devices.add(row.deviceId);
-		dayEntry.versions[row.version] = (dayEntry.versions[row.version] ?? 0) + 1;
-		dayEntry.platforms[row.platform] = (dayEntry.platforms[row.platform] ?? 0) + 1;
-
-		mauDevices.add(row.deviceId);
-		if (row.date >= sevenDaysAgoDate) {
-			wauDevices.add(row.deviceId);
-		}
-
-		overallVersions[row.version] = (overallVersions[row.version] ?? 0) + 1;
-		overallPlatforms[row.platform] = (overallPlatforms[row.platform] ?? 0) + 1;
+		overallVersions[row.version] = (overallVersions[row.version] ?? 0) + n;
+		overallPlatforms[row.platform] = (overallPlatforms[row.platform] ?? 0) + n;
+		totalPings += n;
 	}
 
-	const history: DayStats[] = Array.from(dayMap.entries())
-		.map(([date, d]) => ({
-			date,
-			dau: d.devices.size,
-			versions: d.versions,
-			platforms: d.platforms
-		}))
-		.sort((a, b) => b.date.localeCompare(a.date));
-
-	const todayEntry = dayMap.get(todayDate);
-	const yesterdayEntry = dayMap.get(yesterdayDate);
+	const history = Array.from(dayMap.values()).sort((a, b) => b.date.localeCompare(a.date));
 
 	const summary: TelemetrySummary = {
-		today: todayEntry ? todayEntry.devices.size : 0,
-		yesterday: yesterdayEntry ? yesterdayEntry.devices.size : 0,
-		wau: wauDevices.size,
-		mau: mauDevices.size,
-		totalPings: rows.length,
+		today: dayMap.get(todayDate)?.dau ?? 0,
+		yesterday: dayMap.get(yesterdayDate)?.dau ?? 0,
+		wau: countDevicesSince(db, wauCutoff),
+		mau: countDevicesSince(db, mauCutoff),
+		totalPings,
 		versions: overallVersions,
 		platforms: overallPlatforms
 	};
@@ -192,4 +215,3 @@ export function cleanupOldTelemetry(
 	const res = db.delete(telemetryPings).where(sql`${telemetryPings.date} < ${cutoffDate}`).run();
 	return Number(res.changes ?? 0);
 }
-

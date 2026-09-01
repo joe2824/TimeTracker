@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { openDb, type Db } from "./db";
 import {
+	MAX_DEVICE_ID_LEN,
 	cleanupOldTelemetry,
 	getTelemetryStats,
 	recordTelemetryPing,
@@ -84,6 +85,42 @@ describe("recordTelemetryPing", () => {
 			recordTelemetryPing(db, { deviceId: "  ", version: "0.9.1", platform: "macos" }).ok
 		).toBe(false);
 	});
+
+	// Gekuerzt statt abgewiesen fielen zwei Geraete mit gleichem Anfang ueber den
+	// Eindeutigkeits-Index zu einer Zeile zusammen - eines waere aus der Zaehlung
+	// verschwunden, und beide bekaemen ein "ok" zurueck.
+	it("weist zu lange Gerätekennungen ab, statt sie zu kürzen", () => {
+		const prefix = "x".repeat(MAX_DEVICE_ID_LEN);
+		expect(
+			recordTelemetryPing(db, { deviceId: prefix + "-eins", version: "0.9.1", platform: "macos" })
+				.ok
+		).toBe(false);
+		expect(db.select().from(telemetryPings).all().length).toBe(0);
+	});
+
+	it("übernimmt nur plausible Versionen und bekannte Plattformen", () => {
+		recordTelemetryPing(db, {
+			deviceId: "dev-muell",
+			version: "<script>alert(1)</script>",
+			platform: "Marsianisch",
+			date: "2026-09-01"
+		});
+		recordTelemetryPing(db, {
+			deviceId: "dev-echt",
+			version: "0.9.3-beta.2",
+			platform: "WEB-Linux",
+			date: "2026-09-01"
+		});
+
+		const all = db.select().from(telemetryPings).all();
+		const muell = all.find((r) => r.deviceId === "dev-muell");
+		expect(muell?.version).toBe("unbekannt");
+		expect(muell?.platform).toBe("unbekannt");
+
+		const echt = all.find((r) => r.deviceId === "dev-echt");
+		expect(echt?.version).toBe("0.9.3-beta.2");
+		expect(echt?.platform).toBe("web-linux");
+	});
 });
 
 describe("getTelemetryStats", () => {
@@ -140,6 +177,62 @@ describe("getTelemetryStats", () => {
 		expect(stats.history[1].dau).toBe(2);
 		expect(stats.history[1].versions).toEqual({ "0.9.0": 2 });
 		expect(stats.history[1].platforms).toEqual({ macos: 1, linux: 1 });
+	});
+
+	// Vorher zaehlte MAU nur, was im abgefragten Verlauf lag: unter "30 Tage"
+	// stand dann die Zahl eines 14-Tage-Fensters.
+	it("rechnet WAU und MAU aus ihrem eigenen Fenster, nicht aus `days`", () => {
+		const fixedNow = new Date("2026-09-01T12:00:00Z").getTime();
+		const tag = (vorTagen: number) => toIsoDate(fixedNow - vorTagen * 86_400_000);
+
+		// Je Geraet ein Tag: heute, vor 3, vor 10 und vor 40 Tagen.
+		for (const [id, vorTagen] of [
+			["dev-heute", 0],
+			["dev-drei", 3],
+			["dev-zehn", 10],
+			["dev-vierzig", 40]
+		] as const) {
+			recordTelemetryPing(db, {
+				deviceId: id,
+				version: "0.9.1",
+				platform: "macos",
+				date: tag(vorTagen),
+				now: fixedNow
+			});
+		}
+
+		// Verlauf ueber nur 2 Tage - WAU und MAU bleiben davon unberuehrt.
+		const kurz = getTelemetryStats(db, 2, fixedNow);
+		expect(kurz.history.length).toBe(1);
+		expect(kurz.summary.totalPings).toBe(1);
+		expect(kurz.summary.wau).toBe(2); // heute + vor 3 Tagen
+		expect(kurz.summary.mau).toBe(3); // dazu vor 10 Tagen, nicht der vor 40
+
+		const lang = getTelemetryStats(db, 90, fixedNow);
+		expect(lang.summary.wau).toBe(2);
+		expect(lang.summary.mau).toBe(3);
+		expect(lang.summary.totalPings).toBe(4);
+	});
+
+	// Sieben Tage sind heute und die sechs davor - nicht acht.
+	it("zählt den siebten Tag noch zur WAU, den achten nicht mehr", () => {
+		const fixedNow = new Date("2026-09-01T12:00:00Z").getTime();
+		const tag = (vorTagen: number) => toIsoDate(fixedNow - vorTagen * 86_400_000);
+
+		recordTelemetryPing(db, {
+			deviceId: "dev-sechs",
+			version: "0.9.1",
+			platform: "macos",
+			date: tag(6)
+		});
+		recordTelemetryPing(db, {
+			deviceId: "dev-sieben",
+			version: "0.9.1",
+			platform: "macos",
+			date: tag(7)
+		});
+
+		expect(getTelemetryStats(db, 30, fixedNow).summary.wau).toBe(1);
 	});
 });
 
