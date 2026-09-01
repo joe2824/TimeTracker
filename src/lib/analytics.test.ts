@@ -29,7 +29,7 @@ beforeEach(() => {
 
 describe("sendDailyTelemetryPing", () => {
 	it("sendet Kennung, Version und Plattform an den angegebenen Server", async () => {
-		expect(await sendDailyTelemetryPing("https://tracker.example.de")).toBe(true);
+		expect(await sendDailyTelemetryPing("https://tracker.example.de")).toBe("sent");
 
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 		const [url, init] = fetchMock.mock.calls[0];
@@ -48,22 +48,36 @@ describe("sendDailyTelemetryPing", () => {
 		expect(fetchMock.mock.calls[0][0]).toBe("https://tracker.example.de/api/telemetry");
 	});
 
+	// Ohne verknuepftes Konto gibt es keine Adresse - das kann sich aber jederzeit
+	// aendern, also "spaeter nochmal" und nicht "nie".
 	it("fragt ohne Server gar nicht erst", async () => {
-		expect(await sendDailyTelemetryPing("")).toBe(false);
-		expect(await sendDailyTelemetryPing("   ")).toBe(false);
+		expect(await sendDailyTelemetryPing("")).toBe("retry");
+		expect(await sendDailyTelemetryPing("   ")).toBe("retry");
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
-	it("meldet eine abgewiesene Antwort als Fehlschlag", async () => {
+	it("wiederholt nach einer Bremse oder einem Serverfehler", async () => {
 		// 429 von der Bremse: der Tag darf danach NICHT als gemeldet gelten,
 		// sonst faellt das Geraet ersatzlos aus der Zaehlung.
 		fetchMock.mockResolvedValue({ ok: false, status: 429 });
-		expect(await sendDailyTelemetryPing("https://tracker.example.de")).toBe(false);
+		expect(await sendDailyTelemetryPing("https://tracker.example.de")).toBe("retry");
+
+		fetchMock.mockResolvedValue({ ok: false, status: 500 });
+		expect(await sendDailyTelemetryPing("https://tracker.example.de")).toBe("retry");
+	});
+
+	// Ein Server ohne TELEMETRY_KEY antwortet dauerhaft mit 404. Als "spaeter
+	// nochmal" gelesen klopfte die Anwendung endlos an.
+	it("gibt auf, wenn der Server die Meldung dauerhaft ablehnt", async () => {
+		for (const status of [401, 403, 404]) {
+			fetchMock.mockResolvedValue({ ok: false, status });
+			expect(await sendDailyTelemetryPing("https://tracker.example.de")).toBe("declined");
+		}
 	});
 
 	it("wirft nicht, wenn gar keine Verbindung zustande kommt", async () => {
 		fetchMock.mockRejectedValue(new Error("kein Netz"));
-		await expect(sendDailyTelemetryPing("https://tracker.example.de")).resolves.toBe(false);
+		await expect(sendDailyTelemetryPing("https://tracker.example.de")).resolves.toBe("retry");
 	});
 });
 
@@ -73,7 +87,7 @@ describe("sendDailyTelemetryPing ohne Schluessel", () => {
 		vi.doMock("./defaults", () => ({ APP_VERSION: "9.9.9", TELEMETRY_KEY: "" }));
 		const { sendDailyTelemetryPing: ohneSchluessel } = await import("./analytics");
 
-		expect(await ohneSchluessel("https://tracker.example.de")).toBe(false);
+		expect(await ohneSchluessel("https://tracker.example.de")).toBe("declined");
 		expect(fetchMock).not.toHaveBeenCalled();
 
 		vi.doUnmock("./defaults");

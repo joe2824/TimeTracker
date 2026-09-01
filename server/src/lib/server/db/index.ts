@@ -129,9 +129,14 @@ const MIGRATIONS: string[] = [
 		platform TEXT NOT NULL,
 		last_seen_at INTEGER NOT NULL
 	)`,
-	// Deckt auch die Abfragen nach `date` allein ab - `date` ist die erste Spalte.
-	// Ein zweiter Index nur darauf kostete beim Schreiben und braechte nichts.
-	`CREATE UNIQUE INDEX IF NOT EXISTS telemetry_pings_date_device ON telemetry_pings(date, device_id)`
+	`CREATE UNIQUE INDEX IF NOT EXISTS telemetry_pings_date_device ON telemetry_pings(date, device_id)`,
+	`CREATE INDEX IF NOT EXISTS telemetry_pings_date ON telemetry_pings(date)`,
+	// Der Index auf `date` allein ist ein Praefix des Index darueber und kostet
+	// nur noch beim Schreiben. Nachgereicht statt oben geloescht: die Liste zaehlt
+	// mit ihrer Laenge, welche Schritte eine Datenbank schon gesehen hat. Ein
+	// Eintrag weniger heisst fuer jede bestehende Datenbank "schon durch" - der
+	// naechste angehaengte Schritt wuerde dort stillschweigend uebersprungen.
+	`DROP INDEX IF EXISTS telemetry_pings_date`
 ];
 
 

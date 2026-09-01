@@ -62,13 +62,20 @@ const PING_RETRY_MS = 5 * 60 * 1000;
 let pinging = false;
 /** Wann zuletzt versucht - unabhaengig davon, ob es geklappt hat. */
 let lastPingAttempt = 0;
+/**
+ * Dieser Server nimmt keine Meldung an. Fuer den Rest des Laufs nicht mehr
+ * fragen: ein Server ohne TELEMETRY_KEY antwortet dauerhaft mit 404, und ein
+ * Buero hinter einer gemeinsamen Adresse braechte damit nur die Bremse zum
+ * Anschlagen.
+ */
+let pingDeclined = false;
 
 /**
  * Einmal je Kalendertag „aktiv" melden, sobald eine der PING_HOURS erreicht ist
  * und die App gerade laeuft.
  */
 async function dailyPing(s: Settings): Promise<void> {
-	if (pinging) return;
+	if (pinging || pingDeclined) return;
 	const now = Date.now();
 	if (!PING_HOURS.includes(zonedParts(now).hour)) return;
 	const today = fmtDate(now);
@@ -77,12 +84,12 @@ async function dailyPing(s: Settings): Promise<void> {
 	pinging = true;
 	lastPingAttempt = now;
 	try {
-		// Erst vermerken, wenn der Server den Ping wirklich angenommen hat. Wurde
-		// er abgewiesen - kein Netz, Bremse, Fehler -, bliebe das Geraet sonst fuer
+		const result = await sendDailyTelemetryPing(account.serverUrl);
+		// Erst vermerken, wenn der Server die Meldung wirklich angenommen hat.
+		// Sonst fiele ein Geraet, das gerade offline oder ausgebremst war, fuer
 		// diesen Tag ersatzlos aus der Zaehlung.
-		if (await sendDailyTelemetryPing(account.serverUrl)) {
-			await app.updateSettings({ usageLastDay: today });
-		}
+		if (result === "sent") await app.updateSettings({ usageLastDay: today });
+		else if (result === "declined") pingDeclined = true;
 	} finally {
 		pinging = false;
 	}
@@ -193,8 +200,9 @@ async function tick() {
 
 export function startWatchers(): void {
 	if (interval) return;
-	// Ein frischer Lauf darf sofort melden - die Sperre gilt innerhalb eines Laufs.
+	// Ein frischer Lauf darf sofort melden - beide Sperren gelten innerhalb eines Laufs.
 	lastPingAttempt = 0;
+	pingDeclined = false;
 	interval = setInterval(() => void tick(), 1000);
 }
 

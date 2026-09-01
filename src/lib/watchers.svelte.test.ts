@@ -93,7 +93,7 @@ beforeEach(async () => {
 	ipc.invoke.mockClear();
 	messages.send.mockClear();
 	telemetry.ping.mockReset();
-	telemetry.ping.mockResolvedValue(true);
+	telemetry.ping.mockResolvedValue("sent");
 
 	// Einen Takt ohne laufenden Timer: der setzt die modulinternen Merker zurueck,
 	// die sonst aus dem vorigen Test stehen blieben (sie leben am Modul, nicht am
@@ -347,7 +347,7 @@ describe("Tagesmeldung", () => {
 	// Vorher wurde der Tag auch dann vermerkt, wenn der Server den Ping gar nicht
 	// angenommen hatte - das Geraet fiel damit ersatzlos aus der Zaehlung.
 	it("vermerkt den Tag nicht, wenn der Ping nicht ankam", async () => {
-		telemetry.ping.mockResolvedValue(false);
+		telemetry.ping.mockResolvedValue("retry");
 		vi.setSystemTime(wallStringToTs("2026-08-24", "12:00"));
 		app.now = Date.now();
 		await tick();
@@ -359,7 +359,7 @@ describe("Tagesmeldung", () => {
 	// Der Takt kommt jede Sekunde: ohne Sperre haemmerte ein abgewiesener Ping
 	// eine volle Stunde lang sekuendlich gegen den Server.
 	it("wiederholt einen abgewiesenen Ping erst nach einer Wartezeit", async () => {
-		telemetry.ping.mockResolvedValue(false);
+		telemetry.ping.mockResolvedValue("retry");
 		const zwoelf = wallStringToTs("2026-08-24", "12:00");
 		vi.setSystemTime(zwoelf);
 		app.now = Date.now();
@@ -372,11 +372,32 @@ describe("Tagesmeldung", () => {
 		expect(telemetry.ping).toHaveBeenCalledTimes(1);
 
 		// Nach fuenf Minuten wieder erlaubt - diesmal nimmt der Server ihn an.
-		telemetry.ping.mockResolvedValue(true);
+		telemetry.ping.mockResolvedValue("sent");
 		vi.setSystemTime(zwoelf + 6 * 60_000);
 		await tick();
 		expect(telemetry.ping).toHaveBeenCalledTimes(2);
 		expect(app.settings.usageLastDay).toBe("2026-08-24");
+	});
+
+	// Ein Server ohne TELEMETRY_KEY antwortet dauerhaft mit 404. Ohne diesen
+	// Riegel klopfte jedes Geraet zu jeder Ping-Stunde alle fuenf Minuten an -
+	// hinter einer gemeinsamen Adresse bis die Bremse anschlaegt.
+	it("fragt nicht weiter, wenn der Server die Meldung ablehnt", async () => {
+		telemetry.ping.mockResolvedValue("declined");
+		const zwoelf = wallStringToTs("2026-08-24", "12:00");
+		vi.setSystemTime(zwoelf);
+		app.now = Date.now();
+		await tick();
+		expect(telemetry.ping).toHaveBeenCalledTimes(1);
+
+		// Auch nach der Wartezeit und zur naechsten Ping-Stunde kein zweiter Versuch.
+		vi.setSystemTime(zwoelf + 10 * 60_000);
+		await tick(3);
+		vi.setSystemTime(wallStringToTs("2026-08-24", "15:00"));
+		await tick(3);
+
+		expect(telemetry.ping).toHaveBeenCalledTimes(1);
+		expect(app.settings.usageLastDay).toBe("");
 	});
 
 	it("laeuft am selben Tag nur einmal", async () => {

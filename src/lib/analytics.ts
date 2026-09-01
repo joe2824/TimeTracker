@@ -28,9 +28,22 @@ export function detectPlatform(): string {
 }
 
 /**
- * Meldet diesem Server einmal, dass die Anwendung heute lief. Wirft nie; `false`
- * heisst "nicht angekommen", der Tag bleibt dann offen und wird spaeter erneut
- * versucht.
+ * Wie eine Tagesmeldung ausgegangen ist.
+ *
+ * - `sent`: angekommen, der Tag ist erledigt.
+ * - `retry`: gerade nicht - kein Netz, Bremse, Serverfehler. Spaeter nochmal.
+ * - `declined`: dieser Server will keine Meldung. Nicht wiederholen.
+ */
+export type PingResult = "sent" | "retry" | "declined";
+
+/**
+ * Antwortstatus, nach denen ein zweiter Versuch nichts anderes ergaebe: der
+ * Endpunkt ist abgeschaltet (404) oder der Schluessel passt nicht (401/403).
+ */
+const DECLINED_STATUS = new Set([401, 403, 404, 405, 410]);
+
+/**
+ * Meldet diesem Server einmal, dass die Anwendung heute lief. Wirft nie.
  *
  * Die Adresse kommt vom Aufrufer und nicht aus `account`: sonst haengt dieses
  * Modul am ganzen Abgleich-Stapel, und ueber `log.ts` haenge daran fast alle
@@ -40,11 +53,14 @@ export function detectPlatform(): string {
  * Desktop-Anwendung hat die Herkunft `tauri://localhost`, der Ping waere damit
  * CORS-pflichtig und kaeme nie an.
  */
-export async function sendDailyTelemetryPing(serverUrl: string): Promise<boolean> {
+export async function sendDailyTelemetryPing(serverUrl: string): Promise<PingResult> {
+	// Ohne Schluessel im Build weist jeder Server die Meldung ab - das aendert
+	// sich zur Laufzeit nie mehr.
+	if (!TELEMETRY_KEY) return "declined";
+	// Ohne verknuepftes Konto gibt es keinen Server, der zaehlen duerfte. Das kann
+	// sich jederzeit aendern, also "spaeter nochmal" und nicht "nie".
 	const targetServer = (serverUrl || "").trim().replace(/\/+$/, "");
-	// Ohne eigenen Server gibt es niemanden, der zaehlen duerfte. Ohne Schluessel
-	// weist der Server den Ping ohnehin ab - dann gar nicht erst fragen.
-	if (!targetServer || !TELEMETRY_KEY) return false;
+	if (!targetServer) return "retry";
 
 	try {
 		const answer = await platformFetch(`${targetServer}/api/telemetry`, {
@@ -59,9 +75,13 @@ export async function sendDailyTelemetryPing(serverUrl: string): Promise<boolean
 				platform: detectPlatform()
 			})
 		});
-		return answer.ok;
+		if (answer.ok) return "sent";
+		// Ein Server ohne TELEMETRY_KEY antwortet dauerhaft mit 404. Wer das als
+		// "spaeter nochmal" liest, klopft bis in alle Ewigkeit an - und bringt
+		// hinter einer gemeinsamen Adresse irgendwann die Bremse zum Anschlagen.
+		return DECLINED_STATUS.has(answer.status) ? "declined" : "retry";
 	} catch {
-		// Kein Netz, kein Server, abgewiesen - alles derselbe Fall: nicht gezaehlt.
-		return false;
+		// Kein Netz, kein Server erreichbar: das kann morgen anders sein.
+		return "retry";
 	}
 }

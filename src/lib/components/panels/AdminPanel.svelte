@@ -40,6 +40,8 @@
 	const STATS_DAYS = 30;
 	/** So viele Marken passen nebeneinander, ohne die Seite zu sprengen. */
 	const MAX_BADGES = 12;
+	/** So viele Tage stehen einzeln in der Liste. */
+	const MAX_HISTORY_ROWS = 14;
 	let stats = $state<ServerStats | null>(null);
 
 	/** Haeufigstes zuerst, und nur so viele, wie sich anzeigen lassen. */
@@ -399,10 +401,10 @@
 					{#if stats.history.length > 0}
 						<div class="space-y-2">
 							<Label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-								Tagesverlauf ({stats.history.length} Tage)
+								Tagesverlauf ({Math.min(stats.history.length, MAX_HISTORY_ROWS)} Tage)
 							</Label>
 							<div class="rounded-lg border divide-y overflow-hidden text-xs">
-								{#each stats.history.slice(0, 14) as day}
+								{#each stats.history.slice(0, MAX_HISTORY_ROWS) as day}
 									<div class="flex items-center justify-between p-2.5 hover:bg-muted/30">
 										<div class="font-mono font-medium">{day.date}</div>
 										<div class="flex items-center gap-3">
