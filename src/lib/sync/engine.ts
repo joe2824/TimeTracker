@@ -386,7 +386,7 @@ export class SyncEngine {
 			id: item.id,
 			kind: change.kind,
 			// Gebunden wird an die Fassung, die daraus WIRD - der Server zaehlt beim
-			// Annehmen up. Andernfalls passte die Bindung nach dem Ablegen nicht mehr.
+			// Annehmen hoch. Andernfalls passte die Bindung nach dem Ablegen nicht mehr.
 			rev: rev + 1
 		});
 		return {

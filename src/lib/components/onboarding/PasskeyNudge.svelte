@@ -1,6 +1,6 @@
 <script lang="ts">
 	// Bewusst kein Toast: der ist weg, bevor jemand ihn liest. Deshalb ein
-	// Streifen, der stehen bleibt, bis der Passkey sitzt oder dismissed ist.
+	// Streifen, der stehen bleibt, bis der Passkey angelegt oder weggeklickt ist.
 	import { Button } from "$lib/components/ui/button";
 	import { toast } from "svelte-sonner";
 	import { account } from "$lib/sync/account.svelte";

@@ -1,5 +1,5 @@
 <script lang="ts">
-	// Der erste Bildschirm im Browser: signIn oder Konto create.
+	// Der erste Bildschirm im Browser: anmelden oder Konto anlegen.
 	//
 	// Der Startschritt ist zugleich die oeffentliche Seite - Landing traegt sie,
 	// die Anmeldekarte reicht diese Komponente als Snippet hinein.
@@ -114,7 +114,7 @@
 	 */
 
 	/**
-	 * Ein Konto create - ohne vorher nach einem Einladungscode zu fragen.
+	 * Ein Konto anlegen - ohne vorher nach einem Einladungscode zu fragen.
 	 *
 	 * Ob einer noetig ist, weiss nur der Server, und die meisten Installationen
 	 * brauchen keinen. Ein Feld, das fast immer leer bleibt, steht sonst als
@@ -198,7 +198,7 @@
 		try {
 			const key = await unlockWithPhrase(serverUrl, inputValue);
 			// Kann der Passkey PRF, fehlte aber die passende Verpackung: jetzt eine
-			// create. Ohne das verlangte dieses Gerät die 24 Wörter bei JEDER
+			// anlegen. Ohne das verlangte dieses Gerät die 24 Wörter bei JEDER
 			// Anmeldung erneut - obwohl der Passkey den Tresor allein öffnen könnte.
 			if (prfValue) {
 				await addPasskeyWrap(serverUrl, key, passkeyId, prfValue).catch((e) =>
@@ -320,7 +320,7 @@
 			<Card.Root class="w-full shadow-md border-border/80 bg-card">
 				<Card.Header class="pb-3 border-b">
 					<Card.Title class="text-base font-semibold tracking-tight">
-						{linkValue.fresh ? "Konto create" : "Loslegen"}
+						{linkValue.fresh ? "Konto anlegen" : "Loslegen"}
 					</Card.Title>
 					<Card.Description class="text-xs leading-relaxed">
 						{#if linkValue.fresh}
@@ -336,7 +336,7 @@
 						<div class="space-y-2.5">
 							<Button size="lg" class="w-full h-11 font-medium gap-2 shadow-xs" disabled={running} onclick={() => create(invite)}>
 								<KeyRoundIcon class="size-4.5" />
-								<span>{running ? "Legt an…" : "Konto create"}</span>
+								<span>{running ? "Legt an…" : "Konto anlegen"}</span>
 							</Button>
 							<button
 								type="button"
@@ -661,7 +661,7 @@
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (inviteOpen = false)}>Abbrechen</Button>
 			<Button disabled={running || !invite.trim()} onclick={() => create(invite)}>
-				{running ? "Legt an…" : "Konto create"}
+				{running ? "Legt an…" : "Konto anlegen"}
 			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
