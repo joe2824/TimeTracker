@@ -57,6 +57,13 @@ Dazugekommen nach dem Merge mit `main`:
   hatte die App zugesperrt, waehrend das Band daneben "du kannst schon
   arbeiten" sagte. Der Abschluss ("Synchronisiert") kommt nur, wo vorher auch
   "wird geladen" stand; sonst blitzte er jede Backfill-Runde auf.
+- **Historie laeuft weiter, statt am Herzschlag zu haengen.** Nach einer Runde
+  mit ausgeschoepftem Budget stiess nichts die naechste an - die naechste
+  Portion kam erst mit dem Herzschlag, also 1000 Saetze alle fuenf Minuten, und
+  so lange blieben Sicherung und Monatsauswahl gesperrt. `syncNow` plant jetzt
+  bei `backfilling` selbst die naechste Runde (`BACKFILL_GAP_MS`).
+- **Das Hinweisband steht durchgehend**, solange `backfilling` gilt. An
+  `syncProgress` allein haengend blinkte es im Takt der Portionen.
 - **Nachlauf gibt Prio-Monate aus.** Ein Geraet, das vor dem gestuften Abruf
   verknuepft wurde, hatte kein `priority`. Der `RESYNC_GENERATION`-Nachlauf
   setzte seinen Stand auf 0 und zog danach die ganze Historie aeltestes zuerst

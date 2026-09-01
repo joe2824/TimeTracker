@@ -70,17 +70,19 @@ let pinging = false;
 /** Wann zuletzt versucht - unabhaengig davon, ob es geklappt hat. */
 let lastPingAttempt = 0;
 /**
- * Wie oft heute vergeblich versucht wurde, und an welchem Tag.
+ * Wie oft in dieser Ping-Stunde vergeblich versucht wurde - und in welcher.
  *
- * Nicht jeder Fehlschlag heilt: ein falscher Schluessel oder eine abgelaufene
- * Anmeldung bleibt, wie er ist. Ohne Deckel klopfte ein solches Geraet den
- * ganzen Tag weiter und braechte hinter einer gemeinsamen Adresse die Bremse
- * zum Anschlagen. Am naechsten Tag faengt die Zaehlung von vorn an - so heilt
- * es, sobald jemand den Schluessel richtigstellt oder sich neu anmeldet.
+ * Nicht jeder Fehlschlag heilt: ein falscher Schluessel bleibt falsch. Ohne
+ * Deckel klopfte ein solches Geraet den ganzen Tag weiter und braechte hinter
+ * einer gemeinsamen Adresse die Bremse zum Anschlagen.
+ *
+ * Je Stunde und nicht je Tag: wer um 9 Uhr ohne Netz war, hat das Budget sonst
+ * in zwanzig Minuten verbraucht und faellt aus der Zaehlung, obwohl er um 12
+ * laengst wieder online ist.
  */
-let failedPingDay = "";
+let failedPingSlot = "";
 let failedPingCount = 0;
-/** So viele vergebliche Versuche pro Tag, dann Ruhe. */
+/** So viele vergebliche Versuche je Ping-Stunde, dann Ruhe bis zur naechsten. */
 const MAX_PING_FAILURES = 5;
 /**
  * Der Server, der die Meldung abgelehnt hat - dort nicht mehr fragen. Ein
@@ -98,14 +100,19 @@ let declinedServer: string | null = null;
  */
 async function dailyPing(s: Settings): Promise<void> {
 	if (pinging) return;
+	// Ohne verknuepftes Konto gibt es keinen Server, der zaehlen duerfte - und
+	// nichts, was als Fehlversuch gelten duerfte. Wer sich um 10 Uhr verknuepft,
+	// soll um 12 gezaehlt werden.
 	const server = account.serverUrl;
-	if (server && server === declinedServer) return;
+	if (!server || server === declinedServer) return;
 	const now = Date.now();
-	if (!PING_HOURS.includes(zonedParts(now).hour)) return;
+	const hour = zonedParts(now).hour;
+	if (!PING_HOURS.includes(hour)) return;
 	const today = fmtDate(now);
 	if (s.usageLastDay === today) return;
-	if (failedPingDay !== today) {
-		failedPingDay = today;
+	const slot = `${today}:${hour}`;
+	if (failedPingSlot !== slot) {
+		failedPingSlot = slot;
 		failedPingCount = 0;
 	}
 	if (failedPingCount >= MAX_PING_FAILURES) return;

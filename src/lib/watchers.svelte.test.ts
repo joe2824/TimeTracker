@@ -436,8 +436,8 @@ describe("Tagesmeldung", () => {
 	});
 
 	// Nicht jeder Fehlschlag heilt: ein falscher Schluessel bleibt falsch. Ohne
-	// Deckel klopfte so ein Geraet den ganzen Tag alle fuenf Minuten weiter.
-	it("hoert nach fuenf vergeblichen Versuchen fuer heute auf", async () => {
+	// Deckel klopfte so ein Geraet alle fuenf Minuten weiter.
+	it("hoert nach fuenf vergeblichen Versuchen in dieser Stunde auf", async () => {
 		accountMock.sendUsagePing.mockResolvedValue("retry");
 		const zwoelf = wallStringToTs("2026-08-24", "12:00");
 
@@ -449,6 +449,46 @@ describe("Tagesmeldung", () => {
 
 		expect(accountMock.sendUsagePing).toHaveBeenCalledTimes(5);
 		expect(app.settings.usageLastDay).toBe("");
+	});
+
+	// Das Budget gilt je Ping-Stunde. Sonst brennt eine halbe Stunde ohne Netz um
+	// 9 Uhr den ganzen Tag ab, obwohl das Geraet um 12 laengst wieder da ist.
+	it("bekommt zur naechsten Ping-Stunde ein neues Budget", async () => {
+		accountMock.sendUsagePing.mockResolvedValue("retry");
+		const neun = wallStringToTs("2026-08-24", "09:00");
+		for (let i = 0; i < 7; i++) {
+			vi.setSystemTime(neun + i * 6 * 60_000);
+			await tickPing();
+		}
+		expect(accountMock.sendUsagePing).toHaveBeenCalledTimes(5);
+
+		// Wieder online, naechste Ping-Stunde.
+		accountMock.sendUsagePing.mockResolvedValue("sent");
+		vi.setSystemTime(wallStringToTs("2026-08-24", "12:00"));
+		await tickPing();
+
+		expect(accountMock.sendUsagePing).toHaveBeenCalledTimes(6);
+		expect(app.settings.usageLastDay).toBe("2026-08-24");
+	});
+
+	// Ohne verknuepftes Konto gibt es nichts zu melden - und nichts, was das
+	// Budget verbrauchen duerfte. Wer sich um 10 Uhr verknuepft, zaehlt um 12.
+	it("verbraucht ohne verknuepftes Konto kein Budget", async () => {
+		accountMock.serverUrl = "";
+		const neun = wallStringToTs("2026-08-24", "09:00");
+		for (let i = 0; i < 7; i++) {
+			vi.setSystemTime(neun + i * 6 * 60_000);
+			await tickPing();
+		}
+		expect(accountMock.sendUsagePing).not.toHaveBeenCalled();
+
+		// Jetzt verknuepft, dieselbe Ping-Stunde.
+		accountMock.serverUrl = "https://tracker.example.de";
+		vi.setSystemTime(neun + 8 * 6 * 60_000);
+		await tickPing();
+
+		expect(accountMock.sendUsagePing).toHaveBeenCalledTimes(1);
+		expect(app.settings.usageLastDay).toBe("2026-08-24");
 	});
 
 	it("laeuft am selben Tag nur einmal", async () => {

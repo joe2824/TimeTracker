@@ -94,6 +94,9 @@ const REMOTE_MONTH_LOOKAHEAD = 12;
 /** Der langsame Takt, wo es keinen Weckruf-Kanal gibt. */
 const HEARTBEAT_MS = 5 * 60 * 1000;
 
+/** Pause zwischen zwei Portionen Historie. */
+const BACKFILL_GAP_MS = 2000;
+
 /**
  * Hochzaehlen, sobald eine neue Datensatzart hinzukommt.
  *
@@ -284,10 +287,17 @@ class AccountState {
 			},
 			onProgress: (p) => {
 				this.syncProgress = p.phase === "idle" ? null : p;
+				if (p.phase !== "pulling") return;
 				// Die Historie laeuft im Hintergrund - dafuer steht das Hinweisband
 				// oben. Ein Modal davor sperrt die App zu, waehrend daneben steht,
 				// man koenne schon arbeiten.
-				if (p.phase === "pulling" && p.pulled >= 20 && !p.background) {
+				if (p.background) {
+					// Ab hier kommt nur noch Historie: der vorgezogene Teil steht, das
+					// Modal darf weg - auch wenn der Durchgang noch weiterlaeuft.
+					if (this.bulkSync?.phase === "pulling") this.#finishBulkSync();
+					return;
+				}
+				if (p.pulled >= 20) {
 					this.bulkSync = { phase: "pulling", pulled: p.pulled };
 					if (isTauri()) {
 						toast.loading(`Lade Daten (${p.pulled} Einträge)…`, { id: "sync-bulk" });
@@ -460,6 +470,31 @@ class AccountState {
 		return found;
 	}
 
+	/**
+	 * Das Lade-Modal abschliessen: kurz "fertig", dann weg.
+	 *
+	 * Nur wo vorher auch "wird geladen" stand - der Backfill zaehlt in
+	 * `result.pulled` mit und liesse den Abschluss sonst jede Runde aufblitzen.
+	 */
+	#finishBulkSync(): void {
+		// Steht der Abschluss schon, laeuft nur das Ende des Durchgangs hier ein
+		// zweites Mal durch - Meldung und Toast bleiben, wo sie sind.
+		if (this.bulkSync?.phase === "done") return;
+		if (!this.bulkSync) {
+			toast.dismiss("sync-bulk");
+			return;
+		}
+		const pulled = this.bulkSync.pulled;
+		this.bulkSync = { phase: "done", pulled };
+		// Im Browser zeigt das große Modal den Abschluss an – Toast nur in Tauri.
+		if (isTauri()) {
+			toast.success(`${pulled} Einträge synchronisiert.`, { id: "sync-bulk" });
+		}
+		setTimeout(() => {
+			if (this.bulkSync?.phase === "done") this.bulkSync = null;
+		}, 1500);
+	}
+
 	async syncNow(): Promise<void> {
 		if (!this.#engine || this.state !== "connected") return;
 		this.phase = "running";
@@ -474,24 +509,12 @@ class AccountState {
 				if (result.pushed || result.pulled) {
 					logInfo("Abgeglichen", result);
 				}
-				// Abschluss nur melden, wo vorher auch geladen gemeldet wurde: der
-				// Backfill zaehlt in `result.pulled` mit, wuerde also jede Runde ein
-				// Modal aufblitzen lassen.
-				if (this.bulkSync?.phase === "pulling") {
-					const pulled = this.bulkSync.pulled;
-					this.bulkSync = { phase: "done", pulled };
-					// Im Browser zeigt das große Modal den Abschluss an – Toast nur in Tauri.
-					if (isTauri()) {
-						toast.success(`${pulled} Einträge synchronisiert.`, { id: "sync-bulk" });
-					}
-					setTimeout(() => {
-						if (this.bulkSync?.phase === "done") {
-							this.bulkSync = null;
-						}
-					}, 1500);
-				} else {
-					toast.dismiss("sync-bulk");
-				}
+				this.#finishBulkSync();
+				// Die Historie kommt gedeckelt - fuenf Seiten je Runde. Ohne Anstoss
+				// laege die naechste Portion beim Herzschlag: alle fuenf Minuten
+				// tausend Saetze, und so lange bleiben Sicherung und Monatsauswahl
+				// gesperrt.
+				if (this.backfilling) this.syncSoon(BACKFILL_GAP_MS);
 			} else {
 				if (this.bulkSync?.phase === "pulling") this.bulkSync = null;
 				toast.dismiss("sync-bulk");

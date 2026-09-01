@@ -568,14 +568,16 @@
 			</div>
 		</header>
 
-		{#if account.phase === "running" && account.syncProgress && account.syncProgress.pulled >= 20}
+		<!-- Waehrend des Backfills steht das Band durchgehend: der Abruf kommt in
+		     Portionen mit Pausen dazwischen, sonst blinkte es im Sekundentakt. -->
+		{#if account.backfilling || (account.phase === "running" && account.syncProgress && account.syncProgress.pulled >= 20)}
 			<div class="bg-primary/10 border-b border-primary/20 text-primary px-4 py-1.5 text-xs text-center font-medium flex items-center justify-center gap-2 animate-in fade-in duration-150">
 				<RefreshCwIcon class="size-3.5 animate-spin shrink-0" />
 				<span>
 					{#if account.backfilling}
 						Ältere Monate werden im Hintergrund geladen – du kannst schon arbeiten.
 					{:else}
-						Daten werden vom Server geladen ({account.syncProgress.pulled} Einträge)…
+						Daten werden vom Server geladen ({account.syncProgress?.pulled ?? 0} Einträge)…
 					{/if}
 				</span>
 			</div>
