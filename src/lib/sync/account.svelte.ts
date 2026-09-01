@@ -164,6 +164,16 @@ class AccountState {
 	#wait: AbortController | null = null;
 	/** Wurde der Stand gerade zurueckgesetzt? Siehe #rewindForNewKinds. */
 	#rewound = false;
+	/**
+	 * Wird beim Abmelden aufgerufen - von aussen registriert, um einen Kreis-Import
+	 * zu vermeiden (prefetch importiert account, account darf prefetch nicht importieren).
+	 */
+	#logoutHook: (() => void) | null = null;
+
+	/** Einen Haken fuer das Abmelden setzen. Derzeit: prefetch-Puffer leeren. */
+	setLogoutHook(fn: () => void): void {
+		this.#logoutHook = fn;
+	}
 
 	get linked(): boolean {
 		return this.state === "connected";
@@ -1115,6 +1125,10 @@ class AccountState {
 		app.setMonthFetcher(null);
 		this.#api = null;
 		this.#key = null;
+		// Den Prefetch-Puffer leeren: er gehoert dem abgemeldeten Konto. Sonst
+		// koennte ein schneller Re-Login in denselben 30-Sekunden-Fenstern Name,
+		// E-Mail und Geraete-Labels des vorigen Nutzers sehen.
+		this.#logoutHook?.();
 		const info = await loadDevice();
 		if (info) {
 			// Nur die Kontodaten loeschen, nicht die Geraetekennung: die soll

@@ -157,3 +157,8 @@ export function prefetchMonth(month: string): Promise<unknown> {
 	if (account.phase === "offline") return Promise.resolve(null);
 	return warm(`month:${month}`, () => app.ensureMonth(month)).catch(() => null);
 }
+
+// Beim Abmelden den Puffer leeren: er gehoert dem vorigen Konto. Dieser Aufruf
+// steht hier statt in account.svelte.ts, weil dort kein Import von prefetch
+// erlaubt ist (prefetch importiert seinerseits account - Kreis).
+account.setLogoutHook(invalidateAll);
