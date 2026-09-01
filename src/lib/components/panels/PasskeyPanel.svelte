@@ -7,6 +7,7 @@
 	import { Label } from "$lib/components/ui/label";
 	import { toast } from "svelte-sonner";
 	import { account } from "$lib/sync/account.svelte";
+	import { ACCOUNT_KEY, invalidate, warm } from "$lib/prefetch";
 	import type { Passkey } from "$lib/sync/api";
 	import { fmtDateHuman } from "$lib/time";
 	import { isTauri } from "$lib/platform/env";
@@ -26,9 +27,16 @@
 	let editingPasskeyId = $state<string | null>(null);
 	let editingPasskeyName = $state("");
 
-	async function loadPasskeys() {
+	/**
+	 * Die Liste steckt schon in `accountInfo` - eine Anfrage fuer Konto, Geraete
+	 * und Passkeys statt drei. `fresh` umgeht den Puffer, nachdem sich etwas
+	 * geaendert hat.
+	 */
+	async function loadPasskeys(fresh = false) {
 		try {
-			passkeys = await account.passkeys();
+			if (fresh) invalidate(ACCOUNT_KEY);
+			const info = await warm(ACCOUNT_KEY, () => account.accountInfo());
+			passkeys = info?.passkeys ?? [];
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Passkeys nicht abrufbar");
 		} finally {
@@ -45,7 +53,7 @@
 		try {
 			const { prfAvailable } = await account.addPasskey(newPasskeyName.trim() || "Weiterer Passkey");
 			newPasskeyName = "";
-			await loadPasskeys();
+			await loadPasskeys(true);
 			if (prfAvailable) {
 				toast.success("Passkey hinzugefügt. Er öffnet die Daten allein.");
 			} else {
@@ -69,7 +77,7 @@
 		try {
 			await account.removePasskey(target.id);
 			passkeyToRemove = null;
-			await loadPasskeys();
+			await loadPasskeys(true);
 			toast.success("Passkey entfernt.");
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Entfernen fehlgeschlagen");
@@ -80,7 +88,7 @@
 		try {
 			await account.renamePasskey(id, editingPasskeyName.trim());
 			editingPasskeyId = null;
-			await loadPasskeys();
+			await loadPasskeys(true);
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Umbenennen fehlgeschlagen");
 		}
@@ -94,7 +102,7 @@
 		repairing = p.id;
 		try {
 			await account.repairPasskeyWrap(p.id);
-			await loadPasskeys();
+			await loadPasskeys(true);
 			// Wer bei der Nachfrage einen anderen Passkey nimmt, hat diesen nicht repariert.
 			const ok = passkeys.find((k) => k.id === p.id)?.hasWrap === true;
 			toast[ok ? "success" : "error"](

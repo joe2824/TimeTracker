@@ -9,6 +9,7 @@
 	import PairingCode from "$lib/components/onboarding/PairingCode.svelte";
 	import { toast } from "svelte-sonner";
 	import { account } from "$lib/sync/account.svelte";
+	import { ACCOUNT_KEY, invalidate, warm } from "$lib/prefetch";
 	import { ApiError } from "$lib/sync/api";
 	import { app } from "$lib/app.svelte";
 	import { isPairingCode, normalizePairingCode } from "$lib/crypto/vault";
@@ -156,9 +157,10 @@
 	let devices = $state<DeviceItem[]>([]);
 	let isDevicesLoaded = $state(false);
 
-	async function loadDevices() {
+	async function loadDevices(fresh = false) {
 		try {
-			const info = await account.accountInfo();
+			if (fresh) invalidate(ACCOUNT_KEY);
+			const info = await warm(ACCOUNT_KEY, () => account.accountInfo());
 			devices = info ? info.devices.filter((d) => !d.revokedAt) : [];
 		} catch (e) {
 			toast.error(formatError(e, "Geräte nicht abrufbar"));
@@ -179,7 +181,7 @@
 		try {
 			await account.revokeDevice(target.id);
 			deviceToDisconnect = null;
-			await loadDevices();
+			await loadDevices(true);
 			toast.success(`„${target.label}" ist getrennt.`);
 		} catch (e) {
 			toast.error(formatError(e, "Trennen fehlgeschlagen"));

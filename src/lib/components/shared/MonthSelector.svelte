@@ -2,6 +2,7 @@
 	import { app } from "$lib/app.svelte";
 	import { listEntryMonths } from "$lib/store";
 	import { monthKey, monthLabel } from "$lib/time";
+	import { onIntent, prefetchMonth } from "$lib/prefetch";
 	import { Button } from "$lib/components/ui/button";
 	import * as ButtonGroup from "$lib/components/ui/button-group";
 	import * as Select from "$lib/components/ui/select";
@@ -35,8 +36,12 @@
 
 	/** Einen Monat vor/zurück blättern – auch in (noch) leere Monate. */
 	function shiftMonth(delta: number) {
+		month = neighbour(delta);
+	}
+
+	function neighbour(delta: number): string {
 		const [y, m] = month.split("-").map(Number);
-		month = monthKey(new Date(y, m - 1 + delta, 1).getTime());
+		return monthKey(new Date(y, m - 1 + delta, 1).getTime());
 	}
 </script>
 
@@ -50,6 +55,7 @@
 				aria-label="Vorheriger Monat"
 				title="Vorheriger Monat"
 				onclick={() => shiftMonth(-1)}
+				{...onIntent(() => prefetchMonth(neighbour(-1)))}
 			>
 				<ChevronLeftIcon />
 			</Button>
@@ -61,7 +67,9 @@
 				</Select.Trigger>
 				<Select.Content>
 					{#each months as m (m)}
-						<Select.Item value={m} label={monthLabel(m)}>{monthLabel(m)}</Select.Item>
+						<Select.Item value={m} label={monthLabel(m)} {...onIntent(() => prefetchMonth(m))}>
+							{monthLabel(m)}
+						</Select.Item>
 					{/each}
 				</Select.Content>
 			</Select.Root>
@@ -71,6 +79,7 @@
 				aria-label="Nächster Monat"
 				title="Nächster Monat"
 				onclick={() => shiftMonth(1)}
+				{...onIntent(() => prefetchMonth(neighbour(1)))}
 			>
 				<ChevronRightIcon />
 			</Button>

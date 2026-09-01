@@ -7,6 +7,7 @@
 	import { Label } from "$lib/components/ui/label";
 	import { toast } from "svelte-sonner";
 	import { account } from "$lib/sync/account.svelte";
+	import { BACKUPS_KEY, INVITES_KEY, invalidate, warm } from "$lib/prefetch";
 	import type { BackupInfo, Invite } from "$lib/sync/api";
 	import { fmtDateHuman } from "$lib/time";
 	import { inviteLink } from "$lib/invite";
@@ -80,11 +81,16 @@
 		copyToClipboard(code, (active) => (isCodeCopied = active));
 
 	// ---------- API Calls ----------
-	async function loadData() {
+	/** `fresh` umgeht den Puffer - nach einer Aenderung soll wirklich gefragt werden. */
+	async function loadData(fresh = false) {
 		try {
+			if (fresh) {
+				invalidate(INVITES_KEY);
+				invalidate(BACKUPS_KEY);
+			}
 			const [invitesRes, backupsRes] = await Promise.all([
-				account.invites(),
-				account.backups().catch(() => [])
+				warm(INVITES_KEY, () => account.invites()),
+				warm(BACKUPS_KEY, () => account.backups()).catch(() => [])
 			]);
 			invites = invitesRes.invites;
 			isEnvConfigured = invitesRes.envInvitesConfigured;
@@ -105,7 +111,7 @@
 
 	async function refreshAll() {
 		isRefreshing = true;
-		await loadData();
+		await loadData(true);
 	}
 
 	async function handleToggleRegistration() {
@@ -152,7 +158,7 @@
 			latestInviteCode = created.code;
 			inviteNote = "";
 			inviteDays = "";
-			await loadData();
+			await loadData(true);
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Ausstellen fehlgeschlagen");
 		} finally {
@@ -164,7 +170,7 @@
 		try {
 			await account.revokeInvite(code);
 			if (latestInviteCode === code) latestInviteCode = "";
-			await loadData();
+			await loadData(true);
 			toast.success("Einladung zurückgezogen.");
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Zurückziehen fehlgeschlagen");
@@ -176,7 +182,7 @@
 		try {
 			const backup = await account.createBackup();
 			toast.success(`Sicherung erfolgreich erstellt: ${backup.name}`);
-			await loadData();
+			await loadData(true);
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Sicherung fehlgeschlagen");
 		} finally {
@@ -192,7 +198,7 @@
 			const res = await account.restoreBackup(targetName);
 			toast.success(`Sicherung ${res.restored} erfolgreich wiederhergestellt.`);
 			backupToRestore = null;
-			await loadData();
+			await loadData(true);
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Wiederherstellung fehlgeschlagen");
 		} finally {
@@ -205,7 +211,7 @@
 		try {
 			await account.deleteBackup(name);
 			toast.success(`Sicherungsdatei gelöscht.`);
-			await loadData();
+			await loadData(true);
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Löschen fehlgeschlagen");
 		} finally {

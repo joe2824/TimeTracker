@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from "svelte";
 	import { cn } from "$lib/utils";
 	import { capabilities, isTauri } from "$lib/platform/env";
 	import { account } from "$lib/sync/account.svelte";
@@ -22,8 +21,23 @@
 	import SystemTab from "./settings/SystemTab.svelte";
 	import AboutTab from "./settings/AboutTab.svelte";
 
-	onMount(() => {
-		void account.accountInfo().catch(() => {});
+	interface Props {
+		/** Ob der Einstellungs-Tab gerade sichtbar ist. */
+		active?: boolean;
+	}
+	let { active = false }: Props = $props();
+
+	/**
+	 * Einmal geoeffnet, bleibt aufgebaut.
+	 *
+	 * bits-ui baut alle Tab-Inhalte mit auf. Ohne diese Sperre fragten die
+	 * Unterbereiche schon beim Programmstart Konto, Passkeys, Einladungen und
+	 * Sicherungen ab - vier Anfragen fuer eine Ansicht, die vielleicht niemand
+	 * oeffnet. Beim Zeigen auf den Tab laedt `prefetchAccount` vor.
+	 */
+	let opened = $state(false);
+	$effect(() => {
+		if (active) opened = true;
 	});
 
 	type SettingsTabId =
@@ -104,6 +118,8 @@
 		isMobileMenuOpen = false;
 	}
 </script>
+
+{#if opened}
 
 <div class="flex flex-col gap-5 lg:flex-row lg:items-start lg:gap-8">
 	<!-- Mobile Burger Navigation Bar (nur auf mobilen Bildschirmen) -->
@@ -211,3 +227,4 @@
 		{/if}
 	</div>
 </div>
+{/if}

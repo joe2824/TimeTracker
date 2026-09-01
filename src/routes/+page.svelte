@@ -26,6 +26,7 @@
 	import { applyShortcuts } from "$lib/shortcuts";
 	import { startWatchers, stopWatchers, watchers } from "$lib/watchers.svelte";
 	import { entriesFocus } from "$lib/entriesFocus.svelte";
+	import { onIntent, prefetchSettings } from "$lib/prefetch";
 	import * as Tabs from "$lib/components/ui/tabs";
 	import SyncHint from "$lib/components/shared/SyncHint.svelte";
 	import TimerIcon from "@lucide/svelte/icons/timer";
@@ -491,7 +492,7 @@
 					<Tabs.Trigger value="activities" title="Aktivitäten">
 						<LayersIcon /><span class="hidden sm:inline">Aktivitäten</span>
 					</Tabs.Trigger>
-					<Tabs.Trigger value="settings" title="Einstellungen">
+					<Tabs.Trigger value="settings" title="Einstellungen" {...onIntent(prefetchSettings)}>
 						<SettingsIcon /><span class="hidden sm:inline">Einstellungen</span>
 					</Tabs.Trigger>
 				</Tabs.List>
@@ -552,7 +553,13 @@
 		{#if account.phase === "laeuft" && account.syncProgress && account.syncProgress.pulled >= 20}
 			<div class="bg-primary/10 border-b border-primary/20 text-primary px-4 py-1.5 text-xs text-center font-medium flex items-center justify-center gap-2 animate-in fade-in duration-150">
 				<RefreshCwIcon class="size-3.5 animate-spin shrink-0" />
-				<span>Daten werden vom Server geladen ({account.syncProgress.pulled} Einträge)…</span>
+				<span>
+					{#if account.backfilling}
+						Ältere Monate werden im Hintergrund geladen – du kannst schon arbeiten.
+					{:else}
+						Daten werden vom Server geladen ({account.syncProgress.pulled} Einträge)…
+					{/if}
+				</span>
 			</div>
 		{/if}
 
@@ -581,7 +588,7 @@
 				<ActivitiesPanel />
 			</Tabs.Content>
 			<Tabs.Content value="settings" class="mt-4">
-				<SettingsPanel />
+				<SettingsPanel active={tab === "settings"} />
 			</Tabs.Content>
 		</div>
 	</Tabs.Root>
