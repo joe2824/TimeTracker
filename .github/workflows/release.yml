@@ -1,5 +1,12 @@
 name: Release
 
+# Ein Tag, ein Gate, dann alles was ausgeliefert wird.
+#
+# Vorher liefen fuer denselben Tag zwei Ablaeufe nebeneinander (dieser und
+# docker.yml), jeder mit einer eigenen, unterschiedlich strengen Testrunde. Der
+# Docker-Ablauf musste danach bis zu 30 Minuten darauf warten, dass dieser hier
+# das Release anlegt. Jetzt haengen Desktop-Build und Abbild am selben `verify`
+# und die Notiz einfach an beiden.
 on:
   push:
     tags:
@@ -7,54 +14,78 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}-server
 
 jobs:
-  # Gate: ein rotes Testergebnis darf gar nicht erst zum Build führen. Vorher ging
-  # ein Release raus, ohne dass je ein Test lief.
-  test:
+  # Ein rotes Testergebnis darf gar nicht erst zu einem Build fuehren - weder zu
+  # einem Installer noch zu einem Abbild, das jemand auf seinen Server zieht.
+  verify:
+    uses: ./.github/workflows/verify.yml
+
+  # Tag und Abbildname stehen an einer Stelle, damit Desktop-Build, Abbild und
+  # Notiz nicht jeweils ihre eigene Fassung davon rechnen.
+  target:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.w.outputs.tag }}
+      stable: ${{ steps.w.outputs.stable }}
+      image: ${{ steps.w.outputs.image }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run check
-      - run: npm test
+      - name: Version bestimmen
+        id: w
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ github.ref_name }}"
 
-  build:
-    needs: test
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: windows-latest
-            args: ''
+          if [ "${{ github.ref_type }}" != "tag" ]; then
+            echo "::error::Dieser Ablauf gehoert an einen Tag. Ausgeloest wurde er auf '${TAG}'."
+            exit 1
+          fi
 
-    runs-on: ${{ matrix.platform }}
+          # Vorabversion? Erkennbar am Tag: v0.8.0-beta.1 vs. v0.8.0.
+          case "$TAG" in
+            *-beta.*) STABLE=false ;;
+            *)        STABLE=true  ;;
+          esac
 
+          # ghcr.io nimmt nur Kleinbuchstaben. `docker/metadata-action` rechnet
+          # das von allein um, cosign und die Beglaubigung nicht - die bekommen
+          # den Namen woertlich und scheiterten an dem grossen T in TimeTracker.
+          #
+          # tr statt ${IMAGE,,}: die Klammerform gibt es erst ab bash 4, und ein
+          # "bad substitution" waere unter `set -e` ein stiller Abbruch.
+          IMAGE_LC="$(printf '%s' "$IMAGE" | tr '[:upper:]' '[:lower:]')"
+
+          {
+            echo "tag=$TAG"
+            echo "stable=$STABLE"
+            echo "image=$IMAGE_LC"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Release $TAG (stabil: $STABLE) als $IMAGE_LC."
+
+  # Die Desktop-Anwendung. Legt das Release an - daran haengt alles Weitere.
+  desktop:
+    needs: [verify, target]
+    runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0 # volle History + Tags für das Changelog
 
-      # Vorabversion? Erkennbar am Tag: v0.8.0-beta.1 vs. v0.8.0.
-      - name: Detect channel
-        id: channel
-        shell: bash
-        run: |
-          case "${{ github.ref_name }}" in
-            *-beta.*) echo "beta=true" >> "$GITHUB_OUTPUT" ;;
-            *)        echo "beta=false" >> "$GITHUB_OUTPUT" ;;
-          esac
-
       - name: Generate changelog
         id: changelog
         shell: bash
+        env:
+          TAG: ${{ needs.target.outputs.tag }}
+          STABLE: ${{ needs.target.outputs.stable }}
         run: |
-          TAG="${{ github.ref_name }}"
           if [ -f "RELEASE_NOTES.md" ]; then
             body="$(cat RELEASE_NOTES.md)"$'\n\n'"Installer/Bundles siehe Assets unten."
           else
@@ -62,10 +93,10 @@ jobs:
             # listete es nur, was seit der letzten Beta dazukam, und alles davor
             # taucht in keinen Release-Notes je auf. Betas vergleichen gegen den
             # direkten Vorgänger, egal welcher Kanal.
-            if [ "${{ steps.channel.outputs.beta }}" = "true" ]; then
-              MATCH=(--match 'v*')
-            else
+            if [ "$STABLE" = "true" ]; then
               MATCH=(--match 'v*' --exclude '*-beta.*')
+            else
+              MATCH=(--match 'v*')
             fi
             PREV=$(git describe --tags --abbrev=0 "${MATCH[@]}" "${TAG}^" 2>/dev/null || echo "")
             if [ -n "$PREV" ]; then RANGE="${PREV}..${TAG}"; else RANGE="${TAG}"; fi
@@ -118,7 +149,7 @@ jobs:
           workspaces: './src-tauri -> target'
 
       - name: Install frontend dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
@@ -130,18 +161,22 @@ jobs:
           # Repository-Variable, kein Secret: die Adresse steht ohnehin in jedem
           # Build. Leer lassen heisst, dass die Anwendung danach fragt.
           DEFAULT_SERVER: ${{ vars.DEFAULT_SERVER }}
+          # Ausweis der anonymen Tagesmeldung. Muss zu dem TELEMETRY_KEY passen,
+          # der auf dem Server gesetzt ist - sonst weist der Server sie ab. Leer
+          # lassen heisst: die Anwendung meldet nichts.
+          TELEMETRY_KEY: ${{ secrets.TELEMETRY_KEY }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'TimeTracker ${{ github.ref_name }}'
+          tagName: ${{ needs.target.outputs.tag }}
+          releaseName: 'TimeTracker ${{ needs.target.outputs.tag }}'
           releaseBody: ${{ steps.changelog.outputs.body }}
           releaseDraft: false
-          prerelease: ${{ steps.channel.outputs.beta == 'true' }}
+          prerelease: ${{ needs.target.outputs.stable == 'false' }}
           # Betas nur als NSIS-Installer: WiX/MSI nimmt keine Vorabversionen an
           # ("0.8.0-beta.1" ist keine gültige MSI-Version), der Build bräche sonst
           # genau am Bundle-Schritt ab. Das Update-Artefakt (.nsis.zip + Signatur)
           # entsteht trotzdem – es hängt an createUpdaterArtifacts, nicht am
           # Bundle-Ziel; "updater" ist in Tauri v2 kein gültiges Ziel mehr.
-          args: ${{ steps.channel.outputs.beta == 'true' && '--bundles nsis' || matrix.args }}
+          args: ${{ needs.target.outputs.stable == 'false' && '--bundles nsis' || '' }}
 
       # Das Manifest des Beta-Kanals liegt an einem Release mit festem Tag `beta`
       # und wird bei JEDEM Build überschrieben – auch bei einem stabilen. So
@@ -154,9 +189,9 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.target.outputs.tag }}
         run: |
           set -euo pipefail
-          TAG="${{ github.ref_name }}"
           gh release download "$TAG" --pattern latest.json --dir manifest --clobber
           if ! gh release view beta >/dev/null 2>&1; then
             gh release create beta \
@@ -166,3 +201,59 @@ jobs:
           fi
           gh release upload beta manifest/latest.json --clobber
           echo "Beta-Manifest zeigt jetzt auf ${TAG}."
+
+  # Das Server-Abbild. Laeuft neben dem Desktop-Build, nicht dahinter: beide
+  # haengen nur am selben `verify`.
+  image:
+    needs: [verify, target]
+    uses: ./.github/workflows/docker-build.yml
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    with:
+      tag: ${{ needs.target.outputs.tag }}
+      stable: ${{ needs.target.outputs.stable == 'true' }}
+      image: ${{ needs.target.outputs.image }}
+
+  # Den Startbefehl an das Release haengen. Beide Seiten muessen fertig sein:
+  # das Release entsteht im Desktop-Build, der Abschnitt beschreibt das Abbild.
+  release-note:
+    needs: [target, desktop, image]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Startbefehl anhaengen
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.target.outputs.tag }}
+          IMAGE_LC: ${{ needs.target.outputs.image }}
+        run: |
+          set -euo pipefail
+          BODY="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body -q .body)"
+
+          # Die Marke im Text macht den Schritt wiederholbar: ein zweiter Lauf
+          # desselben Tags haengt den Abschnitt sonst ein zweites Mal an.
+          case "$BODY" in
+            *'<!-- docker-quickstart -->'*)
+              echo "Abschnitt steht schon im Release."
+              exit 0
+              ;;
+          esac
+
+          # Der Text liegt als Vorlage daneben - im Ablauf selbst waere er ein
+          # Heredoc in einem YAML-Blockskalar, und jede Zeile ohne Einrueckung
+          # bricht dort aus dem Block aus.
+          sed -e "s|{{IMAGE}}|${IMAGE_LC}|g" \
+              -e "s|{{VERSION}}|${TAG#v}|g" \
+              -e "s|{{REPO}}|${GITHUB_REPOSITORY}|g" \
+              .github/release-docker.md > abschnitt.md
+
+          { printf '%s\n\n' "$BODY"; cat abschnitt.md; } > notiz.md
+
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notiz.md
+          echo "Startbefehl an $TAG angehaengt."

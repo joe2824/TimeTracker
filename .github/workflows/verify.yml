@@ -1,0 +1,108 @@
+name: Verify
+
+# Das gemeinsame Pruefwerk. Kein eigener Ausloeser - CI und Release rufen es
+# ueber `workflow_call` auf.
+#
+# Vorher stand die Pruefung dreimal getrennt da: einmal in ci.yml, verkuerzt in
+# release.yml und noch einmal anders in docker.yml. Das Release ging damit durch
+# ein SCHWAECHERES Gate als ein gewoehnlicher Push nach main - ohne Server-Tests
+# und ohne Build. Genau die Luecke, durch die ein Server, der nicht einmal
+# kompiliert, bis auf main kam.
+on:
+  workflow_call:
+
+jobs:
+  code:
+    name: Typen, Tests, Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run check
+
+      - name: Tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      # Die PWA aus derselben Quelle wie die Desktop-Anwendung. Bricht dieser
+      # Schritt, ist etwas eingezogen, das nur in der Desktop-Huelle laeuft.
+      - name: PWA bauen
+        run: npm run build:web
+
+      - name: Server pruefen
+        run: npm run server:check
+
+      # Der Bau MUSS vor den Server-Tests laufen: der Durchstich in api.test.ts
+      # startet den GEBAUTEN Server und spricht ihn ueber echtes HTTP an.
+      - name: Server bauen
+        run: npm run server:build
+
+      - name: Server-Tests
+        run: npm run server:test
+
+  # Die Kontozeitzone haengt nicht an der des Geraets - das ist eine Zusage,
+  # keine Vermutung. Geprueft wird sie, indem dieselbe Suite unter Zonen laeuft,
+  # die weit weg liegen: +14, -11 und eine mit Viertelstunden-Versatz. Die
+  # Kontozone bleibt dabei Berlin (siehe src/lib/testing/pinZone.ts), das
+  # Ergebnis muss also unveraendert sein.
+  #
+  # Eigene Jobs statt einer Schleife im Job oben: seriell vervierfachte das die
+  # Wartezeit, nebeneinander kostet es nur Laeufer.
+  timezones:
+    name: Tests (${{ matrix.tz }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        tz: [Pacific/Kiritimati, Pacific/Midway, Australia/Eucla]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Tests
+        run: npm test
+        env:
+          TZ: ${{ matrix.tz }}
+
+  # Die Rust-Seite. Auf windows-latest und nicht ubuntu: der riskanteste
+  # Rust-Code der App steht in #[cfg(windows)]-Bloecken (enforce_single_instance
+  # mit CreateMutexW/FindWindowW, die Icon-Groessen ueber GetSystemMetrics). Ein
+  # Linux-Laeufer schneidet genau die heraus und meldete gruen, ohne sie je
+  # gesehen zu haben. Dazu kommt, dass Tauri auf ubuntu erst eine Reihe von
+  # webkit2gtk-Paketen braucht - hier faellt der Schritt weg.
+  #
+  # Ohne `cargo fmt --check`: die Formatierung im Projekt ist von Hand gesetzt
+  # (kurze Ketten bleiben einzeilig), rustfmt wuerde sie umbrechen wollen.
+  rust:
+    name: Rust
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Clippy
+        working-directory: src-tauri
+        run: cargo clippy --all-targets -- -D warnings

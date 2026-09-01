@@ -47,7 +47,7 @@ Das Abbild ist signiert und trägt Stückliste (SBOM) und Herkunft bei sich:
 
 ```bash
 cosign verify {{IMAGE}}:{{VERSION}} \
-  --certificate-identity-regexp '^https://github.com/{{REPO}}/\.github/workflows/docker\.yml@' \
+  --certificate-identity-regexp '^https://github.com/{{REPO}}/\.github/workflows/docker-build\.yml@' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
 gh attestation verify oci://{{IMAGE}}:{{VERSION}} --repo {{REPO}}
