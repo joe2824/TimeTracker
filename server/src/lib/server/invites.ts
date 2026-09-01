@@ -154,18 +154,3 @@ export const consumeCode = consumeInviteCode;
 export function isAdminUser(db: DbLike, userId: string): boolean {
 	return db.select().from(users).where(eq(users.id, userId)).get()?.isAdmin === true;
 }
-
-// ---------- Backward Compatibility Aliases ----------
-export const neuerCode = generateInviteCode;
-export const erstelleInvite = createInvite;
-export const listeInvites = listInvites;
-export const zieheInviteZurueck = revokeInvite;
-export const istRegistrierungOffen = isRegistrationOpen;
-export const setzeRegistrierungOffen = setRegistrationOpen;
-export const envInvitesDeaktiviert = isEnvInvitesDisabled;
-export const setzeEnvInvitesDeaktiviert = setEnvInvitesDisabled;
-export const gueltigerCode = isValidInviteCode;
-export const entwerteCode = consumeInviteCode;
-export const istVerwalter = isAdminUser;
-
-

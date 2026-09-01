@@ -49,8 +49,6 @@ export function isLocked(secretKey: string, opts: LimitOptions, nowMs = Date.now
 	return Math.min(opts.burst, b.tokens + (nowMs - b.last) * rate) < 1;
 }
 
-export const isBlocked = isLocked;
-
 /** Volle Eimer wegwerfen - sonst waechst die Karte mit jeder gesehenen Adresse. */
 export function cleanupLimits(nowMs = Date.now()): void {
 	for (const [k, b] of tokenBucket) {
@@ -63,14 +61,6 @@ export function cleanupLimits(nowMs = Date.now()): void {
 export function resetLimitsForTests(): void {
 	tokenBucket.clear();
 }
-
-// Backward compatibility aliases
-export const nimmVersuch = (k: string, opts: LimitOptions, now = Date.now()) => {
-	const r = takeAttempt(k, opts, now);
-	return { erlaubt: r.allowed, retryAfter: r.retryAfter };
-};
-export const istGesperrt = isLocked;
-export const raeumeLimits = cleanupLimits;
 
 
 
