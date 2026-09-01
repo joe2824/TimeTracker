@@ -67,6 +67,38 @@ describe("reconcile", () => {
 		expect(r.missingHours).toBeCloseTo(7.67);
 	});
 
+	it("meldet einen Tag Zeitausgleich nicht als zu viel erfasste Zeit", () => {
+		// An einem abgefeierten Tag stempelt niemand: LOGA meldet 0 Stunden. Zaehlt
+		// der Zeitausgleich hier als erfasste Zeit, steht an JEDEM solchen Tag ein
+		// "zu viel" - eine Falschmeldung, und zwar bei jedem einzelnen.
+		const timeOff = { ...absence("2026-01-12", 1), timeOff: true };
+		const r = reconcile([day({ firstIn: null, lastOut: null, hours: 0 })], [timeOff], OPTS);
+		expect(r.days[0].tracked).toBe(0);
+		expect(r.days[0].status).toBe("free");
+		expect(r.over).toBe(0);
+	});
+
+	it("rechnet an einem halben Tag Zeitausgleich nur die gearbeitete Zeit", () => {
+		// Vormittags gearbeitet, nachmittags abgefeiert: LOGA kennt genau die
+		// gestempelten 3,75 h - mehr darf hier nicht stehen.
+		const timeOff = { ...absence("2026-01-12", 0.5), timeOff: true };
+		const r = reconcile(
+			[day({ firstIn: "08:00", lastOut: "11:45", hours: 3.75 })],
+			[entry("2026-01-12", "08:00", "11:45"), timeOff],
+			OPTS
+		);
+		expect(r.days[0].tracked).toBeCloseTo(3.75, 3);
+		expect(r.days[0].status).toBe("ok");
+	});
+
+	it("laesst einen gewoehnlichen Urlaubstag unangetastet", () => {
+		// Urlaub steht in LOGA mit dem Tagessoll - der Abgleich muss ihn weiter
+		// als erfasst sehen.
+		const r = reconcile([day({ firstIn: null, lastOut: null, hours: 7.5 })], [absence("2026-01-12")], OPTS);
+		expect(r.days[0].tracked).toBe(7.5);
+		expect(r.days[0].status).toBe("ok");
+	});
+
 	it("meldet einen teilweise erfassten Tag", () => {
 		const r = reconcile([day()], [entry("2026-01-12", "09:10", "13:00")], OPTS);
 		expect(r.days[0].status).toBe("partial");

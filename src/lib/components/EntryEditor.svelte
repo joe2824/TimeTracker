@@ -168,6 +168,10 @@
 		let othersAbsent = 0;
 		for (const e of app.monthEntries(draft.date.slice(0, 7))) {
 			if (e.id === draft.id || fmtDate(e.startTs) !== draft.date) continue;
+			// Zeitausgleich bleibt draussen - genau wie in `reconcile`. Er ist keine
+			// erfasste Zeit, und als "abwesend" gerechnet zoege er das Ziel dieses
+			// Eintrags faelschlich gegen null.
+			if (app.isTimeOff(e)) continue;
 			const isAbs = app.isAbsenceId(e.activityId);
 			// Gekappt wie in `reconcile`: ein vergessener offener Eintrag zaehlte sonst
 			// bis jetzt weiter, und der Hinweis hier widerspräche dem Badge daneben.
