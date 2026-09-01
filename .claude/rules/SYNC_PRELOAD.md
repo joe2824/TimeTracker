@@ -1,6 +1,7 @@
 # Sync: Vorladen statt Voll-Download — Plan
 
-Status: **grösstenteils umgesetzt** (Stand 2026-09-01), siehe "Was steht" unten.
+Status: **umgesetzt** (Stand 2026-09-02), siehe "Was steht" unten. Offen sind
+nur noch zwei Nebenpunkte.
 Diese Datei liegt im Repo, damit die Arbeit auf einer anderen Maschine
 (git pull) genau hier weitergehen kann.
 
@@ -19,15 +20,36 @@ Umgesetzt in `cc02f7b`, `ec89991`, `dcab713`:
 - Schritt 8 (`reload` liest nicht mehr alles; Sicherung waehrend des Backfills
   abgelehnt)
 - Schritt 9 (Hinweisband)
-- Schritt 10 (Tests: Server 181, Client 806)
+- Schritt 10 (Tests)
 - Schritt 11 (`src/lib/prefetch.ts`, Monatsauswahl und Einstellungs-Tab)
+
+Dazugekommen nach dem Merge mit `main`:
+
+- **Schritt 7, Client-Teil.** `account.remoteMonths()` holt die Kennungen und
+  rechnet zurueck, zu welchen Monaten es Daten gibt (fuenf Jahre, sechzig
+  HMACs). Der MonthSelector fragt nur, solange `backfilling` steht - danach
+  liegt ohnehin alles auf der Platte.
+- **Prefetch-Bremse, zweite Haelfte.** Laeuft ein Monat auf Zuruf, nimmt die
+  Runde fuer die Historie das Budget 0. Ausgesetzt wird nur, nicht gewartet:
+  warten hiesse, dass sich beide gegenseitig aufhalten.
+- **Konfliktweg im Push.** Der Konflikt wird jetzt aus `conflicts[].current`
+  aufgeloest statt ueber einen ungedeckelten Backlog-Abruf. Der alte Weg holte
+  auf einem Konto mit Jahren an Daten die ganze Historie in EINEM Zug - und
+  riss damit genau das Budget ein, das `#pullStaged` setzt.
+- **Nachlauf fuer neue Datensatzarten** (`RESYNC_GENERATION`, aus dem
+  Report-Abgleich). Er arbeitet auf dem ganzen `SyncState`, nicht auf einer
+  Zahl: der vorgezogene Teil zaehlt seinen eigenen Stand mit und zeigte sonst
+  hinter Datensaetze, die gerade erst nachkommen.
+- **Deutsche Bestandsnamen** sind weg - die Rename-Wellen auf `main` haben sie
+  mitgenommen. `kontoKennung`/`bestandGehoertZu` stehen nur noch als
+  Lese-Fallback fuer alte `device.json` in `store.ts`.
 
 Zwei Dinge kamen unterwegs dazu, weil sie sonst gebrochen waeren:
 
 - `#apply` laeuft durch eine Kette. Zwei gleichzeitige Abrufe wuerden sonst
   dieselbe Monatsdatei lesen, aendern und zurueckschreiben.
 - `sync()` gab bei laufendem Durchgang sofort `null` zurueck. `#persistLink`
-  feuert `void abgleichMitNachlese()`, ein danebenstehendes `await syncNow()`
+  feuert `void syncWithFollowUp()`, ein danebenstehendes `await syncNow()`
   war damit sofort fertig, ohne dass abgeglichen war. Jetzt haengt sich der
   zweite Aufruf an den laufenden. Ein Test prueft nicht mehr auf `null`.
 
@@ -37,35 +59,33 @@ Tabs.Trigger).
 
 ## Was noch offen ist
 
-- **Schritt 7, Client-Teil.** `Api.buckets()` steht, aber `MonthSelector`
-  benutzt es noch nicht. Waehrend des Backfills fehlen aeltere Monate im
-  Dropdown - die Pfeile gehen weiter, und ueber die laedt der Prefetch auch
-  richtig nach. Zu tun: `bucketFor` fuer die letzten ~60 Monate rechnen und
-  gegen die Liste vom Server halten.
 - **`listEntryYears`** (`src/lib/store.ts`) liest weiterhin jede Monatsdatei
-  nur zum Zaehlen. Wird nur im Jahr-loeschen-Dialog gebraucht.
-- **Prefetch-Bremse nur halb.** `prefetchMonth` haelt sich bei `offline`
-  zurueck; das Backlog-Budget pausiert waehrend eines Prefetch noch nicht.
-- **Konfliktweg im Push.** `#pushAll` loest einen Konflikt weiterhin ueber
-  `#pullBacklog(..., Infinity)` auf, also ungedeckelt. Auf einem frisch
-  verknuepften Geraet kommt das praktisch nicht vor (Ids sind zufaellig, die
-  Outbox ist leer). Sauberer waere, den Datensatz aus `conflicts[].current` zu
-  nehmen - den schickt der Server ohnehin mit.
-- **Deutsche Bestandsnamen** (siehe unten).
+  nur zum Zaehlen. Entschaerft, aber nicht behoben: `SettingsPanel` montiert
+  `SystemTab` erst bei aktivem Tab (`{#if activeTabId === "system"}`), der
+  Aufruf faellt also nicht mehr beim Start an. Wer die Zahlen exakt braucht,
+  kommt ums Lesen nicht herum - eine Zaehlung im Dateinamen waere der einzige
+  Weg, und der ist es nicht wert.
+- **Backup waehrend des Backfills** (`src/lib/backup.ts`): der Knopf ist
+  gesperrt, aber ein Backup, das VOR dem Backfill lief, ist stillschweigend
+  unvollstaendig.
 
 ## Namenskonvention (gilt fuer alles hier)
 
 Funktionsnamen, Variablen, Felder, Typen, Dateinamen: **immer Englisch**.
 Deutsch nur in Kommentaren, UI-Texten und Commit-Messages.
 
-Der Bestand ist gemischt (`#unbekanntBeimServer`, `monatVon`, `beruehrt`,
-`#merkeMonat`, `abgleichMitNachlese`, `#warteschleife` in `src/lib/sync/`) —
-das ist Altlast, kein Vorbild. Bestehende Namen NICHT nebenbei umbenennen,
-das gehoert in einen eigenen Commit (siehe "Offene Nebenpunkte").
+Der Bestand war gemischt (`#unbekanntBeimServer`, `monatVon`, `beruehrt`,
+`#merkeMonat`, `abgleichMitNachlese`, `#warteschleife`); das ist erledigt.
+Ausnahme mit Absicht: `kontoKennung` und `bestandGehoertZu` in `store.ts` —
+so heissen die Felder in alten `device.json`, sie werden nur noch gelesen.
 
-## Befund
+Wenn doch wieder etwas Deutsches auftaucht: NICHT nebenbei umbenennen, das
+gehoert in einen eigenen Commit — sonst verdeckt der Diff die eigentliche
+Aenderung.
 
-Die Infrastruktur ist da, der Client nutzt sie nicht:
+## Befund (Ausgangslage, historisch)
+
+Die Infrastruktur war da, der Client nutzte sie nicht:
 
 - `records.bucket` = HMAC(vaultKey, `bucket|YYYY-MM`), `src/lib/crypto/vault.ts:96`.
   Deterministisch — der Client kann den Bucket jedes Monats selbst rechnen.
@@ -213,7 +233,7 @@ Zusaetzlich `priority = { seq: 0, months: [currentMonth, previousMonth] }`.
 Bestandsgeraete mit `seq > 0` kennen bereits alles, bekommen kein `priority`
 und verhalten sich unveraendert. Keine Migration noetig.
 
-### 7. Monatsauswahl waehrend des Backfills
+### 7. Monatsauswahl waehrend des Backfills — UMGESETZT
 
 `src/lib/components/shared/MonthSelector.svelte:27` listet nur lokale Dateien.
 Waehrend des Backfills fehlen aeltere Monate im Dropdown (die Pfeile gehen
@@ -341,9 +361,8 @@ Schritt 8, 9, 10 laufen nebenher mit.
 
 ## Offene Nebenpunkte (eigene Commits)
 
-- Deutsche Bestandsnamen aufraeumen: `#unbekanntBeimServer`, `monatVon`,
-  `beruehrt`, `geladen`, `#merkeMonat`, `abgleichMitNachlese`, `#warteschleife`,
-  `kontoKennung`, `bestandGehoertZu`. Reines Umbenennen, getrennt vom Umbau —
-  sonst verdeckt der Diff die eigentliche Aenderung.
-- `src/lib/backup.ts:46` — unvollstaendiges Backup waehrend des Backfills.
-- `src/lib/store.ts:372` — `listEntryYears` liest jede Monatsdatei nur zum Zaehlen.
+- ~~Deutsche Bestandsnamen aufraeumen~~ — erledigt durch die Rename-Wellen auf
+  `main`.
+- `src/lib/backup.ts` — ein Backup, das vor dem Backfill lief, ist
+  unvollstaendig, ohne dass es jemand merkt.
+- `src/lib/store.ts` — `listEntryYears` liest jede Monatsdatei nur zum Zaehlen.
