@@ -45,9 +45,15 @@ const accountMock = vi.hoisted(() => ({ serverUrl: "https://tracker.example.de" 
 vi.mock("./sync/account.svelte", () => ({ account: accountMock }));
 
 const { app } = await import("./app.svelte");
-const { resolveIdle, resolveLongTimer, startWatchers, stopWatchers, watchers } = await import(
-	"./watchers.svelte"
-);
+const {
+	resolveIdle,
+	resolveLongTimer,
+	startUsagePing,
+	startWatchers,
+	stopUsagePing,
+	stopWatchers,
+	watchers
+} = await import("./watchers.svelte");
 
 const P1 = "p1";
 const P2 = "p2";
@@ -80,6 +86,11 @@ async function tick(n = 1) {
 	await vi.advanceTimersByTimeAsync(1000 * n);
 }
 
+/** Die Tagesmeldung laeuft im Minutentakt, nicht im Sekundentakt. */
+async function tickPing(n = 1) {
+	await vi.advanceTimersByTimeAsync(60_000 * n);
+}
+
 beforeEach(async () => {
 	resetFakeFs();
 	vi.useFakeTimers();
@@ -103,6 +114,7 @@ beforeEach(async () => {
 	// die sonst aus dem vorigen Test stehen blieben (sie leben am Modul, nicht am
 	// Zustand). Erst danach beginnt der eigentliche Fall.
 	startWatchers();
+	startUsagePing();
 	await tick();
 	ipc.invoke.mockClear();
 	messages.send.mockClear();
@@ -110,6 +122,7 @@ beforeEach(async () => {
 
 afterEach(() => {
 	stopWatchers();
+	stopUsagePing();
 	vi.useRealTimers();
 });
 
@@ -335,7 +348,7 @@ describe("Tagesmeldung", () => {
 	it("laeuft zu einer festen Stunde und merkt sich den Tag", async () => {
 		vi.setSystemTime(wallStringToTs("2026-08-24", "12:00"));
 		app.now = Date.now();
-		await tick();
+		await tickPing();
 
 		expect(telemetry.ping).toHaveBeenCalledTimes(1);
 		expect(app.settings.usageLastDay).toBe("2026-08-24");
@@ -343,7 +356,7 @@ describe("Tagesmeldung", () => {
 
 	it("laeuft ausserhalb der festen Stunden nicht", async () => {
 		// STILLE_STUNDE ist 10 Uhr.
-		await tick(3);
+		await tickPing(3);
 		expect(telemetry.ping).not.toHaveBeenCalled();
 		expect(app.settings.usageLastDay).toBe("");
 	});
@@ -354,7 +367,7 @@ describe("Tagesmeldung", () => {
 		telemetry.ping.mockResolvedValue("retry");
 		vi.setSystemTime(wallStringToTs("2026-08-24", "12:00"));
 		app.now = Date.now();
-		await tick();
+		await tickPing();
 
 		expect(telemetry.ping).toHaveBeenCalledTimes(1);
 		expect(app.settings.usageLastDay).toBe("");
@@ -367,18 +380,18 @@ describe("Tagesmeldung", () => {
 		const zwoelf = wallStringToTs("2026-08-24", "12:00");
 		vi.setSystemTime(zwoelf);
 		app.now = Date.now();
-		await tick();
+		await tickPing();
 		expect(telemetry.ping).toHaveBeenCalledTimes(1);
 
 		// Eine Minute spaeter: noch gesperrt.
 		vi.setSystemTime(zwoelf + 60_000);
-		await tick(3);
+		await tickPing(3);
 		expect(telemetry.ping).toHaveBeenCalledTimes(1);
 
 		// Nach fuenf Minuten wieder erlaubt - diesmal nimmt der Server ihn an.
 		telemetry.ping.mockResolvedValue("sent");
 		vi.setSystemTime(zwoelf + 6 * 60_000);
-		await tick();
+		await tickPing();
 		expect(telemetry.ping).toHaveBeenCalledTimes(2);
 		expect(app.settings.usageLastDay).toBe("2026-08-24");
 	});
@@ -391,14 +404,14 @@ describe("Tagesmeldung", () => {
 		const zwoelf = wallStringToTs("2026-08-24", "12:00");
 		vi.setSystemTime(zwoelf);
 		app.now = Date.now();
-		await tick();
+		await tickPing();
 		expect(telemetry.ping).toHaveBeenCalledTimes(1);
 
 		// Auch nach der Wartezeit und zur naechsten Ping-Stunde kein zweiter Versuch.
 		vi.setSystemTime(zwoelf + 10 * 60_000);
-		await tick(3);
+		await tickPing(3);
 		vi.setSystemTime(wallStringToTs("2026-08-24", "15:00"));
-		await tick(3);
+		await tickPing(3);
 
 		expect(telemetry.ping).toHaveBeenCalledTimes(1);
 		expect(app.settings.usageLastDay).toBe("");
@@ -411,13 +424,13 @@ describe("Tagesmeldung", () => {
 		const zwoelf = wallStringToTs("2026-08-24", "12:00");
 		vi.setSystemTime(zwoelf);
 		app.now = Date.now();
-		await tick();
+		await tickPing();
 		expect(telemetry.ping).toHaveBeenCalledTimes(1);
 
 		accountMock.serverUrl = "https://anderer.example.de";
 		telemetry.ping.mockResolvedValue("sent");
 		vi.setSystemTime(zwoelf + 6 * 60_000);
-		await tick();
+		await tickPing();
 
 		expect(telemetry.ping).toHaveBeenLastCalledWith("https://anderer.example.de");
 		expect(app.settings.usageLastDay).toBe("2026-08-24");
@@ -426,12 +439,12 @@ describe("Tagesmeldung", () => {
 	it("laeuft am selben Tag nur einmal", async () => {
 		vi.setSystemTime(wallStringToTs("2026-08-24", "12:00"));
 		app.now = Date.now();
-		await tick();
+		await tickPing();
 		const saved = { ...app.settings };
 		const update = vi.spyOn(app, "updateSettings");
 
 		vi.setSystemTime(wallStringToTs("2026-08-24", "15:00"));
-		await tick();
+		await tickPing();
 
 		expect(app.settings.usageLastDay).toBe(saved.usageLastDay);
 		expect(update).not.toHaveBeenCalled();

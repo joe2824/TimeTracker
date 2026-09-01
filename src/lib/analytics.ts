@@ -38,10 +38,14 @@ export function detectPlatform(): string {
 export type PingResult = "sent" | "retry" | "declined";
 
 /**
- * Antwortstatus, nach denen ein zweiter Versuch nichts anderes ergaebe: der
- * Endpunkt ist abgeschaltet (404) oder der Schluessel passt nicht (401/403).
+ * Antwortstatus, nach denen ein zweiter Versuch nichts anderes ergaebe: den
+ * Endpunkt gibt es nicht (404/405/410) oder die Herkunft ist abgelehnt (403).
+ *
+ * 401 gehoert NICHT dazu: seit die PWA sich mit ihrer Sitzung ausweist, heisst
+ * das auch "gerade abgemeldet" - und wer sich wieder anmeldet, soll wieder
+ * zaehlen.
  */
-const DECLINED_STATUS = new Set([401, 403, 404, 405, 410]);
+const DECLINED_STATUS = new Set([403, 404, 405, 410]);
 
 /**
  * Meldet diesem Server einmal, dass die Anwendung heute lief. Wirft nie.
@@ -60,6 +64,10 @@ const DECLINED_STATUS = new Set([401, 403, 404, 405, 410]);
  * Versuch.
  */
 export async function sendDailyTelemetryPing(serverUrl: string): Promise<PingResult> {
+	// In der Desktop-Huelle gibt es keine Sitzung, die den Schluessel ersetzen
+	// koennte. Ohne ihn hat die Meldung keinen Ausweis und braucht gar nicht erst
+	// loszulaufen.
+	if (!TELEMETRY_KEY && isTauri()) return "declined";
 	// Ohne verknuepftes Konto gibt es keinen Server, der zaehlen duerfte. Das kann
 	// sich jederzeit aendern, also "spaeter nochmal" und nicht "nie".
 	const targetServer = (serverUrl || "").trim().replace(/\/+$/, "");

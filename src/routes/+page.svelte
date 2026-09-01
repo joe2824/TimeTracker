@@ -24,7 +24,13 @@
 	import { scheduleReminders, scheduleReportReminder } from "$lib/reminders";
 	import { installNotificationClickListener } from "$lib/platform/notify";
 	import { applyShortcuts } from "$lib/shortcuts";
-	import { startWatchers, stopWatchers, watchers } from "$lib/watchers.svelte";
+	import {
+		startUsagePing,
+		startWatchers,
+		stopUsagePing,
+		stopWatchers,
+		watchers
+	} from "$lib/watchers.svelte";
 	import { entriesFocus } from "$lib/entriesFocus.svelte";
 	import { onIntent, prefetchSettings } from "$lib/prefetch";
 	import * as Tabs from "$lib/components/ui/tabs";
@@ -260,6 +266,8 @@
 			whatsNew.checkOnStartup(app.showOnboarding);
 			scheduleReminders();
 			scheduleReportReminder();
+			// Vor der Desktop-Weiche: die Tagesmeldung gilt auch im Browser.
+			startUsagePing();
 
 			// Alles Weitere gibt es nur in der Desktop-Huelle: Tray-Ereignisse,
 			// globale Hotkeys, Leerlauf-Erkennung, Autostart und die Update-Suche.
@@ -334,6 +342,7 @@
 			clearInterval(updateTimer);
 			updateTimer = undefined;
 			stopWatchers();
+			stopUsagePing();
 			account.dispose();
 			app.dispose();
 		};

@@ -51,12 +51,20 @@ async function reportIt(title: string, body: string) {
 const PING_HOURS = [9, 12, 15, 17];
 
 /**
- * Abstand zwischen zwei Versuchen am selben Tag.
- *
- * Der Tick kommt jede Sekunde: ohne diese Sperre haemmerte ein Geraet, dessen
- * Ping abgewiesen wurde, eine volle Stunde lang sekuendlich gegen den Server.
+ * Wie oft nachgesehen wird, ob eine PING_HOURS erreicht ist. Die Stunde ist die
+ * feinste Angabe, die hier zaehlt - sekuendlich nachzusehen braucht niemand.
+ */
+const PING_CHECK_MS = 60 * 1000;
+
+/**
+ * Abstand zwischen zwei Versuchen am selben Tag. Ohne diese Sperre klopfte ein
+ * Geraet, dessen Meldung abgewiesen wurde, eine volle Stunde lang im Takt der
+ * Pruefung gegen den Server.
  */
 const PING_RETRY_MS = 5 * 60 * 1000;
+
+/** Der Zeitgeber der Tagesmeldung - eigener Lauf, siehe startUsagePing(). */
+let pingInterval: ReturnType<typeof setInterval> | null = null;
 
 /** Laeuft gerade eine Tagesmeldung? Der Tick kommt jede Sekunde wieder. */
 let pinging = false;
@@ -109,8 +117,6 @@ function resetFlags() {
 async function tick() {
 	const s = app.settings;
 	const running = app.running;
-
-	void dailyPing(s);
 
 	// --- Live-Tray-Tooltip (nur bei Änderung senden) ---
 	const tooltip = running
@@ -202,17 +208,35 @@ async function tick() {
 	}
 }
 
+/**
+ * Die Waechter, die es nur in der Desktop-Huelle gibt: Leerlauf, Auto-Stop,
+ * Pomodoro, Tray-Tooltip.
+ */
 export function startWatchers(): void {
 	if (interval) return;
-	// Ein frischer Lauf darf sofort melden - beide Sperren gelten innerhalb eines Laufs.
-	lastPingAttempt = 0;
-	declinedServer = null;
 	interval = setInterval(() => void tick(), 1000);
 }
 
 export function stopWatchers(): void {
 	if (interval) clearInterval(interval);
 	interval = null;
+}
+
+/**
+ * Die Tagesmeldung. Eigener Lauf, weil sie als einzige auch im Browser gilt -
+ * startWatchers() steht hinter der Desktop-Weiche, und dort kam sie nie an.
+ */
+export function startUsagePing(): void {
+	if (pingInterval) return;
+	// Ein frischer Lauf darf sofort melden - beide Sperren gelten innerhalb eines Laufs.
+	lastPingAttempt = 0;
+	declinedServer = null;
+	pingInterval = setInterval(() => void dailyPing(app.settings), PING_CHECK_MS);
+}
+
+export function stopUsagePing(): void {
+	if (pingInterval) clearInterval(pingInterval);
+	pingInterval = null;
 }
 
 /** Nutzer hat den Leerlauf-Dialog entschieden. */

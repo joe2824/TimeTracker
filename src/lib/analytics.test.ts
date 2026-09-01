@@ -72,10 +72,17 @@ describe("sendDailyTelemetryPing", () => {
 	// Ein Server ohne TELEMETRY_KEY antwortet dauerhaft mit 404. Als "spaeter
 	// nochmal" gelesen klopfte die Anwendung endlos an.
 	it("gibt auf, wenn der Server die Meldung dauerhaft ablehnt", async () => {
-		for (const status of [401, 403, 404]) {
+		for (const status of [403, 404, 405, 410]) {
 			fetchMock.mockResolvedValue({ ok: false, status });
 			expect(await sendDailyTelemetryPing("https://tracker.example.de")).toBe("declined");
 		}
+	});
+
+	// 401 heisst seit dem Sitzungs-Weg auch "gerade abgemeldet". Wer sich wieder
+	// anmeldet, soll wieder zaehlen - also kein Dauerzustand.
+	it("gibt bei 401 nicht auf", async () => {
+		fetchMock.mockResolvedValue({ ok: false, status: 401 });
+		expect(await sendDailyTelemetryPing("https://tracker.example.de")).toBe("retry");
 	});
 
 	it("wirft nicht, wenn gar keine Verbindung zustande kommt", async () => {
@@ -102,16 +109,19 @@ describe("sendDailyTelemetryPing ohne Schluessel", () => {
 		vi.resetModules();
 	});
 
-	// Weder Schluessel noch Sitzung: der Server antwortet 401, und dabei bleibt es.
-	it("gibt auf, wenn der Server auch die Sitzung nicht gelten laesst", async () => {
+	// In der Desktop-Huelle gibt es keine Sitzung, die den Schluessel ersetzen
+	// koennte - ohne ihn hat die Meldung keinen Ausweis.
+	it("fragt in der Desktop-Huelle ohne Schluessel gar nicht erst", async () => {
 		vi.resetModules();
 		vi.doMock("./defaults", () => ({ APP_VERSION: "9.9.9", TELEMETRY_KEY: "" }));
-		const { sendDailyTelemetryPing: ohneSchluessel } = await import("./analytics");
+		vi.doMock("./platform/env", () => ({ isTauri: () => true }));
+		const { sendDailyTelemetryPing: imDesktop } = await import("./analytics");
 
-		fetchMock.mockResolvedValue({ ok: false, status: 401 });
-		expect(await ohneSchluessel("https://tracker.example.de")).toBe("declined");
+		expect(await imDesktop("https://tracker.example.de")).toBe("declined");
+		expect(fetchMock).not.toHaveBeenCalled();
 
 		vi.doUnmock("./defaults");
+		vi.doUnmock("./platform/env");
 		vi.resetModules();
 	});
 });
