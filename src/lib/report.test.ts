@@ -171,32 +171,31 @@ describe("buildReport – Zeitausgleich", () => {
 		return { ...absence(id, fraction, dayOffset), timeOff: true };
 	}
 
-	it("laesst das Tagessoll offen, statt es zu fuellen", () => {
-		// Der Kern der Sache: 7,5 h Zeitausgleich duerfen NICHT im Ist landen,
-		// sonst bliebe der Saldo stehen und es waeren keine Ueberstunden abgebaut.
+	it("fuellt das Tagessoll wie ein Urlaubstag", () => {
+		// Der Zeitausgleich ist eine Abwesenheit wie jede andere: er steht mit seinen
+		// Stunden im Ist. Was ihn unterscheidet, ist allein die Beschriftung.
 		const report = buildReport("2026-06", activities, [timeOff("t", 1, 5)], 0.5, HPD);
-		expect(report.total).toBe(0);
-		expect(report.absenceHours).toBe(0);
+		expect(report.total).toBe(7.5);
+		expect(report.absenceHours).toBe(7.5);
 		expect(report.timeOffHours).toBe(7.5);
 	});
 
 	it("rechnet den halben Tag als halbes Tagessoll", () => {
 		const report = buildReport("2026-06", activities, [timeOff("t", 0.5)], 0.5, HPD);
 		expect(report.timeOffHours).toBe(3.75);
-		expect(report.total).toBe(0);
+		expect(report.total).toBe(3.75);
 	});
 
-	it("taucht in keiner Zeile des Berichts auf", () => {
-		// Der Bericht geht an den Chef - der Zeitausgleich ist eine Sache zwischen
-		// dem Menschen und seinem Stundenkonto.
+	it("steht auf der Abwesenheiten-Zeile, ohne sich zu benennen", () => {
+		// Eine eigene Zeile bekommt er nicht - der Bericht geht an den Chef, und dort
+		// ist es schlicht eine Abwesenheit.
 		const report = buildReport("2026-06", activities, [timeOff("t", 1, 5)], 0.5, HPD);
 		const abwesenheiten = report.rows.find((r) => r.name === "Abwesenheiten");
-		expect(abwesenheiten?.hours).toBe(0);
+		expect(abwesenheiten?.hours).toBe(7.5);
 		expect(reportToHtml(report)).not.toContain("Zeitausgleich");
 	});
 
-	it("laesst Urlaub auf derselben Zeile unangetastet", () => {
-		// Beides steht auf "Abwesenheiten": nur der eine Eintrag zaehlt.
+	it("liegt neben Urlaub auf derselben Zeile", () => {
 		const report = buildReport(
 			"2026-06",
 			activities,
@@ -204,9 +203,9 @@ describe("buildReport – Zeitausgleich", () => {
 			0.5,
 			HPD
 		);
-		expect(report.absenceHours).toBe(7.5);
+		expect(report.absenceHours).toBe(15);
 		expect(report.timeOffHours).toBe(7.5);
-		expect(report.total).toBe(7.5);
+		expect(report.total).toBe(15);
 	});
 
 	it("zaehlt einen Zeitausgleich am Wochenende nicht mit", () => {
@@ -221,6 +220,7 @@ describe("buildReport – Zeitausgleich", () => {
 			[1, 2, 3, 4, 5]
 		);
 		expect(report.timeOffHours).toBe(0);
+		expect(report.total).toBe(0);
 	});
 });
 

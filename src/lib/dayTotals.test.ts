@@ -42,30 +42,31 @@ describe("dayTotals", () => {
 		expect(dayTotals([dayEntry("u", 1)], ABSENCES, HPD).total).toBe(7.5);
 	});
 
-	it("zieht einen ganzen Tag Zeitausgleich ab, statt ihn zu addieren", () => {
-		// Der Kern: die Monatssumme zeigte +7:30, waehrend die Ueberstunden sanken.
+	it("zaehlt einen ganzen Tag Zeitausgleich wie eine Abwesenheit", () => {
+		// Er fuellt das Tagessoll wie ein Urlaubstag - getrennt gefuehrt wird er nur,
+		// damit die Auswertung "davon Zeitausgleich" zeigen kann.
 		const totals = dayTotals([dayEntry("z", 1, true)], ABSENCES, HPD);
 		expect(totals.timeOff).toBe(7.5);
 		expect(totals.absent).toBe(0);
-		expect(totals.total).toBe(-7.5);
+		expect(totals.total).toBe(7.5);
 	});
 
-	it("zieht den halben Tag halb ab", () => {
-		expect(dayTotals([dayEntry("z", 0.5, true)], ABSENCES, HPD).total).toBe(-3.75);
+	it("zaehlt den halben Tag halb", () => {
+		expect(dayTotals([dayEntry("z", 0.5, true)], ABSENCES, HPD).total).toBe(3.75);
 	});
 
 	it("verrechnet Arbeit am Vormittag mit einem halben Tag Zeitausgleich", () => {
 		// Der uebliche Fall: vormittags arbeiten, nachmittags abfeiern.
 		const totals = dayTotals([work("1", 8, 11, 45), dayEntry("z", 0.5, true)], ABSENCES, HPD);
 		expect(totals.worked).toBe(3.75);
-		expect(totals.total).toBe(0);
+		expect(totals.total).toBe(7.5);
 	});
 
 	it("haelt Urlaub und Zeitausgleich auf derselben Zeile auseinander", () => {
 		const totals = dayTotals([dayEntry("u", 0.5), dayEntry("z", 0.5, true)], ABSENCES, HPD);
 		expect(totals.absent).toBe(3.75);
 		expect(totals.timeOff).toBe(3.75);
-		expect(totals.total).toBe(0);
+		expect(totals.total).toBe(7.5);
 	});
 
 	it("zieht die Pause nur von der Projektzeit ab, nie vom freien Tag", () => {
@@ -79,6 +80,6 @@ describe("dayTotals", () => {
 		// zoege ab neun Stunden auch noch eine Pause nach sich.
 		const totals = dayTotals([dayEntry("z", 1, true)], ABSENCES, HPD, { deductBreaks: true });
 		expect(totals.pause).toBe(0);
-		expect(totals.total).toBe(-7.5);
+		expect(totals.total).toBe(7.5);
 	});
 });

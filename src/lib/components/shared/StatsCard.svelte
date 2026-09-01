@@ -96,7 +96,7 @@
 
 	// ---- Saldo ----
 	// Ist = Arbeitszeit + Abwesenheiten: ein Urlaubstag ist erfuellte Zeit, kein Minus.
-	// Der Zeitausgleich steckt bewusst NICHT darin - siehe MonthReport.timeOffHours.
+	// Der Zeitausgleich zaehlt dabei mit, wie jede andere Abwesenheit.
 	const target = $derived(targetHours(month, app.settings.workdays, app.settings.hoursPerDay, app.now));
 	const balance = $derived(report.total - target);
 
@@ -171,8 +171,7 @@
 			</div>
 			{#if report.timeOffHours > 0}
 				<p class="text-muted-foreground text-xs">
-					Davon {fmtHoursClock(report.timeOffHours)} h Zeitausgleich – die zählen bewusst nicht
-					zum Ist, dadurch sinkt der Saldo.
+					Davon {fmtHoursClock(report.timeOffHours)} h Zeitausgleich.
 				</p>
 			{/if}
 			{#if month === app.currentMonth}

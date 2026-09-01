@@ -10,12 +10,11 @@
 	}
 	let { value = $bindable(false), id = "kind", label = "Art" }: Props = $props();
 
-	// Der Unterschied steckt allein in der Verrechnung, deshalb steht er hier
-	// dabei: eine Abwesenheit fuellt das Tagessoll, ein Zeitausgleich laesst es
-	// offen und baut damit Ueberstunden ab.
+	// Gerechnet wird beides gleich - beide fuellen das Tagessoll. Der Unterschied
+	// ist die Beschriftung, damit spaeter erkennbar bleibt, warum der Tag frei war.
 	const options = [
 		{ value: "absence", title: "Abwesenheit", hint: "Urlaub, krank, frei" },
-		{ value: "timeoff", title: "Zeitausgleich", hint: "baut Überstunden ab" }
+		{ value: "timeoff", title: "Zeitausgleich", hint: "abgefeierte Überstunden" }
 	];
 </script>
 

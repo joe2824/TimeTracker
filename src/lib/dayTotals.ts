@@ -1,8 +1,7 @@
 // Was ein Tag unterm Strich zaehlt.
 //
 // Lag zweimal ausgeschrieben in Svelte-Dateien - in der Monatsliste und in der
-// Tagesbilanz - und damit ausserhalb jeder Testbarkeit. Genau dort fiel dann auf,
-// dass der Zeitausgleich mitaddiert statt abgezogen wurde.
+// Tagesbilanz - und damit ausserhalb jeder Testbarkeit.
 import type { Entry } from "./types";
 import { entryHours } from "./time";
 import { breakDeduction } from "./breaks";
@@ -19,11 +18,11 @@ export interface DayTotals {
 	/** Projektzeit nach Pausenabzug. */
 	net: number;
 	/**
-	 * Was der Tag zaehlt: Arbeitszeit + Abwesenheit − Zeitausgleich.
+	 * Was der Tag zaehlt: Arbeitszeit + Abwesenheit, Zeitausgleich eingeschlossen.
 	 *
-	 * Der Zeitausgleich geht AB. Ein Urlaubstag fuellt das Tagessoll, ein
-	 * abgefeierter Tag nimmt die Stunden vom Konto - ihn mitzuzaehlen liesse die
-	 * Summe steigen, waehrend die Ueberstunden sinken.
+	 * Er fuellt das Tagessoll wie ein Urlaubstag. Getrennt gefuehrt wird er nur
+	 * fuer die Anzeige - dieselbe Rechnung wie in `buildReport`, sonst zeigten
+	 * die Monatssumme und der Bericht verschiedene Zahlen.
 	 */
 	total: number;
 }
@@ -51,5 +50,5 @@ export function dayTotals(
 	// einen abgefeierten Tag gibt es keine.
 	const pause = opts.deductBreaks ? breakDeduction(worked) : 0;
 	const net = worked - pause;
-	return { worked, absent, timeOff, pause, net, total: net + absent - timeOff };
+	return { worked, absent, timeOff, pause, net, total: net + absent + timeOff };
 }
