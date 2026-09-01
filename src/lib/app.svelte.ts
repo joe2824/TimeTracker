@@ -235,16 +235,26 @@ class AppState {
 	 * Für das zweite Fenster (Tray-Flyout) und fensterübergreifende Updates,
 	 * da jede Webview ihren eigenen Zustand hat.
 	 */
-	async reload(): Promise<void> {
+	async reload(extraMonths: string[] = []): Promise<void> {
 		this.activities = await loadActivities();
 		this.settings = await loadSettings();
 		await this.#applyTimeZone();
 		setErrorReportsEnabled(this.settings.errorReportsEnabled);
-		const allMonths = await listEntryMonths();
-		const months = new Set([this.currentMonth, prevMonthKey(), ...Object.keys(this.entriesByMonth), ...allMonths]);
-		for (const m of months) {
-			this.entriesByMonth[m] = await loadEntries(m);
-		}
+		// Nur die beiden aktuellen Monate und was ohnehin schon im Speicher steht.
+		// Jeden Monat auf der Platte zu lesen kostete bei jedem Fensterwechsel den
+		// gesamten Bestand - bei Jahren Erfassung ist das der spuerbare Teil. Wer
+		// Monate anlegt, die noch niemand geoeffnet hat, nennt sie in `extraMonths`.
+		const months = new Set([
+			this.currentMonth,
+			prevMonthKey(),
+			...Object.keys(this.entriesByMonth),
+			...extraMonths
+		]);
+		await Promise.all(
+			[...months].map(async (m) => {
+				this.entriesByMonth[m] = await loadEntries(m);
+			})
+		);
 		this.running = null;
 		await this.#findRunning();
 		this.now = Date.now();
@@ -511,20 +521,40 @@ class AppState {
 	/** Laufende Ladevorgaenge je Monat. */
 	#loadingMonths = new Map<string, Promise<void>>();
 
+	/**
+	 * Einen Monat erst vom Server holen, wenn er hier noch fehlt.
+	 *
+	 * Setzt der Abgleich beim Start (siehe `setMonthFetcher`). Als Haken und nicht
+	 * als Import, weil der Abgleich seinerseits diese Datei braucht.
+	 */
+	#monthFetcher: ((month: string) => Promise<void>) | null = null;
+
+	setMonthFetcher(fn: ((month: string) => Promise<void>) | null): void {
+		this.#monthFetcher = fn;
+	}
+
 	async ensureMonth(month: string): Promise<void> {
 		if (this.entriesByMonth[month]) return;
 		let pending = this.#loadingMonths.get(month);
 		if (!pending) {
-			pending = loadEntries(month)
-				.then((entries) => {
-					this.entriesByMonth[month] = entries;
-				})
-				.finally(() => {
-					this.#loadingMonths.delete(month);
-				});
+			// Erst holen, dann lesen. Andersherum bliebe der leere Monat im Speicher
+			// stehen, denn ensureMonth merkt sich auch ein leeres Ergebnis.
+			pending = this.#fetchThenLoad(month).finally(() => {
+				this.#loadingMonths.delete(month);
+			});
 			this.#loadingMonths.set(month, pending);
 		}
 		return pending;
+	}
+
+	async #fetchThenLoad(month: string): Promise<void> {
+		try {
+			await this.#monthFetcher?.(month);
+		} catch (e) {
+			// Kein Netz heisst nicht "kein Monat": was auf der Platte liegt, gilt.
+			logWarn(`Monat ${month} konnte nicht vom Server geholt werden`, e);
+		}
+		this.entriesByMonth[month] = await loadEntries(month);
 	}
 
 	monthEntries(month: string): Entry[] {

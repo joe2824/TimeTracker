@@ -20,7 +20,8 @@ import {
 } from "./outbox";
 import { Api, ApiError, type AccountInfo, type BackupInfo, type DeleteSummary, type Invite, type Passkey } from "./api";
 import { detachLocalData } from "./detach";
-import { SyncEngine } from "./engine";
+import { monthKey, prevMonthKey } from "../time";
+import { SyncEngine, type SyncState } from "./engine";
 import {
 	createPairingKeyPair,
 	createVaultKey,
@@ -100,6 +101,14 @@ class AccountState {
 	pairCodeFromLink = $state<string>("");
 	/** Fortschritt des aktuellen Synchronisationsvorgangs (z.B. wie viele Datensätze geladen wurden). */
 	syncProgress = $state<{ phase: "idle" | "pulling" | "pushing"; pulled: number; pushed: number } | null>(null);
+
+	/**
+	 * Ob noch aeltere Monate nachkommen.
+	 *
+	 * Gespiegelt statt durchgereicht: der Zustand im Abgleich ist kein `$state`,
+	 * die Oberflaeche bekaeme eine Aenderung daran sonst nie mit.
+	 */
+	backfilling = $state(false);
 	/** Status des Massen-Imports für die UI (z.B. Modal im Browser). */
 	bulkSync = $state<{ phase: "pulling" | "done"; pulled: number } | null>(null);
 	/** Ob die Initialisierung des Kontos (Lesen lokaler Zugangsdaten) abgeschlossen ist. */
@@ -155,7 +164,10 @@ class AccountState {
 				this.#key = await importVaultKey(fromBase64(rohschluessel).buffer as ArrayBuffer);
 				this.#device = await deviceId();
 				this.hasDeviceToken = token !== null;
-				await this.#startEngine(info.serverUrl, token, info.seq ?? 0);
+				await this.#startEngine(info.serverUrl, token, {
+					seq: info.seq ?? 0,
+					priority: info.priority
+				});
 
 				// Im Browser ohne festes Geraetetoken: vor der Freigabe der App prüfen,
 				// ob die Sitzung (Cookie) beim Server noch gueltig ist.
@@ -196,16 +208,16 @@ class AccountState {
 		}
 	}
 
-	async #startEngine(url: string, token: string | null, seq: number): Promise<void> {
+	async #startEngine(url: string, token: string | null, state: SyncState): Promise<void> {
 		this.#api = new Api({ baseUrl: url, token, fetchFn: platformFetch });
 		this.#engine = new SyncEngine({
 			api: this.#api,
 			key: this.#key!,
 			deviceId: this.#device,
-			state: { seq },
+			state,
 			saveState: async (s) => {
 				const info = await loadDevice();
-				if (info) await saveDevice({ ...info, seq: s.seq });
+				if (info) await saveDevice({ ...info, seq: s.seq, priority: s.priority });
 			},
 			store: {
 				entriesOfMonth: loadEntries,
@@ -225,7 +237,11 @@ class AccountState {
 				}
 			}
 		});
+		this.backfilling = state.priority !== undefined;
 		this.#engine.setMonthLister(listEntryMonths);
+		// Wer einen Monat oeffnet, den der Backfill noch nicht hat, soll ihn sehen -
+		// nicht eine leere Ansicht mit dem Hinweis, spaeter wiederzukommen.
+		app.setMonthFetcher((month) => this.ensureMonthSynced(month));
 		await startTracking(this.#device);
 		// Jede lokale Aenderung stoesst einen Abgleich an - gesammelt, nicht sofort.
 		setChangeListener(() => this.syncSoon());
@@ -288,11 +304,23 @@ class AccountState {
 		this.syncSoon(0);
 	}
 
+	/**
+	 * Einen Monat holen, den der erste Abgleich noch nicht mitgebracht hat.
+	 *
+	 * Ist die Historie durch, kostet der Aufruf nichts - dann liegt ohnehin alles
+	 * auf der Platte.
+	 */
+	async ensureMonthSynced(month: string): Promise<void> {
+		if (!this.#engine || this.state !== "verbunden") return;
+		await this.#engine.ensureMonthSynced(month);
+	}
+
 	async syncNow(): Promise<void> {
 		if (!this.#engine || this.state !== "verbunden") return;
 		this.phase = "laeuft";
 		try {
 			const ergebnis = await this.#engine.sync();
+			this.backfilling = this.#engine.backfilling;
 			this.phase = "ruht";
 			this.lastSync = Date.now();
 			this.#retryStep = 0;
@@ -674,6 +702,14 @@ class AccountState {
 
 		const info = (await loadDevice()) ?? { id: this.#device };
 
+		// Der erste Abgleich zieht vor, was der Mensch sofort sieht. Ohne das kaeme
+		// der laufende Monat zuletzt: der Server liefert nach Stand aufsteigend,
+		// also die aeltesten Eintraege zuerst.
+		const startState: SyncState = {
+			seq: 0,
+			priority: { seq: 0, months: [monthKey(Date.now()), prevMonthKey()] }
+		};
+
 		// Wessen Konto ist das? Zwei Konten haben verschiedene Tresorschluessel,
 		// also verschiedene Nachweise.
 		const kennung = await vaultProof(key);
@@ -711,7 +747,8 @@ class AccountState {
 			accountName: name || info.accountName,
 			kontoKennung: kennung,
 			bestandGehoertZu,
-			seq: 0
+			seq: 0,
+			priority: startState.priority
 		});
 		this.name = name || this.name;
 
@@ -719,7 +756,7 @@ class AccountState {
 		this.secretsProtected = geschuetzterSchluessel.protected;
 		this.hasDeviceToken = token !== null;
 		this.state = "verbunden";
-		await this.#startEngine(url, token, 0);
+		await this.#startEngine(url, token, startState);
 		void this.abgleichMitNachlese();
 	}
 
@@ -949,6 +986,8 @@ class AccountState {
 		stopTracking();
 		setChangeListener(null);
 		this.#engine = null;
+		this.backfilling = false;
+		app.setMonthFetcher(null);
 		this.#api = null;
 		this.#key = null;
 		const info = await loadDevice();

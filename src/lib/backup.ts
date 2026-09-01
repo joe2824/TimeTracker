@@ -10,6 +10,7 @@ import {
 } from "./store";
 import type { Activity, Entry, Settings } from "./types";
 import { app } from "./app.svelte";
+import { account } from "./sync/account.svelte";
 import { invoke } from "@tauri-apps/api/core";
 import { logError, logInfo } from "./log";
 
@@ -39,8 +40,17 @@ export interface RestoreResult {
 
 /**
  * Erstellt eine vollständige Sicherung aller lokalen Daten (Einstellungen, Aktivitäten, alle Monate).
+ *
+ * Solange nach einer Neuverknuepfung noch aeltere Monate nachkommen, waere die
+ * Sicherung nur ein Ausschnitt - und sie sieht einer vollstaendigen zum
+ * Verwechseln aehnlich. Dann lieber gar keine.
  */
 export async function createBackupData(): Promise<TimeTrackerBackup> {
+	if (account.backfilling) {
+		throw new Error(
+			"Ältere Monate werden gerade noch geladen. Die Sicherung wäre unvollständig – bitte kurz warten."
+		);
+	}
 	const settings = await loadSettings();
 	const activities = await loadActivities();
 	const months = await listEntryMonths();
@@ -186,8 +196,9 @@ export async function restoreBackup(
 		}
 	}
 
-	// App-Zustand neu laden
-	await app.reload();
+	// App-Zustand neu laden. Die wiederhergestellten Monate ausdruecklich dazu:
+	// `reload` liest von sich aus nur, was schon im Speicher steht.
+	await app.reload(Object.keys(backup.entries));
 	logInfo("Sicherung wiederhergestellt", { mode, restoredActivities, restoredMonths, restoredEntries });
 
 	return { restoredActivities, restoredMonths, restoredEntries };

@@ -257,11 +257,28 @@ export class Api {
 
 	// ---------- Abgleich ----------
 
-	pull(since: number, opts: { limit?: number; bucket?: string } = {}): Promise<PullPage> {
+	/**
+	 * `buckets` schraenkt auf einzelne Zeitraeume ein; ohne die Angabe kommt
+	 * alles. Eine leere Liste liefert nichts - das ist der Unterschied zu "keine
+	 * Angabe" und beim Vorziehen einzelner Monate genau der gewollte.
+	 */
+	pull(
+		since: number,
+		opts: { limit?: number; buckets?: string[]; unbucketed?: boolean } = {}
+	): Promise<PullPage> {
 		const q = new URLSearchParams({ since: String(since) });
 		if (opts.limit) q.set("limit", String(opts.limit));
-		if (opts.bucket) q.set("bucket", opts.bucket);
+		if (opts.buckets) for (const b of opts.buckets) q.append("bucket", b);
+		if (opts.unbucketed) q.set("unbucketed", "1");
 		return this.#call<PullPage>(`/api/sync?${q}`);
+	}
+
+	/**
+	 * Welche Zeitraum-Kennungen das Konto hat. Der Client rechnet daraus zurueck,
+	 * zu welchen Monaten es Daten gibt - auch zu noch nicht geholten.
+	 */
+	buckets(): Promise<{ buckets: string[] }> {
+		return this.#call("/api/sync/buckets");
 	}
 
 	push(records: OutgoingRecord[]): Promise<PushAnswer> {

@@ -27,12 +27,20 @@ import {
 	type Sealed
 } from "../crypto/vault";
 import { logError, logInfo, logWarn } from "../log";
-import { monthKey } from "../time";
+import { monthKey, prevMonthKey } from "../time";
 
 /** Wie oft nach einem Konflikt neu versucht wird, bevor aufgegeben wird. */
 const MAX_ROUNDS = 5;
 /** Datensaetze je Anfrage - der Server nimmt hoechstens 500. */
 const BATCH = 200;
+/**
+ * Seiten Historie je Durchgang, solange der Backfill laeuft.
+ *
+ * Der Deckel ist kein Geiz: ohne ihn haengt eine Zeiterfassung, die waehrend
+ * eines minutenlangen Backfills gestartet wird, hinter `#running` fest, weil
+ * der naechste Durchgang erst danach pusht.
+ */
+const BACKLOG_PAGES = 5;
 
 export interface LocalStore {
 	entriesOfMonth(month: string): Promise<Entry[]>;
@@ -43,9 +51,25 @@ export interface LocalStore {
 	saveSettings(s: Settings): Promise<void>;
 }
 
+/**
+ * Der vorgezogene Teil des Abgleichs.
+ *
+ * Damit kommen aktueller Monat, Vormonat, Aktivitaeten und Einstellungen sofort,
+ * statt hinter Jahren alter Eintraege zu warten: `seq` laeuft aufsteigend, die
+ * aeltesten Datensaetze kaemen also zuerst.
+ */
+export interface SyncPriority {
+	/** Gemeinsamer Stand ueber die vorgezogene Menge. */
+	seq: number;
+	/** Welche Monate vorgezogen werden. */
+	months: string[];
+}
+
 export interface SyncState {
 	/** Bis zu welchem Serverstand dieses Geraet alles kennt. */
 	seq: number;
+	/** Nur vorhanden, solange die Historie noch fehlt. */
+	priority?: SyncPriority;
 }
 
 export interface SyncOutcome {
@@ -54,6 +78,8 @@ export interface SyncOutcome {
 	/** Wie oft eine eigene, noch nicht hochgeladene Aenderung unterlegen ist. */
 	lostEdits: number;
 	seq: number;
+	/** Ob noch aeltere Monate fehlen. */
+	backfilling: boolean;
 }
 
 /** Das Chiffrat samt Zufallswert als eine Zeichenkette. */
@@ -120,13 +146,48 @@ export class SyncEngine {
 		return this.#state.seq;
 	}
 
-	/** Einen Durchgang anstossen. */
-	async sync(): Promise<SyncOutcome | null> {
+	/** Ob noch aeltere Monate fehlen. */
+	get backfilling(): boolean {
+		return this.#state.priority !== undefined;
+	}
+
+	/**
+	 * Abrufe laufen nacheinander in den Bestand.
+	 *
+	 * Die Anfragen selbst duerfen sich ueberholen - ein vorgezogener Monat soll
+	 * nicht hinter dem Backfill warten. Das Einspielen nicht: zwei Seiten, die
+	 * dieselbe Monatsdatei lesen, aendern und zurueckschreiben, verloeren sonst
+	 * die Aenderung der jeweils anderen.
+	 */
+	#chain: Promise<unknown> = Promise.resolve();
+
+	#serial<T>(op: () => Promise<T>): Promise<T> {
+		const next = this.#chain.then(op, op);
+		this.#chain = next.catch(() => {});
+		return next;
+	}
+
+	/** Der gerade laufende Durchgang, damit ein zweiter Aufruf mitwarten kann. */
+	#current: Promise<SyncOutcome> | null = null;
+
+	/**
+	 * Einen Durchgang anstossen.
+	 *
+	 * Laeuft schon einer, haengt sich der Aufruf an ihn an statt ins Leere zu
+	 * greifen: `#again` sorgt dafuer, dass danach noch eine Runde kommt, und wer
+	 * `sync()` abwartet, will wissen, dass wirklich abgeglichen wurde.
+	 */
+	sync(): Promise<SyncOutcome | null> {
 		if (this.#running) {
 			this.#again = true;
-			return null;
+			return this.#current ?? Promise.resolve(null);
 		}
 		this.#running = true;
+		this.#current = this.#rounds();
+		return this.#current;
+	}
+
+	async #rounds(): Promise<SyncOutcome> {
 		try {
 			let outcome = await this.#round();
 			while (this.#again) {
@@ -136,13 +197,15 @@ export class SyncEngine {
 					pushed: outcome.pushed + weiter.pushed,
 					pulled: outcome.pulled + weiter.pulled,
 					lostEdits: outcome.lostEdits + weiter.lostEdits,
-					seq: weiter.seq
+					seq: weiter.seq,
+					backfilling: weiter.backfilling
 				};
 			}
 			return outcome;
 		} finally {
 			this.#running = false;
 			this.#again = false;
+			this.#current = null;
 			this.#onProgress?.({ phase: "idle", pulled: 0, pushed: 0 });
 		}
 	}
@@ -152,12 +215,38 @@ export class SyncEngine {
 		this.#months = null;
 		this.#allMonthsIndexed = false;
 		const hoch = await this.#pushAll();
-		const runter = await this.#pullAll(hoch.pushed);
+		const runter = this.#state.priority
+			? await this.#pullStaged(hoch.pushed)
+			: await this.#pullBacklog(hoch.pushed, Infinity);
 		return {
 			pushed: hoch.pushed,
 			pulled: hoch.pulled + runter.pulled,
 			lostEdits: hoch.lostEdits + runter.lostEdits,
-			seq: this.#state.seq
+			seq: this.#state.seq,
+			backfilling: this.backfilling
+		};
+	}
+
+	/**
+	 * Erst das Vorgezogene, dann ein Stueck Historie.
+	 *
+	 * Solange der Backfill laeuft, geht jede Runde zuerst ueber die vorgezogenen
+	 * Monate: neue Zeiten von anderen Geraeten sollen ankommen, auch wenn die
+	 * alten Jahre noch tagelang tropfen.
+	 */
+	async #pullStaged(pushed: number): Promise<{ pulled: number; lostEdits: number }> {
+		await this.#followCalendar();
+		const first = await this.#pullPriority(pushed);
+		const rest = await this.#pullBacklog(pushed + first.pulled, BACKLOG_PAGES);
+		// Die Historie ist durch: ab jetzt reicht der eine Stand wieder fuer alles.
+		if (rest.done && this.#state.priority) {
+			this.#state = { seq: this.#state.seq };
+			await this.#saveState(this.#state);
+			logInfo("Ältere Monate vollständig geladen");
+		}
+		return {
+			pulled: first.pulled + rest.pulled,
+			lostEdits: first.lostEdits + rest.lostEdits
 		};
 	}
 
@@ -206,7 +295,7 @@ export class SyncEngine {
 				// Die Konflikte aufloesen heisst: den Serverstand holen und
 				// zusammenfuehren. Danach steht die Aenderung auf der richtigen
 				// Fassung und kommt in der naechsten Runde durch.
-				const aufgeloest = await this.#pullAll(gesamt);
+				const aufgeloest = await this.#pullBacklog(gesamt, Infinity);
 				pulled += aufgeloest.pulled;
 				lostEdits += aufgeloest.lostEdits;
 				continue;
@@ -291,28 +380,124 @@ export class SyncEngine {
 
 	// ---------- Herunterladen ----------
 
-	async #pullAll(pushed = 0): Promise<{ pulled: number; lostEdits: number }> {
+	/**
+	 * Die Historie, seitenweise ab dem allgemeinen Stand.
+	 *
+	 * `maxPages` deckelt, wie viel davon in einem Durchgang kommt. `done` heisst:
+	 * der Server hat nichts mehr, dieses Geraet kennt alles.
+	 */
+	async #pullBacklog(
+		pushed: number,
+		maxPages: number
+	): Promise<{ pulled: number; lostEdits: number; done: boolean }> {
 		let pulled = 0;
 		let lostEdits = 0;
+		let done = false;
 		this.#onProgress?.({ phase: "pulling", pulled, pushed });
-		for (;;) {
-			const seite = await this.#api.pull(this.#state.seq, { limit: BATCH });
-			if (seite.records.length > 0) {
-				pulled += seite.records.length;
+		for (let i = 0; i < maxPages; i++) {
+			const page = await this.#api.pull(this.#state.seq, { limit: BATCH });
+			if (page.records.length > 0) {
+				pulled += page.records.length;
 				this.#onProgress?.({ phase: "pulling", pulled, pushed });
-				const r = await this.#apply(seite.records);
+				const r = await this.#apply(page.records);
 				lostEdits += r.lostEdits;
 			}
-			this.#state = { seq: seite.nextSeq };
+			this.#state = { ...this.#state, seq: page.nextSeq };
 			await this.#saveState(this.#state);
-			if (!seite.hasMore) break;
+			if (!page.hasMore) {
+				done = true;
+				break;
+			}
+		}
+		return { pulled, lostEdits, done };
+	}
+
+	/** Die vorgezogene Menge: die genannten Monate plus Aktivitaeten und Einstellungen. */
+	async #pullPriority(pushed: number): Promise<{ pulled: number; lostEdits: number }> {
+		let pulled = 0;
+		let lostEdits = 0;
+		if (!this.#state.priority) return { pulled, lostEdits };
+		// Einmal rechnen, nicht je Seite: kommt waehrenddessen ein Monat dazu, holt
+		// ihn die naechste Runde. Ein zu alter Stand liefert doppelt, nie zu wenig.
+		const buckets = await Promise.all(
+			this.#state.priority.months.map((m) => bucketFor(this.#key, m))
+		);
+		this.#onProgress?.({ phase: "pulling", pulled, pushed });
+		for (;;) {
+			const before = this.#state.priority;
+			if (!before) break;
+			const page = await this.#api.pull(before.seq, {
+				limit: BATCH,
+				buckets,
+				// Ohne die haette die Oberflaeche weder Namen noch Rundung noch
+				// Sollstunden - die haengen an Datensaetzen ohne Zeitraum.
+				unbucketed: true
+			});
+			if (page.records.length > 0) {
+				pulled += page.records.length;
+				this.#onProgress?.({ phase: "pulling", pulled, pushed });
+				const r = await this.#apply(page.records);
+				lostEdits += r.lostEdits;
+			}
+			// Frisch aus dem Zustand: waehrend des Abrufs kann ein Monat dazugekommen sein.
+			const current = this.#state.priority;
+			if (!current) break;
+			this.#state = { ...this.#state, priority: { ...current, seq: page.nextSeq } };
+			await this.#saveState(this.#state);
+			if (!page.hasMore) break;
 		}
 		return { pulled, lostEdits };
 	}
 
+	/** Ueber Mitternacht hinweg: nach einem Monatswechsel gehoert der neue mit vorn hin. */
+	async #followCalendar(): Promise<void> {
+		const now = Date.now();
+		await this.ensureMonthSynced(monthKey(now));
+		await this.ensureMonthSynced(prevMonthKey(now));
+	}
+
+	/** Laufende Nachladungen, damit zweimal Hovern nicht zweimal laedt. */
+	#monthFetches = new Map<string, Promise<void>>();
+
+	/**
+	 * Einen Monat holen, den der Backfill noch nicht erreicht hat.
+	 *
+	 * Ist die Historie durch, liegt ohnehin alles vor und der Aufruf kostet nichts.
+	 */
+	ensureMonthSynced(month: string): Promise<void> {
+		const priority = this.#state.priority;
+		if (!priority || priority.months.includes(month)) return Promise.resolve();
+		let running = this.#monthFetches.get(month);
+		if (!running) {
+			running = this.#fetchMonth(month).finally(() => this.#monthFetches.delete(month));
+			this.#monthFetches.set(month, running);
+		}
+		return running;
+	}
+
+	async #fetchMonth(month: string): Promise<void> {
+		const bucket = await bucketFor(this.#key, month);
+		let since = 0;
+		for (;;) {
+			const page = await this.#api.pull(since, { limit: BATCH, buckets: [bucket] });
+			if (page.records.length > 0) await this.#apply(page.records);
+			since = page.nextSeq;
+			if (!page.hasMore) break;
+		}
+
+		// Aufnehmen, aber den gemeinsamen Stand NICHT nachziehen: er darf hinterher
+		// sein - dann kommt dieser Monat spaeter noch einmal, was nichts kostet.
+		// Vorziehen wuerde ueberspringen, was die anderen Monate noch nicht kennen.
+		const current = this.#state.priority;
+		if (!current || current.months.includes(month)) return;
+		this.#state = { ...this.#state, priority: { ...current, months: [...current.months, month] } };
+		await this.#saveState(this.#state);
+		logInfo(`Monat ${month} nachgeladen`);
+	}
+
 	/** Serverdaten einspielen - ohne dass der Haken sie als eigene Aenderung nimmt. */
 	async #apply(records: ServerRecord[]): Promise<{ lostEdits: number }> {
-		return applyingRemote(() => this.#applyInner(records));
+		return this.#serial(() => applyingRemote(() => this.#applyInner(records)));
 	}
 
 	async #applyInner(records: ServerRecord[]): Promise<{ lostEdits: number }> {

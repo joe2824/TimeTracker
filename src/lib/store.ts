@@ -7,6 +7,7 @@
 import { storage } from "./platform/fs";
 import type { Activity, Entry, Settings } from "./types";
 import type { TimeReportDay } from "./timeReport";
+import type { SyncPriority } from "./sync/engine";
 import { defaultSettings } from "./types";
 import { logError, logWarn } from "./log";
 
@@ -284,6 +285,8 @@ export interface DeviceInfo {
 	protected?: boolean;
 	/** Bis zu welchem Serverstand dieses Geraet alles kennt. */
 	seq?: number;
+	/** Der vorgezogene Teil des Abgleichs - nur da, solange Historie fehlt. */
+	priority?: SyncPriority;
 	/** Anzeigename des Kontos - nur fuer die Oberflaeche. */
 	accountName?: string;
 	/**

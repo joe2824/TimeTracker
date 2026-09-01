@@ -5,13 +5,14 @@ vi.mock("@tauri-apps/plugin-fs", async () => (await import("../testing/fakeFs"))
 
 const { SyncEngine } = await import("./engine");
 const { Api } = await import("./api");
-const { createVaultKey } = await import("../crypto/vault");
+const { createVaultKey, bucketFor } = await import("../crypto/vault");
+const { monthKey, prevMonthKey } = await import("../time");
 const { resetOutboxForTests, startTracking, pendingChanges } = await import("./outbox");
 const { files, resetFakeFs } = await import("../testing/fakeFs");
 const store = await import("../store");
 const { defaultSettings } = await import("../types");
 import type { Entry } from "../types";
-import type { LocalStore } from "./engine";
+import type { LocalStore, SyncState } from "./engine";
 import type { ServerRecord } from "./api";
 
 // ---------- Der nachgebaute Server ----------
@@ -21,6 +22,8 @@ class FakeServer {
 	seq = 0;
 	/** Alle Anfragen, die je kamen - fuer Aussagen ueber den Datenverkehr. */
 	calls: string[] = [];
+	/** Dasselbe mit Suchteil - fuer Aussagen ueber die Einschraenkung. */
+	queries: string[] = [];
 
 	push(deviceId: string, records: unknown[]) {
 		const accepted: { id: string; rev: number; seq: number }[] = [];
@@ -71,8 +74,15 @@ class FakeServer {
 		return { accepted, conflicts, seq: this.seq };
 	}
 
-	pull(since: number, limit = 200) {
-		const alle = [...this.rows.values()].filter((r) => r.seq > since).sort((a, b) => a.seq - b.seq);
+	pull(since: number, limit = 200, filter?: { buckets?: string[]; unbucketed: boolean }) {
+		const matches = (r: ServerRecord) => {
+			if (!filter?.buckets) return true;
+			if (r.bucket === null) return filter.unbucketed;
+			return filter.buckets.includes(r.bucket);
+		};
+		const alle = [...this.rows.values()]
+			.filter((r) => r.seq > since && matches(r))
+			.sort((a, b) => a.seq - b.seq);
 		const seite = alle.slice(0, limit);
 		return {
 			records: seite,
@@ -86,10 +96,20 @@ class FakeServer {
 		return async (input: string, init?: RequestInit): Promise<Response> => {
 			const url = new URL(input, "http://test");
 			this.calls.push(`${init?.method ?? "GET"} ${url.pathname}`);
+			this.queries.push(`${init?.method ?? "GET"} ${url.pathname}${url.search}`);
 			if (url.pathname === "/api/sync" && (init?.method ?? "GET") === "GET") {
 				const since = Number(url.searchParams.get("since") ?? 0);
 				const limit = Number(url.searchParams.get("limit") ?? 200);
-				return new Response(JSON.stringify(this.pull(since, limit)), { status: 200 });
+				const buckets = url.searchParams.getAll("bucket");
+				return new Response(
+					JSON.stringify(
+						this.pull(since, limit, {
+							buckets: url.searchParams.has("bucket") ? buckets : undefined,
+							unbucketed: url.searchParams.get("unbucketed") === "1"
+						})
+					),
+					{ status: 200 }
+				);
 			}
 			if (url.pathname === "/api/sync" && init?.method === "POST") {
 				const body = JSON.parse(String(init.body));
@@ -105,7 +125,7 @@ class FakeServer {
 /** Ein Geraet ist ein Dateibestand plus ein Stand. */
 class Geraet {
 	dateien = new Map<string, string>();
-	state = { seq: 0 };
+	state: SyncState = { seq: 0 };
 
 	constructor(readonly id: string) {}
 }
@@ -594,7 +614,10 @@ describe("Sparsamkeit", () => {
 			await store.saveEntries(MONAT, [eintrag("e1")]);
 			return Promise.all([engine.sync(), engine.sync()]);
 		});
-		expect([a, b].filter((x) => x === null)).toHaveLength(1);
+		// Der zweite Anstoss haengt sich an den laufenden Durchgang, statt ins Leere
+		// zu greifen: wer `sync()` abwartet, will wissen, dass abgeglichen wurde.
+		expect(a).not.toBeNull();
+		expect(b).toBe(a);
 		expect(server.rows.size).toBe(1);
 	});
 
@@ -874,5 +897,138 @@ describe("onProgress – Ladeanzeige beim Massenimport", () => {
 
 		const maxPulled = Math.max(...pullingEvents.map((e) => e.pulled));
 		expect(maxPulled).toBe(250);
+	});
+});
+
+describe("Vorgezogenes Laden", () => {
+	/**
+	 * Ein Monat, der nie der laufende ist - die Tests haengen sonst am Kalendertag,
+	 * an dem sie laufen.
+	 */
+	const OLD = "2020-01";
+	const oldTs = (tag: number) => Date.UTC(2020, 0, tag, 9) + 2 * 3600_000;
+
+	/** Die Menge, die ein frisch verknuepftes Geraet vorzieht - wie in #persistLink. */
+	function startState(): SyncState {
+		return { seq: 0, priority: { seq: 0, months: [monthKey(Date.now()), prevMonthKey()] } };
+	}
+
+	/** Zwei Stunden, die sicher im laufenden Monat liegen. */
+	const currentMonthEntry = (id: string) =>
+		eintrag(id, { startTs: Date.now() - 2 * 3600_000, endTs: Date.now() - 3600_000 });
+
+	/** Ein Konto mit Historie, Aktivitaeten und Einstellungen auf dem Server. */
+	async function seedServer(): Promise<void> {
+		const sender = new Geraet("sender");
+		await auf(sender, async (engine) => {
+			await store.saveEntries(OLD, [eintrag("alt-1", { startTs: oldTs(15) })]);
+			await store.saveActivities([
+				{ id: "akt-1", name: "Entwicklung", sortOrder: 0, archived: false, isAbsence: false }
+			]);
+			await store.saveSettings({ ...defaultSettings, hoursPerDay: 7 });
+			await store.saveEntries(monthKey(Date.now()), [currentMonthEntry("neu-1")]);
+			return engine.sync();
+		});
+	}
+
+	it("fragt zuerst die vorgezogenen Monate ab und nimmt die ohne Zeitraum mit", async () => {
+		await seedServer();
+		const laptop = new Geraet("laptop");
+		laptop.state = startState();
+		server.queries = [];
+		await auf(laptop, (engine) => engine.sync());
+
+		const firstCall = server.queries.find((q) => q.startsWith("GET /api/sync?"))!;
+		const params = new URLSearchParams(firstCall.split("?")[1]);
+		expect(params.getAll("bucket")).toHaveLength(2);
+		expect(params.get("unbucketed")).toBe("1");
+		expect(params.get("since")).toBe("0");
+	});
+
+	it("bringt Aktivitaeten und Einstellungen im vorgezogenen Teil mit", async () => {
+		// Ohne sie stuende die Oberflaeche ohne Namen und ohne Sollstunden da.
+		await seedServer();
+		const laptop = new Geraet("laptop");
+		laptop.state = startState();
+		await auf(laptop, (engine) => engine.sync());
+
+		const activities = await auf(laptop, () => store.loadActivities());
+		const settings = await auf(laptop, () => store.loadSettings());
+		expect(activities.map((a) => a.name)).toEqual(["Entwicklung"]);
+		expect(settings.hoursPerDay).toBe(7);
+	});
+
+	it("legt den vorgezogenen Teil ab, sobald die Historie durch ist", async () => {
+		await seedServer();
+		const laptop = new Geraet("laptop");
+		laptop.state = startState();
+		await auf(laptop, (engine) => engine.sync());
+
+		expect(laptop.state.priority).toBeUndefined();
+		expect((await eintraege(laptop, OLD)).map((e) => e.id)).toEqual(["alt-1"]);
+	});
+
+	it("holt einen alten Monat auf Zuruf, ohne die Historie zu durchlaufen", async () => {
+		await seedServer();
+		const laptop = new Geraet("laptop");
+		laptop.state = startState();
+		server.queries = [];
+		await auf(laptop, (engine) => engine.ensureMonthSynced(OLD));
+
+		// Genau eine Anfrage, und die nur fuer diesen einen Zeitraum.
+		const pulls = server.queries.filter((q) => q.startsWith("GET /api/sync?"));
+		expect(pulls).toHaveLength(1);
+		const params = new URLSearchParams(pulls[0].split("?")[1]);
+		expect(params.getAll("bucket")).toHaveLength(1);
+		expect(params.get("unbucketed")).toBeNull();
+		expect((await eintraege(laptop, OLD)).map((e) => e.id)).toEqual(["alt-1"]);
+	});
+
+	it("nimmt einen nachgeladenen Monat auf, ohne den gemeinsamen Stand vorzuziehen", async () => {
+		// Der Stand darf hinterher sein - dann kommt der Monat noch einmal, was
+		// nichts kostet. Vorziehen wuerde ueberspringen, was die anderen Monate
+		// noch nicht kennen.
+		await seedServer();
+		const laptop = new Geraet("laptop");
+		laptop.state = startState();
+		await auf(laptop, (engine) => engine.ensureMonthSynced(OLD));
+
+		expect(laptop.state.priority?.months).toContain(OLD);
+		expect(laptop.state.priority?.seq).toBe(0);
+		expect(laptop.state.seq).toBe(0);
+	});
+
+	it("nach dem Backfill kostet ein Nachladen keine Anfrage mehr", async () => {
+		await seedServer();
+		const laptop = new Geraet("laptop");
+		laptop.state = startState();
+		await auf(laptop, (engine) => engine.sync());
+		server.queries = [];
+		await auf(laptop, (engine) => engine.ensureMonthSynced("2019-05"));
+		expect(server.queries).toEqual([]);
+	});
+
+	it("zweimal Nachladen laedt nur einmal", async () => {
+		// Der Prefetch beim Hovern feuert sonst bei jeder Mausbewegung erneut.
+		await seedServer();
+		const laptop = new Geraet("laptop");
+		laptop.state = startState();
+		server.queries = [];
+		await auf(laptop, (engine) =>
+			Promise.all([engine.ensureMonthSynced(OLD), engine.ensureMonthSynced(OLD)])
+		);
+		expect(server.queries.filter((q) => q.startsWith("GET /api/sync?"))).toHaveLength(1);
+	});
+
+	it("ein Geraet ohne vorgezogenen Teil holt weiterhin alles am Stueck", async () => {
+		// Bestandsgeraete kennen schon alles; fuer sie darf sich nichts aendern.
+		await seedServer();
+		const laptop = new Geraet("laptop");
+		server.queries = [];
+		await auf(laptop, (engine) => engine.sync());
+
+		const pulls = server.queries.filter((q) => q.startsWith("GET /api/sync?"));
+		expect(pulls.every((q) => !q.includes("bucket="))).toBe(true);
+		expect((await eintraege(laptop, OLD)).map((e) => e.id)).toEqual(["alt-1"]);
 	});
 });
