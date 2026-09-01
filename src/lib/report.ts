@@ -40,6 +40,15 @@ export interface MonthReport {
 	total: number;
 	absenceHours: number;
 	workHours: number;
+	/**
+	 * Zeitausgleich des Monats - bewusst NICHT Teil von `total`.
+	 *
+	 * Ein Urlaubstag fuellt das Tagessoll, ein Zeitausgleich laesst es offen.
+	 * Genau dadurch sinkt der Saldo um die Stunden des Tages: die Ueberstunden
+	 * sind abgefeiert. Die Zahl steht hier nur, damit die Auswertung sie zeigen
+	 * kann - im Bericht an den Chef taucht sie nicht auf.
+	 */
+	timeOffHours: number;
 	/** Wie viel Pause insgesamt abgezogen wurde (0 = Abzug aus). */
 	breakHours: number;
 }
@@ -67,10 +76,22 @@ export function buildReport(
 	// Endzeitpunkt fuer die Stundenrechnung – siehe openEntryUntil() in time.ts.
 	const until = (e: Entry) => openEntryUntil(e, now);
 
+	// Zeitausgleich sitzt auf derselben Zeile wie Urlaub und Krankheit, wird aber
+	// genau andersherum verrechnet - er laeuft an der ganzen Summe vorbei.
+	const isTimeOff = (e: Entry) => absenceIds.has(e.activityId) && e.timeOff === true;
+
 	// Abwesenheiten an Nicht-Arbeitstagen (z. B. Wochenende) zaehlen nicht mit –
 	// weder als Abwesenheitsstunden noch als Ganztags-Sperre.
 	const isCountedAbsence = (e: Entry) =>
-		absenceIds.has(e.activityId) && (!workdays || isWorkday(e.startTs, workdays));
+		absenceIds.has(e.activityId) && !isTimeOff(e) && (!workdays || isWorkday(e.startTs, workdays));
+
+	// Der Zeitausgleich getrennt: nur zum Anzeigen, nie in `total`.
+	let timeOffHours = 0;
+	for (const e of entries) {
+		if (!isTimeOff(e)) continue;
+		if (workdays && !isWorkday(e.startTs, workdays)) continue;
+		timeOffHours += (e.dayFraction ?? 1) * hoursPerDay;
+	}
 
 	// Tage mit Ganztags-Abwesenheit: an diesen Tagen zaehlen Projektzeiten nicht.
 	const fullDayAbsenceDays = new Set<string>();
@@ -89,6 +110,9 @@ export function buildReport(
 	// gibt es keine Pause.
 	const workByDay = new Map<string, Map<string, number>>();
 	for (const e of entries) {
+		// Ein Zeitausgleich hinterlaesst in der Rechnung nichts - was bleibt, ist
+		// ein Tag ohne Arbeitszeit, und genau das ist gemeint.
+		if (isTimeOff(e)) continue;
 		const isAbs = absenceIds.has(e.activityId);
 		// Abwesenheit an einem Nicht-Arbeitstag komplett ignorieren.
 		if (isAbs && workdays && !isWorkday(e.startTs, workdays)) continue;
@@ -148,6 +172,7 @@ export function buildReport(
 		total: workHours + absenceHours,
 		absenceHours,
 		workHours,
+		timeOffHours,
 		breakHours
 	};
 }

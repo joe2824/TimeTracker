@@ -165,6 +165,65 @@ describe("reportSubject", () => {
 	});
 });
 
+describe("buildReport – Zeitausgleich", () => {
+	/** Ein abgefeierter Tag: dieselbe Zeile wie Urlaub, nur andersherum gerechnet. */
+	function timeOff(id: string, fraction: number, dayOffset = 0): Entry {
+		return { ...absence(id, fraction, dayOffset), timeOff: true };
+	}
+
+	it("laesst das Tagessoll offen, statt es zu fuellen", () => {
+		// Der Kern der Sache: 7,5 h Zeitausgleich duerfen NICHT im Ist landen,
+		// sonst bliebe der Saldo stehen und es waeren keine Ueberstunden abgebaut.
+		const report = buildReport("2026-06", activities, [timeOff("t", 1, 5)], 0.5, HPD);
+		expect(report.total).toBe(0);
+		expect(report.absenceHours).toBe(0);
+		expect(report.timeOffHours).toBe(7.5);
+	});
+
+	it("rechnet den halben Tag als halbes Tagessoll", () => {
+		const report = buildReport("2026-06", activities, [timeOff("t", 0.5)], 0.5, HPD);
+		expect(report.timeOffHours).toBe(3.75);
+		expect(report.total).toBe(0);
+	});
+
+	it("taucht in keiner Zeile des Berichts auf", () => {
+		// Der Bericht geht an den Chef - der Zeitausgleich ist eine Sache zwischen
+		// dem Menschen und seinem Stundenkonto.
+		const report = buildReport("2026-06", activities, [timeOff("t", 1, 5)], 0.5, HPD);
+		const abwesenheiten = report.rows.find((r) => r.name === "Abwesenheiten");
+		expect(abwesenheiten?.hours).toBe(0);
+		expect(reportToHtml(report)).not.toContain("Zeitausgleich");
+	});
+
+	it("laesst Urlaub auf derselben Zeile unangetastet", () => {
+		// Beides steht auf "Abwesenheiten": nur der eine Eintrag zaehlt.
+		const report = buildReport(
+			"2026-06",
+			activities,
+			[absence("u", 1, 5), timeOff("t", 1, 6)],
+			0.5,
+			HPD
+		);
+		expect(report.absenceHours).toBe(7.5);
+		expect(report.timeOffHours).toBe(7.5);
+		expect(report.total).toBe(7.5);
+	});
+
+	it("zaehlt einen Zeitausgleich am Wochenende nicht mit", () => {
+		// Am freien Tag gibt es kein Tagessoll, das offen bleiben koennte.
+		const saturday = wallToTs(2026, 6, 13, 12, 0, 0);
+		const report = buildReport(
+			"2026-06",
+			activities,
+			[{ id: "t", activityId: "abs", startTs: saturday, endTs: saturday, note: "", source: "manual", dayFraction: 1, timeOff: true }],
+			0.5,
+			HPD,
+			[1, 2, 3, 4, 5]
+		);
+		expect(report.timeOffHours).toBe(0);
+	});
+});
+
 describe("buildReport – offene Einträge", () => {
 	const P1: Activity = {
 		id: "p1",

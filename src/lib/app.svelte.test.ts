@@ -285,6 +285,48 @@ describe("addEntry – Konfliktregeln", () => {
 	});
 });
 
+describe("Zeitausgleich", () => {
+	it("legt ihn auf der Abwesenheits-Zeile an und merkt sich die Art", async () => {
+		// Keine eigene Aktivitaet: der Unterschied steckt allein im Eintrag.
+		reset();
+		const created = await app.addEntry(ABS, at(17, 12), at(17, 12), "", "manual", 1, {
+			timeOff: true
+		});
+		expect(created?.activityId).toBe(ABS);
+		expect(onDisk("2026-07")[0].timeOff).toBe(true);
+		expect(app.isTimeOff(onDisk("2026-07")[0])).toBe(true);
+	});
+
+	it("schreibt an einen gewoehnlichen Urlaubstag gar kein Merkmal", async () => {
+		// Ein `timeOff: false` an jedem Eintrag waere eine inhaltliche Aenderung
+		// und schickte beim naechsten Abgleich den halben Bestand erneut hoch.
+		reset();
+		await app.addEntry(ABS, at(17, 12), at(17, 12), "", "manual", 1);
+		expect("timeOff" in onDisk("2026-07")[0]).toBe(false);
+	});
+
+	it("sperrt einen ganzen Tag genauso wie ein Urlaubstag", async () => {
+		// Wer den Tag abfeiert, arbeitet an ihm nicht.
+		reset();
+		await app.addEntry(ABS, at(17, 12), at(17, 12), "", "manual", 1, { timeOff: true });
+		expect(await app.addEntry(P1, at(17, 8), at(17, 12))).toBeNull();
+	});
+
+	it("laesst Projektzeit neben einem halben Tag zu", async () => {
+		// Vormittags arbeiten, nachmittags abfeiern - der Sinn des halben Tages.
+		reset();
+		await app.addEntry(ABS, at(17, 12), at(17, 12), "", "manual", 0.5, { timeOff: true });
+		expect(await app.addEntry(P1, at(17, 8), at(17, 12))).not.toBeNull();
+	});
+
+	it("traegt einen ganzen Zeitraum als Zeitausgleich ein", async () => {
+		reset();
+		const { added } = await app.addAbsenceRange("2026-07-13", "2026-07-15", 1, true);
+		expect(added).toBe(3);
+		expect(onDisk("2026-07").every((e) => e.timeOff === true)).toBe(true);
+	});
+});
+
 describe("deleteYearEntries", () => {
 	it("löscht nur das genannte Jahr – aus Datei UND Cache", async () => {
 		reset({

@@ -5,6 +5,7 @@
 	import * as Dialog from "$lib/components/ui/dialog";
 	import DateInput from "$lib/components/shared/DateInput.svelte";
 	import DayFractionSwitch from "$lib/components/shared/DayFractionSwitch.svelte";
+	import AbsenceKindChoice from "$lib/components/shared/AbsenceKindChoice.svelte";
 	import { toast } from "svelte-sonner";
 	import { fmtDate } from "$lib/time";
 
@@ -16,12 +17,14 @@
 	// Tagesanteil statt Boolean: dieselbe Groesse, die addAbsenceRange und die
 	// anderen Dialoge verwenden – kein Umrechnen an der Grenze mehr.
 	let fraction = $state(1);
+	let timeOff = $state(false);
 
 	async function add() {
-		const { added, skipped } = await app.addAbsenceRange(from, to, fraction);
+		const { added, skipped } = await app.addAbsenceRange(from, to, fraction, timeOff);
 		if (added > 0) {
 			const extra = skipped > 0 ? ` (${skipped} mit Projektzeit übersprungen)` : "";
-			toast.success(`${added} Abwesenheitstag(e) eingetragen${extra}.`);
+			const was = timeOff ? "Tag(e) Zeitausgleich" : "Abwesenheitstag(e)";
+			toast.success(`${added} ${was} eingetragen${extra}.`);
 			onsaved?.(from.slice(0, 7)); // auf den Abwesenheits-Monat springen
 			open = false;
 		} else if (skipped > 0) {
@@ -36,7 +39,7 @@
 	<Dialog.Content class="sm:max-w-md">
 		<form class="grid gap-4" onsubmit={(e) => { e.preventDefault(); add(); }}>
 			<Dialog.Header>
-				<Dialog.Title>Urlaub / Abwesenheit (Zeitraum)</Dialog.Title>
+				<Dialog.Title>Abwesenheit / Zeitausgleich (Zeitraum)</Dialog.Title>
 				<Dialog.Description>
 					Trägt für jeden <strong>Arbeitstag</strong> im Bereich einen Abwesenheitseintrag an
 					(Wochenenden/freie Tage werden übersprungen).
@@ -53,6 +56,7 @@
 						<DateInput id="vacto" bind:value={to} class="w-40" />
 					</div>
 				</div>
+				<AbsenceKindChoice id="vactimeoff" bind:value={timeOff} />
 				<DayFractionSwitch id="vacfrac" label="Umfang je Tag" bind:value={fraction} />
 			</div>
 			<Dialog.Footer>

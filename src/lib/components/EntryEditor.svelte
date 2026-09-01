@@ -30,7 +30,7 @@
 		type Interval,
 		type ReconcileDay
 	} from "$lib/timeReconcile";
-	import { breakDeduction } from "$lib/breaks";
+	import { dayTotals } from "$lib/dayTotals";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
@@ -45,10 +45,12 @@
 	import VacationRange from "$lib/components/shared/VacationRange.svelte";
 	import MonthSelector from "$lib/components/shared/MonthSelector.svelte";
 	import DayFractionSwitch from "$lib/components/shared/DayFractionSwitch.svelte";
+	import AbsenceKindChoice from "$lib/components/shared/AbsenceKindChoice.svelte";
 	import PlusIcon from "@lucide/svelte/icons/plus";
 	import Trash2Icon from "@lucide/svelte/icons/trash-2";
 	import CalendarDaysIcon from "@lucide/svelte/icons/calendar-days";
 	import PalmtreeIcon from "@lucide/svelte/icons/palmtree";
+	import HourglassIcon from "@lucide/svelte/icons/hourglass";
 
 	let month = $state(app.currentMonth);
 	let bulkOpen = $state(false);
@@ -112,6 +114,8 @@
 		start: string;
 		end: string;
 		fraction: number;
+		/** Abwesenheits-Art: true = Zeitausgleich statt Urlaub/Krank. */
+		timeOff: boolean;
 		note: string;
 		source: EntrySource;
 	}
@@ -284,6 +288,7 @@
 			start: `${hh}:00`,
 			end: `${hh}:00`,
 			fraction: 1,
+			timeOff: false,
 			note: "",
 			source: "manual"
 		};
@@ -363,18 +368,12 @@
 			const date = `${month}-${String(d).padStart(2, "0")}`;
 			const wd = weekdayOfDate(date);
 			const entries = (byDate.get(date) ?? []).sort((a, b) => a.startTs - b.startTs);
-			// Projektzeit und Abwesenheit getrennt: die Pause geht nur von der
-			// gearbeiteten Zeit ab, nie von einem Urlaubstag.
-			let worked = 0;
-			let absent = 0;
-			for (const e of entries) {
-				const isAbs = app.isAbsenceId(e.activityId);
-				const h = entryHours(e, isAbs, app.settings.hoursPerDay, app.now);
-				if (isAbs) absent += h;
-				else worked += h;
-			}
-			const pause = app.settings.breakDeduction ? breakDeduction(worked) : 0;
-			const hours = worked - pause + absent;
+			const totals = dayTotals(entries, absenceIds, app.settings.hoursPerDay, {
+				now: app.now,
+				deductBreaks: app.settings.breakDeduction
+			});
+			const pause = totals.pause;
+			const hours = totals.total;
 			// Abweichung laut Zeitwächter, in beide Richtungen. Tage, an denen in LOGA
 			// nur „Kommen" steht, bleiben stumm – dort fehlt der Feierabend, nicht die
 			// Zeit (Status „open", siehe reconcile).
@@ -439,6 +438,7 @@
 			start: fmtClock(e.startTs),
 			end: fmtClock(end),
 			fraction: e.dayFraction ?? 1,
+			timeOff: e.timeOff === true,
 			note: e.note,
 			source: e.source
 		};
@@ -493,7 +493,10 @@
 				note: draft.note,
 				source: draft.source
 			};
-			if (absence) entry.dayFraction = draft.fraction;
+			if (absence) {
+				entry.dayFraction = draft.fraction;
+				if (draft.timeOff) entry.timeOff = true;
+			}
 			const ok = await app.updateEntry(draft.originalStartTs, entry);
 			if (!ok) return; // Tageskonflikt -> Dialog offen lassen
 		} else {
@@ -504,7 +507,7 @@
 				draft.note,
 				"manual",
 				absence ? draft.fraction : undefined,
-				{ confirmAbsenceOverride: true }
+				{ confirmAbsenceOverride: true, timeOff: absence && draft.timeOff }
 			);
 			// Konflikt (z.B. Ganztags-Abwesenheit) -> addEntry hat null + Toast geliefert.
 			if (!created) return;
@@ -520,9 +523,11 @@
 	}
 
 	function entryLabel(e: Entry): string {
-		const name = app.activityName(e.activityId);
+		const name = app.isTimeOff(e) ? "Zeitausgleich" : app.activityName(e.activityId);
 		if (app.isAbsenceId(e.activityId)) {
-			return `${name} · ${(e.dayFraction ?? 1) === 0.5 ? "½ Tag" : "ganzer Tag"}`;
+			const span = (e.dayFraction ?? 1) === 0.5 ? "½ Tag" : "ganzer Tag";
+			const h = entryHours(e, true, app.settings.hoursPerDay, app.now);
+			return `${name} · ${span} (${fmtHoursClock(h)} h)`;
 		}
 		const h = entryHours(e, false, app.settings.hoursPerDay, app.now);
 		// Reicht der Eintrag über seinen Tag hinaus (vergessener Timer), gehört der
@@ -611,6 +616,7 @@
 						>
 							{#each day.entries as e (e.id)}
 								{@const isAbs = app.isAbsenceId(e.activityId)}
+								{@const isTimeOff = app.isTimeOff(e)}
 								<!-- Button-Komponente statt roher <button>: bringt Fokusring, Hover
 								     und Zeiger aus dem Design-System mit. `text-sm` überschreibt das
 								     `text-xs` der xs-Größe, sonst schrumpfte die Eintragszeile. -->
@@ -618,13 +624,15 @@
 									<Button
 										variant="ghost"
 										size="xs"
-										class="min-w-0 flex-1 justify-start text-sm font-normal {isAbs
-											? 'bg-amber-500/15 text-amber-700 hover:bg-amber-500/25 hover:text-amber-700 dark:text-amber-300 dark:hover:text-amber-300'
-											: ''}"
+										class="min-w-0 flex-1 justify-start text-sm font-normal {isTimeOff
+											? 'bg-violet-500/15 text-violet-700 hover:bg-violet-500/25 hover:text-violet-700 dark:text-violet-300 dark:hover:text-violet-300'
+											: isAbs
+												? 'bg-amber-500/15 text-amber-700 hover:bg-amber-500/25 hover:text-amber-700 dark:text-amber-300 dark:hover:text-amber-300'
+												: ''}"
 										onclick={() => openEdit(e)}
 										title="Bearbeiten"
 									>
-										{#if isAbs}<PalmtreeIcon />{/if}
+										{#if isTimeOff}<HourglassIcon />{:else if isAbs}<PalmtreeIcon />{/if}
 										<span class="truncate">{entryLabel(e)}</span>
 									</Button>
 									<Button
@@ -691,7 +699,7 @@
 									</Popover.Content>
 								</Popover.Root>
 							{/if}
-							{#if day.hours > 0}
+							{#if day.hours !== 0}
 								<span class="text-muted-foreground w-14 text-right font-mono text-xs tabular-nums">
 									{fmtHoursClock(day.hours)} h
 								</span>
@@ -769,13 +777,14 @@
 			</div>
 
 			{#if draftIsAbsence}
-				<div class="grid grid-cols-2 gap-2">
-					<div class="space-y-1">
-						<Label for="date">Datum</Label>
-						<DateInput id="date" bind:value={draft.date} />
-					</div>
-					<DayFractionSwitch id="frac" bind:value={draft.fraction} />
+				<div class="space-y-1">
+					<Label for="date">Datum</Label>
+					<DateInput id="date" bind:value={draft.date} />
 				</div>
+				<!-- Der Unterschied steckt allein in der Verrechnung, nicht in der
+				     Erfassung: deshalb hier eine Auswahl statt einer eigenen Aktivitaet. -->
+				<AbsenceKindChoice id="timeoff" bind:value={draft.timeOff} />
+				<DayFractionSwitch id="frac" bind:value={draft.fraction} />
 			{:else}
 				<!-- Schmal zwei Spalten: Von/Bis nebeneinander, Stunden ueber die volle
 				     Breite. Zu dritt bleiben bei 360px keine 90px je Feld. -->

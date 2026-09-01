@@ -103,6 +103,7 @@ class AppState {
 					note: string;
 					source: EntrySource;
 					dayFraction?: number;
+					timeOff?: boolean;
 				};
 				days: BlockedDay[];
 		  }
@@ -771,7 +772,7 @@ class AppState {
 		note = "",
 		source: EntrySource = "manual",
 		dayFraction?: number,
-		opts: { confirmAbsenceOverride?: boolean } = {}
+		opts: { confirmAbsenceOverride?: boolean; timeOff?: boolean } = {}
 	): Promise<Entry | null> {
 		await this.ensureMonth(monthKey(startTs));
 		if (endTs !== null) await this.ensureMonth(monthKey(endTs));
@@ -803,7 +804,7 @@ class AppState {
 				}
 				this.absenceOverridePrompt = {
 					kind: "add",
-					args: { activityId, startTs, endTs, note, source, dayFraction },
+					args: { activityId, startTs, endTs, note, source, dayFraction, timeOff: opts.timeOff },
 					days: blocked
 				};
 				return null;
@@ -812,7 +813,15 @@ class AppState {
 
 		let first: Entry | null = null;
 		for (const p of parts) {
-			const e = await this.#pushEntry(activityId, p.startTs, p.endTs, note, source, dayFraction);
+			const e = await this.#pushEntry(
+				activityId,
+				p.startTs,
+				p.endTs,
+				note,
+				source,
+				dayFraction,
+				opts.timeOff
+			);
 			first ??= e;
 		}
 		return first;
@@ -825,15 +834,24 @@ class AppState {
 		endTs: number | null,
 		note: string,
 		source: EntrySource,
-		dayFraction?: number
+		dayFraction?: number,
+		timeOff?: boolean
 	): Promise<Entry> {
 		const month = monthKey(startTs);
 		await this.ensureMonth(month);
 		const entry: Entry = { id: uid(), activityId, startTs, endTs, note, source };
 		if (dayFraction != null) entry.dayFraction = dayFraction;
+		// Nur setzen, wo es zutrifft: ein `timeOff: false` an jedem Eintrag waere
+		// eine inhaltliche Aenderung und schickte den halben Bestand erneut hoch.
+		if (timeOff) entry.timeOff = true;
 		this.entriesByMonth[month].push(entry);
 		await this.#saveMonth(month);
 		return entry;
+	}
+
+	/** Zeitausgleich statt Urlaub/Krank? Nur auf der Abwesenheits-Zeile moeglich. */
+	isTimeOff(e: Entry): boolean {
+		return e.timeOff === true && this.isAbsenceId(e.activityId);
 	}
 
 	isAbsenceId(activityId: string): boolean {
@@ -1400,7 +1418,7 @@ class AppState {
 				p.args.note,
 				p.args.source,
 				p.args.dayFraction,
-				{ confirmAbsenceOverride: true }
+				{ confirmAbsenceOverride: true, timeOff: p.args.timeOff }
 			);
 		} else {
 			await this.updateEntry(p.originalStartTs, p.entry);
@@ -1431,7 +1449,8 @@ class AppState {
 	async addAbsenceRange(
 		startDate: string,
 		endDate: string,
-		fraction = 1
+		fraction = 1,
+		timeOff = false
 	): Promise<{ added: number; skipped: number }> {
 		const abs = this.absenceActivity;
 		if (!abs) return { added: 0, skipped: 0 };
@@ -1451,7 +1470,7 @@ class AppState {
 				skipped++;
 				continue;
 			}
-			const e = await this.addEntry(abs.id, noon, noon, "", "manual", fraction);
+			const e = await this.addEntry(abs.id, noon, noon, "", "manual", fraction, { timeOff });
 			if (e) added++;
 			else skipped++;
 		}
