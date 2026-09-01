@@ -91,6 +91,17 @@ class FakeServer {
 		};
 	}
 
+	/**
+	 * Ein Tor vor gefilterten Abrufen - damit ein Test einen laufenden
+	 * Monats-Nachschlag festhalten kann, waehrend nebenan ein Durchgang laeuft.
+	 */
+	gate: Promise<void> | null = null;
+	openGate: () => void = () => {};
+
+	holdBucketPulls(): void {
+		this.gate = new Promise((r) => (this.openGate = r));
+	}
+
 	/** Eine Abrufmethode, die statt ins Netz in diesen Nachbau greift. */
 	fetchFor(deviceId: string) {
 		return async (input: string, init?: RequestInit): Promise<Response> => {
@@ -98,6 +109,15 @@ class FakeServer {
 			this.calls.push(`${init?.method ?? "GET"} ${url.pathname}`);
 			this.queries.push(`${init?.method ?? "GET"} ${url.pathname}${url.search}`);
 			if (url.pathname === "/api/sync" && (init?.method ?? "GET") === "GET") {
+				// Nur den Nachschlag auf Zuruf festhalten, nicht die vorgezogene
+				// Menge - die traegt zusaetzlich "unbucketed".
+				if (
+					this.gate &&
+					url.searchParams.has("bucket") &&
+					!url.searchParams.has("unbucketed")
+				) {
+					await this.gate;
+				}
 				const since = Number(url.searchParams.get("since") ?? 0);
 				const limit = Number(url.searchParams.get("limit") ?? 200);
 				const buckets = url.searchParams.getAll("bucket");
@@ -1245,6 +1265,32 @@ describe("Vorgezogenes Laden", () => {
 			Promise.all([engine.ensureMonthSynced(OLD), engine.ensureMonthSynced(OLD)])
 		);
 		expect(server.queries.filter((q) => q.startsWith("GET /api/sync?"))).toHaveLength(1);
+	});
+
+	it("die Historie setzt aus, solange ein Monat auf Zuruf laeuft", async () => {
+		// Spekulation darf die Leitung nicht zumachen, die einer braucht, der
+		// gerade hinsieht. Ausgesetzt wird nur, nicht gewartet - sonst hielten
+		// sich beide gegenseitig auf.
+		await seedServer();
+		const laptop = new Device("laptop");
+		laptop.state = startState();
+
+		await on(laptop, async (engine) => {
+			server.holdBucketPulls();
+			// Laeuft los und bleibt am Tor stehen.
+			const fetching = engine.ensureMonthSynced(OLD);
+			const before = laptop.state.seq;
+			await engine.sync();
+			expect(engine.seq).toBe(before);
+
+			server.openGate();
+			server.gate = null;
+			await fetching;
+		});
+
+		// Und danach laeuft sie wieder.
+		await on(laptop, (engine) => engine.sync());
+		expect(laptop.state.seq).toBeGreaterThan(0);
 	});
 
 	it("ein Device ohne vorgezogenen Teil holt weiterhin alles am Stueck", async () => {

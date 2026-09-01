@@ -242,7 +242,11 @@ export class SyncEngine {
 	async #pullStaged(pushed: number): Promise<{ pulled: number; lostEdits: number }> {
 		await this.#followCalendar();
 		const first = await this.#pullPriority(pushed);
-		const rest = await this.#pullBacklog(pushed + first.pulled, BACKLOG_PAGES);
+		// Was jemand gleich sehen will, schlaegt Historie: laeuft gerade ein Monat
+		// auf Zuruf, setzt die Historie diese Runde aus. Nur aussetzen, nicht
+		// warten - warten hiesse, dass sich beide gegenseitig aufhalten.
+		const budget = this.#monthFetches.size > 0 ? 0 : BACKLOG_PAGES;
+		const rest = await this.#pullBacklog(pushed + first.pulled, budget);
 		// Die Historie ist durch: ab jetzt reicht der eine Stand wieder fuer alles.
 		if (rest.done && this.#state.priority) {
 			this.#state = { seq: this.#state.seq };
