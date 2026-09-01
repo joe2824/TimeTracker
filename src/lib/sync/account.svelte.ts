@@ -298,8 +298,17 @@ class AccountState {
 	async #rewindForNewKinds(state: SyncState): Promise<SyncState> {
 		const info = await loadDevice();
 		if (!info || info.resyncGeneration === RESYNC_GENERATION) return state;
+		// Stand 0 heisst: es gibt nichts nachzuholen - frisch verknuepft, oder noch
+		// nie abgeglichen. Nur der Merker war faellig. Der vorgezogene Teil MUSS
+		// hier stehen bleiben: beim Verknuepfen ist er gerade erst gesetzt worden,
+		// und ohne ihn liefe jede Erstverknuepfung wieder aeltestes zuerst.
+		if (state.seq === 0) {
+			await saveDevice({ ...info, resyncGeneration: RESYNC_GENERATION });
+			return state;
+		}
 		// Der vorgezogene Teil faellt mit weg: er zaehlt seinen eigenen Stand mit,
 		// und der zeigte sonst hinter Datensaetze, die gerade erst nachkommen.
+		// Hier ist das unbedenklich - dieses Geraet hat alle Monate schon lokal.
 		const rewound: SyncState = { seq: 0 };
 		await saveDevice({
 			...info,
@@ -307,9 +316,6 @@ class AccountState {
 			priority: undefined,
 			resyncGeneration: RESYNC_GENERATION
 		});
-		// Stand 0 heisst: es gibt nichts nachzuholen - frisch verknuepft, oder noch
-		// nie abgeglichen. Nur der Merker war faellig.
-		if (state.seq === 0 && !state.priority) return rewound;
 		this.#rewound = true;
 		logInfo("Hole den Serverstand einmalig von vorne", { grund: "neue Datensatzart" });
 		return rewound;

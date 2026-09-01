@@ -26,6 +26,7 @@ const { account, RESYNC_GENERATION } = await import("./account.svelte");
 const { app } = await import("../app.svelte");
 const store = await import("../store");
 const { resetOutboxForTests } = await import("./outbox");
+const { monthKey } = await import("../time");
 
 /** Nur so viel Server, wie der Abgleich anfasst. */
 class MiniServer {
@@ -33,6 +34,14 @@ class MiniServer {
 	seq = 0;
 	/** Ab welchem Stand jeweils abgerufen wurde - daran haengt der zweite Test. */
 	pulledSince: number[] = [];
+	/** Haelt den Abruf an, damit ein Test den Stand direkt nach dem Verknuepfen sieht. */
+	gate: { blocked: Promise<void>; open: () => void } | null = null;
+
+	hold() {
+		let open!: () => void;
+		const blocked = new Promise<void>((r) => (open = r));
+		this.gate = { blocked, open };
+	}
 
 	push(deviceId: string, records: unknown[]) {
 		const accepted: { id: string; rev: number; seq: number }[] = [];
@@ -78,6 +87,7 @@ class MiniServer {
 			const url = new URL(raw, "http://test");
 			const method = init?.method ?? "GET";
 			if (url.pathname === "/api/sync" && method === "GET") {
+				if (this.gate) await this.gate.blocked;
 				const since = Number(url.searchParams.get("since") ?? 0);
 				return new Response(JSON.stringify(this.pull(since)), { status: 200 });
 			}
@@ -184,6 +194,26 @@ describe("Monate beim Server", () => {
 
 	it("liefert ohne Verknuepfung nichts, statt zu fragen", async () => {
 		expect(await account.remoteMonths()).toEqual([]);
+	});
+});
+
+describe("Erstes Verknuepfen", () => {
+	it("behaelt die vorgezogenen Monate, statt sie dem Nachlauf zu opfern", async () => {
+		// Der Nachlauf setzt den Stand auf 0 zurueck. Ein frisch verknuepftes Geraet
+		// steht ohnehin auf 0 - ihm dabei die Prio-Monate zu nehmen, haette den
+		// gestuften Abruf bei JEDER Erstverknuepfung abgeschaltet.
+		server.hold();
+		try {
+			await account.linkWithSession("http://test", await createVaultKey(), "Ich");
+
+			expect((await store.loadDevice())!.priority?.months).toContain(monthKey(Date.now()));
+			expect(account.backfilling).toBe(true);
+		} finally {
+			server.gate?.open();
+			server.gate = null;
+			globalThis.fetch = originalFetch;
+			await account.unlink();
+		}
 	});
 });
 
