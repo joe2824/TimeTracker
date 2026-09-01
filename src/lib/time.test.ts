@@ -343,9 +343,9 @@ describe("fmtDateHuman", () => {
 	it("nennt den Vortag korrekt – der Fall beim rueckdatierten Timer-Start", () => {
 		// Kurz nach Mitternacht "vor 60 Min" landet auf dem Vortag; genau darum
 		// muss die Meldung den Tag benennen statt "an diesem Tag" zu sagen.
-		const kurzNachMitternacht = toTs("2026-07-17", "00:53");
-		const vor60Min = kurzNachMitternacht - 60 * 60 * 1000;
-		expect(fmtDateHuman(vor60Min)).toBe("Do., 16.07.2026");
+		const justAfterMidnight = toTs("2026-07-17", "00:53");
+		const sixtyMinAgo = justAfterMidnight - 60 * 60 * 1000;
+		expect(fmtDateHuman(sixtyMinAgo)).toBe("Do., 16.07.2026");
 	});
 });
 
@@ -465,9 +465,9 @@ describe("keepSeconds", () => {
 	});
 
 	it("unterscheidet gleiche Uhrzeit an verschiedenen Tagen", () => {
-		const heute = ts(14, 0, 0);
-		const gestern = wallToTs(2026, 8, 18, 14, 0, 22);
-		expect(keepSeconds(heute, gestern)).toBe(heute);
+		const today = ts(14, 0, 0);
+		const yesterday = wallToTs(2026, 8, 18, 14, 0, 22);
+		expect(keepSeconds(today, yesterday)).toBe(today);
 	});
 
 	it("laesst einen neuen Eintrag (ohne Original) unberuehrt", () => {
@@ -492,11 +492,11 @@ describe("quantize", () => {
 		// Genau darauf beruht die Ersparnis: Svelte gibt einen unveraenderten
 		// Wert nicht weiter, die Rechnung dahinter laeuft also einmal je Minute.
 		const base = wallToTs(2026, 6, 10, 14, 37, 0);
-		const werte = new Set<number>();
-		for (let s = 0; s < 60; s++) werte.add(quantize(base + s * 1000, MINUTE_MS));
-		expect(werte.size).toBe(1);
+		const values = new Set<number>();
+		for (let s = 0; s < 60; s++) values.add(quantize(base + s * 1000, MINUTE_MS));
+		expect(values.size).toBe(1);
 		// Die naechste Sekunde faellt in die naechste Minute.
-		expect(quantize(base + 60_000, MINUTE_MS)).toBeGreaterThan([...werte][0]);
+		expect(quantize(base + 60_000, MINUTE_MS)).toBeGreaterThan([...values][0]);
 	});
 
 	it("rundet ab, nie auf – eine Rechnung darf nicht in die Zukunft greifen", () => {

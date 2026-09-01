@@ -5,8 +5,8 @@
 //   data/entries-YYYY-MM.json     (eine Datei pro Monat)
 //   data/timereport-YYYY-MM.json  (eingelesener LOGA-Report, eine Datei pro Monat)
 import { storage } from "./platform/fs";
-import type { Activity, Entry, Settings } from "./types";
-import type { TimeReportDay } from "./timeReport";
+import type { Activity, Entry, Settings, SyncMeta } from "./types";
+import type { TimeReportDay, TimeReportFlag } from "./timeReport";
 import type { SyncPriority } from "./sync/engine";
 import { defaultSettings } from "./types";
 import { logError, logWarn } from "./log";
@@ -68,6 +68,12 @@ export interface WriteHook {
 	entries(month: string, before: Entry[], after: Entry[]): Promise<Entry[]>;
 	activities(before: Activity[], after: Activity[]): Promise<Activity[]>;
 	settings(before: Settings | null, after: Settings): Promise<Settings>;
+	/** `after === null` heisst: der Report dieses Monats faellt weg. */
+	timeReport(
+		month: string,
+		before: StoredTimeReport | null,
+		after: StoredTimeReport | null
+	): Promise<StoredTimeReport | null>;
 }
 
 let writeHook: WriteHook | null = null;
@@ -232,15 +238,19 @@ export async function pruneEmptyMonthFiles(): Promise<string[]> {
 // ---- Zeitwirtschaftsreport (pro Monat) ----
 
 /** Ein eingelesener LOGA-Report, auf einen Monat und eine Person eingedampft. */
-export interface StoredTimeReport {
+export interface StoredTimeReport extends SyncMeta {
 	/** "YYYY-MM" */
 	month: string;
 	/** Wann die Datei eingelesen wurde (Epoch-ms) */
 	importedAt: number;
-	/** Person aus der Datei – bei einem Team-Export gibt es mehrere zur Auswahl. */
-	personKey: string;
-	personName: string;
-	/** Nur die Tage DIESES Monats, aufsteigend. */
+	/**
+	 * Nur die Tage DIESES Monats, aufsteigend.
+	 *
+	 * Bewusst ohne Personalnummer und Namen: gerechnet wird damit nirgends, und
+	 * was nicht abgelegt wird, kann auch nicht in eine Sicherung oder auf einen
+	 * Server wandern. Wem der Report gehoert, steht in den Einstellungen unter
+	 * "Bericht & E-Mail" - beim Einlesen wird dagegen geprueft.
+	 */
 	days: TimeReportDay[];
 }
 
@@ -248,15 +258,74 @@ function reportFile(month: string): string {
 	return `timereport-${month}.json`;
 }
 
+/** Die Flag-Namen vor 0.9.2. Zum Lesen alter Reports, nicht zum Schreiben. */
+const LEGACY_FLAG_KEYS: Record<string, TimeReportFlag["key"]> = {
+	ruhepause: "restBreak",
+	ueber10: "over10",
+	soll10: "target10",
+	wiedereingliederung: "gradualReturn",
+	sonntag: "sunday",
+	feiertag: "holiday"
+};
+
 /** Den gespeicherten Report eines Monats lesen. Null, wenn keiner vorliegt. */
 export async function loadTimeReport(month: string): Promise<StoredTimeReport | null> {
 	const stored = await readJson<StoredTimeReport | null>(reportFile(month), null);
 	// Eine Datei aus einer aelteren/kaputten Fassung soll die Ansicht nicht kippen.
-	return stored && Array.isArray(stored.days) ? stored : null;
+	if (!stored || !Array.isArray(stored.days)) return null;
+
+	// Ausdruecklich Feld fuer Feld statt `...stored`: aeltere Dateien tragen noch
+	// Personalnummer und Namen. Ueber den Spread landeten sie beim naechsten
+	// Speichern wieder auf der Platte - und spaeter im Abgleich.
+	//
+	// Die Flag-Namen von vor der Umbenennung werden dabei uebersetzt; ohne das
+	// faellt jeder Hinweis stumm aus der Ansicht.
+	return {
+		month: stored.month,
+		importedAt: stored.importedAt,
+		// Die Stempel gehoeren mitgenommen: ohne sie hielte der Abgleich jeden
+		// gespeicherten Report fuer nie hochgeladen und schriebe ihn endlos neu.
+		updatedAt: stored.updatedAt,
+		rev: stored.rev,
+		deviceId: stored.deviceId,
+		days: stored.days.map((day) => ({
+			...day,
+			flags: (day.flags ?? []).map((flag) => ({
+				...flag,
+				key: LEGACY_FLAG_KEYS[flag.key] ?? flag.key
+			}))
+		}))
+	};
 }
 
 export async function saveTimeReport(report: StoredTimeReport): Promise<void> {
-	return writeJson(reportFile(report.month), report);
+	const file = reportFile(report.month);
+	if (!writeHook) return writeJson(file, report);
+	return queued(file, async () => {
+		const before = await loadTimeReportRaw(report.month);
+		const stamped = await writeHook!.timeReport(report.month, before, report);
+		await writeJsonNow(file, stamped ?? report);
+	});
+}
+
+/**
+ * Den Report eines Monats entfernen.
+ *
+ * Geht durch den Haken, damit die Loeschung auch auf den anderen Geraeten
+ * ankommt - eine bloss geloeschte Datei bliebe dort stehen.
+ */
+export async function deleteTimeReport(month: string): Promise<void> {
+	const file = reportFile(month);
+	return queued(file, async () => {
+		if (writeHook) await writeHook.timeReport(month, await loadTimeReportRaw(month), null);
+		const path = `${DIR}/${file}`;
+		if (await storage.exists(path)) await storage.remove(path);
+	});
+}
+
+/** Der Stand einer Reportdatei, wie er auf der Platte liegt. */
+async function loadTimeReportRaw(month: string): Promise<StoredTimeReport | null> {
+	return readJson<StoredTimeReport | null>(reportFile(month), null);
 }
 
 /** Monate, zu denen ein eingelesener Report auf der Platte liegt, aufsteigend. */
@@ -287,6 +356,15 @@ export interface DeviceInfo {
 	seq?: number;
 	/** Der vorgezogene Teil des Abgleichs - nur da, solange Historie fehlt. */
 	priority?: SyncPriority;
+	/**
+	 * Welchen Nachlauf dieses Geraet schon hinter sich hat.
+	 *
+	 * Der Stand `seq` wandert weiter, auch ueber Datensatzarten, die diese Fassung
+	 * noch nicht kannte - die sind damit fuer immer uebersprungen. Kommt eine Art
+	 * hinzu, wird die Zahl hier hochgesetzt; jedes Geraet holt dann einmalig von
+	 * vorne. Siehe RESYNC_GENERATION.
+	 */
+	resyncGeneration?: number;
 	/** Anzeigename des Kontos - nur fuer die Oberflaeche. */
 	accountName?: string;
 	/**
@@ -296,16 +374,16 @@ export interface DeviceInfo {
 	 * Damit laesst sich ein Kontowechsel erkennen, ohne die Kontokennung selbst
 	 * abzulegen.
 	 */
-	kontoKennung?: string;
+	accountFingerprint?: string;
 	/**
 	 * Wem der lokale Bestand gehoert.
 	 *
-	 * Weicht das von `kontoKennung` ab, stammen die Daten aus einem ANDEREN
+	 * Weicht das von `accountFingerprint` ab, stammen die Daten aus einem ANDEREN
 	 * Konto - dann duerfen sie nicht in das jetzige hochgeladen werden. Fehlt der
 	 * Wert, hat dieses Geraet noch nie ein Konto gesehen: der Bestand ist dann
 	 * der eigene und gehoert hoch.
 	 */
-	bestandGehoertZu?: string;
+	dataOwner?: string;
 }
 
 /**
@@ -318,17 +396,17 @@ export interface DeviceInfo {
  * Abgleich in SEIN Konto.
  */
 export async function clearAccountData(): Promise<void> {
-	for (const monat of await listEntryMonths()) {
-		const pfad = `${DIR}/${entriesFile(monat)}`;
-		if (await storage.exists(pfad)) await storage.remove(pfad);
+	for (const month of await listEntryMonths()) {
+		const path = `${DIR}/${entriesFile(month)}`;
+		if (await storage.exists(path)) await storage.remove(path);
 	}
-	for (const monat of await listTimeReportMonths()) {
-		const pfad = `${DIR}/${reportFile(monat)}`;
-		if (await storage.exists(pfad)) await storage.remove(pfad);
+	for (const month of await listTimeReportMonths()) {
+		const path = `${DIR}/${reportFile(month)}`;
+		if (await storage.exists(path)) await storage.remove(path);
 	}
-	for (const datei of ["activities.json", "outbox.json", "settings.json"]) {
-		const pfad = `${DIR}/${datei}`;
-		if (await storage.exists(pfad)) await storage.remove(pfad);
+	for (const file of ["activities.json", "outbox.json", "settings.json"]) {
+		const path = `${DIR}/${file}`;
+		if (await storage.exists(path)) await storage.remove(path);
 	}
 }
 
@@ -339,12 +417,29 @@ export async function clearAccountData(): Promise<void> {
  * bleiben sollen: der Abgleich liest die Outbox und fragt dabei keinen Stempel.
  */
 export async function clearOutbox(): Promise<void> {
-	const pfad = `${DIR}/outbox.json`;
-	if (await storage.exists(pfad)) await storage.remove(pfad);
+	const path = `${DIR}/outbox.json`;
+	if (await storage.exists(path)) await storage.remove(path);
+}
+
+/** Die Feldnamen vor 0.9.2. Zum Lesen alter Dateien, nicht zum Schreiben. */
+interface LegacyDeviceInfo {
+	kontoKennung?: string;
+	bestandGehoertZu?: string;
 }
 
 export async function loadDevice(): Promise<DeviceInfo | null> {
-	return readJson<DeviceInfo | null>("device.json", null);
+	const info = await readJson<(DeviceInfo & LegacyDeviceInfo) | null>("device.json", null);
+	if (!info) return null;
+
+	// Geraete aus aelteren Fassungen tragen die alten Feldnamen. Wuerden sie hier
+	// verworfen, saehe der naechste Abgleich ein Geraet ohne Kontozuordnung -
+	// und genau das loest das Loeschen des lokalen Bestands aus.
+	const { kontoKennung, bestandGehoertZu, ...rest } = info;
+	return {
+		...rest,
+		accountFingerprint: info.accountFingerprint ?? kontoKennung,
+		dataOwner: info.dataOwner ?? bestandGehoertZu
+	};
 }
 
 export async function saveDevice(info: DeviceInfo): Promise<void> {
@@ -385,25 +480,20 @@ export async function listEntryYears(): Promise<StoredYear[]> {
 
 /** Alle Monatsdateien eines Jahres loeschen. Gibt die geloeschten Monate zurueck. */
 export async function deleteYear(year: number): Promise<string[]> {
-	const desJahres = async (re: RegExp) =>
+	const ofYear = async (re: RegExp) =>
 		(await dataFiles(re)).filter(([, month]) => month.startsWith(`${year}-`));
 
 	// Die Monate gehen ueber saveEntries(month, []) und NICHT ueber ein direktes
 	// storage.remove(): nur so laeuft die Loeschung durch den Haken und landet in
 	// der Outbox - sonst faende der naechste Abgleich die Monate beim Server
 	// unveraendert vor und laedt das geloeschte Jahr wieder herunter.
-	const monate = (await desJahres(MONTH_FILE_RE)).map(([, month]) => month);
-	for (const month of monate) await saveEntries(month, []);
+	const months = (await ofYear(MONTH_FILE_RE)).map(([, month]) => month);
+	for (const month of months) await saveEntries(month, []);
 
-	// Die eingelesenen LOGA-Reports gleicht niemand ab; sie duerfen direkt weg -
-	// aber durch die Warteschlange, aus demselben Grund wie das Leeren eines Monats
-	// in saveEntries: ein noch anstehendes saveTimeReport derselben Datei legte sie
-	// sonst NACH dem Loeschen wieder an, unsichtbar bis zum naechsten Start.
-	for (const [name] of await desJahres(REPORT_FILE_RE)) {
-		await queued(name, async () => {
-			const path = `${DIR}/${name}`;
-			if (await storage.exists(path)) await storage.remove(path);
-		});
-	}
-	return monate.sort();
+	// Die eingelesenen Reports aus demselben Grund ueber deleteTimeReport und nicht
+	// ueber ein direktes storage.remove(): auch sie werden abgeglichen, seit es sie
+	// als eigene Datensatzart gibt. Direkt geloescht kaemen sie beim naechsten
+	// Abgleich vom Server zurueck.
+	for (const [, month] of await ofYear(REPORT_FILE_RE)) await deleteTimeReport(month);
+	return months.sort();
 }

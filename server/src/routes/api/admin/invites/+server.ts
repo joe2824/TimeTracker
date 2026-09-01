@@ -2,71 +2,74 @@
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import {
-	envInvitesDeaktiviert,
-	erstelleInvite,
-	istRegistrierungOffen,
-	istVerwalter,
-	listeInvites,
-	setzeEnvInvitesDeaktiviert,
-	setzeRegistrierungOffen,
-	zieheInviteZurueck
+	envInvitesDisabled,
+	createInvite,
+	isRegistrationOpen,
+	isAdminUser,
+	listInvites,
+	setEnvInvitesDisabled,
+	setRegistrationOpen,
+	revokeInvite
 } from "$lib/server/invites";
 import { INVITE_CODES } from "$lib/server/config";
 
 /** Verwalter sein - und zwar frisch geprueft, nicht aus einem Token geglaubt. */
-function nurVerwalter(locals: App.Locals): string {
+function adminOnly(locals: App.Locals): string {
 	if (!locals.userId) error(401, "Nicht angemeldet");
-	if (!istVerwalter(locals.db, locals.userId)) error(403, "Keine Berechtigung");
+	if (!isAdminUser(locals.db, locals.userId)) error(403, "Keine Berechtigung");
 	return locals.userId;
 }
 
 export const GET: RequestHandler = ({ locals }) => {
-	nurVerwalter(locals);
+	adminOnly(locals);
 	return json({
-		invites: listeInvites(locals.db),
+		invites: listInvites(locals.db),
 		envInvitesConfigured: INVITE_CODES.length > 0,
-		envInvitesActive: INVITE_CODES.length > 0 && !envInvitesDeaktiviert(locals.db),
-		openRegistration: istRegistrierungOffen(locals.db)
+		envInvitesActive: INVITE_CODES.length > 0 && !envInvitesDisabled(locals.db),
+		openRegistration: isRegistrationOpen(locals.db)
 	});
 };
 
 export const POST: RequestHandler = async ({ locals, request }) => {
-	const wer = nurVerwalter(locals);
+	const who = adminOnly(locals);
 	const body = await request.json().catch(() => null);
 
-	const tage = Number(body?.gueltigTage ?? 0);
+	// gueltigTage ist der alte Feldname. Eine Desktop-Anwendung wird unabhaengig
+	// vom Server aktualisiert - ohne den Rueckfall bekaeme eine aeltere Fassung
+	// hier stillschweigend 0 und legte einen Code ganz ohne Frist an.
+	const days = Number(body?.validDays ?? body?.gueltigTage ?? 0);
 	// Eine Frist ist die Voreinstellung des Verwalters, nicht des Servers: ein
 	// Code ohne Frist ist manchmal genau richtig (Familie), meistens aber nicht.
-	const expiresAt = tage > 0 ? Date.now() + tage * 86_400_000 : null;
+	const expiresAt = days > 0 ? Date.now() + days * 86_400_000 : null;
 
-	const zeile = erstelleInvite(locals.db, wer, {
+	const rowText = createInvite(locals.db, who, {
 		note: typeof body?.note === "string" ? body.note : undefined,
 		expiresAt
 	});
-	return json(zeile, { status: 201 });
+	return json(rowText, { status: 201 });
 };
 
 export const PATCH: RequestHandler = async ({ locals, request }) => {
-	nurVerwalter(locals);
+	adminOnly(locals);
 	const body = await request.json().catch(() => null);
 	if (typeof body?.openRegistration === "boolean") {
-		setzeRegistrierungOffen(locals.db, body.openRegistration);
+		setRegistrationOpen(locals.db, body.openRegistration);
 	}
 	if (typeof body?.active === "boolean") {
-		setzeEnvInvitesDeaktiviert(locals.db, !body.active);
+		setEnvInvitesDisabled(locals.db, !body.active);
 	}
 	return json({
 		ok: true,
-		envInvitesActive: INVITE_CODES.length > 0 && !envInvitesDeaktiviert(locals.db),
-		openRegistration: istRegistrierungOffen(locals.db)
+		envInvitesActive: INVITE_CODES.length > 0 && !envInvitesDisabled(locals.db),
+		openRegistration: isRegistrationOpen(locals.db)
 	});
 };
 
 export const DELETE: RequestHandler = async ({ locals, request }) => {
-	nurVerwalter(locals);
+	adminOnly(locals);
 	const body = await request.json().catch(() => null);
 	const code = String(body?.code ?? "");
-	if (!zieheInviteZurueck(locals.db, code)) {
+	if (!revokeInvite(locals.db, code)) {
 		error(404, "Code unbekannt, schon benutzt oder bereits zurückgezogen");
 	}
 	return json({ ok: true });

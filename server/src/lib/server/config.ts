@@ -34,7 +34,7 @@ export const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? "")
  * IP-Adressen NICHT - WebAuthn verlangt einen Domainnamen. `localhost` ist die
  * Ausnahme, die auch ohne HTTPS geht; 127.0.0.1 ist fuer den Browser woanders.
  */
-export function istGueltigeKennung(rpId: string): boolean {
+export function isValidRpId(rpId: string): boolean {
 	if (rpId === "localhost") return true;
 	// IPv4, IPv6 und alles, was keinen Punkt hat, scheidet aus.
 	if (/^\d{1,3}(\.\d{1,3}){3}$/.test(rpId)) return false;
@@ -43,7 +43,7 @@ export function istGueltigeKennung(rpId: string): boolean {
 }
 
 /** Gehoert diese Adresse zu unserer Passkey-Kennung - gleiche Domain oder Unterdomain? */
-function passtZurKennung(origin: string, rpId: string): boolean {
+function matchesRpId(origin: string, rpId: string): boolean {
 	let host: string;
 	try {
 		host = new URL(origin).hostname;
@@ -54,12 +54,12 @@ function passtZurKennung(origin: string, rpId: string): boolean {
 }
 
 /** Die Adressen, auf denen Passkeys gelten sollen. */
-export const WEBAUTHN_ORIGINS = istGueltigeKennung(RP_ID)
-	? ALLOWED_ORIGINS.filter((o) => passtZurKennung(o, RP_ID))
+export const WEBAUTHN_ORIGINS = isValidRpId(RP_ID)
+	? ALLOWED_ORIGINS.filter((o) => matchesRpId(o, RP_ID))
 	: [];
 
 /** Adressen, die zwar zugreifen duerfen, aber keine Passkeys tragen koennen. */
-export const ORIGINS_OHNE_PASSKEY = ALLOWED_ORIGINS.filter((o) => !passtZurKennung(o, RP_ID));
+export const ORIGINS_WITHOUT_PASSKEY = ALLOWED_ORIGINS.filter((o) => !matchesRpId(o, RP_ID));
 
 export const DATA_DIR = process.env.DATA_DIR ?? "./data";
 export const DB_FILE = process.env.DB_FILE ?? `${DATA_DIR}/timetracker.db`;

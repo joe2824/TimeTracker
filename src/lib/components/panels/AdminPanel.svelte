@@ -153,7 +153,7 @@
 		try {
 			const created = await account.createInvite({
 				note: inviteNote.trim() || undefined,
-				gueltigTage: inviteDays ? Number(inviteDays) : undefined
+				validDays: inviteDays ? Number(inviteDays) : undefined
 			});
 			latestInviteCode = created.code;
 			inviteNote = "";

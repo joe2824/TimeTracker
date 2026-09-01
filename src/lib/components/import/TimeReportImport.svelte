@@ -97,7 +97,12 @@
 			// Nicht schlimm: dann steht in der Auswahl nur der offene Monat.
 		}
 	}
-	void refreshReportMonths();
+	// Auch am Abgleich haengen: ein Report von einem anderen Geraet kommt herein,
+	// waehrend diese Karte offen steht.
+	$effect(() => {
+		void app.entriesVersion;
+		void refreshReportMonths();
+	});
 
 	/** Auswahl und Zuordnung je Tag, Schluessel = Datum. */
 	let selected = $state<Record<string, boolean>>({});
@@ -126,6 +131,7 @@
 	// Im Ruhezustand zeigen, ob fuer diesen Monat schon ein Report vorliegt.
 	$effect(() => {
 		const m = month;
+		void app.entriesVersion;
 		if (stage !== "idle") return;
 		void loadTimeReport(m)
 			.then((r) => {
@@ -176,8 +182,11 @@
 			}));
 	});
 
+	/** Wem die eingelesenen Reports gehoeren – der Name aus "Bericht & E-Mail". */
+	const ownName = $derived(app.settings.senderName.trim());
+
 	/** Die Person, um die es gerade geht – nur bekannt, wenn eine Datei offen ist. */
-	const activePerson = $derived(parsed?.people.find((p) => p.key === active?.personKey) ?? null);
+	const activePerson = $derived(parsed?.people.find((p) => p.key === personKey) ?? null);
 	/**
 	 * Monate, die sich hier direkt aufrufen lassen: die DIESER Person aus der
 	 * offenen Datei plus alles, was schon eingelesen auf der Platte liegt.
@@ -307,12 +316,20 @@
 		try {
 			const report = parseTimeReport(await readXlsx(await file.arrayBuffer()));
 			parsed = report;
-			// Bei genau einer Person gibt es nichts zu waehlen.
-			personKey = report.people.length === 1 ? report.people[0].key : (matchOwnPerson(report) ?? "");
+			// Eine Datei mit genau einer Person wurde bisher ungefragt uebernommen.
+			// Die Anzeige weist den Report ab hier mit DEM eigenen Namen aus - bei
+			// der Datei eines Kollegen stuende er also ueber fremden Zahlen, und
+			// abgeglichen wuerde gegen die eigenen Zeiten. Steht dort ein anderer
+			// Name, wird deshalb gefragt statt gemeldet: eine Meldung uebersieht man.
+			if (report.people.length === 1) {
+				personKey = isOwnPerson(report.people[0]) ? report.people[0].key : "";
+			} else {
+				personKey = matchOwnPerson(report) ?? "";
+			}
 			logInfo("Zeitwirtschaftsreport eingelesen", {
-				datei: file.name,
-				personen: report.people.length,
-				monate: report.months
+				fileName: file.name,
+				people: report.people.length,
+				monthList: report.months
 			});
 			const person = report.people.find((p) => p.key === personKey);
 			if (person) await useReport(person.key, preferredMonth(person));
@@ -349,6 +366,18 @@
 		return hit?.key ?? null;
 	}
 
+	/**
+	 * Gehoert diese Person zu diesem Konto?
+	 *
+	 * Ohne eigenen Namen in den Einstellungen laesst sich nichts vergleichen -
+	 * dann wird uebernommen wie bisher, und die Anzeige nennt mangels Namen auch
+	 * niemanden.
+	 */
+	function isOwnPerson(person: TimeReportPerson): boolean {
+		if (!ownName || !person.name) return true;
+		return person.name.toLowerCase() === ownName.toLowerCase();
+	}
+
 	/** Person + Monat festlegen, speichern und in den Abgleich wechseln. */
 	async function useReport(key: string, targetMonth: string) {
 		const person = parsed?.people.find((p) => p.key === key);
@@ -364,13 +393,7 @@
 		// Ohne das bliebe bei einem Team-Export die Personenauswahl stehen und der
 		// Klick sähe aus, als passiere nichts.
 		personKey = person.key;
-		const report: StoredTimeReport = {
-			month: targetMonth,
-			importedAt: Date.now(),
-			personKey: person.key,
-			personName: person.name,
-			days
-		};
+		const report: StoredTimeReport = { month: targetMonth, importedAt: Date.now(), days };
 		month = targetMonth;
 		await app.ensureMonth(targetMonth);
 		try {
@@ -406,9 +429,7 @@
 		await app.ensureMonth(target);
 		// `parsed` bleibt stehen: sonst verschwaenden die uebrigen Monate der noch
 		// offenen Datei aus der Auswahl und waeren nur ueber einen neuen Import
-		// wieder zu erreichen. Stammt der gespeicherte Report von jemand anderem,
-		// faellt `activePerson` von selbst weg – es haengt an `active.personKey`.
-		personKey = report.personKey;
+		// wieder zu erreichen.
 		active = report;
 		stored = report;
 		resetSelection();
@@ -529,9 +550,9 @@
 
 		if (days > 0) {
 			logInfo("Zeiten aus dem Zeitwirtschaftsreport nachgetragen", {
-				monat: active?.month,
-				tage: days,
-				eintraege: created
+				monthValue: active?.month,
+				dayCount: days,
+				entryList: created
 			});
 			toast.success(`${days} Tag${days === 1 ? "" : "e"} nachgetragen.`);
 		}
@@ -555,12 +576,12 @@
 	};
 
 	const FLAG_HINT: Record<string, string> = {
-		ruhepause: "Die gesetzliche Ruhepause wurde an diesem Tag nicht eingehalten.",
-		ueber10: "Die tägliche Arbeitszeit lag über 10 Stunden.",
-		soll10: "Die Soll-Arbeitszeit liegt über 10 Stunden.",
-		wiedereingliederung: "Tag im Rahmen einer Wiedereingliederung.",
-		sonntag: "An diesem Sonntag wurde gearbeitet.",
-		feiertag: "An diesem Feiertag wurde gearbeitet."
+		restBreak: "Die gesetzliche Ruhepause wurde an diesem Tag nicht eingehalten.",
+		over10: "Die tägliche Arbeitszeit lag über 10 Stunden.",
+		target10: "Die Soll-Arbeitszeit liegt über 10 Stunden.",
+		gradualReturn: "Tag im Rahmen einer Wiedereingliederung.",
+		sunday: "An diesem Sonntag wurde gearbeitet.",
+		holiday: "An diesem Feiertag wurde gearbeitet."
 	};
 
 	/** "Mo 12.01." – kurz genug fuer die Tabellenspalte. */
@@ -590,8 +611,8 @@
 	 */
 	function ruleMismatch(day: ReconcileDay): boolean {
 		if (!app.settings.breakDeduction || !hasStamps(day.report)) return false;
-		const brutto = grossHours(day.report);
-		return Math.abs(brutto - day.report.hours - ruleBreakHours(brutto)) > TOLERANCE;
+		const gross = grossHours(day.report);
+		return Math.abs(gross - day.report.hours - ruleBreakHours(gross)) > TOLERANCE;
 	}
 
 	function stampLabel(day: ReconcileDay): string {
@@ -684,17 +705,17 @@
 			</button>
 
 			{#if stored}
-				{@const offen = storedSummary ? storedSummary.missing + storedSummary.partial : 0}
+				{@const openState = storedSummary ? storedSummary.missing + storedSummary.partial : 0}
 				<!-- Der gespeicherte Report sagt hier gleich, ob noch etwas offen ist –
 				     sonst müsste man den Abgleich öffnen, nur um „alles gut" zu sehen. -->
 				<div class="flex items-center justify-between gap-3 rounded-lg border p-3">
 					<div class="flex min-w-0 items-start gap-2.5">
 						<span
-							class="flex size-8 shrink-0 items-center justify-center rounded-md {offen > 0
+							class="flex size-8 shrink-0 items-center justify-center rounded-md {openState > 0
 								? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
 								: 'bg-muted text-muted-foreground'}"
 						>
-							{#if offen > 0}
+							{#if openState > 0}
 								<TriangleAlertIcon class="size-4" />
 							{:else}
 								<CheckIcon class="size-4" />
@@ -703,13 +724,13 @@
 						<div class="min-w-0">
 							<p class="truncate text-sm font-medium">
 								{monthLabel(stored.month)}
-								{#if stored.personName}
-									<span class="text-muted-foreground font-normal">· {stored.personName}</span>
+								{#if ownName}
+									<span class="text-muted-foreground font-normal">· {ownName}</span>
 								{/if}
 							</p>
 							<p class="text-muted-foreground truncate text-xs">
-								{#if storedSummary && offen > 0}
-									{offen} Tag{offen === 1 ? "" : "e"} offen · {fmtHoursClock(storedSummary.missingHours)} h
+								{#if storedSummary && openState > 0}
+									{openState} Tag{openState === 1 ? "" : "e"} offen · {fmtHoursClock(storedSummary.missingHours)} h
 									fehlen ·
 								{:else if storedSummary}
 									alles erfasst ·
@@ -718,7 +739,7 @@
 							</p>
 						</div>
 					</div>
-					<Button variant={offen > 0 ? "default" : "outline"} size="sm" onclick={openStored}>
+					<Button variant={openState > 0 ? "default" : "outline"} size="sm" onclick={openStored}>
 						Abgleich öffnen
 					</Button>
 				</div>
@@ -727,7 +748,14 @@
 
 	{:else if parsed && !personKey}
 		<Card.Content class="space-y-3">
-			<p class="text-sm">Die Datei enthält mehrere Personen. Wessen Zeiten sollen abgeglichen werden?</p>
+			<p class="text-sm">
+				{#if parsed.people.length === 1}
+					Diese Datei enthält die Zeiten von {parsed.people[0].name} – nicht von {ownName}.
+					Trotzdem abgleichen?
+				{:else}
+					Die Datei enthält mehrere Personen. Wessen Zeiten sollen abgeglichen werden?
+				{/if}
+			</p>
 			<div class="flex flex-wrap gap-2">
 				{#each parsed.people as p (p.key)}
 					<Button variant="outline" size="sm" onclick={() => useReport(p.key, preferredMonth(p))}>
@@ -787,8 +815,8 @@
 						{:else}
 							<span class="font-medium">{monthLabel(active.month)}</span>
 						{/if}
-						{#if active.personName}
-							<Badge variant="secondary">{active.personName}</Badge>
+						{#if ownName}
+							<Badge variant="secondary">{ownName}</Badge>
 						{/if}
 					</div>
 					<div class="text-muted-foreground flex flex-wrap items-center gap-3 text-sm">

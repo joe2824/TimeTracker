@@ -129,8 +129,8 @@ describe("heatmapYear", () => {
 
 	it("gibt Tagen ohne Stunden level 0", () => {
 		const weeks = heatmapYear(2026, new Map([["2026-06-10", 8]]));
-		const leer = weeks.flat().find((d) => d.date === "2026-06-11");
-		expect(leer?.level).toBe(0);
+		const empty = weeks.flat().find((d) => d.date === "2026-06-11");
+		expect(empty?.level).toBe(0);
 	});
 
 	it("staffelt die Level als Anteil am staerksten Tag", () => {

@@ -26,7 +26,7 @@ let person: TimeReportPerson;
 let months: string[];
 
 beforeAll(async () => {
-	const url = new URL("./testing/zeitwirtschaftsreport.fixture.xlsx", import.meta.url);
+	const url = new URL("./testing/timeReport.fixture.xlsx", import.meta.url);
 	const report = parseTimeReport(await readXlsx(readFileSync(url)));
 	person = report.people[0];
 	months = report.months;
@@ -95,20 +95,20 @@ describe.each([true, false])("Durchstich mit Pausenabzug=%s", (deductBreaks) => 
 			// Vorher gab es wirklich etwas zu tun – sonst prueft der Test nichts.
 			expect(before.missing + before.partial).toBeGreaterThan(0);
 
-			const offen = after.days.filter((d) => d.status !== "ok" && d.status !== "free");
+			const unresolved = after.days.filter((d) => d.status !== "ok" && d.status !== "free");
 			if (!deductBreaks) {
 				// Ohne eigenen Abzug ist die LOGA-Zahl direkt erreichbar.
-				expect(offen.map((d) => `${d.date} ${d.status}`)).toEqual([]);
+				expect(unresolved.map((d) => `${d.date} ${d.status}`)).toEqual([]);
 				continue;
 			}
 			// Mit Abzug bleibt ein Rest, wo LOGAs tatsaechlicher Abzug von der
 			// Hausregel abweicht – im echten Report rund 11 % der Tage (gestempelte
 			// Zusatzpausen, Korrekturbuchungen). Diese Tage sind nicht fuellbar,
 			// ohne Anwesenheit zu erfinden; sie bleiben sichtbar stehen.
-			for (const d of offen) {
-				const brutto = grossHours(d.report);
-				const logaAbzug = brutto - d.report.hours;
-				expect(Math.abs(logaAbzug - ruleBreakHours(brutto))).toBeGreaterThan(0.25);
+			for (const d of unresolved) {
+				const gross = grossHours(d.report);
+				const logaDeduction = gross - d.report.hours;
+				expect(Math.abs(logaDeduction - ruleBreakHours(gross))).toBeGreaterThan(0.25);
 			}
 		}
 	});
@@ -118,8 +118,8 @@ describe.each([true, false])("Durchstich mit Pausenabzug=%s", (deductBreaks) => 
 		for (const month of months) {
 			const { after, entries } = fillMonth(month, deductBreaks);
 			const fillOpts = { ...DEFAULT_FILL_OPTIONS, deductBreaks };
-			const nochmal = after.days.filter((d) => planFill(d, entries, fillOpts) !== null);
-			expect(nochmal.map((d) => d.date)).toEqual([]);
+			const again = after.days.filter((d) => planFill(d, entries, fillOpts) !== null);
+			expect(again.map((d) => d.date)).toEqual([]);
 		}
 	});
 
@@ -160,10 +160,10 @@ describe.each([true, false])("Durchstich mit Pausenabzug=%s", (deductBreaks) => 
 		for (const month of months) {
 			const { days, entries } = fillMonth(month, deductBreaks);
 			// Im Fixture ist jeder stempellose Tag mit Stunden ein voller Tagessatz.
-			const frei = days.filter((d) => !d.firstIn && d.hours > 0);
-			const gebucht = entries.filter((e) => e.activityId === ABS);
-			expect(gebucht).toHaveLength(frei.length);
-			for (const e of gebucht) expect(e.dayFraction).toBe(1);
+			const free = days.filter((d) => !d.firstIn && d.hours > 0);
+			const booked = entries.filter((e) => e.activityId === ABS);
+			expect(booked).toHaveLength(free.length);
+			for (const e of booked) expect(e.dayFraction).toBe(1);
 		}
 	});
 });
@@ -194,8 +194,8 @@ describe("Nachtrag und Stempelzeiten", () => {
 		// ohne Abzug entsteht die Mittagsluecke (zwei Bloecke).
 		const mit = fillMonth("2026-01", true);
 		const ohne = fillMonth("2026-01", false);
-		const projekte = (r: { entries: Entry[] }) => r.entries.filter((e) => e.activityId === PROJ);
-		expect(projekte(ohne).length).toBeGreaterThan(projekte(mit).length);
+		const projects = (r: { entries: Entry[] }) => r.entries.filter((e) => e.activityId === PROJ);
+		expect(projects(ohne).length).toBeGreaterThan(projects(mit).length);
 	});
 });
 
@@ -221,15 +221,15 @@ describe("Verteilung auf mehrere Projekte", () => {
 
 	it("bucht dieselbe Zeit, nur auf zwei Projekte statt eines", () => {
 		for (const month of months) {
-			const dauer = (entries: Entry[], ids: string[]) =>
+			const duration = (entries: Entry[], ids: string[]) =>
 				entries
 					.filter((e) => ids.includes(e.activityId))
 					.reduce((s, e) => s + (e.endTs! - e.startTs), 0);
 			const ohne = fillMonth(month, false);
 			const mit = fillMonth(month, false, SHARES);
-			expect(dauer(mit.entries, [A, B])).toBe(dauer(ohne.entries, [PROJ]));
+			expect(duration(mit.entries, [A, B])).toBe(duration(ohne.entries, [PROJ]));
 			// „Others" bleibt unberuehrt: die ungestempelten Stunden werden nicht verteilt.
-			expect(dauer(mit.entries, [OTHERS])).toBe(dauer(ohne.entries, [OTHERS]));
+			expect(duration(mit.entries, [OTHERS])).toBe(duration(ohne.entries, [OTHERS]));
 		}
 	});
 
@@ -238,9 +238,9 @@ describe("Verteilung auf mehrere Projekte", () => {
 			const { entries } = fillMonth(month, false, SHARES);
 			const ms = (id: string) =>
 				entries.filter((e) => e.activityId === id).reduce((s, e) => s + (e.endTs! - e.startTs), 0);
-			const anteil = ms(A) / (ms(A) + ms(B));
+			const fraction = ms(A) / (ms(A) + ms(B));
 			// Pro Tag auf die Minute gerundet – ueber einen Monat bleibt davon wenig.
-			expect(anteil).toBeCloseTo(0.6, 2);
+			expect(fraction).toBeCloseTo(0.6, 2);
 		}
 	});
 
@@ -266,19 +266,19 @@ describe("Verteilung auf mehrere Projekte", () => {
 		for (const month of months) {
 			const { days, entries, before } = fillMonth(month, false);
 			// Wie die Oberflaeche im Modus „tageweise": ein Projekt je Tag.
-			const fuellbar = before.days
+			const fillable = before.days
 				.filter((d) => planFill(d, [], DEFAULT_FILL_OPTIONS)?.kind === "time")
 				.map((d) => ({ date: d.date, hours: planFill(d, [], DEFAULT_FILL_OPTIONS)!.hours }));
-			const zuordnung = distributeDays(fuellbar, SHARES);
-			expect(Object.keys(zuordnung)).toHaveLength(fuellbar.length);
+			const mapping = distributeDays(fillable, SHARES);
+			expect(Object.keys(mapping)).toHaveLength(fillable.length);
 			// Jeder Tag geht ganz an eines der beiden Projekte …
-			expect(new Set(Object.values(zuordnung)).size).toBeLessThanOrEqual(2);
+			expect(new Set(Object.values(mapping)).size).toBeLessThanOrEqual(2);
 			// … und die Summe bleibt die des unverteilten Nachtrags.
-			const gesamt = fuellbar.reduce((s, d) => s + d.hours, 0);
+			const total = fillable.reduce((s, d) => s + d.hours, 0);
 			const proj = entries
 				.filter((e) => e.activityId === PROJ)
 				.reduce((s, e) => s + (e.endTs! - e.startTs), 0);
-			expect(gesamt).toBeCloseTo(proj / 3600000, 6);
+			expect(total).toBeCloseTo(proj / 3600000, 6);
 			expect(days.length).toBeGreaterThan(0);
 		}
 	});

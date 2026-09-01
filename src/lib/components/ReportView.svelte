@@ -49,7 +49,7 @@
 		try {
 			await createOutlookDraft(app.settings.bossEmail, subject, html);
 			await app.markReportSent(month);
-			logInfo(`Outlook-Entwurf für ${month} erstellt`, { an: app.settings.bossEmail });
+			logInfo(`Outlook-Entwurf für ${month} erstellt`, { to: app.settings.bossEmail });
 			toast.success("Outlook-Entwurf geöffnet. Bitte prüfen und senden.");
 			return true;
 		} catch (e) {

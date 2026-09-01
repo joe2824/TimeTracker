@@ -2,13 +2,13 @@
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { deleteBackupFile, listBackups, performBackup } from "$lib/server/backup";
-import { istVerwalter } from "$lib/server/invites";
+import { isAdminUser } from "$lib/server/invites";
 import { BACKUP_DIR } from "$lib/server/config";
 
 /** Verwalter-Rolle pruefen. */
 function requireAdmin(locals: App.Locals): string {
 	if (!locals.userId) error(401, "Nicht angemeldet");
-	if (!istVerwalter(locals.db, locals.userId)) error(403, "Keine Berechtigung");
+	if (!isAdminUser(locals.db, locals.userId)) error(403, "Keine Berechtigung");
 	return locals.userId;
 }
 

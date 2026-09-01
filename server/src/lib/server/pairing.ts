@@ -7,12 +7,12 @@ const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 export const PAIRING_CODE_LENGTH = 12;
 
 /** Auf die Form bringen, in der verglichen wird. */
-export function normalisiereCode(eingabe: unknown): string {
-	return [...String(eingabe ?? "").toUpperCase()].filter((c) => ALPHABET.includes(c)).join("");
+export function normalizeCode(input: unknown): string {
+	return [...String(input ?? "").toUpperCase()].filter((c) => ALPHABET.includes(c)).join("");
 }
 
 /** Ob eine bereits normalisierte Zeichenkette die Form eines Codes hat. */
-export function istPairingCode(code: string): boolean {
+export function isPairingCode(code: string): boolean {
 	return code.length === PAIRING_CODE_LENGTH && [...code].every((c) => ALPHABET.includes(c));
 }
 
@@ -25,6 +25,6 @@ export function istPairingCode(code: string): boolean {
 export const CLAIM_HASH_LENGTH = 64;
 
 /** Ob eine Zeichenkette die Form eines Abhol-Hashes hat. */
-export function istClaimHash(hash: string): boolean {
+export function isClaimHash(hash: string): boolean {
 	return hash.length === CLAIM_HASH_LENGTH && /^[0-9a-f]+$/.test(hash);
 }

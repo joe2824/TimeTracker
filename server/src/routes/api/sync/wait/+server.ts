@@ -13,31 +13,31 @@ export const GET: RequestHandler = async ({ locals, url, request }) => {
 	const userId = locals.userId;
 	if (!userId) error(401, "Nicht angemeldet");
 
-	const seit = Number(url.searchParams.get("since") ?? 0);
-	const stand = currentSeq(locals.db, userId);
+	const sinceTs = Number(url.searchParams.get("since") ?? 0);
+	const knownSeq = currentSeq(locals.db, userId);
 	// Schon etwas da: gar nicht erst warten. Ohne das verpasst ein Client jede
 	// Aenderung, die zwischen seinem Abgleich und dieser Anfrage passiert ist.
-	if (stand > seit) return json({ seq: stand, changed: true });
+	if (knownSeq > sinceTs) return json({ seq: knownSeq, changed: true });
 
-	let abmelden: (() => void) | null = null;
-	let uhr: ReturnType<typeof setTimeout> | null = null;
+	let logout: (() => void) | null = null;
+	let clock: ReturnType<typeof setTimeout> | null = null;
 
-	const voll = await new Promise<boolean>((fertig) => {
-		abmelden = subscribe(userId, () => fertig(false));
-		if (!abmelden) return fertig(true);
-		uhr = setTimeout(() => fertig(false), SYNC_WAIT_MS);
+	const full = await new Promise<boolean>((done) => {
+		logout = subscribe(userId, () => done(false));
+		if (!logout) return done(true);
+		clock = setTimeout(() => done(false), SYNC_WAIT_MS);
 		// Bricht der Client ab, wird hier aufgeraeumt statt bis zum Zeitablauf zu
 		// warten - sonst haelt jeder Neustart einen Platz besetzt.
-		request.signal.addEventListener("abort", () => fertig(false));
+		request.signal.addEventListener("abort", () => done(false));
 	});
 
-	if (uhr) clearTimeout(uhr);
-	(abmelden as (() => void) | null)?.();
+	if (clock) clearTimeout(clock);
+	(logout as (() => void) | null)?.();
 
 	// Zu viele offene Verbindungen. Der Client faellt dann auf seinen langsamen
 	// Takt zurueck, statt sofort wieder anzuklopfen.
-	if (voll) error(429, "Zu viele offene Verbindungen");
+	if (full) error(429, "Zu viele offene Verbindungen");
 
-	const jetzt = currentSeq(locals.db, userId);
-	return json({ seq: jetzt, changed: jetzt > seit });
+	const nowMs = currentSeq(locals.db, userId);
+	return json({ seq: nowMs, changed: nowMs > sinceTs });
 };

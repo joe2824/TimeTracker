@@ -45,9 +45,9 @@ async function sameKey(a: CryptoKey, b: CryptoKey): Promise<boolean> {
 describe("Datensaetze versiegeln", () => {
 	it("kommt wieder heraus, was hineinging", async () => {
 		const key = await createVaultKey();
-		const wert = { activityId: "a", startTs: 1000, note: "Kundengespräch" };
-		const sealed = await sealRecord(key, wert, BINDING);
-		expect(await openRecord(key, sealed, BINDING)).toEqual(wert);
+		const value = { activityId: "a", startTs: 1000, note: "Kundengespräch" };
+		const sealed = await sealRecord(key, value, BINDING);
+		expect(await openRecord(key, sealed, BINDING)).toEqual(value);
 	});
 
 	it("verraet den Klartext nicht", async () => {
@@ -110,11 +110,11 @@ describe("Zeitraum-Kennung", () => {
 		expect(bucket).toMatch(/^[0-9a-f]{32}$/);
 		expect(bucket).not.toBe("2026-07");
 
-		const nachbar = await bucketFor(key, "2026-08");
-		const gleicheStellen = [...bucket].filter((c, i) => c === nachbar[i]).length;
+		const neighbour = await bucketFor(key, "2026-08");
+		const samePlaces = [...bucket].filter((c, i) => c === neighbour[i]).length;
 		// Bei einer guten Streuung stimmt rund ein Sechzehntel der Stellen zufaellig
 		// ueberein. Die Haelfte waere ein Hinweis darauf, dass der Monat durchschlaegt.
-		expect(gleicheStellen).toBeLessThan(16);
+		expect(samePlaces).toBeLessThan(16);
 	});
 
 	it("ist bei zwei Konten verschieden, auch fuer denselben Monat", async () => {
@@ -146,8 +146,8 @@ describe("Wiederherstellungs-Phrase", () => {
 		const key = await createVaultKey();
 		const phrase = createRecoveryPhrase();
 		const wrap = await wrapWithPhrase(key, phrase);
-		const geschludert = `  ${phrase.toUpperCase().split(" ").join("   ")}\n`;
-		expect(await sameKey(await unwrapWithPhrase(wrap, geschludert), key)).toBe(true);
+		const sloppy = `  ${phrase.toUpperCase().split(" ").join("   ")}\n`;
+		expect(await sameKey(await unwrapWithPhrase(wrap, sloppy), key)).toBe(true);
 	});
 
 	it("faellt bei der falschen Phrase auf, statt still einen falschen Schluessel zu liefern", async () => {
@@ -162,12 +162,12 @@ describe("Wiederherstellungs-Phrase", () => {
 		// EIN Wort zu ersetzen und "faellt auf" zu erwarten waere ein Test, der
 		// gelegentlich grundlos rot ist: bei 24 Woertern hat BIP39 nur 8
 		// Pruefbits, ein falsches Wort passt also mit 1:256 zufaellig doch.
-		const woerter = phrase.split(" ");
-		const kandidaten = ["zoo", "zone", "zebra", "young", "youth", "wrong", "wrist", "write"];
-		const abgewiesen = kandidaten
-			.filter((w) => w !== woerter[23])
-			.filter((w) => !isValidRecoveryPhrase([...woerter.slice(0, 23), w].join(" ")));
-		expect(abgewiesen.length).toBeGreaterThanOrEqual(5);
+		const words = phrase.split(" ");
+		const candidates = ["zoo", "zone", "zebra", "young", "youth", "wrong", "wrist", "write"];
+		const rejected = candidates
+			.filter((w) => w !== words[23])
+			.filter((w) => !isValidRecoveryPhrase([...words.slice(0, 23), w].join(" ")));
+		expect(rejected.length).toBeGreaterThanOrEqual(5);
 	});
 
 	it("weist Unsinn ab", () => {
@@ -208,34 +208,34 @@ describe("Kopplung eines neuen Geraets", () => {
 	it("das neue Geraet oeffnet, was das entsperrte fuer es verpackt hat", async () => {
 		const vault = await createVaultKey();
 		// Auf dem NEUEN Geraet:
-		const neu = await createPairingKeyPair();
-		const oeffentlich = await exportPairingPublicKey(neu);
+		const freshPair = await createPairingKeyPair();
+		const publicSide = await exportPairingPublicKey(freshPair);
 		// Auf dem ENTSPERRTEN Geraet:
-		const paket = await wrapForDevice(vault, oeffentlich);
+		const packet = await wrapForDevice(vault, publicSide);
 		// Zurueck auf dem neuen Geraet:
-		expect(await sameKey(await unwrapForDevice(paket, neu.privateKey), vault)).toBe(true);
+		expect(await sameKey(await unwrapForDevice(packet, freshPair.privateKey), vault)).toBe(true);
 	});
 
 	it("ein fremdes Geraet oeffnet das Paket nicht", async () => {
 		const vault = await createVaultKey();
-		const gemeint = await createPairingKeyPair();
-		const fremd = await createPairingKeyPair();
-		const paket = await wrapForDevice(vault, await exportPairingPublicKey(gemeint));
-		await expect(unwrapForDevice(paket, fremd.privateKey)).rejects.toThrow();
+		const meant = await createPairingKeyPair();
+		const foreign = await createPairingKeyPair();
+		const packet = await wrapForDevice(vault, await exportPairingPublicKey(meant));
+		await expect(unwrapForDevice(packet, foreign.privateKey)).rejects.toThrow();
 	});
 
 	it("weist ein Paket ohne oeffentlichen Schluessel ab", async () => {
 		const vault = await createVaultKey();
-		const neu = await createPairingKeyPair();
-		const paket = await wrapForDevice(vault, await exportPairingPublicKey(neu));
-		delete paket.ephemeralPublicKey;
-		await expect(unwrapForDevice(paket, neu.privateKey)).rejects.toThrow(/öffentlichen Schlüssel/);
+		const freshPair = await createPairingKeyPair();
+		const packet = await wrapForDevice(vault, await exportPairingPublicKey(freshPair));
+		delete packet.ephemeralPublicKey;
+		await expect(unwrapForDevice(packet, freshPair.privateKey)).rejects.toThrow(/öffentlichen Schlüssel/);
 	});
 
 	it("jede Kopplung nimmt ein neues fluechtiges Paar", async () => {
 		const vault = await createVaultKey();
-		const neu = await createPairingKeyPair();
-		const pub = await exportPairingPublicKey(neu);
+		const freshPair = await createPairingKeyPair();
+		const pub = await exportPairingPublicKey(freshPair);
 		const a = await wrapForDevice(vault, pub);
 		const b = await wrapForDevice(vault, pub);
 		expect(toHex(a.ephemeralPublicKey!)).not.toBe(toHex(b.ephemeralPublicKey!));
@@ -248,23 +248,23 @@ describe("mehrere Wege zum selben Tresor", () => {
 		// Geht ein Weg verloren, bleiben die anderen.
 		const vault = await createVaultKey();
 		const phrase = createRecoveryPhrase();
-		const geraet = await createPairingKeyPair();
+		const device = await createPairingKeyPair();
 
-		const ausPhrase = await unwrapWithPhrase(await wrapWithPhrase(vault, phrase), phrase);
-		const ausPrf = await unwrapWithPrf(await wrapWithPrf(vault, prf()), prf());
-		const ausGeraet = await unwrapForDevice(
-			await wrapForDevice(vault, await exportPairingPublicKey(geraet)),
-			geraet.privateKey
+		const fromPhrase = await unwrapWithPhrase(await wrapWithPhrase(vault, phrase), phrase);
+		const fromPrf = await unwrapWithPrf(await wrapWithPrf(vault, prf()), prf());
+		const fromDevice = await unwrapForDevice(
+			await wrapForDevice(vault, await exportPairingPublicKey(device)),
+			device.privateKey
 		);
 
-		expect(await sameKey(ausPhrase, vault)).toBe(true);
-		expect(await sameKey(ausPrf, vault)).toBe(true);
-		expect(await sameKey(ausGeraet, vault)).toBe(true);
+		expect(await sameKey(fromPhrase, vault)).toBe(true);
+		expect(await sameKey(fromPrf, vault)).toBe(true);
+		expect(await sameKey(fromDevice, vault)).toBe(true);
 
 		// Und ein Datensatz, der mit dem einen versiegelt wurde, geht mit dem
 		// anderen auf.
-		const sealed = await sealRecord(ausPhrase, { note: "egal" }, BINDING);
-		expect(await openRecord(ausGeraet, sealed, BINDING)).toEqual({ note: "egal" });
+		const sealed = await sealRecord(fromPhrase, { note: "egal" }, BINDING);
+		expect(await openRecord(fromDevice, sealed, BINDING)).toEqual({ note: "egal" });
 	});
 });
 
@@ -280,8 +280,8 @@ describe("Kodierung", () => {
 	});
 
 	it("base64 vertraegt alle Bytewerte", () => {
-		const alle = new Uint8Array(256).map((_, i) => i);
-		expect(fromBase64(toBase64(alle))).toEqual(alle);
+		const all = new Uint8Array(256).map((_, i) => i);
+		expect(fromBase64(toBase64(all))).toEqual(all);
 	});
 
 	it("Schluessel ueberstehen den Umweg ueber Rohbytes", async () => {
@@ -292,7 +292,7 @@ describe("Kodierung", () => {
 });
 
 describe("Der Kopplungscode", () => {
-	const schluessel = async () => exportPairingPublicKey(await createPairingKeyPair());
+	const key = async () => exportPairingPublicKey(await createPairingKeyPair());
 
 	it("rechnet, was eine unabhaengige Umsetzung auch rechnet", async () => {
 		// Ein fester Vektor, nachgerechnet mit einer eigenen Umsetzung ausserhalb
@@ -303,13 +303,13 @@ describe("Der Kopplungscode", () => {
 	});
 
 	it("ist der Abdruck des Schluessels, nicht Zufall", async () => {
-		const pub = await schluessel();
+		const pub = await key();
 		expect(await pairingCode(pub)).toBe(await pairingCode(pub));
 	});
 
 	it("hat zwoelf Stellen aus dem Alphabet ohne I, O, 0 und 1", async () => {
 		for (let i = 0; i < 20; i++) {
-			const code = await pairingCode(await schluessel());
+			const code = await pairingCode(await key());
 			expect(code).toMatch(/^[A-HJ-NP-Z2-9]{12}$/);
 			expect(isPairingCode(code)).toBe(true);
 		}
@@ -319,26 +319,26 @@ describe("Der Kopplungscode", () => {
 		// Die Eigenschaft, auf der alles beruht: ein untergeschobener Schluessel
 		// ergibt nicht denselben Code.
 		const codes = new Set<string>();
-		for (let i = 0; i < 30; i++) codes.add(await pairingCode(await schluessel()));
+		for (let i = 0; i < 30; i++) codes.add(await pairingCode(await key()));
 		expect(codes.size).toBe(30);
 	});
 
 	it("aendert sich, wenn sich ein einziges Byte aendert", async () => {
-		const pub = await schluessel();
-		const verbogen = new Uint8Array(pub);
-		verbogen[20] ^= 1;
-		expect(await pairingCode(verbogen)).not.toBe(await pairingCode(pub));
+		const pub = await key();
+		const bent = new Uint8Array(pub);
+		bent[20] ^= 1;
+		expect(await pairingCode(bent)).not.toBe(await pairingCode(pub));
 	});
 
 	it("wird angezeigt, wie er sich abtippen laesst", async () => {
-		const code = await pairingCode(await schluessel());
-		const angezeigt = formatPairingCode(code);
-		expect(angezeigt).toMatch(/^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/);
+		const code = await pairingCode(await key());
+		const shown = formatPairingCode(code);
+		expect(shown).toMatch(/^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/);
 		// Mit Bindestrichen abgetippt, mit Leerzeichen, in Kleinbuchstaben: immer
 		// derselbe Code.
-		expect(normalizePairingCode(angezeigt)).toBe(code);
-		expect(normalizePairingCode(angezeigt.toLowerCase())).toBe(code);
-		expect(normalizePairingCode(angezeigt.replace(/-/g, " "))).toBe(code);
+		expect(normalizePairingCode(shown)).toBe(code);
+		expect(normalizePairingCode(shown.toLowerCase())).toBe(code);
+		expect(normalizePairingCode(shown.replace(/-/g, " "))).toBe(code);
 	});
 });
 
@@ -390,37 +390,37 @@ describe("checkedPairingKey", () => {
 		// beherrscht, tauscht den hinterlegten Schluessel gegen einen eigenen -
 		// und bekaeme vom bestaetigenden Geraet den Tresorschluessel dagegen
 		// verpackt. Danach koennte er jeden Datensatz des Kontos lesen.
-		const echt = await exportPairingPublicKey(await createPairingKeyPair());
-		const angreifer = await exportPairingPublicKey(await createPairingKeyPair());
-		const abgelesen = await pairingCode(echt);
+		const real = await exportPairingPublicKey(await createPairingKeyPair());
+		const attacker = await exportPairingPublicKey(await createPairingKeyPair());
+		const readOff = await pairingCode(real);
 
-		await expect(checkedPairingKey(abgelesen, toBase64(angreifer))).rejects.toThrow(
+		await expect(checkedPairingKey(readOff, toBase64(attacker))).rejects.toThrow(
 			/passt nicht zu diesem Code/
 		);
 	});
 
 	it("weist auch einen verbogenen Schluessel ab", async () => {
 		// Nicht nur ein ganz anderer Schluessel: ein einziges gekipptes Bit reicht.
-		const echt = await exportPairingPublicKey(await createPairingKeyPair());
-		const code = await pairingCode(echt);
-		const verbogen = new Uint8Array(echt);
-		verbogen[5] ^= 0x80;
-		await expect(checkedPairingKey(code, toBase64(verbogen))).rejects.toThrow();
+		const real = await exportPairingPublicKey(await createPairingKeyPair());
+		const code = await pairingCode(real);
+		const bent = new Uint8Array(real);
+		bent[5] ^= 0x80;
+		await expect(checkedPairingKey(code, toBase64(bent))).rejects.toThrow();
 	});
 
 	it("der geprüfte Schluessel oeffnet das Paket wirklich", async () => {
 		// Ende zu Ende: was checkedPairingKey durchlaesst, ist der Schluessel, mit
 		// dem das neue Geraet sein Paket auch aufbekommt.
-		const paar = await createPairingKeyPair();
-		const pub = await exportPairingPublicKey(paar);
+		const pair = await createPairingKeyPair();
+		const pub = await exportPairingPublicKey(pair);
 		const code = await pairingCode(pub);
 
-		const tresor = await createVaultKey();
-		const geprueft = await checkedPairingKey(code, toBase64(pub));
-		const paket = await wrapForDevice(tresor, geprueft);
+		const vault = await createVaultKey();
+		const checked = await checkedPairingKey(code, toBase64(pub));
+		const packet = await wrapForDevice(vault, checked);
 
-		const wieder = await unwrapForDevice(paket, paar.privateKey);
-		expect(await sameKey(wieder, tresor)).toBe(true);
+		const wieder = await unwrapForDevice(packet, pair.privateKey);
+		expect(await sameKey(wieder, vault)).toBe(true);
 	});
 });
 
@@ -440,16 +440,16 @@ describe("Wiederherstellung ueber die Phrase", () => {
 		// Wer abschreibt, tippt Grossbuchstaben und doppelte Leerzeichen. Daran
 		// darf eine Wiederherstellung nicht scheitern.
 		const p = createRecoveryPhrase();
-		const zerzaust = `  ${p.toUpperCase().replace(/ /g, "   ")}  `;
-		expect(await recoveryLookupId(zerzaust)).toBe(await recoveryLookupId(p));
+		const scrambled = `  ${p.toUpperCase().replace(/ /g, "   ")}  `;
+		expect(await recoveryLookupId(scrambled)).toBe(await recoveryLookupId(p));
 	});
 
 	it("verraet die Phrase nicht", async () => {
 		const p = createRecoveryPhrase();
 		const id = await recoveryLookupId(p);
 		// Kein Wort der Phrase darf in der Kennung auftauchen.
-		for (const wort of p.split(" ")) {
-			expect(id).not.toContain(wort);
+		for (const word of p.split(" ")) {
+			expect(id).not.toContain(word);
 		}
 		expect(id).toMatch(/^[0-9a-f]{64}$/);
 	});
@@ -484,12 +484,12 @@ describe("Wiederherstellung ueber die Phrase", () => {
 
 	it("der Nachweis gibt den Schluessel nicht her", async () => {
 		const key = await createVaultKey();
-		const roh = new Uint8Array(await exportVaultKey(key));
-		const beweis = await vaultProof(key);
+		const raw = new Uint8Array(await exportVaultKey(key));
+		const proof = await vaultProof(key);
 		// Der Schluessel selbst darf im Nachweis nicht auftauchen.
-		const hex = [...roh].map((b) => b.toString(16).padStart(2, "0")).join("");
-		expect(beweis).not.toBe(hex);
-		expect(beweis).not.toContain(hex.slice(0, 16));
+		const hex = [...raw].map((b) => b.toString(16).padStart(2, "0")).join("");
+		expect(proof).not.toBe(hex);
+		expect(proof).not.toContain(hex.slice(0, 16));
 	});
 
 	it("der ganze Weg: Phrase rein, Tresorschluessel raus", async () => {
@@ -499,16 +499,16 @@ describe("Wiederherstellung ueber die Phrase", () => {
 
 		// Was der Server hat: Kennung, Nachweis, Chiffrat.
 		const id = await recoveryLookupId(p);
-		const beweis = await vaultProof(key);
+		const proof = await vaultProof(key);
 
 		// Was auf dem neuen Geraet passiert: Kennung rechnen, Verpackung holen,
 		// oeffnen, Nachweis rechnen.
 		expect(await recoveryLookupId(p)).toBe(id);
-		const zurueck = await unwrapWithPhrase(wrap, p);
-		expect(await vaultProof(zurueck)).toBe(beweis);
+		const back = await unwrapWithPhrase(wrap, p);
+		expect(await vaultProof(back)).toBe(proof);
 
 		// Und der Schluessel ist wirklich derselbe.
-		expect(new Uint8Array(await exportVaultKey(zurueck))).toEqual(
+		expect(new Uint8Array(await exportVaultKey(back))).toEqual(
 			new Uint8Array(await exportVaultKey(key))
 		);
 	});

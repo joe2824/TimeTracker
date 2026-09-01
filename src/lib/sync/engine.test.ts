@@ -37,12 +37,12 @@ class FakeServer {
 			deletedAt?: number | null;
 			payload?: string | null;
 		}[]) {
-			const vorhanden = this.rows.get(raw.id);
-			const serverRev = vorhanden?.rev ?? 0;
+			const present = this.rows.get(raw.id);
+			const serverRev = present?.rev ?? 0;
 			if (serverRev !== raw.baseRev) {
 				conflicts.push({
 					id: raw.id,
-					current: vorhanden ?? {
+					current: present ?? {
 						id: raw.id,
 						kind: raw.kind,
 						bucket: null,
@@ -80,14 +80,14 @@ class FakeServer {
 			if (r.bucket === null) return filter.unbucketed;
 			return filter.buckets.includes(r.bucket);
 		};
-		const alle = [...this.rows.values()]
+		const all = [...this.rows.values()]
 			.filter((r) => r.seq > since && matches(r))
 			.sort((a, b) => a.seq - b.seq);
-		const seite = alle.slice(0, limit);
+		const page = all.slice(0, limit);
 		return {
-			records: seite,
-			nextSeq: seite.length > 0 ? seite[seite.length - 1].seq : since,
-			hasMore: alle.length > limit
+			records: page,
+			nextSeq: page.length > 0 ? page[page.length - 1].seq : since,
+			hasMore: all.length > limit
 		};
 	}
 
@@ -120,11 +120,11 @@ class FakeServer {
 	}
 }
 
-// ---------- Ein Geraet ----------
+// ---------- Ein Device ----------
 
-/** Ein Geraet ist ein Dateibestand plus ein Stand. */
-class Geraet {
-	dateien = new Map<string, string>();
+/** Ein Device ist ein Dateibestand plus ein Stand. */
+class Device {
+	files = new Map<string, string>();
 	state: SyncState = { seq: 0 };
 
 	constructor(readonly id: string) {}
@@ -133,10 +133,10 @@ class Geraet {
 let server: FakeServer;
 let key: CryptoKey;
 
-/** Etwas AUF einem Geraet tun. */
-async function auf<T>(g: Geraet, fn: (engine: InstanceType<typeof SyncEngine>) => Promise<T>): Promise<T> {
+/** Etwas AUF einem Device tun. */
+async function on<T>(g: Device, fn: (engine: InstanceType<typeof SyncEngine>) => Promise<T>): Promise<T> {
 	resetFakeFs();
-	for (const [k, v] of g.dateien) files.set(k, v);
+	for (const [k, v] of g.files) files.set(k, v);
 	resetOutboxForTests();
 	await startTracking(g.id);
 
@@ -146,7 +146,10 @@ async function auf<T>(g: Geraet, fn: (engine: InstanceType<typeof SyncEngine>) =
 		activities: () => store.loadActivities(),
 		saveActivities: (l) => store.saveActivities(l),
 		settings: () => store.loadSettings(),
-		saveSettings: (s) => store.saveSettings(s)
+		saveSettings: (s) => store.saveSettings(s),
+		timeReport: (m) => store.loadTimeReport(m),
+		saveTimeReport: (r) => store.saveTimeReport(r),
+		deleteTimeReport: (m) => store.deleteTimeReport(m)
 	};
 	const engine = new SyncEngine({
 		api: new Api({ baseUrl: "http://test", token: "t", fetchFn: server.fetchFor(g.id) }),
@@ -163,14 +166,14 @@ async function auf<T>(g: Geraet, fn: (engine: InstanceType<typeof SyncEngine>) =
 	try {
 		return await fn(engine);
 	} finally {
-		g.dateien = new Map(files);
+		g.files = new Map(files);
 	}
 }
 
-const MONAT = "2026-07";
-const ts = (tag: number, stunde: number) => Date.UTC(2026, 6, tag, stunde) + 2 * 3600_000;
+const MONTH = "2026-07";
+const ts = (day: number, hour: number) => Date.UTC(2026, 6, day, hour) + 2 * 3600_000;
 
-const eintrag = (id: string, over: Partial<Entry> = {}): Entry => ({
+const entry = (id: string, over: Partial<Entry> = {}): Entry => ({
 	id,
 	activityId: "akt-1",
 	startTs: ts(15, 9),
@@ -186,14 +189,14 @@ const eintrag = (id: string, over: Partial<Entry> = {}): Entry => ({
  * Bei gleichem `updatedAt` entscheidet die Geraetekennung statt der Reihenfolge -
  * derselbe Test fiele sonst mal so und mal so aus.
  */
-async function danach(): Promise<void> {
-	const jetzt = Date.now();
-	while (Date.now() === jetzt) await new Promise((r) => setTimeout(r, 1));
+async function afterwards(): Promise<void> {
+	const now = Date.now();
+	while (Date.now() === now) await new Promise((r) => setTimeout(r, 1));
 }
 
-/** Was auf einem Geraet in einem Monat liegt. */
-async function eintraege(g: Geraet, monat = MONAT): Promise<Entry[]> {
-	return auf(g, () => store.loadEntries(monat));
+/** Was auf einem Device in einem Monat liegt. */
+async function entries(g: Device, month = MONTH): Promise<Entry[]> {
+	return on(g, () => store.loadEntries(month));
 }
 
 beforeEach(async () => {
@@ -203,178 +206,178 @@ beforeEach(async () => {
 	key = await createVaultKey();
 });
 
-describe("Ein Geraet allein", () => {
+describe("Ein Device allein", () => {
 	it("laedt eine Aenderung hoch und haelt danach nichts mehr offen", async () => {
-		const handy = new Geraet("handy");
-		const ergebnis = await auf(handy, async (engine) => {
-			await store.saveEntries(MONAT, [eintrag("e1")]);
+		const phone = new Device("handy");
+		const result = await on(phone, async (engine) => {
+			await store.saveEntries(MONTH, [entry("e1")]);
 			expect(pendingChanges()).toHaveLength(1);
 			return engine.sync();
 		});
-		expect(ergebnis!.pushed).toBe(1);
+		expect(result!.pushed).toBe(1);
 		expect(server.rows.size).toBe(1);
-		await auf(handy, async () => expect(pendingChanges()).toEqual([]));
+		await on(phone, async () => expect(pendingChanges()).toEqual([]));
 	});
 
 	it("legt beim Server nur Chiffrat ab", async () => {
 		// Die Zusage des ganzen Entwurfs, hier nachgesehen statt behauptet.
-		const handy = new Geraet("handy");
-		await auf(handy, async (engine) => {
-			await store.saveEntries(MONAT, [eintrag("e1", { note: "Kundengespräch" })]);
+		const phone = new Device("handy");
+		await on(phone, async (engine) => {
+			await store.saveEntries(MONTH, [entry("e1", { note: "Kundengespräch" })]);
 			return engine.sync();
 		});
-		const zeile = [...server.rows.values()][0];
-		const alles = JSON.stringify(zeile);
-		expect(alles).not.toContain("Kundengespräch");
-		expect(alles).not.toContain("akt-1");
-		expect(alles).not.toContain(String(ts(15, 9)));
+		const line = [...server.rows.values()][0];
+		const everything = JSON.stringify(line);
+		expect(everything).not.toContain("Kundengespräch");
+		expect(everything).not.toContain("akt-1");
+		expect(everything).not.toContain(String(ts(15, 9)));
 		// Der verschleierte Zeitraum verraet den Monat nicht.
-		expect(zeile.bucket).not.toContain("2026-08");
-		expect(zeile.bucket).toMatch(/^[0-9a-f]{32}$/);
+		expect(line.bucket).not.toContain("2026-08");
+		expect(line.bucket).toMatch(/^[0-9a-f]{32}$/);
 	});
 
 	it("schreibt die Fassung des Servers auf die Platte zurueck", async () => {
 		// Daran haengt alles Weitere: eine Folgeaenderung wird nur angenommen, wenn
 		// sie auf der Fassung des Servers aufsetzt.
-		const handy = new Geraet("handy");
-		await auf(handy, async (engine) => {
-			await store.saveEntries(MONAT, [eintrag("e1")]);
+		const phone = new Device("handy");
+		await on(phone, async (engine) => {
+			await store.saveEntries(MONTH, [entry("e1")]);
 			return engine.sync();
 		});
-		expect((await eintraege(handy))[0].rev).toBe(1);
+		expect((await entries(phone))[0].rev).toBe(1);
 	});
 
 	it("laedt beim zweiten Durchgang nichts erneut hoch", async () => {
-		const handy = new Geraet("handy");
-		await auf(handy, async (engine) => {
-			await store.saveEntries(MONAT, [eintrag("e1")]);
+		const phone = new Device("handy");
+		await on(phone, async (engine) => {
+			await store.saveEntries(MONTH, [entry("e1")]);
 			return engine.sync();
 		});
-		const vorher = server.seq;
-		const zweiter = await auf(handy, (engine) => engine.sync());
-		expect(zweiter!.pushed).toBe(0);
-		expect(server.seq).toBe(vorher);
+		const before = server.seq;
+		const secondOne = await on(phone, (engine) => engine.sync());
+		expect(secondOne!.pushed).toBe(0);
+		expect(server.seq).toBe(before);
 	});
 });
 
 describe("Zwei Geraete", () => {
 	/** Ein Handy mit einem hochgeladenen Eintrag - die Ausgangslage vieler Faelle. */
-	async function handyMit(e: Entry): Promise<Geraet> {
-		const handy = new Geraet("handy");
-		await auf(handy, async (engine) => {
-			await store.saveEntries(MONAT, [e]);
+	async function phoneWith(e: Entry): Promise<Device> {
+		const phone = new Device("handy");
+		await on(phone, async (engine) => {
+			await store.saveEntries(MONTH, [e]);
 			return engine.sync();
 		});
-		return handy;
+		return phone;
 	}
 
-	it("das zweite Geraet bekommt den Eintrag des ersten - entschluesselt", async () => {
-		await handyMit(eintrag("e1", { note: "vom Handy" }));
+	it("das zweite Device bekommt den Eintrag des ersten - entschluesselt", async () => {
+		await phoneWith(entry("e1", { note: "vom Handy" }));
 
-		const rechner = new Geraet("rechner");
-		await auf(rechner, (engine) => engine.sync());
+		const desktop = new Device("rechner");
+		await on(desktop, (engine) => engine.sync());
 
-		const liste = await eintraege(rechner);
-		expect(liste).toHaveLength(1);
-		expect(liste[0].note).toBe("vom Handy");
-		expect(liste[0].activityId).toBe("akt-1");
+		const list = await entries(desktop);
+		expect(list).toHaveLength(1);
+		expect(list[0].note).toBe("vom Handy");
+		expect(list[0].activityId).toBe("akt-1");
 	});
 
 	it("uebernimmt eine Loeschung", async () => {
-		const handy = await handyMit(eintrag("e1"));
-		const rechner = new Geraet("rechner");
-		await auf(rechner, (engine) => engine.sync());
-		expect(await eintraege(rechner)).toHaveLength(1);
+		const phone = await phoneWith(entry("e1"));
+		const desktop = new Device("rechner");
+		await on(desktop, (engine) => engine.sync());
+		expect(await entries(desktop)).toHaveLength(1);
 
 		// Das Handy loescht. Der Vergleich beim Schreiben erkennt die Loeschung
 		// samt der Fassung, die der Eintrag zuletzt hatte - genau die braucht der
 		// Server, um sie anzunehmen.
-		await danach();
-		const geloescht = await auf(handy, async (engine) => {
-			await store.saveEntries(MONAT, []);
+		await afterwards();
+		const deleted = await on(phone, async (engine) => {
+			await store.saveEntries(MONTH, []);
 			expect(pendingChanges()).toEqual([
 				expect.objectContaining({ id: "e1", deleted: true, rev: 1 })
 			]);
 			return engine.sync();
 		});
-		expect(geloescht!.pushed).toBe(1);
+		expect(deleted!.pushed).toBe(1);
 
-		await auf(rechner, (engine) => engine.sync());
-		expect(await eintraege(rechner)).toHaveLength(0);
+		await on(desktop, (engine) => engine.sync());
+		expect(await entries(desktop)).toHaveLength(0);
 	});
 
 	it("loest einen Konflikt auf und laedt danach durch", async () => {
 		// Beide aendern denselben Eintrag, ohne voneinander zu wissen.
-		const handy = await handyMit(eintrag("e1", { note: "handy" }));
-		const rechner = new Geraet("rechner");
-		await auf(rechner, (engine) => engine.sync());
+		const phone = await phoneWith(entry("e1", { note: "handy" }));
+		const desktop = new Device("rechner");
+		await on(desktop, (engine) => engine.sync());
 
 		// Der Rechner aendert - auf dem Stand, den er kennt, und nachweislich spaeter.
-		await danach();
-		await auf(rechner, async (engine) => {
-			const seiner = (await store.loadEntries(MONAT))[0];
-			await store.saveEntries(MONAT, [{ ...seiner, note: "rechner" }]);
+		await afterwards();
+		await on(desktop, async (engine) => {
+			const theirs = (await store.loadEntries(MONTH))[0];
+			await store.saveEntries(MONTH, [{ ...theirs, note: "rechner" }]);
 			return engine.sync();
 		});
 
 		// Das Handy holt und sieht die juengere Fassung.
-		await auf(handy, (engine) => engine.sync());
-		expect((await eintraege(handy))[0].note).toBe("rechner");
+		await on(phone, (engine) => engine.sync());
+		expect((await entries(phone))[0].note).toBe("rechner");
 	});
 
 	it("laesst hoechstens einen Timer laufen, wenn beide Geraete einen halten", async () => {
 		// Der Fall, um den es dem Nutzer geht: am Handy gestartet, der Rechner
 		// wacht auf und weiss nichts davon.
-		await handyMit(eintrag("h1", { endTs: null, startTs: ts(15, 9) }));
+		await phoneWith(entry("h1", { endTs: null, startTs: ts(15, 9) }));
 
-		const rechner = new Geraet("rechner");
-		await auf(rechner, async (engine) => {
+		const desktop = new Device("rechner");
+		await on(desktop, async (engine) => {
 			// Der Rechner startet seinerseits - spaeter, also ist das die juengere
 			// Handlung.
-			await store.saveEntries(MONAT, [eintrag("r1", { endTs: null, startTs: ts(15, 14) })]);
+			await store.saveEntries(MONTH, [entry("r1", { endTs: null, startTs: ts(15, 14) })]);
 			return engine.sync();
 		});
 
-		const liste = await eintraege(rechner);
-		const offen = liste.filter((e) => e.endTs === null);
-		expect(offen).toHaveLength(1);
-		expect(offen[0].id).toBe("r1");
+		const list = await entries(desktop);
+		const open = list.filter((e) => e.endTs === null);
+		expect(open).toHaveLength(1);
+		expect(open[0].id).toBe("r1");
 		// Der Lauf vom Handy ist nicht weg, sondern beendet - dort steckt echte Zeit.
-		expect(liste.find((e) => e.id === "h1")!.endTs).toBe(ts(15, 14));
+		expect(list.find((e) => e.id === "h1")!.endTs).toBe(ts(15, 14));
 	});
 
 	it("gleicht Aktivitaeten ab", async () => {
-		const handy = new Geraet("handy");
-		await auf(handy, async (engine) => {
+		const phone = new Device("handy");
+		await on(phone, async (engine) => {
 			await store.saveActivities([
 				{ id: "a1", name: "Projekt Alpha", sortOrder: 0, archived: false, isAbsence: false }
 			]);
 			return engine.sync();
 		});
 
-		const rechner = new Geraet("rechner");
-		await auf(rechner, (engine) => engine.sync());
-		const geholt = await auf(rechner, () => store.loadActivities());
-		expect(geholt.map((a) => a.name)).toEqual(["Projekt Alpha"]);
+		const desktop = new Device("rechner");
+		await on(desktop, (engine) => engine.sync());
+		const fetched = await on(desktop, () => store.loadActivities());
+		expect(fetched.map((a) => a.name)).toEqual(["Projekt Alpha"]);
 	});
 
 	it("gleicht Einstellungen ab, ohne die geliehene Id zu hinterlassen", async () => {
-		const handy = new Geraet("handy");
-		await auf(handy, async (engine) => {
+		const phone = new Device("handy");
+		await on(phone, async (engine) => {
 			await store.saveSettings({ ...defaultSettings, hoursPerDay: 8, timeZone: "Europe/Berlin" });
 			return engine.sync();
 		});
 
-		const rechner = new Geraet("rechner");
-		await auf(rechner, (engine) => engine.sync());
-		const s = await auf(rechner, () => store.loadSettings());
+		const desktop = new Device("rechner");
+		await on(desktop, (engine) => engine.sync());
+		const s = await on(desktop, () => store.loadSettings());
 		expect(s.hoursPerDay).toBe(8);
 		expect((s as unknown as { id?: string }).id).toBeUndefined();
 	});
 
 	it("gleicht Pomodoro-Einstellungen und laufenden Timer korrekt ab", async () => {
-		const handy = new Geraet("handy");
-		await auf(handy, async (engine) => {
+		const phone = new Device("handy");
+		await on(phone, async (engine) => {
 			await store.saveSettings({
 				...defaultSettings,
 				pomodoroEnabled: true,
@@ -382,15 +385,15 @@ describe("Zwei Geraete", () => {
 				pomodoroBreakMin: 5
 			});
 			await store.saveEntries("2026-07", [
-				eintrag("timer1", { startTs: ts(15, 9), endTs: null })
+				entry("timer1", { startTs: ts(15, 9), endTs: null })
 			]);
 			return engine.sync();
 		});
 
-		const rechner = new Geraet("rechner");
-		await auf(rechner, (engine) => engine.sync());
-		const s = await auf(rechner, () => store.loadSettings());
-		const entries = await auf(rechner, () => store.loadEntries("2026-07"));
+		const desktop = new Device("rechner");
+		await on(desktop, (engine) => engine.sync());
+		const s = await on(desktop, () => store.loadSettings());
+		const entries = await on(desktop, () => store.loadEntries("2026-07"));
 
 		expect(s.pomodoroEnabled).toBe(true);
 		expect(s.pomodoroMin).toBe(25);
@@ -402,22 +405,22 @@ describe("Zwei Geraete", () => {
 });
 
 /** Ein Zeitstempel im Folgemonat - fuer alles, was ueber die Monatsgrenze geht. */
-const tsAug = (tag: number, stunde: number) => Date.UTC(2026, 7, tag, stunde) + 2 * 3600_000;
+const tsAug = (day: number, hour: number) => Date.UTC(2026, 7, day, hour) + 2 * 3600_000;
 
-/** Eine Loeschung beim Server nachstellen, ohne ein Geraet dafuer zu bemuehen. */
-function grabstein(id: string, rev: number): void {
+/** Eine Loeschung beim Server nachstellen, ohne ein Device dafuer zu bemuehen. */
+function tombstone(id: string, rev: number): void {
 	server.seq++;
-	const alt = server.rows.get(id);
-	const wann = Date.now() + 60_000;
+	const old = server.rows.get(id);
+	const when = Date.now() + 60_000;
 	server.rows.set(id, {
 		id,
 		kind: "entry",
-		bucket: alt?.bucket ?? null,
+		bucket: old?.bucket ?? null,
 		seq: server.seq,
 		rev,
-		updatedAt: wann,
+		updatedAt: when,
 		deviceId: "handy",
-		deletedAt: wann,
+		deletedAt: when,
 		payload: null
 	});
 }
@@ -427,94 +430,94 @@ describe("Ueber Monatsgrenzen hinweg", () => {
 		// Der Weg, den updateEntry geht, wenn jemand das Datum ueber den
 		// Monatswechsel zieht: der alte Monat wird ohne ihn gespeichert, der neue
 		// mit ihm. In der Outbox bleibt davon EINE Aenderung stehen (die spaetere
-		// gewinnt), der Server sieht also nie eine Loeschung - das andere Geraet
+		// gewinnt), der Server sieht also nie eine Loeschung - das andere Device
 		// muss den Umzug am neuen Startzeitpunkt selbst erkennen.
-		const handy = new Geraet("handy");
-		await auf(handy, async (engine) => {
-			await store.saveEntries(MONAT, [eintrag("e1")]);
+		const phone = new Device("handy");
+		await on(phone, async (engine) => {
+			await store.saveEntries(MONTH, [entry("e1")]);
 			return engine.sync();
 		});
-		const rechner = new Geraet("rechner");
-		await auf(rechner, (engine) => engine.sync());
-		expect(await eintraege(rechner, MONAT)).toHaveLength(1);
+		const desktop = new Device("rechner");
+		await on(desktop, (engine) => engine.sync());
+		expect(await entries(desktop, MONTH)).toHaveLength(1);
 
-		await auf(handy, async (engine) => {
-			const seiner = (await store.loadEntries(MONAT))[0];
-			await store.saveEntries(MONAT, []);
+		await on(phone, async (engine) => {
+			const theirs = (await store.loadEntries(MONTH))[0];
+			await store.saveEntries(MONTH, []);
 			await store.saveEntries("2026-08", [
-				{ ...seiner, startTs: tsAug(3, 9), endTs: tsAug(3, 12) }
+				{ ...theirs, startTs: tsAug(3, 9), endTs: tsAug(3, 12) }
 			]);
 			return engine.sync();
 		});
 
-		await auf(rechner, (engine) => engine.sync());
-		expect((await eintraege(rechner, "2026-08")).map((e) => e.id)).toEqual(["e1"]);
+		await on(desktop, (engine) => engine.sync());
+		expect((await entries(desktop, "2026-08")).map((e) => e.id)).toEqual(["e1"]);
 		// Und NICHT zusaetzlich im alten Monat: sonst zaehlte dieselbe Stunde zweimal.
-		expect(await eintraege(rechner, MONAT)).toEqual([]);
+		expect(await entries(desktop, MONTH)).toEqual([]);
 	});
 
 	it("laesst hoechstens einen Timer laufen, auch ueber zwei Monate", async () => {
 		// Am Monatsende am Handy gestartet, im naechsten Monat am Rechner noch
 		// einmal. Zwei laufende Timer in zwei Dateien - monatsweise betrachtet stand
 		// in jeder genau einer, und beide zaehlten weiter.
-		const handy = new Geraet("handy");
-		await auf(handy, async (engine) => {
-			await store.saveEntries(MONAT, [eintrag("h1", { startTs: ts(30, 10), endTs: null })]);
+		const phone = new Device("handy");
+		await on(phone, async (engine) => {
+			await store.saveEntries(MONTH, [entry("h1", { startTs: ts(30, 10), endTs: null })]);
 			return engine.sync();
 		});
 
-		const rechner = new Geraet("rechner");
-		await auf(rechner, async (engine) => {
-			await store.saveEntries("2026-08", [eintrag("r1", { startTs: tsAug(2, 10), endTs: null })]);
+		const desktop = new Device("rechner");
+		await on(desktop, async (engine) => {
+			await store.saveEntries("2026-08", [entry("r1", { startTs: tsAug(2, 10), endTs: null })]);
 			return engine.sync();
 		});
 
-		const juli = await eintraege(rechner, MONAT);
-		const august = await eintraege(rechner, "2026-08");
-		const offen = [...juli, ...august].filter((e) => e.endTs === null);
-		expect(offen.map((e) => e.id)).toEqual(["r1"]);
+		const july = await entries(desktop, MONTH);
+		const august = await entries(desktop, "2026-08");
+		const open = [...july, ...august].filter((e) => e.endTs === null);
+		expect(open.map((e) => e.id)).toEqual(["r1"]);
 		// Der Lauf vom Handy ist nicht weg, sondern beendet - dort steckt echte Zeit.
-		expect(juli.find((e) => e.id === "h1")!.endTs).toBe(tsAug(2, 10));
+		expect(july.find((e) => e.id === "h1")!.endTs).toBe(tsAug(2, 10));
 	});
 
-	it("findet den Monat eines Grabsteins, den es beim Start noch nicht gab", async () => {
+	it("findet den Monat eines Loeschmarkers, den es beim Start noch nicht gab", async () => {
 		// Ein Programm, das laeuft und laeuft. Die Monatsliste darf ihm nicht
 		// einfrieren: sonst faende die Loeschung ihren Monat nicht, wuerde still
 		// verworfen - und `seq` liefe trotzdem weiter. Endgueltig verloren.
-		const handy = new Geraet("handy");
-		await auf(handy, async (engine) => {
-			await store.saveEntries(MONAT, [eintrag("e1")]);
+		const phone = new Device("handy");
+		await on(phone, async (engine) => {
+			await store.saveEntries(MONTH, [entry("e1")]);
 			return engine.sync();
 		});
-		// Ein Grabstein fuer etwas, das der Rechner nie hatte. Er ist der Grund,
+		// Ein Loeschmarker fuer etwas, das der Rechner nie hatte. Er ist der Grund,
 		// weshalb die Monatsliste im ersten Durchgang ueberhaupt gezogen wird - zu
 		// einem Zeitpunkt, an dem es noch keine Monatsdatei gibt.
-		grabstein("nie-gesehen", 1);
+		tombstone("nie-gesehen", 1);
 
-		const rechner = new Geraet("rechner");
-		await auf(rechner, async (engine) => {
+		const desktop = new Device("rechner");
+		await on(desktop, async (engine) => {
 			await engine.sync();
-			expect(await store.loadEntries(MONAT)).toHaveLength(1);
+			expect(await store.loadEntries(MONTH)).toHaveLength(1);
 
-			grabstein("e1", 2);
+			tombstone("e1", 2);
 			await engine.sync();
-			expect(await store.loadEntries(MONAT)).toEqual([]);
+			expect(await store.loadEntries(MONTH)).toEqual([]);
 		});
 	});
 
 	it("ein geloeschtes Jahr kommt beim naechsten Durchgang nicht zurueck", async () => {
-		const handy = new Geraet("handy");
-		await auf(handy, async (engine) => {
+		const phone = new Device("handy");
+		await on(phone, async (engine) => {
 			await store.saveEntries("2025-03", [
-				eintrag("alt", { startTs: Date.UTC(2025, 2, 4, 9), endTs: Date.UTC(2025, 2, 4, 12) })
+				entry("alt", { startTs: Date.UTC(2025, 2, 4, 9), endTs: Date.UTC(2025, 2, 4, 12) })
 			]);
 			return engine.sync();
 		});
-		const rechner = new Geraet("rechner");
-		await auf(rechner, (engine) => engine.sync());
-		expect(await eintraege(rechner, "2025-03")).toHaveLength(1);
+		const desktop = new Device("rechner");
+		await on(desktop, (engine) => engine.sync());
+		expect(await entries(desktop, "2025-03")).toHaveLength(1);
 
-		await auf(handy, async (engine) => {
+		await on(phone, async (engine) => {
 			expect(await store.deleteYear(2025)).toEqual(["2025-03"]);
 			// Das Loeschen muss durch den Haken gegangen sein, sonst weiss der
 			// Abgleich nichts davon.
@@ -525,11 +528,11 @@ describe("Ueber Monatsgrenzen hinweg", () => {
 		});
 
 		// Der naechste Durchgang holt es nicht wieder herunter ...
-		await auf(handy, (engine) => engine.sync());
-		expect(await eintraege(handy, "2025-03")).toEqual([]);
-		// ... und das andere Geraet raeumt mit auf.
-		await auf(rechner, (engine) => engine.sync());
-		expect(await eintraege(rechner, "2025-03")).toEqual([]);
+		await on(phone, (engine) => engine.sync());
+		expect(await entries(phone, "2025-03")).toEqual([]);
+		// ... und das andere Device raeumt mit auf.
+		await on(desktop, (engine) => engine.sync());
+		expect(await entries(desktop, "2025-03")).toEqual([]);
 	});
 });
 
@@ -539,33 +542,33 @@ describe("Was der Mensch erfahren muss", () => {
 		// entlang: die eigene Aenderung stoesst auf einen Konflikt, und beim
 		// Aufloesen gewinnt der Server. Bliebe die Zahl dort liegen, stuende am Ende
 		// "abgeglichen" da - ohne ein Wort darueber, dass etwas ueberschrieben wurde.
-		const handy = new Geraet("handy");
-		await auf(handy, async (engine) => {
-			await store.saveEntries(MONAT, [eintrag("e1", { note: "handy" })]);
+		const phone = new Device("handy");
+		await on(phone, async (engine) => {
+			await store.saveEntries(MONTH, [entry("e1", { note: "handy" })]);
 			return engine.sync();
 		});
-		const rechner = new Geraet("rechner");
-		await auf(rechner, (engine) => engine.sync());
+		const desktop = new Device("rechner");
+		await on(desktop, (engine) => engine.sync());
 
 		// Das Handy aendert und laedt hoch - und zwar nachweislich spaeter, damit
 		// der Wettstreit nicht an einer Millisekunde haengt.
-		await auf(handy, async (engine) => {
-			const seiner = (await store.loadEntries(MONAT))[0];
-			await store.saveEntries(MONAT, [{ ...seiner, note: "handy zwei" }]);
+		await on(phone, async (engine) => {
+			const theirs = (await store.loadEntries(MONTH))[0];
+			await store.saveEntries(MONTH, [{ ...theirs, note: "handy zwei" }]);
 			return engine.sync();
 		});
-		const zeile = server.rows.get("e1")!;
-		server.rows.set("e1", { ...zeile, updatedAt: Date.now() + 60_000 });
+		const line = server.rows.get("e1")!;
+		server.rows.set("e1", { ...line, updatedAt: Date.now() + 60_000 });
 
 		// Der Rechner aendert auf seinem alten Stand und laeuft in den Konflikt.
-		const ergebnis = await auf(rechner, async (engine) => {
-			const seiner = (await store.loadEntries(MONAT))[0];
-			await store.saveEntries(MONAT, [{ ...seiner, note: "rechner" }]);
+		const result = await on(desktop, async (engine) => {
+			const theirs = (await store.loadEntries(MONTH))[0];
+			await store.saveEntries(MONTH, [{ ...theirs, note: "rechner" }]);
 			return engine.sync();
 		});
 
-		expect(ergebnis!.lostEdits).toBe(1);
-		expect((await eintraege(rechner))[0].note).toBe("handy zwei");
+		expect(result!.lostEdits).toBe(1);
+		expect((await entries(desktop))[0].note).toBe("handy zwei");
 	});
 });
 
@@ -574,25 +577,25 @@ describe("Kein Echo", () => {
 		// Ohne diese Wache saehe der Schreib-Haken das Einspielen von Serverdaten
 		// wie jede andere Aenderung und merkte sie vor - der naechste Durchgang
 		// luede sie wieder hoch, wo sie als veraltet abgewiesen wuerde: ein
-		// Geraet, das dieselben Datensaetze im Kreis schickt.
-		const handy = new Geraet("handy");
-		await auf(handy, async (engine) => {
-			await store.saveEntries(MONAT, [eintrag("e1")]);
+		// Device, das dieselben Datensaetze im Kreis schickt.
+		const phone = new Device("handy");
+		await on(phone, async (engine) => {
+			await store.saveEntries(MONTH, [entry("e1")]);
 			await store.saveActivities([
 				{ id: "a1", name: "Alpha", sortOrder: 0, archived: false, isAbsence: false }
 			]);
 			return engine.sync();
 		});
 
-		const rechner = new Geraet("rechner");
-		await auf(rechner, async (engine) => {
+		const desktop = new Device("rechner");
+		await on(desktop, async (engine) => {
 			await engine.sync();
 			expect(pendingChanges()).toEqual([]);
 		});
 
 		// Und der naechste Durchgang laedt folglich auch nichts hoch.
-		const zweiter = await auf(rechner, (engine) => engine.sync());
-		expect(zweiter!.pushed).toBe(0);
+		const secondOne = await on(desktop, (engine) => engine.sync());
+		expect(secondOne!.pushed).toBe(0);
 	});
 });
 
@@ -600,18 +603,18 @@ describe("Sparsamkeit", () => {
 	it("ein Durchgang ohne Aenderungen kostet genau eine Anfrage", async () => {
 		// Der Anspruch aus dem Entwurf: im Leerlauf passiert nichts. Waere hier ein
 		// Poller am Werk, stuenden hier Dutzende Anfragen.
-		const handy = new Geraet("handy");
-		await auf(handy, (engine) => engine.sync());
+		const phone = new Device("handy");
+		await on(phone, (engine) => engine.sync());
 		server.calls = [];
-		await auf(handy, (engine) => engine.sync());
+		await on(phone, (engine) => engine.sync());
 		expect(server.calls).toEqual(["GET /api/sync"]);
 	});
 
 	it("laesst zwei gleichzeitige Anstoesse nicht nebeneinanderlaufen", async () => {
 		// Sonst zoegen sie sich gegenseitig die Outbox unter den Fuessen weg.
-		const handy = new Geraet("handy");
-		const [a, b] = await auf(handy, async (engine) => {
-			await store.saveEntries(MONAT, [eintrag("e1")]);
+		const phone = new Device("handy");
+		const [a, b] = await on(phone, async (engine) => {
+			await store.saveEntries(MONTH, [entry("e1")]);
 			return Promise.all([engine.sync(), engine.sync()]);
 		});
 		// Der zweite Anstoss haengt sich an den laufenden Durchgang, statt ins Leere
@@ -622,20 +625,20 @@ describe("Sparsamkeit", () => {
 	});
 
 	it("blaettert durch einen grossen Bestand, ohne etwas zu ueberspringen", async () => {
-		const handy = new Geraet("handy");
-		await auf(handy, async (engine) => {
-			const viele = Array.from({ length: 450 }, (_, i) =>
-				eintrag(`e${i}`, { startTs: ts(15, 9) + i * 1000, endTs: ts(15, 9) + i * 1000 + 60_000 })
+		const phone = new Device("handy");
+		await on(phone, async (engine) => {
+			const many = Array.from({ length: 450 }, (_, i) =>
+				entry(`e${i}`, { startTs: ts(15, 9) + i * 1000, endTs: ts(15, 9) + i * 1000 + 60_000 })
 			);
-			await store.saveEntries(MONAT, viele);
+			await store.saveEntries(MONTH, many);
 			return engine.sync();
 		});
 
-		const rechner = new Geraet("rechner");
-		await auf(rechner, (engine) => engine.sync());
-		const liste = await eintraege(rechner);
-		expect(liste).toHaveLength(450);
-		expect(new Set(liste.map((e) => e.id)).size).toBe(450);
+		const desktop = new Device("rechner");
+		await on(desktop, (engine) => engine.sync());
+		const list = await entries(desktop);
+		expect(list).toHaveLength(450);
+		expect(new Set(list.map((e) => e.id)).size).toBe(450);
 	});
 });
 
@@ -643,38 +646,38 @@ describe("Robustheit", () => {
 	it("ein unlesbarer Datensatz haelt den Abgleich nicht an", async () => {
 		// Ein einzelner unlesbarer Datensatz ist ein Aergernis, ein
 		// steckengebliebener Abgleich ein Ausfall.
-		const handy = new Geraet("handy");
-		await auf(handy, async (engine) => {
-			await store.saveEntries(MONAT, [eintrag("e1")]);
+		const phone = new Device("handy");
+		await on(phone, async (engine) => {
+			await store.saveEntries(MONTH, [entry("e1")]);
 			return engine.sync();
 		});
 
 		// Ein Datensatz mit Chiffrat aus einem FREMDEN Tresor.
-		const fremderSchluessel = key;
+		const otherKey = key;
 		key = await createVaultKey();
-		const fremd = new Geraet("fremd");
-		await auf(fremd, async (engine) => {
-			await store.saveEntries("2026-08", [eintrag("e2", { startTs: ts(20, 9) })]);
+		const foreign = new Device("fremd");
+		await on(foreign, async (engine) => {
+			await store.saveEntries("2026-08", [entry("e2", { startTs: ts(20, 9) })]);
 			return engine.sync();
 		});
-		key = fremderSchluessel;
+		key = otherKey;
 
-		// Ein Geraet mit dem RICHTIGEN Schluessel bekommt e1 und ueberspringt e2.
-		const rechner = new Geraet("rechner");
-		await expect(auf(rechner, (engine) => engine.sync())).resolves.toBeTruthy();
-		expect((await eintraege(rechner)).map((e) => e.id)).toEqual(["e1"]);
-		expect(await eintraege(rechner, "2026-08")).toEqual([]);
+		// Ein Device mit dem RICHTIGEN Schluessel bekommt e1 und ueberspringt e2.
+		const desktop = new Device("rechner");
+		await expect(on(desktop, (engine) => engine.sync())).resolves.toBeTruthy();
+		expect((await entries(desktop)).map((e) => e.id)).toEqual(["e1"]);
+		expect(await entries(desktop, "2026-08")).toEqual([]);
 	});
 
 	it("merkt sich den Stand, damit der naechste Durchgang nur das Delta holt", async () => {
-		const handy = new Geraet("handy");
-		await auf(handy, async (engine) => {
-			await store.saveEntries(MONAT, [eintrag("e1")]);
+		const phone = new Device("handy");
+		await on(phone, async (engine) => {
+			await store.saveEntries(MONTH, [entry("e1")]);
 			return engine.sync();
 		});
-		const rechner = new Geraet("rechner");
-		await auf(rechner, (engine) => engine.sync());
-		expect(rechner.state.seq).toBe(server.seq);
+		const desktop = new Device("rechner");
+		await on(desktop, (engine) => engine.sync());
+		expect(desktop.state.seq).toBe(server.seq);
 	});
 });
 
@@ -684,97 +687,97 @@ describe("Der Server kennt den Bestand nicht mehr", () => {
 	// niemand kennt. Er antwortet auf jede mit einem Konflikt gegen Fassung 0.
 
 	it("schreibt die Daten neu an, statt fuer immer im Konflikt zu haengen", async () => {
-		const pc = new Geraet("pc");
-		await auf(pc, async (engine) => {
-			await store.saveEntries(MONAT, [eintrag("e1"), eintrag("e2")]);
+		const pc = new Device("pc");
+		await on(pc, async (engine) => {
+			await store.saveEntries(MONTH, [entry("e1"), entry("e2")]);
 			await engine.sync();
 		});
 		expect(server.rows.size).toBe(2);
 
-		// Das Konto wird aufgeloest. Der Server hat nichts mehr - das Geraet weiss
+		// Das Konto wird aufgeloest. Der Server hat nichts mehr - das Device weiss
 		// es noch nicht.
 		server.rows.clear();
 		server.seq = 0;
 
-		const ergebnis = await auf(pc, async (engine) => {
-			const liste = await store.loadEntries(MONAT);
-			liste[0] = { ...liste[0], note: "nach dem Neuaufsetzen" };
-			await store.saveEntries(MONAT, liste);
+		const result = await on(pc, async (engine) => {
+			const list = await store.loadEntries(MONTH);
+			list[0] = { ...list[0], note: "nach dem Neuaufsetzen" };
+			await store.saveEntries(MONTH, list);
 			return engine.sync();
 		});
 
-		expect(ergebnis?.pushed).toBe(1);
+		expect(result?.pushed).toBe(1);
 		expect(server.rows.has("e1")).toBe(true);
 		expect(server.rows.get("e1")?.rev).toBe(1);
 	});
 
 	it("haelt danach nichts mehr offen", async () => {
-		const pc = new Geraet("pc");
-		await auf(pc, async (engine) => {
-			await store.saveEntries(MONAT, [eintrag("e1")]);
+		const pc = new Device("pc");
+		await on(pc, async (engine) => {
+			await store.saveEntries(MONTH, [entry("e1")]);
 			await engine.sync();
 		});
 		server.rows.clear();
 		server.seq = 0;
 
-		const offen = await auf(pc, async (engine) => {
-			const liste = await store.loadEntries(MONAT);
-			await store.saveEntries(MONAT, [{ ...liste[0], note: "geaendert" }]);
+		const open = await on(pc, async (engine) => {
+			const list = await store.loadEntries(MONTH);
+			await store.saveEntries(MONTH, [{ ...list[0], note: "geaendert" }]);
 			await engine.sync();
 			return pendingChanges();
 		});
-		expect(offen).toHaveLength(0);
+		expect(open).toHaveLength(0);
 	});
 
 	it("das neu angeschriebene Chiffrat laesst sich woanders oeffnen", async () => {
 		// Der Punkt, an dem es leicht schiefgeht: die Bindung des Chiffrats zeigt
 		// auf die Fassung, die daraus wird. Wird die Fassung auf 0 zurueckgesetzt,
 		// MUSS das vor dem Versiegeln passieren - sonst ist die Bindung falsch,
-		// und das Chiffrat laesst sich nirgends mehr oeffnen. Ein zweites Geraet
+		// und das Chiffrat laesst sich nirgends mehr oeffnen. Ein zweites Device
 		// ist der einzige ehrliche Beleg dafuer.
-		const pc = new Geraet("pc");
-		await auf(pc, async (engine) => {
-			await store.saveEntries(MONAT, [eintrag("e1", { note: "erste Fassung" })]);
+		const pc = new Device("pc");
+		await on(pc, async (engine) => {
+			await store.saveEntries(MONTH, [entry("e1", { note: "erste Fassung" })]);
 			await engine.sync();
 		});
 		server.rows.clear();
 		server.seq = 0;
 
-		await auf(pc, async (engine) => {
-			const liste = await store.loadEntries(MONAT);
-			await store.saveEntries(MONAT, [{ ...liste[0], note: "nach dem Neuanfang" }]);
+		await on(pc, async (engine) => {
+			const list = await store.loadEntries(MONTH);
+			await store.saveEntries(MONTH, [{ ...list[0], note: "nach dem Neuanfang" }]);
 			await engine.sync();
 		});
 
-		const handy = new Geraet("handy");
-		await auf(handy, (engine) => engine.sync());
-		const gelesen = await eintraege(handy);
-		expect(gelesen).toHaveLength(1);
-		expect(gelesen[0].note).toBe("nach dem Neuanfang");
+		const phone = new Device("handy");
+		await on(phone, (engine) => engine.sync());
+		const read = await entries(phone);
+		expect(read).toHaveLength(1);
+		expect(read[0].note).toBe("nach dem Neuanfang");
 	});
 
 	it("verwechselt einen echten Konflikt nicht damit", async () => {
 		// Die Merkliste darf nicht dazu fuehren, dass spaeter mit Fassung 0
 		// geschrieben wird, wo der Server sehr wohl etwas hat - das wuerde die
 		// Arbeit des anderen Geraets ueberschreiben, ohne sie gesehen zu haben.
-		const pc = new Geraet("pc");
-		const handy = new Geraet("handy");
+		const pc = new Device("pc");
+		const phone = new Device("handy");
 
-		await auf(pc, async (engine) => {
-			await store.saveEntries(MONAT, [eintrag("e1", { note: "vom PC" })]);
+		await on(pc, async (engine) => {
+			await store.saveEntries(MONTH, [entry("e1", { note: "vom PC" })]);
 			await engine.sync();
 		});
-		await auf(handy, (engine) => engine.sync());
+		await on(phone, (engine) => engine.sync());
 
 		// Beide aendern, ohne voneinander zu wissen.
-		await auf(handy, async (engine) => {
-			const liste = await store.loadEntries(MONAT);
-			await store.saveEntries(MONAT, [{ ...liste[0], note: "vom Handy", updatedAt: ts(15, 14) }]);
+		await on(phone, async (engine) => {
+			const list = await store.loadEntries(MONTH);
+			await store.saveEntries(MONTH, [{ ...list[0], note: "vom Handy", updatedAt: ts(15, 14) }]);
 			await engine.sync();
 		});
-		await auf(pc, async (engine) => {
-			const liste = await store.loadEntries(MONAT);
-			await store.saveEntries(MONAT, [{ ...liste[0], note: "spaeter vom PC", updatedAt: ts(15, 15) }]);
+		await on(pc, async (engine) => {
+			const list = await store.loadEntries(MONTH);
+			await store.saveEntries(MONTH, [{ ...list[0], note: "spaeter vom PC", updatedAt: ts(15, 15) }]);
 			await engine.sync();
 		});
 
@@ -784,14 +787,184 @@ describe("Der Server kennt den Bestand nicht mehr", () => {
 	});
 });
 
+describe("Eingelesene Reports", () => {
+	const day = (date: string, hours: number) => ({
+		date,
+		firstIn: "07:30",
+		lastOut: "16:45",
+		hours,
+		flags: []
+	});
+
+	/** Ein Report, wie ihn der Import ablegt. */
+	const report = (month = MONTH, hours = 7.5) => ({
+		month,
+		importedAt: Date.UTC(2026, 6, 20),
+		days: [day(`${month}-15`, hours)]
+	});
+
+	it("traegt einen Report zum anderen Device", async () => {
+		const desktop = new Device("rechner");
+		await on(desktop, async (engine) => {
+			await store.saveTimeReport(report());
+			return engine.sync();
+		});
+
+		const laptop = new Device("laptop");
+		await on(laptop, (engine) => engine.sync());
+		const drueben = await on(laptop, () => store.loadTimeReport(MONTH));
+		expect(drueben?.days).toHaveLength(1);
+		expect(drueben?.days[0].hours).toBe(7.5);
+	});
+
+	it("legt beim Server nur Chiffrat ab", async () => {
+		// Ein Report sagt aus, wann jemand gekommen und gegangen ist. Nichts davon
+		// darf im Klartext beim Server liegen.
+		const desktop = new Device("rechner");
+		await on(desktop, async (engine) => {
+			await store.saveTimeReport(report());
+			return engine.sync();
+		});
+		const line = [...server.rows.values()][0];
+		const everything = JSON.stringify(line);
+		expect(everything).not.toContain("07:30");
+		expect(everything).not.toContain("16:45");
+		expect(everything).not.toContain(`${MONTH}-15`);
+	});
+
+	it("stellt die Id dem Monat voran, damit sie mit keiner anderen Art zusammenstoesst", async () => {
+		// Der Server fuehrt seine Datensaetze allein ueber die Id.
+		const desktop = new Device("rechner");
+		await on(desktop, async (engine) => {
+			await store.saveTimeReport(report());
+			return engine.sync();
+		});
+		expect([...server.rows.keys()]).toEqual([`timereport:${MONTH}`]);
+	});
+
+	it("laedt beim zweiten Durchgang nichts erneut hoch", async () => {
+		// Haengt daran, dass loadTimeReport die Fassung mitliest.
+		const desktop = new Device("rechner");
+		await on(desktop, async (engine) => {
+			await store.saveTimeReport(report());
+			return engine.sync();
+		});
+		const zweiter = await on(desktop, (engine) => engine.sync());
+		expect(zweiter!.pushed).toBe(0);
+		expect(await on(desktop, () => store.loadTimeReport(MONTH))).toMatchObject({ rev: 1 });
+	});
+
+	it("ersetzt drueben den Report, wenn er neu eingelesen wird", async () => {
+		const desktop = new Device("rechner");
+		await on(desktop, async (engine) => {
+			await store.saveTimeReport(report());
+			return engine.sync();
+		});
+		const laptop = new Device("laptop");
+		await on(laptop, (engine) => engine.sync());
+
+		// Ein neuer Import legt ein frisches Objekt ohne Fassung an - genau so, wie
+		// es aus der Datei kommt.
+		await afterwards();
+		await on(desktop, async (engine) => {
+			await store.saveTimeReport(report(MONTH, 9));
+			return engine.sync();
+		});
+		await on(laptop, (engine) => engine.sync());
+		const drueben = await on(laptop, () => store.loadTimeReport(MONTH));
+		expect(drueben?.days[0].hours).toBe(9);
+	});
+
+	it("nimmt den Report drueben weg, wenn er hier geloescht wird", async () => {
+		const desktop = new Device("rechner");
+		await on(desktop, async (engine) => {
+			await store.saveTimeReport(report());
+			return engine.sync();
+		});
+		const laptop = new Device("laptop");
+		await on(laptop, (engine) => engine.sync());
+		expect(await on(laptop, () => store.loadTimeReport(MONTH))).not.toBeNull();
+
+		await afterwards();
+		await on(desktop, async (engine) => {
+			await store.deleteTimeReport(MONTH);
+			return engine.sync();
+		});
+		await on(laptop, (engine) => engine.sync());
+		expect(await on(laptop, () => store.loadTimeReport(MONTH))).toBeNull();
+		expect(await on(laptop, () => store.listTimeReportMonths())).toEqual([]);
+	});
+
+	it("bleibt auch im schlimmsten Monat unter der Groessengrenze des Servers", async () => {
+		// Der Server weist einen Datensatz ueber 64 KB mit 413 ab - und zwar den
+		// ganzen Stapel. Ein einziger zu grosser Report legte damit den Abgleich
+		// lahm, nicht nur sich selbst.
+		const MAX_RECORD_BYTES = 64 * 1024;
+		const flags = (["restBreak", "over10", "target10", "gradualReturn", "sunday", "holiday"] as const).map(
+			(key) => ({ key, label: "Verstoß Ruhepause", value: "10,25" })
+		);
+		const days = Array.from({ length: 31 }, (_, i) => ({
+			...day(`2026-07-${String(i + 1).padStart(2, "0")}`, 10.25),
+			flags
+		}));
+
+		const desktop = new Device("rechner");
+		await on(desktop, async (engine) => {
+			await store.saveTimeReport({ month: MONTH, importedAt: Date.now(), days });
+			return engine.sync();
+		});
+		const payload = [...server.rows.values()][0].payload ?? "";
+		expect(payload.length).toBeGreaterThan(0);
+		expect(payload.length).toBeLessThan(MAX_RECORD_BYTES);
+	});
+
+	it("nimmt den Report drueben weg, wenn hier das Jahr geloescht wird", async () => {
+		// „Einstellungen -> Daten -> Jahr loeschen" nimmt die Reports des Jahres
+		// mit. Ginge das am Haken vorbei, holte der naechste Abgleich sie zurueck.
+		const desktop = new Device("rechner");
+		await on(desktop, async (engine) => {
+			await store.saveTimeReport(report());
+			return engine.sync();
+		});
+		const laptop = new Device("laptop");
+		await on(laptop, (engine) => engine.sync());
+
+		await afterwards();
+		await on(desktop, async (engine) => {
+			await store.deleteYear(2026);
+			return engine.sync();
+		});
+		await on(laptop, (engine) => engine.sync());
+		expect(await on(laptop, () => store.listTimeReportMonths())).toEqual([]);
+	});
+
+	it("legt aus einer Loeschung, die wir nie kannten, keine leere Datei an", async () => {
+		const desktop = new Device("rechner");
+		await on(desktop, async (engine) => {
+			await store.saveTimeReport(report());
+			return engine.sync();
+		});
+		await afterwards();
+		await on(desktop, async (engine) => {
+			await store.deleteTimeReport(MONTH);
+			return engine.sync();
+		});
+
+		// Der Laptop war die ganze Zeit weg und sieht nur noch den Loeschmarker.
+		const laptop = new Device("laptop");
+		await on(laptop, (engine) => engine.sync());
+		expect(await on(laptop, () => store.listTimeReportMonths())).toEqual([]);
+	});
+});
+
 describe("onProgress – Ladeanzeige beim Massenimport", () => {
 	/**
-	 * Geraet mit eigenem SyncEngine und onProgress-Callback.
+	 * Device mit eigenem SyncEngine und onProgress-Callback.
 	 * Gibt alle Progress-Events zurueck.
 	 */
-	async function syncMitProgress(g: Geraet): Promise<{ events: import("./engine").SyncProgress[] }> {
+	async function syncWithProgress(g: Device): Promise<{ events: import("./engine").SyncProgress[] }> {
 		resetFakeFs();
-		for (const [k, v] of g.dateien) files.set(k, v);
+		for (const [k, v] of g.files) files.set(k, v);
 		resetOutboxForTests();
 		await startTracking(g.id);
 
@@ -802,7 +975,10 @@ describe("onProgress – Ladeanzeige beim Massenimport", () => {
 			activities: () => store.loadActivities(),
 			saveActivities: (l) => store.saveActivities(l),
 			settings: () => store.loadSettings(),
-			saveSettings: (s) => store.saveSettings(s)
+			saveSettings: (s) => store.saveSettings(s),
+			timeReport: (m) => store.loadTimeReport(m),
+			saveTimeReport: (r) => store.saveTimeReport(r),
+			deleteTimeReport: (m) => store.deleteTimeReport(m)
 		};
 		const engine = new SyncEngine({
 			api: new Api({ baseUrl: "http://test", token: "t", fetchFn: server.fetchFor(g.id) }),
@@ -818,46 +994,46 @@ describe("onProgress – Ladeanzeige beim Massenimport", () => {
 		try {
 			await engine.sync();
 		} finally {
-			g.dateien = new Map(files);
+			g.files = new Map(files);
 		}
 		return { events };
 	}
 
 	it("ruft onProgress mit phase=pulling auf, waehrend Eintraege gezogen werden", async () => {
-		// Geraet 1 laedt 25 Eintraege hoch.
-		const sender = new Geraet("sender");
-		const eintraege25 = Array.from({ length: 25 }, (_, i) =>
-			eintrag(`e${i}`, { startTs: ts(1 + (i % 15), 9 + (i % 8)) })
+		// Device 1 laedt 25 Eintraege hoch.
+		const sender = new Device("sender");
+		const entries25 = Array.from({ length: 25 }, (_, i) =>
+			entry(`e${i}`, { startTs: ts(1 + (i % 15), 9 + (i % 8)) })
 		);
-		await auf(sender, async (engine) => {
-			await store.saveEntries(MONAT, eintraege25);
+		await on(sender, async (engine) => {
+			await store.saveEntries(MONTH, entries25);
 			return engine.sync();
 		});
 
-		// Geraet 2 zieht die 25 Eintraege herunter - onProgress soll firing.
-		const empfaenger = new Geraet("empfaenger");
-		const { events } = await syncMitProgress(empfaenger);
+		// Device 2 zieht die 25 Eintraege herunter - onProgress soll firing.
+		const recipient = new Device("empfaenger");
+		const { events } = await syncWithProgress(recipient);
 
 		// Es muss mindestens ein Event mit phase=pulling und pulled>=20 geben.
 		const bulkEvents = events.filter((e) => e.phase === "pulling" && e.pulled >= 20);
 		expect(bulkEvents.length).toBeGreaterThan(0);
 
 		// Der finale pulled-Zaehler muss 25 betragen.
-		const letztesPulling = [...events].reverse().find((e) => e.phase === "pulling");
-		expect(letztesPulling?.pulled).toBe(25);
+		const lastPull = [...events].reverse().find((e) => e.phase === "pulling");
+		expect(lastPull?.pulled).toBe(25);
 	});
 
 	it("ruft onProgress NICHT mit pulled>=20 auf, wenn weniger als 20 Eintraege kommen", async () => {
 		// Nur 5 Eintraege hochladen.
-		const sender = new Geraet("sender2");
-		const eintraege5 = Array.from({ length: 5 }, (_, i) => eintrag(`f${i}`));
-		await auf(sender, async (engine) => {
-			await store.saveEntries(MONAT, eintraege5);
+		const sender = new Device("sender2");
+		const entries5 = Array.from({ length: 5 }, (_, i) => entry(`f${i}`));
+		await on(sender, async (engine) => {
+			await store.saveEntries(MONTH, entries5);
 			return engine.sync();
 		});
 
-		const empfaenger = new Geraet("empfaenger2");
-		const { events } = await syncMitProgress(empfaenger);
+		const recipient = new Device("empfaenger2");
+		const { events } = await syncWithProgress(recipient);
 
 		// Kein Event mit pulled >= 20.
 		const bulkEvents = events.filter((e) => e.phase === "pulling" && e.pulled >= 20);
@@ -865,31 +1041,31 @@ describe("onProgress – Ladeanzeige beim Massenimport", () => {
 	});
 
 	it("endet immer mit phase=idle", async () => {
-		const sender = new Geraet("sender3");
-		await auf(sender, async (engine) => {
-			await store.saveEntries(MONAT, [eintrag("g1")]);
+		const sender = new Device("sender3");
+		await on(sender, async (engine) => {
+			await store.saveEntries(MONTH, [entry("g1")]);
 			return engine.sync();
 		});
 
-		const empfaenger = new Geraet("empfaenger3");
-		const { events } = await syncMitProgress(empfaenger);
+		const recipient = new Device("empfaenger3");
+		const { events } = await syncWithProgress(recipient);
 
 		// Letztes Event muss idle sein.
 		expect(events.at(-1)?.phase).toBe("idle");
 	});
 
 	it("meldet Fortschritt bei über 200 Einträgen (voller Batch)", async () => {
-		const sender = new Geraet("sender-bulk");
-		const eintraege250 = Array.from({ length: 250 }, (_, i) =>
-			eintrag(`bulk-${i}`, { startTs: ts(1 + (i % 20), 8 + (i % 8)) })
+		const sender = new Device("sender-bulk");
+		const entries250 = Array.from({ length: 250 }, (_, i) =>
+			entry(`bulk-${i}`, { startTs: ts(1 + (i % 20), 8 + (i % 8)) })
 		);
-		await auf(sender, async (engine) => {
-			await store.saveEntries(MONAT, eintraege250);
+		await on(sender, async (engine) => {
+			await store.saveEntries(MONTH, entries250);
 			return engine.sync();
 		});
 
-		const empfaenger = new Geraet("empfaenger-bulk");
-		const { events } = await syncMitProgress(empfaenger);
+		const recipient = new Device("empfaenger-bulk");
+		const { events } = await syncWithProgress(recipient);
 
 		// Mindestens zwei pulling-Schritte (bei BATCH=200):
 		const pullingEvents = events.filter((e) => e.phase === "pulling");
@@ -908,20 +1084,20 @@ describe("Vorgezogenes Laden", () => {
 	const OLD = "2020-01";
 	const oldTs = (tag: number) => Date.UTC(2020, 0, tag, 9) + 2 * 3600_000;
 
-	/** Die Menge, die ein frisch verknuepftes Geraet vorzieht - wie in #persistLink. */
+	/** Die Menge, die ein frisch verknuepftes Device vorzieht - wie in #persistLink. */
 	function startState(): SyncState {
 		return { seq: 0, priority: { seq: 0, months: [monthKey(Date.now()), prevMonthKey()] } };
 	}
 
 	/** Zwei Stunden, die sicher im laufenden Monat liegen. */
 	const currentMonthEntry = (id: string) =>
-		eintrag(id, { startTs: Date.now() - 2 * 3600_000, endTs: Date.now() - 3600_000 });
+		entry(id, { startTs: Date.now() - 2 * 3600_000, endTs: Date.now() - 3600_000 });
 
 	/** Ein Konto mit Historie, Aktivitaeten und Einstellungen auf dem Server. */
 	async function seedServer(): Promise<void> {
-		const sender = new Geraet("sender");
-		await auf(sender, async (engine) => {
-			await store.saveEntries(OLD, [eintrag("alt-1", { startTs: oldTs(15) })]);
+		const sender = new Device("sender");
+		await on(sender, async (engine) => {
+			await store.saveEntries(OLD, [entry("alt-1", { startTs: oldTs(15) })]);
 			await store.saveActivities([
 				{ id: "akt-1", name: "Entwicklung", sortOrder: 0, archived: false, isAbsence: false }
 			]);
@@ -933,10 +1109,10 @@ describe("Vorgezogenes Laden", () => {
 
 	it("fragt zuerst die vorgezogenen Monate ab und nimmt die ohne Zeitraum mit", async () => {
 		await seedServer();
-		const laptop = new Geraet("laptop");
+		const laptop = new Device("laptop");
 		laptop.state = startState();
 		server.queries = [];
-		await auf(laptop, (engine) => engine.sync());
+		await on(laptop, (engine) => engine.sync());
 
 		const firstCall = server.queries.find((q) => q.startsWith("GET /api/sync?"))!;
 		const params = new URLSearchParams(firstCall.split("?")[1]);
@@ -948,32 +1124,32 @@ describe("Vorgezogenes Laden", () => {
 	it("bringt Aktivitaeten und Einstellungen im vorgezogenen Teil mit", async () => {
 		// Ohne sie stuende die Oberflaeche ohne Namen und ohne Sollstunden da.
 		await seedServer();
-		const laptop = new Geraet("laptop");
+		const laptop = new Device("laptop");
 		laptop.state = startState();
-		await auf(laptop, (engine) => engine.sync());
+		await on(laptop, (engine) => engine.sync());
 
-		const activities = await auf(laptop, () => store.loadActivities());
-		const settings = await auf(laptop, () => store.loadSettings());
+		const activities = await on(laptop, () => store.loadActivities());
+		const settings = await on(laptop, () => store.loadSettings());
 		expect(activities.map((a) => a.name)).toEqual(["Entwicklung"]);
 		expect(settings.hoursPerDay).toBe(7);
 	});
 
 	it("legt den vorgezogenen Teil ab, sobald die Historie durch ist", async () => {
 		await seedServer();
-		const laptop = new Geraet("laptop");
+		const laptop = new Device("laptop");
 		laptop.state = startState();
-		await auf(laptop, (engine) => engine.sync());
+		await on(laptop, (engine) => engine.sync());
 
 		expect(laptop.state.priority).toBeUndefined();
-		expect((await eintraege(laptop, OLD)).map((e) => e.id)).toEqual(["alt-1"]);
+		expect((await entries(laptop, OLD)).map((e) => e.id)).toEqual(["alt-1"]);
 	});
 
 	it("holt einen alten Monat auf Zuruf, ohne die Historie zu durchlaufen", async () => {
 		await seedServer();
-		const laptop = new Geraet("laptop");
+		const laptop = new Device("laptop");
 		laptop.state = startState();
 		server.queries = [];
-		await auf(laptop, (engine) => engine.ensureMonthSynced(OLD));
+		await on(laptop, (engine) => engine.ensureMonthSynced(OLD));
 
 		// Genau eine Anfrage, und die nur fuer diesen einen Zeitraum.
 		const pulls = server.queries.filter((q) => q.startsWith("GET /api/sync?"));
@@ -981,7 +1157,7 @@ describe("Vorgezogenes Laden", () => {
 		const params = new URLSearchParams(pulls[0].split("?")[1]);
 		expect(params.getAll("bucket")).toHaveLength(1);
 		expect(params.get("unbucketed")).toBeNull();
-		expect((await eintraege(laptop, OLD)).map((e) => e.id)).toEqual(["alt-1"]);
+		expect((await entries(laptop, OLD)).map((e) => e.id)).toEqual(["alt-1"]);
 	});
 
 	it("nimmt einen nachgeladenen Monat auf, ohne den gemeinsamen Stand vorzuziehen", async () => {
@@ -989,9 +1165,9 @@ describe("Vorgezogenes Laden", () => {
 		// nichts kostet. Vorziehen wuerde ueberspringen, was die anderen Monate
 		// noch nicht kennen.
 		await seedServer();
-		const laptop = new Geraet("laptop");
+		const laptop = new Device("laptop");
 		laptop.state = startState();
-		await auf(laptop, (engine) => engine.ensureMonthSynced(OLD));
+		await on(laptop, (engine) => engine.ensureMonthSynced(OLD));
 
 		expect(laptop.state.priority?.months).toContain(OLD);
 		expect(laptop.state.priority?.seq).toBe(0);
@@ -1000,35 +1176,35 @@ describe("Vorgezogenes Laden", () => {
 
 	it("nach dem Backfill kostet ein Nachladen keine Anfrage mehr", async () => {
 		await seedServer();
-		const laptop = new Geraet("laptop");
+		const laptop = new Device("laptop");
 		laptop.state = startState();
-		await auf(laptop, (engine) => engine.sync());
+		await on(laptop, (engine) => engine.sync());
 		server.queries = [];
-		await auf(laptop, (engine) => engine.ensureMonthSynced("2019-05"));
+		await on(laptop, (engine) => engine.ensureMonthSynced("2019-05"));
 		expect(server.queries).toEqual([]);
 	});
 
 	it("zweimal Nachladen laedt nur einmal", async () => {
 		// Der Prefetch beim Hovern feuert sonst bei jeder Mausbewegung erneut.
 		await seedServer();
-		const laptop = new Geraet("laptop");
+		const laptop = new Device("laptop");
 		laptop.state = startState();
 		server.queries = [];
-		await auf(laptop, (engine) =>
+		await on(laptop, (engine) =>
 			Promise.all([engine.ensureMonthSynced(OLD), engine.ensureMonthSynced(OLD)])
 		);
 		expect(server.queries.filter((q) => q.startsWith("GET /api/sync?"))).toHaveLength(1);
 	});
 
-	it("ein Geraet ohne vorgezogenen Teil holt weiterhin alles am Stueck", async () => {
+	it("ein Device ohne vorgezogenen Teil holt weiterhin alles am Stueck", async () => {
 		// Bestandsgeraete kennen schon alles; fuer sie darf sich nichts aendern.
 		await seedServer();
-		const laptop = new Geraet("laptop");
+		const laptop = new Device("laptop");
 		server.queries = [];
-		await auf(laptop, (engine) => engine.sync());
+		await on(laptop, (engine) => engine.sync());
 
 		const pulls = server.queries.filter((q) => q.startsWith("GET /api/sync?"));
 		expect(pulls.every((q) => !q.includes("bucket="))).toBe(true);
-		expect((await eintraege(laptop, OLD)).map((e) => e.id)).toEqual(["alt-1"]);
+		expect((await entries(laptop, OLD)).map((e) => e.id)).toEqual(["alt-1"]);
 	});
 });

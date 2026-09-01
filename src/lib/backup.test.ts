@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { resetFakeFs } from "./testing/fakeFs";
-import { defaultSettings, type Activity, type Entry } from "./types";
+import {
+	BUILTIN_ABSENCE_ID,
+	BUILTIN_OTHERS_ID,
+	defaultSettings,
+	type Activity,
+	type Entry
+} from "./types";
 import type { TimeTrackerBackup } from "./backup";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("./testing/fakeFs")).fakeFs);
@@ -113,8 +119,13 @@ describe("Backup & Restore", () => {
 		expect(result.restoredEntries).toBe(1);
 
 		expect(app.settings.senderName).toBe("Neuer Name");
-		expect(app.activities).toHaveLength(2);
-		expect(app.activities.map((a) => a.id)).toEqual(["act-1", "act-2"]);
+		// Die Sicherung bringt zwei Aktivitaeten mit; "Others" und "Abwesenheiten"
+		// stellt die App danach selbst her - ohne sie fehlt der Bericht seine
+		// Sammelzeile. Frueher tauchten sie erst beim naechsten Start auf.
+		expect(app.activities.map((a) => a.id)).toEqual(
+			expect.arrayContaining(["act-1", "act-2", BUILTIN_OTHERS_ID, BUILTIN_ABSENCE_ID])
+		);
+		expect(app.activities).toHaveLength(4);
 	});
 
 	it("stellt Daten im Zusammenführen-Modus (merge) additiv wieder her", async () => {
@@ -141,7 +152,10 @@ describe("Backup & Restore", () => {
 		const result = await restoreBackup(backup, "merge");
 
 		expect(result.restoredActivities).toBe(3); // act-1, act-2, act-local
-		expect(app.activities).toHaveLength(3);
+		// Drei aus der Zusammenfuehrung, dazu die beiden eingebauten Zeilen.
+		expect(app.activities).toHaveLength(5);
+		expect(app.activities.filter((a) => a.name === "Others")).toHaveLength(1);
+		expect(app.activities.filter((a) => a.isAbsence)).toHaveLength(1);
 		expect(app.monthEntries("2026-07")).toHaveLength(2); // e-1 und e-local
 	});
 });

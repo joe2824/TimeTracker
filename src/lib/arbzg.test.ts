@@ -341,17 +341,17 @@ describe("dayFindings", () => {
 		dayFindings(dayFacts(entries, ABSENCE, { deductBreaks }), { ...range, deductBreaks });
 
 	it("laesst zehn Stunden genau durchgehen und meldet erst darueber", () => {
-		expect(find([day("2026-06-10", 10)], false).some((f) => f.rule === "ueber10")).toBe(false);
+		expect(find([day("2026-06-10", 10)], false).some((f) => f.rule === "over10")).toBe(false);
 		const over = find([day("2026-06-10", 10.5)], false);
-		expect(over.find((f) => f.rule === "ueber10")?.level).toBe("verstoss");
+		expect(over.find((f) => f.rule === "over10")?.level).toBe("violation");
 	});
 
 	it("rechnet die Tagesgrenze auf der Nettozeit, wenn der Abzug aktiv ist", () => {
 		// 10:40 h erfasst sind nach Abzug 9:55 h – kein Verstoss. Genau hier zeigt
 		// sich, ob die Netto-Basis wirklich durchgezogen ist.
 		const f = find([day("2026-06-10", 10 + 40 / 60)]);
-		expect(f.some((x) => x.rule === "ueber10")).toBe(false);
-		expect(f.some((x) => x.rule === "ueber9_5")).toBe(true);
+		expect(f.some((x) => x.rule === "over10")).toBe(false);
+		expect(f.some((x) => x.rule === "over9_5")).toBe(true);
 	});
 
 	it("prueft die Ruhepause nicht, solange der Abzug aktiv ist", () => {
@@ -359,33 +359,33 @@ describe("dayFindings", () => {
 		// rechnet die App wie LOGA – das darf keinen Verstoss ausloesen, sonst
 		// waere es der haeufigste Befund und der falscheste.
 		const f = find([entry("2026-06-10", "08:00", "15:00")]);
-		expect(f.some((x) => x.rule === "ruhepause" || x.rule === "pause6h")).toBe(false);
+		expect(f.some((x) => x.rule === "restBreak" || x.rule === "break6h")).toBe(false);
 	});
 
 	it("prueft die Ruhepause, sobald der Abzug aus ist", () => {
 		const f = find([entry("2026-06-10", "08:00", "15:00")], false);
-		expect(f.find((x) => x.rule === "ruhepause")?.level).toBe("verstoss");
-		expect(f.some((x) => x.rule === "pause6h")).toBe(true);
+		expect(f.find((x) => x.rule === "restBreak")?.level).toBe("violation");
+		expect(f.some((x) => x.rule === "break6h")).toBe(true);
 	});
 
 	it("laesst eine ausreichende Pause durchgehen", () => {
 		const f = find([entry("2026-06-10", "08:00", "12:00"), entry("2026-06-10", "12:45", "16:00")], false);
-		expect(f.some((x) => x.rule === "ruhepause" || x.rule === "pause6h")).toBe(false);
+		expect(f.some((x) => x.rule === "restBreak" || x.rule === "break6h")).toBe(false);
 	});
 
 	it("verlangt 45 Minuten jenseits von neun Stunden", () => {
 		const f = find([entry("2026-06-10", "07:00", "12:00"), entry("2026-06-10", "12:35", "17:00")], false);
-		expect(f.some((x) => x.rule === "ruhepause")).toBe(true);
+		expect(f.some((x) => x.rule === "restBreak")).toBe(true);
 	});
 
 	it("misst die Ruhezeit zwischen Feierabend und naechstem Beginn", () => {
 		const f = find([entry("2026-06-10", "13:00", "22:00"), entry("2026-06-11", "08:30", "12:00")]);
-		expect(f.find((x) => x.rule === "ruhezeit")?.level).toBe("verstoss");
+		expect(f.find((x) => x.rule === "restPeriod")?.level).toBe("violation");
 	});
 
 	it("laesst elf Stunden genau durchgehen", () => {
 		const f = find([entry("2026-06-10", "13:00", "22:00"), entry("2026-06-11", "09:00", "12:00")]);
-		expect(f.find((x) => x.rule === "ruhezeit")?.level).toBe("risiko");
+		expect(f.find((x) => x.rule === "restPeriod")?.level).toBe("risk");
 	});
 
 	it("misst die Ruhezeit auch ueber die Monatsgrenze", () => {
@@ -395,19 +395,19 @@ describe("dayFindings", () => {
 			}),
 			{ ...range, deductBreaks: true }
 		);
-		expect(f.find((x) => x.rule === "ruhezeit")?.level).toBe("verstoss");
+		expect(f.find((x) => x.rule === "restPeriod")?.level).toBe("violation");
 		// Der Befund gehoert an den Tag, an dem zu frueh angefangen wurde.
-		expect(f.find((x) => x.rule === "ruhezeit")?.date).toBe("2026-06-01");
+		expect(f.find((x) => x.rule === "restPeriod")?.date).toBe("2026-06-01");
 	});
 
 	it("ignoriert einen freien Tag zwischen zwei Arbeitstagen", () => {
 		const f = find([entry("2026-06-10", "13:00", "23:00"), entry("2026-06-12", "07:00", "12:00")]);
-		expect(f.some((x) => x.rule === "ruhezeit")).toBe(false);
+		expect(f.some((x) => x.rule === "restPeriod")).toBe(false);
 	});
 
 	it("meldet Sonntagsarbeit", () => {
 		const f = find([day("2026-06-28", 4)]);
-		expect(f.find((x) => x.rule === "sonntag")?.level).toBe("hinweis");
+		expect(f.find((x) => x.rule === "sunday")?.level).toBe("hint");
 	});
 });
 
@@ -419,7 +419,7 @@ describe("checkArbZg", () => {
 			deductBreaks: false,
 			absenceIds: ABSENCE
 		});
-		const over = r.findings.filter((f) => f.rule === "ueber10");
+		const over = r.findings.filter((f) => f.rule === "over10");
 		expect(over).toHaveLength(1);
 		expect(over[0].date).toBe("2026-06-16");
 	});
@@ -493,10 +493,10 @@ function naiveAverage(opts: {
 		if (d < opts.dataFrom) continue; // vor der Datenbasis: traegt nichts bei
 		const wd = weekdayOf(d);
 		const future = d > opts.until;
-		const isWerktag = opts.basis === "legal" ? wd !== 0 : opts.workdays.includes(wd);
+		const isWorkdayDe = opts.basis === "legal" ? wd !== 0 : opts.workdays.includes(wd);
 		const isPlanWorkday = opts.workdays.includes(wd);
 		const absence = future ? 0 : (opts.facts.get(d)?.absenceFraction ?? 0);
-		budget += Math.max(0, (isWerktag ? 1 : 0) - absence);
+		budget += Math.max(0, (isWorkdayDe ? 1 : 0) - absence);
 		const worksToday = isPlanWorkday && (opts.stopAfter === undefined || d <= opts.stopAfter);
 		hours += future ? (worksToday ? opts.pace : 0) : (opts.facts.get(d)?.hours ?? 0);
 	}
@@ -732,7 +732,7 @@ function utcShift(iso: string, days: number): string {
 }
 
 describe("Kalender-Randfaelle", () => {
-	const STICHTAGE = [
+	const CUTOFF_DATES = [
 		["2025-01-01", "Neujahr"],
 		["2026-01-05", "kurz nach dem Jahreswechsel"],
 		["2024-03-05", "Fenster enthaelt den Schalttag 29.02.2024"],
@@ -744,7 +744,7 @@ describe("Kalender-Randfaelle", () => {
 	] as const;
 
 	it("zaehlt in jedem 168-Tage-Fenster exakt 120 bzw. 144 Werktage", () => {
-		for (const [until, why] of STICHTAGE) {
+		for (const [until, why] of CUTOFF_DATES) {
 			const from = stepDate(until, -300);
 			const facts = dayFacts(series(from, until, 8), ABSENCE, { deductBreaks: false });
 			const opts = { until, dataFrom: from, workdays: MO_FR };
@@ -761,7 +761,7 @@ describe("Kalender-Randfaelle", () => {
 	it("legt den Fensteranfang exakt 167 Tage zurueck", () => {
 		// Gegengerechnet in UTC: dort hat jeder Tag 86 400 000 ms, eine
 		// Zeitumstellung kann also nichts verschieben.
-		for (const [until, why] of STICHTAGE) {
+		for (const [until, why] of CUTOFF_DATES) {
 			const from = stepDate(until, -300);
 			const facts = dayFacts(series(from, until, 8), ABSENCE, { deductBreaks: false });
 			const w = avgWindow(facts, "strict", { until, dataFrom: from, workdays: MO_FR });
@@ -897,14 +897,14 @@ describe("boesartige Eintraege", () => {
 		// am Wochenende nacharbeitet, verbessert seine Lage also nicht – er
 		// verschlechtert sie. Das ist die vorsichtige Auslegung und muss so bleiben.
 		const from = stepDate(UNTIL, -60);
-		const werktags = series(from, UNTIL, 7);
-		const sonntags: Entry[] = [];
+		const onWorkdays = series(from, UNTIL, 7);
+		const onSundays: Entry[] = [];
 		for (let d = from; d <= UNTIL; d = stepDate(d, 1)) {
-			if (weekdayOf(d) === 0) sonntags.push(day(d, 8));
+			if (weekdayOf(d) === 0) onSundays.push(day(d, 8));
 		}
-		const ohne = avgWindow(dayFacts(werktags, ABSENCE, { deductBreaks: false }), "strict", opts(from));
+		const ohne = avgWindow(dayFacts(onWorkdays, ABSENCE, { deductBreaks: false }), "strict", opts(from));
 		const mit = avgWindow(
-			dayFacts([...werktags, ...sonntags], ABSENCE, { deductBreaks: false }),
+			dayFacts([...onWorkdays, ...onSundays], ABSENCE, { deductBreaks: false }),
 			"strict",
 			opts(from)
 		);

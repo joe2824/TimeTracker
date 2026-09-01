@@ -30,7 +30,7 @@
 		type Interval,
 		type ReconcileDay
 	} from "$lib/timeReconcile";
-	import { breakDeduction } from "$lib/breaks";
+	import { dayTotals } from "$lib/dayTotals";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
@@ -45,10 +45,12 @@
 	import VacationRange from "$lib/components/shared/VacationRange.svelte";
 	import MonthSelector from "$lib/components/shared/MonthSelector.svelte";
 	import DayFractionSwitch from "$lib/components/shared/DayFractionSwitch.svelte";
+	import AbsenceKindChoice from "$lib/components/shared/AbsenceKindChoice.svelte";
 	import PlusIcon from "@lucide/svelte/icons/plus";
 	import Trash2Icon from "@lucide/svelte/icons/trash-2";
 	import CalendarDaysIcon from "@lucide/svelte/icons/calendar-days";
 	import PalmtreeIcon from "@lucide/svelte/icons/palmtree";
+	import HourglassIcon from "@lucide/svelte/icons/hourglass";
 
 	let month = $state(app.currentMonth);
 	let bulkOpen = $state(false);
@@ -112,6 +114,8 @@
 		start: string;
 		end: string;
 		fraction: number;
+		/** Abwesenheits-Art: true = Zeitausgleich statt Urlaub/Krank. */
+		timeOff: boolean;
 		note: string;
 		source: EntrySource;
 	}
@@ -138,8 +142,8 @@
 		if (Number.isNaN(s) || Number.isNaN(e)) return null;
 		if (e < s) e = toTs(fmtDate(startOfNextDay(s)), endText || draft.end);
 		if (Number.isNaN(e) || e <= s) return null;
-		const geteilt = midnightSplitHint(s, e);
-		return geteilt ? `Geht ${geteilt}: ${fmtDateHuman(s)} und ${fmtDateHuman(e)}.` : null;
+		const shared = midnightSplitHint(s, e);
+		return shared ? `Geht ${shared}: ${fmtDateHuman(s)} und ${fmtDateHuman(e)}.` : null;
 	});
 
 	// Die Uhrzeiten, wie sie GERADE im Dialog stehen – auch wenn ein Feld noch nicht
@@ -284,6 +288,7 @@
 			start: `${hh}:00`,
 			end: `${hh}:00`,
 			fraction: 1,
+			timeOff: false,
 			note: "",
 			source: "manual"
 		};
@@ -363,18 +368,12 @@
 			const date = `${month}-${String(d).padStart(2, "0")}`;
 			const wd = weekdayOfDate(date);
 			const entries = (byDate.get(date) ?? []).sort((a, b) => a.startTs - b.startTs);
-			// Projektzeit und Abwesenheit getrennt: die Pause geht nur von der
-			// gearbeiteten Zeit ab, nie von einem Urlaubstag.
-			let worked = 0;
-			let absent = 0;
-			for (const e of entries) {
-				const isAbs = app.isAbsenceId(e.activityId);
-				const h = entryHours(e, isAbs, app.settings.hoursPerDay, app.now);
-				if (isAbs) absent += h;
-				else worked += h;
-			}
-			const pause = app.settings.breakDeduction ? breakDeduction(worked) : 0;
-			const hours = worked - pause + absent;
+			const totals = dayTotals(entries, absenceIds, app.settings.hoursPerDay, {
+				now: app.now,
+				deductBreaks: app.settings.breakDeduction
+			});
+			const pause = totals.pause;
+			const hours = totals.total;
 			// Abweichung laut Zeitwächter, in beide Richtungen. Tage, an denen in LOGA
 			// nur „Kommen" steht, bleiben stumm – dort fehlt der Feierabend, nicht die
 			// Zeit (Status „open", siehe reconcile).
@@ -439,6 +438,7 @@
 			start: fmtClock(e.startTs),
 			end: fmtClock(end),
 			fraction: e.dayFraction ?? 1,
+			timeOff: e.timeOff === true,
 			note: e.note,
 			source: e.source
 		};
@@ -493,7 +493,10 @@
 				note: draft.note,
 				source: draft.source
 			};
-			if (absence) entry.dayFraction = draft.fraction;
+			if (absence) {
+				entry.dayFraction = draft.fraction;
+				if (draft.timeOff) entry.timeOff = true;
+			}
 			const ok = await app.updateEntry(draft.originalStartTs, entry);
 			if (!ok) return; // Tageskonflikt -> Dialog offen lassen
 		} else {
@@ -504,7 +507,7 @@
 				draft.note,
 				"manual",
 				absence ? draft.fraction : undefined,
-				{ confirmAbsenceOverride: true }
+				{ confirmAbsenceOverride: true, timeOff: absence && draft.timeOff }
 			);
 			// Konflikt (z.B. Ganztags-Abwesenheit) -> addEntry hat null + Toast geliefert.
 			if (!created) return;
@@ -520,17 +523,19 @@
 	}
 
 	function entryLabel(e: Entry): string {
-		const name = app.activityName(e.activityId);
+		const name = app.isTimeOff(e) ? "Zeitausgleich" : app.activityName(e.activityId);
 		if (app.isAbsenceId(e.activityId)) {
-			return `${name} · ${(e.dayFraction ?? 1) === 0.5 ? "½ Tag" : "ganzer Tag"}`;
+			const span = (e.dayFraction ?? 1) === 0.5 ? "½ Tag" : "ganzer Tag";
+			const h = entryHours(e, true, app.settings.hoursPerDay, app.now);
+			return `${name} · ${span} (${fmtHoursClock(h)} h)`;
 		}
 		const h = entryHours(e, false, app.settings.hoursPerDay, app.now);
 		// Reicht der Eintrag über seinen Tag hinaus (vergessener Timer), gehört der
 		// Endtag dazu – sonst stünde da "09:00–10:00" neben 73 Stunden.
-		const bis = e.endTs
+		const toDate = e.endTs
 			? fmtClock(e.endTs) + (e.endTs > startOfNextDay(e.startTs) ? ` am ${fmtDateHuman(e.endTs)}` : "")
 			: "…";
-		return `${name} · ${fmtClock(e.startTs)}–${bis} (${fmtHoursClock(h)} h)`;
+		return `${name} · ${fmtClock(e.startTs)}–${toDate} (${fmtHoursClock(h)} h)`;
 	}
 </script>
 
@@ -611,6 +616,7 @@
 						>
 							{#each day.entries as e (e.id)}
 								{@const isAbs = app.isAbsenceId(e.activityId)}
+								{@const isTimeOff = app.isTimeOff(e)}
 								<!-- Button-Komponente statt roher <button>: bringt Fokusring, Hover
 								     und Zeiger aus dem Design-System mit. `text-sm` überschreibt das
 								     `text-xs` der xs-Größe, sonst schrumpfte die Eintragszeile. -->
@@ -618,13 +624,15 @@
 									<Button
 										variant="ghost"
 										size="xs"
-										class="min-w-0 flex-1 justify-start text-sm font-normal {isAbs
-											? 'bg-amber-500/15 text-amber-700 hover:bg-amber-500/25 hover:text-amber-700 dark:text-amber-300 dark:hover:text-amber-300'
-											: ''}"
+										class="min-w-0 flex-1 justify-start text-sm font-normal {isTimeOff
+											? 'bg-violet-500/15 text-violet-700 hover:bg-violet-500/25 hover:text-violet-700 dark:text-violet-300 dark:hover:text-violet-300'
+											: isAbs
+												? 'bg-amber-500/15 text-amber-700 hover:bg-amber-500/25 hover:text-amber-700 dark:text-amber-300 dark:hover:text-amber-300'
+												: ''}"
 										onclick={() => openEdit(e)}
 										title="Bearbeiten"
 									>
-										{#if isAbs}<PalmtreeIcon />{/if}
+										{#if isTimeOff}<HourglassIcon />{:else if isAbs}<PalmtreeIcon />{/if}
 										<span class="truncate">{entryLabel(e)}</span>
 									</Button>
 									<Button
@@ -641,7 +649,7 @@
 						</div>
 						<div class="ml-auto flex items-center gap-2 pt-0.5 sm:ml-0">
 							{#if day.missing > 0 || day.over > 0}
-								{@const fehlt = day.missing > 0}
+								{@const isMissing = day.missing > 0}
 								<!--
 									Aus dem Zeitwirtschaftsreport: der Tag weicht von LOGA ab.
 									„−0:45" allein sagt nichts – was es heisst, stand bisher nur im
@@ -651,18 +659,18 @@
 								-->
 								<Popover.Root>
 									<Popover.Trigger
-										class="focus-visible:ring-ring/50 cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs tabular-nums outline-none transition-opacity hover:opacity-80 focus-visible:ring-3 {fehlt
+										class="focus-visible:ring-ring/50 cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs tabular-nums outline-none transition-opacity hover:opacity-80 focus-visible:ring-3 {isMissing
 											? 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
 											: 'bg-sky-500/15 text-sky-700 dark:text-sky-300'}"
 										aria-label="Abweichung zum Zeitwächter – erklären"
 									>
-										{fehlt ? "−" : "+"}{fmtHoursClock(fehlt ? day.missing : day.over)}
+										{isMissing ? "−" : "+"}{fmtHoursClock(isMissing ? day.missing : day.over)}
 									</Popover.Trigger>
 									<Popover.Content align="end" class="space-y-1">
 										<div class="text-xs font-medium">Abweichung zum Zeitwächter</div>
 										<p class="text-muted-foreground text-xs leading-relaxed">
 											LOGA kennt für diesen Tag {fmtHoursClock(day.reportHours)} h.
-											{#if fehlt}
+											{#if isMissing}
 												Hier fehlen {fmtHoursClock(day.missing)} h.
 											{:else}
 												Hier sind {fmtHoursClock(day.over)} h zu viel erfasst.
@@ -691,7 +699,7 @@
 									</Popover.Content>
 								</Popover.Root>
 							{/if}
-							{#if day.hours > 0}
+							{#if day.hours !== 0}
 								<span class="text-muted-foreground w-14 text-right font-mono text-xs tabular-nums">
 									{fmtHoursClock(day.hours)} h
 								</span>
@@ -769,13 +777,14 @@
 			</div>
 
 			{#if draftIsAbsence}
-				<div class="grid grid-cols-2 gap-2">
-					<div class="space-y-1">
-						<Label for="date">Datum</Label>
-						<DateInput id="date" bind:value={draft.date} />
-					</div>
-					<DayFractionSwitch id="frac" bind:value={draft.fraction} />
+				<div class="space-y-1">
+					<Label for="date">Datum</Label>
+					<DateInput id="date" bind:value={draft.date} />
 				</div>
+				<!-- Der Unterschied steckt allein in der Verrechnung, nicht in der
+				     Erfassung: deshalb hier eine Auswahl statt einer eigenen Aktivitaet. -->
+				<AbsenceKindChoice id="timeoff" bind:value={draft.timeOff} />
+				<DayFractionSwitch id="frac" bind:value={draft.fraction} />
 			{:else}
 				<!-- Schmal zwei Spalten: Von/Bis nebeneinander, Stunden ueber die volle
 				     Breite. Zu dritt bleiben bei 360px keine 90px je Feld. -->

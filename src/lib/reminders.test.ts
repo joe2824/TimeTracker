@@ -3,11 +3,11 @@ import { reportReminderDate } from "./report";
 import { wallToTs, zonedParts } from "./tz";
 
 /** Referenzmonat: Juli 2026 – letzter Tag ist Fr, 31.07. */
-const JULI = new Date(wallToTs(2026, 7, 1, 0, 0, 0));
+const JULY = new Date(wallToTs(2026, 7, 1, 0, 0, 0));
 
 describe("reportReminderDate", () => {
 	it("trifft den letzten Werktag des Monats", () => {
-		const d = reportReminderDate(JULI, "16:00", 0);
+		const d = reportReminderDate(JULY, "16:00", 0);
 		expect(zonedParts(d.getTime()).day).toBe(31);
 		expect(zonedParts(d.getTime()).weekday).toBe(5); // Freitag
 		expect(zonedParts(d.getTime()).hour).toBe(16);
@@ -21,19 +21,19 @@ describe("reportReminderDate", () => {
 	});
 
 	it("geht `lead` Werktage zurück", () => {
-		const d = reportReminderDate(JULI, "16:00", 2);
+		const d = reportReminderDate(JULY, "16:00", 2);
 		expect(zonedParts(d.getTime()).day).toBe(29); // Fr 31. -> Do 30. -> Mi 29.
 	});
 
 	it("nimmt Stunde 0 ernst", () => {
 		// `h || 16` machte aus 00:30 die Uhrzeit 16:30 – Stunde 0 ist falsy.
-		const d = reportReminderDate(JULI, "00:30", 0);
+		const d = reportReminderDate(JULY, "00:30", 0);
 		expect(zonedParts(d.getTime()).hour).toBe(0);
 		expect(zonedParts(d.getTime()).minute).toBe(30);
 	});
 
 	it("fällt bei unlesbarer Uhrzeit auf 16:00 zurück", () => {
-		const d = reportReminderDate(JULI, "quatsch", 0);
+		const d = reportReminderDate(JULY, "quatsch", 0);
 		expect(zonedParts(d.getTime()).hour).toBe(16);
 		expect(zonedParts(d.getTime()).minute).toBe(0);
 	});

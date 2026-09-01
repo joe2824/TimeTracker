@@ -21,12 +21,12 @@ const ipc = vi.hoisted(() => ({
 ipc.invoke.mockImplementation(async (cmd: string) => (cmd === "idle_seconds" ? ipc.idleSeconds : undefined));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: ipc.invoke }));
 
-const meldungen = vi.hoisted(() => ({ send: vi.fn() }));
+const messages = vi.hoisted(() => ({ send: vi.fn() }));
 // Gemeldet wird ueber platform/notify - die Huelle dahinter (Tauri-Plugin oder
 // Web-Notification) ist hier nicht der Gegenstand und laeuft unter vitest ohnehin
 // in keine der beiden Aeste.
 vi.mock("./platform/notify", () => ({
-	notify: meldungen.send,
+	notify: messages.send,
 	ensureNotificationPermission: async () => true,
 	installNotificationClickListener: async () => () => {}
 }));
@@ -40,7 +40,7 @@ const { resolveIdle, resolveLongTimer, startWatchers, stopWatchers, watchers } =
 
 const P1 = "p1";
 const P2 = "p2";
-const AKTIVITAETEN: Activity[] = [
+const ACTIVITIES_DE: Activity[] = [
 	{ id: P1, name: "Projekt 1", sortOrder: 0, archived: false, isAbsence: false },
 	{ id: P2, name: "Projekt 2", sortOrder: 1, archived: false, isAbsence: false }
 ];
@@ -48,16 +48,16 @@ const AKTIVITAETEN: Activity[] = [
 import { wallStringToTs } from "./tz";
 
 /** Ein Tag ohne Tagesmeldung: 10 Uhr steht nicht in PING_HOURS (9/12/15/17). */
-const STILLE_STUNDE = new Date(wallStringToTs("2026-08-24", "10:00"));
+const QUIET_HOUR = new Date(wallStringToTs("2026-08-24", "10:00"));
 
-function laufend(startTs: number, activityId = P1): Entry {
+function ongoing(startTs: number, activityId = P1): Entry {
 	return { id: `r-${startTs}-${activityId}`, activityId, startTs, endTs: null, note: "", source: "timer" };
 }
 
 /** Einen laufenden Timer einhaengen, der vor `sekunden` begonnen hat. */
-function timerLaeuftSeit(sekunden: number, activityId = P1): Entry {
-	const start = Date.now() - sekunden * 1000;
-	const e = laufend(start, activityId);
+function timerRunningSince(seconds: number, activityId = P1): Entry {
+	const start = Date.now() - seconds * 1000;
+	const e = ongoing(start, activityId);
 	app.entriesByMonth[monthKey(start)] = [e];
 	app.running = e;
 	app.now = Date.now();
@@ -72,10 +72,10 @@ async function tick(n = 1) {
 beforeEach(async () => {
 	resetFakeFs();
 	vi.useFakeTimers();
-	vi.setSystemTime(STILLE_STUNDE);
+	vi.setSystemTime(QUIET_HOUR);
 	app.dispose();
 	app.settings = { ...defaultSettings };
-	app.activities = [...AKTIVITAETEN];
+	app.activities = [...ACTIVITIES_DE];
 	app.running = null;
 	app.entriesByMonth = {};
 	app.now = Date.now();
@@ -83,7 +83,7 @@ beforeEach(async () => {
 	watchers.longTimerPrompt = null;
 	ipc.idleSeconds = 0;
 	ipc.invoke.mockClear();
-	meldungen.send.mockClear();
+	messages.send.mockClear();
 
 	// Einen Takt ohne laufenden Timer: der setzt die modulinternen Merker zurueck,
 	// die sonst aus dem vorigen Test stehen blieben (sie leben am Modul, nicht am
@@ -91,7 +91,7 @@ beforeEach(async () => {
 	startWatchers();
 	await tick();
 	ipc.invoke.mockClear();
-	meldungen.send.mockClear();
+	messages.send.mockClear();
 });
 
 afterEach(() => {
@@ -101,7 +101,7 @@ afterEach(() => {
 
 describe("Tray-Tooltip", () => {
 	it("meldet Aktivitaet und laufende Zeit", async () => {
-		timerLaeuftSeit(3661); // 1:01:01
+		timerRunningSince(3661); // 1:01:01
 		await tick();
 
 		expect(ipc.invoke).toHaveBeenCalledWith("set_tray_tooltip", {
@@ -110,7 +110,7 @@ describe("Tray-Tooltip", () => {
 	});
 
 	it("schickt bei unveraenderter Anzeige nichts ueber die Bruecke", async () => {
-		timerLaeuftSeit(10);
+		timerRunningSince(10);
 		await tick();
 		ipc.invoke.mockClear();
 
@@ -122,7 +122,7 @@ describe("Tray-Tooltip", () => {
 	});
 
 	it("faellt beim Stoppen auf den blanken Namen zurueck", async () => {
-		timerLaeuftSeit(10);
+		timerRunningSince(10);
 		await tick();
 		app.running = null;
 		await tick();
@@ -134,49 +134,49 @@ describe("Tray-Tooltip", () => {
 describe("Auto-Stop-Warnung", () => {
 	it("meldet einen Timer, der laenger als die Grenze laeuft", async () => {
 		app.settings.maxTimerHours = 10;
-		timerLaeuftSeit(10 * 3600 + 5);
+		timerRunningSince(10 * 3600 + 5);
 		await tick();
 
 		expect(watchers.longTimerPrompt).toMatchObject({ activityId: P1 });
-		expect(meldungen.send).toHaveBeenCalledTimes(1);
+		expect(messages.send).toHaveBeenCalledTimes(1);
 	});
 
 	it("meldet denselben Lauf kein zweites Mal", async () => {
 		app.settings.maxTimerHours = 10;
-		timerLaeuftSeit(10 * 3600 + 5);
+		timerRunningSince(10 * 3600 + 5);
 		await tick();
 		// Der Benutzer klickt die Rueckfrage weg, der Timer laeuft weiter.
 		watchers.longTimerPrompt = null;
-		meldungen.send.mockClear();
+		messages.send.mockClear();
 
 		await tick(5);
 
 		expect(watchers.longTimerPrompt).toBeNull();
-		expect(meldungen.send).not.toHaveBeenCalled();
+		expect(messages.send).not.toHaveBeenCalled();
 	});
 
 	it("stellt die Warnung bei einem Aktivitaetswechsel wieder scharf", async () => {
 		app.settings.maxTimerHours = 10;
-		timerLaeuftSeit(10 * 3600 + 5);
+		timerRunningSince(10 * 3600 + 5);
 		await tick();
 		watchers.longTimerPrompt = null;
-		meldungen.send.mockClear();
+		messages.send.mockClear();
 
 		// Anderer Lauf, ebenfalls ueber der Grenze.
-		timerLaeuftSeit(10 * 3600 + 5, P2);
+		timerRunningSince(10 * 3600 + 5, P2);
 		await tick();
 
 		expect(watchers.longTimerPrompt).toMatchObject({ activityId: P2 });
-		expect(meldungen.send).toHaveBeenCalledTimes(1);
+		expect(messages.send).toHaveBeenCalledTimes(1);
 	});
 
 	it("ist mit maxTimerHours = 0 abgeschaltet", async () => {
 		app.settings.maxTimerHours = 0;
-		timerLaeuftSeit(50 * 3600);
+		timerRunningSince(50 * 3600);
 		await tick();
 
 		expect(watchers.longTimerPrompt).toBeNull();
-		expect(meldungen.send).not.toHaveBeenCalled();
+		expect(messages.send).not.toHaveBeenCalled();
 	});
 
 	it("zaehlt den ganzen Lauf, nicht nur das Stueck seit Mitternacht", async () => {
@@ -188,24 +188,24 @@ describe("Auto-Stop-Warnung", () => {
 		// wieder das letzte Stueck gezaehlt wird – bei einer Grenze unter 10 Stunden
 		// schluege beides an und der Test bewiese nichts.
 		app.settings.maxTimerHours = 12;
-		const mitternacht = wallStringToTs("2026-08-24", "00:00");
-		const gestern = laufend(mitternacht - 8 * 3600 * 1000);
-		gestern.endTs = mitternacht;
-		const heute = laufend(mitternacht);
-		app.entriesByMonth[monthKey(mitternacht)] = [gestern, heute];
-		app.running = heute;
+		const midnight = wallStringToTs("2026-08-24", "00:00");
+		const yesterday = ongoing(midnight - 8 * 3600 * 1000);
+		yesterday.endTs = midnight;
+		const today = ongoing(midnight);
+		app.entriesByMonth[monthKey(midnight)] = [yesterday, today];
+		app.running = today;
 		app.now = Date.now(); // 10 Uhr, siehe STILLE_STUNDE
 
 		await tick();
 
-		expect(watchers.longTimerPrompt?.startTs).toBe(gestern.startTs);
+		expect(watchers.longTimerPrompt?.startTs).toBe(yesterday.startTs);
 	});
 });
 
 describe("Leerlauf-Erkennung", () => {
 	it("fragt nach, sobald die Schwelle ueberschritten ist", async () => {
 		app.settings.idleThresholdMin = 10;
-		timerLaeuftSeit(3600);
+		timerRunningSince(3600);
 		ipc.idleSeconds = 11 * 60;
 		await tick();
 
@@ -215,7 +215,7 @@ describe("Leerlauf-Erkennung", () => {
 
 	it("fragt erst wieder, nachdem der Benutzer aktiv war", async () => {
 		app.settings.idleThresholdMin = 10;
-		timerLaeuftSeit(3600);
+		timerRunningSince(3600);
 		ipc.idleSeconds = 11 * 60;
 		await tick();
 
@@ -237,7 +237,7 @@ describe("Leerlauf-Erkennung", () => {
 
 	it("ist mit Schwelle 0 abgeschaltet", async () => {
 		app.settings.idleThresholdMin = 0;
-		timerLaeuftSeit(3600);
+		timerRunningSince(3600);
 		ipc.idleSeconds = 5 * 3600;
 		await tick();
 
@@ -262,58 +262,58 @@ describe("Pomodoro", () => {
 	});
 
 	it("meldet sich beim Start eines Timers noch nicht", async () => {
-		timerLaeuftSeit(5);
+		timerRunningSince(5);
 		await tick();
 
-		expect(meldungen.send).not.toHaveBeenCalled();
+		expect(messages.send).not.toHaveBeenCalled();
 	});
 
 	it("meldet den Wechsel in die Pause", async () => {
-		timerLaeuftSeit(49 * 60);
+		timerRunningSince(49 * 60);
 		await tick();
-		meldungen.send.mockClear();
+		messages.send.mockClear();
 
 		// Ueber die Fokus-Grenze hinweg.
 		app.now = Date.now() + 61 * 1000;
 		await tick();
 
-		expect(meldungen.send).toHaveBeenCalledTimes(1);
-		expect(meldungen.send.mock.calls[0][0].title).toContain("Pause");
+		expect(messages.send).toHaveBeenCalledTimes(1);
+		expect(messages.send.mock.calls[0][0].title).toContain("Pause");
 	});
 
 	it("meldet das Ende der Pause", async () => {
-		timerLaeuftSeit(59 * 60); // mitten in der Pause
+		timerRunningSince(59 * 60); // mitten in der Pause
 		await tick();
-		meldungen.send.mockClear();
+		messages.send.mockClear();
 
 		app.now = Date.now() + 61 * 1000; // zurueck in den Fokus
 		await tick();
 
-		expect(meldungen.send).toHaveBeenCalledTimes(1);
-		expect(meldungen.send.mock.calls[0][0].title).toContain("Weiter");
+		expect(messages.send).toHaveBeenCalledTimes(1);
+		expect(messages.send.mock.calls[0][0].title).toContain("Weiter");
 	});
 
 	it("meldet nichts, wenn die Dauern geaendert werden", async () => {
 		// Geaenderte Dauern verschieben den Zyklus – der Sprung darf nicht als
 		// Phasenwechsel durchgehen.
-		timerLaeuftSeit(49 * 60);
+		timerRunningSince(49 * 60);
 		await tick();
-		meldungen.send.mockClear();
+		messages.send.mockClear();
 
 		app.settings.pomodoroMin = 25;
 		await tick();
 
-		expect(meldungen.send).not.toHaveBeenCalled();
+		expect(messages.send).not.toHaveBeenCalled();
 	});
 
 	it("schweigt, solange die Funktion aus ist", async () => {
 		app.settings.pomodoroEnabled = false;
-		timerLaeuftSeit(49 * 60);
+		timerRunningSince(49 * 60);
 		await tick();
 		app.now = Date.now() + 61 * 1000;
 		await tick();
 
-		expect(meldungen.send).not.toHaveBeenCalled();
+		expect(messages.send).not.toHaveBeenCalled();
 	});
 });
 
@@ -336,13 +336,13 @@ describe("Tagesmeldung", () => {
 		vi.setSystemTime(wallStringToTs("2026-08-24", "12:00"));
 		app.now = Date.now();
 		await tick();
-		const gespeichert = { ...app.settings };
+		const saved = { ...app.settings };
 		const update = vi.spyOn(app, "updateSettings");
 
 		vi.setSystemTime(wallStringToTs("2026-08-24", "15:00"));
 		await tick();
 
-		expect(app.settings.usageLastDay).toBe(gespeichert.usageLastDay);
+		expect(app.settings.usageLastDay).toBe(saved.usageLastDay);
 		expect(update).not.toHaveBeenCalled();
 		update.mockRestore();
 	});
@@ -350,7 +350,7 @@ describe("Tagesmeldung", () => {
 
 describe("resolveIdle", () => {
 	it("kuerzt den Eintrag auf den Beginn des Leerlaufs", async () => {
-		const e = timerLaeuftSeit(3600);
+		const e = timerRunningSince(3600);
 		watchers.idlePrompt = { idleStart: Date.now() - 600 * 1000, idleSeconds: 600 };
 		const stop = vi.spyOn(app, "stop").mockResolvedValue();
 
@@ -363,7 +363,7 @@ describe("resolveIdle", () => {
 	});
 
 	it("verwirft den Eintrag auf Wunsch ganz", async () => {
-		const e = timerLaeuftSeit(3600);
+		const e = timerRunningSince(3600);
 		watchers.idlePrompt = { idleStart: Date.now() - 600 * 1000, idleSeconds: 600 };
 		const del = vi.spyOn(app, "deleteEntry").mockResolvedValue();
 
@@ -374,7 +374,7 @@ describe("resolveIdle", () => {
 	});
 
 	it("laesst den Timer bei „weiterlaufen“ unangetastet", async () => {
-		timerLaeuftSeit(3600);
+		timerRunningSince(3600);
 		watchers.idlePrompt = { idleStart: Date.now() - 600 * 1000, idleSeconds: 600 };
 		const stop = vi.spyOn(app, "stop").mockResolvedValue();
 		const del = vi.spyOn(app, "deleteEntry").mockResolvedValue();
@@ -391,8 +391,8 @@ describe("resolveIdle", () => {
 
 describe("resolveLongTimer", () => {
 	it("beendet den Timer zur eingegebenen Zeit", async () => {
-		timerLaeuftSeit(11 * 3600);
-		const ende = Date.now() - 3600 * 1000;
+		timerRunningSince(11 * 3600);
+		const end = Date.now() - 3600 * 1000;
 		watchers.longTimerPrompt = {
 			activityId: P1,
 			startTs: Date.now() - 11 * 3600 * 1000,
@@ -400,15 +400,15 @@ describe("resolveLongTimer", () => {
 		};
 		const stop = vi.spyOn(app, "stop").mockResolvedValue();
 
-		await resolveLongTimer("stop", ende);
+		await resolveLongTimer("stop", end);
 
-		expect(stop).toHaveBeenCalledWith(ende);
+		expect(stop).toHaveBeenCalledWith(end);
 		stop.mockRestore();
 	});
 
 	it("laesst keine Endzeit vor dem Beginn zu", async () => {
 		const start = Date.now() - 11 * 3600 * 1000;
-		timerLaeuftSeit(11 * 3600);
+		timerRunningSince(11 * 3600);
 		watchers.longTimerPrompt = { activityId: P1, startTs: start, elapsedSec: 11 * 3600 };
 		const stop = vi.spyOn(app, "stop").mockResolvedValue();
 
@@ -419,7 +419,7 @@ describe("resolveLongTimer", () => {
 	});
 
 	it("laesst keine Endzeit in der Zukunft zu", async () => {
-		timerLaeuftSeit(11 * 3600);
+		timerRunningSince(11 * 3600);
 		watchers.longTimerPrompt = {
 			activityId: P1,
 			startTs: Date.now() - 11 * 3600 * 1000,
@@ -434,7 +434,7 @@ describe("resolveLongTimer", () => {
 	});
 
 	it("tut bei „weiterlaufen“ nichts", async () => {
-		timerLaeuftSeit(11 * 3600);
+		timerRunningSince(11 * 3600);
 		watchers.longTimerPrompt = {
 			activityId: P1,
 			startTs: Date.now() - 11 * 3600 * 1000,

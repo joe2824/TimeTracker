@@ -92,8 +92,8 @@ describe("Datenbanksicherungen", () => {
 		// Korrupte Datei pruefen
 		const corruptedFile = join(dir, "kaputt.db");
 		fs.writeFileSync(corruptedFile, "KEINE_SQLITE_DATENBANK");
-		const nichtOk = verifyBackupIntegrity(corruptedFile);
-		expect(nichtOk).toBe(false);
+		const notOk = verifyBackupIntegrity(corruptedFile);
+		expect(notOk).toBe(false);
 	});
 
 	it("listBackups listet vorhandene Backups mit Metadaten auf", async () => {

@@ -73,7 +73,7 @@ describe("planBackdate", () => {
 
 	it("greift ueber Mitternacht", () => {
 		// Kurz nach Mitternacht "vor 60 Min": trifft den Eintrag von gestern Abend.
-		const gestern: Entry = {
+		const yesterday: Entry = {
 			id: "g",
 			activityId: "p1",
 			startTs: DAY - 2 * H, // 22:00 Vortag
@@ -81,7 +81,7 @@ describe("planBackdate", () => {
 			note: "",
 			source: "timer"
 		};
-		const plan = planBackdate([gestern], DAY - H, ABSENCES, DAY + H);
+		const plan = planBackdate([yesterday], DAY - H, ABSENCES, DAY + H);
 		expect(plan.truncate[0].endTs).toBe(DAY - H);
 	});
 });

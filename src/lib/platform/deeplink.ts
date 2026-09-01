@@ -15,9 +15,9 @@ export function pairLink(code: string): string {
  * Bewusst nachsichtig gegenueber der Form: je nach Betriebssystem kommt
  * "timetracker://pair/ABC" oder "timetracker://pair/ABC/" an.
  */
-export function pairCodeAus(url: string): string | null {
-	const treffer = /^timetracker:\/\/pair\/([^/?#]+)/i.exec(url.trim());
-	return treffer ? decodeURIComponent(treffer[1]) : null;
+export function pairCodeFrom(url: string): string | null {
+	const hit = /^timetracker:\/\/pair\/([^/?#]+)/i.exec(url.trim());
+	return hit ? decodeURIComponent(hit[1]) : null;
 }
 
 /**
@@ -30,23 +30,23 @@ export function pairCodeAus(url: string): string | null {
  */
 export async function onPairLink(fn: (code: string) => void): Promise<() => void> {
 	if (!isTauri()) return () => {};
-	const auf = (url: string) => {
-		const code = pairCodeAus(url);
+	const on = (url: string) => {
+		const code = pairCodeFrom(url);
 		if (code) fn(code);
 	};
-	const abmelden: (() => void)[] = [];
+	const logout: (() => void)[] = [];
 	try {
 		const { getCurrent, onOpenUrl } = await import("@tauri-apps/plugin-deep-link");
-		for (const url of (await getCurrent()) ?? []) auf(url);
-		abmelden.push(await onOpenUrl((urls) => urls.forEach(auf)));
+		for (const url of (await getCurrent()) ?? []) on(url);
+		logout.push(await onOpenUrl((urls) => urls.forEach(on)));
 	} catch {
 		// Ohne Plugin bleibt der Weg ueber das Ereignis unten.
 	}
 	try {
 		const { listen } = await import("@tauri-apps/api/event");
-		abmelden.push(await listen<string>("deep-link", (e) => auf(String(e.payload ?? ""))));
+		logout.push(await listen<string>("deep-link", (e) => on(String(e.payload ?? ""))));
 	} catch {
 		/* kein Ereigniskanal */
 	}
-	return () => abmelden.forEach((f) => f());
+	return () => logout.forEach((f) => f());
 }

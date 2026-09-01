@@ -10,10 +10,10 @@ import { safeEqual } from "./auth";
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 /** Ein neuer Code: vier Gruppen zu vier Zeichen. */
-export function neuerCode(): string {
-	const gruppe = () =>
+export function newCode(): string {
+	const group = () =>
 		Array.from({ length: 4 }, () => ALPHABET[randomInt(ALPHABET.length)]).join("");
-	return [gruppe(), gruppe(), gruppe(), gruppe()].join("-");
+	return [group(), group(), group(), group()].join("-");
 }
 
 export interface InviteRow {
@@ -27,27 +27,27 @@ export interface InviteRow {
 }
 
 /** Ausstellen. Der Code wird hier erzeugt, nicht vom Aufrufer bestimmt. */
-export function erstelleInvite(
+export function createInvite(
 	db: DbLike,
-	von: string,
+	from: string,
 	opts: { note?: string; expiresAt?: number | null } = {}
 ): InviteRow {
-	const zeile = {
-		code: neuerCode(),
+	const rowText = {
+		code: newCode(),
 		createdAt: Date.now(),
-		createdBy: von,
+		createdBy: from,
 		note: opts.note?.slice(0, 200) || null,
 		expiresAt: opts.expiresAt ?? null,
 		usedAt: null,
 		usedBy: null,
 		revokedAt: null
 	};
-	db.insert(invites).values(zeile).run();
-	return zeile;
+	db.insert(invites).values(rowText).run();
+	return rowText;
 }
 
 /** Alle Einladungen, neueste zuerst. */
-export function listeInvites(db: Db): InviteRow[] {
+export function listInvites(db: Db): InviteRow[] {
 	return db
 		.select()
 		.from(invites)
@@ -65,7 +65,7 @@ export function listeInvites(db: Db): InviteRow[] {
 }
 
 /** Zurueckziehen. */
-export function zieheInviteZurueck(db: Db, code: string): boolean {
+export function revokeInvite(db: Db, code: string): boolean {
 	const r = db
 		.update(invites)
 		.set({ revokedAt: Date.now() })
@@ -75,68 +75,68 @@ export function zieheInviteZurueck(db: Db, code: string): boolean {
 }
 
 /** Ob offene Registrierung (ohne Einladungscode) aktiv ist. */
-export function istRegistrierungOffen(db: DbLike): boolean {
-	const zeile = db
+export function isRegistrationOpen(db: DbLike): boolean {
+	const rowText = db
 		.select()
 		.from(serverSettings)
 		.where(eq(serverSettings.key, "open_registration"))
 		.get();
-	if (zeile) return zeile.value === "true";
+	if (rowText) return rowText.value === "true";
 	return REGISTRATION_OPEN;
 }
 
 /** Offene Registrierung zur Laufzeit aktivieren oder deaktivieren. */
-export function setzeRegistrierungOffen(db: DbLike, offen: boolean): void {
-	const wert = offen ? "true" : "false";
-	const jetzt = Date.now();
+export function setRegistrationOpen(db: DbLike, open: boolean): void {
+	const val = open ? "true" : "false";
+	const nowMs = Date.now();
 	db.insert(serverSettings)
-		.values({ key: "open_registration", value: wert, updatedAt: jetzt })
+		.values({ key: "open_registration", value: val, updatedAt: nowMs })
 		.onConflictDoUpdate({
 			target: serverSettings.key,
-			set: { value: wert, updatedAt: jetzt }
+			set: { value: val, updatedAt: nowMs }
 		})
 		.run();
 }
 
 /** Ob statische Einladungscodes aus INVITE_CODES per Servereinstellung deaktiviert wurden. */
-export function envInvitesDeaktiviert(db: DbLike): boolean {
-	const zeile = db
+export function envInvitesDisabled(db: DbLike): boolean {
+	const rowText = db
 		.select()
 		.from(serverSettings)
 		.where(eq(serverSettings.key, "env_invites_disabled"))
 		.get();
-	return zeile?.value === "true";
+	return rowText?.value === "true";
 }
 
 /** Statische Einladungscodes zur Laufzeit aktivieren oder deaktivieren. */
-export function setzeEnvInvitesDeaktiviert(db: DbLike, deaktiviert: boolean): void {
-	const wert = deaktiviert ? "true" : "false";
-	const jetzt = Date.now();
+export function setEnvInvitesDisabled(db: DbLike, disabled: boolean): void {
+	const val = disabled ? "true" : "false";
+	const nowMs = Date.now();
 	db.insert(serverSettings)
-		.values({ key: "env_invites_disabled", value: wert, updatedAt: jetzt })
+		.values({ key: "env_invites_disabled", value: val, updatedAt: nowMs })
 		.onConflictDoUpdate({
 			target: serverSettings.key,
-			set: { value: wert, updatedAt: jetzt }
+			set: { value: val, updatedAt: nowMs }
 		})
 		.run();
 }
 
 /** Gilt dieser Code? */
-export function gueltigerCode(db: DbLike, code: string): boolean {
-	if (istRegistrierungOffen(db)) return true;
+export function validCode(db: DbLike, code: string): boolean {
+	if (isRegistrationOpen(db)) return true;
 	if (!code) return false;
 	// Die Tuerklinke aus der Umgebung (sofern nicht zur Laufzeit deaktiviert).
-	if (!envInvitesDeaktiviert(db) && INVITE_CODES.some((c) => safeEqual(c, code))) return true;
+	if (!envInvitesDisabled(db) && INVITE_CODES.some((c) => safeEqual(c, code))) return true;
 
-	const zeile = db.select().from(invites).where(eq(invites.code, code)).get();
-	if (!zeile) return false;
-	if (zeile.usedAt || zeile.revokedAt) return false;
-	if (zeile.expiresAt && zeile.expiresAt < Date.now()) return false;
+	const rowText = db.select().from(invites).where(eq(invites.code, code)).get();
+	if (!rowText) return false;
+	if (rowText.usedAt || rowText.revokedAt) return false;
+	if (rowText.expiresAt && rowText.expiresAt < Date.now()) return false;
 	return true;
 }
 
 /** Beim Anlegen des Kontos: den Code entwerten, sofern er aus der Tabelle kam. */
-export function entwerteCode(db: DbLike, code: string, userId: string): void {
+export function consumeCode(db: DbLike, code: string, userId: string): void {
 	db.update(invites)
 		.set({ usedAt: Date.now(), usedBy: userId })
 		.where(and(eq(invites.code, code), isNull(invites.usedAt)))
@@ -144,6 +144,6 @@ export function entwerteCode(db: DbLike, code: string, userId: string): void {
 }
 
 /** Ist dieses Konto ein Verwalter? */
-export function istVerwalter(db: DbLike, userId: string): boolean {
+export function isAdminUser(db: DbLike, userId: string): boolean {
 	return db.select().from(users).where(eq(users.id, userId)).get()?.isAdmin === true;
 }

@@ -382,7 +382,7 @@ export class Api {
 		});
 	}
 
-	createInvite(opts: { note?: string; gueltigTage?: number } = {}): Promise<Invite> {
+	createInvite(opts: { note?: string; validDays?: number } = {}): Promise<Invite> {
 		return this.#call("/api/admin/invites", { method: "POST", body: JSON.stringify(opts) });
 	}
 

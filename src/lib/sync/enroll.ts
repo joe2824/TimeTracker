@@ -51,7 +51,7 @@ function deserialize(payload: string): KeyWrap {
 }
 
 /** Die Verpackung mit der Phrase oeffnen - oder verstaendlich scheitern. */
-async function oeffneMitPhrase(payload: string, phrase: string): Promise<CryptoKey> {
+async function openWithPhrase(payload: string, phrase: string): Promise<CryptoKey> {
 	try {
 		return await unwrapWithPhrase(deserialize(payload), phrase);
 	} catch {
@@ -87,9 +87,9 @@ export function prfBytes(first: unknown): Uint8Array | null {
 	if (typeof first === "object") {
 		// Ein ArrayBuffer, der durch structuredClone oder JSON gegangen ist, kommt
 		// als {"0":12,"1":250,...} zurueck - oder als leeres Objekt, dann ist er weg.
-		const werte = Object.values(first as Record<string, unknown>);
-		if (werte.length > 0 && werte.every((w) => typeof w === "number")) {
-			return Uint8Array.from(werte as number[]);
+		const values = Object.values(first as Record<string, unknown>);
+		if (values.length > 0 && values.every((w) => typeof w === "number")) {
+			return Uint8Array.from(values as number[]);
 		}
 	}
 	throw new Error("Der Passkey lieferte einen PRF-Wert in unbekannter Form.");
@@ -223,7 +223,7 @@ export async function login(baseUrl: string): Promise<LoginResult> {
 	const response = await startAuthentication({
 		optionsJSON: withPrf(start.options as PublicKeyCredentialRequestOptionsJSON)
 	});
-	const konto = await api.loginFinish({ challengeId: start.challengeId, response });
+	const account = await api.loginFinish({ challengeId: start.challengeId, response });
 
 	const { wraps } = await api.wraps();
 	const prf = prfOf(response);
@@ -250,8 +250,8 @@ export async function login(baseUrl: string): Promise<LoginResult> {
 	}
 
 	return {
-		userId: konto.userId,
-		displayName: konto.displayName,
+		userId: account.userId,
+		displayName: account.displayName,
 		key,
 		canUnlockWithPhrase: wraps.some((w) => w.kind === "recovery"),
 		prf,
@@ -265,7 +265,7 @@ export async function unlockWithPhrase(baseUrl: string, phrase: string): Promise
 	const { wraps } = await api.wraps();
 	const wrap = wraps.find((w) => w.kind === "recovery");
 	if (!wrap) throw new Error("Für dieses Konto ist keine Wiederherstellungs-Phrase hinterlegt.");
-	return oeffneMitPhrase(wrap.payload, phrase);
+	return openWithPhrase(wrap.payload, phrase);
 }
 
 /** Nach einer Anmeldung ohne PRF-Verpackung: eine anlegen. */
@@ -294,18 +294,18 @@ export async function recoverWithPhrase(
 	const { wrap } = await api.recoverWrap(recoveryId);
 	// Hier faellt die Entscheidung: passen die Woerter nicht, geht das Chiffrat
 	// nicht auf. Der Server hat damit nichts zu tun und erfaehrt es auch nicht.
-	const key = await oeffneMitPhrase(wrap, phrase);
+	const key = await openWithPhrase(wrap, phrase);
 
-	const angemeldet = await api.recoverDevice({
+	const loggedIn = await api.recoverDevice({
 		recoveryId,
 		proof: await vaultProof(key),
 		label
 	});
 
 	return {
-		userId: angemeldet.userId,
-		displayName: angemeldet.displayName,
-		deviceToken: angemeldet.deviceToken,
+		userId: loggedIn.userId,
+		displayName: loggedIn.displayName,
+		deviceToken: loggedIn.deviceToken,
 		key
 	};
 }
@@ -328,7 +328,7 @@ export async function registerFromDevice(
 	recoveryPhrase: string;
 }> {
 	const api = new Api({ baseUrl, fetchFn: platformFetch });
-	const angelegt = await api.registerDevice({
+	const created = await api.registerDevice({
 		displayName,
 		label,
 		invite: opts.invite,
@@ -337,7 +337,7 @@ export async function registerFromDevice(
 
 	// Ab hier weist sich dieses Geraet mit seinem Token aus - vorher gab es
 	// nichts, womit.
-	api.setToken(angelegt.deviceToken);
+	api.setToken(created.deviceToken);
 
 	const key = await createVaultKey();
 	const recoveryPhrase = createRecoveryPhrase();
@@ -349,9 +349,9 @@ export async function registerFromDevice(
 	});
 
 	return {
-		userId: angelegt.userId,
-		displayName: angelegt.displayName,
-		deviceToken: angelegt.deviceToken,
+		userId: created.userId,
+		displayName: created.displayName,
+		deviceToken: created.deviceToken,
 		key,
 		recoveryPhrase
 	};
@@ -378,7 +378,7 @@ export async function addPasskey(
 	});
 
 	const prf = prfOf(response);
-	const angelegt = await api.addPasskeyFinish({
+	const created = await api.addPasskeyFinish({
 		challengeId,
 		label,
 		hasPrf: prf !== null,
@@ -388,15 +388,15 @@ export async function addPasskey(
 	// Erst jetzt die Verpackung: sie braucht die eben vergebene Kennung.
 	let prfOk = prf !== null;
 	if (prf) {
-		await api.putWrap("passkey", serialize(await wrapWithPrf(key, prf)), angelegt.id);
+		await api.putWrap("passkey", serialize(await wrapWithPrf(key, prf)), created.id);
 	} else if (prfCapable(response)) {
-		prfOk = await harvestPrfWrap(api, key, angelegt.id).catch((e) => {
+		prfOk = await harvestPrfWrap(api, key, created.id).catch((e) => {
 			logWarn("PRF-Wert konnte nicht nachgeholt werden", e);
 			return false;
 		});
 	}
 
-	return { id: angelegt.id, label: angelegt.label, prfAvailable: prfOk };
+	return { id: created.id, label: created.label, prfAvailable: prfOk };
 }
 
 export { ApiError, importVaultKey, toBase64 };

@@ -108,8 +108,8 @@
 	const chartData = $derived(
 		strict.points.map((p) => ({
 			ts: new Date(noonTs(p.date)),
-			schnitt: p.average,
-			grenze: NORM_DAILY
+			average: p.average,
+			limit: NORM_DAILY
 		}))
 	);
 
@@ -146,12 +146,12 @@
 	};
 
 	const chartConfig = {
-		schnitt: { label: "Schnitt", theme: { light: "#2a78d6", dark: "#6ea6ec" } },
-		grenze: { label: "Grenze", theme: { light: "#dc2626", dark: "#f87171" } }
+		average: { label: "Schnitt", theme: { light: "#2a78d6", dark: "#6ea6ec" } },
+		limit: { label: "Grenze", theme: { light: "#dc2626", dark: "#f87171" } }
 	} satisfies Chart.ChartConfig;
 
 	// ---- Befunde ----
-	const LEVEL_ORDER: Record<ArbZgLevel, number> = { verstoss: 0, risiko: 1, hinweis: 2 };
+	const LEVEL_ORDER: Record<ArbZgLevel, number> = { violation: 0, risk: 1, hint: 2 };
 	const byDay = $derived.by(() => {
 		const map = new Map<string, ArbZgFinding[]>();
 		for (const f of result.findings) {
@@ -168,7 +168,7 @@
 	});
 
 	const badgeVariant = (level: ArbZgLevel) =>
-		level === "verstoss" ? ("destructive" as const) : ("outline" as const);
+		level === "violation" ? ("destructive" as const) : ("outline" as const);
 
 	function openDay(date: string) {
 		entriesFocus.requestDate(date);
@@ -344,11 +344,11 @@
 					xScale={scaleTime()}
 					{yDomain}
 					series={[
-						{ key: "schnitt", label: "Schnitt", color: "var(--color-schnitt)" },
+						{ key: "average", label: "Schnitt", color: "var(--color-average)" },
 						{
-							key: "grenze",
+							key: "limit",
 							label: "Grenze",
-							color: "var(--color-grenze)",
+							color: "var(--color-limit)",
 							// SVG-Schreibweise, nicht camelCase: Spline reicht die Props
 							// unveraendert an das <path> durch.
 							props: { "stroke-dasharray": "4 4" }
@@ -397,10 +397,10 @@
 				</p>
 			{:else}
 				<p class="text-muted-foreground text-xs">
-					{result.counts.verstoss}
-					{result.counts.verstoss === 1 ? "Verstoß" : "Verstöße"} · {result.counts.risiko} knapp ·
-					{result.counts.hinweis}
-					{result.counts.hinweis === 1 ? "Hinweis" : "Hinweise"}
+					{result.counts.violation}
+					{result.counts.violation === 1 ? "Verstoß" : "Verstöße"} · {result.counts.risk} knapp ·
+					{result.counts.hint}
+					{result.counts.hint === 1 ? "Hinweis" : "Hinweise"}
 				</p>
 				<!-- Ohne diesen Satz ist am Handy nichts zu sehen, was die Badges als
 				     anklickbar ausweist - Hover gibt es dort nicht. -->
@@ -443,9 +443,9 @@
 													aria-label="{f.label} – erklären"
 												>
 													<Badge variant={badgeVariant(f.level)}>
-														{#if f.level === "verstoss"}
+														{#if f.level === "violation"}
 															<TriangleAlertIcon />
-														{:else if f.level === "hinweis"}
+														{:else if f.level === "hint"}
 															<InfoIcon />
 														{/if}
 														{f.label}

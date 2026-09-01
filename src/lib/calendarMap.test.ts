@@ -8,8 +8,8 @@ function act(id: string, name: string, isAbsence = false): Activity {
 
 const ABS = act("abs", "Abwesenheiten", true);
 const P1 = act("p1", "Projekt 1");
-const WARTUNG = act("w", "Wartung");
-const ACTIVITIES = [P1, WARTUNG, ABS];
+const MAINTENANCE = act("w", "Wartung");
+const ACTIVITIES = [P1, MAINTENANCE, ABS];
 
 /** Termin mit Uhrzeit. */
 const timed = (subject: string) => ({ subject, allDay: false });

@@ -174,12 +174,12 @@ export function pushRecords(
 		const conflicts: PushConflict[] = [];
 		let seq = user.seqCounter;
 
-		const bestand = tx
+		const existingRow = tx
 			.select({ n: sql<number>`count(*)` })
 			.from(records)
 			.where(eq(records.userId, userId))
 			.get();
-		let anzahl = bestand?.n ?? 0;
+		let count = existingRow?.n ?? 0;
 
 		for (const r of incoming) {
 			const existing = tx
@@ -194,20 +194,20 @@ export function pushRecords(
 			const serverRev = existing?.rev ?? 0;
 			if (serverRev !== r.baseRev) {
 				if (existing) conflicts.push({ id: r.id, current: toStored(existing) });
-				else conflicts.push({ id: r.id, current: leererStand(r) });
+				else conflicts.push({ id: r.id, current: emptyState(r) });
 				continue;
 			}
 
 			if (!existing) {
-				if (anzahl >= MAX_RECORDS_PER_USER) {
+				if (count >= MAX_RECORDS_PER_USER) {
 					throw new SyncError("Das Konto hat sein Datensatz-Limit erreicht", 507);
 				}
-				anzahl++;
+				count++;
 			}
 
 			seq++;
 			const rev = serverRev + 1;
-			const zeile = {
+			const rowText = {
 				userId,
 				id: r.id,
 				kind: r.kind,
@@ -218,18 +218,18 @@ export function pushRecords(
 				deviceId,
 				deletedAt: r.deletedAt ?? null,
 				// Bei einer Loeschung faellt das Chiffrat weg. Was bleibt, ist der
-				// Grabstein: ohne ihn haelt ein Geraet, das die Loeschung verpasst hat,
+				// Loeschmarker: ohne ihn haelt ein Geraet, das die Loeschung verpasst hat,
 				// seinen alten Stand fuer gueltig und laedt ihn wieder hoch.
 				payload: r.deletedAt ? null : (r.payload ?? null)
 			};
 
 			if (existing) {
 				tx.update(records)
-					.set(zeile)
+					.set(rowText)
 					.where(and(eq(records.userId, userId), eq(records.id, r.id)))
 					.run();
 			} else {
-				tx.insert(records).values(zeile).run();
+				tx.insert(records).values(rowText).run();
 			}
 			accepted.push({ id: r.id, rev, seq });
 		}
@@ -242,7 +242,7 @@ export function pushRecords(
 }
 
 /** Der "Stand" eines Datensatzes, den es auf dem Server gar nicht gibt. */
-function leererStand(r: IncomingRecord): StoredRecord {
+function emptyState(r: IncomingRecord): StoredRecord {
 	return {
 		id: r.id,
 		kind: r.kind,

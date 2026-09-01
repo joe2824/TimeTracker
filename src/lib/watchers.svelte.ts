@@ -39,7 +39,7 @@ let lastRunStart: number | null = null;
 let lastTooltip = "";
 
 /** Eine Meldung zeigen, sofern erlaubt. Der lokale Name bleibt der bisherige. */
-async function melden(title: string, body: string) {
+async function reportIt(title: string, body: string) {
 	if (await ensureNotificationPermission()) await notify({ title, body });
 }
 
@@ -63,12 +63,12 @@ async function dailyPing(s: Settings): Promise<void> {
 	if (pinging) return;
 	const now = Date.now();
 	if (!PING_HOURS.includes(zonedParts(now).hour)) return;
-	const heute = fmtDate(now);
-	if (s.usageLastDay === heute) return;
+	const today = fmtDate(now);
+	if (s.usageLastDay === today) return;
 	pinging = true;
 	try {
 		await track("aktiv");
-		await app.updateSettings({ usageLastDay: heute });
+		await app.updateSettings({ usageLastDay: today });
 	} finally {
 		pinging = false;
 	}
@@ -123,7 +123,7 @@ async function tick() {
 			elapsedSec
 		};
 		// … und OS-Benachrichtigung (falls App nur im Tray läuft).
-		void melden(
+		void reportIt(
 			"TimeTracker – Timer läuft sehr lange",
 			`„${app.activityName(running.activityId)}" läuft seit über ${s.maxTimerHours} h. Noch aktiv?`
 		);
@@ -144,14 +144,14 @@ async function tick() {
 			// Erste Beobachtung nur merken (kein Hinweis beim Start des Timers).
 			if (lastPomoKey !== null) {
 				if (pomo.phase === "break") {
-					void melden(
+					void reportIt(
 						"TimeTracker – Zeit für eine Pause",
 						`${s.pomodoroMin} min fokussiert. ${s.pomodoroBreakMin} min Pause.`
 					);
 				} else if (s.pomodoroBreakMin > 0) {
-					void melden("TimeTracker – Weiter geht's", "Pause vorbei – zurück zum Fokus.");
+					void reportIt("TimeTracker – Weiter geht's", "Pause vorbei – zurück zum Fokus.");
 				} else {
-					void melden(
+					void reportIt(
 						"TimeTracker – Zeit für eine Pause",
 						`${s.pomodoroMin} min fokussiert gearbeitet.`
 					);

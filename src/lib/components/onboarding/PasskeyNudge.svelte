@@ -1,6 +1,6 @@
 <script lang="ts">
 	// Bewusst kein Toast: der ist weg, bevor jemand ihn liest. Deshalb ein
-	// Streifen, der stehen bleibt, bis der Passkey sitzt oder weggeklickt ist.
+	// Streifen, der stehen bleibt, bis der Passkey sitzt oder dismissed ist.
 	import { Button } from "$lib/components/ui/button";
 	import { toast } from "svelte-sonner";
 	import { account } from "$lib/sync/account.svelte";
@@ -12,9 +12,9 @@
 	type Missing = "passkey" | "wrap" | null;
 
 	let missing = $state<Missing>(null);
-	let gefragt = $state(false);
-	let laeuft = $state(false);
-	let weggeklickt = $state(false);
+	let asked = $state(false);
+	let running = $state(false);
+	let dismissed = $state(false);
 
 	const texts = {
 		passkey: {
@@ -30,8 +30,8 @@
 	$effect(() => {
 		// Nur im Browser: auf dem Rechner traegt das Geraet ein eigenes Token, und
 		// einen Passkey kann es dort ohnehin nicht anlegen.
-		if (isTauri() || !account.linked || gefragt) return;
-		gefragt = true;
+		if (isTauri() || !account.linked || asked) return;
+		asked = true;
 		void check().catch(() => (missing = null));
 	});
 
@@ -44,7 +44,7 @@
 	}
 
 	async function resolve() {
-		laeuft = true;
+		running = true;
 		try {
 			const done =
 				missing === "passkey"
@@ -55,31 +55,31 @@
 				toast.success("Erledigt. Dein Passkey entsperrt deine Daten jetzt allein.");
 			} else {
 				// Der Authentifikator kann kein PRF - ein zweiter Versuch aendert daran nichts.
-				weggeklickt = true;
+				dismissed = true;
 				toast.error("Dieses Gerät kann deine Daten mit dem Passkey allein nicht entsperren.");
 			}
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Hat nicht geklappt");
 		} finally {
-			laeuft = false;
+			running = false;
 		}
 	}
 </script>
 
-{#if missing && !weggeklickt}
+{#if missing && !dismissed}
 	<div class="border-b border-amber-500/40 bg-amber-500/5">
 		<div class="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 py-2 text-sm sm:px-6">
 			<KeyRoundIcon class="size-4 shrink-0" />
 			<p class="flex-1">{texts[missing].text}</p>
-			<Button size="sm" disabled={laeuft} onclick={resolve}>
-				{laeuft ? "Warte auf Bestätigung…" : texts[missing].button}
+			<Button size="sm" disabled={running} onclick={resolve}>
+				{running ? "Warte auf Bestätigung…" : texts[missing].button}
 			</Button>
 			<button
 				type="button"
 				title="Ausblenden"
 				aria-label="Ausblenden"
 				class="text-muted-foreground hover:text-foreground shrink-0"
-				onclick={() => (weggeklickt = true)}
+				onclick={() => (dismissed = true)}
 			>
 				<XIcon class="size-4" />
 			</button>

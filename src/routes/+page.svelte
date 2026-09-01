@@ -13,7 +13,7 @@
 	import type { DataChanged } from "$lib/platform/windows";
 	import { onPairLink } from "$lib/platform/deeplink";
 	import WebOnboarding from "$lib/components/onboarding/WebOnboarding.svelte";
-	import { onboardingOffen } from "$lib/onboarding.svelte";
+	import { onboardingOpen } from "$lib/onboarding.svelte";
 	import PasskeyNudge from "$lib/components/onboarding/PasskeyNudge.svelte";
 	import { errorText, logError, logFile, logInfo, logWarn, pruneOldLogs } from "$lib/log";
 	import { appDataDir, join } from "@tauri-apps/api/path";
@@ -61,7 +61,7 @@
 	// Das Onboarding bleibt auch nach dem Verknuepfen stehen, solange es noch
 	// einen Schritt zu zeigen hat - sonst waere es weg, bevor jemand sagen konnte,
 	// ob er seine App noch dazuholen will.
-	const brauchtAnmeldung = $derived(!isTauri() && (!account.linked || onboardingOffen.wert));
+	const needsLogin = $derived(!isTauri() && (!account.linked || onboardingOpen.value));
 	let paletteOpen = $state(false);
 
 	/** Laufende Version, sobald der Start sie gelesen hat ("" bis dahin). */
@@ -102,26 +102,26 @@
 	// Ohne Rueckfrage: die Sitzung ist mit einem Passkey in Sekunden zurueck.
 	// AUSSER es gibt keinen - dann ist die Abmeldung eine Einbahnstrasse, und
 	// zurueck kaeme man nur ueber die 24 Woerter.
-	let ohnePasskey = $state(false);
-	let legtAn = $state(false);
+	let withoutPasskey = $state(false);
+	let creating = $state(false);
 
-	async function abmeldenKlick() {
+	async function onLogoutClick() {
 		try {
 			if ((await account.passkeys()).length === 0) {
-				ohnePasskey = true;
+				withoutPasskey = true;
 				return;
 			}
 		} catch {
 			// Server nicht erreichbar: dann laesst sich nicht sagen, ob ein Passkey
 			// da ist. Lieber einmal zu viel fragen als jemanden aussperren.
-			ohnePasskey = true;
+			withoutPasskey = true;
 			return;
 		}
-		await abmelden();
+		await logout();
 	}
 
-	async function abmelden() {
-		ohnePasskey = false;
+	async function logout() {
+		withoutPasskey = false;
 		try {
 			await account.logout();
 			toast.success("Abgemeldet.");
@@ -131,16 +131,16 @@
 	}
 
 	/** Direkt aus dem Hinweis heraus einen anlegen - der Weg ist ja der Punkt. */
-	async function passkeyAnlegen() {
-		legtAn = true;
+	async function createPasskey() {
+		creating = true;
 		try {
 			await account.addPasskey("Dieser Browser");
-			ohnePasskey = false;
+			withoutPasskey = false;
 			toast.success("Passkey angelegt. Damit kommst du jederzeit wieder hinein.");
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Passkey konnte nicht angelegt werden");
 		} finally {
-			legtAn = false;
+			creating = false;
 		}
 	}
 
@@ -276,7 +276,7 @@
 						void app.reload();
 						// Das Tray schreibt ohne Haken - erst hier wird daraus etwas,
 						// das den Server erreicht.
-						void account.nachlese();
+						void account.followUp();
 					}),
 					// Tray-Flyout wurde geöffnet und fragt den aktuellen Hinweis-Status ab.
 					await listen("tray-request-attention", () => {
@@ -307,10 +307,10 @@
 		// im Hinweis öffnet direkt den Update-Dialog.
 		updateTimer ??= setInterval(() => void checkAndAnnounceUpdate(), UPDATE_CHECK_MS);
 		// Versteckt gestartet? Dann hat die Suche keine Eile (HIDDEN_UPDATE_DELAY_MS).
-		const sichtbar = await getCurrentWindow()
+		const isVisible = await getCurrentWindow()
 			.isVisible()
 			.catch(() => true);
-		if (!sichtbar) await new Promise((r) => setTimeout(r, HIDDEN_UPDATE_DELAY_MS));
+		if (!isVisible) await new Promise((r) => setTimeout(r, HIDDEN_UPDATE_DELAY_MS));
 		await checkAndAnnounceUpdate();
 	}
 
@@ -422,7 +422,7 @@
 			{/if}
 		</div>
 	</div>
-{:else if brauchtAnmeldung}
+{:else if needsLogin}
 	<!--
 		Im Browser gibt es ohne Konto nichts zu zeigen - anders als auf dem
 		Rechner, wo die Daten ohnehin lokal liegen. Deshalb steht die Anmeldung
@@ -538,7 +538,7 @@
 					{#if account.linked && !capabilities.tray}
 						<button
 							type="button"
-							onclick={abmeldenKlick}
+							onclick={onLogoutClick}
 							title="Abmelden"
 							aria-label="Abmelden"
 							class="text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-ring/50 inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors outline-none focus-visible:ring-2"
@@ -550,7 +550,7 @@
 			</div>
 		</header>
 
-		{#if account.phase === "laeuft" && account.syncProgress && account.syncProgress.pulled >= 20}
+		{#if account.phase === "running" && account.syncProgress && account.syncProgress.pulled >= 20}
 			<div class="bg-primary/10 border-b border-primary/20 text-primary px-4 py-1.5 text-xs text-center font-medium flex items-center justify-center gap-2 animate-in fade-in duration-150">
 				<RefreshCwIcon class="size-3.5 animate-spin shrink-0" />
 				<span>
@@ -620,7 +620,7 @@
 -->
 <svelte:document onvisibilitychange={() => !document.hidden && account.onVisible()} />
 
-<Dialog.Root open={ohnePasskey} onOpenChange={(o) => (ohnePasskey = o)}>
+<Dialog.Root open={withoutPasskey} onOpenChange={(o) => (withoutPasskey = o)}>
 	<Dialog.Content>
 		<Dialog.Header>
 			<Dialog.Title>Achtung: kein Passkey an diesem Konto</Dialog.Title>
@@ -631,9 +631,9 @@
 			</Dialog.Description>
 		</Dialog.Header>
 		<Dialog.Footer>
-			<Button variant="ghost" disabled={legtAn} onclick={abmelden}>Trotzdem abmelden</Button>
-			<Button disabled={legtAn} onclick={passkeyAnlegen}>
-				{legtAn ? "Warte auf Bestätigung…" : "Passkey anlegen"}
+			<Button variant="ghost" disabled={creating} onclick={logout}>Trotzdem abmelden</Button>
+			<Button disabled={creating} onclick={createPasskey}>
+				{creating ? "Warte auf Bestätigung…" : "Passkey anlegen"}
 			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>

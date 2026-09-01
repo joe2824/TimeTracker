@@ -33,14 +33,14 @@ const { checkForUpdate, installUpdate, openUpdateDialog, updater } = await impor
 	"./updater.svelte"
 );
 
-type Fortschritt = { event: string; data?: Record<string, number | undefined> };
+type UpdateProgress = { event: string; data?: Record<string, number | undefined> };
 
 /** Ein gefundenes Update, dessen Installation die uebergebenen Ereignisse meldet. */
-function update(version = "1.2.3", ereignisse: Fortschritt[] = []) {
+function update(version = "1.2.3", events: UpdateProgress[] = []) {
 	return {
 		version,
-		downloadAndInstall: vi.fn(async (cb: (e: Fortschritt) => void) => {
-			for (const e of ereignisse) cb(e);
+		downloadAndInstall: vi.fn(async (cb: (e: UpdateProgress) => void) => {
+			for (const e of events) cb(e);
 		})
 	};
 }

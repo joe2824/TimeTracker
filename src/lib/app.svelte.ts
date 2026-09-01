@@ -1,7 +1,13 @@
 // Zentraler, reaktiver App-Zustand (Svelte 5 Runes).
 import { toast } from "svelte-sonner";
 import type { Activity, Entry, EntrySource, Settings } from "./types";
-import { BUILTIN_ABSENCE, BUILTIN_OTHERS, defaultSettings } from "./types";
+import {
+	BUILTIN_ABSENCE,
+	BUILTIN_ABSENCE_ID,
+	BUILTIN_OTHERS,
+	BUILTIN_OTHERS_ID,
+	defaultSettings
+} from "./types";
 import {
 	fmtClock,
 	fmtDate,
@@ -23,6 +29,7 @@ import { isTauri } from "./platform/env";
 import {
 	deleteYear,
 	listEntryMonths,
+	loadDevice,
 	loadActivities,
 	loadEntries,
 	loadSettings,
@@ -51,6 +58,8 @@ interface BlockedDay {
 
 class AppState {
 	activities = $state<Activity[]>([]);
+	/** Serialisiert mergeDuplicateBuiltins() - siehe dort. */
+	#builtinRepair: Promise<void> = Promise.resolve();
 	settings = $state<Settings>({ ...defaultSettings });
 	/** laufender Eintrag (endTs === null) oder null */
 	running = $state<Entry | null>(null);
@@ -94,6 +103,7 @@ class AppState {
 					note: string;
 					source: EntrySource;
 					dayFraction?: number;
+					timeOff?: boolean;
 				};
 				days: BlockedDay[];
 		  }
@@ -119,7 +129,7 @@ class AppState {
 	async init(): Promise<boolean> {
 		if (!this.loaded) {
 			this.initError = null;
-			const begonnen = Date.now();
+			const started = Date.now();
 			try {
 				// Erster Start? (settings.json noch nicht vorhanden – vor dem ersten Speichern pruefen)
 				const firstRun = !(await this.#step("Einstellungen suchen", settingsFileExists));
@@ -140,7 +150,15 @@ class AppState {
 						logWarn("Aufräumen leerer Monatsdateien fehlgeschlagen", e);
 					}
 				});
-				await this.#step("Aktivitäten prüfen", () => this.#seedBuiltins());
+				await this.#step("Aktivitäten prüfen", async () => {
+					await this.#seedBuiltins();
+					// Ohne Konto gibt es keinen Schreib-Haken und niemanden, den die
+					// Reparatur erreichen muesste - dann darf sie gleich hier laufen.
+					// Mit Konto uebernimmt das der Abgleich, sobald er steht.
+					if (!(await loadDevice())?.accountFingerprint) {
+						await this.mergeDuplicateBuiltins();
+					}
+				});
 				const month = this.currentMonth;
 				await this.#step(`Einträge ${month} laden`, () => this.ensureMonth(month));
 				const prev = prevMonthKey();
@@ -151,11 +169,11 @@ class AppState {
 				this.initStep = null;
 				this.trayVersion = (this.trayVersion + 1) % 1000;
 				logInfo("Daten geladen", {
-					ms: Date.now() - begonnen,
-					erstStart: firstRun,
-					aktivitaeten: this.activities.length,
-					eintraege: this.monthEntries(month).length + this.monthEntries(prev).length,
-					laeuft: this.#runningName()
+					ms: Date.now() - started,
+					firstStart: firstRun,
+					activities: this.activities.length,
+					entries: this.monthEntries(month).length + this.monthEntries(prev).length,
+					running: this.#runningName()
 				});
 			} catch (e) {
 				// Merken statt werfen: eine abgewiesene Promise landet nur in der
@@ -257,6 +275,12 @@ class AppState {
 		);
 		this.running = null;
 		await this.#findRunning();
+		// Auch hier, nicht nur beim Start: ein Abgleich kann waehrend einer offenen
+		// Sitzung eine zweite "Others"-Zeile hereinspielen, und dann steht sie da,
+		// bis jemand die Anwendung neu startet. Hier steht der Schreib-Haken, die
+		// Reparatur wird also mitgeschrieben und erreicht die anderen Geraete.
+		await this.#seedBuiltins();
+		await this.mergeDuplicateBuiltins();
 		this.now = Date.now();
 		this.loaded = true;
 		// Ein anderes Fenster hat geschrieben – abgeleitete Listen neu lesen.
@@ -265,7 +289,7 @@ class AppState {
 		// gesetzt ist. Ein Erhöhen mitten in reload (wenn running kurz null war)
 		// würde das Icon kurz auf „idle" wechseln – das sichtbare Flackern.
 		this.trayVersion = (this.trayVersion + 1) % 1000;
-		logDebug("Daten neu geladen", { laeuft: this.#runningName() });
+		logDebug("Daten neu geladen", { running: this.#runningName() });
 	}
 
 	/** Aktualisiert das native OS Tray Icon und Menü sofort imperativ. */
@@ -309,23 +333,151 @@ class AppState {
 		return this.activities.find((a) => a.id === id)?.name ?? "(gelöscht)";
 	}
 
+	/**
+	 * Die eingebauten Zeilen herstellen: genau eine je Art, unter fester Id.
+	 *
+	 * Laeuft bei jedem Start, VOR dem ersten Abgleich - und raeumt dabei auch auf.
+	 * Aeltere Fassungen vergaben hier Zufalls-Ids; weil jedes Geraet anlegt, bevor
+	 * es die Liste vom Server kennt, entstanden so Duplikate. Die werden hier
+	 * zusammengefuehrt: erst haengen die Eintraege um, dann verschwinden die
+	 * ueberzaehligen Zeilen. Weil die Ziel-Id fest ist, waehlen alle Geraete
+	 * unabhaengig voneinander dasselbe Ziel und laufen zusammen.
+	 */
+	/** Die eingebauten Zeilen, je Art eine feste Id. */
+	get #builtinKinds() {
+		return [
+			{ id: BUILTIN_OTHERS_ID, name: BUILTIN_OTHERS, isAbsence: false },
+			{ id: BUILTIN_ABSENCE_ID, name: BUILTIN_ABSENCE, isAbsence: true }
+		];
+	}
+
+	#builtinsOfKind(kind: { name: string; isAbsence: boolean }): Activity[] {
+		return this.activities.filter((a) =>
+			kind.isAbsence ? a.isAbsence : !a.isAbsence && a.name === kind.name
+		);
+	}
+
+	/**
+	 * Fehlende eingebaute Zeilen anlegen - mehr nicht.
+	 *
+	 * Bewusst harmlos: das laeuft beim Start, also bevor der Abgleich seinen
+	 * Schreib-Haken gesetzt hat. Eine neu angelegte Zeile traegt noch kein `rev`
+	 * und wird von rememberUnstamped() eingesammelt; alles Weitere - Eintraege
+	 * umhaengen, Zeilen loeschen - wuerde hier dagegen spurlos passieren.
+	 */
 	async #seedBuiltins(): Promise<void> {
 		let changed = false;
-		const ensure = (name: string, isAbsence: boolean) => {
-			if (!this.activities.some((a) => a.name === name)) {
-				this.activities.push({
-					id: uid(),
-					name,
-					sortOrder: this.activities.length,
-					archived: false,
-					isAbsence
-				});
-				changed = true;
+		for (const kind of this.#builtinKinds) {
+			if (this.#builtinsOfKind(kind).length > 0) continue;
+			this.activities.push({
+				id: kind.id,
+				name: kind.name,
+				sortOrder: this.activities.length,
+				archived: false,
+				isAbsence: kind.isAbsence
+			});
+			changed = true;
+		}
+		if (changed) {
+			this.#reindexBuiltinsLast();
+			await this.persistActivities();
+		}
+	}
+
+	/**
+	 * Doppelte eingebaute Zeilen zusammenfuehren.
+	 *
+	 * Aeltere Fassungen vergaben hier Zufalls-Ids; weil jedes Geraet anlegt, bevor
+	 * es die Liste vom Server kennt, entstanden Duplikate. Erst haengen die
+	 * Eintraege auf die feste Id um, dann verschwinden die ueberzaehligen Zeilen.
+	 * Weil die Ziel-Id fest ist, waehlt jedes Geraet dasselbe Ziel.
+	 *
+	 * Laeuft NUR dort, wo der Schreib-Haken steht (nach dem Start des Abgleichs)
+	 * oder wo es keinen Abgleich gibt. Die umgehaengten Eintraege tragen bereits
+	 * ein `rev`, rememberUnstamped() wuerde sie nicht mehr aufsammeln - ohne Haken
+	 * bliebe die Reparatur also auf diesem Geraet stehen und erreichte den Server
+	 * nie.
+	 */
+	async mergeDuplicateBuiltins(): Promise<void> {
+		// Nacheinander, nie nebeneinander: reload() wird an mehreren Stellen ohne
+		// await angestossen (Fenster-Signal, Abgleich, Tray). Zwei Durchlaeufe
+		// laesen dieselbe Liste, und der zweite haengt seine Zeile an die des
+		// ersten an - ausgerechnet dasselbe Duplikat, das hier verschwinden soll.
+		this.#builtinRepair = this.#builtinRepair
+			.catch(() => {})
+			.then(() => this.#mergeDuplicateBuiltinsNow());
+		return this.#builtinRepair;
+	}
+
+	async #mergeDuplicateBuiltinsNow(): Promise<void> {
+		let changed = false;
+
+		for (const kind of this.#builtinKinds) {
+			const matches = this.#builtinsOfKind(kind);
+			if (matches.length === 0) continue;
+
+			// Nichts zu tun: genau eine, und sie sitzt schon auf der festen Id.
+			if (matches.length === 1 && matches[0].id === kind.id) continue;
+
+			// Wer ueberlebt: die auf der festen Id, sonst die kleinste - eine Regel,
+			// die auf jedem Geraet dieselbe Zeile waehlt.
+			const survivor =
+				matches.find((a) => a.id === kind.id) ??
+				[...matches].sort((a, b) => a.id.localeCompare(b.id))[0];
+
+			const oldIds = new Set(matches.map((a) => a.id).filter((id) => id !== kind.id));
+			const moved = await this.#repointEntries(oldIds, kind.id);
+
+			// Ohne Stempel: unter der festen Id entsteht ein NEUER Datensatz. Traegt
+			// er das `rev` der alten Zeile, meldet das Geraet dem Server eine
+			// Aenderung an einer Fassung, die es dort nie gab - der erste Abgleich
+			// nach dem Update liefe garantiert in einen Konflikt.
+			const { rev: _rev, updatedAt: _updatedAt, deviceId: _deviceId, ...carried } = survivor;
+			const rest = this.activities.filter((a) => !matches.includes(a));
+			this.activities = [
+				...rest,
+				{ ...carried, id: kind.id, name: kind.name, isAbsence: kind.isAbsence }
+			];
+			changed = true;
+			logWarn(`Eingebaute Zeile "${kind.name}" zusammengeführt`, {
+				removed: oldIds.size,
+				entries: moved
+			});
+		}
+
+		if (changed) {
+			this.#reindexBuiltinsLast();
+			await this.persistActivities();
+		}
+	}
+
+	/**
+	 * Eintraege aller Monate von `oldIds` auf `toId` umhaengen. Liefert die Anzahl.
+	 *
+	 * Muss VOR dem Loeschen der alten Zeilen laufen: sonst zeigen die Eintraege auf
+	 * eine Aktivitaet, die es nicht mehr gibt, und heissen in der Liste "(gelöscht)".
+	 */
+	async #repointEntries(oldIds: Set<string>, toId: string): Promise<number> {
+		if (oldIds.size === 0) return 0;
+		let moved = 0;
+
+		for (const month of await listEntryMonths()) {
+			await this.ensureMonth(month);
+			const list = this.entriesByMonth[month];
+			if (!list) continue;
+			let touched = false;
+			for (const e of list) {
+				if (oldIds.has(e.activityId)) {
+					e.activityId = toId;
+					touched = true;
+					moved++;
+				}
 			}
-		};
-		ensure(BUILTIN_OTHERS, false);
-		ensure(BUILTIN_ABSENCE, true);
-		if (changed) await this.persistActivities();
+			if (touched) await this.#saveMonth(month);
+		}
+
+		if (this.running && oldIds.has(this.running.activityId)) this.running.activityId = toId;
+		return moved;
 	}
 
 	async persistActivities(): Promise<void> {
@@ -485,7 +637,7 @@ class AppState {
 		this.activities = this.activities.filter((x) => x.id !== id);
 		await this.persistActivities();
 		// Unwiderruflich – hinterher will man wissen, was da genau verschwunden ist.
-		logWarn(`Aktivität gelöscht: ${name}`, { id, eintraege: removed });
+		logWarn(`Aktivität gelöscht: ${name}`, { id, entries: removed });
 		return removed;
 	}
 
@@ -573,7 +725,7 @@ class AppState {
 	 */
 	async deleteYearEntries(year: number): Promise<number> {
 		const deleted = await deleteYear(year);
-		logWarn(`Jahr ${year} gelöscht`, { monate: deleted });
+		logWarn(`Jahr ${year} gelöscht`, { months: deleted });
 		for (const m of deleted) delete this.entriesByMonth[m];
 		if (this.running && monthKey(this.running.startTs).startsWith(`${year}-`)) {
 			this.running = null;
@@ -650,7 +802,7 @@ class AppState {
 		note = "",
 		source: EntrySource = "manual",
 		dayFraction?: number,
-		opts: { confirmAbsenceOverride?: boolean } = {}
+		opts: { confirmAbsenceOverride?: boolean; timeOff?: boolean } = {}
 	): Promise<Entry | null> {
 		await this.ensureMonth(monthKey(startTs));
 		if (endTs !== null) await this.ensureMonth(monthKey(endTs));
@@ -682,7 +834,7 @@ class AppState {
 				}
 				this.absenceOverridePrompt = {
 					kind: "add",
-					args: { activityId, startTs, endTs, note, source, dayFraction },
+					args: { activityId, startTs, endTs, note, source, dayFraction, timeOff: opts.timeOff },
 					days: blocked
 				};
 				return null;
@@ -691,7 +843,15 @@ class AppState {
 
 		let first: Entry | null = null;
 		for (const p of parts) {
-			const e = await this.#pushEntry(activityId, p.startTs, p.endTs, note, source, dayFraction);
+			const e = await this.#pushEntry(
+				activityId,
+				p.startTs,
+				p.endTs,
+				note,
+				source,
+				dayFraction,
+				opts.timeOff
+			);
 			first ??= e;
 		}
 		return first;
@@ -704,15 +864,24 @@ class AppState {
 		endTs: number | null,
 		note: string,
 		source: EntrySource,
-		dayFraction?: number
+		dayFraction?: number,
+		timeOff?: boolean
 	): Promise<Entry> {
 		const month = monthKey(startTs);
 		await this.ensureMonth(month);
 		const entry: Entry = { id: uid(), activityId, startTs, endTs, note, source };
 		if (dayFraction != null) entry.dayFraction = dayFraction;
+		// Nur setzen, wo es zutrifft: ein `timeOff: false` an jedem Eintrag waere
+		// eine inhaltliche Aenderung und schickte den halben Bestand erneut hoch.
+		if (timeOff) entry.timeOff = true;
 		this.entriesByMonth[month].push(entry);
 		await this.#saveMonth(month);
 		return entry;
+	}
+
+	/** Zeitausgleich statt Urlaub/Krank? Nur auf der Abwesenheits-Zeile moeglich. */
+	isTimeOff(e: Entry): boolean {
+		return e.timeOff === true && this.isAbsenceId(e.activityId);
 	}
 
 	isAbsenceId(activityId: string): boolean {
@@ -759,8 +928,8 @@ class AppState {
 	quickActivities(limit: number): Activity[] {
 		const seen = new Set<string>();
 		const out: Activity[] = [];
-		const favoriten = this.trackableActivities.filter((a) => a.favorite);
-		for (const a of [...favoriten, ...this.recentActivities(limit)]) {
+		const favorites = this.trackableActivities.filter((a) => a.favorite);
+		for (const a of [...favorites, ...this.recentActivities(limit)]) {
 			if (seen.has(a.id)) continue;
 			seen.add(a.id);
 			out.push(a);
@@ -917,7 +1086,7 @@ class AppState {
 		const seen = new Set([entry.id]);
 		for (;;) {
 			const cur = chain[0];
-			const passend = all.filter(
+			const matching = all.filter(
 				(e) =>
 					!seen.has(e.id) &&
 					e.activityId === cur.activityId &&
@@ -929,7 +1098,7 @@ class AppState {
 			// Zeile vor dem echten Vorgaenger, gewaenne sie – und der Lauf saehe je
 			// nach Dateireihenfolge anders aus.
 			const prev =
-				passend.find((e) => e.endTs === cur.startTs) ?? passend.find((e) => e.endTs === null);
+				matching.find((e) => e.endTs === cur.startTs) ?? matching.find((e) => e.endTs === null);
 			if (!prev) return chain;
 			seen.add(prev.id);
 			chain.unshift(prev);
@@ -949,17 +1118,17 @@ class AppState {
 
 	/** Schließt ALLE offenen Einträge (egal welches Fenster sie öffnete). running = null. */
 	async #closeAllOpen(endTs = Date.now()): Promise<void> {
-		const offen = this.#openEntries();
-		if (offen.length > 0) {
-			logInfo(`Timer gestoppt: ${offen.map((e) => this.activityName(e.activityId)).join(", ")}`, {
-				ende: new Date(endTs).toISOString(),
-				sekunden: offen.map((e) => Math.round((Math.max(e.startTs, endTs) - e.startTs) / 1000))
+		const openOnes = this.#openEntries();
+		if (openOnes.length > 0) {
+			logInfo(`Timer gestoppt: ${openOnes.map((e) => this.activityName(e.activityId)).join(", ")}`, {
+				end: new Date(endTs).toISOString(),
+				seconds: openOnes.map((e) => Math.round((Math.max(e.startTs, endTs) - e.startTs) / 1000))
 			});
 		}
 		// Der ganze Lauf, nicht nur das letzte Tagesstueck: eine Endzeit vor
 		// Mitternacht muss die schon abgetrennten Stuecke mitnehmen.
-		const chains = offen.map((open) => this.runChain(open)).sort((a, b) => b.length - a.length);
-		const erledigt = new Set<string>();
+		const chains = openOnes.map((open) => this.runChain(open)).sort((a, b) => b.length - a.length);
+		const done = new Set<string>();
 
 		const months = new Set<string>();
 		for (const chain of chains) {
@@ -967,8 +1136,8 @@ class AppState {
 			const end = Math.max(chain[0].startTs, endTs);
 			for (let i = 0; i < chain.length; i++) {
 				const piece = chain[i];
-				if (erledigt.has(piece.id)) continue;
-				erledigt.add(piece.id);
+				if (done.has(piece.id)) continue;
+				done.add(piece.id);
 				// Ein Stueck endet spaetestens dort, wo das naechste des Laufs beginnt.
 				// Sonst zerlegte ein offen gebliebenes Vorgaengerstueck den Folgetag
 				// noch einmal – neben dem Stueck, das ihn schon abdeckt.
@@ -1079,8 +1248,8 @@ class AppState {
 			months.add(m);
 			for (const mm of months) await this.#saveMonth(mm);
 			logInfo(`Timer über Mitternacht geteilt: ${this.activityName(cur.activityId)}`, {
-				tage: parts.length,
-				weiterAb: new Date(last.startTs).toISOString()
+				days: parts.length,
+				continueFrom: new Date(last.startTs).toISOString()
 			});
 		});
 	}
@@ -1096,31 +1265,31 @@ class AppState {
 		if (open.length <= 1) return;
 
 		const months = new Set<string>();
-		let geschaetzt = 0;
+		let estimated = 0;
 		// open[i-1] ist der naechstjuengere: dessen Start beendete open[i].
 		for (let i = 1; i < open.length; i++) {
 			const e = open[i];
 			const end = Math.min(open[i - 1].startTs, startOfNextDay(e.startTs));
 			e.endTs = Math.max(e.startTs, end);
-			if (e.endTs > e.startTs) geschaetzt++;
+			if (e.endTs > e.startTs) estimated++;
 			months.add(monthKey(e.startTs));
 		}
 		for (const m of months) await this.#saveMonth(m);
 
 		// Melden statt still korrigieren: die Zeiten sind geraten, nur der Benutzer
 		// weiss, ob sie stimmen.
-		if (geschaetzt > 0) {
-			logWarn(`${geschaetzt} offene Einträge geschätzt geschlossen`, {
-				eintraege: open.slice(1).map((e) => ({
-					aktivitaet: this.activityName(e.activityId),
+		if (estimated > 0) {
+			logWarn(`${estimated} offene Einträge geschätzt geschlossen`, {
+				entries: open.slice(1).map((e) => ({
+					activity: this.activityName(e.activityId),
 					von: new Date(e.startTs).toISOString(),
 					bis: e.endTs ? new Date(e.endTs).toISOString() : null
 				}))
 			});
 			toast.warning(
-				geschaetzt === 1
+				estimated === 1
 					? "Ein Eintrag lief noch – das Ende wurde geschätzt. Bitte prüfen."
-					: `${geschaetzt} Einträge liefen noch – die Enden wurden geschätzt. Bitte prüfen.`
+					: `${estimated} Einträge liefen noch – die Enden wurden geschätzt. Bitte prüfen.`
 			);
 		}
 	}
@@ -1218,12 +1387,12 @@ class AppState {
 		// Alle bisher noch offenen Einträge verlässlich schließen, bevor der neue startet.
 		// Einträge, die planBackdate bereits in truncate/remove erfasst hat, überspringen –
 		// sonst wird endTs zweimal gesetzt (einmal oben, einmal hier).
-		const schonErfasst = new Set([
+		const alreadyRecorded = new Set([
 			...plan.truncate.map((t) => t.entry.id),
 			...plan.remove.map((r) => r.id)
 		]);
 		for (const open of this.#openEntries()) {
-			if (schonErfasst.has(open.id)) continue;
+			if (alreadyRecorded.has(open.id)) continue;
 			const parts = splitAtMidnight(open.startTs, start);
 			open.endTs = parts[0].endTs;
 			for (const p of parts.slice(1)) followUps.push({ from: open, ...p });
@@ -1247,9 +1416,9 @@ class AppState {
 		this.trayVersion = (this.trayVersion + 1) % 1000;
 		logInfo(`Timer gestartet: ${this.activityName(activityId)}`, {
 			start: new Date(start).toISOString(),
-			rueckdatiert: Date.now() - start > 60_000 ? Math.round((Date.now() - start) / 60_000) : 0,
-			gekuerzt: plan.truncate.length,
-			entfernt: plan.remove.length
+			backdated: Date.now() - start > 60_000 ? Math.round((Date.now() - start) / 60_000) : 0,
+			trimmed: plan.truncate.length,
+			removed: plan.remove.length
 		});
 	}
 
@@ -1279,7 +1448,7 @@ class AppState {
 				p.args.note,
 				p.args.source,
 				p.args.dayFraction,
-				{ confirmAbsenceOverride: true }
+				{ confirmAbsenceOverride: true, timeOff: p.args.timeOff }
 			);
 		} else {
 			await this.updateEntry(p.originalStartTs, p.entry);
@@ -1310,7 +1479,8 @@ class AppState {
 	async addAbsenceRange(
 		startDate: string,
 		endDate: string,
-		fraction = 1
+		fraction = 1,
+		timeOff = false
 	): Promise<{ added: number; skipped: number }> {
 		const abs = this.absenceActivity;
 		if (!abs) return { added: 0, skipped: 0 };
@@ -1330,7 +1500,7 @@ class AppState {
 				skipped++;
 				continue;
 			}
-			const e = await this.addEntry(abs.id, noon, noon, "", "manual", fraction);
+			const e = await this.addEntry(abs.id, noon, noon, "", "manual", fraction, { timeOff });
 			if (e) added++;
 			else skipped++;
 		}

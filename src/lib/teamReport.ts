@@ -196,11 +196,11 @@ export function buildTeamSummary(
 		// nameFromSubject) – sonst gewaenne bei einer weitergeleiteten Mail der Name
 		// im Betreff ueber den tatsaechlichen Absender.
 		const subjectName = nameFromSubject(mail.subject, subjectFilter);
-		const anonym = !mail.senderEmail.trim() && !mail.senderName.trim();
+		const anonymous = !mail.senderEmail.trim() && !mail.senderName.trim();
 		const member =
 			byEmail.get(norm(mail.senderEmail)) ??
 			byName.get(norm(mail.senderName)) ??
-			(anonym ? memberFromSubject(mail.subject, team, subjectFilter) : undefined);
+			(anonymous ? memberFromSubject(mail.subject, team, subjectFilter) : undefined);
 
 		const email = member?.email || mail.senderEmail;
 

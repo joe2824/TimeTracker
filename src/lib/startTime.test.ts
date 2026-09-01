@@ -27,8 +27,8 @@ describe("resolveStartTs", () => {
 
 	it("23:00 kurz nach Mitternacht meint die vergangene Nacht", () => {
 		// Genau der Fall: es ist 01:10, Eingabe 23:00.
-		const nachts = wallToTs(2026, 7, 17, 1, 10, 0);
-		expect(resolveStartTs(0, "23:00", nachts)).toBe(wallToTs(2026, 7, 16, 23, 0, 0));
+		const atNight = wallToTs(2026, 7, 17, 1, 10, 0);
+		expect(resolveStartTs(0, "23:00", atNight)).toBe(wallToTs(2026, 7, 16, 23, 0, 0));
 	});
 
 	it("liegt der Start nie in der Zukunft", () => {

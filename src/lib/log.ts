@@ -127,7 +127,7 @@ function record(level: LogLevel, message: string, detail?: unknown): void {
 	// bei den Kollegen reihenweise auf etwas laeuft, das hier nie auftritt.
 	// trackError() und nicht track(): das haengt am Schalter.
 	if (level === "error") {
-		void trackError("fehler", { meldung: redact(message) });
+		void trackError("fehler", { message: redact(message) });
 	}
 }
 

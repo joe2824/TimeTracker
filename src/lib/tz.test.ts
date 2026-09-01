@@ -101,13 +101,13 @@ describe("Sommerzeit-Umstellung", () => {
 
 	it("teilt einen Lauf ueber den 25.10. in Tagesstuecke von 25 und x Stunden", () => {
 		const start = toTs("2026-10-25", "22:00");
-		const ende = toTs("2026-10-26", "02:00");
-		const teile = splitAtMidnight(start, ende);
-		expect(teile).toHaveLength(2);
-		expect(fmtDate(teile[0].startTs)).toBe("2026-10-25");
-		expect(fmtDate(teile[1].startTs)).toBe("2026-10-26");
+		const end = toTs("2026-10-26", "02:00");
+		const parts = splitAtMidnight(start, end);
+		expect(parts).toHaveLength(2);
+		expect(fmtDate(parts[0].startTs)).toBe("2026-10-25");
+		expect(fmtDate(parts[1].startTs)).toBe("2026-10-26");
 		// Kein Stueck darf ueber seine eigene Mitternacht hinausragen.
-		expect(teile[0].endTs).toBe(startOfNextDay(start));
+		expect(parts[0].endTs).toBe(startOfNextDay(start));
 	});
 });
 
@@ -122,12 +122,12 @@ describe("Kalenderrechnung", () => {
 	it("addCalendarDays ueberspringt keinen Tag an einer Umstellung", () => {
 		// Ueber beide deutschen Umstellungen hinweg jeden Tag einmal.
 		let date = "2026-03-27";
-		const gesehen: string[] = [];
+		const seen: string[] = [];
 		for (let i = 0; i < 5; i++) {
-			gesehen.push(date);
+			seen.push(date);
 			date = addCalendarDays(date, 1);
 		}
-		expect(gesehen).toEqual(["2026-03-27", "2026-03-28", "2026-03-29", "2026-03-30", "2026-03-31"]);
+		expect(seen).toEqual(["2026-03-27", "2026-03-28", "2026-03-29", "2026-03-30", "2026-03-31"]);
 	});
 
 	it("daysInMonth kennt Schaltjahre", () => {
@@ -177,9 +177,9 @@ describe("Sommerzeit in einer Zone mit halbstuendigem Abstand", () => {
 		inZone(TZ, () => {
 			// 02:15 gab es an diesem Tag nicht - die Uhr sprang von 02:00 auf 03:00.
 			const ts = wallToTs(2026, 10, 4, 2, 15, 0, TZ);
-			const teile = zonedParts(ts, TZ);
-			expect([teile.month, teile.day]).toEqual([10, 4]);
-			expect([teile.hour, teile.minute]).toEqual([3, 15]);
+			const parts = zonedParts(ts, TZ);
+			expect([parts.month, parts.day]).toEqual([10, 4]);
+			expect([parts.hour, parts.minute]).toEqual([3, 15]);
 		});
 	});
 });

@@ -14,8 +14,8 @@ let tauriFetch: FetchFn | null = null;
 export const platformFetch: FetchFn = async (input, init) => {
 	if (!isTauri()) return globalThis.fetch(input, init);
 	if (!tauriFetch) {
-		const modul = await import("@tauri-apps/plugin-http");
-		tauriFetch = modul.fetch as FetchFn;
+		const module = await import("@tauri-apps/plugin-http");
+		tauriFetch = module.fetch as FetchFn;
 	}
 	return tauriFetch(input, init);
 };

@@ -56,8 +56,8 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			// Kennung und Nachweis gehoeren zu DIESER Verpackung und wandern mit ihr.
 			if (recoveryId && vaultProof) {
 				// Dieselbe Kennung bei zwei Konten hiesse dieselbe Phrase bei zweien.
-				const fremd = tx.select().from(users).where(eq(users.recoveryId, recoveryId)).get();
-				if (fremd && fremd.id !== userId) error(409, "Diese Phrase ist bereits vergeben");
+				const foreign = tx.select().from(users).where(eq(users.recoveryId, recoveryId)).get();
+				if (foreign && foreign.id !== userId) error(409, "Diese Phrase ist bereits vergeben");
 				// Der Nachweis nur als Hash: siehe schema.ts und hashSecret.
 				tx.update(users)
 					.set({ recoveryId, vaultProof: hashSecret(vaultProof) })

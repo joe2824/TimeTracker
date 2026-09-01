@@ -4,7 +4,7 @@ import type { RequestHandler } from "./$types";
 import { pairings } from "$lib/server/db/schema";
 import { eq } from "drizzle-orm";
 import { safeEqual, sha256Hex } from "$lib/server/auth";
-import { normalisiereCode } from "$lib/server/pairing";
+import { normalizeCode } from "$lib/server/pairing";
 
 /**
  * Abgeholt wird mit Code UND Abhol-Geheimnis.
@@ -20,7 +20,7 @@ import { normalisiereCode } from "$lib/server/pairing";
  */
 export const POST: RequestHandler = async ({ locals, request }) => {
 	const body = await request.json().catch(() => null);
-	const code = normalisiereCode(body?.code);
+	const code = normalizeCode(body?.code);
 	const claimSecret = String(body?.claimSecret ?? "");
 
 	const row = locals.db.select().from(pairings).where(eq(pairings.code, code)).get();

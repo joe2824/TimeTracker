@@ -51,9 +51,9 @@ describe("ohne verknuepftes Konto", () => {
 describe("Eintraege", () => {
 	it("stempelt einen neuen Eintrag und merkt ihn vor", async () => {
 		await store.saveEntries("2026-07", [e("1")]);
-		const geschrieben = onDisk("2026-07")[0];
-		expect(geschrieben.deviceId).toBe(DEV);
-		expect(geschrieben.updatedAt).toBeGreaterThan(0);
+		const written = onDisk("2026-07")[0];
+		expect(written.deviceId).toBe(DEV);
+		expect(written.updatedAt).toBeGreaterThan(0);
 		expect(pendingChanges()).toEqual([
 			expect.objectContaining({ kind: "entry", id: "1", month: "2026-07", deleted: false })
 		]);
@@ -94,10 +94,10 @@ describe("Eintraege", () => {
 
 	it("stempelt bei einem Speichern ohne Aenderung nicht erneut", async () => {
 		await store.saveEntries("2026-07", [e("1")]);
-		const ersterStempel = onDisk("2026-07")[0].updatedAt;
+		const firstStamp = onDisk("2026-07")[0].updatedAt;
 		await clearChanges(pendingChanges());
 		await store.saveEntries("2026-07", onDisk("2026-07"));
-		expect(onDisk("2026-07")[0].updatedAt).toBe(ersterStempel);
+		expect(onDisk("2026-07")[0].updatedAt).toBe(firstStamp);
 		expect(pendingChanges()).toEqual([]);
 	});
 });
@@ -105,8 +105,8 @@ describe("Eintraege", () => {
 describe("Aktivitaeten und Einstellungen", () => {
 	it("stempelt Aktivitaeten und merkt sie vor", async () => {
 		await store.saveActivities([act("a1", "Projekt")]);
-		const gelesen = await store.loadActivities();
-		expect(gelesen[0].deviceId).toBe(DEV);
+		const read = await store.loadActivities();
+		expect(read[0].deviceId).toBe(DEV);
 		expect(pendingChanges()).toEqual([expect.objectContaining({ kind: "activity", id: "a1" })]);
 	});
 
@@ -121,9 +121,9 @@ describe("Aktivitaeten und Einstellungen", () => {
 		// Der Vergleich braucht eine Identitaet, die Datei nicht – stuende sie
 		// drin, taeuchte sie beim naechsten Laden als unbekanntes Feld auf.
 		await store.saveSettings({ ...defaultSettings, hoursPerDay: 8 });
-		const roh = JSON.parse(files.get("data/settings.json")!);
-		expect(roh.id).toBeUndefined();
-		expect(roh.updatedAt).toBeGreaterThan(0);
+		const raw = JSON.parse(files.get("data/settings.json")!);
+		expect(raw.id).toBeUndefined();
+		expect(raw.updatedAt).toBeGreaterThan(0);
 	});
 });
 
@@ -139,15 +139,15 @@ describe("Outbox-Verwaltung", () => {
 		// Abgehakt wird ueber Schluessel, nicht ueber Indizes: sonst risse das
 		// Abhaken eine Aenderung mit weg, die es beim Hochladen noch nicht gab.
 		await store.saveEntries("2026-07", [e("1")]);
-		const imFlug = pendingChanges();
+		const inFlight = pendingChanges();
 		await store.saveEntries("2026-07", [e("1", { updatedAt: 1, deviceId: DEV }), e("2")]);
-		await clearChanges(imFlug);
+		await clearChanges(inFlight);
 		expect(pendingChanges().map((c) => c.id)).toEqual(["2"]);
 	});
 
 	it("mergePending laesst die juengste Aenderung gewinnen", () => {
-		const alt = [{ kind: "entry" as const, id: "1", deleted: false, at: 1 }];
-		const neu = [{ kind: "entry" as const, id: "1", deleted: true, at: 2 }];
-		expect(mergePending(alt, neu)).toEqual(neu);
+		const old = [{ kind: "entry" as const, id: "1", deleted: false, at: 1 }];
+		const fresh = [{ kind: "entry" as const, id: "1", deleted: true, at: 2 }];
+		expect(mergePending(old, fresh)).toEqual(fresh);
 	});
 });
