@@ -50,6 +50,8 @@ export interface Passkey {
 	label: string | null;
 	/** Ob er den Tresor allein oeffnen kann - sonst braucht es Phrase oder Gerät. */
 	hasPrf: boolean;
+	/** Ob der Tresorschluessel fuer ihn verpackt vorliegt. */
+	hasWrap: boolean;
 	createdAt: number;
 	lastUsedAt: number | null;
 }
@@ -255,11 +257,28 @@ export class Api {
 
 	// ---------- Abgleich ----------
 
-	pull(since: number, opts: { limit?: number; bucket?: string } = {}): Promise<PullPage> {
+	/**
+	 * `buckets` schraenkt auf einzelne Zeitraeume ein; ohne die Angabe kommt
+	 * alles. Eine leere Liste liefert nichts - das ist der Unterschied zu "keine
+	 * Angabe" und beim Vorziehen einzelner Monate genau der gewollte.
+	 */
+	pull(
+		since: number,
+		opts: { limit?: number; buckets?: string[]; unbucketed?: boolean } = {}
+	): Promise<PullPage> {
 		const q = new URLSearchParams({ since: String(since) });
 		if (opts.limit) q.set("limit", String(opts.limit));
-		if (opts.bucket) q.set("bucket", opts.bucket);
+		if (opts.buckets) for (const b of opts.buckets) q.append("bucket", b);
+		if (opts.unbucketed) q.set("unbucketed", "1");
 		return this.#call<PullPage>(`/api/sync?${q}`);
+	}
+
+	/**
+	 * Welche Zeitraum-Kennungen das Konto hat. Der Client rechnet daraus zurueck,
+	 * zu welchen Monaten es Daten gibt - auch zu noch nicht geholten.
+	 */
+	buckets(): Promise<{ buckets: string[] }> {
+		return this.#call("/api/sync/buckets");
 	}
 
 	push(records: OutgoingRecord[]): Promise<PushAnswer> {
@@ -363,7 +382,7 @@ export class Api {
 		});
 	}
 
-	createInvite(opts: { note?: string; gueltigTage?: number } = {}): Promise<Invite> {
+	createInvite(opts: { note?: string; validDays?: number } = {}): Promise<Invite> {
 		return this.#call("/api/admin/invites", { method: "POST", body: JSON.stringify(opts) });
 	}
 

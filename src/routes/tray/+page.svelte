@@ -53,7 +53,7 @@
 		// Eigener Tick (dieses Fenster ruft app.init() nicht auf) für die Live-Anzeige.
 		const tick = setInterval(() => (app.now = Date.now()), 1000);
 		// Bei jedem Einblenden (Fokus oder Tray-Klick) frische Daten laden.
-		const un = win.onFocusChanged(({ payload }) => {
+		const unFocus = win.onFocusChanged(({ payload }) => {
 			if (payload) {
 				void refresh();
 				void account.syncSoon(50);
@@ -63,21 +63,21 @@
 			void refresh();
 			void account.syncSoon(50);
 		});
-		const unAtt = listen<{ active: boolean }>(
+		const unAttention = listen<{ active: boolean }>(
 			"main-attention",
 			(e) => (attention = !!e.payload?.active)
 		);
 		// Das Hauptfenster meldet, wenn der Abgleich etwas mitgebracht hat oder Daten geändert wurden.
-		const unDaten = listen<DataChanged>("data-reload", (e) => {
+		const unData = listen<DataChanged>("data-reload", (e) => {
 			if (e.payload?.from === "tray") return;
 			void refresh();
 		});
 		return () => {
 			clearInterval(tick);
-			void un.then((f) => f());
+			void unFocus.then((f) => f());
 			void unShown.then((f) => f());
-			void unAtt.then((f) => f());
-			void unDaten.then((f) => f());
+			void unAttention.then((f) => f());
+			void unData.then((f) => f());
 		};
 	});
 
@@ -104,8 +104,8 @@
 		const ts = resolveStartTs(presetMin, customStart);
 		if (ts == null) return "ungültige Uhrzeit";
 		// Auch im Tray sagen, dass zwei Eintraege entstehen - hier wird genauso rueckdatiert.
-		const geteilt = midnightSplitHint(ts, now);
-		return geteilt ? `ab ${fmtClock(ts)} – ${geteilt}` : `ab ${fmtClock(ts)}`;
+		const shared = midnightSplitHint(ts, now);
+		return shared ? `ab ${fmtClock(ts)} – ${shared}` : `ab ${fmtClock(ts)}`;
 	});
 
 	async function start(id: string) {

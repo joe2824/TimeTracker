@@ -96,8 +96,9 @@
 
 	// ---- Saldo ----
 	// Ist = Arbeitszeit + Abwesenheiten: ein Urlaubstag ist erfuellte Zeit, kein Minus.
-	const soll = $derived(targetHours(month, app.settings.workdays, app.settings.hoursPerDay, app.now));
-	const saldo = $derived(report.total - soll);
+	// Der Zeitausgleich zaehlt dabei mit, wie jede andere Abwesenheit.
+	const target = $derived(targetHours(month, app.settings.workdays, app.settings.hoursPerDay, app.now));
+	const balance = $derived(report.total - target);
 
 	// ---- Balken: Stunden je Aktivitaet ----
 	// Nur Projektzeiten, absteigend – die Laenge traegt die Aussage, nicht die Farbe.
@@ -158,16 +159,21 @@
 			<div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
 				<StatTile label="Ist">{fmtHoursClock(report.total)} h</StatTile>
 				<StatTile label="Soll" hint={month === app.currentMonth ? "Werktage bis heute" : undefined}>
-					{fmtHoursClock(soll)} h
+					{fmtHoursClock(target)} h
 				</StatTile>
 				<StatTile
 					label="Saldo"
 					class="col-span-2 sm:col-span-1"
-					valueClass={Math.abs(saldo) < 0.01 ? "text-muted-foreground" : undefined}
+					valueClass={Math.abs(balance) < 0.01 ? "text-muted-foreground" : undefined}
 				>
-					{saldo >= 0 ? "+" : "−"}{fmtHoursClock(Math.abs(saldo))} h
+					{balance >= 0 ? "+" : "−"}{fmtHoursClock(Math.abs(balance))} h
 				</StatTile>
 			</div>
+			{#if report.timeOffHours > 0}
+				<p class="text-muted-foreground text-xs">
+					Davon {fmtHoursClock(report.timeOffHours)} h Zeitausgleich.
+				</p>
+			{/if}
 			{#if month === app.currentMonth}
 				<p class="text-muted-foreground text-xs">
 					Laufender Monat: Soll zählt nur die Werktage bis heute.

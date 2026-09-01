@@ -14,16 +14,16 @@ const CACHE = `timetracker-${version}`;
 const START = `${base}/`;
 
 /** Was sich nie aendert: die Dateinamen tragen die Fassung. */
-const UNVERAENDERLICH = [...build, ...files];
+const IMMUTABLE = [...build, ...files];
 
 /** Was vorgehalten wird: der Rahmen, das gebaute Programm, die mitgelieferten Dateien. */
-const VORRAT = [START, ...UNVERAENDERLICH];
+const PRECACHE = [START, ...IMMUTABLE];
 
 sw.addEventListener("install", (event) => {
 	event.waitUntil(
 		caches
 			.open(CACHE)
-			.then((cache) => cache.addAll(VORRAT))
+			.then((cache) => cache.addAll(PRECACHE))
 			// Sofort uebernehmen: sonst bliebe nach einem Update die alte Fassung
 			// aktiv, bis alle Fenster geschlossen wurden - was auf dem Handy selten
 			// passiert.
@@ -35,7 +35,7 @@ sw.addEventListener("activate", (event) => {
 	event.waitUntil(
 		caches
 			.keys()
-			.then((namen) => Promise.all(namen.filter((n) => n !== CACHE).map((n) => caches.delete(n))))
+			.then((names) => Promise.all(names.filter((n) => n !== CACHE).map((n) => caches.delete(n))))
 			.then(() => sw.clients.claim())
 	);
 });
@@ -49,29 +49,29 @@ sw.addEventListener("fetch", (event) => {
 	if (url.origin !== location.origin) return;
 	if (url.pathname.startsWith("/api/")) return;
 
-	event.respondWith(antwort(req, url));
+	event.respondWith(answer(req, url));
 });
 
-async function antwort(req: Request, url: URL): Promise<Response> {
+async function answer(req: Request, url: URL): Promise<Response> {
 	const cache = await caches.open(CACHE);
 
 	// Das gebaute Programm hat die Fassung im Namen und aendert sich nie: aus dem
 	// Vorrat, ohne zu fragen. Der Rahmen gehoert ausdruecklich NICHT dazu - er
 	// liegt unter einer festen Adresse und muss sich erneuern duerfen.
-	if (UNVERAENDERLICH.includes(url.pathname)) {
-		const treffer = await cache.match(url.pathname);
-		if (treffer) return treffer;
+	if (IMMUTABLE.includes(url.pathname)) {
+		const hit = await cache.match(url.pathname);
+		if (hit) return hit;
 	}
 
 	try {
-		const frisch = await fetch(req);
+		const fresh = await fetch(req);
 		// Nur echte Antworten aufheben. Eine Fehlerseite im Vorrat waere schlimmer
 		// als gar keine.
-		if (frisch.ok && frisch.type === "basic") cache.put(req, frisch.clone());
-		return frisch;
+		if (fresh.ok && fresh.type === "basic") cache.put(req, fresh.clone());
+		return fresh;
 	} catch {
-		const treffer = await cache.match(req);
-		if (treffer) return treffer;
+		const hit = await cache.match(req);
+		if (hit) return hit;
 		// Ohne Netz und ohne Vorrat: die Startseite. Bei einer Seitenanwendung ist
 		// das die Anwendung selbst, und die kann mit ihrem lokalen Bestand
 		// weiterarbeiten.

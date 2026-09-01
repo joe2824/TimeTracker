@@ -10,6 +10,7 @@
 	import SettingsCard from "$lib/components/shared/SettingsCard.svelte";
 	import SettingToggle from "$lib/components/shared/SettingToggle.svelte";
 	import { capabilities, isTauri } from "$lib/platform/env";
+	import { account } from "$lib/sync/account.svelte";
 	import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 	import { checkForUpdate, updater } from "$lib/updater.svelte";
 	import { relaunch } from "@tauri-apps/plugin-process";
@@ -21,6 +22,7 @@
 	import UploadIcon from "@lucide/svelte/icons/upload";
 	import FileTextIcon from "@lucide/svelte/icons/file-text";
 	import CheckCircle2Icon from "@lucide/svelte/icons/check-circle-2";
+	import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
 	import {
 		downloadBackupFile,
 		inspectBackup,
@@ -48,6 +50,9 @@
 	let pendingBackup = $state<TimeTrackerBackup | null>(null);
 	let pendingBackupStats = $state<BackupStats | null>(null);
 	let restoreMode = $state<"merge" | "replace">("merge");
+	// Solange aeltere Monate nachkommen, waere eine Sicherung nur ein Ausschnitt und
+	// ein Einspielen wuerde vom Nachschub teilweise ueberschrieben.
+	const backupBlocked = $derived(account.backfilling);
 
 	async function handleExportBackup() {
 		isExportingBackup = true;
@@ -239,7 +244,7 @@
 				variant="outline"
 				size="sm"
 				class="shrink-0 gap-2 self-start sm:self-center"
-				disabled={isExportingBackup}
+				disabled={isExportingBackup || backupBlocked}
 				onclick={handleExportBackup}
 			>
 				<DownloadIcon class="size-4 {isExportingBackup ? 'animate-bounce' : ''}" />
@@ -258,12 +263,20 @@
 				variant="outline"
 				size="sm"
 				class="shrink-0 gap-2 self-start sm:self-center"
+				disabled={backupBlocked}
 				onclick={handleTriggerRestore}
 			>
 				<UploadIcon class="size-4" />
 				Sicherung einlesen…
 			</Button>
 		</div>
+
+		{#if backupBlocked}
+			<div class="text-muted-foreground border-t pt-3 text-xs">
+				Ältere Monate werden gerade noch geladen. Sichern und Einlesen gehen wieder,
+				sobald alles da ist.
+			</div>
+		{/if}
 	</SettingsCard>
 
 {#if isTauri()}
@@ -323,6 +336,16 @@
 							</div>
 						{/if}
 					</div>
+
+					{#if !pendingBackupStats.complete}
+						<div class="flex items-start gap-2 rounded-lg border border-amber-500/50 bg-amber-500/10 p-3 text-xs text-left">
+							<TriangleAlertIcon class="size-4 shrink-0 text-amber-600 mt-0.5" />
+							<span class="text-muted-foreground">
+								Diese Datei stammt aus einer älteren Version und sagt nicht, ob damals
+								schon alle Monate da waren. Prüfe die Liste oben, bevor du ersetzt.
+							</span>
+						</div>
+					{/if}
 				{/if}
 
 				<div class="space-y-2">
@@ -358,7 +381,12 @@
 							/>
 							<div class="text-xs">
 								<span class="font-medium text-foreground block">Vollständig ersetzen</span>
-								<span class="text-muted-foreground">Überschreibt alle lokalen Einstellungen, Aktivitäten und Monate 1:1 mit dem Stand der Datei.</span>
+								<span class="text-muted-foreground">
+									Überschreibt Einstellungen, Aktivitäten und Monate 1:1 mit dem Stand der
+									Datei. Monate, die in der Datei fehlen, werden geleert{account.linked
+										? " – auch auf deinen anderen Geräten"
+										: ""}.
+								</span>
 							</div>
 						</label>
 					</div>

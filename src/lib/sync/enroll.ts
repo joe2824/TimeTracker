@@ -23,6 +23,7 @@ import {
 	type KeyWrap
 } from "../crypto/vault";
 import { Api, ApiError } from "./api";
+import { logWarn } from "../log";
 import { platformFetch } from "../platform/http";
 
 /** Was der Server unter einer Verpackung versteht: JSON mit base64-Feldern. */
@@ -50,7 +51,7 @@ function deserialize(payload: string): KeyWrap {
 }
 
 /** Die Verpackung mit der Phrase oeffnen - oder verstaendlich scheitern. */
-async function oeffneMitPhrase(payload: string, phrase: string): Promise<CryptoKey> {
+async function openWithPhrase(payload: string, phrase: string): Promise<CryptoKey> {
 	try {
 		return await unwrapWithPhrase(deserialize(payload), phrase);
 	} catch {
@@ -86,9 +87,9 @@ export function prfBytes(first: unknown): Uint8Array | null {
 	if (typeof first === "object") {
 		// Ein ArrayBuffer, der durch structuredClone oder JSON gegangen ist, kommt
 		// als {"0":12,"1":250,...} zurueck - oder als leeres Objekt, dann ist er weg.
-		const werte = Object.values(first as Record<string, unknown>);
-		if (werte.length > 0 && werte.every((w) => typeof w === "number")) {
-			return Uint8Array.from(werte as number[]);
+		const values = Object.values(first as Record<string, unknown>);
+		if (values.length > 0 && values.every((w) => typeof w === "number")) {
+			return Uint8Array.from(values as number[]);
 		}
 	}
 	throw new Error("Der Passkey lieferte einen PRF-Wert in unbekannter Form.");
@@ -100,6 +101,17 @@ function prfOf(response: RegistrationResponseJSON | AuthenticationResponseJSON):
 		prf?: { enabled?: boolean; results?: { first?: unknown } };
 	};
 	return prfBytes(ext?.prf?.results?.first);
+}
+
+/** Ob der Authentifikator PRF beherrscht - der Wert kann trotzdem noch fehlen. */
+function prfCapable(response: RegistrationResponseJSON | AuthenticationResponseJSON): boolean {
+	const ext = response.clientExtensionResults as { prf?: { enabled?: boolean } };
+	return ext?.prf?.enabled === true;
+}
+
+/** WebAuthn-JSON erwartet base64url, nicht base64. */
+function toBase64Url(bytes: Uint8Array): string {
+	return toBase64(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 /** Die PRF-Eingabe an die Optionen haengen. */
@@ -118,8 +130,6 @@ export interface EnrollResult {
 	displayName: string;
 	/** Nur bei der Registrierung: einmal anzeigen, danach nie wieder. */
 	recoveryPhrase?: string;
-	/** Ob der Passkey den Tresor kuenftig allein oeffnen kann. */
-	prfAvailable: boolean;
 	key: CryptoKey;
 }
 
@@ -162,7 +172,6 @@ export async function register(
 		userId: start.userId,
 		displayName,
 		recoveryPhrase,
-		prfAvailable: prf !== null,
 		key
 	};
 }
@@ -180,6 +189,33 @@ export interface LoginResult {
 	credentialId: string;
 }
 
+/**
+ * Die PRF-Verpackung nachholen - fuer Passkeys, die den Wert beim Anlegen nicht
+ * herausgaben. Ohne sie verlangt die naechste Anmeldung die 24 Woerter.
+ */
+export async function harvestPrfWrap(
+	api: Api,
+	key: CryptoKey,
+	/** Nur dieser Passkey zaehlt. Ohne Angabe: der, den der Browser anbietet. */
+	credentialId?: string
+): Promise<boolean> {
+	// Eigene Aufgabe statt einer vom Server: die Antwort wird nirgends geprueft,
+	// gebraucht wird allein der PRF-Wert, den der Authentifikator dazu ausrechnet.
+	const options: PublicKeyCredentialRequestOptionsJSON = {
+		challenge: toBase64Url(crypto.getRandomValues(new Uint8Array(32))),
+		userVerification: "required",
+		...(credentialId ? { allowCredentials: [{ id: credentialId, type: "public-key" }] } : {})
+	};
+	const response = await startAuthentication({ optionsJSON: withPrf(options) });
+	// allowCredentials sollte das schon erzwingen - ein Wert vom falschen Passkey
+	// wuerde den gemeinten aber nicht reparieren.
+	if (credentialId && response.id !== credentialId) return false;
+	const prf = prfOf(response);
+	if (!prf) return false;
+	await api.putWrap("passkey", serialize(await wrapWithPrf(key, prf)), response.id);
+	return true;
+}
+
 /** Anmelden. */
 export async function login(baseUrl: string): Promise<LoginResult> {
 	const api = new Api({ baseUrl, fetchFn: platformFetch });
@@ -187,7 +223,7 @@ export async function login(baseUrl: string): Promise<LoginResult> {
 	const response = await startAuthentication({
 		optionsJSON: withPrf(start.options as PublicKeyCredentialRequestOptionsJSON)
 	});
-	const konto = await api.loginFinish({ challengeId: start.challengeId, response });
+	const account = await api.loginFinish({ challengeId: start.challengeId, response });
 
 	const { wraps } = await api.wraps();
 	const prf = prfOf(response);
@@ -205,9 +241,17 @@ export async function login(baseUrl: string): Promise<LoginResult> {
 		}
 	}
 
+	// Sonst ist nicht zu unterscheiden, ob der PRF-Wert fehlte oder die Verpackung.
+	if (!key) {
+		logWarn("Passkey öffnete den Tresor nicht", {
+			prf: prf !== null,
+			wrap: passkeyWrap !== undefined
+		});
+	}
+
 	return {
-		userId: konto.userId,
-		displayName: konto.displayName,
+		userId: account.userId,
+		displayName: account.displayName,
 		key,
 		canUnlockWithPhrase: wraps.some((w) => w.kind === "recovery"),
 		prf,
@@ -221,7 +265,7 @@ export async function unlockWithPhrase(baseUrl: string, phrase: string): Promise
 	const { wraps } = await api.wraps();
 	const wrap = wraps.find((w) => w.kind === "recovery");
 	if (!wrap) throw new Error("Für dieses Konto ist keine Wiederherstellungs-Phrase hinterlegt.");
-	return oeffneMitPhrase(wrap.payload, phrase);
+	return openWithPhrase(wrap.payload, phrase);
 }
 
 /** Nach einer Anmeldung ohne PRF-Verpackung: eine anlegen. */
@@ -250,18 +294,18 @@ export async function recoverWithPhrase(
 	const { wrap } = await api.recoverWrap(recoveryId);
 	// Hier faellt die Entscheidung: passen die Woerter nicht, geht das Chiffrat
 	// nicht auf. Der Server hat damit nichts zu tun und erfaehrt es auch nicht.
-	const key = await oeffneMitPhrase(wrap, phrase);
+	const key = await openWithPhrase(wrap, phrase);
 
-	const angemeldet = await api.recoverDevice({
+	const loggedIn = await api.recoverDevice({
 		recoveryId,
 		proof: await vaultProof(key),
 		label
 	});
 
 	return {
-		userId: angemeldet.userId,
-		displayName: angemeldet.displayName,
-		deviceToken: angemeldet.deviceToken,
+		userId: loggedIn.userId,
+		displayName: loggedIn.displayName,
+		deviceToken: loggedIn.deviceToken,
 		key
 	};
 }
@@ -284,7 +328,7 @@ export async function registerFromDevice(
 	recoveryPhrase: string;
 }> {
 	const api = new Api({ baseUrl, fetchFn: platformFetch });
-	const angelegt = await api.registerDevice({
+	const created = await api.registerDevice({
 		displayName,
 		label,
 		invite: opts.invite,
@@ -293,7 +337,7 @@ export async function registerFromDevice(
 
 	// Ab hier weist sich dieses Geraet mit seinem Token aus - vorher gab es
 	// nichts, womit.
-	api.setToken(angelegt.deviceToken);
+	api.setToken(created.deviceToken);
 
 	const key = await createVaultKey();
 	const recoveryPhrase = createRecoveryPhrase();
@@ -305,9 +349,9 @@ export async function registerFromDevice(
 	});
 
 	return {
-		userId: angelegt.userId,
-		displayName: angelegt.displayName,
-		deviceToken: angelegt.deviceToken,
+		userId: created.userId,
+		displayName: created.displayName,
+		deviceToken: created.deviceToken,
 		key,
 		recoveryPhrase
 	};
@@ -334,7 +378,7 @@ export async function addPasskey(
 	});
 
 	const prf = prfOf(response);
-	const angelegt = await api.addPasskeyFinish({
+	const created = await api.addPasskeyFinish({
 		challengeId,
 		label,
 		hasPrf: prf !== null,
@@ -342,9 +386,17 @@ export async function addPasskey(
 	});
 
 	// Erst jetzt die Verpackung: sie braucht die eben vergebene Kennung.
-	if (prf) await api.putWrap("passkey", serialize(await wrapWithPrf(key, prf)), angelegt.id);
+	let prfOk = prf !== null;
+	if (prf) {
+		await api.putWrap("passkey", serialize(await wrapWithPrf(key, prf)), created.id);
+	} else if (prfCapable(response)) {
+		prfOk = await harvestPrfWrap(api, key, created.id).catch((e) => {
+			logWarn("PRF-Wert konnte nicht nachgeholt werden", e);
+			return false;
+		});
+	}
 
-	return { id: angelegt.id, label: angelegt.label, prfAvailable: prf !== null };
+	return { id: created.id, label: created.label, prfAvailable: prfOk };
 }
 
 export { ApiError, importVaultKey, toBase64 };

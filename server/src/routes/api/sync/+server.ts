@@ -1,6 +1,7 @@
 // Der Abgleich: abholen und ablegen.
 //
-// GET  /api/sync?since=N&limit=M[&bucket=X]  -> was seit N dazukam
+// GET  /api/sync?since=N&limit=M[&bucket=X&bucket=Y][&unbucketed=1]
+//                                             -> was seit N dazukam
 // POST /api/sync                              -> geaenderte Datensaetze ablegen
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
@@ -13,15 +14,25 @@ export const GET: RequestHandler = ({ locals, url }) => {
 
 	const since = Number(url.searchParams.get("since") ?? 0);
 	const limitRaw = url.searchParams.get("limit");
-	const bucket = url.searchParams.get("bucket") ?? undefined;
 	if (!Number.isFinite(since) || since < 0) error(400, "Ungültiger Stand");
 
-	const result = pullRecords(locals.db, locals.userId, {
-		since,
-		limit: limitRaw ? Number(limitRaw) : undefined,
-		bucket
-	});
-	return json(result);
+	// Mehrfach angebbar: ?bucket=a&bucket=b. Ohne jede Angabe bleibt es beim
+	// vollen Durchlauf, damit aeltere Geraete unveraendert weiterlaufen.
+	const buckets = url.searchParams.getAll("bucket").filter(Boolean);
+	const unbucketed = /^(1|true)$/i.test(url.searchParams.get("unbucketed") ?? "");
+
+	try {
+		const result = pullRecords(locals.db, locals.userId, {
+			since,
+			limit: limitRaw ? Number(limitRaw) : undefined,
+			buckets: url.searchParams.has("bucket") ? buckets : undefined,
+			includeUnbucketed: unbucketed
+		});
+		return json(result);
+	} catch (e) {
+		if (e instanceof SyncError) error(e.status, e.message);
+		throw e;
+	}
 };
 
 export const POST: RequestHandler = async ({ locals, request }) => {

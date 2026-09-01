@@ -40,6 +40,15 @@ export interface MonthReport {
 	total: number;
 	absenceHours: number;
 	workHours: number;
+	/**
+	 * Wie viel des Monats auf Zeitausgleich entfaellt.
+	 *
+	 * Er zaehlt wie jede andere Abwesenheit - steckt also bereits in
+	 * `absenceHours` und `total`. Die Zahl steht hier nur zusaetzlich, damit die
+	 * Auswertung "davon X h Zeitausgleich" zeigen kann. Im Bericht an den Chef
+	 * bekommt er keine eigene Zeile.
+	 */
+	timeOffHours: number;
 	/** Wie viel Pause insgesamt abgezogen wurde (0 = Abzug aus). */
 	breakHours: number;
 }
@@ -67,10 +76,22 @@ export function buildReport(
 	// Endzeitpunkt fuer die Stundenrechnung – siehe openEntryUntil() in time.ts.
 	const until = (e: Entry) => openEntryUntil(e, now);
 
+	// Zeitausgleich sitzt auf derselben Zeile wie Urlaub und Krankheit und wird
+	// genauso verrechnet. Getrennt gezaehlt wird er nur fuer die Anzeige.
+	const isTimeOff = (e: Entry) => absenceIds.has(e.activityId) && e.timeOff === true;
+
 	// Abwesenheiten an Nicht-Arbeitstagen (z. B. Wochenende) zaehlen nicht mit –
 	// weder als Abwesenheitsstunden noch als Ganztags-Sperre.
 	const isCountedAbsence = (e: Entry) =>
 		absenceIds.has(e.activityId) && (!workdays || isWorkday(e.startTs, workdays));
+
+	// Der Zeitausgleich zusaetzlich getrennt - nur zum Anzeigen.
+	let timeOffHours = 0;
+	for (const e of entries) {
+		if (!isTimeOff(e)) continue;
+		if (workdays && !isWorkday(e.startTs, workdays)) continue;
+		timeOffHours += (e.dayFraction ?? 1) * hoursPerDay;
+	}
 
 	// Tage mit Ganztags-Abwesenheit: an diesen Tagen zaehlen Projektzeiten nicht.
 	const fullDayAbsenceDays = new Set<string>();
@@ -110,15 +131,15 @@ export function buildReport(
 
 	let breakHours = 0;
 	for (const perActivity of workByDay.values()) {
-		let brutto = 0;
-		for (const h of perActivity.values()) brutto += h;
-		const netto = deductBreaks ? deductBreakFromDay(perActivity) : perActivity;
+		let gross = 0;
+		for (const h of perActivity.values()) gross += h;
+		const net = deductBreaks ? deductBreakFromDay(perActivity) : perActivity;
 		let sum = 0;
-		for (const [id, h] of netto) {
+		for (const [id, h] of net) {
 			add(id, h);
 			sum += h;
 		}
-		breakHours += brutto - sum;
+		breakHours += gross - sum;
 	}
 
 	// Aktive Aktivitäten immer; archivierte nur, wenn sie in diesem Monat Stunden haben
@@ -148,6 +169,7 @@ export function buildReport(
 		total: workHours + absenceHours,
 		absenceHours,
 		workHours,
+		timeOffHours,
 		breakHours
 	};
 }

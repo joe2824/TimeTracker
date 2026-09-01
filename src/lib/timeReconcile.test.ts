@@ -16,9 +16,9 @@ import type { Entry } from "./types";
 import { noonTs, startOfNextDay, toTs } from "./time";
 import { deductBreakFromHours } from "./breaks";
 
-const PROJEKT = "act-projekt";
-const URLAUB = "act-urlaub";
-const ABSENCE_IDS = new Set([URLAUB]);
+const PROJECT_DE = "act-projekt";
+const VACATION = "act-urlaub";
+const ABSENCE_IDS = new Set([VACATION]);
 const OPTS = { hoursPerDay: 7.5, tolerance: 0.25, absenceIds: ABSENCE_IDS };
 
 let seq = 0;
@@ -26,7 +26,7 @@ let seq = 0;
 function entry(date: string, from: string, to: string, over: Partial<Entry> = {}): Entry {
 	return {
 		id: `e${seq++}`,
-		activityId: PROJEKT,
+		activityId: PROJECT_DE,
 		startTs: toTs(date, from),
 		endTs: toTs(date, to),
 		note: "",
@@ -39,7 +39,7 @@ function entry(date: string, from: string, to: string, over: Partial<Entry> = {}
 function absence(date: string, fraction = 1): Entry {
 	return {
 		id: `a${seq++}`,
-		activityId: URLAUB,
+		activityId: VACATION,
 		startTs: noonTs(date),
 		endTs: noonTs(date),
 		note: "",
@@ -65,6 +65,38 @@ describe("reconcile", () => {
 		expect(r.days[0].diff).toBeCloseTo(7.6667, 3);
 		expect(r.missing).toBe(1);
 		expect(r.missingHours).toBeCloseTo(7.67);
+	});
+
+	it("meldet einen Tag Zeitausgleich nicht als zu viel erfasste Zeit", () => {
+		// An einem abgefeierten Tag stempelt niemand: LOGA meldet 0 Stunden. Zaehlt
+		// der Zeitausgleich hier als erfasste Zeit, steht an JEDEM solchen Tag ein
+		// "zu viel" - eine Falschmeldung, und zwar bei jedem einzelnen.
+		const timeOff = { ...absence("2026-01-12", 1), timeOff: true };
+		const r = reconcile([day({ firstIn: null, lastOut: null, hours: 0 })], [timeOff], OPTS);
+		expect(r.days[0].tracked).toBe(0);
+		expect(r.days[0].status).toBe("free");
+		expect(r.over).toBe(0);
+	});
+
+	it("rechnet an einem halben Tag Zeitausgleich nur die gearbeitete Zeit", () => {
+		// Vormittags gearbeitet, nachmittags abgefeiert: LOGA kennt genau die
+		// gestempelten 3,75 h - mehr darf hier nicht stehen.
+		const timeOff = { ...absence("2026-01-12", 0.5), timeOff: true };
+		const r = reconcile(
+			[day({ firstIn: "08:00", lastOut: "11:45", hours: 3.75 })],
+			[entry("2026-01-12", "08:00", "11:45"), timeOff],
+			OPTS
+		);
+		expect(r.days[0].tracked).toBeCloseTo(3.75, 3);
+		expect(r.days[0].status).toBe("ok");
+	});
+
+	it("laesst einen gewoehnlichen Urlaubstag unangetastet", () => {
+		// Urlaub steht in LOGA mit dem Tagessoll - der Abgleich muss ihn weiter
+		// als erfasst sehen.
+		const r = reconcile([day({ firstIn: null, lastOut: null, hours: 7.5 })], [absence("2026-01-12")], OPTS);
+		expect(r.days[0].tracked).toBe(7.5);
+		expect(r.days[0].status).toBe("ok");
 	});
 
 	it("meldet einen teilweise erfassten Tag", () => {
@@ -163,7 +195,7 @@ describe("reconcile", () => {
 		// Vergessener Timer in einem alten Monat: zaehlt nur bis Mitternacht, nicht bis heute.
 		const open: Entry = {
 			id: "open",
-			activityId: PROJEKT,
+			activityId: PROJECT_DE,
 			startTs: toTs("2026-01-12", "22:00"),
 			endTs: null,
 			note: "",
@@ -240,8 +272,8 @@ describe("planFill", () => {
 	});
 
 	it("fuellt nur die Luecken um bereits erfasste Zeit herum", () => {
-		const vorhanden = [entry("2026-01-12", "09:10", "11:00")];
-		const plan = planFill(reconcileOne(day(), vorhanden), vorhanden, DEFAULT_FILL_OPTIONS)!;
+		const present = [entry("2026-01-12", "09:10", "11:00")];
+		const plan = planFill(reconcileOne(day(), present), present, DEFAULT_FILL_OPTIONS)!;
 		expect(asClock(plan.blocks)).toEqual(["11:00–12:00", "12:45–17:35"]);
 		// Vorhandenes plus Nachtrag ergibt die LOGA-Stunden.
 		expect(plan.hours + 1.8333).toBeCloseTo(7.67, 1);
@@ -254,8 +286,8 @@ describe("planFill", () => {
 	});
 
 	it("haengt den Nachtrag hinten an, wenn vor der Mittagszeit nichts frei ist", () => {
-		const vorhanden = [entry("2026-01-12", "09:10", "13:00")];
-		const plan = planFill(reconcileOne(day(), vorhanden), vorhanden)!;
+		const present = [entry("2026-01-12", "09:10", "13:00")];
+		const plan = planFill(reconcileOne(day(), present), present)!;
 		// Frei ist 13:00–17:35 (275 min), fehlen 230 min -> 45 min Pause bleiben vorne.
 		expect(asClock(plan.blocks)).toEqual(["13:45–17:35"]);
 	});
@@ -275,17 +307,17 @@ describe("planFill", () => {
 	it("schlaegt keine Ganztags-Abwesenheit vor, wo schon Projektzeit liegt", () => {
 		// App-Regel: beides am selben Tag schliesst sich aus – addEntry wiese den
 		// Vorschlag beim Uebernehmen mit einer Fehlermeldung ab.
-		const vorhanden = [entry("2026-01-05", "09:00", "12:00")];
+		const present = [entry("2026-01-05", "09:00", "12:00")];
 		const tag = day({ date: "2026-01-05", firstIn: null, lastOut: null, hours: 7.5 });
-		expect(reconcileOne(tag, vorhanden).looksLikeAbsence).toBe(true);
-		expect(planFill(reconcileOne(tag, vorhanden), vorhanden)).toBeNull();
+		expect(reconcileOne(tag, present).looksLikeAbsence).toBe(true);
+		expect(planFill(reconcileOne(tag, present), present)).toBeNull();
 	});
 
 	it("schlaegt einen halben freien Tag auch neben Projektzeit vor", () => {
 		// Ein halber Urlaubstag darf neben Projektzeit liegen.
-		const vorhanden = [entry("2026-01-05", "09:00", "12:00")];
+		const present = [entry("2026-01-05", "09:00", "12:00")];
 		const tag = day({ date: "2026-01-05", firstIn: null, lastOut: null, hours: 3.75 });
-		expect(planFill(reconcileOne(tag, vorhanden), vorhanden)).toMatchObject({
+		expect(planFill(reconcileOne(tag, present), present)).toMatchObject({
 			kind: "absence",
 			fraction: 0.5
 		});
@@ -298,30 +330,30 @@ describe("planFill", () => {
 
 	it("traegt an einem Ganztags-Abwesenheitstag nichts nach", () => {
 		// App-Regel: dort gibt es keine Projektzeit, addEntry wuerde es ohnehin ablehnen.
-		const vorhanden = [absence("2026-01-12")];
-		expect(planFill(reconcileOne(day(), vorhanden), vorhanden)).toBeNull();
+		const present = [absence("2026-01-12")];
+		expect(planFill(reconcileOne(day(), present), present)).toBeNull();
 	});
 
 	it("traegt keine Minutenkrümel an einem Tag nach, der stimmt", () => {
 		// 8,55 h laut LOGA gegen 8,50 h erfasst: innerhalb der Toleranz, also
 		// „stimmt". Am reinen Vorzeichen der Differenz haengend entstuend hier ein
 		// Nachtrag ueber drei Minuten – angehakt und mitgezaehlt.
-		const vorhanden = [entry("2026-01-12", "09:02", "17:32")];
+		const present = [entry("2026-01-12", "09:02", "17:32")];
 		const tag = day({ firstIn: "09:02", lastOut: "18:20", hours: 8.55 });
-		const abgleich = reconcileOne(tag, vorhanden);
-		expect(abgleich.status).toBe("ok");
-		expect(abgleich.diff).toBeGreaterThan(0);
-		expect(planFill(abgleich, vorhanden)).toBeNull();
+		const sync = reconcileOne(tag, present);
+		expect(sync.status).toBe("ok");
+		expect(sync.diff).toBeGreaterThan(0);
+		expect(planFill(sync, present)).toBeNull();
 	});
 
 	it("bucht keine zweite Abwesenheit neben einem halben Urlaubstag", () => {
 		// Ein halber Tag belegt keine Uhrzeit und wird von der App-Regel nicht
 		// abgewiesen – ein ganzer Tag daneben ergaebe still 11,25 h.
-		const vorhanden = [absence("2026-01-05", 0.5)];
+		const present = [absence("2026-01-05", 0.5)];
 		const tag = day({ date: "2026-01-05", firstIn: null, lastOut: null, hours: 7.5 });
-		const abgleich = reconcileOne(tag, vorhanden);
-		expect(abgleich).toMatchObject({ hasAbsence: true, blockedByAbsence: false });
-		expect(planFill(abgleich, vorhanden)).toBeNull();
+		const sync = reconcileOne(tag, present);
+		expect(sync).toMatchObject({ hasAbsence: true, blockedByAbsence: false });
+		expect(planFill(sync, present)).toBeNull();
 	});
 
 	it("traegt nichts nach, wenn nichts fehlt", () => {
@@ -354,11 +386,11 @@ describe("planFill", () => {
 		// 06:30–14:00 gestempelt (7,5 h), LOGA zieht nur 15 min ab statt der 45
 		// der Hausregel. Die Stempelzeiten sind voll erfasst – der Rest liesse
 		// sich nur mit erfundener Zeit schliessen. Also nichts vorschlagen.
-		const vorhanden = [entry("2026-01-12", "06:30", "14:00")];
+		const present = [entry("2026-01-12", "06:30", "14:00")];
 		const tag = day({ firstIn: "06:30", lastOut: "14:00", hours: 7.25 });
-		const abgleich = reconcile([tag], vorhanden, { ...OPTS, deductBreaks: true }).days[0];
-		expect(abgleich.status).toBe("partial");
-		expect(planFill(abgleich, vorhanden, { ...DEFAULT_FILL_OPTIONS, deductBreaks: true })).toBeNull();
+		const sync = reconcile([tag], present, { ...OPTS, deductBreaks: true }).days[0];
+		expect(sync.status).toBe("partial");
+		expect(planFill(sync, present, { ...DEFAULT_FILL_OPTIONS, deductBreaks: true })).toBeNull();
 	});
 
 	it("bleibt bei einem ueber Mitternacht gestempelten Tag im Tag", () => {
@@ -371,17 +403,17 @@ describe("planFill", () => {
 });
 
 describe("Zusammenspiel mit dem automatischen Pausenabzug", () => {
-	const MIT_ABZUG = { ...OPTS, deductBreaks: true };
+	const WITH_DEDUCTION = { ...OPTS, deductBreaks: true };
 
 	it("rechnet die erfasste Zeit auf derselben Grundlage wie LOGA", () => {
 		// Timer lief 08:36–16:49 durch, also 8,22 h brutto. LOGA meldet 7,47 h
 		// netto. Ohne Abzug staende der Tag als „zu viel" da, mit Abzug stimmt er.
-		const vorhanden = [entry("2026-01-12", "08:36", "16:49")];
+		const present = [entry("2026-01-12", "08:36", "16:49")];
 		const tag = day({ firstIn: "08:36", lastOut: "16:49", hours: 7.47 });
 
-		expect(reconcile([tag], vorhanden, OPTS).days[0].status).toBe("over");
+		expect(reconcile([tag], present, OPTS).days[0].status).toBe("over");
 
-		const mit = reconcile([tag], vorhanden, MIT_ABZUG).days[0];
+		const mit = reconcile([tag], present, WITH_DEDUCTION).days[0];
 		expect(mit.status).toBe("ok");
 		expect(mit.tracked).toBeCloseTo(7.47, 2);
 		// Die Brutto-Zeit bleibt daneben erhalten.
@@ -389,9 +421,9 @@ describe("Zusammenspiel mit dem automatischen Pausenabzug", () => {
 	});
 
 	it("zieht die Pause nicht von einem Urlaubstag ab", () => {
-		const vorhanden = [absence("2026-01-05", 1)];
+		const present = [absence("2026-01-05", 1)];
 		const tag = day({ date: "2026-01-05", firstIn: null, lastOut: null, hours: 7.5 });
-		expect(reconcile([tag], vorhanden, MIT_ABZUG).days[0]).toMatchObject({
+		expect(reconcile([tag], present, WITH_DEDUCTION).days[0]).toMatchObject({
 			tracked: 7.5,
 			status: "ok"
 		});
@@ -413,13 +445,13 @@ describe("Zusammenspiel mit dem automatischen Pausenabzug", () => {
 	});
 
 	it("beruecksichtigt beim Teil-Nachtrag die schon erfasste Brutto-Zeit", () => {
-		const vorhanden = [entry("2026-01-12", "09:10", "11:00")]; // 1,833 h brutto
+		const present = [entry("2026-01-12", "09:10", "11:00")]; // 1,833 h brutto
 		const tag = day({ firstIn: "09:10", lastOut: "17:35", hours: 7.67 });
-		const abgleich = reconcile([tag], vorhanden, MIT_ABZUG).days[0];
-		const plan = planFill(abgleich, vorhanden, { ...DEFAULT_FILL_OPTIONS, deductBreaks: true })!;
+		const sync = reconcile([tag], present, WITH_DEDUCTION).days[0];
+		const plan = planFill(sync, present, { ...DEFAULT_FILL_OPTIONS, deductBreaks: true })!;
 		expect(asClock(plan.blocks)).toEqual(["11:00–17:35"]);
 		// Brutto des ganzen Tages danach: 1,833 + 6,583 = 8,417 -> netto 7,67.
-		expect(deductBreakFromHours(abgleich.workedGross + plan.hours)).toBeCloseTo(7.67, 2);
+		expect(deductBreakFromHours(sync.workedGross + plan.hours)).toBeCloseTo(7.67, 2);
 	});
 
 	it("spart die Pause weiterhin aus, wenn der Abzug aus ist", () => {
@@ -447,8 +479,8 @@ describe("targetEntryHours", () => {
 
 	it("rechnet den Abzug ueber den GANZEN Tag, nicht ueber den einzelnen Eintrag", () => {
 		// 1,833 h stehen schon: zusammen muessen 8,42 h herauskommen.
-		const ziel = targetEntryHours(7.67, 1.8333, 0, true);
-		expect(deductBreakFromHours(1.8333 + ziel)).toBeCloseTo(7.67, 2);
+		const target = targetEntryHours(7.67, 1.8333, 0, true);
+		expect(deductBreakFromHours(1.8333 + target)).toBeCloseTo(7.67, 2);
 	});
 
 	it("nimmt eine Abwesenheit vom Ziel herunter", () => {
@@ -535,50 +567,50 @@ describe("distributeDays", () => {
 	const B = "act-b";
 
 	/** Zehn gleich lange Tage – dann muss 60/40 exakt aufgehen. */
-	const zehnTage = Array.from({ length: 10 }, (_, i) => ({
+	const tenDays = Array.from({ length: 10 }, (_, i) => ({
 		date: `2026-01-${String(i + 1).padStart(2, "0")}`,
 		hours: 8
 	}));
 
 	it("trifft die Anteile ueber gleich lange Tage genau", () => {
-		const zuordnung = distributeDays(zehnTage, [
+		const mapping = distributeDays(tenDays, [
 			{ id: A, share: 0.6 },
 			{ id: B, share: 0.4 }
 		]);
-		const anzahl = Object.values(zuordnung).filter((id) => id === A).length;
-		expect(anzahl).toBe(6);
-		expect(Object.keys(zuordnung)).toHaveLength(10);
+		const count = Object.values(mapping).filter((id) => id === A).length;
+		expect(count).toBe(6);
+		expect(Object.keys(mapping)).toHaveLength(10);
 	});
 
 	it("wiegt lange Tage staerker als kurze", () => {
 		// 12 h + 2 h + 2 h: haelftig heisst NICHT „drei Tage durch zwei".
-		const tage = [
+		const days = [
 			{ date: "2026-01-01", hours: 12 },
 			{ date: "2026-01-02", hours: 2 },
 			{ date: "2026-01-03", hours: 2 }
 		];
-		const zuordnung = distributeDays(tage, [
+		const mapping = distributeDays(days, [
 			{ id: A, share: 0.5 },
 			{ id: B, share: 0.5 }
 		]);
 		// Der lange Tag geht an einen, die beiden kurzen an den anderen.
-		expect(zuordnung["2026-01-02"]).toBe(zuordnung["2026-01-03"]);
-		expect(zuordnung["2026-01-01"]).not.toBe(zuordnung["2026-01-02"]);
+		expect(mapping["2026-01-02"]).toBe(mapping["2026-01-03"]);
+		expect(mapping["2026-01-01"]).not.toBe(mapping["2026-01-02"]);
 	});
 
 	it("gibt bei einem einzigen Projekt alle Tage an dieses", () => {
-		const zuordnung = distributeDays(zehnTage, [{ id: A, share: 1 }]);
-		expect(new Set(Object.values(zuordnung))).toEqual(new Set([A]));
+		const mapping = distributeDays(tenDays, [{ id: A, share: 1 }]);
+		expect(new Set(Object.values(mapping))).toEqual(new Set([A]));
 	});
 
 	it("liefert nichts, wenn kein Projekt einen Anteil hat", () => {
-		expect(distributeDays(zehnTage, [{ id: A, share: 0 }])).toEqual({});
+		expect(distributeDays(tenDays, [{ id: A, share: 0 }])).toEqual({});
 	});
 });
 
 describe("rebalanceShares", () => {
 	/** Was auf den Reglern steht, muss immer 100 % ergeben. */
-	const summe = (pcts: number[]) => pcts.reduce((s, p) => s + p, 0);
+	const sum = (pcts: number[]) => pcts.reduce((s, p) => s + p, 0);
 
 	it("zieht den Rest im Verhaeltnis der uebrigen nach", () => {
 		expect(rebalanceShares([50, 50], 0, 70)).toEqual([70, 30]);
@@ -589,7 +621,7 @@ describe("rebalanceShares", () => {
 		// Bei individueller Rundung kaemen hier 101 % heraus, und der letzte
 		// Regler fiele dafuer auf 0.
 		const next = rebalanceShares([17, 17, 17, 17, 17, 15], 0, 97);
-		expect(summe(next)).toBe(100);
+		expect(sum(next)).toBe(100);
 		expect(next[0]).toBe(97);
 		expect(next.slice(1).every((p) => p >= 0)).toBe(true);
 	});
@@ -604,7 +636,7 @@ describe("rebalanceShares", () => {
 			[2, 33]
 		] as const) {
 			pcts = rebalanceShares(pcts, i, v);
-			expect(summe(pcts)).toBe(100);
+			expect(sum(pcts)).toBe(100);
 			expect(pcts[i]).toBe(v);
 			expect(pcts.every((p) => p >= 0 && p <= 100)).toBe(true);
 		}

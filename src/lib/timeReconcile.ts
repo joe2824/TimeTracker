@@ -101,7 +101,11 @@ export function reconcile(
 		const isAbsence = absenceIds.has(e.activityId);
 		const h = entryHours(e, isAbsence, hoursPerDay, openEntryUntil(e, now));
 		if (isAbsence) {
-			absence.set(day, (absence.get(day) ?? 0) + h);
+			// Der Zeitausgleich zaehlt NICHT als erfasste Zeit: an einem abgefeierten
+			// Tag stempelt niemand, LOGA meldet dort 0 Stunden. Wuerde er hier
+			// mitzaehlen, stuende an JEDEM solchen Tag ein "zu viel erfasst".
+			// Belegt bleibt der Tag trotzdem - der Nachtrag soll nichts hineinschreiben.
+			if (e.timeOff !== true) absence.set(day, (absence.get(day) ?? 0) + h);
 			anyAbsence.add(day);
 			if ((e.dayFraction ?? 1) >= 1) fullDayAbsence.add(day);
 		} else {
@@ -113,8 +117,8 @@ export function reconcile(
 	const tracked = new Map<string, number>();
 	for (const day of new Set([...work.keys(), ...absence.keys()])) {
 		const worked = work.get(day) ?? 0;
-		const netto = opts.deductBreaks ? deductBreakFromHours(worked) : worked;
-		tracked.set(day, netto + (absence.get(day) ?? 0));
+		const net = opts.deductBreaks ? deductBreakFromHours(worked) : worked;
+		tracked.set(day, net + (absence.get(day) ?? 0));
 	}
 
 	const out: ReconcileDay[] = [];

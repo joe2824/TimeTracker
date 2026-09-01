@@ -29,9 +29,9 @@ const PRF_EXTENSION = { prf: {} } as unknown as AuthenticationExtensionsClientIn
  * nicht mehr, auch wenn das Konto spaeter einen Namen bekommt.
  */
 export function passkeyLabel(displayName: string, userId: string): string {
-	const menschlich = displayName.trim();
-	const hatNamen = menschlich !== "" && menschlich !== userId;
-	return hatNamen ? `${menschlich} · ${RP_ID}` : `${RP_NAME} · ${RP_ID}`;
+	const human = displayName.trim();
+	const hasName = human !== "" && human !== userId;
+	return hasName ? `${human} · ${RP_ID}` : `${RP_NAME} · ${RP_ID}`;
 }
 
 export async function registrationOptions(displayName: string, userId: string) {
@@ -67,13 +67,13 @@ export async function verifyRegistration(
 
 /** Die Aufgabe fuer eine BESTAETIGUNG, nicht fuer eine Anmeldung. */
 export async function confirmationOptions(db: Db, userId: string) {
-	const eigene = db.select().from(credentials).where(eq(credentials.userId, userId)).all();
+	const own = db.select().from(credentials).where(eq(credentials.userId, userId)).all();
 	return generateAuthenticationOptions({
 		rpID: RP_ID,
 		// Anders als bei der Anmeldung wird hier eingeschraenkt: es ist bereits
 		// bekannt, wer bestaetigt. Ein fremder Passkey darf gar nicht erst
 		// angeboten werden.
-		allowCredentials: eigene.map((c) => ({
+		allowCredentials: own.map((c) => ({
 			id: c.id,
 			transports: c.transports
 				? (JSON.parse(c.transports) as AuthenticatorTransportFuture[])

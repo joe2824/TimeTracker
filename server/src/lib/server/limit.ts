@@ -9,7 +9,7 @@ interface Bucket {
 	last: number;
 }
 
-const eimer = new Map<string, Bucket>();
+const tokenBucket = new Map<string, Bucket>();
 
 export interface LimitOptions {
 	/** Wie viele Versuche in Folge erlaubt sind, wenn nichts nachfliesst. */
@@ -19,47 +19,47 @@ export interface LimitOptions {
 }
 
 /** Einen Versuch anmelden - erlaubt oder nicht, samt Wartezeit. */
-export function nimmVersuch(
-	schluessel: string,
+export function takeAttempt(
+	secretKey: string,
 	opts: LimitOptions,
-	jetzt = Date.now()
-): { erlaubt: boolean; retryAfter: number } {
+	nowMs = Date.now()
+): { allowed: boolean; retryAfter: number } {
 	const rate = opts.perMinute / 60_000;
-	const vorhanden = eimer.get(schluessel);
-	const b = vorhanden ?? { tokens: opts.burst, last: jetzt };
+	const present = tokenBucket.get(secretKey);
+	const b = present ?? { tokens: opts.burst, last: nowMs };
 
 	// Auffuellen fuer die verstrichene Zeit, aber nie ueber den Rand.
-	b.tokens = Math.min(opts.burst, b.tokens + (jetzt - b.last) * rate);
-	b.last = jetzt;
+	b.tokens = Math.min(opts.burst, b.tokens + (nowMs - b.last) * rate);
+	b.last = nowMs;
 
 	if (b.tokens < 1) {
-		eimer.set(schluessel, b);
-		return { erlaubt: false, retryAfter: Math.ceil((1 - b.tokens) / rate / 1000) };
+		tokenBucket.set(secretKey, b);
+		return { allowed: false, retryAfter: Math.ceil((1 - b.tokens) / rate / 1000) };
 	}
 	b.tokens -= 1;
-	eimer.set(schluessel, b);
-	return { erlaubt: true, retryAfter: 0 };
+	tokenBucket.set(secretKey, b);
+	return { allowed: true, retryAfter: 0 };
 }
 
 /** Nachsehen, ob gesperrt ist - ohne einen Versuch zu verbrauchen. */
-export function istGesperrt(schluessel: string, opts: LimitOptions, jetzt = Date.now()): boolean {
-	const b = eimer.get(schluessel);
+export function isLocked(secretKey: string, opts: LimitOptions, nowMs = Date.now()): boolean {
+	const b = tokenBucket.get(secretKey);
 	if (!b) return false;
 	const rate = opts.perMinute / 60_000;
-	return Math.min(opts.burst, b.tokens + (jetzt - b.last) * rate) < 1;
+	return Math.min(opts.burst, b.tokens + (nowMs - b.last) * rate) < 1;
 }
 
 /** Volle Eimer wegwerfen - sonst waechst die Karte mit jeder gesehenen Adresse. */
-export function raeumeLimits(jetzt = Date.now()): void {
-	for (const [k, b] of eimer) {
+export function cleanupLimits(nowMs = Date.now()): void {
+	for (const [k, b] of tokenBucket) {
 		// Nach einer Stunde Ruhe ist jeder Eimer wieder voll, egal wie klein die Rate.
-		if (jetzt - b.last > 3600_000) eimer.delete(k);
+		if (nowMs - b.last > 3600_000) tokenBucket.delete(k);
 	}
 }
 
 /** Nur fuer Tests: die Bremse in den Ausgangszustand bringen. */
 export function resetLimitsForTests(): void {
-	eimer.clear();
+	tokenBucket.clear();
 }
 
 // ---------- Die Saetze ----------

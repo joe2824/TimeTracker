@@ -1,6 +1,6 @@
 // Welches Betriebssystem der Browser meldet.
 
-export type Betriebssystem = "windows" | "macos" | "linux" | "mobil" | "unbekannt";
+export type OperatingSystem = "windows" | "macos" | "linux" | "mobil" | "unbekannt";
 
 /**
  * Grob raten, worauf das hier laeuft - fuer die Auswahl des Downloads.
@@ -12,21 +12,21 @@ export type Betriebssystem = "windows" | "macos" | "linux" | "mobil" | "unbekann
  * `userAgentData` zuerst, weil der User-Agent-Text seit Jahren eingefroren wird
  * und dort z. B. jedes Windows als "Windows NT 10.0" steht.
  */
-export function erkenneOS(): Betriebssystem {
+export function detectOs(): OperatingSystem {
 	if (typeof navigator === "undefined") return "unbekannt";
 
 	const uaData = (navigator as Navigator & { userAgentData?: { platform?: string; mobile?: boolean } })
 		.userAgentData;
 	if (uaData?.mobile) return "mobil";
 
-	const roh = `${uaData?.platform ?? ""} ${navigator.platform ?? ""} ${navigator.userAgent ?? ""}`;
+	const raw = `${uaData?.platform ?? ""} ${navigator.platform ?? ""} ${navigator.userAgent ?? ""}`;
 
 	// Android meldet auch "Linux" - deshalb zuerst.
-	if (/Android|iPhone|iPad|iPod/i.test(roh)) return "mobil";
-	if (/Win/i.test(roh)) return "windows";
+	if (/Android|iPhone|iPad|iPod/i.test(raw)) return "mobil";
+	if (/Win/i.test(raw)) return "windows";
 	// "Mac" trifft auch iPadOS im Desktop-Modus; das ist oben schon weg.
-	if (/Mac/i.test(roh)) return "macos";
-	if (/Linux|X11|CrOS/i.test(roh)) return "linux";
+	if (/Mac/i.test(raw)) return "macos";
+	if (/Linux|X11|CrOS/i.test(raw)) return "linux";
 	return "unbekannt";
 }
 
@@ -37,7 +37,7 @@ export function erkenneOS(): Betriebssystem {
  * Solange das so ist, waere ein Download-Knopf fuer alles andere ein Versprechen
  * ohne Datei dahinter.
  */
-export function hatDesktopApp(os: Betriebssystem): boolean {
+export function hasDesktopApp(os: OperatingSystem): boolean {
 	return os === "windows";
 }
 

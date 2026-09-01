@@ -19,15 +19,15 @@ vi.mock("svelte-sonner", () => ({
  * Kuerzel die uebrigen mitreisst.
  */
 const gs = vi.hoisted(() => {
-	const registriert = new Map<string, (e: { state: string }) => void>();
+	const registered = new Map<string, (e: { state: string }) => void>();
 	return {
-		registriert,
+		registered,
 		register: vi.fn(async (acc: string, cb: (e: { state: string }) => void) => {
-			if (registriert.has(acc)) throw new Error(`Shortcut ${acc} ist bereits vergeben`);
-			registriert.set(acc, cb);
+			if (registered.has(acc)) throw new Error(`Shortcut ${acc} ist bereits vergeben`);
+			registered.set(acc, cb);
 		}),
 		unregisterAll: vi.fn(async () => {
-			registriert.clear();
+			registered.clear();
 		})
 	};
 });
@@ -42,12 +42,12 @@ const { acceleratorFromEvent, applyShortcuts } = await import("./shortcuts");
 const P1 = "p1";
 const P2 = "p2";
 
-function aktivitaet(id: string, extra: Partial<Activity> = {}): Activity {
+function activity(id: string, extra: Partial<Activity> = {}): Activity {
 	return { id, name: id, sortOrder: 0, archived: false, isAbsence: false, ...extra };
 }
 
 /** Tastendruck nachstellen – `code` ist das, was acceleratorFromEvent auswertet. */
-function taste(code: string, mods: Partial<KeyboardEvent> = {}): KeyboardEvent {
+function keyPress(code: string, mods: Partial<KeyboardEvent> = {}): KeyboardEvent {
 	return {
 		code,
 		ctrlKey: false,
@@ -60,7 +60,7 @@ function taste(code: string, mods: Partial<KeyboardEvent> = {}): KeyboardEvent {
 
 beforeEach(() => {
 	resetFakeFs();
-	gs.registriert.clear();
+	gs.registered.clear();
 	gs.register.mockClear();
 	gs.unregisterAll.mockClear();
 	app.dispose();
@@ -72,86 +72,86 @@ beforeEach(() => {
 
 describe("acceleratorFromEvent", () => {
 	it("baut Modifier und Taste zusammen", () => {
-		expect(acceleratorFromEvent(taste("KeyT", { ctrlKey: true, shiftKey: true }))).toBe(
+		expect(acceleratorFromEvent(keyPress("KeyT", { ctrlKey: true, shiftKey: true }))).toBe(
 			"Control+Shift+T"
 		);
 	});
 
 	it("nimmt Ziffern, Nummernblock und Funktionstasten", () => {
-		expect(acceleratorFromEvent(taste("Digit1", { altKey: true }))).toBe("Alt+1");
-		expect(acceleratorFromEvent(taste("Numpad7", { ctrlKey: true }))).toBe("Control+Numpad7");
-		expect(acceleratorFromEvent(taste("F9"))).toBe("F9");
+		expect(acceleratorFromEvent(keyPress("Digit1", { altKey: true }))).toBe("Alt+1");
+		expect(acceleratorFromEvent(keyPress("Numpad7", { ctrlKey: true }))).toBe("Control+Numpad7");
+		expect(acceleratorFromEvent(keyPress("F9"))).toBe("F9");
 	});
 
 	it("liefert null, wenn nur Modifier gedrueckt wurden", () => {
 		// Sonst entstuende beim Aufnehmen eines Kuerzels schon ein Eintrag, sobald
 		// jemand Strg drueckt – bevor er die eigentliche Taste erreicht hat.
-		expect(acceleratorFromEvent(taste("ControlLeft", { ctrlKey: true }))).toBeNull();
-		expect(acceleratorFromEvent(taste("ShiftRight", { shiftKey: true }))).toBeNull();
+		expect(acceleratorFromEvent(keyPress("ControlLeft", { ctrlKey: true }))).toBeNull();
+		expect(acceleratorFromEvent(keyPress("ShiftRight", { shiftKey: true }))).toBeNull();
 	});
 
 	it("liefert null fuer Tasten, die Tauri nicht kennt", () => {
-		expect(acceleratorFromEvent(taste("BracketLeft"))).toBeNull();
+		expect(acceleratorFromEvent(keyPress("BracketLeft"))).toBeNull();
 	});
 
 	it("nimmt die physische Taste, nicht das erzeugte Zeichen", () => {
 		// Auf einer deutschen Tastatur liefert Alt+L ein anderes `key` als auf einer
 		// amerikanischen; `code` ist auf beiden KeyL. Ein Kuerzel darf nicht davon
 		// abhaengen, welches Layout gerade aktiv ist.
-		expect(acceleratorFromEvent(taste("KeyL", { altKey: true }))).toBe("Alt+L");
+		expect(acceleratorFromEvent(keyPress("KeyL", { altKey: true }))).toBe("Alt+L");
 	});
 });
 
 describe("applyShortcuts", () => {
 	it("registriert Umschalt-Kuerzel und Aktivitaets-Kuerzel", async () => {
 		app.settings.toggleShortcut = "Control+Alt+T";
-		app.activities = [aktivitaet(P1, { shortcut: "Control+Alt+1" })];
+		app.activities = [activity(P1, { shortcut: "Control+Alt+1" })];
 
 		await applyShortcuts();
 
-		expect([...gs.registriert.keys()]).toEqual(["Control+Alt+T", "Control+Alt+1"]);
+		expect([...gs.registered.keys()]).toEqual(["Control+Alt+T", "Control+Alt+1"]);
 	});
 
 	it("raeumt vor jedem Durchgang auf", async () => {
-		app.activities = [aktivitaet(P1, { shortcut: "Control+Alt+1" })];
+		app.activities = [activity(P1, { shortcut: "Control+Alt+1" })];
 		await applyShortcuts();
 
-		app.activities = [aktivitaet(P2, { shortcut: "Control+Alt+2" })];
+		app.activities = [activity(P2, { shortcut: "Control+Alt+2" })];
 		await applyShortcuts();
 
 		// Das alte Kuerzel darf nicht liegen bleiben: sonst startete eine geloeschte
 		// oder umbelegte Aktivitaet weiter mit.
 		expect(gs.unregisterAll).toHaveBeenCalledTimes(2);
-		expect([...gs.registriert.keys()]).toEqual(["Control+Alt+2"]);
+		expect([...gs.registered.keys()]).toEqual(["Control+Alt+2"]);
 	});
 
 	it("laesst archivierte Aktivitaeten und leere Kuerzel aus", async () => {
 		app.activities = [
-			aktivitaet(P1, { shortcut: "Control+Alt+1", archived: true }),
-			aktivitaet(P2, { shortcut: "   " }),
-			aktivitaet("p3")
+			activity(P1, { shortcut: "Control+Alt+1", archived: true }),
+			activity(P2, { shortcut: "   " }),
+			activity("p3")
 		];
 
 		await applyShortcuts();
 
-		expect(gs.registriert.size).toBe(0);
+		expect(gs.registered.size).toBe(0);
 	});
 
 	it("vergibt ein doppelt hinterlegtes Kuerzel nur einmal", async () => {
 		app.activities = [
-			aktivitaet(P1, { shortcut: "Control+Alt+1" }),
-			aktivitaet(P2, { shortcut: "Control+Alt+1" })
+			activity(P1, { shortcut: "Control+Alt+1" }),
+			activity(P2, { shortcut: "Control+Alt+1" })
 		];
 
 		await applyShortcuts();
 
 		expect(gs.register).toHaveBeenCalledTimes(1);
-		expect(gs.registriert.size).toBe(1);
+		expect(gs.registered.size).toBe(1);
 	});
 
 	it("laesst das Umschalt-Kuerzel gewinnen, wenn eine Aktivitaet dasselbe traegt", async () => {
 		app.settings.toggleShortcut = "Control+Alt+T";
-		app.activities = [aktivitaet(P1, { shortcut: "Control+Alt+T" })];
+		app.activities = [activity(P1, { shortcut: "Control+Alt+T" })];
 
 		await applyShortcuts();
 
@@ -159,7 +159,7 @@ describe("applyShortcuts", () => {
 		// Der Aufruf des Kuerzels muss den Umschalter treffen, nicht den Start.
 		const start = vi.spyOn(app, "startActivity").mockResolvedValue();
 		const toggle = vi.spyOn(app, "toggleLast").mockResolvedValue();
-		gs.registriert.get("Control+Alt+T")?.({ state: "Pressed" });
+		gs.registered.get("Control+Alt+T")?.({ state: "Pressed" });
 		expect(toggle).toHaveBeenCalled();
 		expect(start).not.toHaveBeenCalled();
 		start.mockRestore();
@@ -174,31 +174,31 @@ describe("applyShortcuts", () => {
 			throw new Error("Control+Alt+1 ist bereits vergeben");
 		});
 		app.activities = [
-			aktivitaet(P1, { shortcut: "Control+Alt+1" }),
-			aktivitaet(P2, { shortcut: "Control+Alt+2" })
+			activity(P1, { shortcut: "Control+Alt+1" }),
+			activity(P2, { shortcut: "Control+Alt+2" })
 		];
 
 		await applyShortcuts();
 
 		expect(gs.register).toHaveBeenCalledTimes(2);
-		expect([...gs.registriert.keys()]).toEqual(["Control+Alt+2"]);
+		expect([...gs.registered.keys()]).toEqual(["Control+Alt+2"]);
 	});
 
 	it("startet die Aktivitaet beim Druck – und nicht beim Loslassen", async () => {
-		app.activities = [aktivitaet(P1, { shortcut: "Control+Alt+1" })];
+		app.activities = [activity(P1, { shortcut: "Control+Alt+1" })];
 		await applyShortcuts();
 		const start = vi.spyOn(app, "startActivity").mockResolvedValue();
 
-		gs.registriert.get("Control+Alt+1")?.({ state: "Released" });
+		gs.registered.get("Control+Alt+1")?.({ state: "Released" });
 		expect(start).not.toHaveBeenCalled();
 
-		gs.registriert.get("Control+Alt+1")?.({ state: "Pressed" });
+		gs.registered.get("Control+Alt+1")?.({ state: "Pressed" });
 		expect(start).toHaveBeenCalledWith(P1);
 		start.mockRestore();
 	});
 
 	it("registriert gar nichts, wenn nichts hinterlegt ist", async () => {
-		app.activities = [aktivitaet(P1)];
+		app.activities = [activity(P1)];
 		await applyShortcuts();
 		expect(gs.register).not.toHaveBeenCalled();
 		// Aufgeraeumt wird trotzdem – sonst blieben Kuerzel eines frueheren Standes stehen.

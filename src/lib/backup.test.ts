@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { resetFakeFs } from "./testing/fakeFs";
-import { defaultSettings, type Activity, type Entry } from "./types";
+import {
+	BUILTIN_ABSENCE_ID,
+	BUILTIN_OTHERS_ID,
+	defaultSettings,
+	type Activity,
+	type Entry
+} from "./types";
 import type { TimeTrackerBackup } from "./backup";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("./testing/fakeFs")).fakeFs);
@@ -9,11 +15,13 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 const { createBackupData, inspectBackup, restoreBackup } = await import("./backup");
 const { saveActivities, saveEntries, saveSettings } = await import("./store");
 const { app } = await import("./app.svelte");
+const { account } = await import("./sync/account.svelte");
 
 describe("Backup & Restore", () => {
 	beforeEach(() => {
 		resetFakeFs();
 		app.clearLocalData();
+		account.backfilling = false;
 	});
 
 	const sampleActivities: Activity[] = [
@@ -58,6 +66,48 @@ describe("Backup & Restore", () => {
 		expect(Object.keys(backup.entries)).toEqual(["2026-08", "2026-07"]);
 		expect(backup.entries["2026-07"]).toHaveLength(1);
 		expect(backup.entries["2026-08"]).toHaveLength(1);
+	});
+
+	it("hält fest, dass die Sicherung den ganzen Bestand enthält", async () => {
+		await saveEntries("2026-07", sampleEntries202607);
+
+		expect((await createBackupData()).complete).toBe(true);
+	});
+
+	it("sichert nicht, solange ältere Monate nachkommen", async () => {
+		await saveEntries("2026-07", sampleEntries202607);
+		account.backfilling = true;
+
+		await expect(createBackupData()).rejects.toThrow(/unvollständig/);
+	});
+
+	it("spielt nicht ein, solange ältere Monate nachkommen", async () => {
+		const backup: TimeTrackerBackup = {
+			version: 1,
+			format: "timetracker-backup",
+			createdAt: "2026-08-30T12:00:00.000Z",
+			settings: defaultSettings,
+			activities: sampleActivities,
+			entries: { "2026-07": sampleEntries202607 }
+		};
+		account.backfilling = true;
+
+		await expect(restoreBackup(backup, "merge")).rejects.toThrow(/nachgeladen|geladen/);
+		expect(app.monthEntries("2026-07")).toHaveLength(0);
+	});
+
+	it("meldet eine Sicherung ohne Vollständigkeits-Vermerk als ungeprüft", () => {
+		const alt: TimeTrackerBackup = {
+			version: 1,
+			format: "timetracker-backup",
+			createdAt: "2026-08-30T12:00:00.000Z",
+			settings: defaultSettings,
+			activities: sampleActivities,
+			entries: { "2026-07": sampleEntries202607 }
+		};
+
+		expect(inspectBackup(JSON.stringify(alt)).stats?.complete).toBe(false);
+		expect(inspectBackup(JSON.stringify({ ...alt, complete: true })).stats?.complete).toBe(true);
 	});
 
 	it("prüft und analysiert eine Sicherungsdatei korrekt", () => {
@@ -113,8 +163,13 @@ describe("Backup & Restore", () => {
 		expect(result.restoredEntries).toBe(1);
 
 		expect(app.settings.senderName).toBe("Neuer Name");
-		expect(app.activities).toHaveLength(2);
-		expect(app.activities.map((a) => a.id)).toEqual(["act-1", "act-2"]);
+		// Die Sicherung bringt zwei Aktivitaeten mit; "Others" und "Abwesenheiten"
+		// stellt die App danach selbst her - ohne sie fehlt der Bericht seine
+		// Sammelzeile. Frueher tauchten sie erst beim naechsten Start auf.
+		expect(app.activities.map((a) => a.id)).toEqual(
+			expect.arrayContaining(["act-1", "act-2", BUILTIN_OTHERS_ID, BUILTIN_ABSENCE_ID])
+		);
+		expect(app.activities).toHaveLength(4);
 	});
 
 	it("stellt Daten im Zusammenführen-Modus (merge) additiv wieder her", async () => {
@@ -141,7 +196,10 @@ describe("Backup & Restore", () => {
 		const result = await restoreBackup(backup, "merge");
 
 		expect(result.restoredActivities).toBe(3); // act-1, act-2, act-local
-		expect(app.activities).toHaveLength(3);
+		// Drei aus der Zusammenfuehrung, dazu die beiden eingebauten Zeilen.
+		expect(app.activities).toHaveLength(5);
+		expect(app.activities.filter((a) => a.name === "Others")).toHaveLength(1);
+		expect(app.activities.filter((a) => a.isAbsence)).toHaveLength(1);
 		expect(app.monthEntries("2026-07")).toHaveLength(2); // e-1 und e-local
 	});
 });

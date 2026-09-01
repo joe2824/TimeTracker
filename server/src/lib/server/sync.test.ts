@@ -1,7 +1,15 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { openDb, type Db } from "./db";
 import { records, users } from "./db/schema";
-import { currentSeq, pullRecords, pushRecords, SyncError, type IncomingRecord } from "./sync";
+import {
+	currentSeq,
+	listBuckets,
+	pullRecords,
+	pushRecords,
+	SyncError,
+	type IncomingRecord
+} from "./sync";
+import { MAX_BUCKETS } from "./config";
 import { eq } from "drizzle-orm";
 
 let db: Db;
@@ -9,7 +17,7 @@ let db: Db;
 const ANNA = "user-anna";
 const BODO = "user-bodo";
 
-function anlegen(id: string) {
+function create(id: string) {
 	db.insert(users).values({ id, displayName: id, createdAt: 1, seqCounter: 0 }).run();
 }
 
@@ -25,8 +33,8 @@ const rec = (id: string, over: Partial<IncomingRecord> = {}): IncomingRecord => 
 
 beforeEach(() => {
 	db = openDb(":memory:").db;
-	anlegen(ANNA);
-	anlegen(BODO);
+	create(ANNA);
+	create(BODO);
 });
 
 describe("Ablegen", () => {
@@ -54,11 +62,11 @@ describe("Ablegen", () => {
 		pushRecords(db, ANNA, "g1", [rec("e1")]);
 		pushRecords(db, ANNA, "g1", [rec("e1", { baseRev: 1, payload: "bmV1" })]);
 
-		const spaet = pushRecords(db, ANNA, "g2", [rec("e1", { baseRev: 1, payload: "YWx0" })]);
-		expect(spaet.accepted).toEqual([]);
-		expect(spaet.conflicts).toHaveLength(1);
-		expect(spaet.conflicts[0].current.rev).toBe(2);
-		expect(spaet.conflicts[0].current.payload).toBe("bmV1");
+		const late = pushRecords(db, ANNA, "g2", [rec("e1", { baseRev: 1, payload: "YWx0" })]);
+		expect(late.accepted).toEqual([]);
+		expect(late.conflicts).toHaveLength(1);
+		expect(late.conflicts[0].current.rev).toBe(2);
+		expect(late.conflicts[0].current.payload).toBe("bmV1");
 	});
 
 	it("meldet einen leeren Stand, wenn der Datensatz beim Server fehlt", () => {
@@ -76,20 +84,20 @@ describe("Ablegen", () => {
 		expect(r.conflicts.map((c) => c.id)).toEqual(["e1"]);
 	});
 
-	it("legt bei einer Loeschung einen Grabstein an, statt die Zeile zu entfernen", () => {
-		// Ohne Grabstein haelt ein Geraet, das die Loeschung verpasst hat, seinen
+	it("legt bei einer Loeschung einen Loeschmarker an, statt die Zeile zu entfernen", () => {
+		// Ohne Loeschmarker haelt ein Geraet, das die Loeschung verpasst hat, seinen
 		// alten Stand fuer gueltig und laedt ihn beim naechsten Mal wieder hoch.
 		pushRecords(db, ANNA, "g1", [rec("e1")]);
 		pushRecords(db, ANNA, "g1", [rec("e1", { baseRev: 1, deletedAt: 5000 })]);
 
-		const zeile = db.select().from(records).where(eq(records.id, "e1")).get()!;
-		expect(zeile.deletedAt).toBe(5000);
-		expect(zeile.payload).toBeNull();
+		const rowText = db.select().from(records).where(eq(records.id, "e1")).get()!;
+		expect(rowText.deletedAt).toBe(5000);
+		expect(rowText.payload).toBeNull();
 	});
 
 	it("weist ein zu grosses Chiffrat ab", () => {
-		const riesig = "x".repeat(64 * 1024 + 1);
-		expect(() => pushRecords(db, ANNA, "g1", [rec("e1", { payload: riesig })])).toThrow(SyncError);
+		const huge = "x".repeat(64 * 1024 + 1);
+		expect(() => pushRecords(db, ANNA, "g1", [rec("e1", { payload: huge })])).toThrow(SyncError);
 	});
 
 	it("weist einen Datensatz ohne id oder Art ab", () => {
@@ -99,9 +107,9 @@ describe("Ablegen", () => {
 
 	it("prueft die Groesse VOR dem Schreiben, nicht mittendrin", () => {
 		// Sonst laege der erste Datensatz schon da, wenn der zweite auffliegt.
-		const riesig = "x".repeat(64 * 1024 + 1);
+		const huge = "x".repeat(64 * 1024 + 1);
 		expect(() =>
-			pushRecords(db, ANNA, "g1", [rec("e1"), rec("e2", { payload: riesig })])
+			pushRecords(db, ANNA, "g1", [rec("e1"), rec("e2", { payload: huge })])
 		).toThrow(SyncError);
 		expect(currentSeq(db, ANNA)).toBe(0);
 		expect(pullRecords(db, ANNA).records).toEqual([]);
@@ -127,37 +135,37 @@ describe("Abholen", () => {
 
 	it("blaettert und meldet ehrlich, ob noch etwas kommt", () => {
 		pushRecords(db, ANNA, "g1", [rec("e1"), rec("e2"), rec("e3")]);
-		const erste = pullRecords(db, ANNA, { limit: 2 });
-		expect(erste.records).toHaveLength(2);
-		expect(erste.hasMore).toBe(true);
+		const first = pullRecords(db, ANNA, { limit: 2 });
+		expect(first.records).toHaveLength(2);
+		expect(first.hasMore).toBe(true);
 
-		const zweite = pullRecords(db, ANNA, { since: erste.nextSeq, limit: 2 });
-		expect(zweite.records.map((r) => r.id)).toEqual(["e3"]);
-		expect(zweite.hasMore).toBe(false);
+		const secondB = pullRecords(db, ANNA, { since: first.nextSeq, limit: 2 });
+		expect(secondB.records.map((r) => r.id)).toEqual(["e3"]);
+		expect(secondB.hasMore).toBe(false);
 	});
 
 	it("blaettert vollstaendig durch, ohne etwas zu ueberspringen", () => {
-		const viele = Array.from({ length: 25 }, (_, i) => rec(`e${i}`));
-		pushRecords(db, ANNA, "g1", viele);
+		const many = Array.from({ length: 25 }, (_, i) => rec(`e${i}`));
+		pushRecords(db, ANNA, "g1", many);
 
-		const gesehen: string[] = [];
+		const seen: string[] = [];
 		let since = 0;
 		for (;;) {
-			const seite = pullRecords(db, ANNA, { since, limit: 7 });
-			gesehen.push(...seite.records.map((r) => r.id));
-			since = seite.nextSeq;
-			if (!seite.hasMore) break;
+			const pageNo = pullRecords(db, ANNA, { since, limit: 7 });
+			seen.push(...pageNo.records.map((r) => r.id));
+			since = pageNo.nextSeq;
+			if (!pageNo.hasMore) break;
 		}
-		expect(gesehen).toHaveLength(25);
-		expect(new Set(gesehen).size).toBe(25);
+		expect(seen).toHaveLength(25);
+		expect(new Set(seen).size).toBe(25);
 	});
 
-	it("liefert einen Grabstein mit aus", () => {
+	it("liefert einen Loeschmarker mit aus", () => {
 		pushRecords(db, ANNA, "g1", [rec("e1")]);
 		pushRecords(db, ANNA, "g1", [rec("e1", { baseRev: 1, deletedAt: 5000 })]);
-		const geholt = pullRecords(db, ANNA, { since: 1 }).records;
-		expect(geholt).toHaveLength(1);
-		expect(geholt[0].deletedAt).toBe(5000);
+		const fetched = pullRecords(db, ANNA, { since: 1 }).records;
+		expect(fetched).toHaveLength(1);
+		expect(fetched[0].deletedAt).toBe(5000);
 	});
 
 	it("laedt einen einzelnen Zeitraum gezielt nach", () => {
@@ -166,8 +174,74 @@ describe("Abholen", () => {
 			rec("e2", { bucket: "august" }),
 			rec("e3", { bucket: "juli" })
 		]);
-		const juli = pullRecords(db, ANNA, { bucket: "juli" }).records;
-		expect(juli.map((r) => r.id).sort()).toEqual(["e1", "e3"]);
+		const july = pullRecords(db, ANNA, { buckets: ["juli"] }).records;
+		expect(july.map((r) => r.id).sort()).toEqual(["e1", "e3"]);
+	});
+
+	it("laedt mehrere Zeitraeume in einem Zug", () => {
+		pushRecords(db, ANNA, "g1", [
+			rec("e1", { bucket: "juli" }),
+			rec("e2", { bucket: "august" }),
+			rec("e3", { bucket: "september" })
+		]);
+		const page = pullRecords(db, ANNA, { buckets: ["juli", "september"] }).records;
+		expect(page.map((r) => r.id).sort()).toEqual(["e1", "e3"]);
+	});
+
+	it("nimmt die Datensaetze ohne Zeitraum auf Wunsch mit", () => {
+		pushRecords(db, ANNA, "g1", [
+			rec("e1", { bucket: "juli" }),
+			rec("e2", { bucket: "august" }),
+			rec("s1", { bucket: null })
+		]);
+		const page = pullRecords(db, ANNA, {
+			buckets: ["juli"],
+			includeUnbucketed: true
+		}).records;
+		expect(page.map((r) => r.id).sort()).toEqual(["e1", "s1"]);
+	});
+
+	it("laesst die Datensaetze ohne Zeitraum sonst draussen", () => {
+		pushRecords(db, ANNA, "g1", [rec("e1", { bucket: "juli" }), rec("s1", { bucket: null })]);
+		const page = pullRecords(db, ANNA, { buckets: ["juli"] }).records;
+		expect(page.map((r) => r.id)).toEqual(["e1"]);
+	});
+
+	it("holt nur die Datensaetze ohne Zeitraum, wenn kein Bucket genannt ist", () => {
+		pushRecords(db, ANNA, "g1", [rec("e1", { bucket: "juli" }), rec("s1", { bucket: null })]);
+		const page = pullRecords(db, ANNA, { includeUnbucketed: true }).records;
+		expect(page.map((r) => r.id)).toEqual(["s1"]);
+	});
+
+	it("eine leere Bucket-Liste liefert nichts - nicht alles", () => {
+		// Der Unterschied ist der Punkt: eingeschraenkt auf nichts ist nicht
+		// dasselbe wie gar nicht eingeschraenkt.
+		pushRecords(db, ANNA, "g1", [rec("e1", { bucket: "juli" }), rec("s1", { bucket: null })]);
+		expect(pullRecords(db, ANNA, { buckets: [] }).records).toEqual([]);
+	});
+
+	it("nextSeq und hasMore gelten fuer die gefilterte Menge", () => {
+		pushRecords(db, ANNA, "g1", [
+			rec("e1", { bucket: "juli" }),
+			rec("e2", { bucket: "august" }),
+			rec("e3", { bucket: "juli" }),
+			rec("e4", { bucket: "juli" })
+		]);
+		const first = pullRecords(db, ANNA, { buckets: ["juli"], limit: 2 });
+		expect(first.records.map((r) => r.id)).toEqual(["e1", "e3"]);
+		expect(first.hasMore).toBe(true);
+		const second = pullRecords(db, ANNA, {
+			buckets: ["juli"],
+			since: first.nextSeq,
+			limit: 2
+		});
+		expect(second.records.map((r) => r.id)).toEqual(["e4"]);
+		expect(second.hasMore).toBe(false);
+	});
+
+	it("weist eine masslose Bucket-Liste ab", () => {
+		const many = Array.from({ length: MAX_BUCKETS + 1 }, (_, i) => `b${i}`);
+		expect(() => pullRecords(db, ANNA, { buckets: many })).toThrow(SyncError);
 	});
 
 	it("deckelt eine masslose Seitengroesse", () => {
@@ -203,7 +277,13 @@ describe("Mandantentrennung", () => {
 
 	it("Bodos Zeitraum-Kennung holt nichts von Anna", () => {
 		pushRecords(db, ANNA, "g1", [rec("a1", { bucket: "geteilt" })]);
-		expect(pullRecords(db, BODO, { bucket: "geteilt" }).records).toEqual([]);
+		expect(pullRecords(db, BODO, { buckets: ["geteilt"] }).records).toEqual([]);
+	});
+
+	it("Bodo sieht Annas Zeitraum-Kennungen nicht in der Liste", () => {
+		pushRecords(db, ANNA, "g1", [rec("a1", { bucket: "anna-juli" })]);
+		pushRecords(db, BODO, "g2", [rec("b1", { bucket: "bodo-juli" })]);
+		expect(listBuckets(db, BODO)).toEqual(["bodo-juli"]);
 	});
 
 	it("Bodo kann Annas Datensatz nicht ueberschreiben", () => {
@@ -220,17 +300,17 @@ describe("Zwei Geraete am selben Konto", () => {
 		pushRecords(db, ANNA, "handy", [rec("e1", { payload: "ZXJzdA==" })]);
 
 		// Der Rechner kennt nur Fassung 1 und wird abgewiesen.
-		const abgelehnt = pushRecords(db, ANNA, "rechner", [
+		const rejected = pushRecords(db, ANNA, "rechner", [
 			rec("e1", { baseRev: 0, payload: "cmVjaG5lcg==" })
 		]);
-		expect(abgelehnt.conflicts).toHaveLength(1);
+		expect(rejected.conflicts).toHaveLength(1);
 
 		// Er uebernimmt den Serverstand und schickt auf dessen Fassung erneut.
-		const stand = abgelehnt.conflicts[0].current;
-		const zweiter = pushRecords(db, ANNA, "rechner", [
-			rec("e1", { baseRev: stand.rev, payload: "enVzYW1tZW4=" })
+		const knownSeq = rejected.conflicts[0].current;
+		const secondC = pushRecords(db, ANNA, "rechner", [
+			rec("e1", { baseRev: knownSeq.rev, payload: "enVzYW1tZW4=" })
 		]);
-		expect(zweiter.accepted).toEqual([{ id: "e1", rev: 2, seq: 2 }]);
+		expect(secondC.accepted).toEqual([{ id: "e1", rev: 2, seq: 2 }]);
 		expect(pullRecords(db, ANNA).records[0].payload).toBe("enVzYW1tZW4=");
 	});
 
@@ -238,5 +318,25 @@ describe("Zwei Geraete am selben Konto", () => {
 		// Damit ein Geraet nicht auf seinen eigenen Weckruf hin neu laedt.
 		pushRecords(db, ANNA, "handy", [rec("e1")]);
 		expect(pullRecords(db, ANNA).records[0].deviceId).toBe("handy");
+	});
+});
+
+describe("listBuckets", () => {
+	it("nennt jede Kennung genau einmal", () => {
+		pushRecords(db, ANNA, "g1", [
+			rec("e1", { bucket: "juli" }),
+			rec("e2", { bucket: "juli" }),
+			rec("e3", { bucket: "august" })
+		]);
+		expect(listBuckets(db, ANNA).sort()).toEqual(["august", "juli"]);
+	});
+
+	it("laesst die Datensaetze ohne Kennung weg", () => {
+		pushRecords(db, ANNA, "g1", [rec("e1", { bucket: "juli" }), rec("s1", { bucket: null })]);
+		expect(listBuckets(db, ANNA)).toEqual(["juli"]);
+	});
+
+	it("ein leeres Konto liefert eine leere Liste", () => {
+		expect(listBuckets(db, ANNA)).toEqual([]);
 	});
 });

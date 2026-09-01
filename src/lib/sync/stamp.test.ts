@@ -25,8 +25,8 @@ describe("diffAndStamp", () => {
 	});
 
 	it("laesst einen unveraenderten, bereits gestempelten Datensatz in Ruhe", () => {
-		const alt = e("1", { updatedAt: 500, deviceId: "anderes", rev: 7 });
-		const { changes, stamped } = diffAndStamp([alt], [{ ...alt }], DEV, NOW);
+		const old = e("1", { updatedAt: 500, deviceId: "anderes", rev: 7 });
+		const { changes, stamped } = diffAndStamp([old], [{ ...old }], DEV, NOW);
 		expect(changes.changed).toEqual([]);
 		expect(stamped[0].updatedAt).toBe(500);
 		expect(stamped[0].deviceId).toBe("anderes");
@@ -36,16 +36,16 @@ describe("diffAndStamp", () => {
 		// Daten aus einer Fassung ohne Serveranbindung: inhaltlich unveraendert,
 		// aber nie gestempelt. Ohne diesen Fall bliebe der Altbestand fuer immer
 		// unsynchronisiert – und genau das ist der haeufigste Fall beim Umstieg.
-		const alt = e("1");
-		const { changes, stamped } = diffAndStamp([alt], [{ ...alt }], DEV, NOW);
+		const old = e("1");
+		const { changes, stamped } = diffAndStamp([old], [{ ...old }], DEV, NOW);
 		expect(changes.changed).toHaveLength(1);
 		expect(stamped[0].updatedAt).toBe(NOW);
 	});
 
 	it("erkennt eine inhaltliche Aenderung", () => {
-		const alt = e("1", { updatedAt: 500, deviceId: "x" });
-		const neu = { ...alt, note: "geaendert" };
-		const { changes, stamped } = diffAndStamp([alt], [neu], DEV, NOW);
+		const old = e("1", { updatedAt: 500, deviceId: "x" });
+		const fresh = { ...old, note: "geaendert" };
+		const { changes, stamped } = diffAndStamp([old], [fresh], DEV, NOW);
 		expect(changes.changed).toHaveLength(1);
 		expect(stamped[0].updatedAt).toBe(NOW);
 		expect(stamped[0].deviceId).toBe(DEV);
@@ -67,32 +67,32 @@ describe("diffAndStamp", () => {
 	it("stempelt beim zweiten Speichern nicht erneut", () => {
 		// Der Stempel selbst darf nicht als Aenderung zaehlen, sonst stempelt jedes
 		// Speichern erneut und der Abgleich laedt denselben Stand endlos hoch.
-		const erst = diffAndStamp([], [e("1")], DEV, NOW);
-		const zweit = diffAndStamp(erst.stamped, erst.stamped, DEV, NOW + 5000);
-		expect(zweit.changes.changed).toEqual([]);
-		expect(zweit.stamped[0].updatedAt).toBe(NOW);
+		const first = diffAndStamp([], [e("1")], DEV, NOW);
+		const second = diffAndStamp(first.stamped, first.stamped, DEV, NOW + 5000);
+		expect(second.changes.changed).toEqual([]);
+		expect(second.stamped[0].updatedAt).toBe(NOW);
 	});
 
 	it("reicht den Serverstand des Vorgaengers weiter", () => {
 		// Damit der Abgleich weiss, auf welchem Serverstand die Aenderung aufsetzt –
 		// ohne das kann der Server einen Konflikt nicht von einem Erstschreiben
 		// unterscheiden.
-		const alt = e("1", { updatedAt: 500, rev: 12 });
-		const { stamped } = diffAndStamp([alt], [{ ...alt, note: "neu" }], DEV, NOW);
+		const old = e("1", { updatedAt: 500, rev: 12 });
+		const { stamped } = diffAndStamp([old], [{ ...old, note: "neu" }], DEV, NOW);
 		expect(stamped[0].rev).toBe(12);
 		expect(stamped[0].updatedAt).toBe(NOW);
 	});
 
 	it("haelt fehlende und undefinierte Felder fuer denselben Inhalt", () => {
-		const alt = e("1", { updatedAt: 500 });
-		const neu = { ...alt, dayFraction: undefined };
-		expect(diffAndStamp([alt], [neu], DEV, NOW).changes.changed).toEqual([]);
+		const old = e("1", { updatedAt: 500 });
+		const fresh = { ...old, dayFraction: undefined };
+		expect(diffAndStamp([old], [fresh], DEV, NOW).changes.changed).toEqual([]);
 	});
 
 	it("stoert sich nicht an der Schluesselreihenfolge", () => {
 		// Ein frisch gebauter Eintrag hat sie anders als einer aus JSON.parse.
-		const alt = e("1", { updatedAt: 500 });
-		const neu = JSON.parse(JSON.stringify({ note: "", source: "manual", endTs: 2000, startTs: 1000, activityId: "a", id: "1", updatedAt: 500 }));
-		expect(diffAndStamp([alt], [neu], DEV, NOW).changes.changed).toEqual([]);
+		const old = e("1", { updatedAt: 500 });
+		const fresh = JSON.parse(JSON.stringify({ note: "", source: "manual", endTs: 2000, startTs: 1000, activityId: "a", id: "1", updatedAt: 500 }));
+		expect(diffAndStamp([old], [fresh], DEV, NOW).changes.changed).toEqual([]);
 	});
 });

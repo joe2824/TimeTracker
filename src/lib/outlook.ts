@@ -109,6 +109,6 @@ export function explainOutlookError(err: unknown, info?: OutlookInfo | null): st
  */
 export async function reportOutlookError(context: string, err: unknown): Promise<string> {
 	const info = await detectOutlook().catch(() => null);
-	logError(context, { fehler: errorText(err), outlook: info });
+	logError(context, { error: errorText(err), outlook: info });
 	return explainOutlookError(err, info);
 }

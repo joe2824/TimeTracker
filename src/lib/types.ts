@@ -25,6 +25,14 @@ export interface Activity extends SyncMeta {
 	color?: string;
 }
 
+/**
+ * Feste Farbe fuer Zeitausgleich.
+ *
+ * Violett, nicht Sky: Sky heisst in der Tagesliste bereits "hier steht zu viel
+ * Zeit", und dieselbe Farbe darf nicht zweierlei bedeuten.
+ */
+export const TIME_OFF_COLOR = "#8b5cf6";
+
 /** Auswahl-Palette fuer Aktivitaets-Farben. */
 export const ACTIVITY_COLORS = [
 	"#ef4444",
@@ -56,6 +64,17 @@ export interface Entry extends SyncMeta {
 	 * Die Stunden werden als dayFraction * settings.hoursPerDay berechnet.
 	 */
 	dayFraction?: number;
+	/**
+	 * Nur fuer Abwesenheits-Eintraege: abgefeierte Ueberstunden statt Urlaub oder
+	 * Krankheit.
+	 *
+	 * Erfasst wird er wie ein Urlaubstag - ganzer oder halber Tag auf derselben
+	 * Zeile. Verrechnet wird er genau andersherum: ein Urlaubstag fuellt das
+	 * Tagessoll, ein Zeitausgleich laesst es offen. Dadurch sinkt der Saldo um die
+	 * Stunden des Tages, und genau das feiert die Ueberstunden ab. Im Bericht an
+	 * den Chef taucht er nicht auf.
+	 */
+	timeOff?: boolean;
 }
 
 /**
@@ -182,3 +201,15 @@ export const defaultSettings: Settings = {
 /** Namen der eingebauten Zeilen, die immer im Bericht erscheinen. */
 export const BUILTIN_OTHERS = "Others";
 export const BUILTIN_ABSENCE = "Abwesenheiten";
+
+/**
+ * Feste Ids der eingebauten Zeilen.
+ *
+ * Bewusst KEINE Zufalls-Id: sie werden auf jedem Geraet angelegt, und zwar
+ * bevor der erste Abgleich gelaufen ist. Mit einer Zufalls-Id legt jedes Geraet
+ * eine eigene Fassung an, der Abgleich vergleicht nach Id, findet keine
+ * Uebereinstimmung - und die Liste haette "Others" und "Abwesenheiten" doppelt
+ * und dreifach. Mit einer festen Id entsteht ueberall derselbe Datensatz.
+ */
+export const BUILTIN_OTHERS_ID = "builtin-others";
+export const BUILTIN_ABSENCE_ID = "builtin-absence";

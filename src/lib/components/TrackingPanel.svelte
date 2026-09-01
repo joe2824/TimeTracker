@@ -11,7 +11,9 @@
 		midnightSplitHint,
 		noonTs
 	} from "$lib/time";
+	import { TIME_OFF_COLOR } from "$lib/types";
 	import { breakDeduction } from "$lib/breaks";
+	import { dayTotals } from "$lib/dayTotals";
 	import { arbzgMonths, checkArbZg, dataFromEntries, MIN_HINT_WEEKS } from "$lib/arbzg";
 	import { START_PRESETS, resolveStartTs, toStartArg } from "$lib/startTime";
 	import { Button } from "$lib/components/ui/button";
@@ -52,8 +54,8 @@
 		const now = app.now;
 		const ts = resolveStartTs(presetMin, customStart, now);
 		if (ts == null) return "unlesbare Uhrzeit";
-		const geteilt = midnightSplitHint(ts, now);
-		if (geteilt) return `beginnt ${fmtDateHuman(ts)} um ${fmtClock(ts)} – ${geteilt}`;
+		const shared = midnightSplitHint(ts, now);
+		if (shared) return `beginnt ${fmtDateHuman(ts)} um ${fmtClock(ts)} – ${shared}`;
 		return `Timer beginnt um ${fmtClock(ts)}`;
 	});
 
@@ -137,24 +139,19 @@
 	 * heisst (frueher zwei getrennte <style>-Bloecke mit denselben Werten).
 	 */
 	const HINT_FORM = "flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-xs";
-	const hintTon = $derived(
+	const hintTone = $derived(
 		arbzgVerdict?.level === "crit"
 			? "border-destructive/50 bg-destructive/6 text-destructive"
 			: "border-amber-500/55 bg-amber-500/7 text-amber-700 dark:text-amber-400"
 	);
 
-	const todaySum = $derived.by(() => {
-		let worked = 0;
-		let absent = 0;
-		for (const e of todayEntries) {
-			const isAbs = app.isAbsenceId(e.activityId);
-			const h = entryHours(e, isAbs, app.settings.hoursPerDay, app.now);
-			if (isAbs) absent += h;
-			else worked += h;
-		}
-		const pause = app.settings.breakDeduction ? breakDeduction(worked) : 0;
-		return { worked, absent, pause, net: worked - pause };
-	});
+	const absenceIds = $derived(new Set(app.activities.filter((a) => a.isAbsence).map((a) => a.id)));
+	const todaySum = $derived(
+		dayTotals(todayEntries, absenceIds, app.settings.hoursPerDay, {
+			now: app.now,
+			deductBreaks: app.settings.breakDeduction
+		})
+	);
 </script>
 
 <div class="space-y-4">
@@ -165,7 +162,7 @@
 		     kein Klick. -->
 		{#if app.settings.arbzgEnabled}
 			<button
-				class={[HINT_FORM, hintTon, "text-left transition-colors hover:brightness-[0.97]"]}
+				class={[HINT_FORM, hintTone, "text-left transition-colors hover:brightness-[0.97]"]}
 				onclick={() => onShowReport?.()}
 			>
 				<TriangleAlertIcon class="size-3.5 shrink-0" />
@@ -174,7 +171,7 @@
 				<ChevronRightIcon class="ml-auto size-3.5 shrink-0 opacity-60" />
 			</button>
 		{:else}
-			<div class={[HINT_FORM, hintTon]}>
+			<div class={[HINT_FORM, hintTone]}>
 				<TriangleAlertIcon class="size-3.5 shrink-0" />
 				<span class="font-medium">{arbzgVerdict.headline}</span>
 				<span class="text-muted-foreground hidden truncate sm:inline">· Arbeitszeit-Check</span>
@@ -369,7 +366,7 @@
 		<Card.Header class="flex flex-row flex-wrap items-start justify-between gap-2 space-y-0">
 			<div class="min-w-0">
 				<Card.Title>Heute ({today})</Card.Title>
-				{#if todaySum.worked > 0 || todaySum.absent > 0}
+				{#if todaySum.worked > 0 || todaySum.absent > 0 || todaySum.timeOff > 0}
 					<!-- Kleine Tagesbilanz: erfasst, Abzug, Arbeitszeit. Ohne sie muesste
 					     man die Zeilen darunter im Kopf zusammenrechnen – und der
 					     Pausenabzug waere gar nicht zu sehen. -->
@@ -381,6 +378,9 @@
 						{/if}
 						{#if todaySum.absent > 0}
 							· {fmtHoursClock(todaySum.absent)} h Abwesenheit
+						{/if}
+						{#if todaySum.timeOff > 0}
+							· −{fmtHoursClock(todaySum.timeOff)} h Zeitausgleich
 						{/if}
 					</p>
 				{/if}
@@ -396,10 +396,15 @@
 				<ul class="divide-border divide-y text-sm">
 					{#each todayEntries as e (e.id)}
 						{@const isAbs = app.isAbsenceId(e.activityId)}
+						{@const isTimeOff = app.isTimeOff(e)}
 						<li class="flex items-center justify-between gap-2 py-1.5">
 							<span class="flex min-w-0 items-center gap-2">
-								<ActivityDot color={app.activityColor(e.activityId)} />
-								<span class="truncate">{app.activityName(e.activityId)}</span>
+								<ActivityDot
+									color={isTimeOff ? TIME_OFF_COLOR : app.activityColor(e.activityId)}
+								/>
+								<span class="truncate">
+									{isTimeOff ? "Zeitausgleich" : app.activityName(e.activityId)}
+								</span>
 							</span>
 							<span class="text-muted-foreground shrink-0 font-mono tabular-nums">
 								{#if isAbs}

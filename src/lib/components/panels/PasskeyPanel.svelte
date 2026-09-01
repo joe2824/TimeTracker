@@ -7,6 +7,7 @@
 	import { Label } from "$lib/components/ui/label";
 	import { toast } from "svelte-sonner";
 	import { account } from "$lib/sync/account.svelte";
+	import { ACCOUNT_KEY, invalidate, warm } from "$lib/prefetch";
 	import type { Passkey } from "$lib/sync/api";
 	import { fmtDateHuman } from "$lib/time";
 	import { isTauri } from "$lib/platform/env";
@@ -26,9 +27,16 @@
 	let editingPasskeyId = $state<string | null>(null);
 	let editingPasskeyName = $state("");
 
-	async function loadPasskeys() {
+	/**
+	 * Die Liste steckt schon in `accountInfo` - eine Anfrage fuer Konto, Geraete
+	 * und Passkeys statt drei. `fresh` umgeht den Puffer, nachdem sich etwas
+	 * geaendert hat.
+	 */
+	async function loadPasskeys(fresh = false) {
 		try {
-			passkeys = await account.passkeys();
+			if (fresh) invalidate(ACCOUNT_KEY);
+			const info = await warm(ACCOUNT_KEY, () => account.accountInfo());
+			passkeys = info?.passkeys ?? [];
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Passkeys nicht abrufbar");
 		} finally {
@@ -45,7 +53,7 @@
 		try {
 			const { prfAvailable } = await account.addPasskey(newPasskeyName.trim() || "Weiterer Passkey");
 			newPasskeyName = "";
-			await loadPasskeys();
+			await loadPasskeys(true);
 			if (prfAvailable) {
 				toast.success("Passkey hinzugefügt. Er öffnet die Daten allein.");
 			} else {
@@ -69,7 +77,7 @@
 		try {
 			await account.removePasskey(target.id);
 			passkeyToRemove = null;
-			await loadPasskeys();
+			await loadPasskeys(true);
 			toast.success("Passkey entfernt.");
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Entfernen fehlgeschlagen");
@@ -80,13 +88,34 @@
 		try {
 			await account.renamePasskey(id, editingPasskeyName.trim());
 			editingPasskeyId = null;
-			await loadPasskeys();
+			await loadPasskeys(true);
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Umbenennen fehlgeschlagen");
 		}
 	}
 
-	const prfCount = $derived(passkeys.filter((p) => p.hasPrf).length);
+	const wrapCount = $derived(passkeys.filter((p) => p.hasWrap).length);
+
+	let repairing = $state<string | null>(null);
+
+	async function handleRepair(p: Passkey) {
+		repairing = p.id;
+		try {
+			await account.repairPasskeyWrap(p.id);
+			await loadPasskeys(true);
+			// Wer bei der Nachfrage einen anderen Passkey nimmt, hat diesen nicht repariert.
+			const ok = passkeys.find((k) => k.id === p.id)?.hasWrap === true;
+			toast[ok ? "success" : "error"](
+				ok
+					? "Erledigt. Dieser Passkey entsperrt deine Daten jetzt allein."
+					: "Unverändert. Bestätige mit genau dem Passkey, der in der Zeile steht."
+			);
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : "Einrichten fehlgeschlagen");
+		} finally {
+			repairing = null;
+		}
+	}
 
 	async function handleOpenInBrowser() {
 		try {
@@ -170,11 +199,11 @@
 										{:else}
 											<div class="flex flex-wrap items-center gap-2">
 												<p class="font-medium text-foreground truncate">{p.label ?? "Unbenannt"}</p>
-												{#if !p.hasPrf}
+												{#if !p.hasWrap}
 													<Badge
 														variant="outline"
 														class="text-[10px] px-1.5 py-0 h-4 font-normal text-muted-foreground"
-														title="Ohne die Passkey-Erweiterung PRF: die Anmeldung klappt, den Tresor öffnet dieser Passkey aber nicht von allein."
+														title="Die Anmeldung klappt, die Daten öffnet dieser Passkey aber nicht von allein."
 													>
 														ohne direkte Entschlüsselung
 													</Badge>
@@ -194,6 +223,18 @@
 
 								{#if editingPasskeyId !== p.id}
 									<div class="flex shrink-0 items-center gap-1">
+										{#if !p.hasWrap && !isTauri()}
+											<Button
+												variant="outline"
+												size="sm"
+												class="h-8 text-xs"
+												disabled={repairing === p.id}
+												title="Einmal bestätigen – danach entsperrt dieser Passkey deine Daten ohne die 24 Wörter."
+												onclick={() => handleRepair(p)}
+											>
+												{repairing === p.id ? "…" : "Einrichten"}
+											</Button>
+										{/if}
 										<Button
 											variant="ghost"
 											size="icon-sm"
@@ -224,10 +265,10 @@
 					</div>
 				</div>
 
-				{#if prfCount === 0 && passkeys.length > 0}
+				{#if wrapCount === 0 && passkeys.length > 0}
 					<p class="text-muted-foreground text-xs">
-						Keiner dieser Passkeys kann den Tresor allein öffnen – zum Entsperren braucht es
-						zusätzlich die Wiederherstellungs-Phrase oder ein bereits entsperrtes Gerät.
+						Keiner dieser Passkeys öffnet deine Daten allein – zum Entsperren braucht es zusätzlich
+						die Wiederherstellungs-Phrase oder ein bereits entsperrtes Gerät.
 					</p>
 				{/if}
 

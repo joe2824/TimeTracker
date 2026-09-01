@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Activity, Entry } from "./types";
-import { defaultSettings } from "./types";
+import { BUILTIN_ABSENCE_ID, BUILTIN_OTHERS_ID, defaultSettings } from "./types";
 import { fakeFs, files, fsFaults, resetFakeFs } from "./testing/fakeFs";
 import { appTimeZone, wallToTs } from "./tz";
 
@@ -59,9 +59,9 @@ beforeEach(() => reset());
 
 describe("stop() – Teilung an Mitternacht", () => {
 	it("teilt einen Timer über Mitternacht und schreibt beide Tage", async () => {
-		const laufend = entry("r", P1, at(16, 23, 25), null);
-		reset({ "2026-07": [laufend] });
-		app.running = laufend;
+		const ongoing = entry("r", P1, at(16, 23, 25), null);
+		reset({ "2026-07": [ongoing] });
+		app.running = ongoing;
 
 		await app.stop(at(17, 1, 1));
 
@@ -75,10 +75,10 @@ describe("stop() – Teilung an Mitternacht", () => {
 
 	it("legt das Folgetag-Stück in die richtige MONATSDATEI", async () => {
 		// Ueber die Monatsgrenze: sonst zaehlte die Zeit im falschen Bericht.
-		const silvester = wallToTs(2026, 7, 31, 23, 0, 0);
-		const laufend = entry("r", P1, silvester, null);
-		reset({ "2026-07": [laufend] });
-		app.running = laufend;
+		const newYearsEve = wallToTs(2026, 7, 31, 23, 0, 0);
+		const ongoing = entry("r", P1, newYearsEve, null);
+		reset({ "2026-07": [ongoing] });
+		app.running = ongoing;
 
 		await app.stop(wallToTs(2026, 8, 1, 1, 0, 0));
 
@@ -88,9 +88,9 @@ describe("stop() – Teilung an Mitternacht", () => {
 	});
 
 	it("lässt einen Timer innerhalb eines Tages ungeteilt", async () => {
-		const laufend = entry("r", P1, at(17, 8), null);
-		reset({ "2026-07": [laufend] });
-		app.running = laufend;
+		const ongoing = entry("r", P1, at(17, 8), null);
+		reset({ "2026-07": [ongoing] });
+		app.running = ongoing;
 
 		await app.stop(at(17, 12));
 
@@ -106,20 +106,20 @@ describe("stop() – Lauf über mehrere Tage nachträglich beenden", () => {
 	 * davon volle 24-Stunden-Tage). Wer im "Timer läuft noch"-Dialog das echte
 	 * Ende einträgt, meint den ganzen Lauf – nicht nur das letzte Stueck.
 	 */
-	function laufUeberDreiTage() {
-		const stuecke = [
+	function runsOverThreeDays() {
+		const pieces = [
 			entry("t1", P1, at(16, 9), at(17, 0)),
 			entry("t2", P1, at(17, 0), at(18, 0)),
 			entry("t3", P1, at(18, 0), at(19, 0)),
 			entry("t4", P1, at(19, 0), null)
 		];
-		reset({ "2026-07": stuecke });
-		app.running = stuecke[3];
-		return stuecke;
+		reset({ "2026-07": pieces });
+		app.running = pieces[3];
+		return pieces;
 	}
 
 	it("räumt die Tagesstücke weg, die nach der eingetragenen Endzeit liegen", async () => {
-		laufUeberDreiTage();
+		runsOverThreeDays();
 
 		await app.stop(at(16, 17)); // "aufgehört habe ich am 16. um 17 Uhr"
 
@@ -131,7 +131,7 @@ describe("stop() – Lauf über mehrere Tage nachträglich beenden", () => {
 	});
 
 	it("kürzt das Stück, in dem die Endzeit liegt, und löscht nur die danach", async () => {
-		laufUeberDreiTage();
+		runsOverThreeDays();
 
 		await app.stop(at(18, 10));
 
@@ -141,7 +141,7 @@ describe("stop() – Lauf über mehrere Tage nachträglich beenden", () => {
 	});
 
 	it("lässt einen Lauf nie spurlos verschwinden", async () => {
-		laufUeberDreiTage();
+		runsOverThreeDays();
 
 		await app.stop(at(15, 8)); // vor dem Start – unmoeglich
 
@@ -156,10 +156,10 @@ describe("stop() – Lauf über mehrere Tage nachträglich beenden", () => {
 		// stehen lassen, damit fehlte das Bindeglied `endTs`. Das Folgestueck galt
 		// als eigener Lauf, dessen Beginn schon hinter der Endzeit lag – und blieb
 		// als Eintrag ueber 00:00–00:00 zurueck.
-		const vortag = entry("t1", P1, at(16, 9), null);
-		const folge = entry("t2", P1, at(17, 0), null);
-		reset({ "2026-07": [vortag, folge] });
-		app.running = folge;
+		const prevDay = entry("t1", P1, at(16, 9), null);
+		const followUp = entry("t2", P1, at(17, 0), null);
+		reset({ "2026-07": [prevDay, followUp] });
+		app.running = followUp;
 
 		await app.stop(at(16, 19)); // "aufgehört habe ich gestern um 19 Uhr"
 
@@ -172,10 +172,10 @@ describe("stop() – Lauf über mehrere Tage nachträglich beenden", () => {
 	it("erkennt den Lauf über ein offenes Vorgängerstück hinweg", async () => {
 		// Dieselbe Lage, aber die Endzeit liegt im Folgestueck: dann bleiben beide
 		// stehen – nur eben als ein Lauf.
-		const vortag = entry("t1", P1, at(16, 9), null);
-		const folge = entry("t2", P1, at(17, 0), null);
-		reset({ "2026-07": [vortag, folge] });
-		app.running = folge;
+		const prevDay = entry("t1", P1, at(16, 9), null);
+		const followUp = entry("t2", P1, at(17, 0), null);
+		reset({ "2026-07": [prevDay, followUp] });
+		app.running = followUp;
 
 		await app.stop(at(17, 8));
 
@@ -190,10 +190,10 @@ describe("stop() – Lauf über mehrere Tage nachträglich beenden", () => {
 		// Idempotenz-Wache in #rolloverAtMidnight greift nur, wenn das andere
 		// Fenster schon geschrieben hat). Beide Ketten haben denselben Anfang und
 		// dieselbe Länge – es darf trotzdem keine offen zurückbleiben.
-		const vortag = entry("t1", P1, at(16, 9), at(17, 0));
+		const prevDay = entry("t1", P1, at(16, 9), at(17, 0));
 		const a = entry("t2a", P1, at(17, 0), null);
 		const b = entry("t2b", P1, at(17, 0), null);
-		reset({ "2026-07": [vortag, a, b] });
+		reset({ "2026-07": [prevDay, a, b] });
 		app.running = b;
 
 		await app.stop(at(17, 8));
@@ -208,20 +208,20 @@ describe("stop() – Lauf über mehrere Tage nachträglich beenden", () => {
 		// Beide kämen als Vorgänger in Frage: gleiche Aktivität, Mitternacht des
 		// eigenen Tages ist der Start von t2. Ohne Vorrang für den exakten Treffer
 		// entschiede die Reihenfolge in der Monatsdatei, wie der Lauf aussieht.
-		const vergessen = entry("alt", P1, at(16, 7), null); // nach einem Absturz nie geschlossen
-		const echt = entry("t1", P1, at(16, 9), at(17, 0));
-		const folge = entry("t2", P1, at(17, 0), null);
-		reset({ "2026-07": [vergessen, echt, folge] });
+		const forgotten = entry("alt", P1, at(16, 7), null); // nach einem Absturz nie geschlossen
+		const real = entry("t1", P1, at(16, 9), at(17, 0));
+		const followUp = entry("t2", P1, at(17, 0), null);
+		reset({ "2026-07": [forgotten, real, followUp] });
 
-		expect(app.runChain(folge).map((e) => e.id)).toEqual(["t1", "t2"]);
+		expect(app.runChain(followUp).map((e) => e.id)).toEqual(["t1", "t2"]);
 	});
 
 	it("fasst zwei zufällig aneinanderstoßende Einträge nicht zu einem Lauf zusammen", async () => {
 		// Manuell erfasst, kein Mitternachts-Stueck: der Vormittag bleibt stehen.
-		const vormittag = entry("v", P1, at(17, 8), at(17, 12));
-		const laufend = entry("r", P1, at(17, 12), null);
-		reset({ "2026-07": [vormittag, laufend] });
-		app.running = laufend;
+		const morning = entry("v", P1, at(17, 8), at(17, 12));
+		const ongoing = entry("r", P1, at(17, 12), null);
+		reset({ "2026-07": [morning, ongoing] });
+		app.running = ongoing;
 
 		await app.stop(at(17, 10));
 
@@ -231,7 +231,7 @@ describe("stop() – Lauf über mehrere Tage nachträglich beenden", () => {
 	});
 
 	it("runSeconds zählt den ganzen Lauf, nicht nur das Stück seit Mitternacht", () => {
-		laufUeberDreiTage();
+		runsOverThreeDays();
 		app.now = at(19, 9);
 
 		expect(app.runStartTs).toBe(at(16, 9));
@@ -245,19 +245,19 @@ describe("Rückdatierter Start kürzt einen Eintrag über mehrere Tage", () => {
 		// Start gekuerzt – ohne Teilung stuende dort ein Eintrag ueber 49 Stunden.
 		vi.useFakeTimers({ now: at(18, 10) });
 		try {
-			const vergessen = entry("alt", P1, at(16, 9), null);
-			reset({ "2026-07": [vergessen] });
-			app.running = vergessen;
+			const forgotten = entry("alt", P1, at(16, 9), null);
+			reset({ "2026-07": [forgotten] });
+			app.running = forgotten;
 			app.now = at(18, 10);
 
 			await app.startActivity(P2, at(18, 9));
 
-			const alt = onDisk("2026-07")
+			const old = onDisk("2026-07")
 				.filter((e) => e.activityId === P1)
 				.sort((a, b) => a.startTs - b.startTs);
-			expect(alt).toHaveLength(3); // 16., 17., 18. statt einer 49-Stunden-Zeile
-			expect(alt[0].endTs).toBe(at(17, 0));
-			expect(alt[2].endTs).toBe(at(18, 9));
+			expect(old).toHaveLength(3); // 16., 17., 18. statt einer 49-Stunden-Zeile
+			expect(old[0].endTs).toBe(at(17, 0));
+			expect(old[2].endTs).toBe(at(18, 9));
 			expect(app.running?.activityId).toBe(P2);
 		} finally {
 			vi.useRealTimers();
@@ -279,9 +279,51 @@ describe("addEntry – Konfliktregeln", () => {
 	});
 
 	it("lehnt Projektzeit an einem Ganztags-Abwesenheitstag ab", async () => {
-		const urlaub: Entry = { ...entry("v", ABS, at(17, 12), at(17, 12)), dayFraction: 1 };
-		reset({ "2026-07": [urlaub] });
+		const vacation: Entry = { ...entry("v", ABS, at(17, 12), at(17, 12)), dayFraction: 1 };
+		reset({ "2026-07": [vacation] });
 		expect(await app.addEntry(P1, at(17, 8), at(17, 12))).toBeNull();
+	});
+});
+
+describe("Zeitausgleich", () => {
+	it("legt ihn auf der Abwesenheits-Zeile an und merkt sich die Art", async () => {
+		// Keine eigene Aktivitaet: der Unterschied steckt allein im Eintrag.
+		reset();
+		const created = await app.addEntry(ABS, at(17, 12), at(17, 12), "", "manual", 1, {
+			timeOff: true
+		});
+		expect(created?.activityId).toBe(ABS);
+		expect(onDisk("2026-07")[0].timeOff).toBe(true);
+		expect(app.isTimeOff(onDisk("2026-07")[0])).toBe(true);
+	});
+
+	it("schreibt an einen gewoehnlichen Urlaubstag gar kein Merkmal", async () => {
+		// Ein `timeOff: false` an jedem Eintrag waere eine inhaltliche Aenderung
+		// und schickte beim naechsten Abgleich den halben Bestand erneut hoch.
+		reset();
+		await app.addEntry(ABS, at(17, 12), at(17, 12), "", "manual", 1);
+		expect("timeOff" in onDisk("2026-07")[0]).toBe(false);
+	});
+
+	it("sperrt einen ganzen Tag genauso wie ein Urlaubstag", async () => {
+		// Wer den Tag abfeiert, arbeitet an ihm nicht.
+		reset();
+		await app.addEntry(ABS, at(17, 12), at(17, 12), "", "manual", 1, { timeOff: true });
+		expect(await app.addEntry(P1, at(17, 8), at(17, 12))).toBeNull();
+	});
+
+	it("laesst Projektzeit neben einem halben Tag zu", async () => {
+		// Vormittags arbeiten, nachmittags abfeiern - der Sinn des halben Tages.
+		reset();
+		await app.addEntry(ABS, at(17, 12), at(17, 12), "", "manual", 0.5, { timeOff: true });
+		expect(await app.addEntry(P1, at(17, 8), at(17, 12))).not.toBeNull();
+	});
+
+	it("traegt einen ganzen Zeitraum als Zeitausgleich ein", async () => {
+		reset();
+		const { added } = await app.addAbsenceRange("2026-07-13", "2026-07-15", 1, true);
+		expect(added).toBe(3);
+		expect(onDisk("2026-07").every((e) => e.timeOff === true)).toBe(true);
 	});
 });
 
@@ -300,9 +342,9 @@ describe("deleteYearEntries", () => {
 	});
 
 	it("stoppt einen Timer, der im gelöschten Jahr läuft", async () => {
-		const laufend = entry("r", P1, wallToTs(2025, 12, 1, 8, 0, 0), null);
-		reset({ "2025-12": [laufend] });
-		app.running = laufend;
+		const ongoing = entry("r", P1, wallToTs(2025, 12, 1, 8, 0, 0), null);
+		reset({ "2025-12": [ongoing] });
+		app.running = ongoing;
 
 		await app.deleteYearEntries(2025);
 
@@ -311,9 +353,9 @@ describe("deleteYearEntries", () => {
 
 	it("meldet die Änderung, damit abgeleitete Listen neu lesen", async () => {
 		reset({ "2025-12": [entry("alt", P1, wallToTs(2025, 12, 1, 8, 0, 0), wallToTs(2025, 12, 1, 9, 0, 0))] });
-		const vorher = app.entriesVersion;
+		const previous = app.entriesVersion;
 		await app.deleteYearEntries(2025);
-		expect(app.entriesVersion).toBeGreaterThan(vorher);
+		expect(app.entriesVersion).toBeGreaterThan(previous);
 	});
 });
 
@@ -332,8 +374,8 @@ describe("Zurückgebliebene offene Einträge (Absturz)", () => {
 		// muss eine echte Dauer behalten, nicht endTs = startTs.
 		await reloadAt(at(17, 15), [entry("alt", P1, at(17, 9), null), entry("neu", P2, at(17, 12), null)]);
 
-		const alt = onDisk("2026-07").find((e) => e.id === "alt")!;
-		expect(alt.endTs).toBe(at(17, 12)); // nicht at(17, 9)
+		const old = onDisk("2026-07").find((e) => e.id === "alt")!;
+		expect(old.endTs).toBe(at(17, 12)); // nicht at(17, 9)
 		expect(app.running?.id).toBe("neu"); // der neueste läuft weiter
 	});
 
@@ -350,9 +392,9 @@ describe("Zurückgebliebene offene Einträge (Absturz)", () => {
 		// Gleicher Zeitstempel = versehentlich zweimal gestartet, keine Arbeitszeit.
 		await reloadAt(at(17, 15), [entry("a", P1, at(17, 9), null), entry("b", P2, at(17, 9), null)]);
 
-		const geschlossen = onDisk("2026-07").filter((e) => e.endTs !== null);
-		expect(geschlossen).toHaveLength(1);
-		expect(geschlossen[0].endTs).toBe(geschlossen[0].startTs);
+		const closed = onDisk("2026-07").filter((e) => e.endTs !== null);
+		expect(closed).toHaveLength(1);
+		expect(closed[0].endTs).toBe(closed[0].startTs);
 	});
 
 	it("rührt einen einzelnen laufenden Eintrag nicht an", async () => {
@@ -367,16 +409,16 @@ describe("Teilung respektiert Ganztags-Abwesenheiten", () => {
 	it("legt kein Folgetag-Stück an, wenn der neue Tag ganztags abwesend ist", async () => {
 		// Sonst umginge die Mitternachts-Teilung die Regel, die #reportConflict
 		// ueberall sonst durchsetzt: Urlaubstag traegt keine Projektzeit.
-		const urlaub: Entry = { ...entry("v", ABS, at(17, 12), at(17, 12)), dayFraction: 1 };
-		const laufend = entry("r", P1, at(16, 22), null);
-		reset({ "2026-07": [urlaub, laufend] });
-		app.running = laufend;
+		const vacation: Entry = { ...entry("v", ABS, at(17, 12), at(17, 12)), dayFraction: 1 };
+		const ongoing = entry("r", P1, at(16, 22), null);
+		reset({ "2026-07": [vacation, ongoing] });
+		app.running = ongoing;
 
 		await app.stop(at(17, 3));
 
-		const projekt = onDisk("2026-07").filter((e) => e.activityId === P1);
-		expect(projekt).toHaveLength(1);
-		expect(projekt[0].endTs).toBe(at(17, 0)); // endet an Mitternacht, kein Stueck danach
+		const project = onDisk("2026-07").filter((e) => e.activityId === P1);
+		expect(project).toHaveLength(1);
+		expect(project[0].endTs).toBe(at(17, 0)); // endet an Mitternacht, kein Stueck danach
 	});
 
 	it("splittet addEntry normal, wenn der Folgetag NICHT abwesend ist", async () => {
@@ -391,8 +433,8 @@ describe("Teilung respektiert Ganztags-Abwesenheiten", () => {
 	});
 
 	it("addEntry (ohne Rueckfrage-Option) lehnt einen Folgetag mit Ganztags-Abwesenheit ab", async () => {
-		const urlaub: Entry = { ...entry("v", ABS, at(18, 12), at(18, 12)), dayFraction: 1 };
-		reset({ "2026-07": [urlaub] });
+		const vacation: Entry = { ...entry("v", ABS, at(18, 12), at(18, 12)), dayFraction: 1 };
+		reset({ "2026-07": [vacation] });
 
 		const result = await app.addEntry(P1, at(17, 23), at(18, 1));
 
@@ -404,8 +446,8 @@ describe("Teilung respektiert Ganztags-Abwesenheiten", () => {
 
 describe("Rueckfrage bei Ganztags-Abwesenheit auf einem Folgetag", () => {
 	it("addEntry mit confirmAbsenceOverride zeigt eine Rueckfrage statt zu schreiben", async () => {
-		const urlaub: Entry = { ...entry("v", ABS, at(18, 12), at(18, 12)), dayFraction: 1 };
-		reset({ "2026-07": [urlaub] });
+		const vacation: Entry = { ...entry("v", ABS, at(18, 12), at(18, 12)), dayFraction: 1 };
+		reset({ "2026-07": [vacation] });
 
 		const result = await app.addEntry(
 			P1,
@@ -425,8 +467,8 @@ describe("Rueckfrage bei Ganztags-Abwesenheit auf einem Folgetag", () => {
 	});
 
 	it("confirmAbsenceOverride entfernt die Abwesenheit und legt den Eintrag danach an (add)", async () => {
-		const urlaub: Entry = { ...entry("v", ABS, at(18, 12), at(18, 12)), dayFraction: 1 };
-		reset({ "2026-07": [urlaub] });
+		const vacation: Entry = { ...entry("v", ABS, at(18, 12), at(18, 12)), dayFraction: 1 };
+		reset({ "2026-07": [vacation] });
 		await app.addEntry(P1, at(17, 23), at(18, 1), "", "manual", undefined, {
 			confirmAbsenceOverride: true
 		});
@@ -436,20 +478,20 @@ describe("Rueckfrage bei Ganztags-Abwesenheit auf einem Folgetag", () => {
 		expect(app.absenceOverridePrompt).toBeNull();
 		const disk = onDisk("2026-07").sort((a, b) => a.startTs - b.startTs);
 		expect(disk.find((e) => e.id === "v")).toBeUndefined(); // Abwesenheit entfernt
-		const projekt = disk.filter((e) => e.activityId === P1);
-		expect(projekt).toHaveLength(2);
-		expect(projekt[0].endTs).toBe(at(18, 0));
-		expect(projekt[1].startTs).toBe(at(18, 0));
-		expect(projekt[1].endTs).toBe(at(18, 1));
+		const project = disk.filter((e) => e.activityId === P1);
+		expect(project).toHaveLength(2);
+		expect(project[0].endTs).toBe(at(18, 0));
+		expect(project[1].startTs).toBe(at(18, 0));
+		expect(project[1].endTs).toBe(at(18, 1));
 	});
 
 	it("updateEntry zeigt dieselbe Rueckfrage, ohne den Eintrag vorher zu veraendern", async () => {
-		const urlaub: Entry = { ...entry("v", ABS, at(18, 12), at(18, 12)), dayFraction: 1 };
-		const bestehend = entry("e", P1, at(17, 22), at(17, 23));
-		reset({ "2026-07": [urlaub, bestehend] });
+		const vacation: Entry = { ...entry("v", ABS, at(18, 12), at(18, 12)), dayFraction: 1 };
+		const existing = entry("e", P1, at(17, 22), at(17, 23));
+		reset({ "2026-07": [vacation, existing] });
 
 		const result = await app.updateEntry(at(17, 22), {
-			...bestehend,
+			...existing,
 			endTs: at(18, 1) // reicht jetzt in den Urlaubstag
 		});
 
@@ -461,10 +503,10 @@ describe("Rueckfrage bei Ganztags-Abwesenheit auf einem Folgetag", () => {
 	});
 
 	it("confirmAbsenceOverride entfernt die Abwesenheit und uebernimmt die Bearbeitung (update)", async () => {
-		const urlaub: Entry = { ...entry("v", ABS, at(18, 12), at(18, 12)), dayFraction: 1 };
-		const bestehend = entry("e", P1, at(17, 22), at(17, 23));
-		reset({ "2026-07": [urlaub, bestehend] });
-		await app.updateEntry(at(17, 22), { ...bestehend, endTs: at(18, 1) });
+		const vacation: Entry = { ...entry("v", ABS, at(18, 12), at(18, 12)), dayFraction: 1 };
+		const existing = entry("e", P1, at(17, 22), at(17, 23));
+		reset({ "2026-07": [vacation, existing] });
+		await app.updateEntry(at(17, 22), { ...existing, endTs: at(18, 1) });
 
 		await app.confirmAbsenceOverride();
 
@@ -474,9 +516,9 @@ describe("Rueckfrage bei Ganztags-Abwesenheit auf einem Folgetag", () => {
 		const e = disk.find((x) => x.id === "e")!;
 		expect(e.startTs).toBe(at(17, 22));
 		expect(e.endTs).toBe(at(18, 0)); // Tag 1 behaelt die id, endet an Mitternacht
-		const folgetag = disk.find((x) => x.id !== "e" && x.activityId === P1)!;
-		expect(folgetag.startTs).toBe(at(18, 0));
-		expect(folgetag.endTs).toBe(at(18, 1));
+		const nextDay = disk.find((x) => x.id !== "e" && x.activityId === P1)!;
+		expect(nextDay.startTs).toBe(at(18, 0));
+		expect(nextDay.endTs).toBe(at(18, 1));
 	});
 });
 
@@ -488,19 +530,19 @@ describe("Bearbeiten eines anstossenden Timer-Eintrags", () => {
 		wallToTs(2026, 7, day, h, m, s);
 
 	/** 11:20:39–14:00:22, direkt gefolgt von 14:00:22–24:00 (Annas 19.08.). */
-	function paar() {
-		const vorher = entry("a", P1, sec(19, 11, 20, 39), sec(19, 14, 0, 22));
-		const danach = entry("b", P1, sec(19, 14, 0, 22), sec(20, 0, 0, 0));
-		reset({ "2026-07": [vorher, danach] });
-		return danach;
+	function pair() {
+		const previous = entry("a", P1, sec(19, 11, 20, 39), sec(19, 14, 0, 22));
+		const afterwards = entry("b", P1, sec(19, 14, 0, 22), sec(20, 0, 0, 0));
+		reset({ "2026-07": [previous, afterwards] });
+		return afterwards;
 	}
 
 	it("weist den auf :00 abgerundeten Start ab – der Fehler, den keepSeconds verhindert", async () => {
-		const danach = paar();
+		const afterwards = pair();
 		// Ohne keepSeconds baut der Dialog aus "14:00" die Sekunde 00 und ragt damit
 		// 22 Sekunden in den Vorgaenger.
-		const ok = await app.updateEntry(danach.startTs, {
-			...danach,
+		const ok = await app.updateEntry(afterwards.startTs, {
+			...afterwards,
 			startTs: sec(19, 14, 0, 0),
 			endTs: sec(19, 18, 26, 0)
 		});
@@ -509,9 +551,9 @@ describe("Bearbeiten eines anstossenden Timer-Eintrags", () => {
 	});
 
 	it("nimmt den Start mit erhaltenen Sekunden an", async () => {
-		const danach = paar();
-		const ok = await app.updateEntry(danach.startTs, {
-			...danach,
+		const afterwards = pair();
+		const ok = await app.updateEntry(afterwards.startTs, {
+			...afterwards,
 			startTs: sec(19, 14, 0, 22), // keepSeconds hat die 22 zurueckgegeben
 			endTs: sec(19, 18, 26, 0)
 		});
@@ -527,12 +569,12 @@ describe("#reportConflict über Monatsgrenzen", () => {
 		// #reportConflict muss auch den Folgemonat pruefen: ein Kandidat, der ueber
 		// den Monatswechsel reicht, darf einen Eintrag am 1. August nicht uebersehen.
 		const augustStart = wallToTs(2026, 8, 1, 0, 0, 0);
-		const bestehend = entry("aug", P2, augustStart, augustStart + 30 * 60 * 1000); // 00:00–00:30
-		reset({ "2026-08": [bestehend] });
+		const existing = entry("aug", P2, augustStart, augustStart + 30 * 60 * 1000); // 00:00–00:30
+		reset({ "2026-08": [existing] });
 
-		const silvester = wallToTs(2026, 7, 31, 23, 45, 0);
-		const ende = wallToTs(2026, 8, 1, 0, 15, 0); // überschneidet 00:00–00:15 mit "aug"
-		const result = await app.addEntry(P1, silvester, ende);
+		const newYearsEve = wallToTs(2026, 7, 31, 23, 45, 0);
+		const end = wallToTs(2026, 8, 1, 0, 15, 0); // überschneidet 00:00–00:15 mit "aug"
+		const result = await app.addEntry(P1, newYearsEve, end);
 
 		expect(result).toBeNull();
 		expect(onDisk("2026-07")).toHaveLength(0);
@@ -541,12 +583,12 @@ describe("#reportConflict über Monatsgrenzen", () => {
 
 	it("lässt einen anstoßenden (nicht überschneidenden) Monatswechsel weiterhin zu", async () => {
 		const augustStart = wallToTs(2026, 8, 1, 0, 15, 0);
-		const bestehend = entry("aug", P2, augustStart, augustStart + 30 * 60 * 1000); // 00:15–00:45
-		reset({ "2026-08": [bestehend] });
+		const existing = entry("aug", P2, augustStart, augustStart + 30 * 60 * 1000); // 00:15–00:45
+		reset({ "2026-08": [existing] });
 
-		const silvester = wallToTs(2026, 7, 31, 23, 45, 0);
-		const ende = wallToTs(2026, 8, 1, 0, 15, 0); // endet genau, wo "aug" beginnt
-		const result = await app.addEntry(P1, silvester, ende);
+		const newYearsEve = wallToTs(2026, 7, 31, 23, 45, 0);
+		const end = wallToTs(2026, 8, 1, 0, 15, 0); // endet genau, wo "aug" beginnt
+		const result = await app.addEntry(P1, newYearsEve, end);
 
 		expect(result).not.toBeNull();
 	});
@@ -601,10 +643,10 @@ describe("devSimulateStartFault() – Ladebildschirm vorführen", () => {
 	});
 
 	it("nimmt den echten Fehlerweg und lässt sich danach normal starten", async () => {
-		const laufend = entry("r", P1, at(17, 9), null);
-		reset({ "2026-07": [laufend] });
+		const ongoing = entry("r", P1, at(17, 9), null);
+		reset({ "2026-07": [ongoing] });
 		app.loaded = true; // App laeuft bereits
-		const vorher = files.get(monthFile("2026-07"));
+		const previous = files.get(monthFile("2026-07"));
 
 		await app.devSimulateStartFault("error");
 
@@ -612,7 +654,7 @@ describe("devSimulateStartFault() – Ladebildschirm vorführen", () => {
 		expect(app.initError?.step).toContain("Einträge");
 		expect(app.initError?.message).toContain("Dev-Menü");
 		// Nichts angefasst: der gestoerte Schritt laeuft gar nicht erst an.
-		expect(files.get(monthFile("2026-07"))).toBe(vorher);
+		expect(files.get(monthFile("2026-07"))).toBe(previous);
 
 		// „Erneut versuchen": die Stoerung gilt nur einmal.
 		expect(await app.init()).toBe(true);
@@ -659,8 +701,8 @@ describe("ensureMonth", () => {
 			app.ensureMonth("2026-03")
 		]);
 
-		const gelesen = spy.mock.calls.filter((c) => String(c[0]).includes("entries-2026-03")).length;
-		expect(gelesen).toBe(1);
+		const read = spy.mock.calls.filter((c) => String(c[0]).includes("entries-2026-03")).length;
+		expect(read).toBe(1);
 		spy.mockRestore();
 	});
 
@@ -700,5 +742,174 @@ describe("ensureMonth", () => {
 		expect(app.settings.pomodoroBreakMin).toBe(5);
 		expect(app.running?.activityId).toBe(P1);
 		expect(app.pomodoro?.phase).toBe("focus");
+	});
+});
+
+describe("Eingebaute Zeilen: Duplikate zusammenfuehren", () => {
+	/** Aktivitaeten auf die Platte legen und die App neu einlesen lassen. */
+	async function withActivities(list: Activity[], entries: Record<string, Entry[]> = {}) {
+		reset(entries);
+		files.set("data/activities.json", JSON.stringify(list));
+		await app.reload();
+	}
+
+	const row = (id: string, name: string, isAbsence: boolean, sortOrder = 0): Activity => ({
+		id,
+		name,
+		sortOrder,
+		archived: false,
+		isAbsence
+	});
+
+	it("macht aus drei 'Others' und drei 'Abwesenheiten' je eine", async () => {
+		// Genau der gemeldete Zustand: jedes Geraet hatte eigene Zufalls-Ids vergeben.
+		await withActivities([
+			row("zufall-1", "Others", false, 0),
+			row("zufall-2", "Others", false, 1),
+			row("zufall-3", "Others", false, 2),
+			row("zufall-4", "Abwesenheiten", true, 3),
+			row("zufall-5", "Abwesenheiten", true, 4),
+			row("zufall-6", "Abwesenheiten", true, 5),
+			row(P1, "Projekt 1", false, 6)
+		]);
+
+		expect(app.activities.filter((a) => a.name === "Others")).toHaveLength(1);
+		expect(app.activities.filter((a) => a.isAbsence)).toHaveLength(1);
+		expect(app.activities.find((a) => a.name === "Others")?.id).toBe(BUILTIN_OTHERS_ID);
+		expect(app.activities.find((a) => a.isAbsence)?.id).toBe(BUILTIN_ABSENCE_ID);
+		// Die echte Aktivitaet bleibt unangetastet.
+		expect(app.activities.find((a) => a.id === P1)).toBeDefined();
+	});
+
+	it("haengt die Eintraege der Duplikate um, statt sie zu loeschen", async () => {
+		await withActivities(
+			[row("alt-a", "Abwesenheiten", true, 0), row("alt-b", "Abwesenheiten", true, 1)],
+			{
+				"2026-08": [
+					entry("e1", "alt-a", at(3, 9), at(3, 17)),
+					entry("e2", "alt-b", at(4, 9), at(4, 17))
+				]
+			}
+		);
+
+		const stored = onDisk("2026-08");
+		expect(stored).toHaveLength(2);
+		expect(stored.every((e) => e.activityId === BUILTIN_ABSENCE_ID)).toBe(true);
+	});
+
+	it("zieht auch eine einzelne Zeile mit Alt-Id auf die feste Id", async () => {
+		// Sonst legte ein frisch aufgesetztes Geraet die feste Id an und der
+		// Abgleich brachte prompt wieder ein Duplikat.
+		await withActivities([row("alt-einzeln", "Abwesenheiten", true, 0)], {
+			"2026-08": [entry("e1", "alt-einzeln", at(3, 9), at(3, 17))]
+		});
+
+		expect(app.activities.filter((a) => a.isAbsence)).toHaveLength(1);
+		expect(app.activities.find((a) => a.isAbsence)?.id).toBe(BUILTIN_ABSENCE_ID);
+		expect(onDisk("2026-08")[0].activityId).toBe(BUILTIN_ABSENCE_ID);
+	});
+
+	it("behaelt Farbe und Favorit der ueberlebenden Zeile", async () => {
+		await withActivities([
+			{ ...row("aaa", "Others", false, 0), color: "#22c55e", favorite: true },
+			row("bbb", "Others", false, 1)
+		]);
+
+		const others = app.activities.find((a) => a.name === "Others");
+		expect(others?.color).toBe("#22c55e");
+		expect(others?.favorite).toBe(true);
+	});
+
+	it("legt fehlende Zeilen mit fester Id an", async () => {
+		await withActivities([row(P1, "Projekt 1", false, 0)]);
+
+		expect(app.activities.find((a) => a.name === "Others")?.id).toBe(BUILTIN_OTHERS_ID);
+		expect(app.activities.find((a) => a.isAbsence)?.id).toBe(BUILTIN_ABSENCE_ID);
+	});
+
+	it("aendert beim zweiten Durchlauf nichts mehr", async () => {
+		await withActivities([row("zufall-1", "Others", false, 0), row("zufall-2", "Others", false, 1)]);
+		const after = JSON.stringify(app.activities);
+
+		await app.reload();
+
+		expect(JSON.stringify(app.activities)).toBe(after);
+	});
+});
+
+describe("Reparatur der eingebauten Zeilen erreicht den Abgleich", () => {
+	it("merkt umgehaengte Eintraege und geloeschte Zeilen in der Outbox vor", async () => {
+		const { startTracking, stopTracking, pendingChanges, resetOutboxForTests } = await import(
+			"./sync/outbox"
+		);
+
+		reset();
+		// Ein bereits abgeglichener Eintrag: er traegt `rev`. Genau solche sammelt
+		// rememberUnstamped() NICHT mehr ein - ohne Schreib-Haken bliebe das
+		// Umhaengen also auf diesem Geraet stehen.
+		files.set(
+			"data/activities.json",
+			JSON.stringify([
+				{ id: "alt-a", name: "Abwesenheiten", sortOrder: 0, archived: false, isAbsence: true, rev: 7 },
+				{ id: "alt-b", name: "Abwesenheiten", sortOrder: 1, archived: false, isAbsence: true, rev: 8 }
+			])
+		);
+		files.set(
+			"data/entries-2026-08.json",
+			JSON.stringify([{ ...entry("e1", "alt-a", at(3, 9), at(3, 17)), rev: 3 }])
+		);
+
+		resetOutboxForTests();
+		await startTracking("geraet-test");
+		try {
+			await app.reload();
+
+			const marked = pendingChanges();
+			expect(marked.some((c) => c.kind === "entry" && c.id === "e1")).toBe(true);
+			expect(marked.some((c) => c.kind === "activity" && c.id === BUILTIN_ABSENCE_ID)).toBe(true);
+			// Die Duplikate muessen als Loeschung hochgehen, sonst holt sie der
+			// naechste Abgleich zurueck.
+			const deletions = marked.filter((c) => c.kind === "activity" && c.deleted).map((c) => c.id);
+			expect(deletions).toEqual(expect.arrayContaining(["alt-a", "alt-b"]));
+		} finally {
+			stopTracking();
+			resetOutboxForTests();
+		}
+	});
+});
+
+describe("Reparatur laeuft nicht zweimal ueber dieselbe Liste", () => {
+	it("erzeugt bei gleichzeitigen Durchlaeufen keine neuen Duplikate", async () => {
+		// reload() wird an mehreren Stellen ohne await angestossen (Fenster-Signal,
+		// Abgleich, Tray). Zwei Durchlaeufe lesen dann dieselbe Liste, und der
+		// zweite haengt seine Zeile an die des ersten an - dasselbe Duplikat, das
+		// hier eigentlich verschwinden soll.
+		reset();
+		app.activities = [
+			{ id: "alt-a", name: "Abwesenheiten", sortOrder: 0, archived: false, isAbsence: true },
+			{ id: "alt-b", name: "Abwesenheiten", sortOrder: 1, archived: false, isAbsence: true }
+		];
+
+		await Promise.all([app.mergeDuplicateBuiltins(), app.mergeDuplicateBuiltins()]);
+
+		expect(app.activities.filter((a) => a.isAbsence)).toHaveLength(1);
+		expect(app.activities.filter((a) => a.id === BUILTIN_ABSENCE_ID)).toHaveLength(1);
+	});
+
+	it("gibt der zusammengefuehrten Zeile keinen fremden Stempel mit", async () => {
+		// Unter der festen Id entsteht ein NEUER Datensatz. Mit dem `rev` der alten
+		// Zeile meldete das Geraet eine Aenderung an einer Fassung, die der Server
+		// nie hatte - der erste Abgleich nach dem Update liefe in einen Konflikt.
+		reset();
+		app.activities = [
+			{ id: "alt-a", name: "Abwesenheiten", sortOrder: 0, archived: false, isAbsence: true, rev: 7, updatedAt: 123 },
+			{ id: "alt-b", name: "Abwesenheiten", sortOrder: 1, archived: false, isAbsence: true, rev: 8 }
+		];
+
+		await app.mergeDuplicateBuiltins();
+
+		const merged = app.activities.find((a) => a.id === BUILTIN_ABSENCE_ID);
+		expect(merged?.rev).toBeUndefined();
+		expect(merged?.updatedAt).toBeUndefined();
 	});
 });

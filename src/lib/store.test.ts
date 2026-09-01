@@ -10,7 +10,9 @@ const {
 	listEntryMonths,
 	listEntryYears,
 	loadEntries,
+	loadDevice,
 	loadSettings,
+	loadTimeReport,
 	pruneEmptyMonthFiles,
 	saveEntries,
 	saveSettings
@@ -47,8 +49,8 @@ describe("saveEntries", () => {
 		// zu - mit einem fuehrenden Punkt im Namen schiede jeder Versuch mit
 		// "forbidden path", und die App schriebe dauerhaft ungeschuetzt direkt.
 		await saveEntries("2026-06", [entry("e1")]);
-		const versteckt = written.filter((p) => (p.split("/").pop() ?? "").startsWith("."));
-		expect(versteckt).toEqual([]);
+		const hidden = written.filter((p) => (p.split("/").pop() ?? "").startsWith("."));
+		expect(hidden).toEqual([]);
 		expect(written).toContain("data/entries-2026-06.json.tmp");
 	});
 
@@ -153,18 +155,18 @@ describe("deleteYear", () => {
 		// beim naechsten Start wieder in der Auswahl.
 		await saveEntries("2026-01", [entry("a")]);
 
-		const freigeben = blockWrites();
-		const speichern = saveEntries("2026-01", [entry("a"), entry("b")]);
+		const release = blockWrites();
+		const saving = saveEntries("2026-01", [entry("a"), entry("b")]);
 		// Das Loeschen startet, waehrend oben nachweislich noch geschrieben wird.
-		const loeschen = deleteYear(2026);
+		const remove = deleteYear(2026);
 		// Erst laufen lassen, bis es an der Datei ist: alles am Fake-Dateisystem ist
 		// eine Microtask, ein Durchlauf der Warteschlange bringt das Loeschen also
 		// bis zu seinem remove. Ohne dieses Warten stuende es beim Freigeben noch
 		// beim Verzeichnis-Lesen – dann treffen die beiden gar nicht aufeinander und
 		// der Test wuerde auch ohne die Warteschlange gruen.
 		await new Promise((resolve) => setTimeout(resolve, 0));
-		freigeben();
-		await Promise.all([speichern, loeschen]);
+		release();
+		await Promise.all([saving, remove]);
 
 		expect(files.has(file("2026-01"))).toBe(false);
 		expect(await listEntryMonths()).toEqual([]);
@@ -206,26 +208,26 @@ describe("pruneEmptyMonthFiles", () => {
 
 describe("beschädigte Monatsdatei", () => {
 	/** Halb geschriebene Datei, z.B. nach Stromausfall im Fallback-Zweig. */
-	const kaputt = '[{"id":"e1","activityId":"a1","startTs":123';
+	const broken = '[{"id":"e1","activityId":"a1","startTs":123';
 
 	it("wird nicht als leer gelesen, sondern zur Seite gelegt", async () => {
-		files.set(file("2026-06"), kaputt);
+		files.set(file("2026-06"), broken);
 		expect(await loadEntries("2026-06")).toEqual([]);
 		// Original weg, Inhalt aber unter neuem Namen erhalten.
 		expect(files.has(file("2026-06"))).toBe(false);
-		const abgelegt = [...files.entries()].find(([p]) => p.includes("beschaedigt"));
-		expect(abgelegt?.[1]).toBe(kaputt);
+		const stored = [...files.entries()].find(([p]) => p.includes("beschaedigt"));
+		expect(stored?.[1]).toBe(broken);
 	});
 
 	it("überlebt pruneEmptyMonthFiles – der Monat wird nicht gelöscht", async () => {
-		files.set(file("2026-06"), kaputt);
+		files.set(file("2026-06"), broken);
 		await pruneEmptyMonthFiles();
 		// Eine beschaedigte Datei darf prune nicht faelschlich als leer lesen und loeschen.
 		expect([...files.keys()].some((p) => p.includes("beschaedigt"))).toBe(true);
 	});
 
 	it("taucht danach nicht mehr in der Monatsliste auf", async () => {
-		files.set(file("2026-06"), kaputt);
+		files.set(file("2026-06"), broken);
 		await saveEntries("2026-07", [entry("e1")]);
 		await loadEntries("2026-06"); // legt die kaputte Datei ab
 		expect(await listEntryMonths()).toEqual(["2026-07"]);
@@ -247,9 +249,9 @@ describe("Speichern, wenn rename fehlschlägt", () => {
 
 	it("schreibt trotzdem eine vollständige, lesbare Datei", async () => {
 		await saveEntries("2026-06", [entry("e1"), entry("e2")]);
-		const roh = files.get(file("2026-06"));
-		expect(roh).toBeDefined();
-		expect(() => JSON.parse(roh!)).not.toThrow();
+		const raw = files.get(file("2026-06"));
+		expect(raw).toBeDefined();
+		expect(() => JSON.parse(raw!)).not.toThrow();
 		expect(await loadEntries("2026-06")).toHaveLength(2);
 	});
 
@@ -272,7 +274,7 @@ describe("Rundlauf", () => {
 	it("erhält alle Felder unverändert", async () => {
 		// Der Standard-entry() deckt nur eine Form ab; dayFraction, ein gesetztes
 		// endTs und Sonderzeichen in der Notiz gingen bisher durch keinen Test.
-		const voll: Entry = {
+		const complete: Entry = {
 			id: "e1",
 			activityId: "a1",
 			startTs: Date.UTC(2026, 5, 10, 8),
@@ -281,8 +283,8 @@ describe("Rundlauf", () => {
 			source: "calendar",
 			dayFraction: 0.5
 		};
-		await saveEntries("2026-06", [voll]);
-		expect((await loadEntries("2026-06"))[0]).toEqual(voll);
+		await saveEntries("2026-06", [complete]);
+		expect((await loadEntries("2026-06"))[0]).toEqual(complete);
 	});
 });
 
@@ -308,5 +310,90 @@ describe("clearAccountData", () => {
 		const s = await loadSettings();
 		expect(s.bossEmail).toBe("");
 		expect(s.senderName).toBe("");
+	});
+});
+
+describe("loadDevice", () => {
+	it("uebernimmt die alten Feldnamen aus device.json vor 0.9.2", async () => {
+		files.set(
+			"data/device.json",
+			JSON.stringify({ id: "d1", kontoKennung: "konto-a", bestandGehoertZu: "konto-a" })
+		);
+
+		const info = await loadDevice();
+
+		// Ohne Uebernahme saehe der Abgleich ein Geraet ohne Kontozuordnung und
+		// wuerde den lokalen Bestand als fremde Kopie loeschen.
+		expect(info?.accountFingerprint).toBe("konto-a");
+		expect(info?.dataOwner).toBe("konto-a");
+	});
+
+	it("laesst die alten Feldnamen nicht stehen", async () => {
+		files.set("data/device.json", JSON.stringify({ id: "d1", kontoKennung: "konto-a" }));
+
+		const info = (await loadDevice()) as Record<string, unknown> | null;
+
+		expect(info).not.toHaveProperty("kontoKennung");
+		expect(info).not.toHaveProperty("bestandGehoertZu");
+	});
+
+	it("bevorzugt die neuen Feldnamen, wenn beide dastehen", async () => {
+		files.set(
+			"data/device.json",
+			JSON.stringify({ id: "d1", kontoKennung: "alt", accountFingerprint: "neu" })
+		);
+
+		expect((await loadDevice())?.accountFingerprint).toBe("neu");
+	});
+
+	it("gibt null zurueck, wenn es noch keine device.json gibt", async () => {
+		expect(await loadDevice()).toBeNull();
+	});
+});
+
+describe("loadTimeReport", () => {
+	it("laesst Personalnummer und Namen aus aelteren Dateien fallen", async () => {
+		// Vor 0.9.2 wurden beide mitgespeichert. Ueber einen Spread landeten sie
+		// beim naechsten Speichern wieder auf der Platte - und spaeter im Abgleich.
+		files.set(
+			"data/timereport-2026-06.json",
+			JSON.stringify({
+				month: "2026-06",
+				importedAt: 1,
+				personKey: "00123456",
+				personName: "Anna Meier",
+				days: [{ date: "2026-06-01", firstIn: null, lastOut: null, hours: 0, flags: [] }]
+			})
+		);
+
+		const report = (await loadTimeReport("2026-06")) as Record<string, unknown> | null;
+
+		expect(report).not.toHaveProperty("personKey");
+		expect(report).not.toHaveProperty("personName");
+		expect(report?.month).toBe("2026-06");
+		expect((report?.days as unknown[]).length).toBe(1);
+	});
+
+	it("uebersetzt die alten Flag-Namen weiter", async () => {
+		files.set(
+			"data/timereport-2026-06.json",
+			JSON.stringify({
+				month: "2026-06",
+				importedAt: 1,
+				days: [
+					{
+						date: "2026-06-01",
+						firstIn: null,
+						lastOut: null,
+						hours: 0,
+						flags: [{ key: "ruhepause", label: "Ruhepause", value: "x" }]
+					}
+				]
+			})
+		);
+
+		const report = await loadTimeReport("2026-06");
+
+		expect(report?.days[0].flags[0].key).toBe("restBreak");
 	});
 });

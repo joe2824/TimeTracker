@@ -10,6 +10,7 @@ import {
 } from "./store";
 import type { Activity, Entry, Settings } from "./types";
 import { app } from "./app.svelte";
+import { account } from "./sync/account.svelte";
 import { invoke } from "@tauri-apps/api/core";
 import { logError, logInfo } from "./log";
 
@@ -21,6 +22,11 @@ export interface TimeTrackerBackup {
 	settings: Settings;
 	activities: Activity[];
 	entries: Record<string, Entry[]>; // "YYYY-MM" -> Entry[]
+	/**
+	 * Dass beim Sichern der ganze Bestand da war. Aelteren Dateien fehlt der
+	 * Vermerk - die koennen aus einer Zeit stammen, in der noch Monate nachkamen.
+	 */
+	complete?: true;
 }
 
 export interface BackupStats {
@@ -29,6 +35,8 @@ export interface BackupStats {
 	entryCount: number;
 	months: string[];
 	createdAt?: string;
+	/** Ob die Datei bezeugt, dass sie den ganzen Bestand enthaelt. */
+	complete: boolean;
 }
 
 export interface RestoreResult {
@@ -39,8 +47,17 @@ export interface RestoreResult {
 
 /**
  * Erstellt eine vollständige Sicherung aller lokalen Daten (Einstellungen, Aktivitäten, alle Monate).
+ *
+ * Solange nach einer Neuverknuepfung noch aeltere Monate nachkommen, waere die
+ * Sicherung nur ein Ausschnitt - und sie sieht einer vollstaendigen zum
+ * Verwechseln aehnlich. Dann lieber gar keine.
  */
 export async function createBackupData(): Promise<TimeTrackerBackup> {
+	if (account.backfilling) {
+		throw new Error(
+			"Ältere Monate werden gerade noch geladen. Die Sicherung wäre unvollständig – bitte kurz warten."
+		);
+	}
 	const settings = await loadSettings();
 	const activities = await loadActivities();
 	const months = await listEntryMonths();
@@ -59,7 +76,8 @@ export async function createBackupData(): Promise<TimeTrackerBackup> {
 		createdAt: new Date().toISOString(),
 		settings,
 		activities,
-		entries
+		entries,
+		complete: true
 	};
 }
 
@@ -108,7 +126,8 @@ export function inspectBackup(jsonString: string): {
 			monthCount: months.length,
 			entryCount,
 			months,
-			createdAt: backup.createdAt
+			createdAt: backup.createdAt,
+			complete: backup.complete === true
 		};
 
 		return { valid: true, backup, stats };
@@ -124,6 +143,14 @@ export async function restoreBackup(
 	backup: TimeTrackerBackup,
 	mode: "merge" | "replace" = "merge"
 ): Promise<RestoreResult> {
+	// Nachkommende Monate wuerden ueber das Eingespielte laufen: die Zeiten aus der
+	// Datei tragen ihren alten Zeitstempel, der Serverstand gewinnt damit stellenweise.
+	if (account.backfilling) {
+		throw new Error(
+			"Ältere Monate werden gerade noch geladen. Ein Teil der Sicherung würde dabei wieder überschrieben – bitte kurz warten."
+		);
+	}
+
 	let restoredActivities = 0;
 	let restoredMonths = 0;
 	let restoredEntries = 0;
@@ -186,8 +213,9 @@ export async function restoreBackup(
 		}
 	}
 
-	// App-Zustand neu laden
-	await app.reload();
+	// App-Zustand neu laden. Die wiederhergestellten Monate ausdruecklich dazu:
+	// `reload` liest von sich aus nur, was schon im Speicher steht.
+	await app.reload(Object.keys(backup.entries));
 	logInfo("Sicherung wiederhergestellt", { mode, restoredActivities, restoredMonths, restoredEntries });
 
 	return { restoredActivities, restoredMonths, restoredEntries };

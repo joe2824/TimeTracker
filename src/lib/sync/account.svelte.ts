@@ -4,10 +4,13 @@ import { logError, logInfo, logWarn } from "../log";
 import {
 	clearAccountData,
 	clearOutbox,
+	deleteTimeReport,
 	loadDevice,
 	loadEntries,
+	loadTimeReport,
 	saveDevice,
-	saveEntries
+	saveEntries,
+	saveTimeReport
 } from "../store";
 import { loadActivities, saveActivities, loadSettings, saveSettings, listEntryMonths } from "../store";
 import { deviceId } from "./device";
@@ -16,11 +19,12 @@ import {
 	stopTracking,
 	pendingChanges,
 	setChangeListener,
-	merkeUngestempeltes
+	rememberUnstamped
 } from "./outbox";
 import { Api, ApiError, type AccountInfo, type BackupInfo, type DeleteSummary, type Invite, type Passkey } from "./api";
 import { detachLocalData } from "./detach";
-import { SyncEngine } from "./engine";
+import { monthKey, prevMonthKey, shiftMonthKey } from "../time";
+import { SyncEngine, type SyncState } from "./engine";
 import {
 	createPairingKeyPair,
 	createVaultKey,
@@ -31,6 +35,7 @@ import {
 	importVaultKey,
 	normalizePairingCode,
 	pairingCode,
+	bucketFor,
 	createClaimSecret,
 	toBase64,
 	unwrapForDevice,
@@ -43,7 +48,7 @@ import { isTauri } from "../platform/env";
 import { platformFetch } from "../platform/http";
 import { notifyDataChanged } from "../platform/windows";
 
-export type LinkState = "aus" | "verbindet" | "verbunden" | "fehler";
+export type LinkState = "off" | "connecting" | "connected" | "error";
 
 /** Wie weit das Entkoppeln gehen soll - siehe `AccountState.unlink`. */
 export interface UnlinkOptions {
@@ -54,7 +59,7 @@ export interface UnlinkOptions {
 }
 
 /** Wie es dem Abgleich gerade geht - genau das, was die Oberflaeche zeigt. */
-export type SyncPhase = "ruht" | "laeuft" | "offline" | "fehler";
+export type SyncPhase = "idle" | "running" | "offline" | "error";
 
 /**
  * Wie lange nach einer Aenderung gewartet wird, bevor hochgeladen wird.
@@ -67,12 +72,42 @@ const DEBOUNCE_MS = 400;
 /** Abstand zwischen zwei Verbindungsversuchen, wachsend (maximal 30s). */
 const RETRY_MS = [1_000, 3_000, 5_000, 10_000, 20_000, 30_000];
 
+/**
+ * Wie weit `remoteMonths` zurueckschaut.
+ *
+ * Fuenf Jahre. Die Kennungen sind HMACs, die dieses Geraet selbst rechnet -
+ * sechzig Stueck kosten nichts.
+ */
+const REMOTE_MONTH_LOOKBACK = 60;
+
+/**
+ * Wie weit `remoteMonths` vorausschaut.
+ *
+ * Urlaub wird im Voraus gebucht, oft bis ins naechste Jahr. Ohne den Blick nach
+ * vorn fehlten genau diese Monate in der Auswahl, solange die Historie laeuft.
+ */
+const REMOTE_MONTH_LOOKAHEAD = 12;
+
 /** Der langsame Takt, wo es keinen Weckruf-Kanal gibt. */
 const HEARTBEAT_MS = 5 * 60 * 1000;
 
+/**
+ * Hochzaehlen, sobald eine neue Datensatzart hinzukommt.
+ *
+ * 1 = die eingelesenen Reports (timereport).
+ *
+ * Der Stand `seq` laeuft ueber ALLES, was der Server hat - auch ueber Arten, die
+ * die damals laufende Fassung nicht kannte und deshalb stillschweigend
+ * uebergangen hat. Die sind fuer dieses Geraet fuer immer weg, denn der naechste
+ * Abruf beginnt hinter ihnen. Ein Wechsel dieser Zahl laesst jedes Geraet
+ * einmalig von vorne holen; das Zusammenfuehren aendert dabei nichts an dem, was
+ * schon stimmt.
+ */
+export const RESYNC_GENERATION = 1;
+
 class AccountState {
-	state = $state<LinkState>("aus");
-	phase = $state<SyncPhase>("ruht");
+	state = $state<LinkState>("off");
+	phase = $state<SyncPhase>("idle");
 	/** Anzeigename des Kontos, sobald bekannt. */
 	name = $state<string>("");
 	serverUrl = $state<string>("");
@@ -100,6 +135,16 @@ class AccountState {
 	pairCodeFromLink = $state<string>("");
 	/** Fortschritt des aktuellen Synchronisationsvorgangs (z.B. wie viele Datensätze geladen wurden). */
 	syncProgress = $state<{ phase: "idle" | "pulling" | "pushing"; pulled: number; pushed: number } | null>(null);
+
+	/**
+	 * Ob noch aeltere Monate nachkommen.
+	 *
+	 * Gespiegelt statt durchgereicht: der Zustand im Abgleich ist kein `$state`,
+	 * die Oberflaeche bekaeme eine Aenderung daran sonst nie mit.
+	 */
+	backfilling = $state(false);
+	/** Monate, die gerade vom Server nachgeholt werden - die Auswahl zeigt es an. */
+	fetchingMonths = $state<string[]>([]);
 	/** Status des Massen-Imports für die UI (z.B. Modal im Browser). */
 	bulkSync = $state<{ phase: "pulling" | "done"; pulled: number } | null>(null);
 	/** Ob die Initialisierung des Kontos (Lesen lokaler Zugangsdaten) abgeschlossen ist. */
@@ -116,10 +161,22 @@ class AccountState {
 	#heartbeat: ReturnType<typeof setInterval> | null = null;
 	#listenersInstalled = false;
 	/** Laeuft eine Weckruf-Schleife? Der Abbruch beendet auch die offene Anfrage. */
-	#warten: AbortController | null = null;
+	#wait: AbortController | null = null;
+	/** Wurde der Stand gerade zurueckgesetzt? Siehe #rewindForNewKinds. */
+	#rewound = false;
+	/**
+	 * Wird beim Abmelden aufgerufen - von aussen registriert, um einen Kreis-Import
+	 * zu vermeiden (prefetch importiert account, account darf prefetch nicht importieren).
+	 */
+	#logoutHook: (() => void) | null = null;
+
+	/** Einen Haken fuer das Abmelden setzen. Derzeit: prefetch-Puffer leeren. */
+	setLogoutHook(fn: () => void): void {
+		this.#logoutHook = fn;
+	}
 
 	get linked(): boolean {
-		return this.state === "verbunden";
+		return this.state === "connected";
 	}
 
 	get pending(): number {
@@ -146,23 +203,26 @@ class AccountState {
 			this.serverUrl = info.serverUrl;
 			this.name = info.accountName ?? "";
 			this.secretsProtected = info.protected ?? false;
-			this.state = "verbindet";
+			this.state = "connecting";
 			try {
 				const token = info.token
 					? await unprotectSecret(info.token, info.protected ?? false)
 					: null;
-				const rohschluessel = await unprotectSecret(info.vaultKey, info.protected ?? false);
-				this.#key = await importVaultKey(fromBase64(rohschluessel).buffer as ArrayBuffer);
+				const rawKey = await unprotectSecret(info.vaultKey, info.protected ?? false);
+				this.#key = await importVaultKey(fromBase64(rawKey).buffer as ArrayBuffer);
 				this.#device = await deviceId();
 				this.hasDeviceToken = token !== null;
-				await this.#startEngine(info.serverUrl, token, info.seq ?? 0);
+				await this.#startEngine(info.serverUrl, token, {
+					seq: info.seq ?? 0,
+					priority: info.priority
+				});
 
 				// Im Browser ohne festes Geraetetoken: vor der Freigabe der App prüfen,
 				// ob die Sitzung (Cookie) beim Server noch gueltig ist.
 				if (!isTauri() && !this.hasDeviceToken) {
 					try {
 						await this.accountInfo();
-						this.state = "verbunden";
+						this.state = "connected";
 					} catch (e) {
 						if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
 							// Sitzung abgelaufen: Daten aufräumen und sauber in den Anmeldezustand wechseln
@@ -170,24 +230,24 @@ class AccountState {
 							await this.#forgetLocally();
 							await clearAccountData();
 							app.clearLocalData();
-							this.state = "aus";
+							this.state = "off";
 							return;
 						}
 						// Bei Verbindungsabbruch / Offline: offline verbunden bleiben
-						this.state = "verbunden";
+						this.state = "connected";
 						this.phase = "offline";
 					}
 				} else {
-					this.state = "verbunden";
+					this.state = "connected";
 					void this.accountInfo().catch(() => {});
 				}
 
 				logInfo("Konto verknüpft", { server: info.serverUrl });
-				void this.abgleichMitNachlese();
+				void this.syncWithFollowUp();
 			} catch (e) {
 				// Der haeufigste Grund: die Datei stammt von einem anderen
 				// Benutzerkonto. Dann ist die Verknuepfung hier nichts mehr wert.
-				this.state = "fehler";
+				this.state = "error";
 				this.message = e instanceof Error ? e.message : "Verknüpfung nicht lesbar";
 				logError("Verknüpfung konnte nicht geöffnet werden", e);
 			}
@@ -196,16 +256,17 @@ class AccountState {
 		}
 	}
 
-	async #startEngine(url: string, token: string | null, seq: number): Promise<void> {
+	async #startEngine(url: string, token: string | null, state: SyncState): Promise<void> {
+		state = await this.#rewindForNewKinds(state);
 		this.#api = new Api({ baseUrl: url, token, fetchFn: platformFetch });
 		this.#engine = new SyncEngine({
 			api: this.#api,
 			key: this.#key!,
 			deviceId: this.#device,
-			state: { seq },
+			state,
 			saveState: async (s) => {
 				const info = await loadDevice();
-				if (info) await saveDevice({ ...info, seq: s.seq });
+				if (info) await saveDevice({ ...info, seq: s.seq, priority: s.priority });
 			},
 			store: {
 				entriesOfMonth: loadEntries,
@@ -213,7 +274,10 @@ class AccountState {
 				activities: loadActivities,
 				saveActivities,
 				settings: loadSettings,
-				saveSettings
+				saveSettings,
+				timeReport: loadTimeReport,
+				saveTimeReport,
+				deleteTimeReport
 			},
 			onProgress: (p) => {
 				this.syncProgress = p.phase === "idle" ? null : p;
@@ -225,12 +289,55 @@ class AccountState {
 				}
 			}
 		});
+		this.backfilling = state.priority !== undefined;
 		this.#engine.setMonthLister(listEntryMonths);
+		// Wer einen Monat oeffnet, den der Backfill noch nicht hat, soll ihn sehen -
+		// nicht eine leere Ansicht mit dem Hinweis, spaeter wiederzukommen.
+		app.setMonthFetcher((month) => this.ensureMonthSynced(month));
 		await startTracking(this.#device);
+		// Ab hier steht der Schreib-Haken. Erst jetzt darf die Reparatur der
+		// eingebauten Zeilen laufen: sie haengt Eintraege um, die bereits ein `rev`
+		// tragen - ohne Haken wuerde rememberUnstamped() sie nicht aufsammeln und
+		// die Umhaengung erreichte den Server nie.
+		await app.mergeDuplicateBuiltins();
 		// Jede lokale Aenderung stoesst einen Abgleich an - gesammelt, nicht sofort.
 		setChangeListener(() => this.syncSoon());
 		this.#installNetworkListeners();
 		this.#openStream();
+	}
+
+	/**
+	 * Einmalig von vorne holen, wenn seit dem letzten Start eine Datensatzart
+	 * dazugekommen ist. Siehe RESYNC_GENERATION.
+	 *
+	 * Der Merker wird VOR dem Abrufen gespeichert, zusammen mit dem
+	 * zurueckgesetzten Stand: bricht der Abruf ab, steht der Stand weiterhin auf 0
+	 * und der naechste Versuch holt den Rest - ohne den Nachlauf ein zweites Mal
+	 * auszuloesen.
+	 */
+	async #rewindForNewKinds(state: SyncState): Promise<SyncState> {
+		const info = await loadDevice();
+		if (!info || info.resyncGeneration === RESYNC_GENERATION) return state;
+		// Der vorgezogene Teil bleibt stehen, nur sein eigener Stand geht mit auf
+		// 0 - der zeigte sonst hinter Datensaetze, die gerade erst nachkommen.
+		// Ihn wegzunehmen kostet mehr, als es einbringt: der Abruf liefe wieder
+		// aeltestes zuerst, und `backfilling` stuende auf false, obwohl Monate
+		// fehlen. Damit gingen die Sperren fuer Sicherung und Monatsauswahl still
+		// auf, und eine Teilsicherung truege den Vermerk "vollstaendig".
+		const priority = state.priority ? { ...state.priority, seq: 0 } : undefined;
+		const rewound: SyncState = { seq: 0, priority };
+		// Stand 0 heisst: es gibt nichts nachzuholen - frisch verknuepft, oder noch
+		// nie abgeglichen. Nur der Merker war faellig. Der Nachlauf-Vermerk darf
+		// hier NICHT gesetzt werden: sonst gilt das Konto als schon benutzt, und
+		// der lokale Bestand faende nie den Weg hinauf.
+		if (state.seq === 0) {
+			await saveDevice({ ...info, priority, resyncGeneration: RESYNC_GENERATION });
+			return rewound;
+		}
+		await saveDevice({ ...info, seq: 0, priority, resyncGeneration: RESYNC_GENERATION });
+		this.#rewound = true;
+		logInfo("Hole den Serverstand einmalig von vorne", { grund: "neue Datensatzart" });
+		return rewound;
 	}
 
 	// ---------- Abgleich ----------
@@ -252,11 +359,18 @@ class AccountState {
 	 * Erst holen, dann vormerken: der frische Zeitstempel des ungestempelten
 	 * Bestands gewaenne sonst jeden Vergleich und ueberschriebe das Konto.
 	 */
-	async abgleichMitNachlese(): Promise<void> {
-		const vorSeq = (await loadDevice())?.seq ?? 0;
+	async syncWithFollowUp(): Promise<void> {
+		const beforeSeq = (await loadDevice())?.seq ?? 0;
+		// Nach einem Nachlauf steht der Stand ebenfalls auf 0 - aber der Server hat
+		// alles. Ihn hier fuer frisch zu halten hiesse: der gesamte lokale Bestand
+		// geht ohne Not noch einmal hoch, und jedes andere Geraet zieht ihn hinter
+		// einer neuen Fassung wieder herunter.
+		const rewound = this.#rewound;
+		this.#rewound = false;
+		const untouchedAccount = beforeSeq === 0 && !rewound;
 		await this.syncNow();
-		if (await this.#bestandIstUnserer()) {
-			await merkeUngestempeltes(vorSeq === 0);
+		if (await this.#dataIsOurs()) {
+			await rememberUnstamped(untouchedAccount);
 		}
 		await this.syncNow();
 	}
@@ -268,10 +382,10 @@ class AccountState {
 	 * Kontos. Sie bleiben - aber sie gehen nicht hoch. Ohne diese Frage haette
 	 * jedes neue Konto den Bestand des vorigen geerbt.
 	 */
-	async #bestandIstUnserer(): Promise<boolean> {
+	async #dataIsOurs(): Promise<boolean> {
 		const info = await loadDevice();
-		if (!info?.bestandGehoertZu || !info.kontoKennung) return true;
-		return info.bestandGehoertZu === info.kontoKennung;
+		if (!info?.dataOwner || !info.accountFingerprint) return true;
+		return info.dataOwner === info.accountFingerprint;
 	}
 
 	/**
@@ -281,31 +395,79 @@ class AccountState {
 	 * Modulzustand; der Schreib-Haken laeuft dort nicht. Was es schreibt, traegt
 	 * deshalb keinen Stempel und stuende ohne diesen Schritt nur lokal da.
 	 */
-	async nachlese(): Promise<void> {
+	async followUp(): Promise<void> {
 		if (!this.linked) return;
-		if (!(await this.#bestandIstUnserer())) return;
-		await merkeUngestempeltes();
+		if (!(await this.#dataIsOurs())) return;
+		await rememberUnstamped();
 		this.syncSoon(0);
 	}
 
-	async syncNow(): Promise<void> {
-		if (!this.#engine || this.state !== "verbunden") return;
-		this.phase = "laeuft";
+	/**
+	 * Einen Monat holen, den der erste Abgleich noch nicht mitgebracht hat.
+	 *
+	 * Ist die Historie durch, kostet der Aufruf nichts - dann liegt ohnehin alles
+	 * auf der Platte.
+	 */
+	async ensureMonthSynced(month: string): Promise<void> {
+		if (!this.#engine || this.state !== "connected") return;
+		const running = this.#engine.ensureMonthSynced(month);
+		// Nur melden, wenn wirklich etwas laeuft: liegt der Monat schon vor, kaeme
+		// sonst fuer einen Wimpernschlag ein Spinner, den niemand deuten kann.
+		if (!this.#engine.isFetchingMonth(month) || this.fetchingMonths.includes(month)) {
+			return running;
+		}
+		this.fetchingMonths = [...this.fetchingMonths, month];
 		try {
-			const ergebnis = await this.#engine.sync();
-			this.phase = "ruht";
+			await running;
+		} finally {
+			this.fetchingMonths = this.fetchingMonths.filter((m) => m !== month);
+		}
+	}
+
+	/**
+	 * Zu welchen Monaten das Konto Daten hat - auch zu solchen, die hier noch
+	 * nicht liegen.
+	 *
+	 * Waehrend der Backfill laeuft, kennt die Platte nur die vorgezogenen Monate;
+	 * die Auswahl zeigte sonst ausgerechnet die alten Monate nicht an, die man
+	 * anklicken muesste, damit sie geholt werden.
+	 *
+	 * Der Server nennt nur Kennungen. Welcher Monat dahintersteckt, rechnet dieses
+	 * Geraet selbst aus - die Kennung ist deterministisch, und der Server erfaehrt
+	 * dabei nichts, was er nicht ohnehin haette.
+	 */
+	async remoteMonths(): Promise<string[]> {
+		if (!this.#api || !this.#key || this.state !== "connected") return [];
+		const { buckets } = await this.#api.buckets();
+		const known = new Set(buckets);
+		const start = monthKey(Date.now());
+		const found: string[] = [];
+		for (let offset = 1 - REMOTE_MONTH_LOOKBACK; offset <= REMOTE_MONTH_LOOKAHEAD; offset++) {
+			const month = shiftMonthKey(start, offset);
+			if (known.has(await bucketFor(this.#key, month))) found.push(month);
+		}
+		return found;
+	}
+
+	async syncNow(): Promise<void> {
+		if (!this.#engine || this.state !== "connected") return;
+		this.phase = "running";
+		try {
+			const result = await this.#engine.sync();
+			this.backfilling = this.#engine.backfilling;
+			this.phase = "idle";
 			this.lastSync = Date.now();
 			this.#retryStep = 0;
-			if (ergebnis) {
-				this.lostEdits += ergebnis.lostEdits;
-				if (ergebnis.pushed || ergebnis.pulled) {
-					logInfo("Abgeglichen", ergebnis);
+			if (result) {
+				this.lostEdits += result.lostEdits;
+				if (result.pushed || result.pulled) {
+					logInfo("Abgeglichen", result);
 				}
-				if (ergebnis.pulled >= 20) {
-					this.bulkSync = { phase: "done", pulled: ergebnis.pulled };
+				if (result.pulled >= 20) {
+					this.bulkSync = { phase: "done", pulled: result.pulled };
 					// Im Browser zeigt das große Modal den Abschluss an – Toast nur in Tauri.
 					if (isTauri()) {
-						toast.success(`${ergebnis.pulled} Einträge synchronisiert.`, { id: "sync-bulk" });
+						toast.success(`${result.pulled} Einträge synchronisiert.`, { id: "sync-bulk" });
 					}
 					setTimeout(() => {
 						if (this.bulkSync?.phase === "done") {
@@ -325,7 +487,7 @@ class AccountState {
 				toast.dismiss("sync-bulk");
 			}
 			// Der Bestand kann sich geaendert haben - die Ansichten haengen daran.
-			if (ergebnis && (ergebnis.pulled > 0 || ergebnis.pushed > 0)) {
+			if (result && (result.pulled > 0 || result.pushed > 0)) {
 				await app.reload();
 				void this.accountInfo().catch(() => {});
 				void notifyDataChanged({ from: "sync" });
@@ -334,7 +496,7 @@ class AccountState {
 			// wusste es nur noch nicht. Der Willkommensbildschirm hat sich damit
 			// erledigt, und zwar bevor jemand ihn ausfuellt und dabei die echten
 			// Einstellungen ueberschreibt.
-			if (ergebnis && ergebnis.pulled > 0 && app.showOnboarding) {
+			if (result && result.pulled > 0 && app.showOnboarding) {
 				app.dismissOnboarding();
 			}
 		} catch (e) {
@@ -348,8 +510,8 @@ class AccountState {
 		if (e instanceof ApiError && e.status === 401) {
 			// Das Geraet wurde widerrufen oder das Token ist ungueltig. Weiter zu
 			// versuchen hat keinen Zweck und wuerde nur Anfragen erzeugen.
-			this.state = "fehler";
-			this.phase = "fehler";
+			this.state = "error";
+			this.phase = "error";
 			this.message = "Dieses Gerät wurde vom Konto getrennt.";
 			this.#closeStream();
 			logWarn("Gerät ist nicht mehr berechtigt");
@@ -360,7 +522,7 @@ class AccountState {
 			this.#scheduleRetry();
 			return;
 		}
-		this.phase = "fehler";
+		this.phase = "error";
 		this.message = e instanceof Error ? e.message : "Abgleich fehlgeschlagen";
 		logError("Abgleich fehlgeschlagen", e);
 		this.#scheduleRetry();
@@ -368,9 +530,9 @@ class AccountState {
 
 	#scheduleRetry(): void {
 		if (this.#retry) clearTimeout(this.#retry);
-		const wartezeit = RETRY_MS[Math.min(this.#retryStep, RETRY_MS.length - 1)];
+		const waitMs = RETRY_MS[Math.min(this.#retryStep, RETRY_MS.length - 1)];
 		this.#retryStep++;
-		this.#retry = setTimeout(() => void this.syncNow(), wartezeit);
+		this.#retry = setTimeout(() => void this.syncNow(), waitMs);
 	}
 
 	// ---------- Weckruf-Kanal ----------
@@ -381,14 +543,14 @@ class AccountState {
 
 		window.addEventListener("online", () => {
 			logInfo("Netzwerkverbindung wieder verfügbar (online Event)");
-			if (this.state === "verbunden") {
+			if (this.state === "connected") {
 				this.#retryStep = 0;
 				if (this.#retry) {
 					clearTimeout(this.#retry);
 					this.#retry = null;
 				}
 				if (this.phase === "offline") {
-					this.phase = "ruht";
+					this.phase = "idle";
 				}
 				// Stream nur neu aufbauen wenn er wirklich weg ist.
 				if (!this.#stream || this.#stream.readyState === EventSource.CLOSED) {
@@ -400,7 +562,7 @@ class AccountState {
 
 		window.addEventListener("offline", () => {
 			logWarn("Netzwerkverbindung unterbrochen (offline Event)");
-			if (this.phase !== "laeuft") {
+			if (this.phase !== "running") {
 				this.phase = "offline";
 			}
 		});
@@ -435,7 +597,7 @@ class AccountState {
 			this.#stream = new EventSource(this.#api.streamUrl(), { withCredentials: true });
 			this.#stream.onopen = () => {
 				if (this.phase === "offline") {
-					this.phase = "ruht";
+					this.phase = "idle";
 				}
 				this.#retryStep = 0;
 			};
@@ -447,7 +609,7 @@ class AccountState {
 				this.syncSoon(300);
 			});
 			this.#stream.onerror = () => {
-				if (this.phase !== "laeuft") this.phase = "offline";
+				if (this.phase !== "running") this.phase = "offline";
 				// Falls EventSource geschlossen wurde (z. B. Netzwerk-Drop auf Mobile):
 				if (this.#stream && this.#stream.readyState === EventSource.CLOSED) {
 					this.#closeStream();
@@ -469,22 +631,22 @@ class AccountState {
 	 * Adresse wandern muesste.
 	 */
 	async #warteschleife(): Promise<void> {
-		const abbruch = new AbortController();
-		this.#warten = abbruch;
+		const abort = new AbortController();
+		this.#wait = abort;
 		// Der langsame Takt bleibt als Netz darunter: faellt die Schleife aus,
 		// laeuft der Abgleich trotzdem weiter.
 		this.#startHeartbeat();
 
 		let errorCount = 0;
-		while (this.#warten === abbruch && this.state === "verbunden") {
+		while (this.#wait === abort && this.state === "connected") {
 			try {
-				const stand = (await loadDevice())?.seq ?? 0;
-				const antwort = await this.#api!.waitForChange(stand, abbruch.signal);
-				if (this.#warten !== abbruch) return;
+				const knownSeq = (await loadDevice())?.seq ?? 0;
+				const answer = await this.#api!.waitForChange(knownSeq, abort.signal);
+				if (this.#wait !== abort) return;
 				errorCount = 0;
-				if (antwort.changed) this.syncSoon(50);
+				if (answer.changed) this.syncSoon(50);
 			} catch (e) {
-				if (abbruch.signal.aborted) return;
+				if (abort.signal.aborted) return;
 				// Nach einem Fehlschlag wachsend warten, sonst haemmert eine
 				// abgerissene Verbindung gegen den Server.
 				errorCount++;
@@ -508,7 +670,7 @@ class AccountState {
 
 	/** Das Fenster kommt in den Vordergrund oder wird wieder aktiv. */
 	onVisible(): void {
-		if (this.state === "verbunden") {
+		if (this.state === "connected") {
 			if (this.phase === "offline" || !this.#stream) {
 				this.#retryStep = 0;
 				this.#openStream();
@@ -520,8 +682,8 @@ class AccountState {
 	#closeStream(): void {
 		this.#stream?.close();
 		this.#stream = null;
-		this.#warten?.abort();
-		this.#warten = null;
+		this.#wait?.abort();
+		this.#wait = null;
 		this.#stopHeartbeat();
 	}
 
@@ -564,25 +726,25 @@ class AccountState {
 		const url = serverUrl.replace(/\/+$/, "");
 		const api = new Api({ baseUrl: url, fetchFn: platformFetch });
 		const pair = await createPairingKeyPair();
-		const roh = await exportPairingPublicKey(pair);
-		const publicKey = toBase64(roh);
+		const raw = await exportPairingPublicKey(pair);
+		const publicKey = toBase64(raw);
 
 		// Der Code wird HIER gerechnet, aus dem eigenen oeffentlichen Schluessel -
 		// er ist dessen Abdruck (siehe pairingCode). Der Server bekommt ihn nur
 		// mitgeteilt und legt den Vorgang darunter ab.
-		const code = await pairingCode(roh);
+		const code = await pairingCode(raw);
 
 		// Der Code ist zum Vergleichen da und steht deshalb offen herum. Das
 		// Abholen des Geraete-Tokens haengt an diesem Geheimnis, das dieses Geraet
 		// behaelt - sonst genuegte ein mitgelesener Code.
 		const { secret: claimSecret, hash: claimHash } = await createClaimSecret();
-		const antwort = await api.pairStart(publicKey, label, code, claimHash);
+		const answer = await api.pairStart(publicKey, label, code, claimHash);
 
 		// Und was er zurueckgibt, muss dasselbe sein. Ein Server, der einen anderen
 		// Code herausgibt, brauchte ihn nur, um ihn auf den Bildschirm zu bekommen:
 		// der Mensch traegt ihn drueben ein, drueben liegt dann ein Schluessel, der
 		// zu DIESEM Code passt - und das waere nicht mehr unserer.
-		if (antwort.code !== code) {
+		if (answer.code !== code) {
 			throw new Error("Der Server hat einen anderen Kopplungscode zurückgegeben.");
 		}
 
@@ -595,12 +757,12 @@ class AccountState {
 		if (!this.#pairing) return false;
 		const { pair, code, url, claimSecret } = this.#pairing;
 		const api = new Api({ baseUrl: url, fetchFn: platformFetch });
-		const antwort = await api.pairClaim(code, claimSecret);
-		if (antwort.pending) return false;
+		const answer = await api.pairClaim(code, claimSecret);
+		if (answer.pending) return false;
 
 		// Das Paket oeffnen - das kann nur dieses Geraet, mit seinem privaten
 		// Schluessel. Der Server hatte nie mehr als Chiffrat in der Hand.
-		const wrap = JSON.parse(antwort.wrappedKey) as {
+		const wrap = JSON.parse(answer.wrappedKey) as {
 			salt: string;
 			iv: string;
 			wrapped: string;
@@ -617,7 +779,7 @@ class AccountState {
 			pair.privateKey
 		);
 
-		await this.#persistLink(url, antwort.deviceToken, key);
+		await this.#persistLink(url, answer.deviceToken, key);
 		this.#pairing = null;
 		return true;
 	}
@@ -631,22 +793,22 @@ class AccountState {
 	/** Einen Code bestaetigen. */
 	async approvePairing(code: string): Promise<string> {
 		if (!this.#api || !this.#key) throw new Error("Dieses Gerät ist nicht verknüpft");
-		const getippt = normalizePairingCode(code);
-		const { publicKey, label } = await this.#api.pairLookup(getippt);
+		const typed = normalizePairingCode(code);
+		const { publicKey, label } = await this.#api.pairLookup(typed);
 
 		// Wirft, wenn unter diesem Code ein anderer Schluessel liegt als der, dessen
 		// Abdruck er ist. Dann wird NICHTS verpackt: wer immer den Schluessel
 		// hinterlegt hat, bekaeme sonst den Tresorschluessel.
-		const roh = await checkedPairingKey(getippt, publicKey).catch((e) => {
+		const raw = await checkedPairingKey(typed, publicKey).catch((e) => {
 			logWarn("Kopplung abgebrochen: hinterlegter Schlüssel passt nicht zum Code");
 			throw e;
 		});
 
 		const { wrapForDevice } = await import("../crypto/vault");
-		const wrap = await wrapForDevice(this.#key, roh);
-		await this.#api.pairApprove(getippt, JSON.stringify(serializeWrap(wrap)));
+		const wrap = await wrapForDevice(this.#key, raw);
+		await this.#api.pairApprove(typed, JSON.stringify(serializeWrap(wrap)));
 		logInfo("Gerät gekoppelt", { label });
-		void this.abgleichMitNachlese();
+		void this.syncWithFollowUp();
 		return label;
 	}
 
@@ -665,27 +827,35 @@ class AccountState {
 	): Promise<void> {
 		this.#key = key;
 		this.#device = await deviceId();
-		const roh = toBase64(new Uint8Array(await exportVaultKey(key)));
-		const geschuetzterSchluessel = await protectSecret(roh);
+		const raw = toBase64(new Uint8Array(await exportVaultKey(key)));
+		const protectedKey = await protectSecret(raw);
 		// Im Browser gibt es kein Geraete-Token: dort weist das Sitzungs-Cookie
 		// aus. Der Tresorschluessel wird trotzdem abgelegt, damit die Anwendung
 		// nach einem Neuladen nicht wieder nach der Anmeldung fragen muss.
-		const geschuetztesToken = token ? await protectSecret(token) : null;
+		const protectedToken = token ? await protectSecret(token) : null;
 
 		const info = (await loadDevice()) ?? { id: this.#device };
 
+		// Der erste Abgleich zieht vor, was der Mensch sofort sieht. Ohne das kaeme
+		// der laufende Monat zuletzt: der Server liefert nach Stand aufsteigend,
+		// also die aeltesten Eintraege zuerst.
+		const startState: SyncState = {
+			seq: 0,
+			priority: { seq: 0, months: [monthKey(Date.now()), prevMonthKey()] }
+		};
+
 		// Wessen Konto ist das? Zwei Konten haben verschiedene Tresorschluessel,
 		// also verschiedene Nachweise.
-		const kennung = await vaultProof(key);
-		const wechsel = Boolean(info.kontoKennung && info.kontoKennung !== kennung);
+		const fingerprint = await vaultProof(key);
+		const switched = Boolean(info.accountFingerprint && info.accountFingerprint !== fingerprint);
 
 		// Im Browser gibt es keinen Bestand ohne Konto - man kommt ohne Anmeldung
 		// gar nicht hinein. Was hier liegt, ist die Kopie IRGENDEINES Kontos. Laesst
 		// sich nicht beweisen, dass es dieses ist, kommt es weg; der Server hat es.
 		// Auf dem Rechner sind die Zeiten die Sache des Menschen: sie bleiben, gehen
-		// aber nicht hoch (siehe bestandGehoertZu).
-		const fremdeKopie = !isTauri() && info.kontoKennung !== kennung;
-		if (fremdeKopie) {
+		// aber nicht hoch (siehe dataOwner).
+		const foreignCopy = !isTauri() && info.accountFingerprint !== fingerprint;
+		if (foreignCopy) {
 			await clearAccountData();
 			app.clearLocalData();
 			logInfo("Kontowechsel / Neuverknüpfung: lokale Kopie entfernt");
@@ -694,33 +864,34 @@ class AccountState {
 		// Die Merkliste gehoert IMMER dem vorigen Konto - auf beiden Plattformen.
 		// Ohne diese Zeile laedt sie der naechste Abgleich ins neue Konto: `#pushAll`
 		// liest die Outbox, nicht den Stempel.
-		if (wechsel || fremdeKopie) await clearOutbox();
+		if (switched || foreignCopy) await clearOutbox();
 
 		// Wem der Bestand gehoert: nach einem Wechsel weiterhin dem alten Konto
 		// (dann bleibt er hier liegen), sonst diesem. Wer noch nie ein Konto hatte,
 		// dessen Bestand ist der eigene und gehoert hoch.
-		const bestandGehoertZu = wechsel && isTauri() ? info.bestandGehoertZu : kennung;
+		const dataOwner = switched && isTauri() ? info.dataOwner : fingerprint;
 
 		await saveDevice({
 			...info,
 			id: this.#device,
 			serverUrl: url,
-			token: geschuetztesToken?.data,
-			vaultKey: geschuetzterSchluessel.data,
-			protected: geschuetzterSchluessel.protected && (geschuetztesToken?.protected ?? true),
+			token: protectedToken?.data,
+			vaultKey: protectedKey.data,
+			protected: protectedKey.protected && (protectedToken?.protected ?? true),
 			accountName: name || info.accountName,
-			kontoKennung: kennung,
-			bestandGehoertZu,
-			seq: 0
+			accountFingerprint: fingerprint,
+			dataOwner,
+			seq: 0,
+			priority: startState.priority
 		});
 		this.name = name || this.name;
 
 		this.serverUrl = url;
-		this.secretsProtected = geschuetzterSchluessel.protected;
+		this.secretsProtected = protectedKey.protected;
 		this.hasDeviceToken = token !== null;
-		this.state = "verbunden";
-		await this.#startEngine(url, token, 0);
-		void this.abgleichMitNachlese();
+		this.state = "connected";
+		await this.#startEngine(url, token, startState);
+		void this.syncWithFollowUp();
 	}
 
 	/** Nachsehen, was am Konto haengt - vor allem, wie viele Geraete und die Verwalterrolle. */
@@ -779,8 +950,16 @@ class AccountState {
 		if (!this.#key) throw new Error("Das Konto ist nicht entsperrt");
 		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
 		const { addPasskey } = await import("./enroll");
-		const ergebnis = await addPasskey(this.#api, this.#key, label);
-		return { prfAvailable: ergebnis.prfAvailable };
+		const result = await addPasskey(this.#api, this.#key, label);
+		return { prfAvailable: result.prfAvailable };
+	}
+
+	/** Einen vorhandenen Passkey nachtraeglich den Tresor oeffnen lassen - ohne die 24 Woerter. */
+	async repairPasskeyWrap(credentialId?: string): Promise<boolean> {
+		if (!this.#key) throw new Error("Das Konto ist nicht entsperrt");
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		const { harvestPrfWrap } = await import("./enroll");
+		return harvestPrfWrap(this.#api, this.#key, credentialId);
 	}
 
 	/** Die Kennung dieses Geraets - damit die Liste das eigene erkennt. */
@@ -838,7 +1017,7 @@ class AccountState {
 		return res.envInvitesActive;
 	}
 
-	async createInvite(opts: { note?: string; gueltigTage?: number } = {}): Promise<Invite> {
+	async createInvite(opts: { note?: string; validDays?: number } = {}): Promise<Invite> {
 		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
 		return this.#api.createInvite(opts);
 	}
@@ -896,14 +1075,14 @@ class AccountState {
 
 	/** Die Verknuepfung loesen. */
 	async unlink(opts: UnlinkOptions = {}): Promise<DeleteSummary | null> {
-		let summe: DeleteSummary | null = null;
+		let summary: DeleteSummary | null = null;
 
 		if (opts.deleteRemote || opts.revokeSelf) {
 			if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
 			// Zuerst der Server, solange Zugang und Token noch stehen. Danach ist
 			// beides weg und der Vorgang liesse sich nicht mehr nachholen.
 			if (opts.deleteRemote) {
-				summe = await this.#api.deleteAccount(await this.#bestaetigung());
+				summary = await this.#api.deleteAccount(await this.#bestaetigung());
 			} else {
 				await this.#api.revokeDevice();
 			}
@@ -913,13 +1092,13 @@ class AccountState {
 		// Erst nachdem der Zugang wirklich weg ist: die Stempel abstreifen. Vorher
 		// waere ein Abbruch mittendrin der schlechteste aller Zustaende - Daten
 		// ohne Fassungsnummern, aber ein Konto, das sie noch erwartet.
-		const geloest = await detachLocalData();
+		const unlinked = await detachLocalData();
 		if (!isTauri()) {
 			await clearAccountData();
 			app.clearLocalData();
 		}
-		logInfo("Verknüpfung gelöst", { ...opts, ...geloest });
-		return summe;
+		logInfo("Verknüpfung gelöst", { ...opts, ...unlinked });
+		return summary;
 	}
 
 	/** Den Menschen bestaetigen lassen - mit dem Passkey, nicht mit einem Haken. */
@@ -941,16 +1120,23 @@ class AccountState {
 		stopTracking();
 		setChangeListener(null);
 		this.#engine = null;
+		this.backfilling = false;
+		this.fetchingMonths = [];
+		app.setMonthFetcher(null);
 		this.#api = null;
 		this.#key = null;
+		// Den Prefetch-Puffer leeren: er gehoert dem abgemeldeten Konto. Sonst
+		// koennte ein schneller Re-Login in denselben 30-Sekunden-Fenstern Name,
+		// E-Mail und Geraete-Labels des vorigen Nutzers sehen.
+		this.#logoutHook?.();
 		const info = await loadDevice();
 		if (info) {
 			// Nur die Kontodaten loeschen, nicht die Geraetekennung: die soll
 			// dieselbe bleiben, falls jemand erneut koppelt.
 			await saveDevice({ id: info.id });
 		}
-		this.state = "aus";
-		this.phase = "ruht";
+		this.state = "off";
+		this.phase = "idle";
 		this.serverUrl = "";
 		this.name = "";
 		this.message = "";

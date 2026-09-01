@@ -165,6 +165,65 @@ describe("reportSubject", () => {
 	});
 });
 
+describe("buildReport – Zeitausgleich", () => {
+	/** Ein abgefeierter Tag: dieselbe Zeile wie Urlaub, nur andersherum gerechnet. */
+	function timeOff(id: string, fraction: number, dayOffset = 0): Entry {
+		return { ...absence(id, fraction, dayOffset), timeOff: true };
+	}
+
+	it("fuellt das Tagessoll wie ein Urlaubstag", () => {
+		// Der Zeitausgleich ist eine Abwesenheit wie jede andere: er steht mit seinen
+		// Stunden im Ist. Was ihn unterscheidet, ist allein die Beschriftung.
+		const report = buildReport("2026-06", activities, [timeOff("t", 1, 5)], 0.5, HPD);
+		expect(report.total).toBe(7.5);
+		expect(report.absenceHours).toBe(7.5);
+		expect(report.timeOffHours).toBe(7.5);
+	});
+
+	it("rechnet den halben Tag als halbes Tagessoll", () => {
+		const report = buildReport("2026-06", activities, [timeOff("t", 0.5)], 0.5, HPD);
+		expect(report.timeOffHours).toBe(3.75);
+		expect(report.total).toBe(3.75);
+	});
+
+	it("steht auf der Abwesenheiten-Zeile, ohne sich zu benennen", () => {
+		// Eine eigene Zeile bekommt er nicht - der Bericht geht an den Chef, und dort
+		// ist es schlicht eine Abwesenheit.
+		const report = buildReport("2026-06", activities, [timeOff("t", 1, 5)], 0.5, HPD);
+		const abwesenheiten = report.rows.find((r) => r.name === "Abwesenheiten");
+		expect(abwesenheiten?.hours).toBe(7.5);
+		expect(reportToHtml(report)).not.toContain("Zeitausgleich");
+	});
+
+	it("liegt neben Urlaub auf derselben Zeile", () => {
+		const report = buildReport(
+			"2026-06",
+			activities,
+			[absence("u", 1, 5), timeOff("t", 1, 6)],
+			0.5,
+			HPD
+		);
+		expect(report.absenceHours).toBe(15);
+		expect(report.timeOffHours).toBe(7.5);
+		expect(report.total).toBe(15);
+	});
+
+	it("zaehlt einen Zeitausgleich am Wochenende nicht mit", () => {
+		// Am freien Tag gibt es kein Tagessoll, das offen bleiben koennte.
+		const saturday = wallToTs(2026, 6, 13, 12, 0, 0);
+		const report = buildReport(
+			"2026-06",
+			activities,
+			[{ id: "t", activityId: "abs", startTs: saturday, endTs: saturday, note: "", source: "manual", dayFraction: 1, timeOff: true }],
+			0.5,
+			HPD,
+			[1, 2, 3, 4, 5]
+		);
+		expect(report.timeOffHours).toBe(0);
+		expect(report.total).toBe(0);
+	});
+});
+
 describe("buildReport – offene Einträge", () => {
 	const P1: Activity = {
 		id: "p1",
@@ -175,7 +234,7 @@ describe("buildReport – offene Einträge", () => {
 	};
 	/** Feste Uhr: 17.07.2026, 08:30 – sonst prüfte der Test die Wanduhr. */
 	const NOW = wallToTs(2026, 7, 17, 8, 30, 0);
-	const offen = (start: number): Entry => ({
+	const openEntry = (start: number): Entry => ({
 		id: "x",
 		activityId: "p1",
 		startTs: start,
@@ -190,7 +249,7 @@ describe("buildReport – offene Einträge", () => {
 		const r = buildReport(
 			"2026-06",
 			[P1],
-			[offen(wallToTs(2026, 6, 1, 8, 0, 0))],
+			[openEntry(wallToTs(2026, 6, 1, 8, 0, 0))],
 			0.5,
 			7.5,
 			[1, 2, 3, 4, 5],
@@ -203,7 +262,7 @@ describe("buildReport – offene Einträge", () => {
 		const r = buildReport(
 			"2026-07",
 			[P1],
-			[offen(wallToTs(2026, 7, 17, 6, 30, 0))],
+			[openEntry(wallToTs(2026, 7, 17, 6, 30, 0))],
 			0.5,
 			7.5,
 			[1, 2, 3, 4, 5],
@@ -216,7 +275,7 @@ describe("buildReport – offene Einträge", () => {
 		const r = buildReport(
 			"2026-06",
 			[P1],
-			[offen(wallToTs(2026, 6, 1, 8, 0, 0))],
+			[openEntry(wallToTs(2026, 6, 1, 8, 0, 0))],
 			0.5,
 			7.5,
 			[1, 2, 3, 4, 5]

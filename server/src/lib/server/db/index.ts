@@ -114,7 +114,12 @@ const MIGRATIONS: string[] = [
 		key TEXT PRIMARY KEY,
 		value TEXT NOT NULL,
 		updated_at INTEGER NOT NULL
-	)`
+	)`,
+	// Der Abgleich holt einen Bucket immer der Reihe nach ab. Ohne `seq` im Index
+	// findet SQLite zwar die Zeilen, muss sie aber jedes Mal nachsortieren.
+	`CREATE INDEX IF NOT EXISTS records_bucket_seq ON records(user_id, bucket, seq)`,
+	// Der alte Index ist damit ein Praefix des neuen und kostet nur noch beim Schreiben.
+	`DROP INDEX IF EXISTS records_bucket`
 ];
 
 export type Db = ReturnType<typeof drizzle<typeof schema>>;

@@ -9,8 +9,8 @@ let db: Db;
 const ANNA = "user-anna";
 
 /** Eine Kopplung, wie sie /api/pair/start hinterlaesst - Zeitpunkt frei waehlbar. */
-function kopplung(code: string, abgelaufen: boolean, deviceToken?: string) {
-	const jetzt = Date.now();
+function pairing(code: string, expired: boolean, deviceToken?: string) {
+	const nowMs = Date.now();
 	db.insert(pairings)
 		.values({
 			code,
@@ -19,8 +19,8 @@ function kopplung(code: string, abgelaufen: boolean, deviceToken?: string) {
 			label: "Rechner",
 			wrappedKey: deviceToken ? "cGFrZXQ=" : null,
 			deviceToken: deviceToken ?? null,
-			createdAt: jetzt - 60_000,
-			expiresAt: abgelaufen ? jetzt - 1000 : jetzt + 600_000
+			createdAt: nowMs - 60_000,
+			expiresAt: expired ? nowMs - 1000 : nowMs + 600_000
 		})
 		.run();
 }
@@ -39,13 +39,13 @@ beforeEach(() => {
 
 describe("cleanupExpired: Kopplungen", () => {
 	it("raeumt eine abgelaufene, nie bestaetigte Kopplung weg", () => {
-		kopplung("ABCDEFGHJKLM", true);
+		pairing("ABCDEFGHJKLM", true);
 		cleanupExpired(db);
 		expect(codes()).toEqual([]);
 	});
 
 	it("laesst eine laufende Kopplung in Ruhe", () => {
-		kopplung("ABCDEFGHJKLM", false);
+		pairing("ABCDEFGHJKLM", false);
 		cleanupExpired(db);
 		expect(codes()).toEqual(["ABCDEFGHJKLM"]);
 	});
@@ -54,15 +54,15 @@ describe("cleanupExpired: Kopplungen", () => {
 		// Der gefaehrliche Fall: jemand hat bestaetigt, das neue Geraet ist nie
 		// erschienen. Das Token gilt, aber niemand hatte es je in der Hand - es
 		// laege sonst im Klartext in der Zeile und zaehlte weiter als Geraet.
-		const geraet = createDevice(db, ANNA, "Rechner");
-		kopplung("ABCDEFGHJKLM", true, geraet.token);
+		const deviceRow = createDevice(db, ANNA, "Rechner");
+		pairing("ABCDEFGHJKLM", true, deviceRow.token);
 
-		expect(deviceFromToken(db, geraet.token)).not.toBeNull();
+		expect(deviceFromToken(db, deviceRow.token)).not.toBeNull();
 		cleanupExpired(db);
 
 		expect(codes()).toEqual([]);
-		expect(deviceFromToken(db, geraet.token)).toBeNull();
-		expect(db.select().from(devices).where(eq(devices.id, geraet.id)).get()?.revokedAt).toBeTypeOf(
+		expect(deviceFromToken(db, deviceRow.token)).toBeNull();
+		expect(db.select().from(devices).where(eq(devices.id, deviceRow.id)).get()?.revokedAt).toBeTypeOf(
 			"number"
 		);
 	});
@@ -70,16 +70,16 @@ describe("cleanupExpired: Kopplungen", () => {
 	it("laesst ein abgeholtes Geraet in Ruhe", () => {
 		// Wer abholt, loescht seine Kopplungszeile dabei selbst. Es darf nicht
 		// passieren, dass das Aufraeumen ein Geraet trifft, das laengst laeuft.
-		const geraet = createDevice(db, ANNA, "Rechner");
+		const deviceRow = createDevice(db, ANNA, "Rechner");
 		cleanupExpired(db);
-		expect(deviceFromToken(db, geraet.token)).toEqual({ userId: ANNA, deviceId: geraet.id });
+		expect(deviceFromToken(db, deviceRow.token)).toEqual({ userId: ANNA, deviceId: deviceRow.id });
 	});
 
 	it("ruehrt ein Geraet nicht an, das zu einer laufenden Kopplung gehoert", () => {
-		const geraet = createDevice(db, ANNA, "Rechner");
-		kopplung("ABCDEFGHJKLM", false, geraet.token);
+		const deviceRow = createDevice(db, ANNA, "Rechner");
+		pairing("ABCDEFGHJKLM", false, deviceRow.token);
 		cleanupExpired(db);
 		expect(codes()).toEqual(["ABCDEFGHJKLM"]);
-		expect(deviceFromToken(db, geraet.token)).not.toBeNull();
+		expect(deviceFromToken(db, deviceRow.token)).not.toBeNull();
 	});
 });

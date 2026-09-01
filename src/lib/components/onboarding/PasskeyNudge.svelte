@@ -8,61 +8,78 @@
 	import KeyRoundIcon from "@lucide/svelte/icons/key-round";
 	import XIcon from "@lucide/svelte/icons/x";
 
-	let ohnePasskey = $state(false);
-	let gefragt = $state(false);
-	let laeuft = $state(false);
-	let weggeklickt = $state(false);
+	/** Was diesem Browser zum reibungslosen Anmelden fehlt. */
+	type Missing = "passkey" | "wrap" | null;
+
+	let missing = $state<Missing>(null);
+	let asked = $state(false);
+	let running = $state(false);
+	let dismissed = $state(false);
+
+	const texts = {
+		passkey: {
+			text: "Dieser Browser hat noch keinen Passkey. Ohne ihn brauchst du beim nächsten Mal wieder die Kopplung oder deine 24 Wörter.",
+			button: "Passkey anlegen"
+		},
+		wrap: {
+			text: "Dein Passkey meldet dich an, entsperrt deine Daten aber noch nicht. Einmal bestätigen – danach brauchst du die 24 Wörter beim Anmelden nicht mehr.",
+			button: "Jetzt verbinden"
+		}
+	};
 
 	$effect(() => {
 		// Nur im Browser: auf dem Rechner traegt das Geraet ein eigenes Token, und
 		// einen Passkey kann es dort ohnehin nicht anlegen.
-		if (isTauri() || !account.linked || gefragt) return;
-		gefragt = true;
-		void (async () => {
-			try {
-				ohnePasskey = (await account.passkeys()).length === 0;
-			} catch {
-				// Server nicht erreichbar - dann ist jetzt nicht der Moment dafuer.
-				ohnePasskey = false;
-			}
-		})();
+		if (isTauri() || !account.linked || asked) return;
+		asked = true;
+		void check().catch(() => (missing = null));
 	});
 
-	async function anlegen() {
-		laeuft = true;
+	async function check() {
+		const passkeys = await account.passkeys();
+		if (passkeys.length === 0) missing = "passkey";
+		// Kontoweit, nicht je Passkey: welcher an DIESEM Browser haengt, ist von
+		// hier aus nicht zu sehen.
+		else missing = passkeys.every((p) => !p.hasWrap) ? "wrap" : null;
+	}
+
+	async function resolve() {
+		running = true;
 		try {
-			const { prfAvailable } = await account.addPasskey("Dieser Browser");
-			ohnePasskey = false;
-			toast.success(
-				prfAvailable
-					? "Passkey angelegt. Die nächste Anmeldung ist ein Klick."
-					: "Passkey angelegt. Zum Entsperren braucht dieses Gerät zusätzlich die 24 Wörter."
-			);
+			const done =
+				missing === "passkey"
+					? (await account.addPasskey("Dieser Browser")).prfAvailable
+					: await account.repairPasskeyWrap();
+			await check();
+			if (done) {
+				toast.success("Erledigt. Dein Passkey entsperrt deine Daten jetzt allein.");
+			} else {
+				// Der Authentifikator kann kein PRF - ein zweiter Versuch aendert daran nichts.
+				dismissed = true;
+				toast.error("Dieses Gerät kann deine Daten mit dem Passkey allein nicht entsperren.");
+			}
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : "Passkey konnte nicht angelegt werden");
+			toast.error(e instanceof Error ? e.message : "Hat nicht geklappt");
 		} finally {
-			laeuft = false;
+			running = false;
 		}
 	}
 </script>
 
-{#if ohnePasskey && !weggeklickt}
+{#if missing && !dismissed}
 	<div class="border-b border-amber-500/40 bg-amber-500/5">
 		<div class="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 py-2 text-sm sm:px-6">
 			<KeyRoundIcon class="size-4 shrink-0" />
-			<p class="flex-1">
-				Dieser Browser hat noch keinen Passkey. Ohne ihn brauchst du beim nächsten Mal
-				wieder die Kopplung oder deine 24 Wörter.
-			</p>
-			<Button size="sm" disabled={laeuft} onclick={anlegen}>
-				{laeuft ? "Warte auf Bestätigung…" : "Passkey anlegen"}
+			<p class="flex-1">{texts[missing].text}</p>
+			<Button size="sm" disabled={running} onclick={resolve}>
+				{running ? "Warte auf Bestätigung…" : texts[missing].button}
 			</Button>
 			<button
 				type="button"
 				title="Ausblenden"
 				aria-label="Ausblenden"
 				class="text-muted-foreground hover:text-foreground shrink-0"
-				onclick={() => (weggeklickt = true)}
+				onclick={() => (dismissed = true)}
 			>
 				<XIcon class="size-4" />
 			</button>

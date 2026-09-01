@@ -48,7 +48,7 @@
 	 * im Maerz nachreicht, taucht deshalb im Posteingang auf, aber nicht in dieser
 	 * Tabelle. Ungenannt wirkt das wie ein verschluckter Bericht.
 	 */
-	const andererMonat = $derived(Math.max(0, mails.length - summary.entries.length));
+	const otherMonth = $derived(Math.max(0, mails.length - summary.entries.length));
 	/** Fehlende mit Adresse – nur die lassen sich erinnern. */
 	const reachableMissing = $derived(summary.missing.filter((m) => m.email.trim()));
 
@@ -75,10 +75,10 @@
 			mails = found;
 			scanned = month;
 			logInfo(`Chef-Modus: Posteingang für ${month} gelesen`, {
-				gefunden: found.length,
-				von: range.start,
-				bis: range.end,
-				betreff: app.settings.teamSubjectFilter
+				wasFound: found.length,
+				fromDate: range.start,
+				toDate: range.end,
+				subjectLine: app.settings.teamSubjectFilter
 			});
 			if (found.length === 0) {
 				toast.info("Keine passende Mail gefunden.", {
@@ -116,7 +116,7 @@
 				teamReminderSubject(summary.label),
 				teamReminderHtml(summary.label)
 			);
-			logInfo(`Chef-Modus: Erinnerung für ${month} erstellt`, { anzahl: reachableMissing.length });
+			logInfo(`Chef-Modus: Erinnerung für ${month} erstellt`, { count: reachableMissing.length });
 			toast.success("Outlook-Entwurf geöffnet. Bitte prüfen und senden.");
 		} catch (e) {
 			toast.error(await reportOutlookError("Chef-Modus: Erinnerung fehlgeschlagen", e));
@@ -209,7 +209,7 @@
 				{#if summary.entries.length === 0 && summary.missing.length === 0}
 					<p class="text-muted-foreground px-4 text-sm">Nichts gefunden.</p>
 				{:else}
-					<div class="grid grid-cols-2 gap-3 px-4 {andererMonat > 0 ? 'sm:grid-cols-3' : ''}">
+					<div class="grid grid-cols-2 gap-3 px-4 {otherMonth > 0 ? 'sm:grid-cols-3' : ''}">
 						<StatTile label="Abgegeben">{summary.entries.length}</StatTile>
 						<StatTile
 							label="Ausstehend"
@@ -217,7 +217,7 @@
 						>
 							{summary.missing.length}
 						</StatTile>
-						{#if andererMonat > 0}
+						{#if otherMonth > 0}
 							<!-- Mails, die der Filter fand, die aber einen anderen Monat betreffen.
 							     Gehoert genannt: sonst wundert man sich, warum der Posteingang mehr
 							     hergab als die Tabelle zeigt. -->
@@ -226,7 +226,7 @@
 								hint="gefunden, nicht gezählt"
 								class="col-span-2 sm:col-span-1"
 							>
-								{andererMonat}
+								{otherMonth}
 							</StatTile>
 						{/if}
 					</div>

@@ -9,6 +9,7 @@
 	import PairingCode from "$lib/components/onboarding/PairingCode.svelte";
 	import { toast } from "svelte-sonner";
 	import { account } from "$lib/sync/account.svelte";
+	import { ACCOUNT_KEY, invalidate, warm } from "$lib/prefetch";
 	import { ApiError } from "$lib/sync/api";
 	import { app } from "$lib/app.svelte";
 	import { isPairingCode, normalizePairingCode } from "$lib/crypto/vault";
@@ -16,7 +17,7 @@
 	import { capabilities, isTauri } from "$lib/platform/env";
 	import { errorText } from "$lib/log";
 	import { DEFAULT_SERVER } from "$lib/defaults";
-	import { anlegenLink } from "$lib/invite";
+	import { createLink } from "$lib/invite";
 	import { openExternal } from "$lib/platform/open";
 	import CloudIcon from "@lucide/svelte/icons/cloud";
 	import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
@@ -52,13 +53,13 @@
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 	const connectionStatus = $derived.by(() => {
-		if (account.state === "aus")
+		if (account.state === "off")
 			return { text: "Nicht verknüpft", dot: "bg-muted-foreground" };
-		if (account.state === "verbindet") return { text: "Verbinde…", dot: "bg-muted-foreground" };
-		if (account.state === "fehler") return { text: "Getrennt", dot: "bg-destructive" };
+		if (account.state === "connecting") return { text: "Verbinde…", dot: "bg-muted-foreground" };
+		if (account.state === "error") return { text: "Getrennt", dot: "bg-destructive" };
 		if (account.phase === "offline") return { text: "Server nicht erreichbar", dot: "bg-amber-500" };
-		if (account.phase === "fehler") return { text: "Server nicht erreichbar", dot: "bg-destructive" };
-		if (account.phase === "laeuft") {
+		if (account.phase === "error") return { text: "Server nicht erreichbar", dot: "bg-destructive" };
+		if (account.phase === "running") {
 			if (account.syncProgress && account.syncProgress.pulled > 0) {
 				return { text: `Lade Daten… (${account.syncProgress.pulled})`, dot: "bg-blue-500" };
 			}
@@ -86,7 +87,7 @@
 			pairingCode = await account.startPairing(url, suggestDeviceName());
 			isWaitingForApproval = true;
 			pollTimer = setInterval(checkPairingStatus, 2000);
-			await openExternal(anlegenLink(url));
+			await openExternal(createLink(url));
 		} catch (e) {
 			toast.error(formatError(e, "Konnte nicht beginnen"));
 		} finally {
@@ -156,9 +157,10 @@
 	let devices = $state<DeviceItem[]>([]);
 	let isDevicesLoaded = $state(false);
 
-	async function loadDevices() {
+	async function loadDevices(fresh = false) {
 		try {
-			const info = await account.accountInfo();
+			if (fresh) invalidate(ACCOUNT_KEY);
+			const info = await warm(ACCOUNT_KEY, () => account.accountInfo());
 			devices = info ? info.devices.filter((d) => !d.revokedAt) : [];
 		} catch (e) {
 			toast.error(formatError(e, "Geräte nicht abrufbar"));
@@ -179,7 +181,7 @@
 		try {
 			await account.revokeDevice(target.id);
 			deviceToDisconnect = null;
-			await loadDevices();
+			await loadDevices(true);
 			toast.success(`„${target.label}" ist getrennt.`);
 		} catch (e) {
 			toast.error(formatError(e, "Trennen fehlgeschlagen"));
@@ -320,11 +322,11 @@
 					variant="outline"
 					size="sm"
 					class="shrink-0 self-start sm:self-center gap-1.5"
-					disabled={account.phase === "laeuft"}
+					disabled={account.phase === "running"}
 					onclick={() => account.syncNow()}
 				>
-					<RefreshCwIcon class="size-3.5 {account.phase === 'laeuft' ? 'animate-spin' : ''}" />
-					{account.phase === "laeuft"
+					<RefreshCwIcon class="size-3.5 {account.phase === 'running' ? 'animate-spin' : ''}" />
+					{account.phase === "running"
 						? account.syncProgress?.pulled
 							? `Lade (${account.syncProgress.pulled})…`
 							: account.syncProgress?.pushed
@@ -332,7 +334,7 @@
 								: "Gleicht ab…"
 						: "Jetzt abgleichen"}
 				</Button>
-			{:else if account.state === "fehler"}
+			{:else if account.state === "error"}
 				<Button
 					variant="outline"
 					size="sm"

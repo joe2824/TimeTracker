@@ -19,13 +19,13 @@ const { app } = await import("./app.svelte");
 const { reportSubject, sendReport } = await import("./reportSend");
 
 const P1 = "p1";
-const AKTIVITAETEN: Activity[] = [
+const ACTIVITIES_DE: Activity[] = [
 	{ id: P1, name: "Projekt 1", sortOrder: 0, archived: false, isAbsence: false }
 ];
 
 const at = (tag: number, h: number, min = 0) => new Date(2026, 6, tag, h, min, 0, 0).getTime();
 
-function eintrag(id: string, startTs: number, endTs: number): Entry {
+function entry(id: string, startTs: number, endTs: number): Entry {
 	return { id, activityId: P1, startTs, endTs, note: "", source: "timer" };
 }
 
@@ -33,7 +33,7 @@ beforeEach(() => {
 	resetFakeFs();
 	app.dispose();
 	app.settings = { ...defaultSettings, bossEmail: "chef@firma.de", senderName: "Anna" };
-	app.activities = [...AKTIVITAETEN];
+	app.activities = [...ACTIVITIES_DE];
 	app.running = null;
 	app.entriesByMonth = {};
 	outlook.createOutlookDraft.mockClear();
@@ -59,7 +59,7 @@ describe("reportSubject", () => {
 
 describe("sendReport", () => {
 	it("oeffnet den Entwurf mit Empfaenger, Betreff und Tabelle", async () => {
-		app.entriesByMonth["2026-07"] = [eintrag("e1", at(16, 9), at(16, 12))];
+		app.entriesByMonth["2026-07"] = [entry("e1", at(16, 9), at(16, 12))];
 
 		await sendReport("2026-07");
 
@@ -72,7 +72,7 @@ describe("sendReport", () => {
 	});
 
 	it("markiert den Monat erst nach dem Entwurf als erledigt", async () => {
-		app.entriesByMonth["2026-07"] = [eintrag("e1", at(16, 9), at(16, 12))];
+		app.entriesByMonth["2026-07"] = [entry("e1", at(16, 9), at(16, 12))];
 
 		await sendReport("2026-07");
 
@@ -86,7 +86,7 @@ describe("sendReport", () => {
 	it("laesst den Monat offen, wenn Outlook nicht mitspielt", async () => {
 		// Sonst gilt ein Bericht als verschickt, den niemand je gesehen hat – und die
 		// Erinnerung kommt nicht wieder.
-		app.entriesByMonth["2026-07"] = [eintrag("e1", at(16, 9), at(16, 12))];
+		app.entriesByMonth["2026-07"] = [entry("e1", at(16, 9), at(16, 12))];
 		outlook.createOutlookDraft.mockRejectedValueOnce(new Error("Outlook antwortet nicht"));
 
 		await expect(sendReport("2026-07")).rejects.toThrow("Outlook antwortet nicht");
@@ -98,7 +98,7 @@ describe("sendReport", () => {
 		// Der Bericht laesst sich fuer einen Monat ausloesen, den die App in dieser
 		// Sitzung nie geoeffnet hat. Ohne das Nachladen stuende dort eine leere
 		// Tabelle – ein Bericht ueber einen Monat ohne Arbeit.
-		files.set("data/entries-2026-07.json", JSON.stringify([eintrag("e1", at(16, 9), at(16, 12))]));
+		files.set("data/entries-2026-07.json", JSON.stringify([entry("e1", at(16, 9), at(16, 12))]));
 
 		await sendReport("2026-07");
 

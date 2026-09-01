@@ -10,14 +10,14 @@
 
 	let { code, onCancel }: { code: string; onCancel?: () => void } = $props();
 
-	let kopiert = $state(false);
+	let copied = $state(false);
 
-	async function kopieren() {
+	async function copy() {
 		try {
 			await navigator.clipboard.writeText(formatPairingCode(code));
-			kopiert = true;
+			copied = true;
 			toast.success("Kopplungscode kopiert.");
-			setTimeout(() => (kopiert = false), 2500);
+			setTimeout(() => (copied = false), 2500);
 		} catch {
 			toast.error("Kopieren nicht möglich – bitte manuell kopieren.");
 		}
@@ -27,7 +27,7 @@
 <div class="space-y-3">
 	<button
 		type="button"
-		onclick={kopieren}
+		onclick={copy}
 		class="bg-muted hover:bg-muted/80 active:scale-[0.99] group relative flex w-full cursor-pointer flex-col items-center gap-2 rounded-xl p-4 transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring/50 border border-transparent hover:border-primary/20 shadow-sm"
 		title="Klicken zum Kopieren"
 	>
@@ -37,7 +37,7 @@
 			{formatPairingCode(code)}
 		</p>
 		<div class="inline-flex items-center gap-1.5 text-xs text-muted-foreground group-hover:text-foreground transition-colors font-medium">
-			{#if kopiert}
+			{#if copied}
 				<CheckIcon class="size-3.5 text-emerald-500" />
 				<span class="text-emerald-600 dark:text-emerald-400 font-medium">In die Zwischenablage kopiert!</span>
 			{:else}

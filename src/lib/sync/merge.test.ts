@@ -2,24 +2,24 @@ import { describe, expect, it } from "vitest";
 import { mergeRecord, pickWinner, resolveOpenEntries } from "./merge";
 import type { Entry } from "../types";
 
-interface Satz {
+interface TestRecord {
 	id: string;
-	wert: string;
+	value: string;
 	updatedAt?: number;
 	rev?: number;
 	deviceId?: string;
 	deletedAt?: number;
 }
 
-const s = (over: Partial<Satz> = {}): Satz => ({
+const s = (over: Partial<TestRecord> = {}): TestRecord => ({
 	id: "1",
-	wert: "a",
+	value: "a",
 	updatedAt: 1000,
 	deviceId: "geraet-a",
 	...over
 });
 
-const grab = (v: Satz) => v.deletedAt !== undefined;
+const tomb = (v: TestRecord) => v.deletedAt !== undefined;
 
 const e = (id: string, over: Partial<Entry> = {}): Entry => ({
 	id,
@@ -60,16 +60,16 @@ describe("pickWinner", () => {
 
 describe("mergeRecord", () => {
 	it("uebernimmt einen unbekannten Datensatz", () => {
-		const r = mergeRecord({ local: undefined, remote: s(), localPending: false }, grab);
+		const r = mergeRecord({ local: undefined, remote: s(), localPending: false }, tomb);
 		expect(r.changed).toBe(true);
-		expect(r.value?.wert).toBe("a");
+		expect(r.value?.value).toBe("a");
 	});
 
-	it("legt fuer einen Grabsteine ohne lokalen Stand nichts an", () => {
+	it("legt fuer einen Loeschmarker ohne lokalen Stand nichts an", () => {
 		// Sonst entstuende aus einer Loeschung, die uns nie betraf, eine leere Zeile.
 		const r = mergeRecord(
 			{ local: undefined, remote: s({ deletedAt: 5000 }), localPending: false },
-			grab
+			tomb
 		);
 		expect(r.changed).toBe(false);
 		expect(r.value).toBeNull();
@@ -77,10 +77,10 @@ describe("mergeRecord", () => {
 
 	it("nimmt den Serverstand, wenn lokal nichts offen ist", () => {
 		const r = mergeRecord(
-			{ local: s({ updatedAt: 1000 }), remote: s({ wert: "neu", updatedAt: 2000 }), localPending: false },
-			grab
+			{ local: s({ updatedAt: 1000 }), remote: s({ value: "neu", updatedAt: 2000 }), localPending: false },
+			tomb
 		);
-		expect(r.value?.wert).toBe("neu");
+		expect(r.value?.value).toBe("neu");
 		expect(r.lostLocalEdit).toBe(false);
 	});
 
@@ -89,23 +89,23 @@ describe("mergeRecord", () => {
 		// Stempel heisst hier nicht "veraltet", sondern dass das eigene Geraet
 		// seinen Stand aus einer Quelle hat, die der Server nicht kennt.
 		const r = mergeRecord(
-			{ local: s({ updatedAt: 3000 }), remote: s({ wert: "server", updatedAt: 2000 }), localPending: false },
-			grab
+			{ local: s({ updatedAt: 3000 }), remote: s({ value: "server", updatedAt: 2000 }), localPending: false },
+			tomb
 		);
-		expect(r.value?.wert).toBe("server");
+		expect(r.value?.value).toBe("server");
 	});
 
 	it("laesst alles in Ruhe, wenn beide Seiten denselben Stempel haben", () => {
-		const r = mergeRecord({ local: s(), remote: s(), localPending: false }, grab);
+		const r = mergeRecord({ local: s(), remote: s(), localPending: false }, tomb);
 		expect(r.changed).toBe(false);
 	});
 
 	it("behaelt die juengere eigene Aenderung", () => {
 		const r = mergeRecord(
-			{ local: s({ wert: "meins", updatedAt: 3000 }), remote: s({ updatedAt: 2000 }), localPending: true },
-			grab
+			{ local: s({ value: "meins", updatedAt: 3000 }), remote: s({ updatedAt: 2000 }), localPending: true },
+			tomb
 		);
-		expect(r.value?.wert).toBe("meins");
+		expect(r.value?.value).toBe("meins");
 		expect(r.changed).toBe(false);
 		expect(r.lostLocalEdit).toBe(false);
 	});
@@ -114,17 +114,17 @@ describe("mergeRecord", () => {
 		// Der einzige Fall, den ein Mensch erfahren muss: seine Aenderung ist weg,
 		// und zwar nicht durch sein eigenes Zutun.
 		const r = mergeRecord(
-			{ local: s({ wert: "meins", updatedAt: 1000 }), remote: s({ wert: "fremd", updatedAt: 3000 }), localPending: true },
-			grab
+			{ local: s({ value: "meins", updatedAt: 1000 }), remote: s({ value: "fremd", updatedAt: 3000 }), localPending: true },
+			tomb
 		);
-		expect(r.value?.wert).toBe("fremd");
+		expect(r.value?.value).toBe("fremd");
 		expect(r.lostLocalEdit).toBe(true);
 	});
 
 	it("laesst eine juengere Loeschung gewinnen", () => {
 		const r = mergeRecord(
 			{ local: s({ updatedAt: 1000 }), remote: s({ updatedAt: 3000, deletedAt: 3000 }), localPending: true },
-			grab
+			tomb
 		);
 		expect(r.value).toBeNull();
 		expect(r.lostLocalEdit).toBe(true);
@@ -134,24 +134,24 @@ describe("mergeRecord", () => {
 		// "Loeschung gewinnt immer" klaenge sicherer, machte aber das Wiederanlegen
 		// eines versehentlich geloeschten Eintrags unmoeglich.
 		const r = mergeRecord(
-			{ local: s({ wert: "wieder da", updatedAt: 5000 }), remote: s({ updatedAt: 3000, deletedAt: 3000 }), localPending: true },
-			grab
+			{ local: s({ value: "wieder da", updatedAt: 5000 }), remote: s({ updatedAt: 3000, deletedAt: 3000 }), localPending: true },
+			tomb
 		);
-		expect(r.value?.wert).toBe("wieder da");
+		expect(r.value?.value).toBe("wieder da");
 	});
 
 	it("laesst ohne Serverstand alles unberuehrt", () => {
-		const r = mergeRecord({ local: s(), remote: undefined, localPending: true }, grab);
+		const r = mergeRecord({ local: s(), remote: undefined, localPending: true }, tomb);
 		expect(r.changed).toBe(false);
-		expect(r.value?.wert).toBe("a");
+		expect(r.value?.value).toBe("a");
 	});
 
-	it("nimmt einen Grabstein an, auch wenn die Zeit gleich ist", () => {
+	it("nimmt einen Loeschmarker an, auch wenn die Zeit gleich ist", () => {
 		// Der Fall, der engine.test.ts flackern liess: deleteYear stempelt alle
 		// Eintraege eines Jahres mit demselben Date.now(). Faellt das mit dem
 		// updatedAt eines gerade erst angelegten Eintrags zusammen, standen hier
 		// zwei gleiche Stempel - und die Abkuerzung fuer "derselbe Stand" nahm
-		// den Grabstein nicht zur Kenntnis. Das andere Geraet behielt den
+		// den Loeschmarker nicht zur Kenntnis. Das andere Geraet behielt den
 		// Eintrag und schob ihn beim naechsten Abgleich wieder hoch.
 		const r = mergeRecord(
 			{
@@ -159,7 +159,7 @@ describe("mergeRecord", () => {
 				remote: s({ updatedAt: 1000, deletedAt: 1000 }),
 				localPending: false
 			},
-			grab
+			tomb
 		);
 		expect(r.value).toBeNull();
 		expect(r.changed).toBe(true);
@@ -169,12 +169,12 @@ describe("mergeRecord", () => {
 	it("kommt auf beiden Geraeten zum selben Ergebnis", () => {
 		// Die Zusage, an der alles haengt: derselbe Code, dieselbe Ausgangslage,
 		// dieselbe Entscheidung - egal, wer gerade rechnet.
-		const handy = s({ id: "x", wert: "handy", updatedAt: 2000, deviceId: "handy" });
-		const rechner = s({ id: "x", wert: "rechner", updatedAt: 2000, deviceId: "rechner" });
+		const phone = s({ id: "x", value: "handy", updatedAt: 2000, deviceId: "handy" });
+		const desktop = s({ id: "x", value: "rechner", updatedAt: 2000, deviceId: "rechner" });
 
-		const ausSichtHandy = mergeRecord({ local: handy, remote: rechner, localPending: true }, grab);
-		const ausSichtRechner = mergeRecord({ local: rechner, remote: handy, localPending: true }, grab);
-		expect(ausSichtHandy.value?.wert).toBe(ausSichtRechner.value?.wert);
+		const fromPhone = mergeRecord({ local: phone, remote: desktop, localPending: true }, tomb);
+		const fromDesktop = mergeRecord({ local: desktop, remote: phone, localPending: true }, tomb);
+		expect(fromPhone.value?.value).toBe(fromDesktop.value?.value);
 	});
 });
 
@@ -190,9 +190,9 @@ describe("resolveOpenEntries", () => {
 	it("beendet den aelteren, wenn zwei Geraete je einen offenen halten", () => {
 		// Der Fall, um den es geht: am Handy gestartet, der Rechner wacht auf und
 		// weiss nichts davon.
-		const handy = e("h", { startTs: 1000, updatedAt: 1000, deviceId: "handy" });
-		const rechner = e("r", { startTs: 5000, updatedAt: 9000, deviceId: "rechner" });
-		const fix = resolveOpenEntries([handy, rechner]);
+		const phone = e("h", { startTs: 1000, updatedAt: 1000, deviceId: "handy" });
+		const desktop = e("r", { startTs: 5000, updatedAt: 9000, deviceId: "rechner" });
+		const fix = resolveOpenEntries([phone, desktop]);
 		expect(fix).toHaveLength(1);
 		expect(fix[0].id).toBe("h");
 		expect(fix[0].endTs).toBe(5000);
@@ -201,18 +201,18 @@ describe("resolveOpenEntries", () => {
 	it("entscheidet nach der juengsten HANDLUNG, nicht nach der Startzeit", () => {
 		// Wer um 10 am Rechner startet und dabei auf 8 Uhr zurueckdatiert, meint
 		// trotzdem diesen Lauf - nicht den vom Handy um 9.
-		const frueh = e("neu", { startTs: 8000, updatedAt: 10_000, deviceId: "rechner" });
-		const spaet = e("alt", { startTs: 9000, updatedAt: 9000, deviceId: "handy" });
-		const fix = resolveOpenEntries([frueh, spaet]);
+		const early = e("neu", { startTs: 8000, updatedAt: 10_000, deviceId: "rechner" });
+		const late = e("alt", { startTs: 9000, updatedAt: 9000, deviceId: "handy" });
+		const fix = resolveOpenEntries([early, late]);
 		expect(fix.map((x) => x.id)).toEqual(["alt"]);
 	});
 
 	it("laesst keine negative Dauer entstehen", () => {
 		// Wenn der Gewinner VOR dem Verlierer begann, endet der Verlierer an seinem
 		// eigenen Start - Dauer null statt negativ.
-		const gewinner = e("g", { startTs: 1000, updatedAt: 9000 });
-		const verlierer = e("v", { startTs: 5000, updatedAt: 1000 });
-		const fix = resolveOpenEntries([gewinner, verlierer]);
+		const winner = e("g", { startTs: 1000, updatedAt: 9000 });
+		const loser = e("v", { startTs: 5000, updatedAt: 1000 });
+		const fix = resolveOpenEntries([winner, loser]);
 		expect(fix[0].endTs).toBe(5000);
 	});
 

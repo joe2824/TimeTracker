@@ -9,8 +9,8 @@
 		RELEASES_URL,
 		REPO_URL,
 		WIKI_URL,
-		hatDesktopApp,
-		type Betriebssystem
+		hasDesktopApp,
+		type OperatingSystem
 	} from "$lib/platform/os";
 
 	import TimerIcon from "@lucide/svelte/icons/timer";
@@ -22,9 +22,9 @@
 	import ServerIcon from "@lucide/svelte/icons/server";
 	import BookOpenIcon from "@lucide/svelte/icons/book-open";
 
-	let { auth, os }: { auth: Snippet; os: Betriebssystem } = $props();
+	let { auth, os }: { auth: Snippet; os: OperatingSystem } = $props();
 
-	const desktop = $derived(hatDesktopApp(os));
+	const desktop = $derived(hasDesktopApp(os));
 
 	const highlights = [
 		{
