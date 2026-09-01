@@ -36,7 +36,23 @@
 	let isRefreshing = $state(false);
 
 	// Telemetry Stats
+	/** Wie viele Tage Verlauf abgefragt werden. WAU und MAU haengen nicht daran. */
+	const STATS_DAYS = 30;
+	/** So viele Marken passen nebeneinander, ohne die Seite zu sprengen. */
+	const MAX_BADGES = 12;
 	let stats = $state<ServerStats | null>(null);
+
+	/** Haeufigstes zuerst, und nur so viele, wie sich anzeigen lassen. */
+	function topEntries(counts: Record<string, number>): [string, number][] {
+		return Object.entries(counts)
+			.sort((a, b) => b[1] - a[1])
+			.slice(0, MAX_BADGES);
+	}
+
+	/** Wie viele Marken weggelassen wurden. */
+	function restCount(counts: Record<string, number>): number {
+		return Math.max(0, Object.keys(counts).length - MAX_BADGES);
+	}
 
 	// Invites & Registration
 	let invites = $state<Invite[]>([]);
@@ -97,7 +113,7 @@
 			const [invitesRes, backupsRes, statsRes] = await Promise.all([
 				warm(INVITES_KEY, () => account.invites()),
 				warm(BACKUPS_KEY, () => account.backups()).catch(() => []),
-				account.stats(14).catch(() => null)
+				account.stats(STATS_DAYS).catch(() => null)
 			]);
 
 			invites = invitesRes.invites;
@@ -307,7 +323,7 @@
 					</div>
 					{#if stats}
 						<Badge variant="outline" class="text-xs">
-							{stats.summary.totalPings} Ping{stats.summary.totalPings === 1 ? "" : "s"} erfasst
+							{stats.summary.totalPings} Ping{stats.summary.totalPings === 1 ? "" : "s"} in {STATS_DAYS} Tagen
 						</Badge>
 					{/if}
 				</div>
@@ -345,27 +361,37 @@
 
 					<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 						<div class="rounded-lg border p-3 space-y-2">
-							<div class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Versionen (Gesamt)</div>
+							<div class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Versionen ({STATS_DAYS} Tage)</div>
 							<div class="flex flex-wrap gap-1.5">
-								{#each Object.entries(stats.summary.versions) as [ver, count]}
+								{#each topEntries(stats.summary.versions) as [ver, count]}
 									<Badge variant="secondary" class="font-mono text-xs">
 										{ver}: {count}
 									</Badge>
 								{:else}
 									<span class="text-xs text-muted-foreground">Keine Daten</span>
 								{/each}
+								{#if restCount(stats.summary.versions) > 0}
+									<span class="text-xs text-muted-foreground self-center">
+										+{restCount(stats.summary.versions)} weitere
+									</span>
+								{/if}
 							</div>
 						</div>
 						<div class="rounded-lg border p-3 space-y-2">
-							<div class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Plattformen (Gesamt)</div>
+							<div class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Plattformen ({STATS_DAYS} Tage)</div>
 							<div class="flex flex-wrap gap-1.5">
-								{#each Object.entries(stats.summary.platforms) as [plat, count]}
+								{#each topEntries(stats.summary.platforms) as [plat, count]}
 									<Badge variant="secondary" class="font-mono text-xs">
 										{plat}: {count}
 									</Badge>
 								{:else}
 									<span class="text-xs text-muted-foreground">Keine Daten</span>
 								{/each}
+								{#if restCount(stats.summary.platforms) > 0}
+									<span class="text-xs text-muted-foreground self-center">
+										+{restCount(stats.summary.platforms)} weitere
+									</span>
+								{/if}
 							</div>
 						</div>
 					</div>
@@ -384,7 +410,7 @@
 												{Object.entries(day.versions).map(([v, c]) => `${v} (${c})`).join(", ")}
 											</div>
 											<Badge variant="outline" class="font-mono text-[11px] font-semibold">
-												{day.dau} {day.dau === 1 ? "Nutzer" : "Nutzer"}
+												{day.dau} {day.dau === 1 ? "Gerät" : "Geräte"}
 											</Badge>
 										</div>
 									</div>

@@ -221,8 +221,11 @@
 		// dass der Blick auch mal woanders sein darf.
 		await whenWindowVisible();
 		// Wenn inzwischen eine neuere Version ansteht oder der Dialog bereits offen/installiert ist:
-		// den veralteten Hinweis verwerfen.
+		// den veralteten Hinweis verwerfen. Den Vermerk dabei zuruecknehmen - sonst
+		// bliebe genau diese Version fuer den Rest des Laufs stumm, obwohl der
+		// Hinweis nie zu sehen war.
 		if (!updater.pending || updater.pending.version !== version || updater.open || updater.installing) {
+			if (announcedVersion === version) announcedVersion = null;
 			return;
 		}
 		logInfo(`Hinweis auf Update ${version} gezeigt`);
