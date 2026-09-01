@@ -325,6 +325,57 @@ describe("Zwei Geraete", () => {
 		expect((await entries(phone))[0].note).toBe("rechner");
 	});
 
+	it("loest einen Konflikt aus der Antwort, ohne die Historie zu ziehen", async () => {
+		// Der Server schickt den Stand, an dem es gescheitert ist, ohnehin mit.
+		// Ihn zu nehmen kostet nichts; die Historie dafuer durchzublaettern kann
+		// auf einem Konto mit Jahren an Daten eine ganze Weile dauern.
+		const phone = await phoneWith(entry("e1", { note: "handy" }));
+		const desktop = new Device("rechner");
+		await on(desktop, (engine) => engine.sync());
+
+		// Das Handy aendert denselben Eintrag - damit steht der Rechner auf einer
+		// Fassung, die der Server nicht mehr hat.
+		await afterwards();
+		await on(phone, async (engine) => {
+			const mine = (await store.loadEntries(MONTH))[0];
+			await store.saveEntries(MONTH, [{ ...mine, note: "handy zwei" }]);
+			return engine.sync();
+		});
+
+		// Historie beim Server, die mit dem Konflikt nichts zu tun hat.
+		await on(phone, async (engine) => {
+			const old = Array.from({ length: 40 }, (_, i) =>
+				entry(`alt${i}`, {
+					startTs: Date.UTC(2026, 5, 1 + (i % 28), 9) + 2 * 3600_000,
+					endTs: Date.UTC(2026, 5, 1 + (i % 28), 10) + 2 * 3600_000
+				})
+			);
+			await store.saveEntries("2026-06", old);
+			return engine.sync();
+		});
+
+		// Der Rechner aendert auf seinem alten Stand und laeuft damit in den Konflikt.
+		await afterwards();
+		server.calls.length = 0;
+		const result = await on(desktop, async (engine) => {
+			const theirs = (await store.loadEntries(MONTH))[0];
+			await store.saveEntries(MONTH, [{ ...theirs, note: "rechner" }]);
+			return engine.sync();
+		});
+
+		// Die Aenderung ist durch - darum geht es zuerst.
+		expect(result!.pushed).toBe(1);
+		expect([...server.rows.values()].find((r) => r.id === "e1")!.rev).toBe(3);
+
+		// Und zwar OHNE Abruf dazwischen: der zweite Versuch folgt direkt auf den
+		// ersten. Ein Abruf an dieser Stelle zoege die ganze Historie und risse
+		// damit das Budget ein, das der gestaffelte Abgleich setzt.
+		const first = server.calls.indexOf("POST /api/sync");
+		const second = server.calls.indexOf("POST /api/sync", first + 1);
+		expect(second).toBeGreaterThan(first);
+		expect(server.calls.slice(first, second)).not.toContain("GET /api/sync");
+	});
+
 	it("laesst hoechstens einen Timer laufen, wenn beide Geraete einen halten", async () => {
 		// Der Fall, um den es dem Nutzer geht: am Handy gestartet, der Rechner
 		// wacht auf und weiss nichts davon.

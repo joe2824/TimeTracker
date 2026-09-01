@@ -297,12 +297,20 @@ export class SyncEngine {
 					if (k.current.rev === 0) this.#unknownToServer.add(k.id);
 					else this.#unknownToServer.delete(k.id);
 				}
-				// Die Konflikte aufloesen heisst: den Serverstand holen und
-				// zusammenfuehren. Danach steht die Aenderung auf der richtigen
-				// Fassung und kommt in der naechsten Runde durch.
-				const resolved = await this.#pullBacklog(total, Infinity);
-				pulled += resolved.pulled;
-				lostEdits += resolved.lostEdits;
+				// Den Stand, an dem es gescheitert ist, schickt der Server mit -
+				// mehr braucht das Zusammenfuehren nicht. Danach steht die Aenderung
+				// auf der richtigen Fassung und kommt in der naechsten Runde durch.
+				//
+				// Frueher lief hier ein ungedeckelter Backlog-Abruf. Der holte auf
+				// einem Konto mit Jahren an Daten die ganze Historie in EINEM Zug und
+				// riss damit genau das Budget ein, das #pullStaged setzt.
+				//
+				// Der Stand bleibt dabei stehen: nach der Invariante ist ein zu alter
+				// Cursor nur redundant, nie lueckenhaft - dieselben Datensaetze kommen
+				// im regulaeren Abruf noch einmal, und mergeRecord ist idempotent.
+				const current = answer.conflicts.map((k) => k.current);
+				pulled += current.length;
+				lostEdits += (await this.#apply(current)).lostEdits;
 				continue;
 			}
 			if (batch.length === open.length) break;
