@@ -45,6 +45,7 @@ import {
 } from "../crypto/vault";
 import { toast } from "svelte-sonner";
 import { protectSecret, unprotectSecret } from "../platform/secrets";
+import type { PrfFailure } from "./enroll";
 import { isTauri } from "../platform/env";
 import { platformFetch } from "../platform/http";
 import { notifyDataChanged } from "../platform/windows";
@@ -1108,7 +1109,10 @@ class AccountState {
 	 * Liegt der PRF-Wert schon vor (er faellt bei jeder Anmeldung an), kostet das
 	 * keine zweite Abfrage.
 	 */
-	async repairPasskeyWrap(credentialId?: string, prf?: Uint8Array | null): Promise<boolean> {
+	async repairPasskeyWrap(
+		credentialId?: string,
+		prf?: Uint8Array | null
+	): Promise<{ ok: true } | { ok: false; reason: PrfFailure }> {
 		if (!this.#key) throw new Error("Das Konto ist nicht entsperrt");
 		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
 		const { ensurePasskeyWrap } = await import("./enroll");

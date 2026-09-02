@@ -101,15 +101,19 @@
 	async function handleRepair(p: Passkey) {
 		repairing = p.id;
 		try {
-			await account.repairPasskeyWrap(p.id);
+			const r = await account.repairPasskeyWrap(p.id);
 			await loadPasskeys(true);
-			// Wer bei der Nachfrage einen anderen Passkey nimmt, hat diesen nicht repariert.
-			const ok = passkeys.find((k) => k.id === p.id)?.hasWrap === true;
-			toast[ok ? "success" : "error"](
-				ok
-					? "Erledigt. Dieser Passkey entsperrt deine Daten jetzt allein."
-					: "Unverändert. Bestätige mit genau dem Passkey, der in der Zeile steht."
-			);
+			if (r.ok) {
+				toast.success("Erledigt. Dieser Passkey entsperrt deine Daten jetzt allein.");
+			} else if (r.reason === "otherPasskey") {
+				toast.error("Das war ein anderer Passkey. Bitte den aus dieser Zeile bestätigen.");
+			} else {
+				// Kein PRF: daran aendert kein zweiter Versuch etwas, und die 24 Wörter
+				// helfen hier auch nicht - den Wert kann nur der Passkey selbst liefern.
+				toast.error(
+					"Dieser Passkey kann deine Daten nicht entschlüsseln. Leg auf diesem Gerät einen neuen an."
+				);
+			}
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Einrichten fehlgeschlagen");
 		} finally {

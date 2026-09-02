@@ -49,7 +49,7 @@
 			const done =
 				missing === "passkey"
 					? (await account.addPasskey("Dieser Browser")).prfAvailable
-					: await account.repairPasskeyWrap();
+					: (await account.repairPasskeyWrap()).ok;
 			await check();
 			if (done) {
 				toast.success("Erledigt. Dein Passkey entsperrt deine Daten jetzt allein.");

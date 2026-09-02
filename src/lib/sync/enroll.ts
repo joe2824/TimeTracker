@@ -219,15 +219,13 @@ export async function register(
 	// Der PRF-Wert kommt beim Anlegen meist nicht heraus - dann holt ihn eine
 	// eigene Abfrage nach. Sie laeuft VOR dem Abschluss: der Passkey liegt schon
 	// im Authentifikator, und die Antwort wird nirgends geprueft.
-	const prf =
-		prfOf(response) ??
-		(
-			await harvestPrf(response.id).catch((e) => {
+	const harvested = prfOf(response)
+		? null
+		: await harvestPrf(response.id).catch((e) => {
 				logWarn("PRF-Wert ließ sich beim Anlegen nicht nachholen", e);
-				return null;
-			})
-		)?.prf ??
-		null;
+				return { ok: false as const, reason: "noPrf" as const };
+			});
+	const prf = prfOf(response) ?? (harvested?.ok ? harvested.prf : null);
 
 	// Beide Verpackungen entstehen hier, nicht in einer zweiten Anfrage. Der
 	// Server schreibt sie zusammen mit Konto und Passkey in EINER Transaktion -
@@ -263,6 +261,20 @@ export async function register(
 }
 
 /**
+ * Warum ein Passkey die Daten nicht oeffnen kann.
+ *
+ * `otherPasskey`: bestaetigt wurde ein anderer als der gemeinte.
+ * `noPrf`: der Authentifikator rechnet keinen PRF-Wert aus - daran aendert auch
+ * ein zweiter Versuch nichts, und die Phrase hilft hier ebenfalls nicht: den
+ * Wert kann nur der Authentifikator selbst liefern.
+ */
+export type PrfFailure = "otherPasskey" | "noPrf";
+
+type PrfResult =
+	| { ok: true; credentialId: string; prf: Uint8Array }
+	| { ok: false; reason: PrfFailure };
+
+/**
  * Den PRF-Wert eines Passkeys per eigener Abfrage holen.
  *
  * Beim Anlegen geben die meisten Browser noch keinen heraus - er faellt erst bei
@@ -270,9 +282,7 @@ export async function register(
  * nirgends geprueft, gebraucht wird allein der Wert, den der Authentifikator
  * dazu ausrechnet. Ohne Kennung nimmt der Browser den, den er anbietet.
  */
-async function harvestPrf(
-	credentialId?: string
-): Promise<{ credentialId: string; prf: Uint8Array } | null> {
+async function harvestPrf(credentialId?: string): Promise<PrfResult> {
 	const options: PublicKeyCredentialRequestOptionsJSON = {
 		challenge: toBase64Url(crypto.getRandomValues(new Uint8Array(32))),
 		userVerification: "required",
@@ -281,9 +291,11 @@ async function harvestPrf(
 	const response = await startAuthentication({ optionsJSON: withPrf(options) });
 	// allowCredentials sollte das schon erzwingen - ein Wert vom falschen Passkey
 	// wuerde den gemeinten aber nicht reparieren.
-	if (credentialId && response.id !== credentialId) return null;
+	if (credentialId && response.id !== credentialId) return { ok: false, reason: "otherPasskey" };
 	const prf = prfOf(response);
-	return prf ? { credentialId: response.id, prf } : null;
+	return prf
+		? { ok: true, credentialId: response.id, prf }
+		: { ok: false, reason: "noPrf" };
 }
 
 export interface LoginResult {
@@ -312,11 +324,14 @@ export async function ensurePasskeyWrap(
 	credentialId?: string,
 	/** Ein bereits vorliegender PRF-Wert - dann entfaellt die zweite Abfrage. */
 	prf?: Uint8Array | null
-): Promise<boolean> {
-	const found = prf && credentialId ? { credentialId, prf } : await harvestPrf(credentialId);
-	if (!found) return false;
+): Promise<{ ok: true } | { ok: false; reason: PrfFailure }> {
+	const found: PrfResult =
+		prf && credentialId
+			? { ok: true, credentialId, prf }
+			: await harvestPrf(credentialId);
+	if (!found.ok) return found;
 	await api.putWrap("passkey", serialize(await wrapWithPrf(key, found.prf)), found.credentialId);
-	return true;
+	return { ok: true };
 }
 
 /** Anmelden. */
@@ -489,12 +504,12 @@ export async function addPasskey(
 	});
 
 	// Erst jetzt die Verpackung: sie braucht die eben vergebene Kennung.
-	const prfAvailable = await ensurePasskeyWrap(api, key, created.id, prf).catch((e) => {
+	const wrapped = await ensurePasskeyWrap(api, key, created.id, prf).catch((e) => {
 		logWarn("PRF-Wert konnte nicht nachgeholt werden", e);
-		return false;
+		return { ok: false as const, reason: "noPrf" as const };
 	});
 
-	return { id: created.id, label: created.label, prfAvailable };
+	return { id: created.id, label: created.label, prfAvailable: wrapped.ok };
 }
 
 export { ApiError, importVaultKey, toBase64 };
