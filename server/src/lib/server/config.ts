@@ -136,6 +136,6 @@ export const SYNC_WAIT_MS = Number(process.env.SYNC_WAIT_MS ?? 25_000);
 /** Lebensdauer einer Browser-Sitzung. */
 export const SESSION_TTL_MS = 30 * 24 * 3600 * 1000;
 /** Wie lange eine WebAuthn-Aufgabe gilt. */
-export const CHALLENGE_TTL_MS = 5 * 60 * 1000;
+export { CHALLENGE_TTL_MS } from "$shared/codes";
 /** Wie lange ein Kopplungscode gilt - kurz, er wird abgetippt, nicht verwahrt. */
 export const PAIRING_TTL_MS = 10 * 60 * 1000;

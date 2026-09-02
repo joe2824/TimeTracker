@@ -21,3 +21,17 @@ export function isPairingCode(code: string): boolean {
 		code.length === PAIRING_CODE_LENGTH && [...code].every((c) => CODE_ALPHABET.includes(c))
 	);
 }
+
+// ---------- Wie lange eine WebAuthn-Aufgabe gilt ----------
+
+/** Was der Server einer Aufgabe zugesteht. */
+export const CHALLENGE_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Wie lange der Client eine vorgeladene Aufgabe liegen laesst.
+ *
+ * Knapp darunter: eine Aufgabe, die hier noch als frisch gilt, waehrend der
+ * Server sie schon verworfen hat, laesst die Anmeldung ohne erkennbaren Grund
+ * scheitern. Deshalb haengt der Wert am Server-Wert und steht nicht daneben.
+ */
+export const CHALLENGE_REUSE_MS = CHALLENGE_TTL_MS - 60 * 1000;

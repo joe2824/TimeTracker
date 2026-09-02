@@ -382,3 +382,32 @@ export function fromBase64(b64: string): Uint8Array {
 	for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
 	return out;
 }
+
+// ---------- Wire-Format einer Verpackung ----------
+//
+// So legt der Server sie ab, und so reist sie durch die Kopplung: JSON mit
+// base64-Feldern. Stand an drei Stellen; drei Fassungen hiessen, dass ein
+// zusaetzliches Feld nur an zweien ankommt.
+
+/** Eine Verpackung als JSON-Objekt - Bytes werden zu base64. */
+export function serializeWrap(wrap: KeyWrap): Record<string, string> {
+	return {
+		kind: wrap.kind,
+		salt: toBase64(wrap.salt),
+		iv: toBase64(wrap.iv),
+		wrapped: toBase64(wrap.wrapped),
+		...(wrap.ephemeralPublicKey ? { ephemeralPublicKey: toBase64(wrap.ephemeralPublicKey) } : {})
+	};
+}
+
+/** Der Weg zurueck. `kind` faellt vor, wo es im JSON fehlt (Kopplung). */
+export function deserializeWrap(payload: string, kind: KeyWrap["kind"] = "device"): KeyWrap {
+	const d = JSON.parse(payload);
+	return {
+		kind: d.kind ?? kind,
+		salt: fromBase64(d.salt),
+		iv: fromBase64(d.iv),
+		wrapped: fromBase64(d.wrapped),
+		...(d.ephemeralPublicKey ? { ephemeralPublicKey: fromBase64(d.ephemeralPublicKey) } : {})
+	};
+}

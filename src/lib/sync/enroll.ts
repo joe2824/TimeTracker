@@ -10,10 +10,12 @@ import type {
 import {
 	createRecoveryPhrase,
 	createVaultKey,
+	deserializeWrap,
 	fromBase64,
 	importVaultKey,
 	isValidRecoveryPhrase,
 	recoveryLookupId,
+	serializeWrap,
 	toBase64,
 	unwrapWithPhrase,
 	unwrapWithPrf,
@@ -25,30 +27,11 @@ import {
 import { Api, ApiError } from "./api";
 import { logWarn } from "../log";
 import { platformFetch } from "../platform/http";
+import { CHALLENGE_REUSE_MS } from "$shared/codes";
 
-/** Was der Server unter einer Verpackung versteht: JSON mit base64-Feldern. */
-function serialize(wrap: KeyWrap): string {
-	return JSON.stringify({
-		kind: wrap.kind,
-		salt: toBase64(wrap.salt),
-		iv: toBase64(wrap.iv),
-		wrapped: toBase64(wrap.wrapped),
-		...(wrap.ephemeralPublicKey
-			? { ephemeralPublicKey: toBase64(wrap.ephemeralPublicKey) }
-			: {})
-	});
-}
-
-function deserialize(payload: string): KeyWrap {
-	const d = JSON.parse(payload);
-	return {
-		kind: d.kind,
-		salt: fromBase64(d.salt),
-		iv: fromBase64(d.iv),
-		wrapped: fromBase64(d.wrapped),
-		...(d.ephemeralPublicKey ? { ephemeralPublicKey: fromBase64(d.ephemeralPublicKey) } : {})
-	};
-}
+/** Was der Server unter einer Verpackung versteht - Format siehe vault.ts. */
+const serialize = (wrap: KeyWrap) => JSON.stringify(serializeWrap(wrap));
+const deserialize = deserializeWrap;
 
 /** Die Verpackung mit der Phrase oeffnen - oder verstaendlich scheitern. */
 async function openWithPhrase(payload: string, phrase: string): Promise<CryptoKey> {
@@ -140,9 +123,6 @@ function withPrf<T extends { extensions?: unknown }>(options: T): T {
 // anmelden. Deshalb wird die Aufgabe schon geholt, wenn jemand auf den Knopf
 // zusteuert; der Klick trifft dann auf etwas, das dasteht.
 
-/** Serverseitig gilt eine Aufgabe fuenf Minuten - hier knapp darunter. */
-const CHALLENGE_TTL_MS = 4 * 60 * 1000;
-
 type LoginStart = Awaited<ReturnType<Api["loginStart"]>>;
 type RegisterStart = Awaited<ReturnType<Api["registerStart"]>>;
 
@@ -154,7 +134,7 @@ const challenges = new Map<string, { at: number; task: Promise<unknown> }>();
  */
 function prepare<T>(key: string, start: () => Promise<T>): Promise<T> {
 	const waiting = challenges.get(key);
-	if (waiting && Date.now() - waiting.at < CHALLENGE_TTL_MS) return waiting.task as Promise<T>;
+	if (waiting && Date.now() - waiting.at < CHALLENGE_REUSE_MS) return waiting.task as Promise<T>;
 	const task = start();
 	challenges.set(key, { at: Date.now(), task });
 	// Ein Fehlschlag darf sich nicht einbrennen - der naechste Versuch fragt wieder.

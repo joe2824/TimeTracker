@@ -32,8 +32,10 @@ import {
 	exportPairingPublicKey,
 	checkedPairingKey,
 	exportVaultKey,
+	deserializeWrap,
 	fromBase64,
 	importVaultKey,
+	serializeWrap,
 	normalizePairingCode,
 	pairingCode,
 	bucketFor,
@@ -876,22 +878,7 @@ class AccountState {
 
 		// Das Paket oeffnen - das kann nur dieses Geraet, mit seinem privaten
 		// Schluessel. Der Server hatte nie mehr als Chiffrat in der Hand.
-		const wrap = JSON.parse(answer.wrappedKey) as {
-			salt: string;
-			iv: string;
-			wrapped: string;
-			ephemeralPublicKey: string;
-		};
-		const key = await unwrapForDevice(
-			{
-				kind: "device",
-				salt: fromBase64(wrap.salt),
-				iv: fromBase64(wrap.iv),
-				wrapped: fromBase64(wrap.wrapped),
-				ephemeralPublicKey: fromBase64(wrap.ephemeralPublicKey)
-			},
-			pair.privateKey
-		);
+		const key = await unwrapForDevice(deserializeWrap(answer.wrappedKey), pair.privateKey);
 
 		await this.#persistLink(url, answer.deviceToken, key);
 		this.#pairing = null;
@@ -1343,19 +1330,6 @@ class AccountState {
 		if (this.#debounce) clearTimeout(this.#debounce);
 		if (this.#retry) clearTimeout(this.#retry);
 	}
-}
-
-/** Eine Verpackung als JSON - Bytes werden zu base64. */
-function serializeWrap(wrap: KeyWrap): Record<string, string> {
-	return {
-		kind: wrap.kind,
-		salt: toBase64(wrap.salt),
-		iv: toBase64(wrap.iv),
-		wrapped: toBase64(wrap.wrapped),
-		...(wrap.ephemeralPublicKey
-			? { ephemeralPublicKey: toBase64(wrap.ephemeralPublicKey) }
-			: {})
-	};
 }
 
 export const account = new AccountState();
