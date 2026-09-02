@@ -9,6 +9,7 @@ import { DB_FILE } from "$lib/server/config";
 import { SESSION_COOKIE } from "$lib/server/session";
 import {
 	LIMIT_AUTH,
+	LIMIT_AUTH_START,
 	LIMIT_PAIR_CLAIM,
 	LIMIT_PAIR_START,
 	LIMIT_RECOVER,
@@ -35,6 +36,8 @@ import {
 const RATE_LIMITS: [string, LimitOptions][] = [
 	["/api/pair/claim", LIMIT_PAIR_CLAIM],
 	["/api/pair/start", LIMIT_PAIR_START],
+	// Vor dem allgemeinen Satz: `find` nimmt den ersten Treffer.
+	["/api/auth/login/start", LIMIT_AUTH_START],
 	["/api/auth/login", LIMIT_AUTH],
 	["/api/auth/register", LIMIT_AUTH],
 	["/api/auth/recover", LIMIT_RECOVER],

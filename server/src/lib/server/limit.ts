@@ -72,6 +72,17 @@ export const LIMIT_PAIR_CLAIM: LimitOptions = { burst: 15, perMinute: 10 };
 export const LIMIT_PAIR_START: LimitOptions = { burst: 10, perMinute: 5 };
 /** Anmelden und Registrieren. */
 export const LIMIT_AUTH: LimitOptions = { burst: 15, perMinute: 10 };
+/**
+ * Die Aufgabe fuer eine Anmeldung abholen.
+ *
+ * Eigener Eimer, weil die Oberflaeche sie im Voraus holt: WebAuthn muss
+ * unmittelbar auf die Beruehrung folgen, sonst lehnt der Browser ab. Dabei
+ * faellt je Aufruf der Anmeldeseite eine Anfrage an - hinter einer gemeinsamen
+ * Adresse waeren mit dem strengen Satz sonst schon die Besucher am Zug, bevor
+ * jemand geklickt hat. Geraten werden kann hier nichts: die Antwort ist eine
+ * Zufallsaufgabe, geprueft wird erst beim Abschluss.
+ */
+export const LIMIT_AUTH_START: LimitOptions = { burst: 60, perMinute: 30 };
 /** Wiederherstellung mit der Phrase - zwei Anfragen je Vorgang. */
 export const LIMIT_RECOVER: LimitOptions = { burst: 12, perMinute: 6 };
 /** Telemetrie-Ping (täglicher Heartbeat von Clients). */

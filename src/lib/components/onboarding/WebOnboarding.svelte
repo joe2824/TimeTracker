@@ -11,7 +11,16 @@
 	import { toast } from "svelte-sonner";
 	import { account } from "$lib/sync/account.svelte";
 	import { app } from "$lib/app.svelte";
-	import { ApiError, addPasskeyWrap, login, register, unlockWithPhrase } from "$lib/sync/enroll";
+	import {
+		ApiError,
+		addPasskeyWrap,
+		login,
+		prepareLogin,
+		prepareRegister,
+		register,
+		unlockWithPhrase
+	} from "$lib/sync/enroll";
+	import { onIntent } from "$lib/prefetch";
 	import * as Dialog from "$lib/components/ui/dialog";
 	import PairingCode from "$lib/components/onboarding/PairingCode.svelte";
 	import Landing from "$lib/components/onboarding/Landing.svelte";
@@ -23,6 +32,7 @@
 	import { errorText, logWarn } from "$lib/log";
 	import { linkParameter } from "$lib/invite";
 	import { onboardingOpen } from "$lib/onboarding.svelte";
+	import { onMount } from "svelte";
 	import {
 		isPairingCode,
 		isValidRecoveryPhrase,
@@ -52,8 +62,30 @@
 	let prfValue: Uint8Array | null = null;
 	let passkeyId = "";
 
+	/**
+	 * Die Aufgabe schon holen, wenn jemand auf den Knopf zusteuert.
+	 *
+	 * WebAuthn will unmittelbar auf die Beruehrung folgen; bei langsamer
+	 * Verbindung ist die Berechtigung aus dem Klick sonst abgelaufen, bevor der
+	 * Dialog aufgeht. Fehlschlaege bleiben still - der Klick fragt dann eben
+	 * selbst, wie bisher.
+	 */
+	function warmLogin() {
+		void prepareLogin(serverUrl).catch(() => {});
+	}
+
+	function warmRegister() {
+		void prepareRegister(serverUrl, "", invite.trim() || undefined).catch(() => {});
+	}
+
+	// Nicht erst beim Zeigen: auf dem Touchscreen liegen Beruehrung und Klick so
+	// dicht beieinander, dass die Anfrage sonst noch laeuft, wenn der Klick kommt
+	// - und genau darauf wartet dann die Berechtigung, die WebAuthn braucht.
+	onMount(warmLogin);
+
 	async function signIn() {
 		running = true;
+		const started = Date.now();
 		try {
 			const r = await login(serverUrl);
 			loggedInName = r.displayName;
@@ -76,6 +108,15 @@
 			}
 			stepIndex = "unlock";
 		} catch (e) {
+			// Bricht es sofort ab, hat der Browser den Dialog gar nicht erst
+			// aufgemacht - die Berechtigung aus der Beruehrung war abgelaufen,
+			// waehrend die Aufgabe noch unterwegs war. Ein zweiter Versuch geht
+			// durch: die Aufgabe liegt jetzt hier.
+			if (e instanceof Error && e.name === "NotAllowedError" && Date.now() - started < 1500) {
+				// Derselbe Fehler kommt auch von "abgebrochen" und "hier gibt es
+				// keinen Passkey" - die Karte mit den anderen Wegen bleibt deshalb.
+				toast.error("Der Passkey-Dialog kam nicht auf. Bitte noch einmal tippen.");
+			}
 			// Kein Sackgassen-Toast. WebAuthn sagt nicht, OB es einen Passkey gibt -
 			// abgebrochen und "gar keiner da" kommen als derselbe Fehler an. Statt zu
 			// raten, zeigen wir die Wege, die es von hier aus gibt.
@@ -334,7 +375,13 @@
 					{#if linkValue.fresh}
 						<!-- Der Rechner hat hierher geschickt, ausdruecklich zum Anlegen. -->
 						<div class="space-y-2.5">
-							<Button size="lg" class="w-full h-11 font-medium gap-2 shadow-xs" disabled={running} onclick={() => create(invite)}>
+							<Button
+								size="lg"
+								class="w-full h-11 font-medium gap-2 shadow-xs"
+								disabled={running}
+								onclick={() => create(invite)}
+								{...onIntent(warmRegister)}
+							>
 								<KeyRoundIcon class="size-4.5" />
 								<span>{running ? "Legt an…" : "Konto anlegen"}</span>
 							</Button>
@@ -354,6 +401,7 @@
 								class="w-full h-11 text-sm font-medium gap-2 shadow-xs transition-all active:scale-[0.99]"
 								disabled={running}
 								onclick={signIn}
+								{...onIntent(warmLogin)}
 							>
 								<FingerprintIcon class="size-4.5" />
 								<span>{running ? "Logge ein…" : "Login mit Passkey"}</span>
@@ -390,6 +438,7 @@
 							class="w-full h-10 text-sm font-medium gap-2 hover:bg-accent/60 transition-colors"
 							disabled={running}
 							onclick={() => create(invite)}
+							{...onIntent(warmRegister)}
 						>
 							<UserPlusIcon class="size-4" />
 							<span>{running ? "Erstelle Konto…" : (fromLink ? "Mit Einladung registrieren" : "Neues Konto erstellen")}</span>

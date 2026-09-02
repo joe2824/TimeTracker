@@ -125,6 +125,70 @@ function withPrf<T extends { extensions?: unknown }>(options: T): T {
 	} as T;
 }
 
+// ---------- Die Aufgabe im Voraus holen ----------
+//
+// WebAuthn will unmittelbar auf die Berührung folgen. Liegt eine langsame
+// Verbindung dazwischen - Mobilfunk, gedrosseltes Netz -, ist die Berechtigung
+// aus dem Klick abgelaufen, bevor der Dialog aufgehen kann, und der Browser
+// lehnt mit NotAllowedError ab. Es sieht aus, als koenne sich niemand mehr
+// anmelden. Deshalb wird die Aufgabe schon geholt, wenn jemand auf den Knopf
+// zusteuert; der Klick trifft dann auf etwas, das dasteht.
+
+/** Serverseitig gilt eine Aufgabe fuenf Minuten - hier knapp darunter. */
+const CHALLENGE_TTL_MS = 4 * 60 * 1000;
+
+type LoginStart = Awaited<ReturnType<Api["loginStart"]>>;
+type RegisterStart = Awaited<ReturnType<Api["registerStart"]>>;
+
+interface Prepared<T> {
+	/** Adresse und Eingaben, zu denen die Aufgabe passt. */
+	key: string;
+	at: number;
+	task: Promise<T>;
+}
+
+let loginPrepared: Prepared<LoginStart> | null = null;
+let registerPrepared: Prepared<RegisterStart> | null = null;
+
+function prepared<T>(held: Prepared<T> | null, key: string): Promise<T> | null {
+	if (!held || held.key !== key) return null;
+	if (Date.now() - held.at > CHALLENGE_TTL_MS) return null;
+	return held.task;
+}
+
+/**
+ * Die Anmelde-Aufgabe vorladen. Mehrfach aufzurufen kostet nichts - solange eine
+ * frische daliegt, kommt sie zurueck.
+ */
+export function prepareLogin(baseUrl: string): Promise<LoginStart> {
+	const held = prepared(loginPrepared, baseUrl);
+	if (held) return held;
+	const task = new Api({ baseUrl, fetchFn: platformFetch }).loginStart();
+	loginPrepared = { key: baseUrl, at: Date.now(), task };
+	// Ein Fehlschlag darf sich nicht einbrennen - der naechste Versuch fragt wieder.
+	void task.catch(() => {
+		if (loginPrepared?.task === task) loginPrepared = null;
+	});
+	return task;
+}
+
+/** Dasselbe fuer das Anlegen eines Kontos. */
+export function prepareRegister(
+	baseUrl: string,
+	displayName = "",
+	invite?: string
+): Promise<RegisterStart> {
+	const key = `${baseUrl}|${displayName}|${invite ?? ""}`;
+	const held = prepared(registerPrepared, key);
+	if (held) return held;
+	const task = new Api({ baseUrl, fetchFn: platformFetch }).registerStart(displayName, invite);
+	registerPrepared = { key, at: Date.now(), task };
+	void task.catch(() => {
+		if (registerPrepared?.task === task) registerPrepared = null;
+	});
+	return task;
+}
+
 export interface EnrollResult {
 	userId: string;
 	displayName: string;
@@ -141,20 +205,27 @@ export async function register(
 ): Promise<EnrollResult> {
 	const api = new Api({ baseUrl, fetchFn: platformFetch });
 
-	const start = await api.registerStart(displayName, opts.invite);
+	const prepared = prepareRegister(baseUrl, displayName, opts.invite);
+	const start = await prepared;
 	const response = await startRegistration({
 		optionsJSON: withPrf(start.options as PublicKeyCredentialCreationOptionsJSON)
 	});
 
 	const prf = prfOf(response);
-	await api.registerFinish({
-		challengeId: start.challengeId,
-		displayName,
-		invite: opts.invite,
-		email: opts.email,
-		hasPrf: prf !== null,
-		response
-	});
+	try {
+		await api.registerFinish({
+			challengeId: start.challengeId,
+			displayName,
+			invite: opts.invite,
+			email: opts.email,
+			hasPrf: prf !== null,
+			response
+		});
+	} finally {
+		// Der Server loescht die Aufgabe beim Nachsehen, gleich wie es ausgeht.
+		// Nur die eigene wegraeumen: inzwischen kann eine neue vorgeladen sein.
+		if (registerPrepared?.task === prepared) registerPrepared = null;
+	}
 
 	// Ab hier ist die Sitzung offen und die Verpackungen koennen abgelegt werden.
 	// Die Phrasen-Verpackung IMMER, auch wenn der Passkey PRF kann.
@@ -219,11 +290,19 @@ export async function harvestPrfWrap(
 /** Anmelden. */
 export async function login(baseUrl: string): Promise<LoginResult> {
 	const api = new Api({ baseUrl, fetchFn: platformFetch });
-	const start = await api.loginStart();
+	const prepared = prepareLogin(baseUrl);
+	const start = await prepared;
 	const response = await startAuthentication({
 		optionsJSON: withPrf(start.options as PublicKeyCredentialRequestOptionsJSON)
 	});
-	const account = await api.loginFinish({ challengeId: start.challengeId, response });
+	let account;
+	try {
+		account = await api.loginFinish({ challengeId: start.challengeId, response });
+	} finally {
+		// Der Server loescht die Aufgabe beim Nachsehen, gleich wie es ausgeht.
+		// Nur die eigene wegraeumen: inzwischen kann eine neue vorgeladen sein.
+		if (loginPrepared?.task === prepared) loginPrepared = null;
+	}
 
 	const { wraps } = await api.wraps();
 	const prf = prfOf(response);
