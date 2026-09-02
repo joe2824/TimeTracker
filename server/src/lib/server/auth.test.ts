@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { openDb, type Db } from "./db";
-import { devices, pairings, users } from "./db/schema";
-import { cleanupExpired, createDevice, deviceFromToken } from "./auth";
+import { devices, pairings, sessions, users } from "./db/schema";
+import { cleanupExpired, createDevice, deviceFromToken, hashSecret, userFromSession } from "./auth";
+import { SESSION_REFRESH_MS, SESSION_TTL_MS } from "./config";
 import { eq } from "drizzle-orm";
 
 let db: Db;
@@ -81,5 +82,65 @@ describe("cleanupExpired: Kopplungen", () => {
 		cleanupExpired(db);
 		expect(codes()).toEqual(["ABCDEFGHJKLM"]);
 		expect(deviceFromToken(db, deviceRow.token)).not.toBeNull();
+	});
+});
+
+describe("userFromSession: die Frist laeuft ab der letzten Nutzung", () => {
+	/** Eine Sitzung, deren Frist vor `agoMs` zuletzt gesetzt wurde. */
+	function session(secret: string, agoMs: number) {
+		db.insert(sessions)
+			.values({
+				id: hashSecret(secret),
+				userId: ANNA,
+				createdAt: Date.now() - agoMs,
+				expiresAt: Date.now() - agoMs + SESSION_TTL_MS
+			})
+			.run();
+	}
+
+	const expiresOf = (secret: string) =>
+		db.select().from(sessions).where(eq(sessions.id, hashSecret(secret))).get()?.expiresAt ?? 0;
+
+	it("verlaengert eine frische Sitzung NICHT - sonst schriebe jede Anfrage", () => {
+		session("frisch", 60_000);
+		const before = expiresOf("frisch");
+
+		expect(userFromSession(db, "frisch")).toEqual({ userId: ANNA, slid: false });
+		expect(expiresOf("frisch")).toBe(before);
+	});
+
+	it("verlaengert, wenn seit der letzten Nutzung genug Zeit vergangen ist", () => {
+		session("benutzt", SESSION_REFRESH_MS + 60_000);
+		const before = expiresOf("benutzt");
+
+		expect(userFromSession(db, "benutzt")).toEqual({ userId: ANNA, slid: true });
+		expect(expiresOf("benutzt")).toBeGreaterThan(before);
+	});
+
+	it("bleibt damit unbegrenzt gueltig, solange jemand die Anwendung benutzt", () => {
+		// Der Fall, um den es geht: 30 Tage waren die harte Grenze, danach kam der
+		// Entsperren-Bildschirm. Wer taeglich arbeitet, soll ihn nie sehen.
+		session("taeglich", SESSION_TTL_MS - 60_000);
+
+		expect(userFromSession(db, "taeglich")?.slid).toBe(true);
+		expect(expiresOf("taeglich")).toBeGreaterThan(Date.now() + SESSION_TTL_MS - 10_000);
+	});
+
+	it("eine abgelaufene Sitzung gilt nicht und wird weggeraeumt", () => {
+		db.insert(sessions)
+			.values({
+				id: hashSecret("abgelaufen"),
+				userId: ANNA,
+				createdAt: Date.now() - SESSION_TTL_MS - 2000,
+				expiresAt: Date.now() - 1000
+			})
+			.run();
+
+		expect(userFromSession(db, "abgelaufen")).toBeNull();
+		expect(db.select().from(sessions).all()).toEqual([]);
+	});
+
+	it("ein unbekanntes Geheimnis gilt nicht", () => {
+		expect(userFromSession(db, "gibt-es-nicht")).toBeNull();
 	});
 });

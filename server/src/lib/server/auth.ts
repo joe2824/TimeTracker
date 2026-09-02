@@ -7,7 +7,7 @@ import { and, eq, isNull, lt } from "drizzle-orm";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { Db, DbLike } from "./db";
 import { challenges, devices, pairings, sessions, users } from "./db/schema";
-import { CHALLENGE_TTL_MS, HMAC_SECRET, SESSION_TTL_MS } from "./config";
+import { CHALLENGE_TTL_MS, HMAC_SECRET, SESSION_REFRESH_MS, SESSION_TTL_MS } from "./config";
 
 /** Geheimnisse werden nur als Hash abgelegt.
  *  Mit HMAC_SECRET: sicher gegen DB-Exfil (serverseitiger Schluessel noetig).
@@ -78,14 +78,32 @@ export function createSession(db: Db, userId: string): string {
 	return secret;
 }
 
-export function userFromSession(db: Db, secret: string): string | null {
+export interface SessionAuth {
+	userId: string;
+	/** Ob die Frist dabei verlaengert wurde - dann muss das Cookie nachziehen. */
+	slid: boolean;
+}
+
+export function userFromSession(db: Db, secret: string): SessionAuth | null {
 	const row = db.select().from(sessions).where(eq(sessions.id, hashSecret(secret))).get();
 	if (!row) return null;
-	if (row.expiresAt < Date.now()) {
+	const now = Date.now();
+	if (row.expiresAt < now) {
 		db.delete(sessions).where(eq(sessions.id, row.id)).run();
 		return null;
 	}
-	return row.userId;
+
+	// Wer die Anwendung benutzt, wird nicht abgemeldet. Die Frist laeuft ab der
+	// letzten Nutzung, und `expiresAt - SESSION_TTL_MS` ist der Zeitpunkt, an dem
+	// sie zuletzt gesetzt wurde.
+	const touched = row.expiresAt - SESSION_TTL_MS;
+	if (now - touched < SESSION_REFRESH_MS) return { userId: row.userId, slid: false };
+
+	db.update(sessions)
+		.set({ expiresAt: now + SESSION_TTL_MS })
+		.where(eq(sessions.id, row.id))
+		.run();
+	return { userId: row.userId, slid: true };
 }
 
 export function destroySession(db: Db, secret: string): void {

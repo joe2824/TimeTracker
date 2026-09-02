@@ -6,7 +6,7 @@ import { openDb } from "$lib/server/db";
 import { cleanupExpired, deviceFromToken, userFromSession } from "$lib/server/auth";
 import { startBackupScheduler } from "$lib/server/backup";
 import { DB_FILE } from "$lib/server/config";
-import { SESSION_COOKIE } from "$lib/server/session";
+import { SESSION_COOKIE, setSessionCookie } from "$lib/server/session";
 import {
 	LIMIT_AUTH,
 	LIMIT_AUTH_START,
@@ -183,7 +183,14 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	if (!event.locals.userId) {
 		const cookie = event.cookies.get(SESSION_COOKIE);
-		if (cookie) event.locals.userId = userFromSession(db, cookie);
+		const session = cookie ? userFromSession(db, cookie) : null;
+		if (session) {
+			event.locals.userId = session.userId;
+			// Die Frist im Cookie laeuft ab dem Setzen - sie muss mitwandern, sonst
+			// meldet der Browser nach 30 Tagen ab, obwohl der Server laengst
+			// verlaengert hat.
+			if (session.slid) setSessionCookie(event.cookies, cookie!);
+		}
 	}
 
 	const answer = await resolve(event);
