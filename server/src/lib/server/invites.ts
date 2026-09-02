@@ -6,9 +6,10 @@ import { invites, serverSettings, users } from "./db/schema";
 import { INVITE_CODES, REGISTRATION_OPEN } from "./config";
 import { randomInt } from "node:crypto";
 import { safeEqual } from "./auth";
+import { CODE_ALPHABET } from "$shared/codes";
 
-/** Character set for generated invite codes. */
-const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+/** Character set for generated invite codes - shared with the pairing code. */
+const ALPHABET = CODE_ALPHABET;
 
 /** Generate a new formatted invite code: 4 groups of 4 characters. */
 export function generateInviteCode(): string {

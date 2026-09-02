@@ -16,7 +16,8 @@ const config = {
     // Der Dienstmitarbeiter wird nur fuer die PWA gebaut. In der
     // Desktop-Anwendung waere er ohne Nutzen und mit Ueberraschungen: sie laedt
     // ohnehin aus dem eigenen Paket.
-    serviceWorker: { register: web }
+    serviceWorker: { register: web },
+    alias: { $shared: "shared" }
   }
 };
 

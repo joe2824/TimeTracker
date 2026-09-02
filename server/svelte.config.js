@@ -8,6 +8,7 @@ export default {
 	preprocess: vitePreprocess(),
 	kit: {
 		adapter: adapter(),
+		alias: { $shared: "../shared" },
 		// Schreibende Anfragen nur von bekannten Herkuenften. Die API wird aus der
 		// PWA und aus der Desktop-Anwendung heraus gerufen - letztere meldet sich
 		// mit einem Geraete-Token statt mit einem Cookie und ist davon nicht

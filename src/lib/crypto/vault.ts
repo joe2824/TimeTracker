@@ -2,6 +2,12 @@
 
 import { generateMnemonic, mnemonicToEntropy, validateMnemonic } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english.js";
+import {
+	CODE_ALPHABET,
+	PAIRING_CODE_LENGTH,
+	isPairingCode,
+	normalizePairingCode
+} from "$shared/codes";
 
 const enc = new TextEncoder();
 
@@ -270,12 +276,11 @@ async function kekFromEcdh(
 }
 
 // ---------- Der Kopplungscode ----------
-
-/** Zeichen des Kopplungscodes - ohne I, O, 0, 1. 32 Zeichen = 5 Bit je Stelle. */
-const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-
-/** Zwoelf Stellen, also 60 Bit. */
-const CODE_LENGTH = 12;
+//
+// Alphabet, Laenge und Form stehen in shared/codes.ts. Der Server prueft
+// dieselbe Form; zwei Fassungen davon waeren zwei Gelegenheiten fuer einen Code,
+// den die eine Seite annimmt und die andere nicht.
+export { isPairingCode, normalizePairingCode };
 
 /** Der Kopplungscode zu einem oeffentlichen Schluessel - dessen Abdruck. */
 export async function pairingCode(publicKey: Uint8Array): Promise<string> {
@@ -283,7 +288,7 @@ export async function pairingCode(publicKey: Uint8Array): Promise<string> {
 		await crypto.subtle.digest("SHA-256", publicKey as BufferSource)
 	);
 	let out = "";
-	for (let i = 0; i < CODE_LENGTH; i++) {
+	for (let i = 0; i < PAIRING_CODE_LENGTH; i++) {
 		// Fuenf Bit je Stelle, fortlaufend aus dem Abdruck gelesen. Zwei Bytes auf
 		// einmal, weil eine Stelle ueber eine Byte-Grenze reichen kann.
 		const bit = i * 5;
@@ -293,16 +298,6 @@ export async function pairingCode(publicKey: Uint8Array): Promise<string> {
 		out += CODE_ALPHABET[(window >> (11 - offset)) & 31];
 	}
 	return out;
-}
-
-/** Getipptes auf die Rechenform bringen: Grossschreibung, nur Alphabet-Zeichen. */
-export function normalizePairingCode(input: string): string {
-	return [...input.toUpperCase()].filter((c) => CODE_ALPHABET.includes(c)).join("");
-}
-
-/** Ob eine Zeichenkette ueberhaupt die Form eines Codes hat. */
-export function isPairingCode(code: string): boolean {
-	return code.length === CODE_LENGTH && [...code].every((c) => CODE_ALPHABET.includes(c));
 }
 
 /**

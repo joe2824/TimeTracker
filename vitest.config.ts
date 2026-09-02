@@ -1,5 +1,6 @@
 import { defineConfig } from "vitest/config";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
+import { fileURLToPath } from "node:url";
 
 export default defineConfig({
 	// Svelte-Plugin, damit auch app.svelte.ts testbar ist: die Datei zieht ueber
@@ -8,7 +9,12 @@ export default defineConfig({
 	// Konfliktregeln) – die war bis dahin komplett ungetestet.
 	// `browser`-Condition: svelte-sonner liefert sonst die SSR-Fassung aus.
 	plugins: [svelte({ hot: false })],
-	resolve: { conditions: ["browser"] },
+	// $shared zeigt auf das Verzeichnis, das Client und Server teilen. Der
+	// Alias steht in svelte.config.js fuer den Build - vitest laedt die nicht.
+	resolve: {
+		conditions: ["browser"],
+		alias: { $shared: fileURLToPath(new URL("./shared", import.meta.url)) }
+	},
 	test: {
 		environment: "node",
 		include: ["src/**/*.test.ts"],

@@ -1,19 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { isPairingCode, normalizeCode, PAIRING_CODE_LENGTH } from "./pairing";
+import { isPairingCode, normalizePairingCode, PAIRING_CODE_LENGTH } from "./pairing";
 
 describe("normalisiereCode", () => {
 	it("nimmt den Code so an, wie er angezeigt wird", () => {
 		// Angezeigt wird "ABCD-EFGH-JKLM". Wer die Bindestriche mittippt, soll
 		// nicht scheitern - und wer sie weglaesst, ebenso wenig.
-		expect(normalizeCode("ABCD-EFGH-JKLM")).toBe("ABCDEFGHJKLM");
-		expect(normalizeCode("ABCDEFGHJKLM")).toBe("ABCDEFGHJKLM");
-		expect(normalizeCode(" abcd efgh jklm ")).toBe("ABCDEFGHJKLM");
+		expect(normalizePairingCode("ABCD-EFGH-JKLM")).toBe("ABCDEFGHJKLM");
+		expect(normalizePairingCode("ABCDEFGHJKLM")).toBe("ABCDEFGHJKLM");
+		expect(normalizePairingCode(" abcd efgh jklm ")).toBe("ABCDEFGHJKLM");
 	});
 
 	it("haelt auch das aus, was gar kein Code ist", () => {
-		expect(normalizeCode(null)).toBe("");
-		expect(normalizeCode(undefined)).toBe("");
-		expect(normalizeCode(42)).toBe("42");
+		expect(normalizePairingCode(null)).toBe("");
+		expect(normalizePairingCode(undefined)).toBe("");
+		expect(normalizePairingCode(42)).toBe("42");
 	});
 });
 
@@ -38,7 +38,7 @@ describe("istPairingCode", () => {
 	});
 
 	it("nimmt an, was normalisiereCode aus der Anzeige macht", () => {
-		expect(isPairingCode(normalizeCode("ABCD-EFGH-JKLM"))).toBe(true);
+		expect(isPairingCode(normalizePairingCode("ABCD-EFGH-JKLM"))).toBe(true);
 		expect(PAIRING_CODE_LENGTH).toBe(12);
 	});
 });

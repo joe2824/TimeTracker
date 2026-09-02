@@ -1,6 +1,11 @@
 import { defineConfig } from "vitest/config";
+import { fileURLToPath } from "node:url";
 
 export default defineConfig({
+	// Siehe svelte.config.js - vitest laedt die Kit-Aliase nicht selbst.
+	resolve: {
+		alias: { $shared: fileURLToPath(new URL("../shared", import.meta.url)) }
+	},
 	test: {
 		environment: "node",
 		include: ["src/**/*.test.ts"],

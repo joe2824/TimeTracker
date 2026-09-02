@@ -5,7 +5,7 @@ import { pairings } from "$lib/server/db/schema";
 import { PAIRING_TTL_MS } from "$lib/server/config";
 import { eq } from "drizzle-orm";
 import { safeEqual } from "$lib/server/auth";
-import { isPairingCode, isClaimHash, normalizeCode } from "$lib/server/pairing";
+import { isPairingCode, isClaimHash, normalizePairingCode } from "$lib/server/pairing";
 
 /**
  * Der Code kommt vom Geraet, nicht von hier - er ist der Abdruck des oeffentlichen
@@ -19,7 +19,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	const body = await request.json().catch(() => null);
 	const publicKey = String(body?.publicKey ?? "");
 	const label = String(body?.label ?? "Neues Gerät").slice(0, 64);
-	const code = normalizeCode(body?.code);
+	const code = normalizePairingCode(body?.code);
 	const claimHash = String(body?.claimHash ?? "");
 	if (!publicKey || publicKey.length > 512) error(400, "Öffentlicher Schlüssel fehlt");
 	if (!isPairingCode(code)) error(400, "Kopplungscode hat nicht die erwartete Form");
