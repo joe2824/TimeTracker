@@ -445,17 +445,10 @@ class AccountState {
 	 * Bestands gewaenne sonst jeden Vergleich und ueberschriebe das Konto.
 	 */
 	async syncWithFollowUp(): Promise<void> {
-		const beforeSeq = (await loadDevice())?.seq ?? 0;
-		// Nach einem Nachlauf steht der Stand ebenfalls auf 0 - aber der Server hat
-		// alles. Ihn hier fuer frisch zu halten hiesse: der gesamte lokale Bestand
-		// geht ohne Not noch einmal hoch, und jedes andere Geraet zieht ihn hinter
-		// einer neuen Fassung wieder herunter.
-		const rewound = this.#rewound;
 		this.#rewound = false;
-		const untouchedAccount = beforeSeq === 0 && !rewound;
 		await this.syncNow();
 		if (await this.#dataIsOurs()) {
-			await rememberUnstamped(untouchedAccount);
+			await rememberUnstamped();
 		}
 		await this.syncNow();
 	}

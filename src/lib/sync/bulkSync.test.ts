@@ -137,8 +137,8 @@ function entriesIn(month: string, count: number, prefix: string) {
 	return Array.from({ length: count }, (_, i) => ({
 		id: `${prefix}-${i}`,
 		activityId: "a1",
-		startTs: Date.UTC(year, mon - 1, 1 + (i % 20), 8) + 2 * 3600_000,
-		endTs: Date.UTC(year, mon - 1, 1 + (i % 20), 12) + 2 * 3600_000,
+		startTs: Date.UTC(year, mon - 1, 5 + (i % 20), 10),
+		endTs: Date.UTC(year, mon - 1, 5 + (i % 20), 14),
 		note: "",
 		source: "manual" as const
 	}));
