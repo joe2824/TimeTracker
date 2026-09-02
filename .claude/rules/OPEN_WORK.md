@@ -35,26 +35,17 @@ Zu tun:
 3. Fall in `storedKey.test.ts` ergaenzen. Die drei vorhandenen decken
    Kennung-falsch und Kennung-fehlt ab, nicht Kennung-veraltet.
 
-## P1 — die Sitzung laeuft nicht mit
+## ~~P1 — die Sitzung~~ erledigt
 
-`SESSION_TTL_MS` sind 30 Tage (`server/config.ts:138`), und `userFromSession`
-(`server/auth.ts:81`) verlaengert nicht. Dieser Branch laesst beim 401 den
-Vault-Key liegen, damit niemand die 24 Woerter braucht - ohne die gleitende
-Sitzung, die dazugehoert.
+`userFromSession` schiebt `expiresAt` jetzt nach, wenn seit dem letzten Setzen
+`SESSION_REFRESH_MS` (24 h) vergangen sind - nicht bei jeder Anfrage. Der
+Rueckgabewert ist `{userId, slid}`, weil auch das Cookie mitwandern muss.
+Wer die Anwendung benutzt, wird nicht mehr abgemeldet.
 
-Das ist kein Loch (wer ans Browserprofil kommt, liest die Eintraege ohnehin
-direkt aus IndexedDB - sie liegen dort im Klartext), aber die Haelfte einer
-Massnahme. Entweder:
-
-- `expiresAt` in `userFromSession` mitziehen, dann ist der Ablauf kein Fall mehr
-  fuer den taeglichen Nutzer, ODER
-- beim 401 wenigstens `clearAccountData()` und `app.clearLocalData()` rufen, den
-  Schluessel behalten.
-
-Getrennt davon und aelter als dieser Branch: **die lokalen Eintraege liegen im
-Browser unverschluesselt** (`store.ts:85`, IndexedDB). Das ist der Grund, warum
-die Frage nach dem liegenden Schluessel so wenig Gewicht hat - und der
-eigentliche Punkt, wenn jemand das ernst nehmen will.
+Offen und AELTER als dieser Branch: **die lokalen Eintraege liegen im Browser
+unverschluesselt** (`store.ts:85`, IndexedDB). Das ist der Grund, warum die
+Frage nach dem liegenden Vault-Key so wenig Gewicht hat - und der eigentliche
+Punkt, wenn jemand das ernst nehmen will.
 
 ## P2 — im Browser durchklicken
 
