@@ -59,6 +59,18 @@ async function openWithPhrase(payload: string, phrase: string): Promise<CryptoKe
 	}
 }
 
+/** Die Verpackung mit dem PRF-Wert oeffnen - oder null, wenn sie nicht aufgeht. */
+async function openWithPrf(payload: string, prf: Uint8Array): Promise<CryptoKey | null> {
+	try {
+		return await unwrapWithPrf(deserialize(payload), prf);
+	} catch {
+		// Der Authentifikator lieferte einen Wert, aber nicht den, mit dem verpackt
+		// wurde - etwa nach einem Wechsel des Passkey-Verwalters. Dann bleibt die
+		// Phrase, statt hier abzubrechen.
+		return null;
+	}
+}
+
 /**
  * Feste Eingabe fuer die PRF-Erweiterung - muss bei jeder Anmeldung dieselbe
  * sein, sonst faellt ein anderer Wert heraus. Kein Geheimnis.
@@ -103,12 +115,6 @@ function prfOf(response: RegistrationResponseJSON | AuthenticationResponseJSON):
 	return prfBytes(ext?.prf?.results?.first);
 }
 
-/** Ob der Authentifikator PRF beherrscht - der Wert kann trotzdem noch fehlen. */
-function prfCapable(response: RegistrationResponseJSON | AuthenticationResponseJSON): boolean {
-	const ext = response.clientExtensionResults as { prf?: { enabled?: boolean } };
-	return ext?.prf?.enabled === true;
-}
-
 /** WebAuthn-JSON erwartet base64url, nicht base64. */
 function toBase64Url(bytes: Uint8Array): string {
 	return toBase64(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -140,36 +146,39 @@ const CHALLENGE_TTL_MS = 4 * 60 * 1000;
 type LoginStart = Awaited<ReturnType<Api["loginStart"]>>;
 type RegisterStart = Awaited<ReturnType<Api["registerStart"]>>;
 
-interface Prepared<T> {
-	/** Adresse und Eingaben, zu denen die Aufgabe passt. */
-	key: string;
-	at: number;
-	task: Promise<T>;
-}
+const challenges = new Map<string, { at: number; task: Promise<unknown> }>();
 
-let loginPrepared: Prepared<LoginStart> | null = null;
-let registerPrepared: Prepared<RegisterStart> | null = null;
-
-function prepared<T>(held: Prepared<T> | null, key: string): Promise<T> | null {
-	if (!held || held.key !== key) return null;
-	if (Date.now() - held.at > CHALLENGE_TTL_MS) return null;
-	return held.task;
+/**
+ * Eine Aufgabe holen und liegen lassen. Mehrfach aufzurufen kostet nichts -
+ * solange eine frische dahaengt, kommt sie zurueck.
+ */
+function prepare<T>(key: string, start: () => Promise<T>): Promise<T> {
+	const waiting = challenges.get(key);
+	if (waiting && Date.now() - waiting.at < CHALLENGE_TTL_MS) return waiting.task as Promise<T>;
+	const task = start();
+	challenges.set(key, { at: Date.now(), task });
+	// Ein Fehlschlag darf sich nicht einbrennen - der naechste Versuch fragt wieder.
+	void task.catch(() => forget(key, task));
+	return task;
 }
 
 /**
- * Die Anmelde-Aufgabe vorladen. Mehrfach aufzurufen kostet nichts - solange eine
- * frische daliegt, kommt sie zurueck.
+ * Eine verbrauchte Aufgabe wegraeumen - der Server loescht sie beim Nachsehen,
+ * gleich wie es ausgeht. Nur die eigene: inzwischen kann eine neue dahaengen.
  */
+function forget(key: string, task: Promise<unknown>): void {
+	if (challenges.get(key)?.task === task) challenges.delete(key);
+}
+
+const loginKey = (baseUrl: string) => `login|${baseUrl}`;
+const registerKey = (baseUrl: string, displayName: string, invite?: string) =>
+	`register|${baseUrl}|${displayName}|${invite ?? ""}`;
+
+/** Die Anmelde-Aufgabe vorladen. */
 export function prepareLogin(baseUrl: string): Promise<LoginStart> {
-	const held = prepared(loginPrepared, baseUrl);
-	if (held) return held;
-	const task = new Api({ baseUrl, fetchFn: platformFetch }).loginStart();
-	loginPrepared = { key: baseUrl, at: Date.now(), task };
-	// Ein Fehlschlag darf sich nicht einbrennen - der naechste Versuch fragt wieder.
-	void task.catch(() => {
-		if (loginPrepared?.task === task) loginPrepared = null;
-	});
-	return task;
+	return prepare(loginKey(baseUrl), () =>
+		new Api({ baseUrl, fetchFn: platformFetch }).loginStart()
+	);
 }
 
 /** Dasselbe fuer das Anlegen eines Kontos. */
@@ -178,15 +187,9 @@ export function prepareRegister(
 	displayName = "",
 	invite?: string
 ): Promise<RegisterStart> {
-	const key = `${baseUrl}|${displayName}|${invite ?? ""}`;
-	const held = prepared(registerPrepared, key);
-	if (held) return held;
-	const task = new Api({ baseUrl, fetchFn: platformFetch }).registerStart(displayName, invite);
-	registerPrepared = { key, at: Date.now(), task };
-	void task.catch(() => {
-		if (registerPrepared?.task === task) registerPrepared = null;
-	});
-	return task;
+	return prepare(registerKey(baseUrl, displayName, invite), () =>
+		new Api({ baseUrl, fetchFn: platformFetch }).registerStart(displayName, invite)
+	);
 }
 
 export interface EnrollResult {
@@ -194,6 +197,8 @@ export interface EnrollResult {
 	displayName: string;
 	/** Nur bei der Registrierung: einmal anzeigen, danach nie wieder. */
 	recoveryPhrase?: string;
+	/** Ob der Passkey den Vault kuenftig allein oeffnen kann. */
+	prfAvailable: boolean;
 	key: CryptoKey;
 }
 
@@ -205,8 +210,8 @@ export async function register(
 ): Promise<EnrollResult> {
 	const api = new Api({ baseUrl, fetchFn: platformFetch });
 
-	const prepared = prepareRegister(baseUrl, displayName, opts.invite);
-	const start = await prepared;
+	const task = prepareRegister(baseUrl, displayName, opts.invite);
+	const start = await task;
 	const response = await startRegistration({
 		optionsJSON: withPrf(start.options as PublicKeyCredentialCreationOptionsJSON)
 	});
@@ -222,9 +227,7 @@ export async function register(
 			response
 		});
 	} finally {
-		// Der Server loescht die Aufgabe beim Nachsehen, gleich wie es ausgeht.
-		// Nur die eigene wegraeumen: inzwischen kann eine neue vorgeladen sein.
-		if (registerPrepared?.task === prepared) registerPrepared = null;
+		forget(registerKey(baseUrl, displayName, opts.invite), task);
 	}
 
 	// Ab hier ist die Sitzung offen und die Verpackungen koennen abgelegt werden.
@@ -235,11 +238,16 @@ export async function register(
 		recoveryId: await recoveryLookupId(recoveryPhrase),
 		vaultProof: await vaultProof(key)
 	});
-	if (prf) {
-		await api.putWrap("passkey", serialize(await wrapWithPrf(key, prf)), response.id);
-	}
+	// Der Passkey soll den Vault von Anfang an allein oeffnen. Lieferte das Anlegen
+	// keinen PRF-Wert, holt ensurePasskeyWrap ihn mit einer zweiten Abfrage nach -
+	// sonst verlangt schon der naechste Browser die 24 Woerter.
+	const prfAvailable = await ensurePasskeyWrap(api, key, response.id, prf).catch((e) => {
+		logWarn("Passkey-Verpackung konnte beim Anlegen nicht abgelegt werden", e);
+		return false;
+	});
 
 	return {
+		prfAvailable,
 		userId: start.userId,
 		displayName,
 		recoveryPhrase,
@@ -261,15 +269,29 @@ export interface LoginResult {
 }
 
 /**
- * Die PRF-Verpackung nachholen - fuer Passkeys, die den Wert beim Anlegen nicht
- * herausgaben. Ohne sie verlangt die naechste Anmeldung die 24 Woerter.
+ * Dafuer sorgen, dass dieser Passkey den Vault allein oeffnen kann.
+ *
+ * Beim ANLEGEN eines Passkeys geben die meisten Browser noch keinen PRF-Wert
+ * heraus - der faellt erst bei einer Anmeldung an. Fehlt er, holt ihn hier eine
+ * eigene WebAuthn-Abfrage nach. Ohne diese Verpackung verlangt jede Anmeldung in
+ * einem neuen Browser die 24 Woerter, obwohl der Passkey genuegen wuerde.
+ *
+ * Gibt `false` zurueck, wenn der Authentifikator kein PRF beherrscht - dann
+ * bleiben die 24 Woerter oder ein bereits verknuepftes Geraet.
  */
-export async function harvestPrfWrap(
+export async function ensurePasskeyWrap(
 	api: Api,
 	key: CryptoKey,
 	/** Nur dieser Passkey zaehlt. Ohne Angabe: der, den der Browser anbietet. */
-	credentialId?: string
+	credentialId?: string,
+	/** Ein bereits vorliegender PRF-Wert - dann entfaellt die zweite Abfrage. */
+	prf?: Uint8Array | null
 ): Promise<boolean> {
+	if (prf && credentialId) {
+		await api.putWrap("passkey", serialize(await wrapWithPrf(key, prf)), credentialId);
+		return true;
+	}
+
 	// Eigene Aufgabe statt einer vom Server: die Antwort wird nirgends geprueft,
 	// gebraucht wird allein der PRF-Wert, den der Authentifikator dazu ausrechnet.
 	const options: PublicKeyCredentialRequestOptionsJSON = {
@@ -281,17 +303,17 @@ export async function harvestPrfWrap(
 	// allowCredentials sollte das schon erzwingen - ein Wert vom falschen Passkey
 	// wuerde den gemeinten aber nicht reparieren.
 	if (credentialId && response.id !== credentialId) return false;
-	const prf = prfOf(response);
-	if (!prf) return false;
-	await api.putWrap("passkey", serialize(await wrapWithPrf(key, prf)), response.id);
+	const fresh = prfOf(response);
+	if (!fresh) return false;
+	await api.putWrap("passkey", serialize(await wrapWithPrf(key, fresh)), response.id);
 	return true;
 }
 
 /** Anmelden. */
 export async function login(baseUrl: string): Promise<LoginResult> {
 	const api = new Api({ baseUrl, fetchFn: platformFetch });
-	const prepared = prepareLogin(baseUrl);
-	const start = await prepared;
+	const task = prepareLogin(baseUrl);
+	const start = await task;
 	const response = await startAuthentication({
 		optionsJSON: withPrf(start.options as PublicKeyCredentialRequestOptionsJSON)
 	});
@@ -299,30 +321,17 @@ export async function login(baseUrl: string): Promise<LoginResult> {
 	try {
 		account = await api.loginFinish({ challengeId: start.challengeId, response });
 	} finally {
-		// Der Server loescht die Aufgabe beim Nachsehen, gleich wie es ausgeht.
-		// Nur die eigene wegraeumen: inzwischen kann eine neue vorgeladen sein.
-		if (loginPrepared?.task === prepared) loginPrepared = null;
+		forget(loginKey(baseUrl), task);
 	}
 
 	const { wraps } = await api.wraps();
 	const prf = prfOf(response);
 	const passkeyWrap = wraps.find((w) => w.kind === "passkey" && w.credentialId === response.id);
-
-	let key: CryptoKey | null = null;
-	if (prf && passkeyWrap) {
-		try {
-			key = await unwrapWithPrf(deserialize(passkeyWrap.payload), prf);
-		} catch {
-			// Der Authentifikator hat einen Wert geliefert, aber nicht den, mit dem
-			// verpackt wurde - etwa nach einem Wechsel des Passkey-Verwalters. Dann
-			// bleibt die Phrase, statt hier abzubrechen.
-			key = null;
-		}
-	}
+	const key = prf && passkeyWrap ? await openWithPrf(passkeyWrap.payload, prf) : null;
 
 	// Sonst ist nicht zu unterscheiden, ob der PRF-Wert fehlte oder die Verpackung.
 	if (!key) {
-		logWarn("Passkey öffnete den Tresor nicht", {
+		logWarn("Passkey öffnete die Daten nicht", {
 			prf: prf !== null,
 			wrap: passkeyWrap !== undefined
 		});
@@ -338,24 +347,29 @@ export async function login(baseUrl: string): Promise<LoginResult> {
 	};
 }
 
-/** Den Tresor mit der Wiederherstellungs-Phrase oeffnen. */
-export async function unlockWithPhrase(baseUrl: string, phrase: string): Promise<CryptoKey> {
+/**
+ * Den Vault mit der Wiederherstellungs-Phrase oeffnen.
+ *
+ * `repair` ist der Passkey, mit dem eben angemeldet wurde: er bekommt dabei die
+ * fehlende Verpackung, damit die Phrase wieder das bleibt, wofuer sie gedacht
+ * ist - der Weg zurueck, nicht der Weg hinein.
+ */
+export async function unlockWithPhrase(
+	baseUrl: string,
+	phrase: string,
+	repair?: { credentialId: string; prf: Uint8Array | null }
+): Promise<CryptoKey> {
 	const api = new Api({ baseUrl, fetchFn: platformFetch });
 	const { wraps } = await api.wraps();
 	const wrap = wraps.find((w) => w.kind === "recovery");
 	if (!wrap) throw new Error("Für dieses Konto ist keine Wiederherstellungs-Phrase hinterlegt.");
-	return openWithPhrase(wrap.payload, phrase);
-}
-
-/** Nach einer Anmeldung ohne PRF-Verpackung: eine anlegen. */
-export async function addPasskeyWrap(
-	baseUrl: string,
-	key: CryptoKey,
-	credentialId: string,
-	prf: BufferSource
-): Promise<void> {
-	const api = new Api({ baseUrl, fetchFn: platformFetch });
-	await api.putWrap("passkey", serialize(await wrapWithPrf(key, prf)), credentialId);
+	const key = await openWithPhrase(wrap.payload, phrase);
+	if (repair) {
+		await ensurePasskeyWrap(api, key, repair.credentialId, repair.prf).catch((e) =>
+			logWarn("Passkey-Verpackung konnte nicht abgelegt werden", e)
+		);
+	}
+	return key;
 }
 
 /** Ein Konto allein mit der Wiederherstellungs-Phrase zurueckholen. */
@@ -465,17 +479,12 @@ export async function addPasskey(
 	});
 
 	// Erst jetzt die Verpackung: sie braucht die eben vergebene Kennung.
-	let prfOk = prf !== null;
-	if (prf) {
-		await api.putWrap("passkey", serialize(await wrapWithPrf(key, prf)), created.id);
-	} else if (prfCapable(response)) {
-		prfOk = await harvestPrfWrap(api, key, created.id).catch((e) => {
-			logWarn("PRF-Wert konnte nicht nachgeholt werden", e);
-			return false;
-		});
-	}
+	const prfAvailable = await ensurePasskeyWrap(api, key, created.id, prf).catch((e) => {
+		logWarn("PRF-Wert konnte nicht nachgeholt werden", e);
+		return false;
+	});
 
-	return { id: created.id, label: created.label, prfAvailable: prfOk };
+	return { id: created.id, label: created.label, prfAvailable };
 }
 
 export { ApiError, importVaultKey, toBase64 };

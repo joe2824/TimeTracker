@@ -13,7 +13,6 @@
 	import { app } from "$lib/app.svelte";
 	import {
 		ApiError,
-		addPasskeyWrap,
 		login,
 		prepareLogin,
 		prepareRegister,
@@ -55,12 +54,11 @@
 	let loggedInName = $state("");
 	let keyValue: CryptoKey | null = null;
 	/**
-	 * Was die Anmeldung an PRF hergab - fuer den Fall, dass gleich die Phrase
-	 * gebraucht wird. Danach kann eine PRF-Verpackung nachgelegt werden, und die
-	 * naechste Anmeldung kommt ohne die 24 Wörter aus.
+	 * Der Passkey der letzten Anmeldung. Braucht es gleich die Phrase, bekommt er
+	 * dabei seine fehlende Verpackung - und die nächste Anmeldung kommt ohne die
+	 * 24 Wörter aus.
 	 */
-	let prfValue: Uint8Array | null = null;
-	let passkeyId = "";
+	let lastPasskey: { credentialId: string; prf: Uint8Array | null } | undefined;
 
 	/**
 	 * Die Aufgabe schon holen, wenn jemand auf den Knopf zusteuert.
@@ -89,8 +87,7 @@
 		try {
 			const r = await login(serverUrl);
 			loggedInName = r.displayName;
-			prfValue = r.prf;
-			passkeyId = r.credentialId;
+			lastPasskey = { credentialId: r.credentialId, prf: r.prf };
 			if (r.key) {
 				await account.linkWithSession(serverUrl, r.key, r.displayName);
 				// Begruesst wird mit dem Namen aus "Bericht & E-Mail" - der steht hier auf
@@ -100,10 +97,10 @@
 				toast.success(name ? `Willkommen zurück, ${name}.` : "Willkommen zurück.");
 				return;
 			}
-			// Der Passkey konnte den Tresor nicht öffnen - das ist kein Fehler,
-			// sondern der normale Weg auf Geräten ohne PRF-Unterstützung.
+			// Der Passkey konnte die Daten nicht öffnen: entweder fehlt ihm die Verpackung
+			// des Vault-Keys, oder der Authentifikator kann kein PRF.
 			if (!r.canUnlockWithPhrase) {
-				toast.error("Für dieses Konto ist kein Weg hinterlegt, den Tresor zu öffnen.");
+				toast.error("Für dieses Konto ist kein Weg hinterlegt, um die Daten zu öffnen.");
 				return;
 			}
 			stepIndex = "unlock";
@@ -237,15 +234,9 @@
 		}
 		running = true;
 		try {
-			const key = await unlockWithPhrase(serverUrl, inputValue);
-			// Kann der Passkey PRF, fehlte aber die passende Verpackung: jetzt eine
-			// anlegen. Ohne das verlangte dieses Gerät die 24 Wörter bei JEDER
-			// Anmeldung erneut - obwohl der Passkey den Tresor allein öffnen könnte.
-			if (prfValue) {
-				await addPasskeyWrap(serverUrl, key, passkeyId, prfValue).catch((e) =>
-					logWarn("Passkey-Verpackung konnte nicht abgelegt werden", e)
-				);
-			}
+			// `lastPasskey` repariert den Passkey gleich mit: er bekommt die fehlende
+			// Verpackung und öffnet die Daten beim nächsten Mal allein.
+			const key = await unlockWithPhrase(serverUrl, inputValue, lastPasskey);
 			await account.linkWithSession(serverUrl, key, loggedInName);
 			toast.success("Entsperrt.");
 		} catch (e) {
@@ -288,7 +279,6 @@
 	// ---------- Der Browser koppelt sich wie ein neues Geraet ----------
 
 	let kopplungscode = $state("");
-	let poll: ReturnType<typeof setInterval> | null = null;
 
 	/** Steht der Kopplungs-Dialog offen? */
 	let koppelnOffen = $state(false);
@@ -301,9 +291,6 @@
 		koppelnOffen = true;
 		try {
 			kopplungscode = await account.startPairing(serverUrl, "Browser");
-			// Alle zwei Sekunden nachsehen. Der Server bremst das nicht aus - gezaehlt
-			// werden dort nur Fehlgriffe, nicht das Warten.
-			poll = setInterval(pruefen, 2000);
 		} catch (e) {
 			// Ohne Code hat der Dialog nichts zu zeigen.
 			koppelnOffen = false;
@@ -312,6 +299,16 @@
 			running = false;
 		}
 	}
+
+	// Solange ein Code am Bildschirm steht, alle zwei Sekunden nachsehen. Der
+	// Effekt besitzt den Timer und raeumt ihn selbst weg - sobald der Code
+	// verschwindet und wenn der Bildschirm abgebaut wird. Der Server bremst das
+	// Warten nicht aus, gezaehlt werden dort nur Fehlgriffe.
+	$effect(() => {
+		if (!kopplungscode) return;
+		const timer = setInterval(pruefen, 2000);
+		return () => clearInterval(timer);
+	});
 
 	async function pruefen() {
 		try {
@@ -331,15 +328,9 @@
 	}
 
 	function koppelnAufraeumen() {
-		if (poll) clearInterval(poll);
-		poll = null;
 		kopplungscode = "";
 		koppelnOffen = false;
 	}
-
-	$effect(() => () => {
-		if (poll) clearInterval(poll);
-	});
 
 	async function copy() {
 		try {
@@ -573,15 +564,15 @@
 		{:else}
 			<Card.Root class="w-full">
 				<Card.Header>
-					<Card.Title>Daten unlock</Card.Title>
+					<Card.Title>Daten entsperren</Card.Title>
 					<Card.Description>
-						Dein Passkey hat dich angemeldet, kann deine Daten hier aber nicht öffnen. Nimm dafür ein
-						Gerät, auf dem TimeTracker schon läuft – oder deine 24 Wörter.
+						Dein Passkey hat dich angemeldet, kann deine Daten hier aber noch nicht öffnen. Entsperre
+						sie einmal – danach genügt der Passkey allein.
 					</Card.Description>
 				</Card.Header>
 				<Card.Content class="space-y-3">
 					<Button variant="outline" class="w-full" disabled={running} onclick={startPairing}>
-						Mit einem anderen Gerät unlock
+						Mit einem anderen Gerät entsperren
 					</Button>
 
 					<div class="relative flex items-center justify-center">
@@ -598,7 +589,7 @@
 						placeholder="wort1 wort2 wort3 …"
 					></textarea>
 					<Button class="w-full" disabled={running} onclick={unlock}>
-						Mit den 24 Wörtern unlock
+						Mit den 24 Wörtern entsperren
 					</Button>
 					<Button variant="ghost" size="sm" onclick={() => (stepIndex = "start")}>Zurück</Button>
 				</Card.Content>
