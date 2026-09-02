@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildReport, reportSubject, reportToHtml } from "./report";
+import { buildReport, buildSubject, reportToHtml } from "./report";
 import type { Activity, Entry } from "./types";
 import { wallToTs } from "./tz";
 
@@ -127,9 +127,9 @@ describe("reportToHtml", () => {
 	});
 });
 
-describe("reportSubject", () => {
+describe("buildSubject", () => {
 	it("ersetzt beide Platzhalter", () => {
-		expect(reportSubject("Stundenerfassung {month} – {name}", "Juli 2026", "Anna Meier")).toBe(
+		expect(buildSubject("Stundenerfassung {month} – {name}", "Juli 2026", "Anna Meier")).toBe(
 			"Stundenerfassung Juli 2026 – Anna Meier"
 		);
 	});
@@ -137,29 +137,29 @@ describe("reportSubject", () => {
 	it("haengt den Namen an, wenn die Vorlage {name} nicht enthaelt", () => {
 		// Genau der Fall: Platzhalter beim Bearbeiten der Vorlage verloren,
 		// Name steht aber in den Einstellungen.
-		expect(reportSubject("Stundenerfassung {month}", "Juli 2026", "Anna Meier")).toBe(
+		expect(buildSubject("Stundenerfassung {month}", "Juli 2026", "Anna Meier")).toBe(
 			"Stundenerfassung Juli 2026 – Anna Meier"
 		);
 	});
 
 	it("haengt nichts an, wenn kein Name hinterlegt ist", () => {
-		expect(reportSubject("Stundenerfassung {month}", "Juli 2026", "")).toBe(
+		expect(buildSubject("Stundenerfassung {month}", "Juli 2026", "")).toBe(
 			"Stundenerfassung Juli 2026"
 		);
 	});
 
 	it("laesst ohne Namen keinen leeren Trenner stehen", () => {
-		expect(reportSubject("Stundenerfassung {month} – {name}", "Juli 2026", "  ")).toBe(
+		expect(buildSubject("Stundenerfassung {month} – {name}", "Juli 2026", "  ")).toBe(
 			"Stundenerfassung Juli 2026"
 		);
 	});
 
 	it("faellt bei leerer Vorlage auf den Standard zurueck", () => {
-		expect(reportSubject("", "Juli 2026", "Anna")).toBe("Stundenerfassung Juli 2026 – Anna");
+		expect(buildSubject("", "Juli 2026", "Anna")).toBe("Stundenerfassung Juli 2026 – Anna");
 	});
 
 	it("dupliziert den Namen nicht, wenn {name} schon vorkommt", () => {
-		expect(reportSubject("{name}: Stunden {month}", "Juli 2026", "Anna")).toBe(
+		expect(buildSubject("{name}: Stunden {month}", "Juli 2026", "Anna")).toBe(
 			"Anna: Stunden Juli 2026"
 		);
 	});

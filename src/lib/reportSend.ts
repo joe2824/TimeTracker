@@ -1,5 +1,5 @@
 import { app } from "./app.svelte";
-import { buildReport, reportSubject as buildSubject, reportToHtml } from "./report";
+import { buildReport, buildSubject, reportToHtml } from "./report";
 import { createOutlookDraft } from "./outlook";
 
 /** Betreff aus Vorlage und Einstellungen – Regel siehe report.ts. */

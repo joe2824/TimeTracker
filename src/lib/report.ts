@@ -13,7 +13,7 @@ import {
 } from "./time";
 
 /** Betreff aus der Vorlage bauen. Platzhalter: {month}, {name}. */
-export function reportSubject(template: string, label: string, name: string): string {
+export function buildSubject(template: string, label: string, name: string): string {
 	const trimmedName = name.trim();
 	const tpl = template.trim() || DEFAULT_SUBJECT;
 	const withName = trimmedName && !tpl.includes("{name}") ? `${tpl} – {name}` : tpl;

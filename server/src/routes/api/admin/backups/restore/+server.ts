@@ -2,16 +2,10 @@
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { restoreBackup } from "$lib/server/backup";
-import { isAdminUser } from "$lib/server/invites";
+import { requireAdmin } from "$lib/server/invites";
 import { BACKUP_DIR, DB_FILE } from "$lib/server/config";
 
 /** Verwalter-Rolle pruefen. */
-function requireAdmin(locals: App.Locals): string {
-	if (!locals.userId) error(401, "Nicht angemeldet");
-	if (!isAdminUser(locals.db, locals.userId)) error(403, "Keine Berechtigung");
-	return locals.userId;
-}
-
 export const POST: RequestHandler = async ({ locals, request }) => {
 	requireAdmin(locals);
 	const body = await request.json().catch(() => null);

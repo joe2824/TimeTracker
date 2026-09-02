@@ -1,4 +1,5 @@
 // Invite management: creation, validation, consumption, and admin role checking.
+import { error } from "@sveltejs/kit";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import type { Db, DbLike } from "./db";
 import { invites, serverSettings, users } from "./db/schema";
@@ -153,4 +154,11 @@ export const consumeCode = consumeInviteCode;
 /** Check if a given user has the admin role. */
 export function isAdminUser(db: DbLike, userId: string): boolean {
 	return db.select().from(users).where(eq(users.id, userId)).get()?.isAdmin === true;
+}
+
+/** Nur fuer Verwalter - wirft, wenn nicht angemeldet oder nicht berechtigt. */
+export function requireAdmin(locals: { userId: string | null; db: DbLike }): string {
+	if (!locals.userId) error(401, "Nicht angemeldet");
+	if (!isAdminUser(locals.db, locals.userId)) error(403, "Keine Berechtigung");
+	return locals.userId;
 }

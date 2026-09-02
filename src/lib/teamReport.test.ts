@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { reportSubject } from "./report";
+import { buildSubject } from "./report";
 import {
 	buildTeamSummary,
 	monthFromReceived,
@@ -33,7 +33,7 @@ function mail(over: Partial<Parameters<typeof buildTeamSummary>[1][number]> = {}
 
 describe("monthFromSubject", () => {
 	it("liest den Monat aus dem Standard-Betreff der App", () => {
-		const subject = reportSubject("Stundenerfassung {month} – {name}", "Juli 2026", "Anna");
+		const subject = buildSubject("Stundenerfassung {month} – {name}", "Juli 2026", "Anna");
 		expect(monthFromSubject(subject)).toBe("2026-07");
 	});
 

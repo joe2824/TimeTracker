@@ -75,7 +75,7 @@ export interface ReconcileSummary {
 }
 
 /** Rundung auf Minuten – 7,469999 h soll nicht als Abweichung durchgehen. */
-function roundHours(h: number): number {
+function toMinutes(h: number): number {
 	return Math.round(h * 60) / 60;
 }
 
@@ -125,9 +125,9 @@ export function reconcile(
 	const summary = { ok: 0, missing: 0, partial: 0, over: 0, missingHours: 0 };
 
 	for (const report of days) {
-		const trackedHours = roundHours(tracked.get(report.date) ?? 0);
-		const reportHours = roundHours(report.hours);
-		const diff = roundHours(reportHours - trackedHours);
+		const trackedHours = toMinutes(tracked.get(report.date) ?? 0);
+		const reportHours = toMinutes(report.hours);
+		const diff = toMinutes(reportHours - trackedHours);
 
 		let status: ReconcileStatus;
 		if (reportHours <= 0) {
@@ -157,7 +157,7 @@ export function reconcile(
 			date: report.date,
 			report,
 			tracked: trackedHours,
-			workedGross: roundHours(work.get(report.date) ?? 0),
+			workedGross: toMinutes(work.get(report.date) ?? 0),
 			diff,
 			status,
 			looksLikeAbsence,
@@ -174,7 +174,7 @@ export function reconcile(
 		if (status === "missing" || status === "partial") summary.missingHours += diff;
 	}
 
-	return { days: out, ...summary, missingHours: roundHours(summary.missingHours) };
+	return { days: out, ...summary, missingHours: toMinutes(summary.missingHours) };
 }
 
 // ---------- Nachtrag planen ----------

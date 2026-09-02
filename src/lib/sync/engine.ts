@@ -20,6 +20,7 @@ import {
 	type PendingChange
 } from "./outbox";
 import { mergeRecord, resolveOpenEntries } from "./merge";
+import { contentOf } from "./stamp";
 import {
 	bucketFor,
 	fromBase64,
@@ -103,14 +104,6 @@ function packSealed(sealed: Sealed): string {
 function unpackSealed(payload: string): Sealed {
 	const raw = fromBase64(payload);
 	return { iv: raw.slice(0, 12), ciphertext: raw.slice(12) };
-}
-
-/** Was von einem Eintrag verschluesselt wird. */
-function contentOf<T extends { updatedAt?: number; rev?: number; deviceId?: string }>(
-	item: T
-): Omit<T, "updatedAt" | "rev" | "deviceId"> {
-	const { updatedAt: _u, rev: _r, deviceId: _d, ...rest } = item;
-	return rest;
 }
 
 export interface SyncProgress {

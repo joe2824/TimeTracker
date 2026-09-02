@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
-	import { buildReport, reportSubject, reportToHtml, reportToText } from "$lib/report";
+	import { buildReport, reportToHtml, reportToText } from "$lib/report";
+	import { reportSubject } from "$lib/reportSend";
 	import { fmtHoursClock } from "$lib/time";
 	import { openExternal } from "$lib/platform/open";
 	import { createOutlookDraft, mailtoFallback, reportOutlookError } from "$lib/outlook";
@@ -41,7 +42,7 @@
 		)
 	);
 	const html = $derived(reportToHtml(report));
-	const subject = $derived(reportSubject(app.settings.reportSubjectTemplate, report.label, app.settings.senderName));
+	const subject = $derived(reportSubject(report.label));
 
 	/** @returns true, wenn der Entwurf geoeffnet wurde. */
 	async function sendToOutlook(): Promise<boolean> {

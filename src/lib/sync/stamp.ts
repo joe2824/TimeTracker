@@ -21,7 +21,7 @@ export interface Changes<T extends Identified> {
 const META_KEYS: readonly (keyof SyncMeta)[] = ["updatedAt", "rev", "deviceId"];
 
 /** Ein Datensatz ohne seine Aenderungsspuren. */
-function contentOf<T extends Identified>(item: T): Record<string, unknown> {
+export function contentOf<T extends Identified>(item: T): Record<string, unknown> {
 	const out: Record<string, unknown> = {};
 	for (const [k, v] of Object.entries(item)) {
 		if ((META_KEYS as readonly string[]).includes(k)) continue;
