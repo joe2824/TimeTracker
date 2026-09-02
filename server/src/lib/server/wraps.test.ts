@@ -6,6 +6,7 @@ import { openDb, type Db } from "./db";
 import { credentials, keyWraps, users } from "./db/schema";
 import { storeWrap, readWrap } from "./wraps";
 import { storeCredential } from "./webauthn";
+import { listPasskeys } from "./passkeys";
 import { hashSecret } from "./auth";
 import { eq } from "drizzle-orm";
 
@@ -148,6 +149,26 @@ describe("readWrap", () => {
 			credentialId: null,
 			recoveryId: "k",
 			vaultProof: "n"
+		});
+	});
+});
+
+describe("listPasskeys", () => {
+	it("liefert Namen und Verpackung - beides las die Verwaltung aus /me", () => {
+		db.transaction((tx) => {
+			storeCredential(tx, ANNA, cred("mit-wrap"), undefined, true, "Touch ID");
+			storeCredential(tx, ANNA, cred("ohne-wrap"), undefined, true, "YubiKey");
+			storeWrap(tx, ANNA, { kind: "passkey", payload: "p", credentialId: "mit-wrap" });
+		});
+
+		const rows = listPasskeys(db, ANNA);
+		expect(rows.find((p) => p.id === "mit-wrap")).toMatchObject({
+			label: "Touch ID",
+			hasWrap: true
+		});
+		expect(rows.find((p) => p.id === "ohne-wrap")).toMatchObject({
+			label: "YubiKey",
+			hasWrap: false
 		});
 	});
 });

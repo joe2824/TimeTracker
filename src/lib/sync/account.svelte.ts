@@ -1088,9 +1088,10 @@ class AccountState {
 	// Nur im Browser: ein Passkey haengt an der Domain, und die Desktop-Anwendung
 	// hat keine. Dort ist der Weg zu einem zweiten Geraet die Kopplung.
 
+	/** Die Passkeys des Kontos - aus `accountInfo`, das sie ohnehin mitbringt. */
 	async passkeys(): Promise<Passkey[]> {
 		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		return (await this.#api.passkeys()).passkeys;
+		return (await this.#api.me()).passkeys;
 	}
 
 	/** Einen weiteren Passkey anlegen. */

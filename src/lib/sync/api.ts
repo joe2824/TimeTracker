@@ -388,10 +388,6 @@ export class Api {
 	// Nur im Browser zu gebrauchen: ein Passkey haengt an der Domain, und die
 	// Desktop-Anwendung hat keine. Sie koppelt sich stattdessen.
 
-	passkeys(): Promise<{ passkeys: Passkey[] }> {
-		return this.#call("/api/passkeys");
-	}
-
 	addPasskeyStart(): Promise<{ challengeId: string; options: unknown }> {
 		return this.#call("/api/passkeys/start", { method: "POST" });
 	}

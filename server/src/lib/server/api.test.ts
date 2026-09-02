@@ -328,7 +328,7 @@ describe("Verpackungen", () => {
 			})
 		});
 
-		const { passkeys } = await (await api(annaToken, "/api/passkeys")).json();
+		const { passkeys } = await (await api(annaToken, "/api/me")).json();
 		expect(passkeys[0].hasWrap).toBe(true);
 	});
 
@@ -339,7 +339,7 @@ describe("Verpackungen", () => {
 			)
 			.run("annas-schluessel", ANNA, Buffer.from([1, 2, 3]), null, Date.now());
 
-		const { passkeys } = await (await api(annaToken, "/api/passkeys")).json();
+		const { passkeys } = await (await api(annaToken, "/api/me")).json();
 		expect(passkeys[0].hasWrap).toBe(false);
 	});
 
@@ -1320,7 +1320,7 @@ describe("Passkeys verwalten", () => {
 	}
 
 	it("verlangt eine Anmeldung", async () => {
-		expect((await api(null, "/api/passkeys")).status).toBe(401);
+		expect((await api(null, "/api/me")).status).toBe(401);
 		expect((await api(null, "/api/passkeys/start", { method: "POST" })).status).toBe(401);
 		expect((await api(null, "/api/passkeys", { method: "DELETE", body: "{}" })).status).toBe(401);
 	});
@@ -1329,7 +1329,7 @@ describe("Passkeys verwalten", () => {
 		addPasskey(ANNA, "annas-schluessel", "Annas Laptop");
 		addPasskey(BODO, "bodos-schluessel", "Bodos Handy");
 
-		const { passkeys } = await (await api(annaToken, "/api/passkeys")).json();
+		const { passkeys } = await (await api(annaToken, "/api/me")).json();
 		expect(passkeys).toHaveLength(1);
 		expect(passkeys[0].label).toBe("Annas Laptop");
 	});
@@ -1352,7 +1352,7 @@ describe("Passkeys verwalten", () => {
 			body: JSON.stringify({ id: "annas-schluessel", label: "Der alte Rechner" })
 		});
 		expect(res.status).toBe(200);
-		const { passkeys } = await (await api(annaToken, "/api/passkeys")).json();
+		const { passkeys } = await (await api(annaToken, "/api/me")).json();
 		expect(passkeys[0].label).toBe("Der alte Rechner");
 	});
 
@@ -1379,7 +1379,7 @@ describe("Passkeys verwalten", () => {
 		});
 		expect(res.status).toBe(200);
 
-		const { passkeys } = await (await api(annaToken, "/api/passkeys")).json();
+		const { passkeys } = await (await api(annaToken, "/api/me")).json();
 		expect(passkeys.map((p: { id: string }) => p.id)).toEqual(["neues-handy"]);
 
 		// Die Verpackung ist ohne ihren Passkey nicht mehr zu oeffnen - sie stehen
@@ -1401,7 +1401,7 @@ describe("Passkeys verwalten", () => {
 		});
 		expect(res.status).toBe(409);
 
-		const { passkeys } = await (await api(annaToken, "/api/passkeys")).json();
+		const { passkeys } = await (await api(annaToken, "/api/me")).json();
 		expect(passkeys).toHaveLength(1);
 	});
 
@@ -1416,7 +1416,7 @@ describe("Passkeys verwalten", () => {
 		});
 		expect(res.status).toBe(404);
 
-		const { passkeys } = await (await api(bodoToken, "/api/passkeys")).json();
+		const { passkeys } = await (await api(bodoToken, "/api/me")).json();
 		expect(passkeys).toHaveLength(2);
 	});
 

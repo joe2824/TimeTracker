@@ -1,6 +1,7 @@
 // Wer bin ich - und was weiss der Server ueber meine Zugaenge.
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
+import { listPasskeys } from "$lib/server/passkeys";
 import { credentials, devices, keyWraps, users } from "$lib/server/db/schema";
 import { eq } from "drizzle-orm";
 import { currentSeq } from "$lib/server/sync";
@@ -28,12 +29,7 @@ export const GET: RequestHandler = ({ locals }) => {
 			.where(eq(keyWraps.userId, user.id))
 			.all()
 			.map((w) => w.kind),
-		passkeys: locals.db
-			.select()
-			.from(credentials)
-			.where(eq(credentials.userId, user.id))
-			.all()
-			.map((c) => ({ id: c.id, hasPrf: c.hasPrf, createdAt: c.createdAt, lastUsedAt: c.lastUsedAt })),
+		passkeys: listPasskeys(locals.db, user.id),
 		devices: locals.db
 			.select()
 			.from(devices)

@@ -1,42 +1,13 @@
-// Passkeys ansehen, benennen, entfernen.
+// Passkeys benennen und entfernen.
 //
-// Das Anlegen laeuft ueber /start und /finish - es braucht zwei Schritte, weil
+// Die LISTE kommt aus /api/me - sie steht dort ohnehin, zusammen mit Konto und
+// Geraeten, und zwei Endpunkte fuer dieselben Zeilen liefen prompt auseinander.
+// Das Anlegen laeuft ueber /start und /finish: es braucht zwei Schritte, weil
 // ein Authentifikator dazwischen den Menschen fragt.
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { credentials, keyWraps } from "$lib/server/db/schema";
 import { and, eq } from "drizzle-orm";
-
-export const GET: RequestHandler = ({ locals }) => {
-	if (!locals.userId) error(401, "Nicht angemeldet");
-	const userId = locals.userId;
-
-	// `has_prf` sagt nur, was der Authentifikator koennte - die Verpackung, ob er es tut.
-	const wrapped = new Set(
-		locals.db
-			.select()
-			.from(keyWraps)
-			.where(and(eq(keyWraps.userId, userId), eq(keyWraps.kind, "passkey")))
-			.all()
-			.map((w) => w.credentialId)
-	);
-
-	return json({
-		passkeys: locals.db
-			.select()
-			.from(credentials)
-			.where(eq(credentials.userId, userId))
-			.all()
-			.map((c) => ({
-				id: c.id,
-				label: c.label,
-				hasPrf: c.hasPrf,
-				hasWrap: wrapped.has(c.id),
-				createdAt: c.createdAt,
-				lastUsedAt: c.lastUsedAt
-			}))
-	});
-};
 
 /** Umbenennen - damit in der Liste steht, welches Geraet gemeint ist. */
 export const PATCH: RequestHandler = async ({ locals, request }) => {
