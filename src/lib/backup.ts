@@ -53,7 +53,7 @@ export interface RestoreResult {
  * Verwechseln aehnlich. Dann lieber gar keine.
  */
 export async function createBackupData(): Promise<TimeTrackerBackup> {
-	if (account.backfilling) {
+	if (account.historyIncomplete) {
 		throw new Error(
 			"Ältere Monate werden gerade noch geladen. Die Sicherung wäre unvollständig – bitte kurz warten."
 		);
@@ -145,7 +145,7 @@ export async function restoreBackup(
 ): Promise<RestoreResult> {
 	// Nachkommende Monate wuerden ueber das Eingespielte laufen: die Zeiten aus der
 	// Datei tragen ihren alten Zeitstempel, der Serverstand gewinnt damit stellenweise.
-	if (account.backfilling) {
+	if (account.historyIncomplete) {
 		throw new Error(
 			"Ältere Monate werden gerade noch geladen. Ein Teil der Sicherung würde dabei wieder überschrieben – bitte kurz warten."
 		);

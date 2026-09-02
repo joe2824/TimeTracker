@@ -43,7 +43,6 @@
 	import SettingsIcon from "@lucide/svelte/icons/settings";
 	import CircleArrowUpIcon from "@lucide/svelte/icons/circle-arrow-up";
 	import LogOutIcon from "@lucide/svelte/icons/log-out";
-	import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
 	import TrackingPanel from "$lib/components/TrackingPanel.svelte";
 	import EntryEditor from "$lib/components/EntryEditor.svelte";
 	import ReportView from "$lib/components/ReportView.svelte";
@@ -568,21 +567,6 @@
 			</div>
 		</header>
 
-		<!-- Waehrend des Backfills steht das Band durchgehend: der Abruf kommt in
-		     Portionen mit Pausen dazwischen, sonst blinkte es im Sekundentakt. -->
-		{#if account.backfilling || (account.phase === "running" && account.syncProgress && account.syncProgress.pulled >= 20)}
-			<div class="bg-primary/10 border-b border-primary/20 text-primary px-4 py-1.5 text-xs text-center font-medium flex items-center justify-center gap-2 animate-in fade-in duration-150">
-				<RefreshCwIcon class="size-3.5 animate-spin shrink-0" />
-				<span>
-					{#if account.backfilling}
-						Ältere Monate werden im Hintergrund geladen – du kannst schon arbeiten.
-					{:else}
-						Daten werden vom Server geladen ({account.syncProgress?.pulled ?? 0} Einträge)…
-					{/if}
-				</span>
-			</div>
-		{/if}
-
 		<PasskeyNudge />
 
 		<div
@@ -620,7 +604,9 @@
 	<AbsenceOverrideDialog />
 	<UpdateDialog />
 
-	{#if app.showOnboarding}
+	<!-- Ein frisch gekoppeltes Geraet ist lokal leer: "Willkommen" waere falsch,
+	     solange der erste Abgleich die vorhandenen Daten noch holt. -->
+	{#if app.showOnboarding && account.ready && (!account.linked || account.firstSyncDone)}
 		<OnboardingWizard />
 	{/if}
 	<CommandPalette bind:open={paletteOpen} onNavigate={(t) => (tab = t)} />

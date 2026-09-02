@@ -22,6 +22,7 @@ describe("Backup & Restore", () => {
 		resetFakeFs();
 		app.clearLocalData();
 		account.backfilling = false;
+		account.historyIncomplete = false;
 	});
 
 	const sampleActivities: Activity[] = [
@@ -74,11 +75,22 @@ describe("Backup & Restore", () => {
 		expect((await createBackupData()).complete).toBe(true);
 	});
 
-	it("sichert nicht, solange ältere Monate nachkommen", async () => {
+	it("sichert nicht, solange ältere Monate fehlen", async () => {
 		await saveEntries("2026-07", sampleEntries202607);
 		account.backfilling = true;
+		account.historyIncomplete = true;
 
 		await expect(createBackupData()).rejects.toThrow(/unvollständig/);
+	});
+
+	it("sichert, wenn der Abgleich nur wiederholt, was schon dasteht", async () => {
+		// Ein Geraet, das der Nachlauf zurueckgesetzt hat, holt die Monate ein
+		// zweites Mal - sie liegen aber laengst hier. Zu sperren waere Fehlalarm.
+		await saveEntries("2026-07", sampleEntries202607);
+		account.backfilling = true;
+		account.historyIncomplete = false;
+
+		expect((await createBackupData()).complete).toBe(true);
 	});
 
 	it("spielt nicht ein, solange ältere Monate nachkommen", async () => {
@@ -91,6 +103,7 @@ describe("Backup & Restore", () => {
 			entries: { "2026-07": sampleEntries202607 }
 		};
 		account.backfilling = true;
+		account.historyIncomplete = true;
 
 		await expect(restoreBackup(backup, "merge")).rejects.toThrow(/nachgeladen|geladen/);
 		expect(app.monthEntries("2026-07")).toHaveLength(0);

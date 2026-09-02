@@ -19,9 +19,22 @@
 	}
 
 	const age = $derived(account.lastSync ? app.now - account.lastSync : null);
-	const isBulkPull = $derived(account.phase === "running" && (account.syncProgress?.pulled ?? 0) >= 20);
+	/** Ein Schwung Daten, auf den jemand wartet - nicht die Historie nebenher. */
+	const isBulkPull = $derived(
+		account.phase === "running" &&
+			(account.syncProgress?.pulled ?? 0) >= 20 &&
+			!account.syncProgress?.background
+	);
 
-	const statusInfo = $derived.by(() => {
+	interface Status {
+		tone: string;
+		text: string;
+		titleText: string;
+		/** Laeuft gerade etwas? Dann dreht sich das Icon statt des Punktes. */
+		busy?: boolean;
+	}
+
+	const statusInfo = $derived.by((): Status | null => {
 		if (!account.linked) return null;
 		if (account.state === "error") {
 			return { tone: "bg-destructive", text: "Getrennt", titleText: account.message };
@@ -36,8 +49,21 @@
 		if (isBulkPull) {
 			return {
 				tone: "bg-blue-500",
-				text: `Lade Daten… (${account.syncProgress!.pulled})`,
-				titleText: "Synchronisiere Daten mit dem Server…"
+				busy: true,
+				text: "Daten werden geladen …",
+				titleText: `${account.syncProgress?.pulled ?? 0} Einträge vom Server geladen`
+			};
+		}
+		// Die Historie laeuft nebenher weiter. Sie steht hier, weil daran die
+		// gesperrte Sicherung haengt - aber leise, es wartet niemand darauf.
+		if (account.backfilling) {
+			return {
+				tone: "bg-emerald-500",
+				busy: true,
+				text: "Ältere Monate …",
+				titleText: account.historyIncomplete
+					? "Ältere Monate kommen im Hintergrund nach. Du kannst schon arbeiten; Sicherungen gehen erst danach wieder."
+					: "Ältere Monate werden im Hintergrund aufgefrischt."
 			};
 		}
 		return {
@@ -52,6 +78,8 @@
 						: `Letzter Abgleich ${howLongAgo(age)}`
 		};
 	});
+
+	const spinning = $derived(statusInfo?.busy === true);
 </script>
 
 {#if statusInfo}
@@ -59,9 +87,9 @@
 		class="text-muted-foreground inline-flex items-center gap-1.5 text-xs whitespace-nowrap"
 		title={statusInfo.titleText}
 	>
-		{#if isBulkPull}
-			<RefreshCwIcon class="size-3 text-primary animate-spin shrink-0" />
-			<span class="text-primary font-medium">{statusInfo.text}</span>
+		{#if spinning}
+			<RefreshCwIcon class="size-3 shrink-0 animate-spin opacity-70" />
+			<span class="max-w-32 truncate sm:max-w-none">{statusInfo.text}</span>
 		{:else}
 			<span
 				class="size-1.5 shrink-0 rounded-full {statusInfo.tone} {account.phase === 'running' ? 'animate-pulse ring-2 ring-emerald-500/30' : ''}"

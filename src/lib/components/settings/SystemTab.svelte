@@ -52,7 +52,7 @@
 	let restoreMode = $state<"merge" | "replace">("merge");
 	// Solange aeltere Monate nachkommen, waere eine Sicherung nur ein Ausschnitt und
 	// ein Einspielen wuerde vom Nachschub teilweise ueberschrieben.
-	const backupBlocked = $derived(account.backfilling);
+	const backupBlocked = $derived(account.historyIncomplete);
 
 	async function handleExportBackup() {
 		isExportingBackup = true;

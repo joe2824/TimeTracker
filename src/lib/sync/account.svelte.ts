@@ -97,6 +97,9 @@ const HEARTBEAT_MS = 5 * 60 * 1000;
 /** Pause zwischen zwei Portionen Historie. */
 const BACKFILL_GAP_MS = 2000;
 
+/** Wie oft waehrend des Backfills hoechstens neu gelesen wird. */
+const BACKFILL_RELOAD_MS = 5_000;
+
 /**
  * Hochzaehlen, sobald eine neue Datensatzart hinzukommt.
  *
@@ -140,7 +143,13 @@ class AccountState {
 	 */
 	pairCodeFromLink = $state<string>("");
 	/** Fortschritt des aktuellen Synchronisationsvorgangs (z.B. wie viele Datensätze geladen wurden). */
-	syncProgress = $state<{ phase: "idle" | "pulling" | "pushing"; pulled: number; pushed: number } | null>(null);
+	syncProgress = $state<{
+		phase: "idle" | "pulling" | "pushing";
+		pulled: number;
+		pushed: number;
+		/** Historie im Hintergrund - siehe SyncProgress. */
+		background?: boolean;
+	} | null>(null);
 
 	/**
 	 * Ob noch aeltere Monate nachkommen.
@@ -149,9 +158,32 @@ class AccountState {
 	 * die Oberflaeche bekaeme eine Aenderung daran sonst nie mit.
 	 */
 	backfilling = $state(false);
+	/**
+	 * Ob lokal wirklich Monate FEHLEN - daran haengen die Sperren fuer Sicherung
+	 * und Einspielen.
+	 *
+	 * Ein Geraet, das nach einem Nachlauf nur alles noch einmal holt, hat den
+	 * Bestand laengst: dort waere eine Sicherung vollstaendig, und sie zu sperren
+	 * waere ein Fehlalarm.
+	 */
+	historyIncomplete = $state(false);
+	/**
+	 * Ob dieses Geraet seit dem Start einmal abgeglichen hat - erfolgreich oder
+	 * gescheitert.
+	 *
+	 * Bis dahin ist unklar, ob das Konto schon Daten hat. Der
+	 * Willkommensbildschirm wartet darauf: ein frisch gekoppeltes Geraet ist
+	 * lokal leer und saehe sonst "Willkommen", waehrend die Eintraege gerade
+	 * hereinkommen.
+	 */
+	firstSyncDone = $state(false);
 	/** Monate, die gerade vom Server nachgeholt werden - die Auswahl zeigt es an. */
 	fetchingMonths = $state<string[]>([]);
-	/** Status des Massen-Imports für die UI (z.B. Modal im Browser). */
+	/**
+	 * Massen-Abruf, allein fuer die Desktop-Meldung (Toast).
+	 *
+	 * Im Browser haengt die Anzeige an `syncProgress`, nicht hieran.
+	 */
 	bulkSync = $state<{ phase: "pulling" | "done"; pulled: number } | null>(null);
 	/** Ob die Initialisierung des Kontos (Lesen lokaler Zugangsdaten) abgeschlossen ist. */
 	ready = $state<boolean>(false);
@@ -161,6 +193,8 @@ class AccountState {
 	#key: CryptoKey | null = null;
 	#stream: EventSource | null = null;
 	#debounce: ReturnType<typeof setTimeout> | null = null;
+	/** Eigener Takt fuer die Historie - der geteilte Entpreller gehoert dem Nutzer. */
+	#backfillTimer: ReturnType<typeof setTimeout> | null = null;
 	#retry: ReturnType<typeof setTimeout> | null = null;
 	#retryStep = 0;
 	#device = "";
@@ -306,6 +340,7 @@ class AccountState {
 			}
 		});
 		this.backfilling = state.priority !== undefined;
+		this.historyIncomplete = state.priority !== undefined && state.priority.historyLocal !== true;
 		this.#engine.setMonthLister(listEntryMonths);
 		// Wer einen Monat oeffnet, den der Backfill noch nicht hat, soll ihn sehen -
 		// nicht eine leere Ansicht mit dem Hinweis, spaeter wiederzukommen.
@@ -334,18 +369,14 @@ class AccountState {
 	async #rewindForNewKinds(state: SyncState): Promise<SyncState> {
 		const info = await loadDevice();
 		if (!info || info.resyncGeneration === RESYNC_GENERATION) return state;
-		// Der vorgezogene Teil bleibt stehen, nur sein eigener Stand geht mit auf
-		// 0 - der zeigte sonst hinter Datensaetze, die gerade erst nachkommen.
-		// Ihn wegzunehmen kostet mehr, als es einbringt: der Abruf liefe wieder
-		// aeltestes zuerst, und `backfilling` stuende auf false, obwohl Monate
-		// fehlen. Damit gingen die Sperren fuer Sicherung und Monatsauswahl still
-		// auf, und eine Teilsicherung truege den Vermerk "vollstaendig".
-		// Ein Geraet ohne vorgezogenen Teil - verknuepft, bevor es den gab - zoege
-		// sonst die ganze Historie aeltestes zuerst, mit dem aktuellen Monat ganz
-		// am Ende und einem Modal davor. Es bekommt ihn hier.
+		// Der vorgezogene Teil bleibt - sonst liefe der Abruf wieder aeltestes
+		// zuerst. Sein eigener Stand geht mit auf 0, er zeigte sonst hinter
+		// Datensaetze, die gerade erst nachkommen. Ein Geraet ohne vorgezogenen
+		// Teil bekommt hier einen; `historyLocal` haelt fest, dass seine Monate
+		// schon auf der Platte liegen und die Sicherung erlaubt bleibt.
 		const priority = state.priority
 			? { ...state.priority, seq: 0 }
-			: { seq: 0, months: [monthKey(Date.now()), prevMonthKey()] };
+			: { seq: 0, months: [monthKey(Date.now()), prevMonthKey()], historyLocal: state.seq > 0 };
 		const rewound: SyncState = { seq: 0, priority };
 		// Stand 0 heisst: es gibt nichts nachzuholen - frisch verknuepft, oder noch
 		// nie abgeglichen. Nur der Merker war faellig. Der Nachlauf-Vermerk darf
@@ -362,6 +393,39 @@ class AccountState {
 	}
 
 	// ---------- Abgleich ----------
+
+	/** Wann zuletzt die Ansichten neu gelesen wurden - siehe `#reloadIsDue`. */
+	#lastReload = 0;
+
+	/**
+	 * Steht ein Neulesen an?
+	 *
+	 * Ausserhalb des Backfills immer. Waehrend er laeuft, hoechstens alle
+	 * `BACKFILL_RELOAD_MS` - und am Ende, wenn er durch ist.
+	 */
+	#reloadIsDue(): boolean {
+		const now = Date.now();
+		if (!this.backfilling || now - this.#lastReload >= BACKFILL_RELOAD_MS) {
+			this.#lastReload = now;
+			return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Die naechste Portion Historie anstossen.
+	 *
+	 * Mit eigenem Timer: `syncSoon` traegt den Wunsch des Nutzers, und den darf
+	 * eine Backfill-Runde nicht um zwei Sekunden nach hinten schieben.
+	 */
+	#continueBackfill(): void {
+		if (!this.#engine) return;
+		if (this.#backfillTimer) clearTimeout(this.#backfillTimer);
+		this.#backfillTimer = setTimeout(() => {
+			this.#backfillTimer = null;
+			void this.syncNow();
+		}, BACKFILL_GAP_MS);
+	}
 
 	/** Bald abgleichen. */
 	syncSoon(delay = DEBOUNCE_MS): void {
@@ -471,7 +535,7 @@ class AccountState {
 	}
 
 	/**
-	 * Das Lade-Modal abschliessen: kurz "fertig", dann weg.
+	 * Den Massen-Abruf abschliessen: kurz "fertig", dann weg.
 	 *
 	 * Nur wo vorher auch "wird geladen" stand - der Backfill zaehlt in
 	 * `result.pulled` mit und liesse den Abschluss sonst jede Runde aufblitzen.
@@ -486,7 +550,6 @@ class AccountState {
 		}
 		const pulled = this.bulkSync.pulled;
 		this.bulkSync = { phase: "done", pulled };
-		// Im Browser zeigt das große Modal den Abschluss an – Toast nur in Tauri.
 		if (isTauri()) {
 			toast.success(`${pulled} Einträge synchronisiert.`, { id: "sync-bulk" });
 		}
@@ -500,7 +563,16 @@ class AccountState {
 		this.phase = "running";
 		try {
 			const result = await this.#engine.sync();
+			// Kam etwas an, war dieses Geraet nie leer - es wusste es nur noch
+			// nicht. Der Willkommensbildschirm hat sich damit erledigt, und zwar
+			// bevor jemand ihn ausfuellt und dabei die echten Einstellungen
+			// ueberschreibt. Vor `firstSyncDone`, sonst blitzt er dazwischen auf.
+			if (result && result.pulled > 0 && app.showOnboarding) {
+				app.dismissOnboarding();
+			}
+			this.firstSyncDone = true;
 			this.backfilling = this.#engine.backfilling;
+			this.historyIncomplete = this.#engine.historyIncomplete;
 			this.phase = "idle";
 			this.lastSync = Date.now();
 			this.#retryStep = 0;
@@ -514,25 +586,26 @@ class AccountState {
 				// laege die naechste Portion beim Herzschlag: alle fuenf Minuten
 				// tausend Saetze, und so lange bleiben Sicherung und Monatsauswahl
 				// gesperrt.
-				if (this.backfilling) this.syncSoon(BACKFILL_GAP_MS);
+				if (this.backfilling) this.#continueBackfill();
 			} else {
 				if (this.bulkSync?.phase === "pulling") this.bulkSync = null;
 				toast.dismiss("sync-bulk");
 			}
 			// Der Bestand kann sich geaendert haben - die Ansichten haengen daran.
-			if (result && (result.pulled > 0 || result.pushed > 0)) {
+			// Waehrend die Historie laeuft, kommen die Runden im Sekundentakt und
+			// betreffen fast immer Monate, die niemand offen hat: dann reicht es,
+			// gelegentlich nachzuziehen, statt bei jeder Portion alles von der
+			// Platte zu lesen und /me zu fragen.
+			if (result && (result.pulled > 0 || result.pushed > 0) && this.#reloadIsDue()) {
 				await app.reload();
 				void this.accountInfo().catch(() => {});
 				void notifyDataChanged({ from: "sync" });
 			}
-			// Kam beim ersten Abgleich etwas an, war dieses Geraet nie leer - es
-			// wusste es nur noch nicht. Der Willkommensbildschirm hat sich damit
-			// erledigt, und zwar bevor jemand ihn ausfuellt und dabei die echten
-			// Einstellungen ueberschreibt.
-			if (result && result.pulled > 0 && app.showOnboarding) {
-				app.dismissOnboarding();
-			}
 		} catch (e) {
+			// Auch ein gescheiterter Versuch beantwortet die Frage "warten oder
+			// anzeigen?": ohne Verbindung bleibt der Willkommensbildschirm sonst
+			// fuer immer aus.
+			this.firstSyncDone = true;
 			this.bulkSync = null;
 			toast.dismiss("sync-bulk");
 			this.#onSyncError(e);
@@ -1177,11 +1250,14 @@ class AccountState {
 	async #forgetLocally(): Promise<void> {
 		this.#closeStream();
 		if (this.#debounce) clearTimeout(this.#debounce);
+		if (this.#backfillTimer) clearTimeout(this.#backfillTimer);
 		if (this.#retry) clearTimeout(this.#retry);
 		stopTracking();
 		setChangeListener(null);
 		this.#engine = null;
 		this.backfilling = false;
+		this.historyIncomplete = false;
+		this.firstSyncDone = false;
 		this.fetchingMonths = [];
 		app.setMonthFetcher(null);
 		this.#api = null;

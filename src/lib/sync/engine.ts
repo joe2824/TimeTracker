@@ -68,6 +68,11 @@ export interface SyncPriority {
 	seq: number;
 	/** Welche Monate vorgezogen werden. */
 	months: string[];
+	/**
+	 * Die Historie liegt hier bereits auf der Platte - der Nachlauf holt sie nur
+	 * noch einmal. Dann fehlt lokal nichts, und die Sicherung darf laufen.
+	 */
+	historyLocal?: boolean;
 }
 
 export interface SyncState {
@@ -156,9 +161,21 @@ export class SyncEngine {
 		return this.#state.seq;
 	}
 
-	/** Ob noch aeltere Monate fehlen. */
+	/** Ob noch aeltere Monate nachkommen. */
 	get backfilling(): boolean {
 		return this.#state.priority !== undefined;
+	}
+
+	/**
+	 * Ob lokal wirklich Monate FEHLEN.
+	 *
+	 * Nicht dasselbe wie `backfilling`: ein Geraet, das nach einem Nachlauf alles
+	 * noch einmal holt, hat den Bestand laengst - eine Sicherung waere da
+	 * vollstaendig.
+	 */
+	get historyIncomplete(): boolean {
+		const priority = this.#state.priority;
+		return priority !== undefined && priority.historyLocal !== true;
 	}
 
 	/**

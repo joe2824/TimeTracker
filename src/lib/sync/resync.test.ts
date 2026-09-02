@@ -235,6 +235,8 @@ describe("Erstes Verknuepfen", () => {
 
 			expect((await store.loadDevice())!.priority?.months).toContain(monthKey(Date.now()));
 			expect(account.backfilling).toBe(true);
+			// Frisch verknuepft: hier fehlt wirklich alles Aeltere.
+			expect(account.historyIncomplete).toBe(true);
 		} finally {
 			server.gate?.open();
 			server.gate = null;
@@ -369,6 +371,11 @@ describe("Nachlauf fuer eine neue Datensatzart", () => {
 			expect(after.seq).toBe(0);
 			expect(after.priority?.months).toContain(monthKey(Date.now()));
 			expect(after.priority?.seq).toBe(0);
+			// Sein Stand stand auf 42: die Monate liegen hier, der Nachlauf holt sie
+			// nur noch einmal. Die Sicherung zu sperren waere Fehlalarm.
+			expect(after.priority?.historyLocal).toBe(true);
+			expect(account.backfilling).toBe(true);
+			expect(account.historyIncomplete).toBe(false);
 		} finally {
 			server.gate?.open();
 			server.gate = null;

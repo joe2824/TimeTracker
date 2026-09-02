@@ -87,7 +87,29 @@ Aus `use:onIntent` wurde `{...onIntent(...)}`: Svelte-Actions duerfen nur an
 Elemente, die Ziele hier sind aber alle Komponenten (Button, Select.Item,
 Tabs.Trigger).
 
+- **Sperre der Sicherung trennt zwei Faelle.** `backfilling` heisst nur "es
+  laeuft noch ein Nachschub", nicht "hier fehlen Monate". Ein Geraet, das der
+  `RESYNC_GENERATION`-Nachlauf zurueckgesetzt hat, holt alles ein zweites Mal -
+  lokal liegt es laengst, eine Sicherung waere vollstaendig. Dafuer gibt es
+  `priority.historyLocal` (gesetzt, wenn der Stand vor dem Ruecksetzen > 0 war),
+  daraus `engine.historyIncomplete` und `account.historyIncomplete`. Export und
+  Einlesen haengen jetzt daran statt an `backfilling`; Band, Spinner und
+  Monatsauswahl weiter an `backfilling`.
+- **Test fuer das Lade-Modal** (`src/lib/sync/bulkSync.test.ts`). Eigener
+  Mini-Server, der den Bucket-Filter wirklich auswertet, und ein Gatter nur fuer
+  den Abruf ohne Filter: damit steht die Historie still, waehrend der Test
+  hinsieht. Geprueft wird beides - das Modal schliesst mit dem vorgezogenen
+  Teil, und es geht gar nicht erst auf, wenn nur Historie kommt.
+
 ## Was noch offen ist
+
+- **Im Browser nachstellen.** Alles oben haengt an Tests und `svelte-check`; der
+  Weg durch die echte PWA (verknuepfen, Modal, Band, Monatsauswahl) ist nicht
+  durchgeklickt. Es gibt kein Playwright im Projekt, und der Ablauf braucht
+  Server plus Konto. Von Hand: `npm run server:dev`, `npm run dev:web`, Konto
+  anlegen, Daten fuer mehrere Monate erzeugen, in einem zweiten Browserprofil
+  koppeln - dort darf das Modal nur kurz fuer den aktuellen Monat stehen,
+  danach nur noch das Band.
 
 - **`listEntryYears`** (`src/lib/store.ts`) liest weiterhin jede Monatsdatei
   nur zum Zaehlen. Entschaerft, aber nicht behoben: `SettingsPanel` montiert
