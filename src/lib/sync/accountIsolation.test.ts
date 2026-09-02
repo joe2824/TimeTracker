@@ -113,6 +113,9 @@ class MockServer {
 		this.gate = new Promise((r) => (this.openGate = r));
 	}
 
+	/** Das Abmelden bleibt unbeantwortet, bis der Aufrufer aufgibt. */
+	silentLogout = false;
+
 	fetchFor(deviceId: string) {
 		return async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
 			const rawUrl = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -163,6 +166,13 @@ class MockServer {
 				);
 			}
 			if (pathname === "/api/auth/logout") {
+				// Ein Server, der die Verbindung offen laesst und nie antwortet -
+				// der Fall, den ein `catch` allein nicht abfaengt.
+				if (this.silentLogout) {
+					await new Promise((_, reject) => {
+						init?.signal?.addEventListener("abort", () => reject(new Error("abgebrochen")));
+					});
+				}
 				return new Response(JSON.stringify({ ok: true }), { status: 200 });
 			}
 			return new Response(JSON.stringify({ message: "unbekannt" }), { status: 404 });
@@ -260,6 +270,39 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 			]);
 			expect(JSON.parse(files.get("data/device.json")!)).toEqual({ id: expect.any(String) });
 			expect(app.settings.bossEmail).toBe("");
+		} finally {
+			globalThis.fetch = originalFetch;
+		}
+	});
+
+	it("räumt lokal auch dann auf, wenn der Server auf das Abmelden nicht antwortet", async () => {
+		// Ohne Zeitlimit haengt account.logout() vor dem Aufräumen: der Hinweis ist
+		// weg, der Tresorschlüssel bleibt liegen, und niemand sieht, dass nichts
+		// passiert ist.
+		const server = new MockServer();
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = server.fetchFor("browser-device");
+
+		try {
+			const key = await createVaultKey();
+			await account.linkWithSession("http://test-server", key, "Alice");
+			await app.updateSettings({ bossEmail: "chef@alice.de" });
+			server.silentLogout = true;
+
+			vi.useFakeTimers();
+			try {
+				const loggingOut = account.logout();
+				await vi.advanceTimersByTimeAsync(30_000);
+				await loggingOut;
+			} finally {
+				vi.useRealTimers();
+			}
+
+			expect(account.linked).toBe(false);
+			expect([...files.keys()].filter((f) => f.startsWith("data/")).sort()).toEqual([
+				"data/device.json"
+			]);
+			expect(JSON.parse(files.get("data/device.json")!)).toEqual({ id: expect.any(String) });
 		} finally {
 			globalThis.fetch = originalFetch;
 		}

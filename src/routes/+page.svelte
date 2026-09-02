@@ -43,6 +43,7 @@
 	import SettingsIcon from "@lucide/svelte/icons/settings";
 	import CircleArrowUpIcon from "@lucide/svelte/icons/circle-arrow-up";
 	import LogOutIcon from "@lucide/svelte/icons/log-out";
+	import LoaderCircleIcon from "@lucide/svelte/icons/loader-circle";
 	import TrackingPanel from "$lib/components/TrackingPanel.svelte";
 	import EntryEditor from "$lib/components/EntryEditor.svelte";
 	import ReportView from "$lib/components/ReportView.svelte";
@@ -109,29 +110,48 @@
 	// zurueck kaeme man nur ueber die 24 Woerter.
 	let withoutPasskey = $state(false);
 	let creating = $state(false);
+	/** Laeuft gerade eine Nachfrage oder das Abmelden? Solange dreht sich der Knopf. */
+	let busy = $state(false);
+	/** Steht wirklich kein Passkey am Konto - oder kam nur keine Antwort? */
+	let passkeyCheckFailed = $state(false);
+
+	/** So lange warten wir auf die Antwort. Danach wird gefragt statt gewartet. */
+	const PASSKEY_CHECK_MS = 4000;
 
 	async function onLogoutClick() {
-		try {
-			if ((await account.passkeys()).length === 0) {
-				withoutPasskey = true;
-				return;
-			}
-		} catch {
-			// Server nicht erreichbar: dann laesst sich nicht sagen, ob ein Passkey
-			// da ist. Lieber einmal zu viel fragen als jemanden aussperren.
-			withoutPasskey = true;
+		busy = true;
+		passkeyCheckFailed = false;
+		// Mit Zeitlimit: im Mobilfunk bleibt die Antwort schon mal minutenlang aus.
+		// So lange sieht der Knopf aus, als waere der Klick ins Leere gegangen -
+		// und wer daraufhin den Tab schliesst, ist gar nicht abgemeldet.
+		const passkeys = await Promise.race([
+			account.passkeys().catch(() => null),
+			new Promise<null>((r) => setTimeout(() => r(null), PASSKEY_CHECK_MS))
+		]);
+		busy = false;
+
+		if (passkeys && passkeys.length > 0) {
+			await logout();
 			return;
 		}
-		await logout();
+		// Kein Passkey - oder keine Antwort darauf. Beides ist die Nachfrage wert,
+		// nur mit verschiedenem Text.
+		passkeyCheckFailed = passkeys === null;
+		withoutPasskey = true;
 	}
 
 	async function logout() {
 		withoutPasskey = false;
+		// Auch das Abmelden selbst kann auf den Server warten. Ohne Anzeige steht
+		// die App danach unveraendert da, und niemand weiss, ob etwas passiert.
+		busy = true;
 		try {
 			await account.logout();
 			toast.success("Abgemeldet.");
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Abmelden fehlgeschlagen");
+		} finally {
+			busy = false;
 		}
 	}
 
@@ -139,9 +159,18 @@
 	async function createPasskey() {
 		creating = true;
 		try {
-			await account.addPasskey("Dieser Browser");
-			withoutPasskey = false;
+			const { prfAvailable } = await account.addPasskey("Dieser Browser");
+			if (!prfAvailable) {
+				// Der Passkey meldet zwar an, entsperrt die Daten aber nicht allein.
+				// Abgemeldet braeuchte es trotzdem die 24 Woerter - also bleibt der
+				// Hinweis stehen, statt ein Versprechen zu geben, das nicht haelt.
+				toast.error("Dieses Gerät kann deine Daten mit dem Passkey allein nicht entsperren.");
+				return;
+			}
 			toast.success("Passkey angelegt. Damit kommst du jederzeit wieder hinein.");
+			// Der Klick galt dem Abmelden; der Passkey war nur die Bedingung dafuer.
+			// Ohne diese Zeile schliesst sich der Hinweis, und niemand ist abgemeldet.
+			await logout();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Passkey konnte nicht angelegt werden");
 		} finally {
@@ -556,11 +585,16 @@
 						<button
 							type="button"
 							onclick={onLogoutClick}
+							disabled={busy}
 							title="Abmelden"
 							aria-label="Abmelden"
-							class="text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-ring/50 inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors outline-none focus-visible:ring-2"
+							class="text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-ring/50 inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors outline-none focus-visible:ring-2 disabled:cursor-default disabled:opacity-60"
 						>
-							<LogOutIcon class="size-4.5" />
+							{#if busy}
+								<LoaderCircleIcon class="size-4.5 animate-spin" aria-hidden="true" />
+							{:else}
+								<LogOutIcon class="size-4.5" />
+							{/if}
 						</button>
 					{/if}
 				</div>
@@ -629,18 +663,33 @@
 <Dialog.Root open={withoutPasskey} onOpenChange={(o) => (withoutPasskey = o)}>
 	<Dialog.Content>
 		<Dialog.Header>
-			<Dialog.Title>Achtung: kein Passkey an diesem Konto</Dialog.Title>
+			<Dialog.Title>
+				{passkeyCheckFailed
+					? "Der Server antwortet gerade nicht"
+					: "Achtung: kein Passkey an diesem Konto"}
+			</Dialog.Title>
 			<Dialog.Description>
-				Meldest du dich jetzt ab, kommst du nur noch über die 24 Wörter der
-				Wiederherstellungs-Phrase zurück – oder indem du dieses Gerät neu koppelst.
-				Ein Passkey ist in zehn Sekunden angelegt.
+				{#if passkeyCheckFailed}
+					Wir konnten nicht nachsehen, ob an deinem Konto ein Passkey hängt. Hast du
+					einen, kommst du damit sofort wieder hinein. Hast du keinen, brauchst du zum
+					Anmelden die 24 Wörter deiner Wiederherstellungs-Phrase.
+				{:else}
+					Meldest du dich jetzt ab, kommst du nur noch über die 24 Wörter der
+					Wiederherstellungs-Phrase zurück – oder indem du dieses Gerät neu koppelst.
+					Ein Passkey ist in zehn Sekunden angelegt.
+				{/if}
 			</Dialog.Description>
 		</Dialog.Header>
 		<Dialog.Footer>
 			<Button variant="ghost" disabled={creating} onclick={logout}>Trotzdem abmelden</Button>
-			<Button disabled={creating} onclick={createPasskey}>
-				{creating ? "Warte auf Bestätigung…" : "Passkey anlegen"}
-			</Button>
+			{#if passkeyCheckFailed}
+				<!-- Anlegen braucht denselben Server, der gerade nicht antwortet. -->
+				<Button onclick={() => (withoutPasskey = false)}>Abbrechen</Button>
+			{:else}
+				<Button disabled={creating} onclick={createPasskey}>
+					{creating ? "Warte auf Bestätigung…" : "Passkey anlegen"}
+				</Button>
+			{/if}
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

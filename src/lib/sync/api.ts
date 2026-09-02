@@ -4,6 +4,9 @@ import { TELEMETRY_KEY } from "../defaults";
 
 export type FetchFn = (input: string, init?: RequestInit) => Promise<Response>;
 
+/** So lange wartet das Abmelden auf den Server, bevor es ohne ihn weitermacht. */
+const LOGOUT_MS = 5000;
+
 /** Was die anonyme Tagesmeldung enthaelt - und sonst nichts. */
 export interface TelemetryPing {
 	deviceId: string;
@@ -246,7 +249,16 @@ export class Api {
 	}
 
 	logout(): Promise<{ ok: boolean }> {
-		return this.#call("/api/auth/logout", { method: "POST" });
+		// Mit Zeitlimit, als einziger Aufruf: das oertliche Abmelden - Tresor-
+		// schluessel und Bestand weg - darf nicht daran haengen, ob der Server
+		// gerade antwortet. Bleibt die Verbindung stumm, laeuft die Sitzung dort
+		// von selbst ab; hier zaehlt, dass nichts liegen bleibt.
+		const abort = new AbortController();
+		const timer = setTimeout(() => abort.abort(), LOGOUT_MS);
+		return this.#call<{ ok: boolean }>("/api/auth/logout", {
+			method: "POST",
+			signal: abort.signal
+		}).finally(() => clearTimeout(timer));
 	}
 
 	// ---------- Registrierung und Anmeldung ----------
