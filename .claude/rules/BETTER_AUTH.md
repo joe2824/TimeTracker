@@ -339,3 +339,129 @@ Werkzeuge: `search_docs`, `get_doc`. Relevante Seiten:
 `/docs/plugins/passkey`, `/docs/adapters/drizzle`,
 `/docs/integrations/svelte-kit`, `/docs/concepts/database`,
 `/docs/concepts/session-management`.
+
+---
+
+# Teil 2: Die Verschluesselung so bauen, dass es nicht wiederkommt
+
+## Der Zustand, den es nicht geben darf
+
+Fuer jeden Passkey eines Kontos gilt genau eines von beidem:
+
+- **verpackt** — in `key_wraps` liegt eine Zeile dazu
+- **kann kein PRF** — nach einer ECHTEN Anmeldung stand fest, dass der
+  Authentifikator keinen Wert liefert
+
+Der dritte Zustand — **weder noch** — ist der Bug. Jeder Fehler der letzten
+Wochen war eine neue Auspraegung davon: `5671928` (addPasskey), `67d55cc`
+(register). Nicht dieselbe Stelle, derselbe Zustand.
+
+## Warum es immer wiederkam
+
+Drei Dinge, die einzeln harmlos sind und zusammen genau dieses Muster erzeugen:
+
+**1. Passkey und Verpackung entstehen in zwei getrennten Anfragen.**
+`registerFinish` legt den Passkey an, `putWrap` die Verpackung. Dazwischen kann
+alles passieren: Netz weg, Tab zu, Deckel zu. Dann steht der Passkey und die
+Verpackung fehlt. Und weil es zwei Schritte sind, muss JEDER neue Weg, der einen
+Passkey anlegt, an den zweiten denken. Genau das ist zweimal schiefgegangen.
+
+**2. Der Fehlschlag ist still.** Ueberall `.catch(logWarn)`. Der kaputte Zustand
+entsteht, ohne dass irgendwer etwas merkt - auch nicht der, der ihn gerade
+erzeugt hat.
+
+**3. Die Folge kommt bis zu 30 Tage spaeter.** `SESSION_TTL_MS` ist 30 Tage
+(`server/src/lib/server/config.ts:137`) und laeuft NICHT mit: `userFromSession`
+verlaengert nichts. Und beim 401 raeumt `restore()` den lokalen Vault-Key weg
+(`#forgetLocally` schreibt `saveDevice({ id })`). Bis dahin laeuft alles, weil
+der Key lokal liegt.
+
+Punkt 3 ist die eigentliche Antwort auf "warum immer wieder". Zwischen der
+Aenderung, die den Bug einbaut, und dem Moment, in dem jemand ihn sieht, liegt
+ein Monat. Kein Test faengt das, und Ausprobieren von Hand auch nicht: ein frisch
+angelegtes Konto funktioniert 30 Tage lang tadellos. Der Passkey ist dann das
+EINZIGE, was noch zwischen dem Anwender und den 24 Woertern steht - und ob er
+das kann, hat einen Monat lang niemand geprueft.
+
+## Was daraus folgt
+
+### A. Eine Anfrage, eine Transaktion
+
+Die Verpackung ist fuer den Server undurchsichtige Bytes - er kann sie
+entgegennehmen, ohne irgendetwas zu erfahren. Also: Passkey und Verpackung in
+DERSELBEN Anfrage, und serverseitig in einer `db.transaction`. Entweder beides
+oder nichts. Damit ist "weder noch" bei der Entstehung nicht mehr darstellbar.
+
+Offen (Spike 5): Better Auths Passkey-Plugin besitzt den Verify-Endpunkt. Es gibt
+`registration.afterVerification` - zu pruefen, ob der Haken zusaetzliche
+Body-Felder sieht und ob ein Wurf dort die Registrierung zurueckrollt. Wenn
+nicht, bleibt es bei zwei Anfragen, und B + C muessen es auffangen.
+
+### B. Der Weg zurueck ist automatisch, nicht manuell
+
+Steht ein Passkey ohne Verpackung da, gilt der Reihe nach:
+
+1. Liegt der Vault-Key hier (lokal, oder eine andere Verpackung geht auf)?
+   Dann still reparieren - ohne Rueckfrage, ohne Bildschirm.
+2. Sonst: Phrase oder Kopplung, und dabei reparieren.
+   Das tut `unlockWithPhrase(url, phrase, repair)` seit `67d55cc`.
+
+Schritt 1 fehlt heute. Wer den Vault-Key hat, soll nie einen Entsperren-Bildschirm
+sehen.
+
+### C. `hasPrf` faellt weg, `wrapState` kommt
+
+`credentials.has_prf` wird aus der ANLEGE-Antwort gesetzt - genau dem Signal, das
+dokumentiert unzuverlaessig ist. Dasselbe falsche Signal, an dem `prfCapable`
+haengengeblieben ist. Ersatz, serverseitig aus `key_wraps` gerechnet:
+
+| Wert | Bedeutung |
+|---|---|
+| `linked` | Verpackung liegt vor |
+| `unsupported` | Nach einer echten Anmeldung stand fest: kein PRF |
+| `pending` | Weder noch — **der kaputte Zustand** |
+
+`pending` ist nichts, was man wegklicken kann. `PasskeyNudge` prueft heute
+kontoweit (`passkeys.every(p => !p.hasWrap)`) und uebersieht damit "einer von
+drei ist kaputt". Muss je Passkey gelten.
+
+### D. Die Rueckkopplung verkuerzen
+
+- **Gleitende Sitzung.** Better Auth kann das von Haus aus (`expiresIn` +
+  `updateAge`, siehe `/docs/concepts/session-management`). Wer die App benutzt,
+  wird nicht mehr abgemeldet - und der Ablauf ist nicht mehr der Moment, in dem
+  ein einen Monat alter Bug hochkommt.
+- **Ausdruecklich NICHT:** den lokalen Vault-Key beim 401 liegen lassen. Das
+  wuerde jeden dieser Bugs verstecken statt beheben, und es weicht eine
+  Sicherheitseigenschaft auf, die gerade erst nachgezogen wurde (`ac9df43`).
+  Der richtige Weg ist, dass der Ablauf harmlos ist - nicht, dass er nicht
+  auffaellt.
+
+### E. Der Test, der gefehlt hat
+
+Kein Happy-Path-Test, sondern eine Tabelle ueber die Zustaende. Jede Art, wie ein
+Passkey entsteht, mal jede Kombination der beiden PRF-Signale:
+
+| Entsteht durch | PRF beim Anlegen | PRF beim Anmelden | erwartet |
+|---|---|---|---|
+| `register` | nein | ja | `linked` |
+| `register` | ja | — | `linked` |
+| `register` | nein | nein | `unsupported` |
+| `addPasskey` | nein | ja | `linked` |
+| `addPasskey` | ja | — | `linked` |
+| `addPasskey` | nein | nein | `unsupported` |
+| nach `recoverWithPhrase` | nein | ja | `linked` |
+| nach Kopplung | nein | ja | `linked` |
+
+`enroll.test.ts` deckt davon heute drei Zeilen ab. Die Tabelle macht die
+Luecken sichtbar - und jede neue Art, einen Passkey anzulegen, bekommt eine
+Zeile, bevor sie gebaut wird.
+
+Dazu ein Servertest: nach einer erfolgreichen Registrierung darf es keine Zeile
+in `credentials`/`passkey` geben, zu der keine Zeile in `key_wraps` gehoert.
+
+## Reihenfolge
+
+C und E haengen nicht am Better-Auth-Umbau und koennen sofort gebaut werden - sie
+sind auch dann richtig, wenn der Umbau scheitert. A haengt an Spike 5. B und D
+kommen mit dem Umbau.
