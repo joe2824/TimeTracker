@@ -299,14 +299,19 @@ class AccountState {
 	async #startEngine(url: string, token: string | null, state: SyncState): Promise<void> {
 		state = await this.#rewindForNewKinds(state);
 		this.#api = new Api({ baseUrl: url, token, fetchFn: platformFetch });
-		this.#engine = new SyncEngine({
+		const engine = new SyncEngine({
 			api: this.#api,
 			key: this.#key!,
 			deviceId: this.#device,
 			state,
 			saveState: async (s) => {
 				const info = await loadDevice();
-				if (info) await saveDevice({ ...info, seq: s.seq, priority: s.priority });
+				// Erst hier pruefen, nicht vor dem Lesen: zwischen beidem kann das
+				// Abmelden liegen. Eine Runde von vorher schriebe sonst den ganzen
+				// gelesenen Stand zurueck - Tresorschluessel eingeschlossen - oder
+				// ihren Stand in die device.json des naechsten Kontos.
+				if (!info || this.#engine !== engine) return;
+				await saveDevice({ ...info, seq: s.seq, priority: s.priority });
 			},
 			store: {
 				entriesOfMonth: loadEntries,
@@ -339,6 +344,7 @@ class AccountState {
 				}
 			}
 		});
+		this.#engine = engine;
 		this.backfilling = state.priority !== undefined;
 		this.historyIncomplete = state.priority !== undefined && state.priority.historyLocal !== true;
 		this.#engine.setMonthLister(listEntryMonths);
@@ -1176,7 +1182,6 @@ class AccountState {
 	}
 
 	/**
-
 	 * Abmelden: die Sitzung beim Server beenden und die Verknuepfung hier vergessen.
 	 *
 	 * Die erfassten Zeiten bleiben liegen - abmelden ist kein Loeschen. Der Passkey
@@ -1192,12 +1197,6 @@ class AccountState {
 			logWarn("Abmelden beim Server fehlgeschlagen", e);
 		}
 		await this.unlink();
-		// Im Browser war der Bestand nur eine Kopie des Servers. Bliebe er liegen,
-		// sieht der naechste Mensch an diesem Rechner die Zeiten des vorigen.
-		if (!isTauri()) {
-			await clearAccountData();
-			app.clearLocalData();
-		}
 	}
 
 	/** Die Verknuepfung loesen. */
@@ -1220,6 +1219,8 @@ class AccountState {
 		// waere ein Abbruch mittendrin der schlechteste aller Zustaende - Daten
 		// ohne Fassungsnummern, aber ein Konto, das sie noch erwartet.
 		const unlinked = await detachLocalData();
+		// Im Browser war der Bestand nur eine Kopie des Servers. Bliebe er liegen,
+		// sieht der naechste Mensch an diesem Rechner die Zeiten des vorigen.
 		if (!isTauri()) {
 			await clearAccountData();
 			app.clearLocalData();
@@ -1241,13 +1242,27 @@ class AccountState {
 
 	/** Alles abstellen und die Kontodaten dieses Geraets vergessen. */
 	async #forgetLocally(): Promise<void> {
+		// Zuerst die Engine, und zwar ohne ein einziges await davor: eine laufende
+		// Runde antwortet noch, wenn hier laengst aufgeraeumt ist. Ohne stop()
+		// spielt sie die Daten des alten Kontos wieder ein, und ihr `saveState`
+		// traegt den Tresorschluessel in die gerade geleerte device.json zurueck.
+		this.#engine?.stop();
+		this.#engine = null;
+
+		// Dann der Schluessel - vor allem, was fremden Code ruft (Timer, Haken,
+		// Oberflaeche). Wirft dort etwas, laege er sonst weiter im Browser, und
+		// mit ihm die Adresse des Servers.
+		const info = await loadDevice();
+		// Nur die Kontodaten loeschen, nicht die Geraetekennung: die soll
+		// dieselbe bleiben, falls jemand erneut koppelt.
+		if (info) await saveDevice({ id: info.id });
+
 		this.#closeStream();
 		if (this.#debounce) clearTimeout(this.#debounce);
 		if (this.#backfillTimer) clearTimeout(this.#backfillTimer);
 		if (this.#retry) clearTimeout(this.#retry);
 		stopTracking();
 		setChangeListener(null);
-		this.#engine = null;
 		this.backfilling = false;
 		this.historyIncomplete = false;
 		this.firstSyncDone = false;
@@ -1259,12 +1274,6 @@ class AccountState {
 		// koennte ein schneller Re-Login in denselben 30-Sekunden-Fenstern Name,
 		// E-Mail und Geraete-Labels des vorigen Nutzers sehen.
 		this.#logoutHook?.();
-		const info = await loadDevice();
-		if (info) {
-			// Nur die Kontodaten loeschen, nicht die Geraetekennung: die soll
-			// dieselbe bleiben, falls jemand erneut koppelt.
-			await saveDevice({ id: info.id });
-		}
 		this.state = "off";
 		this.phase = "idle";
 		this.serverUrl = "";

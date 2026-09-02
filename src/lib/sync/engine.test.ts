@@ -1317,6 +1317,28 @@ describe("Vorgezogenes Laden", () => {
 		expect(laptop.state.seq).toBeGreaterThan(0);
 	});
 
+	it("nach stop() spielt eine laufende Runde nichts mehr ein", async () => {
+		// Beim Abmelden ist ein Abruf unterwegs. Seine Seite kommt an, wenn der
+		// lokale Bestand geloescht ist - ohne stop() schreibt er ihn zurueck.
+		await seedServer();
+		const laptop = new Device("laptop");
+		laptop.state = startState();
+
+		await on(laptop, async (engine) => {
+			server.holdBucketPulls();
+			const fetching = engine.ensureMonthSynced(OLD);
+
+			engine.stop();
+			server.openGate();
+			server.gate = null;
+			await fetching;
+
+			expect(await store.loadEntries(OLD)).toEqual([]);
+			// Und eine neue Runde faengt gar nicht erst an.
+			expect(await engine.sync()).toBeNull();
+		});
+	});
+
 	it("ein Device ohne vorgezogenen Teil holt weiterhin alles am Stueck", async () => {
 		// Bestandsgeraete kennen schon alles; fuer sie darf sich nichts aendern.
 		await seedServer();

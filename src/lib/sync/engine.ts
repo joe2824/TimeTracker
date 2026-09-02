@@ -136,6 +136,8 @@ export class SyncEngine {
 	#running = false;
 	/** Kam waehrend eines Durchgangs eine Anforderung? Dann gleich noch einmal. */
 	#again = false;
+	/** Abgemeldet: nichts mehr einspielen, nichts mehr anfangen. Siehe `stop`. */
+	#stopped = false;
 	/** Datensaetze, die der Server nachweislich nicht kennt. */
 	#unknownToServer = new Set<string>();
 
@@ -205,6 +207,7 @@ export class SyncEngine {
 	 * `sync()` abwartet, will wissen, dass wirklich abgeglichen wurde.
 	 */
 	sync(): Promise<SyncOutcome | null> {
+		if (this.#stopped) return Promise.resolve(null);
 		if (this.#running) {
 			this.#again = true;
 			return this.#current ?? Promise.resolve(null);
@@ -212,6 +215,18 @@ export class SyncEngine {
 		this.#running = true;
 		this.#current = this.#rounds();
 		return this.#current;
+	}
+
+	/**
+	 * Endgueltig anhalten - beim Abmelden.
+	 *
+	 * Einen laufenden Durchgang holt das nicht zurueck: seine Anfragen sind
+	 * unterwegs. Was danach ankommt, gehoert einem Konto, das dieses Geraet nicht
+	 * mehr hat, und der lokale Bestand ist inzwischen geloescht. Ohne stop()
+	 * schreibt die Runde ihn Datensatz fuer Datensatz wieder hin.
+	 */
+	stop(): void {
+		this.#stopped = true;
 	}
 
 	async #rounds(): Promise<SyncOutcome> {
@@ -546,6 +561,7 @@ export class SyncEngine {
 
 	/** Serverdaten einspielen - ohne dass der Haken sie als eigene Aenderung nimmt. */
 	async #apply(records: ServerRecord[]): Promise<{ lostEdits: number }> {
+		if (this.#stopped) return { lostEdits: 0 };
 		return this.#serial(() => applyingRemote(() => this.#applyInner(records)));
 	}
 

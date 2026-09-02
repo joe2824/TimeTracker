@@ -14,6 +14,7 @@ const {
 	loadSettings,
 	loadTimeReport,
 	pruneEmptyMonthFiles,
+	saveActivities,
 	saveEntries,
 	saveSettings
 } = await import("./store");
@@ -310,6 +311,51 @@ describe("clearAccountData", () => {
 		const s = await loadSettings();
 		expect(s.bossEmail).toBe("");
 		expect(s.senderName).toBe("");
+	});
+
+	it("löscht auch, was in keiner Namensliste steht", async () => {
+		// Eine abgebrochene Speicherung und ein beschädigter Monat tragen denselben
+		// Bestand wie die Datei daneben - nur heissen sie anders.
+		files.set("data/activities.json.tmp", '[{"id":"a1","name":"Kunde"}]');
+		files.set("data/entries-2026-06.json.beschaedigt-1770000000000", '[{"id":"e1"}]');
+		files.set("data/irgendwas-neues.json", "{}");
+
+		await clearAccountData();
+
+		expect([...files.keys()].filter((f) => f.startsWith("data/"))).toEqual([]);
+	});
+
+	it("lässt die Gerätekennung stehen", async () => {
+		// Sie gehört dem Rechner, nicht dem Konto: wer sich erneut anmeldet, soll
+		// dem Server als dasselbe Gerät begegnen und keine zweite Zeile anlegen.
+		files.set("data/device.json", '{"id":"d1"}');
+		files.set("data/activities.json", "[]");
+
+		await clearAccountData();
+
+		expect(files.get("data/device.json")).toBe('{"id":"d1"}');
+		expect(files.has("data/activities.json")).toBe(false);
+	});
+
+	it("löscht auch das, was gerade noch geschrieben wird", async () => {
+		// Beim Abmelden ist oft noch ein Speichern unterwegs. Läuft das Löschen an
+		// der Warteschlange vorbei, landet dessen Datei DANACH - und der Bestand
+		// des abgemeldeten Kontos liegt wieder da.
+		files.set("data/activities.json", "[]");
+		const release = blockWrites();
+		const saving = saveActivities([
+			{ id: "a1", name: "Kunde", sortOrder: 0, archived: false, isAbsence: false }
+		]);
+
+		const clearing = clearAccountData();
+		// Dem Loeschen erst seine Runde lassen, dann das Speichern landen: sonst
+		// ginge der Test auch dann durch, wenn beide nur zufaellig in der
+		// richtigen Reihenfolge fertig wurden.
+		await new Promise((r) => setTimeout(r, 0));
+		release();
+		await Promise.all([saving, clearing]);
+
+		expect(files.has("data/activities.json")).toBe(false);
 	});
 });
 

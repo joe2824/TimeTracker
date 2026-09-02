@@ -396,17 +396,21 @@ export interface DeviceInfo {
  * Abgleich in SEIN Konto.
  */
 export async function clearAccountData(): Promise<void> {
-	for (const month of await listEntryMonths()) {
-		const path = `${DIR}/${entriesFile(month)}`;
-		if (await storage.exists(path)) await storage.remove(path);
-	}
-	for (const month of await listTimeReportMonths()) {
-		const path = `${DIR}/${reportFile(month)}`;
-		if (await storage.exists(path)) await storage.remove(path);
-	}
-	for (const file of ["activities.json", "outbox.json", "settings.json"]) {
-		const path = `${DIR}/${file}`;
-		if (await storage.exists(path)) await storage.remove(path);
+	await ensureDir();
+	// Der ganze Datenordner, keine gepflegte Namensliste: liegengebliebene
+	// .tmp-Dateien und in Quarantaene gelegte Monate (.beschaedigt-*) tragen
+	// denselben Bestand, standen aber in keiner Liste.
+	for (const { name } of await storage.readDir(DIR)) {
+		// Die Geraetekennung gehoert dem Rechner, nicht dem Konto - sie soll ein
+		// erneutes Koppeln wiedererkennen. Die Kontodaten daneben streift das
+		// Abmelden ab.
+		if (name === "device.json") continue;
+		// Durch dieselbe Warteschlange wie das Schreiben: ein bereits eingereihtes
+		// Speichern landete sonst NACH dem Loeschen - und der Bestand waere zurueck.
+		await queued(name, async () => {
+			const path = `${DIR}/${name}`;
+			if (await storage.exists(path)) await storage.remove(path);
+		});
 	}
 }
 

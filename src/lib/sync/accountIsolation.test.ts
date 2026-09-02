@@ -101,6 +101,18 @@ class MockServer {
 		};
 	}
 
+	/**
+	 * Ein Tor vor dem Abruf - damit eine Runde beim Abmelden nachweislich noch
+	 * offen steht. Ohne das waere „waehrend noch abgeglichen wird" nur eine
+	 * Vermutung ueber Microtask-Reihenfolgen.
+	 */
+	gate: Promise<void> | null = null;
+	openGate: () => void = () => {};
+
+	holdPulls(): void {
+		this.gate = new Promise((r) => (this.openGate = r));
+	}
+
 	fetchFor(deviceId: string) {
 		return async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
 			const rawUrl = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -114,6 +126,7 @@ class MockServer {
 			}
 
 			if (pathname === "/api/sync" && (init?.method ?? "GET") === "GET") {
+				if (this.gate) await this.gate;
 				const since = Number(url.searchParams.get("since") ?? 0);
 				const res = this.pull(since, 200, user);
 				return new Response(JSON.stringify(res), { status: 200 });
@@ -220,6 +233,38 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 		}
 	});
 
+	it("eine Runde, die beim Abmelden noch läuft, füllt den Speicher nicht wieder", async () => {
+		// Der Fall aus der Praxis: beim Klick auf Abmelden ist ein Abgleich
+		// unterwegs. Seine Antwort kommt, wenn lokal schon aufgeräumt ist - und
+		// schreibt Daten und Gerätestand des abgemeldeten Kontos zurück.
+		const server = new MockServer();
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = server.fetchFor("browser-device");
+
+		try {
+			const key = await createVaultKey();
+			await account.linkWithSession("http://test-server", key, "Alice");
+			await app.updateSettings({ bossEmail: "chef@alice.de", senderName: "Alice" });
+
+			// Die Runde bleibt im Abruf stehen ...
+			server.holdPulls();
+			const round = account.syncNow();
+			// ... und währenddessen meldet sich Alice ab.
+			await account.logout();
+			server.openGate();
+			server.gate = null;
+			await round;
+
+			expect([...files.keys()].filter((f) => f.startsWith("data/")).sort()).toEqual([
+				"data/device.json"
+			]);
+			expect(JSON.parse(files.get("data/device.json")!)).toEqual({ id: expect.any(String) });
+			expect(app.settings.bossEmail).toBe("");
+		} finally {
+			globalThis.fetch = originalFetch;
+		}
+	});
+
 	it("account.init() im Browser ohne aktive Sitzung bereinigt alte Speicher-Rückstände", async () => {
 		// Speicher enthält Rückstände einer alten Sitzung
 		files.set("data/settings.json", JSON.stringify({ ...defaultSettings, bossEmail: "leiche@firma.de" }));
@@ -261,13 +306,38 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 			expect(app.settings.senderName).toBe("Alice Wunder");
 			expect(app.settings.bossEmail).toBe("chef@alice.de");
 
+			// Alice hat ausserdem Zeiten erfasst - die duerfen Bob genauso wenig
+			// erreichen wie ihre Einstellungen.
+			await store.saveEntries("2026-08", [
+				{
+					id: "e-alice",
+					activityId: "akt-alice",
+					startTs: Date.UTC(2026, 7, 3, 8),
+					endTs: Date.UTC(2026, 7, 3, 12),
+					note: "Alice",
+					source: "manual"
+				}
+			]);
+			await account.syncNow();
+
 			// User A meldet sich ab
 			await account.logout();
 
 			// Nach dem Logout ist der Browser komplett leer
 			expect(app.settings.senderName).toBe("");
 			expect(app.settings.bossEmail).toBe("");
-			expect(files.has("data/settings.json")).toBe(false);
+			// Nur die Geraetekennung bleibt - kein Eintrag, keine Aktivitaet, keine
+			// Merkliste, kein liegengebliebener Zwischenstand.
+			expect([...files.keys()].filter((f) => f.startsWith("data/")).sort()).toEqual([
+				"data/device.json"
+			]);
+
+			// Und in der Geraetedatei steht wirklich nur sie. Bliebe der
+			// Tresorschluessel liegen, koennte der naechste Mensch an diesem Rechner
+			// den Bestand des Kontos entschluesseln, den der Server noch hat.
+			expect(JSON.parse(files.get("data/device.json")!)).toEqual({
+				id: expect.any(String)
+			});
 
 			// User B loggt sich ein / registriert sich mit eigenem Schlüssel
 			const keyB = await createVaultKey();
