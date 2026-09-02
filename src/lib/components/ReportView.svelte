@@ -1,10 +1,9 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
 	import { buildReport, reportToHtml, reportToText } from "$lib/report";
-	import { reportSubject } from "$lib/reportSend";
+	import { copyReportToClipboard, openMailWithReport, reportSubject } from "$lib/reportSend";
 	import { fmtHoursClock } from "$lib/time";
-	import { openExternal } from "$lib/platform/open";
-	import { createOutlookDraft, mailtoFallback, reportOutlookError } from "$lib/outlook";
+	import { createOutlookDraft, reportOutlookError } from "$lib/outlook";
 	import { capabilities } from "$lib/platform/env";
 	import { logInfo } from "$lib/log";
 	import { Button } from "$lib/components/ui/button";
@@ -57,13 +56,10 @@
 			// Klar erklaeren (z.B. nur neues Outlook) und den mailto-Fallback anbieten.
 			const msg = await reportOutlookError(`Outlook-Entwurf für ${month} fehlgeschlagen`, e);
 			toast.error(msg, {
-				description: "Fallback: E-Mail als Text öffnen (ohne HTML-Tabelle) oder „HTML kopieren“.",
+				description: "Fallback: Mail öffnen – die Tabelle liegt dann zum Einfügen bereit.",
 				action: {
 					label: "Mail öffnen",
-					onClick: () =>
-						openExternal(mailtoFallback(app.settings.bossEmail, subject, reportToText(report))).catch(
-							(err) => toast.error(`Mailprogramm konnte nicht geöffnet werden: ${err}`)
-						)
+					onClick: () => void prepareMail()
 				}
 			});
 			return false;
@@ -80,36 +76,45 @@
 		if (await action()) previewOpen = false;
 	}
 
-	/**
-	 * Legt die Tabelle als "text/html" UND "text/plain" in die Zwischenablage.
-	 * Nur mit dem text/html-Flavor fuegt Outlook die gerenderte Tabelle ein –
-	 * writeText() allein landet als Quelltext in der Mail.
-	 *
-	 * @returns true, wenn irgendetwas Brauchbares in der Zwischenablage liegt.
-	 */
+	/** @returns true, wenn etwas Brauchbares in der Zwischenablage liegt. */
 	async function copyHtml(): Promise<boolean> {
-		try {
-			await navigator.clipboard.write([
-				new ClipboardItem({
-					"text/html": new Blob([html], { type: "text/html" }),
-					"text/plain": new Blob([reportToText(report)], { type: "text/plain" })
-				})
-			]);
+		const mode = await copyReportToClipboard(html, reportToText(report));
+		if (mode === "rich") {
 			toast.success("Tabelle kopiert – in Outlook mit Strg+V einfügen.");
-			return true;
-		} catch (e) {
-			// Aeltere Webviews ohne ClipboardItem/write: Quelltext ist besser als nichts.
-			try {
-				await navigator.clipboard.writeText(html);
-				toast.success("HTML-Quelltext kopiert.", {
-					description: "Rich-Text wird von diesem System nicht unterstützt."
-				});
-				return true;
-			} catch {
-				toast.error(`Kopieren fehlgeschlagen: ${e}`);
-				return false;
-			}
+		} else if (mode === "source") {
+			toast.success("HTML-Quelltext kopiert.", {
+				description: "Rich-Text wird von diesem System nicht unterstützt."
+			});
+		} else {
+			toast.error("Kopieren fehlgeschlagen.");
 		}
+		return mode !== null;
+	}
+
+	/** Weg ohne Outlook – siehe openMailWithReport. */
+	async function prepareMail(): Promise<boolean> {
+		let mode;
+		try {
+			mode = await openMailWithReport(
+				app.settings.bossEmail,
+				subject,
+				html,
+				reportToText(report)
+			);
+		} catch (err) {
+			toast.error(`Mailprogramm konnte nicht geöffnet werden: ${err}`);
+			return false;
+		}
+		// Die Anleitung selbst steht im Entwurf - hier reicht die Rueckmeldung,
+		// dass etwas passiert ist.
+		if (mode === "rich") {
+			toast.success("Die Tabelle wurde kopiert.");
+		} else {
+			toast.warning("Die Tabelle konnte nicht kopiert werden.", {
+				description: "Die Mail wurde stattdessen als einfache Liste geöffnet."
+			});
+		}
+		return true;
 	}
 </script>
 
@@ -128,10 +133,7 @@
 					{sending ? "Öffne Outlook…" : "Outlook-Entwurf erstellen"}
 				</Button>
 			{:else}
-				<Button
-					onclick={() =>
-						openExternal(mailtoFallback(app.settings.bossEmail, subject, reportToText(report)))}
-				>
+				<Button onclick={prepareMail}>
 					<MailIcon class="size-4" />
 					E-Mail vorbereiten
 				</Button>
@@ -217,10 +219,17 @@
 			<Button variant="outline" onclick={() => fromPreview(copyHtml)}>
 				<CopyIcon class="size-4" /> HTML kopieren
 			</Button>
-			<Button onclick={() => fromPreview(sendToOutlook)} disabled={sending}>
-				<MailIcon class="size-4" />
-				{sending ? "Öffne Outlook…" : "Outlook-Entwurf erstellen"}
-			</Button>
+			{#if capabilities.outlook}
+				<Button onclick={() => fromPreview(sendToOutlook)} disabled={sending}>
+					<MailIcon class="size-4" />
+					{sending ? "Öffne Outlook…" : "Outlook-Entwurf erstellen"}
+				</Button>
+			{:else}
+				<Button onclick={() => fromPreview(prepareMail)}>
+					<MailIcon class="size-4" />
+					E-Mail vorbereiten
+				</Button>
+			{/if}
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

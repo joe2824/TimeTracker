@@ -4,6 +4,7 @@
 	import { app } from "$lib/app.svelte";
 	import { monthLabel } from "$lib/time";
 	import { sendReport } from "$lib/reportSend";
+	import { capabilities } from "$lib/platform/env";
 	import { watchers } from "$lib/watchers.svelte";
 	import { toast } from "svelte-sonner";
 	import MailIcon from "@lucide/svelte/icons/mail";
@@ -24,12 +25,21 @@
 		if (!month) return;
 		sending = true;
 		try {
-			await sendReport(month);
-			toast.success("Outlook-Entwurf geöffnet. Bitte prüfen und senden.");
+			const res = await sendReport(month);
+			if (res.via === "outlook") {
+				toast.success("Outlook-Entwurf geöffnet. Bitte prüfen und senden.");
+			} else if (res.clipboard === null) {
+				toast.warning("Die Tabelle konnte nicht kopiert werden.", {
+					description: "Die Mail wurde stattdessen als einfache Liste geöffnet."
+				});
+			} else {
+				// Wie es weitergeht, steht im Entwurf selbst.
+				toast.success("Die Tabelle wurde kopiert.");
+			}
 			watchers.reportReminderDismissed = true;
 			watchers.forceReportReminder = false;
 		} catch (e) {
-			toast.error(`Outlook-Entwurf fehlgeschlagen: ${e}. Tipp: Tab „Bericht“ → „HTML kopieren“.`);
+			toast.error(`Mail konnte nicht geöffnet werden: ${e}. Tipp: Tab „Bericht“ → „HTML kopieren“.`);
 		} finally {
 			sending = false;
 		}
@@ -63,7 +73,7 @@
 			<Button variant="ghost" onclick={neverAgain}>Nicht mehr erinnern</Button>
 			<Button onclick={send} disabled={sending}>
 				<MailIcon class="size-4" />
-				{sending ? "Öffne…" : "Per Outlook senden"}
+				{sending ? "Öffne…" : capabilities.outlook ? "Per Outlook senden" : "E-Mail vorbereiten"}
 			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
