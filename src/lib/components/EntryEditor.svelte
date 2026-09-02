@@ -44,6 +44,8 @@
 	import BulkEntryDialog from "$lib/components/dialogs/BulkEntryDialog.svelte";
 	import VacationRange from "$lib/components/shared/VacationRange.svelte";
 	import MonthSelector from "$lib/components/shared/MonthSelector.svelte";
+	import { Skeleton } from "$lib/components/ui/skeleton";
+	import { account } from "$lib/sync/account.svelte";
 	import DayFractionSwitch from "$lib/components/shared/DayFractionSwitch.svelte";
 	import AbsenceKindChoice from "$lib/components/shared/AbsenceKindChoice.svelte";
 	import PlusIcon from "@lucide/svelte/icons/plus";
@@ -302,6 +304,18 @@
 		void app.ensureMonth(month);
 	});
 
+	/**
+	 * Der Monat ist noch unterwegs.
+	 *
+	 * Die Liste zeigt jeden Kalendertag, auch ohne Eintraege - ein Monat, der
+	 * gerade erst geholt wird, saehe deshalb aus wie ein leerer. Statt dessen
+	 * Platzhalter, bis wirklich feststeht, was drinsteht.
+	 */
+	const monthLoading = $derived(
+		account.fetchingMonths.includes(month) ||
+			(account.linked && !account.firstSyncDone && app.monthEntries(month).length === 0)
+	);
+
 	/** Die scrollbare Tagesliste – Ziel des Sprungs auf einen Tag. */
 	let listEl = $state<HTMLUListElement | null>(null);
 
@@ -339,6 +353,12 @@
 		}
 		await tick(); // Warten, bis die Tage neu gerendert sind.
 		if (centerRow(date)) return;
+		// Steht der Monat noch aus, gibt es keine Zeilen - der naechste Durchlauf
+		// des Effekts oben holt den Sprung nach, sobald sie da sind.
+		if (monthLoading) {
+			entriesFocus.pendingDate = date;
+			return;
+		}
 		// Nach einem Monatswechsel haengen die Zeilen an Daten, die erst nach
 		// weiteren Durchlaeufen stehen – ein `tick()` reicht dann nicht, und der
 		// Sprung fiel bisher still aus ("Scroll bleibt haengen"). Ein paar Frames
@@ -349,10 +369,12 @@
 		}
 	}
 
-	// Wunsch aus Tracking oder Arbeitszeit-Check konsumieren.
+	// Wunsch aus Tracking oder Arbeitszeit-Check konsumieren. Nicht, solange
+	// Platzhalter stehen: die Zeile, auf die gesprungen werden soll, gibt es dann
+	// noch gar nicht, und der Wunsch waere verbraucht.
 	$effect(() => {
 		const date = entriesFocus.pendingDate;
-		if (date) {
+		if (date && !monthLoading) {
 			entriesFocus.pendingDate = null;
 			void jumpToDate(date);
 		}
@@ -579,6 +601,20 @@
 			     auch alle anderen Tabs auf dieser Hoehe. dvh statt vh, weil die
 			     Adressleiste auf dem Handy sonst mitrechnet.
 			     overscroll-contain: am Ende der Liste scrollt nicht die Seite weiter. -->
+			{#if monthLoading}
+				<ul class="max-h-[calc(100dvh-20rem)] min-h-64 overflow-hidden" aria-busy="true">
+					{#each Array.from({ length: 12 }) as _, i (i)}
+						<li class="flex items-center gap-3 border-b border-l-2 border-l-transparent px-3 py-2.5 last:border-b-0">
+							<div class="w-14 shrink-0 space-y-1.5">
+								<Skeleton class="h-4 w-6" />
+								<Skeleton class="h-3 w-9" />
+							</div>
+							<Skeleton class="h-4 flex-1" style={`max-width: ${45 + ((i * 13) % 40)}%`} />
+							<Skeleton class="h-4 w-12 shrink-0" />
+						</li>
+					{/each}
+				</ul>
+			{:else}
 			<ul
 				bind:this={listEl}
 				class="max-h-[calc(100dvh-20rem)] min-h-64 overflow-y-auto overscroll-contain"
@@ -723,6 +759,7 @@
 					</li>
 				{/each}
 			</ul>
+			{/if}
 		</Card.Content>
 	</Card.Root>
 	{/if}
