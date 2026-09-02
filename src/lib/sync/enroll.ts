@@ -219,7 +219,15 @@ export async function register(
 	// Der PRF-Wert kommt beim Anlegen meist nicht heraus - dann holt ihn eine
 	// eigene Abfrage nach. Sie laeuft VOR dem Abschluss: der Passkey liegt schon
 	// im Authentifikator, und die Antwort wird nirgends geprueft.
-	const prf = prfOf(response) ?? (await harvestPrf(response.id));
+	const prf =
+		prfOf(response) ??
+		(
+			await harvestPrf(response.id).catch((e) => {
+				logWarn("PRF-Wert ließ sich beim Anlegen nicht nachholen", e);
+				return null;
+			})
+		)?.prf ??
+		null;
 
 	// Beide Verpackungen entstehen hier, nicht in einer zweiten Anfrage. Der
 	// Server schreibt sie zusammen mit Konto und Passkey in EINER Transaktion -
@@ -255,25 +263,27 @@ export async function register(
 }
 
 /**
- * Den PRF-Wert eines eben angelegten Passkeys nachholen.
+ * Den PRF-Wert eines Passkeys per eigener Abfrage holen.
  *
- * Eigene Aufgabe statt einer vom Server: die Antwort wird nirgends geprueft,
- * gebraucht wird allein der Wert, den der Authentifikator dazu ausrechnet.
- * Scheitert das, bleibt es bei den 24 Woertern - das Konto entsteht trotzdem.
+ * Beim Anlegen geben die meisten Browser noch keinen heraus - er faellt erst bei
+ * einer Anmeldung an. Eigene Aufgabe statt einer vom Server: die Antwort wird
+ * nirgends geprueft, gebraucht wird allein der Wert, den der Authentifikator
+ * dazu ausrechnet. Ohne Kennung nimmt der Browser den, den er anbietet.
  */
-async function harvestPrf(credentialId: string): Promise<Uint8Array | null> {
-	try {
-		const options: PublicKeyCredentialRequestOptionsJSON = {
-			challenge: toBase64Url(crypto.getRandomValues(new Uint8Array(32))),
-			userVerification: "required",
-			allowCredentials: [{ id: credentialId, type: "public-key" }]
-		};
-		const response = await startAuthentication({ optionsJSON: withPrf(options) });
-		return response.id === credentialId ? prfOf(response) : null;
-	} catch (e) {
-		logWarn("PRF-Wert ließ sich beim Anlegen nicht nachholen", e);
-		return null;
-	}
+async function harvestPrf(
+	credentialId?: string
+): Promise<{ credentialId: string; prf: Uint8Array } | null> {
+	const options: PublicKeyCredentialRequestOptionsJSON = {
+		challenge: toBase64Url(crypto.getRandomValues(new Uint8Array(32))),
+		userVerification: "required",
+		...(credentialId ? { allowCredentials: [{ id: credentialId, type: "public-key" }] } : {})
+	};
+	const response = await startAuthentication({ optionsJSON: withPrf(options) });
+	// allowCredentials sollte das schon erzwingen - ein Wert vom falschen Passkey
+	// wuerde den gemeinten aber nicht reparieren.
+	if (credentialId && response.id !== credentialId) return null;
+	const prf = prfOf(response);
+	return prf ? { credentialId: response.id, prf } : null;
 }
 
 export interface LoginResult {
@@ -292,11 +302,6 @@ export interface LoginResult {
 /**
  * Dafuer sorgen, dass dieser Passkey den Vault allein oeffnen kann.
  *
- * Beim ANLEGEN eines Passkeys geben die meisten Browser noch keinen PRF-Wert
- * heraus - der faellt erst bei einer Anmeldung an. Fehlt er, holt ihn hier eine
- * eigene WebAuthn-Abfrage nach. Ohne diese Verpackung verlangt jede Anmeldung in
- * einem neuen Browser die 24 Woerter, obwohl der Passkey genuegen wuerde.
- *
  * Gibt `false` zurueck, wenn der Authentifikator kein PRF beherrscht - dann
  * bleiben die 24 Woerter oder ein bereits verknuepftes Geraet.
  */
@@ -308,25 +313,9 @@ export async function ensurePasskeyWrap(
 	/** Ein bereits vorliegender PRF-Wert - dann entfaellt die zweite Abfrage. */
 	prf?: Uint8Array | null
 ): Promise<boolean> {
-	if (prf && credentialId) {
-		await api.putWrap("passkey", serialize(await wrapWithPrf(key, prf)), credentialId);
-		return true;
-	}
-
-	// Eigene Aufgabe statt einer vom Server: die Antwort wird nirgends geprueft,
-	// gebraucht wird allein der PRF-Wert, den der Authentifikator dazu ausrechnet.
-	const options: PublicKeyCredentialRequestOptionsJSON = {
-		challenge: toBase64Url(crypto.getRandomValues(new Uint8Array(32))),
-		userVerification: "required",
-		...(credentialId ? { allowCredentials: [{ id: credentialId, type: "public-key" }] } : {})
-	};
-	const response = await startAuthentication({ optionsJSON: withPrf(options) });
-	// allowCredentials sollte das schon erzwingen - ein Wert vom falschen Passkey
-	// wuerde den gemeinten aber nicht reparieren.
-	if (credentialId && response.id !== credentialId) return false;
-	const fresh = prfOf(response);
-	if (!fresh) return false;
-	await api.putWrap("passkey", serialize(await wrapWithPrf(key, fresh)), response.id);
+	const found = prf && credentialId ? { credentialId, prf } : await harvestPrf(credentialId);
+	if (!found) return false;
+	await api.putWrap("passkey", serialize(await wrapWithPrf(key, found.prf)), found.credentialId);
 	return true;
 }
 
