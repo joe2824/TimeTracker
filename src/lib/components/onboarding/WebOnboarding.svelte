@@ -52,6 +52,8 @@
 	let inputValue = $state("");
 	let confirmed = $state(false);
 	let loggedInName = $state("");
+	/** Zu welchem Konto der eben geholte Schluessel gehoert. */
+	let loggedInId = "";
 	let keyValue: CryptoKey | null = null;
 	/**
 	 * Der Passkey der letzten Anmeldung. Braucht es gleich die Phrase, bekommt er
@@ -87,18 +89,27 @@
 		try {
 			const r = await login(serverUrl);
 			loggedInName = r.displayName;
+			loggedInId = r.userId;
 			lastPasskey = { credentialId: r.credentialId, prf: r.prf };
 			if (r.key) {
-				await account.linkWithSession(serverUrl, r.key, r.displayName);
-				// Begruesst wird mit dem Namen aus "Bericht & E-Mail" - der steht hier auf
-				// dem Geraet und ist der, den die Person selbst gesetzt hat. Ist er leer,
-				// bleibt der Gruss namenlos statt auf die Kontokennung auszuweichen.
-				const name = app.settings.senderName.trim();
-				toast.success(name ? `Willkommen zurück, ${name}.` : "Willkommen zurück.");
+				await account.linkWithSession(serverUrl, r.key, r.displayName, r.userId);
+				welcome();
 				return;
 			}
-			// Der Passkey konnte die Daten nicht öffnen: entweder fehlt ihm die Verpackung
-			// des Vault-Keys, oder der Authentifikator kann kein PRF.
+
+			// Der Passkey öffnet die Daten nicht. Bevor jemand 24 Wörter abtippt:
+			// nachsehen, ob der Schlüssel hier noch liegt. Nach einer abgelaufenen
+			// Sitzung ist das der Normalfall.
+			if (await account.unlockWithStoredKey(serverUrl, r.userId)) {
+				// Und gleich den Passkey in Ordnung bringen, damit es beim nächsten
+				// Mal auch ohne den hinterlegten Schlüssel geht.
+				void account
+					.repairPasskeyWrap(r.credentialId, r.prf)
+					.catch((e) => logWarn("Passkey-Verpackung konnte nicht abgelegt werden", e));
+				welcome();
+				return;
+			}
+
 			if (!r.canUnlockWithPhrase) {
 				toast.error("Für dieses Konto ist kein Weg hinterlegt, um die Daten zu öffnen.");
 				return;
@@ -122,6 +133,16 @@
 		} finally {
 			running = false;
 		}
+	}
+
+	/**
+	 * Begruesst wird mit dem Namen aus "Bericht & E-Mail" - der steht hier auf dem
+	 * Geraet und ist der, den die Person selbst gesetzt hat. Ist er leer, bleibt
+	 * der Gruss namenlos statt auf die Kontokennung auszuweichen.
+	 */
+	function welcome() {
+		const name = app.settings.senderName.trim();
+		toast.success(name ? `Willkommen zurück, ${name}.` : "Willkommen zurück.");
 	}
 
 	/** Nach einer gescheiterten Anmeldung: wie geht es weiter? */
@@ -169,6 +190,7 @@
 				invite: code.trim() || undefined
 			});
 			loggedInName = r.displayName;
+			loggedInId = r.userId;
 			keyValue = r.key;
 			phrase = r.recoveryPhrase!;
 			inviteOpen = false;
@@ -192,7 +214,7 @@
 		// Seite diesen Bildschirm ab - und der letzte Step ginge mit ihm. Wer
 		// das Flag erst danach setzt, sieht ihn nie.
 		onboardingOpen.value = true;
-		await account.linkWithSession(serverUrl, keyValue, loggedInName);
+		await account.linkWithSession(serverUrl, keyValue, loggedInName, loggedInId);
 
 		stepIndex = "geraet";
 	}
@@ -237,7 +259,7 @@
 			// `lastPasskey` repariert den Passkey gleich mit: er bekommt die fehlende
 			// Verpackung und öffnet die Daten beim nächsten Mal allein.
 			const key = await unlockWithPhrase(serverUrl, inputValue, lastPasskey);
-			await account.linkWithSession(serverUrl, key, loggedInName);
+			await account.linkWithSession(serverUrl, key, loggedInName, loggedInId);
 			toast.success("Entsperrt.");
 		} catch (e) {
 			toast.error(fehlertext(e, "Die Phrase passt nicht zu diesem Konto"));

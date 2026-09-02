@@ -368,6 +368,15 @@ export interface DeviceInfo {
 	/** Anzeigename des Kontos - nur fuer die Oberflaeche. */
 	accountName?: string;
 	/**
+	 * Zu welchem Konto der hier liegende Schluessel gehoert.
+	 *
+	 * Laeuft die Sitzung im Browser ab, bleibt der Schluessel liegen. Meldet sich
+	 * danach jemand mit einem Passkey an, entscheidet dieser Vergleich, ob es
+	 * dasselbe Konto ist - und ob der Schluessel damit weiterbenutzt werden darf.
+	 * Ohne den Vergleich bekaeme ein fremdes Konto den Schluessel des vorigen.
+	 */
+	accountUserId?: string;
+	/**
 	 * Welches Konto hier haengt - der Nachweis aus seinem Tresorschluessel.
 	 *
 	 * Zwei Konten haben verschiedene Schluessel, also verschiedene Nachweise.

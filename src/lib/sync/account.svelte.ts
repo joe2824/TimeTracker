@@ -265,11 +265,19 @@ class AccountState {
 						this.state = "connected";
 					} catch (e) {
 						if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
-							// Sitzung abgelaufen: Daten aufräumen und sauber in den Anmeldezustand wechseln
-							logWarn("Sitzung ist abgelaufen - melde lokal ab", e);
-							await this.#forgetLocally();
-							await clearAccountData();
-							app.clearLocalData();
+							// Abgelaufene Sitzung ist kein Abmelden. Der Schluessel bleibt
+							// liegen, damit die naechste Passkey-Anmeldung die Daten wieder
+							// oeffnet, ohne nach den 24 Woertern zu fragen - siehe
+							// unlockWithStoredKey. Wer wirklich abmeldet, geht durch
+							// `logout`, und dort wird alles geloescht.
+							//
+							// Meldet sich danach ein ANDERES Konto an, raeumt #persistLink
+							// den fremden Bestand weg (foreignCopy).
+							logWarn("Sitzung ist abgelaufen - Anmeldung nötig", e);
+							this.#engine?.stop();
+							this.#engine = null;
+							this.#closeStream();
+							this.#key = null;
 							this.state = "off";
 							return;
 						}
@@ -804,7 +812,7 @@ class AccountState {
 		const url = serverUrl.replace(/\/+$/, "");
 		const { registerFromDevice } = await import("./enroll");
 		const r = await registerFromDevice(url, displayName, label, opts);
-		await this.#persistLink(url, r.deviceToken, r.key, r.displayName);
+		await this.#persistLink(url, r.deviceToken, r.key, r.displayName, r.userId);
 		return r.recoveryPhrase;
 	}
 
@@ -813,7 +821,7 @@ class AccountState {
 		const url = serverUrl.replace(/\/+$/, "");
 		const { recoverWithPhrase } = await import("./enroll");
 		const r = await recoverWithPhrase(url, phrase, label);
-		await this.#persistLink(url, r.deviceToken, r.key, r.displayName);
+		await this.#persistLink(url, r.deviceToken, r.key, r.displayName, r.userId);
 	}
 
 	// ---------- Koppeln: dieses Geraet ist neu ----------
@@ -918,8 +926,40 @@ class AccountState {
 	}
 
 	/** Nach Registrierung oder Anmeldung im Browser: die Verknuepfung uebernehmen. */
-	async linkWithSession(url: string, key: CryptoKey, name: string): Promise<void> {
-		await this.#persistLink(url.replace(/\/+$/, ""), null, key, name);
+	async linkWithSession(
+		url: string,
+		key: CryptoKey,
+		name: string,
+		userId?: string
+	): Promise<void> {
+		await this.#persistLink(url.replace(/\/+$/, ""), null, key, name, userId);
+	}
+
+	/**
+	 * Nach einer Anmeldung, die die Daten nicht oeffnen konnte: den Schluessel
+	 * nehmen, der hier noch liegt.
+	 *
+	 * Laeuft die Sitzung ab, bleibt der Schluessel im Browser - abgemeldet wird
+	 * damit nicht (siehe `logout`). Meldet sich danach dasselbe Konto per Passkey
+	 * an, ist der Schluessel hier schon der richtige, und niemand muss 24 Woerter
+	 * abtippen.
+	 *
+	 * Gibt `false` zurueck, wenn nichts liegt oder es ein anderes Konto ist.
+	 */
+	async unlockWithStoredKey(url: string, userId: string): Promise<boolean> {
+		const info = await loadDevice();
+		if (!info?.vaultKey || !info.accountUserId) return false;
+		// Ohne diesen Vergleich bekaeme ein fremdes Konto den Schluessel des vorigen.
+		if (info.accountUserId !== userId) return false;
+		try {
+			const raw = await unprotectSecret(info.vaultKey, info.protected ?? false);
+			const key = await importVaultKey(fromBase64(raw).buffer as ArrayBuffer);
+			await this.#persistLink(url.replace(/\/+$/, ""), null, key, info.accountName ?? "", userId);
+			return true;
+		} catch (e) {
+			logWarn("Hinterlegter Schlüssel ließ sich nicht öffnen", e);
+			return false;
+		}
 	}
 
 	// ---------- Verknuepfung ablegen und loesen ----------
@@ -928,7 +968,8 @@ class AccountState {
 		url: string,
 		token: string | null,
 		key: CryptoKey,
-		name = ""
+		name = "",
+		userId?: string
 	): Promise<void> {
 		this.#key = key;
 		this.#device = await deviceId();
@@ -984,6 +1025,7 @@ class AccountState {
 			vaultKey: protectedKey.data,
 			protected: protectedKey.protected && (protectedToken?.protected ?? true),
 			accountName: name || info.accountName,
+			accountUserId: userId ?? info.accountUserId,
 			accountFingerprint: fingerprint,
 			dataOwner,
 			seq: 0,
@@ -1059,12 +1101,18 @@ class AccountState {
 		return { prfAvailable: result.prfAvailable };
 	}
 
-	/** Einen vorhandenen Passkey nachtraeglich die Daten oeffnen lassen - ohne die 24 Woerter. */
-	async repairPasskeyWrap(credentialId?: string): Promise<boolean> {
+	/**
+	 * Einen vorhandenen Passkey nachtraeglich die Daten oeffnen lassen - ohne die
+	 * 24 Woerter.
+	 *
+	 * Liegt der PRF-Wert schon vor (er faellt bei jeder Anmeldung an), kostet das
+	 * keine zweite Abfrage.
+	 */
+	async repairPasskeyWrap(credentialId?: string, prf?: Uint8Array | null): Promise<boolean> {
 		if (!this.#key) throw new Error("Das Konto ist nicht entsperrt");
 		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
 		const { ensurePasskeyWrap } = await import("./enroll");
-		return ensurePasskeyWrap(this.#api, this.#key, credentialId);
+		return ensurePasskeyWrap(this.#api, this.#key, credentialId, prf);
 	}
 
 	/** Die Kennung dieses Geraets - damit die Liste das eigene erkennt. */
