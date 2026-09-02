@@ -216,43 +216,64 @@ export async function register(
 		optionsJSON: withPrf(start.options as PublicKeyCredentialCreationOptionsJSON)
 	});
 
-	const prf = prfOf(response);
+	// Der PRF-Wert kommt beim Anlegen meist nicht heraus - dann holt ihn eine
+	// eigene Abfrage nach. Sie laeuft VOR dem Abschluss: der Passkey liegt schon
+	// im Authentifikator, und die Antwort wird nirgends geprueft.
+	const prf = prfOf(response) ?? (await harvestPrf(response.id));
+
+	// Beide Verpackungen entstehen hier, nicht in einer zweiten Anfrage. Der
+	// Server schreibt sie zusammen mit Konto und Passkey in EINER Transaktion -
+	// ein Passkey ohne Verpackung kann damit gar nicht erst entstehen.
+	const key = await createVaultKey();
+	const recoveryPhrase = createRecoveryPhrase();
+
 	try {
 		await api.registerFinish({
 			challengeId: start.challengeId,
 			displayName,
 			invite: opts.invite,
 			email: opts.email,
-			hasPrf: prf !== null,
-			response
+			response,
+			recoveryWrap: {
+				payload: serialize(await wrapWithPhrase(key, recoveryPhrase)),
+				recoveryId: await recoveryLookupId(recoveryPhrase),
+				vaultProof: await vaultProof(key)
+			},
+			passkeyWrap: prf ? { payload: serialize(await wrapWithPrf(key, prf)) } : null
 		});
 	} finally {
 		forget(registerKey(baseUrl, displayName, opts.invite), task);
 	}
 
-	// Ab hier ist die Sitzung offen und die Verpackungen koennen abgelegt werden.
-	// Die Phrasen-Verpackung IMMER, auch wenn der Passkey PRF kann.
-	const key = await createVaultKey();
-	const recoveryPhrase = createRecoveryPhrase();
-	await api.putWrap("recovery", serialize(await wrapWithPhrase(key, recoveryPhrase)), undefined, {
-		recoveryId: await recoveryLookupId(recoveryPhrase),
-		vaultProof: await vaultProof(key)
-	});
-	// Der Passkey soll den Vault von Anfang an allein oeffnen. Lieferte das Anlegen
-	// keinen PRF-Wert, holt ensurePasskeyWrap ihn mit einer zweiten Abfrage nach -
-	// sonst verlangt schon der naechste Browser die 24 Woerter.
-	const prfAvailable = await ensurePasskeyWrap(api, key, response.id, prf).catch((e) => {
-		logWarn("Passkey-Verpackung konnte beim Anlegen nicht abgelegt werden", e);
-		return false;
-	});
-
 	return {
-		prfAvailable,
+		prfAvailable: prf !== null,
 		userId: start.userId,
 		displayName,
 		recoveryPhrase,
 		key
 	};
+}
+
+/**
+ * Den PRF-Wert eines eben angelegten Passkeys nachholen.
+ *
+ * Eigene Aufgabe statt einer vom Server: die Antwort wird nirgends geprueft,
+ * gebraucht wird allein der Wert, den der Authentifikator dazu ausrechnet.
+ * Scheitert das, bleibt es bei den 24 Woertern - das Konto entsteht trotzdem.
+ */
+async function harvestPrf(credentialId: string): Promise<Uint8Array | null> {
+	try {
+		const options: PublicKeyCredentialRequestOptionsJSON = {
+			challenge: toBase64Url(crypto.getRandomValues(new Uint8Array(32))),
+			userVerification: "required",
+			allowCredentials: [{ id: credentialId, type: "public-key" }]
+		};
+		const response = await startAuthentication({ optionsJSON: withPrf(options) });
+		return response.id === credentialId ? prfOf(response) : null;
+	} catch (e) {
+		logWarn("PRF-Wert ließ sich beim Anlegen nicht nachholen", e);
+		return null;
+	}
 }
 
 export interface LoginResult {

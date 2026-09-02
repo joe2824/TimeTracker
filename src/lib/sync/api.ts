@@ -281,8 +281,11 @@ export class Api {
 		displayName: string;
 		invite?: string;
 		email?: string;
-		hasPrf: boolean;
 		response: unknown;
+		/** Pflicht - ohne sie gaebe es keinen Weg zurueck ins Konto. */
+		recoveryWrap: { payload: string; recoveryId: string; vaultProof: string };
+		/** Fehlt nur, wenn der Authentifikator kein PRF kann. */
+		passkeyWrap?: { payload: string } | null;
 	}): Promise<{ userId: string; displayName: string }> {
 		return this.#call("/api/auth/register/finish", {
 			method: "POST",

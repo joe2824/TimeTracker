@@ -33,8 +33,18 @@ vi.mock("./api", () => {
 		registerStart() {
 			return Promise.resolve({ challengeId: "c1", userId: "u1", options: {} });
 		}
-		registerFinish() {
-			return Promise.resolve({});
+		/**
+		 * Wie die echte Route: Konto, Passkey und beide Verpackungen entstehen in
+		 * EINER Transaktion. Nur so faellt hier auf, wenn eine davon fehlt.
+		 */
+		registerFinish(body: {
+			response: { id: string };
+			recoveryWrap: { payload: string };
+			passkeyWrap?: { payload: string } | null;
+		}) {
+			this.putWrap("recovery", body.recoveryWrap.payload);
+			if (body.passkeyWrap) this.putWrap("passkey", body.passkeyWrap.payload, body.response.id);
+			return Promise.resolve({ userId: "u1", displayName: "Test" });
 		}
 		loginStart() {
 			server.loginStarts += 1;
@@ -150,6 +160,26 @@ describe("login", () => {
 		// Anmeldung braucht eine neue.
 		await login("https://f.example");
 		expect(server.loginStarts).toBe(2);
+	});
+
+	it("neues Gerät, nur der Passkey - mehr braucht es nicht", async () => {
+		// Genau der Fall, um den es geht: Konto woanders angelegt, hier liegt
+		// nichts, der Passkey ist ueber die Cloud mitgekommen.
+		webauthn.startRegistration.mockResolvedValue(response("cred-sync", null));
+		webauthn.startAuthentication.mockResolvedValue(response("cred-sync", PRF));
+		const created = await register("https://neu.example", "");
+
+		webauthn.startRegistration.mockReset();
+		webauthn.startAuthentication.mockClear();
+
+		const r = await login("https://neu.example");
+
+		expect(r.key).not.toBeNull();
+		expect(new Uint8Array(await exportVaultKey(r.key!))).toEqual(
+			new Uint8Array(await exportVaultKey(created.key))
+		);
+		// Eine einzige WebAuthn-Abfrage: die Anmeldung. Keine Phrase, kein Nachlauf.
+		expect(webauthn.startAuthentication).toHaveBeenCalledTimes(1);
 	});
 
 	it("bleibt ohne Verpackung zu, verlangt dann aber die Phrase", async () => {

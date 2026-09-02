@@ -5,6 +5,7 @@ import { verifyRegistration, createUser, storeCredential } from "$lib/server/web
 import { createSession, takeChallenge } from "$lib/server/auth";
 import { consumeCode, validCode, isRegistrationOpen } from "$lib/server/invites";
 import { setSessionCookie } from "$lib/server/session";
+import { readWrap, storeWrap } from "$lib/server/wraps";
 
 export const POST: RequestHandler = async ({ locals, request, cookies }) => {
 	const body = await request.json().catch(() => null);
@@ -32,9 +33,17 @@ export const POST: RequestHandler = async ({ locals, request, cookies }) => {
 
 	const email = body?.email ? String(body.email).trim().toLowerCase() : null;
 
+	// Die Phrasen-Verpackung ist Pflicht: ohne sie gaebe es keinen Weg zurueck,
+	// und das faellt erst auf, wenn er gebraucht wird.
+	const recovery = readWrap(body?.recoveryWrap, "recovery");
+	// Die Passkey-Verpackung kann fehlen - dann kann der Authentifikator kein PRF.
+	const passkey = body?.passkeyWrap ? readWrap(body.passkeyWrap, "passkey") : null;
+	if (passkey) passkey.credentialId = verification.registrationInfo.credential.id;
+
 	// Konto, Passkey und Verpackung gehoeren zusammen: entweder entsteht alles,
 	// oder nichts. Ein Konto ohne Passkey waere unerreichbar, ein Passkey ohne
-	// Verpackung ein Tresor ohne Schluessel.
+	// Verpackung ein Vault ohne Schluessel - und das merkt niemand, solange der
+	// Schluessel noch lokal liegt.
 	locals.db.transaction((tx) => {
 		createUser(tx, taken.userId!, displayName, email);
 		// Ein Code aus der Tabelle gilt genau einmal. Hier drin, damit "Konto
@@ -45,8 +54,10 @@ export const POST: RequestHandler = async ({ locals, request, cookies }) => {
 			taken.userId!,
 			verification.registrationInfo!.credential,
 			verification.registrationInfo!.credential.transports,
-			Boolean(body?.hasPrf)
+			passkey !== null
 		);
+		storeWrap(tx, taken.userId!, recovery);
+		if (passkey) storeWrap(tx, taken.userId!, passkey);
 	});
 
 	const secret = createSession(locals.db, taken.userId);
