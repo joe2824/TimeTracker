@@ -96,11 +96,13 @@ export const SERVER_VERSION =
 export const HMAC_SECRET = process.env.HMAC_SECRET?.trim() || null;
 
 /**
- * Der Ausweis, den die Tagesmeldung mitbringen muss.
+ * Der Ausweis, mit dem eine Tagesmeldung OHNE Anmeldung durchkommt - so zaehlt
+ * eine Installation, die noch gar kein Konto hat.
  *
  * Derselbe Wert wie beim Bauen der Anwendung (`TELEMETRY_KEY`). Nicht gesetzt
- * heisst: der Endpunkt nimmt gar nichts an - ein offener Zaehler waere ein
- * Freibrief, DAU und Versionsliste mit Erfundenem zu fuellen.
+ * heisst nicht "Zaehlung aus": angemeldete Sitzungen und verknuepfte Geraete
+ * zaehlen weiter. Offen ist der Endpunkt trotzdem nie - ein offener Zaehler
+ * waere ein Freibrief, DAU und Versionsliste mit Erfundenem zu fuellen.
  *
  * Kein echtes Geheimnis: der Schluessel steckt im ausgelieferten Bundle. Er
  * haelt Spam von aussen ab, nicht jemanden, der sich ein Release ansieht.
@@ -133,8 +135,15 @@ export const MAX_STREAMS_PER_USER = 8;
 /** Wie lange die Warteschleife eine Anfrage offen haelt. */
 export const SYNC_WAIT_MS = Number(process.env.SYNC_WAIT_MS ?? 25_000);
 
-/** Lebensdauer einer Browser-Sitzung. */
+/** Lebensdauer einer Browser-Sitzung - ab der letzten Nutzung, nicht ab der Anmeldung. */
 export const SESSION_TTL_MS = 30 * 24 * 3600 * 1000;
+/**
+ * Ab wann eine benutzte Sitzung verlaengert wird.
+ *
+ * Nicht bei jeder Anfrage: das waere ein Schreibvorgang je Aufruf, ohne dass
+ * sich am Ergebnis etwas aendert.
+ */
+export const SESSION_REFRESH_MS = 24 * 3600 * 1000;
 /** Wie lange eine WebAuthn-Aufgabe gilt. */
 export { CHALLENGE_TTL_MS } from "$shared/codes";
 /** Wie lange ein Kopplungscode gilt - kurz, er wird abgetippt, nicht verwahrt. */

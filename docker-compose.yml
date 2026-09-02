@@ -43,8 +43,10 @@ services:
       #
       # Dokumentation: server/README.md → "HMAC_SECRET — Session-Schlüssel"
       HMAC_SECRET: ${HMAC_SECRET:-}
-      # Ausweis der anonymen Nutzungszaehlung. Muss zum TELEMETRY_KEY passen,
-      # mit dem die Anwendung gebaut wurde. Leer = der Endpunkt nimmt nichts an.
+      # Ausweis der anonymen Nutzungszaehlung. Angemeldete Nutzer und verknuepfte
+      # Geraete zaehlen auch ohne; erst mit ihm zaehlen auch die Installationen
+      # ohne Konto. Der Wert muss zu dem passen, mit dem die Anwendung gebaut
+      # wurde - sonst weist der Server sie ab.
       TELEMETRY_KEY: ${TELEMETRY_KEY:-}
       # Hinter einem Reverse-Proxy: die echte Adresse des Aufrufers steht in den
       # weitergereichten Kopfzeilen, nicht in der Verbindung.

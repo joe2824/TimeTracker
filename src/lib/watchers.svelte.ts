@@ -44,14 +44,9 @@ async function reportIt(title: string, body: string) {
 }
 
 /**
- * Feste Stunden, zu denen die Tagesmeldung „aktiv" versucht wird. Die erste
- * erreichte gewinnt, danach ist der Tag erledigt.
- */
-const PING_HOURS = [9, 12, 15, 17];
-
-/**
- * Wie oft nachgesehen wird, ob eine PING_HOURS erreicht ist. Die Stunde ist die
- * feinste Angabe, die hier zaehlt - sekuendlich nachzusehen braucht niemand.
+ * Wie oft nachgesehen wird, ob die Tagesmeldung noch aussteht. Der erste
+ * Versuch laeuft sofort beim Start; dieser Takt holt nur nach, was daran
+ * gescheitert ist, dass Netz oder Konto noch nicht standen.
  */
 const PING_CHECK_MS = 60 * 1000;
 
@@ -70,7 +65,7 @@ let pinging = false;
 /** Wann zuletzt versucht - unabhaengig davon, ob es geklappt hat. */
 let lastPingAttempt = 0;
 /**
- * Wie oft in dieser Ping-Stunde vergeblich versucht wurde - und in welcher.
+ * Wie oft in dieser Stunde vergeblich versucht wurde - und in welcher.
  *
  * Nicht jeder Fehlschlag heilt: ein falscher Schluessel bleibt falsch. Ohne
  * Deckel klopfte ein solches Geraet den ganzen Tag weiter und braechte hinter
@@ -82,12 +77,13 @@ let lastPingAttempt = 0;
  */
 let failedPingSlot = "";
 let failedPingCount = 0;
-/** So viele vergebliche Versuche je Ping-Stunde, dann Ruhe bis zur naechsten. */
+/** So viele vergebliche Versuche je Stunde, dann Ruhe bis zur naechsten. */
 const MAX_PING_FAILURES = 5;
 /**
  * Der Server, der die Meldung abgelehnt hat - dort nicht mehr fragen. Ein
- * Server ohne TELEMETRY_KEY antwortet dauerhaft mit 404, und ein Buero hinter
- * einer gemeinsamen Adresse braechte damit nur die Bremse zum Anschlagen.
+ * aelterer Server kennt den Endpunkt nicht und antwortet dauerhaft mit 404;
+ * ein Buero hinter einer gemeinsamen Adresse braechte damit nur die Bremse zum
+ * Anschlagen.
  *
  * Die Adresse und nicht bloss ein Ja/Nein: wer sich danach mit einem anderen
  * Server verknuepft, soll dort wieder zaehlen duerfen.
@@ -95,22 +91,20 @@ const MAX_PING_FAILURES = 5;
 let declinedServer: string | null = null;
 
 /**
- * Einmal je Kalendertag „aktiv" melden, sobald eine der PING_HOURS erreicht ist
- * und die App gerade laeuft.
+ * Einmal je Kalendertag „aktiv" melden, sobald die App laeuft. Ohne feste
+ * Uhrzeit: wer nur zwischen zwei Terminen kurz aufmacht, faellt sonst aus der
+ * Zaehlung.
  */
 async function dailyPing(s: Settings): Promise<void> {
 	if (pinging) return;
-	// Ohne verknuepftes Konto gibt es keinen Server, der zaehlen duerfte - und
-	// nichts, was als Fehlversuch gelten duerfte. Wer sich um 10 Uhr verknuepft,
-	// soll um 12 gezaehlt werden.
-	const server = account.serverUrl;
+	// Ohne Ziel gibt es nichts zu melden - und nichts, was als Fehlversuch gelten
+	// duerfte. Das Ziel ist der verknuepfte Server, sonst der aus dem Build.
+	const server = account.usagePingServer;
 	if (!server || server === declinedServer) return;
 	const now = Date.now();
-	const hour = zonedParts(now).hour;
-	if (!PING_HOURS.includes(hour)) return;
 	const today = fmtDate(now);
 	if (s.usageLastDay === today) return;
-	const slot = `${today}:${hour}`;
+	const slot = `${today}:${zonedParts(now).hour}`;
 	if (failedPingSlot !== slot) {
 		failedPingSlot = slot;
 		failedPingCount = 0;
@@ -258,6 +252,9 @@ export function startUsagePing(): void {
 	declinedServer = null;
 	failedPingCount = 0;
 	pingInterval = setInterval(() => void dailyPing(app.settings), PING_CHECK_MS);
+	// Sofort und nicht erst nach der ersten Minute: ein kurzer Blick in die App
+	// waere sonst keine Nutzung.
+	void dailyPing(app.settings);
 }
 
 export function stopUsagePing(): void {

@@ -26,7 +26,9 @@ export default defineConfig(async ({ command }) => ({
     // ein Schritt, den niemand braucht. DEFAULT_SERVER sticht das aus, und
     // eintragen laesst sich ohnehin jederzeit etwas anderes.
     __DEFAULT_SERVER__: JSON.stringify(process.env.DEFAULT_SERVER ?? ""),
-    // Der Ausweis der Tagesmeldung. Leer = die Anwendung meldet nichts.
+    // Der Ausweis der Tagesmeldung. Leer heisst nicht "meldet nichts": mit
+    // verknuepftem Konto weist sich die Meldung ueber Geraetetoken bzw. Sitzung
+    // aus. Ohne Konto ist der Schluessel der einzige Weg.
     __TELEMETRY_KEY__: JSON.stringify(process.env.TELEMETRY_KEY ?? ""),
   },
 

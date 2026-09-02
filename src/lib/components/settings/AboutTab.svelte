@@ -5,6 +5,7 @@
 	import SettingsCard from "$lib/components/shared/SettingsCard.svelte";
 	import LogPanel from "$lib/components/panels/LogPanel.svelte";
 	import { APP_VERSION } from "$lib/defaults";
+	import { account } from "$lib/sync/account.svelte";
 
 	import { getVersion } from "@tauri-apps/api/app";
 	import { invoke } from "@tauri-apps/api/core";
@@ -56,21 +57,20 @@
 </script>
 
 <div class="space-y-4">
-	<SettingsCard
-		title="Datenschutz"
-		description="Was diese App über sich selbst meldet – und was nie."
-	>
+	<SettingsCard title="Datenschutz" description="Was dein Gerät nie verlässt.">
 		<div class="text-muted-foreground space-y-2 text-xs leading-relaxed">
 			<p>
-				<span class="text-foreground font-medium">Anonyme Nutzungszählung:</span> Sobald du ein Konto
-				verknüpft hast, meldet die App einmal täglich an genau diesen Server, dass sie heute lief –
-				mit Version und Betriebssystem, sonst nichts. Ohne verknüpftes Konto wird nichts gesendet.
+				Aktivitäten, Projekte, Notizen, Zeiten, Namen, E-Mail-Adressen, Dateien – nichts aus deinen
+				Einträgen verlässt unverschlüsselt dein Gerät. Es gibt kein Tracking durch Fremdanbieter,
+				und nichts geht an Dritte: alles bleibt auf deinem TimeTracker-Server.
 			</p>
-			<p>
-				<span class="text-foreground font-medium">Nie:</span> Aktivitäten, Projekte, Notizen, Zeiten,
-				Namen, E-Mail-Adressen, Dateien – nichts aus deinen Einträgen verlässt unverschlüsselt dein Gerät. Es gibt kein Tracking durch Fremdanbieter.
-			</p>
-			<p>Alle Telemetriedaten verbleiben vollständig auf deinem TimeTracker-Server.</p>
+			{#if account.usagePingServer}
+				<p>
+					Einmal am Tag meldet die App anonym an <span class="text-foreground font-medium"
+						>{account.usagePingServer}</span
+					>, dass sie lief – mit Version und Betriebssystem, sonst nichts.
+				</p>
+			{/if}
 		</div>
 	</SettingsCard>
 

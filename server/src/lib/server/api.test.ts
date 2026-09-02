@@ -1748,10 +1748,13 @@ describe("Telemetrie", () => {
 		expect(res.status).toBe(200);
 	});
 
-	it("weist einen Ping mit falschem Schluessel ab", async () => {
-		expect((await ping(goodPing, "falsch")).status).toBe(401);
+	// 403 und nicht 401: ein Schluessel, den dieser Server nicht annimmt, wird
+	// auch beim naechsten Versuch keiner sein. Der Client liest 403 als "nicht
+	// wieder fragen" und verbrennt so nicht sein Versuchsbudget.
+	it("weist einen Ping mit falschem Schluessel dauerhaft ab", async () => {
+		expect((await ping(goodPing, "falsch")).status).toBe(403);
 		// Gleiche Laenge, anderer Inhalt: der Vergleich darf nicht am Praefix haengen.
-		expect((await ping(goodPing, "x".repeat(TELEMETRY_KEY.length))).status).toBe(401);
+		expect((await ping(goodPing, "x".repeat(TELEMETRY_KEY.length))).status).toBe(403);
 	});
 
 	it("weist zu kurze und zu lange Geraetekennungen ab", async () => {

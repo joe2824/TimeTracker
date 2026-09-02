@@ -27,13 +27,13 @@ export const DEFAULT_SERVER =
  * Der Schluessel, mit dem sich die Tagesmeldung beim Server ausweist.
  *
  * Kommt aus `TELEMETRY_KEY` und wird beim Bauen eingesetzt. Leer heisst nicht
- * "meldet nichts": die Meldung laeuft ueber denselben Weg wie jeder andere
- * Serveraufruf und weist sich notfalls allein mit dem Geraetetoken aus - so
- * kommt die PWA durch, die im Server-Abbild liegt und gar keinen Schluessel
- * mitbekommen kann.
+ * "meldet nichts": mit verknuepftem Konto laeuft die Meldung ueber denselben Weg
+ * wie jeder andere Serveraufruf und weist sich mit Geraetetoken bzw. Sitzung aus
+ * - so kommt die PWA durch, die im Server-Abbild liegt und gar keinen
+ * Schluessel mitbekommen kann.
  *
- * Abgeschaltet wird die Zaehlung auf der Serverseite: ohne TELEMETRY_KEY dort
- * antwortet der Endpunkt 404 und nimmt von niemandem etwas an.
+ * OHNE Konto ist der Schluessel der einzige Ausweis. Er entscheidet damit, ob
+ * eine Desktop-Installation gezaehlt wird, die noch kein Konto verknuepft hat.
  *
  * Er steckt zwangslaeufig im ausgelieferten Bundle und ist damit kein
  * Geheimnis - er haelt Spam von aussen ab, nicht jemanden, der sich ein Release

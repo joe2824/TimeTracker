@@ -51,7 +51,7 @@ import type { PrfFailure } from "./enroll";
 import { isTauri } from "../platform/env";
 import { platformFetch } from "../platform/http";
 import { notifyDataChanged } from "../platform/windows";
-import { APP_VERSION } from "../defaults";
+import { APP_VERSION, DEFAULT_SERVER, TELEMETRY_KEY } from "../defaults";
 import { classifyPingFailure, detectPlatform, type PingResult } from "../analytics";
 
 export type LinkState = "off" | "connecting" | "connected" | "error";
@@ -1203,17 +1203,31 @@ class AccountState {
 	}
 
 	/**
-	 * Dem eigenen Server anonym melden, dass die Anwendung heute lief. Wirft nie.
+	 * Der Server, an den die Tagesmeldung ginge - leer heisst: es gibt keinen.
 	 *
-	 * Ueber `#api` und nicht mit einem eigenen Aufruf: nur so weist sich die
-	 * Meldung genauso aus wie jeder andere Serveraufruf - mit dem Geraetetoken,
-	 * sonst mit dem Cookie. Die PWA hat keinen Schluessel aus dem Build und
-	 * kaeme sonst gar nicht durch.
+	 * Ohne verknuepftes Konto meldet die Desktop-Anwendung an den Server, der
+	 * beim Bauen eingetragen wurde; ausweisen kann sie sich dort nur mit dem
+	 * Schluessel aus dem Build, ohne ihn kaeme sie gar nicht durch. Im Browser
+	 * gibt es diesen Weg nicht: dort zaehlt, wer angemeldet ist.
+	 */
+	get usagePingServer(): string {
+		if (this.serverUrl) return this.serverUrl;
+		return isTauri() && TELEMETRY_KEY ? DEFAULT_SERVER : "";
+	}
+
+	/**
+	 * Dem Server anonym melden, dass die Anwendung heute lief. Wirft nie.
+	 *
+	 * Mit Konto ueber `#api`: die Meldung weist sich dann genauso aus wie jeder
+	 * andere Serveraufruf - mit dem Geraetetoken, sonst mit dem Cookie. Ohne
+	 * Konto gibt es kein `#api`, und der Weg geht ueber `usagePingServer`.
 	 */
 	async sendUsagePing(): Promise<PingResult> {
-		if (!this.#api) return "retry";
+		const target = this.usagePingServer;
+		if (!target) return "retry";
+		const api = this.#api ?? new Api({ baseUrl: target, fetchFn: platformFetch });
 		try {
-			await this.#api.telemetry({
+			await api.telemetry({
 				deviceId: await deviceId(),
 				version: APP_VERSION,
 				platform: detectPlatform()

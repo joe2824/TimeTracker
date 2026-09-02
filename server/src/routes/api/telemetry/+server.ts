@@ -20,19 +20,23 @@ function keyMatches(given: string, expected: string): boolean {
 }
 
 export const POST: RequestHandler = async ({ locals, request }) => {
-	// Ohne konfigurierten Schluessel ist die Zaehlung aus. 404 und nicht 403: ein
-	// abgeschalteter Endpunkt muss sich nicht als vorhanden zu erkennen geben.
-	if (!TELEMETRY_KEY) error(404, "Nicht gefunden");
-
 	// Zwei Wege herein:
 	//
-	// - Der Schluessel aus dem Build. So meldet sich die Desktop-Anwendung.
-	// - Eine angemeldete Sitzung. Die PWA liegt IM Abbild, und das ist fuer alle
-	//   Betreiber dasselbe - einen Schluessel kann sie deshalb gar nicht
-	//   mitbekommen. Wer hier angemeldet ist, ist ohnehin ein echter Nutzer
-	//   dieses Servers.
-	const withKey = keyMatches(request.headers.get("x-telemetry-key") ?? "", TELEMETRY_KEY);
-	if (!withKey && !locals.userId) error(401, "Nicht berechtigt");
+	// - Eine angemeldete Sitzung bzw. ein verknuepftes Geraet. Das ist der
+	//   Regelfall und braucht keine Konfiguration: wer hier angemeldet ist, ist
+	//   ein echter Nutzer dieses Servers.
+	// - Der Schluessel aus dem Build. Nur so zaehlt eine Installation, die noch
+	//   gar kein Konto hat - sie hat sonst nichts, womit sie sich ausweisen kann.
+	const givenKey = request.headers.get("x-telemetry-key");
+	const withKey = TELEMETRY_KEY && givenKey ? keyMatches(givenKey, TELEMETRY_KEY) : false;
+	if (!withKey && !locals.userId) {
+		// Der Unterschied entscheidet, ob der Client es nochmal versucht: 403 heisst
+		// fuer ihn "hier nie wieder fragen", 401 nur "gerade nicht". Ein Schluessel,
+		// den dieser Server nicht annimmt, wird auch morgen keiner sein - eine
+		// fehlende Anmeldung kann dagegen jederzeit dazukommen.
+		if (givenKey) error(403, "Nicht berechtigt");
+		error(401, "Nicht berechtigt");
+	}
 
 	const body = await request.json().catch(() => null);
 	if (!body || typeof body !== "object") {
