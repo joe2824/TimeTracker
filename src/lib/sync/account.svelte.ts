@@ -880,7 +880,7 @@ class AccountState {
 		// Schluessel. Der Server hatte nie mehr als Chiffrat in der Hand.
 		const key = await unwrapForDevice(deserializeWrap(answer.wrappedKey), pair.privateKey);
 
-		await this.#persistLink(url, answer.deviceToken, key);
+		await this.#persistLink(url, answer.deviceToken, key, "", answer.userId);
 		this.#pairing = null;
 		return true;
 	}
@@ -1013,7 +1013,10 @@ class AccountState {
 			vaultKey: protectedKey.data,
 			protected: protectedKey.protected && (protectedToken?.protected ?? true),
 			accountName: name || info.accountName,
-			accountUserId: userId ?? info.accountUserId,
+			// Beim Wechsel NICHTS erben. Der Schluessel gehoert dann einem anderen
+			// Konto, und `unlockWithStoredKey` haengt allein an diesem Feld: eine
+			// stehengebliebene Kennung gaebe den neuen Schluessel an das alte Konto.
+			accountUserId: userId ?? (switched || foreignCopy ? undefined : info.accountUserId),
 			accountFingerprint: fingerprint,
 			dataOwner,
 			seq: 0,

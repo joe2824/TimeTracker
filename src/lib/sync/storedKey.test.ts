@@ -81,6 +81,20 @@ describe("unlockWithStoredKey", () => {
 		expect(await account.unlockWithStoredKey(URL, "konto-a")).toBe(false);
 	});
 
+	it("erbt die Kennung NICHT, wenn ein anderer Schluessel dazukommt", async () => {
+		// Der Weg, der das ausgeloest hat: Profil hing an Konto A, wird dann zu
+		// Konto B gekoppelt. Die Kopplung kannte die Kennung frueher nicht - blieb
+		// sie stehen, gab unlockWithStoredKey B's Schluessel an A.
+		await linkedDevice("konto-a");
+		expect(await account.unlockWithStoredKey(URL, "konto-a")).toBe(true);
+
+		const keyB = await createVaultKey();
+		await account.linkWithSession(URL, keyB, "", undefined);
+
+		expect((await store.loadDevice())?.accountUserId).toBeUndefined();
+		expect(await account.unlockWithStoredKey(URL, "konto-a")).toBe(false);
+	});
+
 	it("sagt nein, wenn der Schluessel ohne Kontokennung liegt", async () => {
 		// Aeltere device.json kennen das Feld nicht. Ohne Kennung ist nicht zu
 		// entscheiden, wem der Schluessel gehoert - dann lieber die Phrase.

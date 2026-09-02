@@ -1,6 +1,6 @@
 # Was offen ist
 
-Stand 2026-09-02, Branch `feat/better-auth`. Nach Prioritaet, nicht nach Thema.
+Stand 2026-09-02, Branch `feat/passkey-vault`. Nach Prioritaet, nicht nach Thema.
 Nichts davon ist deployt - `main` steht bei `0d72a0c`.
 
 ## P0 — Sicherheit, eine Zeile
@@ -97,17 +97,3 @@ einmalig.
   `grep -rhoE "^(export )?(async )?function [a-zA-Z0-9_]+" src/lib server/src`,
   gleiche LOGIK findet man so nicht - die drei Fassungen des Wire-Formats hiessen
   alle anders.
-
-## Und Better Auth?
-
-`BETTER_AUTH.md` steht unveraendert daneben, aber die Lage hat sich geaendert:
-der wiederkehrende Fehler ist ohne den Umbau behoben. Was Better Auth ersetzen
-wuerde, laeuft jetzt; was es nicht anfasst (`key_wraps`, PRF, Kopplung,
-Geraete-Token), war die ganze Zeit die kaputte Haelfte.
-
-Die Argumente, die bleiben: Challenge-Ablage und Sitzungs-Cookies muessen wir
-nicht selbst pflegen, und die gleitende Sitzung aus P1 bringt Better Auth mit.
-Die Argumente dagegen stehen in `BETTER_AUTH.md` unter "Risiken" - allen voran
-Spike 4, das Vorladen der Anmelde-Aufgabe.
-
-Entscheidung offen. P0 bis P2 haengen NICHT daran und sollten so oder so zuerst.
