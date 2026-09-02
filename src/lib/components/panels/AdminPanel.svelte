@@ -30,6 +30,9 @@
 	import EyeIcon from "@lucide/svelte/icons/eye";
 	import EyeOffIcon from "@lucide/svelte/icons/eye-off";
 	import { Skeleton } from "$lib/components/ui/skeleton";
+	import * as Chart from "$lib/components/ui/chart";
+	import { BarChart } from "layerchart";
+	import { scaleBand } from "d3-scale";
 
 	// ---------- State ----------
 	let isLoaded = $state(false);
@@ -55,6 +58,45 @@
 	function restCount(counts: Record<string, number>): number {
 		return Math.max(0, Object.keys(counts).length - MAX_BADGES);
 	}
+
+	/** Nur jede n-te Beschriftung - dreissig Datumsangaben nebeneinander sind Brei. */
+	const TICK_EVERY = 5;
+
+	const statsChartConfig = {
+		devices: { label: "Geräte", theme: { light: "#2a78d6", dark: "#3987e5" } }
+	} satisfies Chart.ChartConfig;
+
+	/**
+	 * Ein Balken je Tag, auch fuer Tage ohne Meldung. Der Verlauf vom Server
+	 * enthaelt nur Tage mit Daten - ohne die Luecken ruecken zwei weit
+	 * auseinanderliegende Tage nebeneinander und sehen aus wie ein Verlauf.
+	 *
+	 * Die Datumsangaben kommen in UTC, wie sie der Server ablegt.
+	 */
+	const chartData = $derived.by(() => {
+		if (!stats) return [];
+		const byDate = new Map(stats.history.map((d) => [d.date, d.dau]));
+		const end = Date.now();
+		const days: { date: string; label: string; devices: number }[] = [];
+		for (let i = STATS_DAYS - 1; i >= 0; i--) {
+			const date = new Date(end - i * 86_400_000).toISOString().slice(0, 10);
+			days.push({
+				date,
+				label: `${date.slice(8, 10)}.${date.slice(5, 7)}.`,
+				devices: byDate.get(date) ?? 0
+			});
+		}
+		return days;
+	});
+
+	/** Welche Beschriftungen an der Achse stehen duerfen - vom heutigen Tag aus gezaehlt. */
+	const tickLabels = $derived(
+		new Set(
+			chartData
+				.filter((_, i) => (chartData.length - 1 - i) % TICK_EVERY === 0)
+				.map((d) => d.label)
+		)
+	);
 
 	// Invites & Registration
 	let invites = $state<Invite[]>([]);
@@ -360,6 +402,49 @@
 							<div class="text-xs text-muted-foreground mt-0.5">30 Tage (MAU)</div>
 						</div>
 					</div>
+
+					<p class="text-xs text-muted-foreground leading-relaxed">
+						DAU, WAU und MAU sind die üblichen Abkürzungen für die Zahl der aktiven Geräte pro Tag,
+						Woche und Monat (englisch <em>daily</em>, <em>weekly</em>, <em>monthly active users</em>).
+						Jedes Gerät wird höchstens einmal pro Tag gezählt. Wer an mehreren Tagen gearbeitet hat,
+						steht in „7 Tage" und „30 Tage" trotzdem nur einmal – die Zahlen lassen sich deshalb nicht
+						zusammenzählen.
+					</p>
+
+					{#if chartData.length > 0}
+						<div class="space-y-2">
+							<Label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+								Aktive Geräte je Tag ({STATS_DAYS} Tage)
+							</Label>
+							<Chart.Container
+								config={statsChartConfig}
+								class="aspect-auto w-full"
+								style="height: 180px"
+							>
+								<BarChart
+									data={chartData}
+									x="label"
+									xScale={scaleBand()}
+									bandPadding={0.25}
+									y="devices"
+									axis="x"
+									grid={false}
+									series={[{ key: "devices", label: "Geräte", color: "var(--color-devices)" }]}
+									props={{
+										bars: { radius: 2, rounded: "top" },
+										xAxis: {
+											format: (v: string) => (tickLabels.has(v) ? v : ""),
+											tickLabelProps: { class: "fill-muted-foreground" }
+										}
+									}}
+								>
+									{#snippet tooltip()}
+										<Chart.Tooltip />
+									{/snippet}
+								</BarChart>
+							</Chart.Container>
+						</div>
+					{/if}
 
 					<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 						<div class="rounded-lg border p-3 space-y-2">
