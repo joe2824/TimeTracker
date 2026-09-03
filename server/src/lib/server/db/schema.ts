@@ -36,8 +36,6 @@ export const credentials = sqliteTable(
 		publicKey: blob("public_key", { mode: "buffer" }).$type<Buffer>().notNull(),
 		counter: integer("counter").notNull().default(0),
 		transports: text("transports"),
-		/** Ob dieser Authentifikator die PRF-Erweiterung kann - fuer die Anzeige. */
-		hasPrf: integer("has_prf", { mode: "boolean" }).notNull().default(false),
 		/** Wie der Mensch diesen Passkey nennt - "Laptop", "Handy", "Stick". */
 		label: text("label"),
 		createdAt: integer("created_at").notNull(),

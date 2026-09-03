@@ -315,7 +315,7 @@ describe("Verpackungen", () => {
 	it("meldet einen Passkey mit Verpackung als solchen", async () => {
 		db.$client
 			.prepare(
-				"INSERT INTO credentials (id, user_id, public_key, counter, has_prf, label, created_at) VALUES (?,?,?,0,0,?,?)"
+				"INSERT INTO credentials (id, user_id, public_key, counter, label, created_at) VALUES (?,?,?,0,?,?)"
 			)
 			.run("annas-schluessel", ANNA, Buffer.from([1, 2, 3]), null, Date.now());
 
@@ -335,7 +335,7 @@ describe("Verpackungen", () => {
 	it("meldet einen Passkey ohne Verpackung als solchen", async () => {
 		db.$client
 			.prepare(
-				"INSERT INTO credentials (id, user_id, public_key, counter, has_prf, label, created_at) VALUES (?,?,?,0,1,?,?)"
+				"INSERT INTO credentials (id, user_id, public_key, counter, label, created_at) VALUES (?,?,?,0,?,?)"
 			)
 			.run("annas-schluessel", ANNA, Buffer.from([1, 2, 3]), null, Date.now());
 
@@ -1314,7 +1314,7 @@ describe("Passkeys verwalten", () => {
 	function addPasskey(userId: string, id: string, label: string | null = null) {
 		db.$client
 			.prepare(
-				"INSERT INTO credentials (id, user_id, public_key, counter, has_prf, label, created_at) VALUES (?,?,?,0,1,?,?)"
+				"INSERT INTO credentials (id, user_id, public_key, counter, label, created_at) VALUES (?,?,?,0,?,?)"
 			)
 			.run(id, userId, Buffer.from([1, 2, 3]), label, Date.now());
 	}
@@ -1426,7 +1426,7 @@ describe("Passkeys verwalten", () => {
 		).json();
 		const res = await api(annaToken, "/api/passkeys/finish", {
 			method: "POST",
-			body: JSON.stringify({ challengeId, response: {}, hasPrf: false })
+			body: JSON.stringify({ challengeId, response: {} })
 		});
 		expect(res.status).toBe(403);
 	});

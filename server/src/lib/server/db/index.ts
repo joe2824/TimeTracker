@@ -136,7 +136,13 @@ const MIGRATIONS: string[] = [
 	// mit ihrer Laenge, welche Schritte eine Datenbank schon gesehen hat. Ein
 	// Eintrag weniger heisst fuer jede bestehende Datenbank "schon durch" - der
 	// naechste angehaengte Schritt wuerde dort stillschweigend uebersprungen.
-	`DROP INDEX IF EXISTS telemetry_pings_date`
+	`DROP INDEX IF EXISTS telemetry_pings_date`,
+	// `has_prf` kam aus der Anlege-Antwort des Browsers - einem Signal, das
+	// dokumentiert unzuverlaessig ist. Was zaehlt, ist die Verpackung in
+	// `key_wraps`: liegt sie, oeffnet der Passkey die Daten. Wie oben steht der
+	// Schritt hinten statt in der CREATE-Anweisung; eine frische Datenbank legt
+	// die Spalte also an und wirft sie hier wieder weg.
+	`ALTER TABLE credentials DROP COLUMN has_prf`
 ];
 
 

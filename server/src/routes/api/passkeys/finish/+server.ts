@@ -37,9 +37,8 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		locals.userId,
 		checked.registrationInfo.credential,
 		checked.registrationInfo.credential.transports,
-		Boolean(body?.hasPrf),
 		label
 	);
 
-	return json({ id: hostId, label, hasPrf: Boolean(body?.hasPrf) });
+	return json({ id: hostId, label });
 };

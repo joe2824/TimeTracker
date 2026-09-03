@@ -106,7 +106,7 @@ describe("Passkey und Verpackung entstehen zusammen", () => {
 
 		expect(() =>
 			db.transaction((tx) => {
-				storeCredential(tx, ANNA, cred("cred-neu"), undefined, true);
+				storeCredential(tx, ANNA, cred("cred-neu"), undefined);
 				storeWrap(tx, ANNA, {
 					kind: "recovery",
 					payload: "{}",
@@ -122,7 +122,7 @@ describe("Passkey und Verpackung entstehen zusammen", () => {
 
 	it("geht es durch, steht zu jedem Passkey eine Verpackung", () => {
 		db.transaction((tx) => {
-			storeCredential(tx, ANNA, cred("cred-1"), undefined, true);
+			storeCredential(tx, ANNA, cred("cred-1"), undefined);
 			storeWrap(tx, ANNA, { kind: "recovery", payload: "r", recoveryId: "k", vaultProof: "n" });
 			storeWrap(tx, ANNA, { kind: "passkey", payload: "p", credentialId: "cred-1" });
 		});
@@ -156,8 +156,8 @@ describe("readWrap", () => {
 describe("listPasskeys", () => {
 	it("liefert Namen und Verpackung - beides las die Verwaltung aus /me", () => {
 		db.transaction((tx) => {
-			storeCredential(tx, ANNA, cred("mit-wrap"), undefined, true, "Touch ID");
-			storeCredential(tx, ANNA, cred("ohne-wrap"), undefined, true, "YubiKey");
+			storeCredential(tx, ANNA, cred("mit-wrap"), undefined, "Touch ID");
+			storeCredential(tx, ANNA, cred("ohne-wrap"), undefined, "YubiKey");
 			storeWrap(tx, ANNA, { kind: "passkey", payload: "p", credentialId: "mit-wrap" });
 		});
 

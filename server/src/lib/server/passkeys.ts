@@ -11,9 +11,7 @@ import { credentials, keyWraps } from "./db/schema";
 export interface PasskeyView {
 	id: string;
 	label: string | null;
-	/** Was der Authentifikator koennte. */
-	hasPrf: boolean;
-	/** Ob er es auch tut - daran haengt, ob er die Daten allein oeffnet. */
+	/** Ob der Tresorschluessel fuer ihn verpackt vorliegt - dann oeffnet er die Daten allein. */
 	hasWrap: boolean;
 	createdAt: number;
 	lastUsedAt: number | null;
@@ -37,7 +35,6 @@ export function listPasskeys(db: DbLike, userId: string): PasskeyView[] {
 		.map((c) => ({
 			id: c.id,
 			label: c.label,
-			hasPrf: c.hasPrf,
 			hasWrap: wrapped.has(c.id),
 			createdAt: c.createdAt,
 			lastUsedAt: c.lastUsedAt

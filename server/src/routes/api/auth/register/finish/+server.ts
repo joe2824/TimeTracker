@@ -53,8 +53,7 @@ export const POST: RequestHandler = async ({ locals, request, cookies }) => {
 			tx,
 			taken.userId!,
 			verification.registrationInfo!.credential,
-			verification.registrationInfo!.credential.transports,
-			passkey !== null
+			verification.registrationInfo!.credential.transports
 		);
 		storeWrap(tx, taken.userId!, recovery);
 		if (passkey) storeWrap(tx, taken.userId!, passkey);

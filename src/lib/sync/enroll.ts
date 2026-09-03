@@ -479,12 +479,7 @@ export async function addPasskey(
 	});
 
 	const prf = prfOf(response);
-	const created = await api.addPasskeyFinish({
-		challengeId,
-		label,
-		hasPrf: prf !== null,
-		response
-	});
+	const created = await api.addPasskeyFinish({ challengeId, label, response });
 
 	// Erst jetzt die Verpackung: sie braucht die eben vergebene Kennung.
 	const wrapped = await ensurePasskeyWrap(api, key, created.id, prf).catch((e) => {

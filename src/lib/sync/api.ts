@@ -78,9 +78,7 @@ export interface Passkey {
 	id: string;
 	/** Wie der Mensch ihn nennt. Null, solange niemand ihn benannt hat. */
 	label: string | null;
-	/** Ob er den Tresor allein oeffnen kann - sonst braucht es Phrase oder Gerät. */
-	hasPrf: boolean;
-	/** Ob der Tresorschluessel fuer ihn verpackt vorliegt. */
+	/** Ob der Tresorschluessel fuer ihn verpackt vorliegt - dann oeffnet er die Daten allein. */
 	hasWrap: boolean;
 	createdAt: number;
 	lastUsedAt: number | null;
@@ -395,9 +393,8 @@ export class Api {
 	addPasskeyFinish(body: {
 		challengeId: string;
 		label?: string;
-		hasPrf: boolean;
 		response: unknown;
-	}): Promise<Passkey> {
+	}): Promise<{ id: string; label: string | null }> {
 		return this.#call("/api/passkeys/finish", { method: "POST", body: JSON.stringify(body) });
 	}
 
