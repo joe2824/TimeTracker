@@ -38,7 +38,7 @@
 		normalizePairingCode
 	} from "$lib/crypto/vault";
 
-	type Step = "start" | "phrase" | "unlock" | "geraet";
+	type Step = "start" | "phrase" | "unlock" | "device";
 
 	let stepIndex = $state<Step>("start");
 	let running = $state(false);
@@ -207,7 +207,7 @@
 				inviteOpen = true;
 				return;
 			}
-			toast.error(fehlertext(e, "Konto konnte nicht angelegt werden"));
+			toast.error(errorMessage(e, "Konto konnte nicht angelegt werden"));
 		} finally {
 			running = false;
 		}
@@ -222,7 +222,7 @@
 		await account.linkWithSession(serverUrl, keyValue, loggedInName, loggedInId);
 		if (newPasskeyId) await account.rememberPasskey(newPasskeyId);
 
-		stepIndex = "geraet";
+		stepIndex = "device";
 	}
 
 	/** Den Code aus der Desktop-Anwendung bestaetigen. */
@@ -240,7 +240,7 @@
 			app.dismissOnboarding();
 			toast.success(`„${label}" ist jetzt verknüpft.`);
 		} catch (e) {
-			toast.error(fehlertext(e, "Code konnte nicht bestätigt werden"));
+			toast.error(errorMessage(e, "Code konnte nicht bestätigt werden"));
 		} finally {
 			running = false;
 		}
@@ -269,13 +269,13 @@
 			if (lastPasskey) await account.rememberPasskey(lastPasskey.credentialId);
 			toast.success("Entsperrt.");
 		} catch (e) {
-			toast.error(fehlertext(e, "Die Phrase passt nicht zu diesem Konto"));
+			toast.error(errorMessage(e, "Die Phrase passt nicht zu diesem Konto"));
 		} finally {
 			running = false;
 		}
 	}
 
-	function fehlertext(e: unknown, standard: string): string {
+	function errorMessage(e: unknown, fallback: string): string {
 		// Ein abgebrochener Passkey-Dialog ist keine Störung, sondern eine
 		// Entscheidung - dafür braucht es keine Fehlermeldung mit Ausrufezeichen.
 		if (e instanceof Error && /NotAllowed|abort/i.test(e.name + e.message)) {
@@ -283,23 +283,23 @@
 		}
 		// `errorText` und nicht `e.message`: WebCrypto wirft beim Entsperren einen
 		// OperationError, dessen Meldung in Chromium-Laufzeiten LEER ist.
-		return e instanceof Error ? errorText(e) : standard;
+		return e instanceof Error ? errorText(e) : fallback;
 	}
 
 	// ---------- Mit der Phrase zurueckholen ----------
 
-	let phraseOffen = $state(false);
-	let phraseEingabe = $state("");
+	let phraseOpen = $state(false);
+	let phraseInput = $state("");
 
-	async function zurueckholen() {
+	async function recover() {
 		running = true;
 		try {
-			await account.recoverWithPhrase(serverUrl, phraseEingabe, "Browser");
-			phraseOffen = false;
-			phraseEingabe = "";
+			await account.recoverWithPhrase(serverUrl, phraseInput, "Browser");
+			phraseOpen = false;
+			phraseInput = "";
 			toast.success("Konto zurückgeholt. Leg jetzt einen Passkey an, dann geht es künftig schneller.");
 		} catch (e) {
-			toast.error(fehlertext(e, "Zurückholen fehlgeschlagen"));
+			toast.error(errorMessage(e, "Zurückholen fehlgeschlagen"));
 		} finally {
 			running = false;
 		}
@@ -307,23 +307,23 @@
 
 	// ---------- Der Browser koppelt sich wie ein neues Geraet ----------
 
-	let kopplungscode = $state("");
+	let pairingCode = $state("");
 
 	/** Steht der Kopplungs-Dialog offen? */
-	let koppelnOffen = $state(false);
+	let pairingOpen = $state(false);
 
 	async function startPairing() {
 		helpOpen = false;
 		running = true;
 		// Vor dem Holen aufmachen. Der Server braucht einen Moment, und ein Klick,
 		// nach dem sichtbar nichts passiert, sieht aus wie ein kaputter Knopf.
-		koppelnOffen = true;
+		pairingOpen = true;
 		try {
-			kopplungscode = await account.startPairing(serverUrl, "Browser");
+			pairingCode = await account.startPairing(serverUrl, "Browser");
 		} catch (e) {
 			// Ohne Code hat der Dialog nichts zu zeigen.
-			koppelnOffen = false;
-			toast.error(fehlertext(e, "Kopplung konnte nicht begonnen werden"));
+			pairingOpen = false;
+			toast.error(errorMessage(e, "Kopplung konnte nicht begonnen werden"));
 		} finally {
 			running = false;
 		}
@@ -334,31 +334,31 @@
 	// verschwindet und wenn der Bildschirm abgebaut wird. Der Server bremst das
 	// Warten nicht aus, gezaehlt werden dort nur Fehlgriffe.
 	$effect(() => {
-		if (!kopplungscode) return;
-		const timer = setInterval(pruefen, 2000);
+		if (!pairingCode) return;
+		const timer = setInterval(pollPairing, 2000);
 		return () => clearInterval(timer);
 	});
 
-	async function pruefen() {
+	async function pollPairing() {
 		try {
 			if (await account.checkPairing()) {
-				koppelnAufraeumen();
+				clearPairing();
 				toast.success("Verbunden. Deine Zeiten werden geladen.");
 			}
 		} catch (e) {
-			koppelnAufraeumen();
-			toast.error(fehlertext(e, "Kopplung fehlgeschlagen"));
+			clearPairing();
+			toast.error(errorMessage(e, "Kopplung fehlgeschlagen"));
 		}
 	}
 
-	function koppelnAbbrechen() {
+	function cancelPairing() {
 		account.cancelPairing();
-		koppelnAufraeumen();
+		clearPairing();
 	}
 
-	function koppelnAufraeumen() {
-		kopplungscode = "";
-		koppelnOffen = false;
+	function clearPairing() {
+		pairingCode = "";
+		pairingOpen = false;
 	}
 
 	async function copy() {
@@ -468,7 +468,7 @@
 							<button
 								type="button"
 								class="hover:text-foreground transition-colors underline-offset-4 hover:underline"
-								onclick={() => (phraseOffen = true)}
+								onclick={() => (phraseOpen = true)}
 							>
 								Wiederherstellen
 							</button>
@@ -483,7 +483,7 @@
 	<div
 		class="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-6 px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]"
 	>
-		{#if stepIndex === "geraet"}
+		{#if stepIndex === "device"}
 			<!-- Der eine Step nach dem Anlegen. -->
 			<header class="flex flex-col items-center gap-3 text-center">
 				<img src="/logo.svg" alt="" class="h-14 w-auto drop-shadow-sm" />
@@ -635,12 +635,12 @@
 	Karte zu ragen.
 -->
 <Dialog.Root
-	open={koppelnOffen}
+	open={pairingOpen}
 	onOpenChange={(o) => {
-		koppelnOffen = o;
+		pairingOpen = o;
 		// Zuklappen heisst abbrechen - sonst liefe die Abfrage im Hintergrund
 		// weiter und der Vorgang bliebe auf dem Server stehen.
-		if (!o) koppelnAbbrechen();
+		if (!o) cancelPairing();
 	}}
 >
 	<!-- max-w-md, nicht -sm: der Code ist 14 Zeichen weit gesperrt und braucht
@@ -655,16 +655,16 @@
 			</Dialog.Description>
 		</Dialog.Header>
 
-		{#if kopplungscode}
+		{#if pairingCode}
 			<!-- Ohne onCancel: das Abbrechen steht unten im Fuss des Dialogs, und
 			     zweimal derselbe Knopf untereinander stiftet nur Verwirrung. -->
-			<PairingCode code={kopplungscode} />
+			<PairingCode code={pairingCode} />
 		{:else}
 			<p class="text-muted-foreground py-8 text-center text-sm">Lade Code...</p>
 		{/if}
 
 		<Dialog.Footer>
-			<Button variant="outline" onclick={koppelnAbbrechen}>Abbrechen</Button>
+			<Button variant="outline" onclick={cancelPairing}>Abbrechen</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
@@ -678,12 +678,12 @@
 	haette er nichts getan.
 -->
 <Dialog.Root
-	open={phraseOffen}
+	open={phraseOpen}
 	onOpenChange={(o) => {
-		phraseOffen = o;
+		phraseOpen = o;
 		// Beim Schliessen mitnehmen, nicht bloss ausblenden: sonst stehen die
 		// Woerter beim naechsten Oeffnen wieder sichtbar im Feld.
-		if (!o) phraseEingabe = "";
+		if (!o) phraseInput = "";
 	}}
 >
 	<Dialog.Content class="sm:max-w-md">
@@ -695,16 +695,16 @@
 			</Dialog.Description>
 		</Dialog.Header>
 		<textarea
-			bind:value={phraseEingabe}
+			bind:value={phraseInput}
 			rows="3"
 			class="border-input bg-background w-full rounded-md border p-2 font-mono text-sm"
 			placeholder="wort eins wort zwei wort drei …"
 		></textarea>
 		<Dialog.Footer>
-			<Button variant="outline" disabled={running} onclick={() => (phraseOffen = false)}>
+			<Button variant="outline" disabled={running} onclick={() => (phraseOpen = false)}>
 				Abbrechen
 			</Button>
-			<Button disabled={running || !phraseEingabe.trim()} onclick={zurueckholen}>
+			<Button disabled={running || !phraseInput.trim()} onclick={recover}>
 				{running ? "Einen Moment…" : "Wiederherstellen"}
 			</Button>
 		</Dialog.Footer>
