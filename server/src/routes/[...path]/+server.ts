@@ -3,17 +3,7 @@ import { error } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { ORIGIN } from "$lib/server/config";
-
-/** Wo die gebaute PWA liegt - im Abbild neben dem Server. */
-const CLIENT_DIR = process.env.CLIENT_DIR ?? "static";
-
-/**
- * Die Shell heisst bewusst NICHT index.html: sonst liefert der statische
- * Dateiserver sie unter "/" aus, noch bevor dieser Handler drankommt - und dann
- * greift das Absolutmachen der og:-Adressen unten nie.
- */
-const SHELL = "app-shell.html";
+import { APP_SHELL_FILE, CLIENT_DIR, ORIGIN } from "$lib/server/config";
 
 let cached: string | null = null;
 
@@ -41,8 +31,8 @@ export const GET: RequestHandler = async ({ params }) => {
 		// damit ein Rebuild (npm run pwa:bundle) sofort ohne Server-Neustart greift.
 		const raw =
 			process.env.NODE_ENV === "production"
-				? (cached ??= await readFile(join(CLIENT_DIR, SHELL), "utf-8"))
-				: await readFile(join(CLIENT_DIR, SHELL), "utf-8");
+				? (cached ??= await readFile(join(CLIENT_DIR, APP_SHELL_FILE), "utf-8"))
+				: await readFile(join(CLIENT_DIR, APP_SHELL_FILE), "utf-8");
 
 		return new Response(withAbsoluteOgImage(raw), {
 			headers: {

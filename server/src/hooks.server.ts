@@ -2,10 +2,12 @@
 // die Anfrage gehoert.
 import type { Handle } from "@sveltejs/kit";
 import { randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { openDb } from "$lib/server/db";
 import { cleanupExpired, deviceFromToken, userFromSession } from "$lib/server/auth";
 import { startBackupScheduler } from "$lib/server/backup";
-import { DB_FILE } from "$lib/server/config";
+import { APP_SHELL_FILE, CLIENT_DIR, DB_FILE } from "$lib/server/config";
 import { SESSION_COOKIE, setSessionCookie } from "$lib/server/session";
 import {
 	LIMIT_AUTH,
@@ -47,6 +49,26 @@ const RATE_LIMITS: [string, LimitOptions][] = [
 
 const { db, raw } = openDb(DB_FILE);
 startBackupScheduler(raw);
+
+/**
+ * `script-src` aus dem CSP-Meta-Tag uebernehmen, das SvelteKit beim Bauen in
+ * die App-Shell legt (svelte.config.js, `csp.mode: "hash"`) - so erlaubt die
+ * Kopfzeile denselben Inline-Bootstrap-Code wie das Meta-Tag, statt pauschal
+ * `'unsafe-inline'`. Eine Kopie des Hash-Werts waere zwei Stellen, die
+ * auseinanderlaufen koennten - der Wert wird deshalb aus der Datei gelesen,
+ * nicht selbst gerechnet. Fehlt Datei oder Tag (z.B. lokal ohne Bau, oder
+ * bevor die PWA das erste Mal gebaut wurde), bleibt `'unsafe-inline'` als
+ * Rueckfall - besser eine laxere Kopfzeile als eine App, die gar nicht startet.
+ */
+const SCRIPT_SRC = (() => {
+	try {
+		const html = readFileSync(join(CLIENT_DIR, APP_SHELL_FILE), "utf-8");
+		const meta = html.match(/<meta[^>]*content-security-policy[^>]*content="([^"]*)"/i)?.[1];
+		return meta?.match(/script-src ([^;]+)/i)?.[1].trim() ?? "'self' 'unsafe-inline'";
+	} catch {
+		return "'self' 'unsafe-inline'";
+	}
+})();
 
 /** Methoden, die etwas veraendern - nur fuer die zaehlt die Herkunft. */
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
@@ -205,7 +227,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	if (contentType.includes("text/html")) {
 		answer.headers.set(
 			"content-security-policy",
-			"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws: wss:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';"
+			`default-src 'self'; script-src ${SCRIPT_SRC}; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws: wss:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';`
 		);
 	}
 

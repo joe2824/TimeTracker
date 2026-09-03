@@ -64,6 +64,17 @@ export const ORIGINS_WITHOUT_PASSKEY = ALLOWED_ORIGINS.filter((o) => !matchesRpI
 export const DATA_DIR = process.env.DATA_DIR ?? "./data";
 export const DB_FILE = process.env.DB_FILE ?? `${DATA_DIR}/timetracker.db`;
 
+/** Wo die gebaute PWA liegt - im Abbild neben dem Server. */
+export const CLIENT_DIR = process.env.CLIENT_DIR ?? "static";
+
+/**
+ * Die Shell heisst bewusst NICHT index.html: sonst liefert der statische
+ * Dateiserver sie unter "/" aus, noch bevor der Rueckfall-Handler drankommt -
+ * und dann greift weder das Absolutmachen der og:-Adressen noch die CSP aus
+ * dem Meta-Tag (siehe hooks.server.ts).
+ */
+export const APP_SHELL_FILE = "app-shell.html";
+
 /** Automatische Sicherungen: Intervall in Stunden (0 = aus, Standard 24h). */
 export const BACKUP_INTERVAL_HOURS = Number(process.env.BACKUP_INTERVAL_HOURS ?? 24);
 /** Wie viele automatische Sicherungen aufgehoben werden (Standard: 7). */
