@@ -32,18 +32,15 @@ import {
 	exportPairingPublicKey,
 	checkedPairingKey,
 	exportVaultKey,
-	deserializeWrap,
 	fromBase64,
 	importVaultKey,
-	serializeWrap,
 	normalizePairingCode,
 	pairingCode,
 	bucketFor,
 	createClaimSecret,
 	toBase64,
 	unwrapForDevice,
-	vaultProof,
-	type KeyWrap
+	vaultProof
 } from "../crypto/vault";
 import { toast } from "svelte-sonner";
 import { protectSecret, unprotectSecret } from "../platform/secrets";
@@ -884,7 +881,7 @@ class AccountState {
 
 		// Das Paket oeffnen - das kann nur dieses Geraet, mit seinem privaten
 		// Schluessel. Der Server hatte nie mehr als Chiffrat in der Hand.
-		const key = await unwrapForDevice(deserializeWrap(answer.wrappedKey), pair.privateKey);
+		const key = await unwrapForDevice(answer.wrappedKey, pair.privateKey);
 
 		await this.#persistLink(url, answer.deviceToken, key, "", answer.userId);
 		this.#pairing = null;
@@ -913,7 +910,7 @@ class AccountState {
 
 		const { wrapForDevice } = await import("../crypto/vault");
 		const wrap = await wrapForDevice(this.#key, raw);
-		await this.#api.pairApprove(typed, JSON.stringify(serializeWrap(wrap)));
+		await this.#api.pairApprove(typed, wrap);
 		logInfo("Gerät gekoppelt", { label });
 		void this.syncWithFollowUp();
 		return label;

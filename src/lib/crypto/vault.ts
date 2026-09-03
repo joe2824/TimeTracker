@@ -1,7 +1,14 @@
 // Der Tresorschluessel und alles, was mit ihm geschieht.
+//
+// Verpackt wird als JWE (RFC 7516/7518, ueber die Bibliothek `jose`) statt mit
+// selbstgebautem AES-GCM/PBKDF2/ECDH: die drei Verpackungswege unten bilden
+// fast 1:1 auf JWE-Standardalgorithmen ab (PBES2 fuer die Phrase, ECDH-ES fuer
+// die Kopplung), inklusive automatischer Ephemeral-Key-Verwaltung bei der
+// Kopplung (`epk`-Header), die vorher von Hand mitgefuehrt wurde.
 
 import { generateMnemonic, mnemonicToEntropy, validateMnemonic } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english.js";
+import { CompactEncrypt, compactDecrypt, decodeProtectedHeader } from "jose";
 import {
 	CODE_ALPHABET,
 	PAIRING_CODE_LENGTH,
@@ -13,10 +20,10 @@ const enc = new TextEncoder();
 
 /** Laenge des Tresorschluessels in Bit. */
 const KEY_BITS = 256;
-/** GCM will 96 Bit Zufall je Vorgang - laenger bringt nichts, kuerzer schadet. */
-const IV_BYTES = 12;
-/** Iterationen fuer die Phrase - grosszuegig, aber nicht entscheidend (siehe oben). */
-const PBKDF2_ITERATIONS = 600_000;
+/** Iterationen fuer die Phrase - grosszuegig, aber nicht entscheidend (siehe unten). */
+const PBES2_ITERATIONS = 600_000;
+/** Alle drei Verpackungswege verschluesseln denselben Inhalt (den Tresorschluessel) gleich. */
+const WRAP_ENC = "A256GCM";
 
 // ---------- Tresorschluessel ----------
 
@@ -28,9 +35,16 @@ export async function createVaultKey(): Promise<CryptoKey> {
 	]);
 }
 
-/** Rohbytes zu einem Tresorschluessel machen. */
-export async function importVaultKey(raw: ArrayBuffer): Promise<CryptoKey> {
-	return crypto.subtle.importKey("raw", raw, "AES-GCM", true, ["encrypt", "decrypt"]);
+/**
+ * Rohbytes zu einem Tresorschluessel machen.
+ *
+ * `extractable: false` fuer eine Kopie, die nur noch ver-/entschluesseln kann,
+ * nie wieder Bytes herausgibt - siehe `platform/keyStore.ts`. Fuer die
+ * laufende Sitzung bleibt es bei `true` (Vorgabe): der Schluessel muss dort
+ * fuer eine neue Passkey-/Geraete-Verpackung exportierbar bleiben.
+ */
+export async function importVaultKey(raw: ArrayBuffer, extractable = true): Promise<CryptoKey> {
+	return crypto.subtle.importKey("raw", raw, "AES-GCM", extractable, ["encrypt", "decrypt"]);
 }
 
 export async function exportVaultKey(key: CryptoKey): Promise<ArrayBuffer> {
@@ -39,50 +53,59 @@ export async function exportVaultKey(key: CryptoKey): Promise<ArrayBuffer> {
 
 // ---------- Datensaetze ----------
 
-/** Woran ein Chiffrat gebunden ist - als "zusaetzliche Daten" mitversiegelt. */
+/** Woran ein Chiffrat gebunden ist - als JWE-Header-Claims mitversiegelt. */
 export interface RecordBinding {
 	id: string;
 	kind: string;
 	rev: number;
 }
 
-export interface Sealed {
-	iv: Uint8Array;
-	ciphertext: Uint8Array;
+interface RecordHeader {
+	recId: string;
+	recKind: string;
+	recRev: number;
 }
 
-function bindingBytes(b: RecordBinding): Uint8Array {
-	return enc.encode(`${b.kind}|${b.id}|${b.rev}`);
-}
+/** Wie eine Verpackung des Tresorschluessels entstanden ist. */
+export type WrapKind = "recovery" | "passkey" | "device";
 
-/** Einen Datensatz verschluesseln. */
+/**
+ * Einen Datensatz verschluesseln - `alg:"dir"`, der Tresorschluessel wird
+ * direkt als Inhaltsschluessel benutzt. `binding` liegt als Header-Claims im
+ * JWE und ist damit Teil der authentisierten Daten: eine vertauschte Datei
+ * (falscher Monat, falsche Kennung) faellt beim Oeffnen auf.
+ */
 export async function sealRecord(
 	key: CryptoKey,
 	value: unknown,
 	binding: RecordBinding
-): Promise<Sealed> {
-	const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
-	const data = enc.encode(JSON.stringify(value));
-	const ciphertext = await crypto.subtle.encrypt(
-		{ name: "AES-GCM", iv, additionalData: bindingBytes(binding) },
-		key,
-		data
-	);
-	return { iv, ciphertext: new Uint8Array(ciphertext) };
+): Promise<string> {
+	const plaintext = enc.encode(JSON.stringify(value));
+	const header: RecordHeader = { recId: binding.id, recKind: binding.kind, recRev: binding.rev };
+	return new CompactEncrypt(plaintext)
+		.setProtectedHeader({ alg: "dir", enc: WRAP_ENC, ...header })
+		.encrypt(key);
 }
 
-/** Einen Datensatz entschluesseln. Wirft, wenn Chiffrat oder Bindung nicht passen. */
+/** Einen Datensatz entschluesseln. Wirft, wenn Chiffrat, Bindung oder Schluessel nicht passen. */
 export async function openRecord<T>(
 	key: CryptoKey,
-	sealed: Sealed,
+	sealed: string,
 	binding: RecordBinding
 ): Promise<T> {
-	const plain = await crypto.subtle.decrypt(
-		{ name: "AES-GCM", iv: sealed.iv, additionalData: bindingBytes(binding) },
-		key,
-		sealed.ciphertext
-	);
-	return JSON.parse(new TextDecoder().decode(plain)) as T;
+	const { plaintext, protectedHeader } = await compactDecrypt(sealed, key, {
+		keyManagementAlgorithms: ["dir"],
+		contentEncryptionAlgorithms: [WRAP_ENC]
+	});
+	const header = protectedHeader as unknown as RecordHeader;
+	if (
+		header.recId !== binding.id ||
+		header.recKind !== binding.kind ||
+		header.recRev !== binding.rev
+	) {
+		throw new Error("Datensatz passt nicht zur erwarteten Kennung.");
+	}
+	return JSON.parse(new TextDecoder().decode(plaintext)) as T;
 }
 
 // ---------- Abgeleitete Werte ----------
@@ -129,37 +152,6 @@ export async function vaultProof(key: CryptoKey): Promise<string> {
 	return toHex(await hmacWithVaultKey(key, "vault-proof-v1"));
 }
 
-// ---------- Verpackungen ----------
-
-export type WrapKind = "recovery" | "passkey" | "device";
-
-export interface KeyWrap {
-	kind: WrapKind;
-	/** Womit die Verpackung geoeffnet wird - Zufall je Verpackung. */
-	salt: Uint8Array;
-	iv: Uint8Array;
-	wrapped: Uint8Array;
-	/** Nur bei "device": der fluechtige oeffentliche Schluessel des Verpackenden. */
-	ephemeralPublicKey?: Uint8Array;
-}
-
-async function wrapWith(
-	kek: CryptoKey,
-	vaultKey: CryptoKey,
-	salt: Uint8Array,
-	kind: WrapKind
-): Promise<KeyWrap> {
-	const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
-	const raw = await exportVaultKey(vaultKey);
-	const wrapped = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, kek, raw);
-	return { kind, salt, iv, wrapped: new Uint8Array(wrapped) };
-}
-
-async function unwrapWith(kek: CryptoKey, wrap: KeyWrap): Promise<CryptoKey> {
-	const raw = await crypto.subtle.decrypt({ name: "AES-GCM", iv: wrap.iv }, kek, wrap.wrapped);
-	return importVaultKey(raw);
-}
-
 // ---------- Verpackung aus der Wiederherstellungs-Phrase ----------
 
 /** Eine neue Wiederherstellungs-Phrase: 24 Woerter, 256 Bit Entropie. */
@@ -176,34 +168,29 @@ export function normalizePhrase(phrase: string): string {
 	return phrase.trim().toLowerCase().split(/\s+/).join(" ");
 }
 
-async function kekFromPhrase(phrase: string, salt: Uint8Array): Promise<CryptoKey> {
-	// Die Entropie der Phrase, nicht ihr Text: derselbe Schluessel auch dann, wenn
-	// jemand sie in einer anderen Schreibweise eingibt.
+/**
+ * Die Phrase verpackt den Tresorschluessel - `PBES2-HS512+A256KW`, das
+ * Passwort ist die Entropie der Phrase, nicht ihr Text (derselbe Schluessel
+ * auch dann, wenn jemand sie in einer anderen Schreibweise eingibt). Salz und
+ * Iterationszahl liegen automatisch im JWE-Header, `p2c` explizit gesetzt.
+ */
+export async function wrapWithPhrase(vaultKey: CryptoKey, phrase: string): Promise<string> {
 	const entropy = mnemonicToEntropy(normalizePhrase(phrase), wordlist);
-	const base = await crypto.subtle.importKey("raw", entropy as BufferSource, "PBKDF2", false, [
-		"deriveKey"
-	]);
-	return crypto.subtle.deriveKey(
-		{
-			name: "PBKDF2",
-			salt: salt as BufferSource,
-			iterations: PBKDF2_ITERATIONS,
-			hash: "SHA-256"
-		},
-		base,
-		{ name: "AES-GCM", length: KEY_BITS },
-		false,
-		["encrypt", "decrypt"]
-	);
+	const raw = new Uint8Array(await exportVaultKey(vaultKey));
+	return new CompactEncrypt(raw)
+		.setProtectedHeader({ alg: "PBES2-HS512+A256KW", enc: WRAP_ENC })
+		.setKeyManagementParameters({ p2c: PBES2_ITERATIONS })
+		.encrypt(entropy as Uint8Array);
 }
 
-export async function wrapWithPhrase(vaultKey: CryptoKey, phrase: string): Promise<KeyWrap> {
-	const salt = crypto.getRandomValues(new Uint8Array(16));
-	return wrapWith(await kekFromPhrase(phrase, salt), vaultKey, salt, "recovery");
-}
-
-export async function unwrapWithPhrase(wrap: KeyWrap, phrase: string): Promise<CryptoKey> {
-	return unwrapWith(await kekFromPhrase(phrase, wrap.salt), wrap);
+export async function unwrapWithPhrase(wrap: string, phrase: string): Promise<CryptoKey> {
+	const entropy = mnemonicToEntropy(normalizePhrase(phrase), wordlist);
+	const { plaintext } = await compactDecrypt(wrap, entropy as Uint8Array, {
+		keyManagementAlgorithms: ["PBES2-HS512+A256KW"],
+		contentEncryptionAlgorithms: [WRAP_ENC],
+		maxPBES2Count: PBES2_ITERATIONS
+	});
+	return importVaultKey(plaintext.buffer as ArrayBuffer);
 }
 
 // ---------- Verpackung aus einem Passkey (PRF) ----------
@@ -221,17 +208,34 @@ export async function kekFromPrf(prfOutput: BufferSource, salt: Uint8Array): Pro
 		base,
 		{ name: "AES-GCM", length: KEY_BITS },
 		false,
-		["encrypt", "decrypt"]
+		["encrypt", "decrypt", "wrapKey", "unwrapKey"]
 	);
 }
 
-export async function wrapWithPrf(vaultKey: CryptoKey, prfOutput: BufferSource): Promise<KeyWrap> {
+/**
+ * Der PRF-Wert selbst ist kein Standard-JWE-Schluessel (kein Passwort, kein
+ * EC-Schluessel) - `kekFromPrf` leitet erst einen ab (HKDF, wie bisher), der
+ * dann als `A256GCMKW`-Schluessel den Tresorschluessel verpackt. Das
+ * HKDF-Salz reist als eigenes Header-Claim mit, da JWE dafuer kein Feld kennt.
+ */
+export async function wrapWithPrf(vaultKey: CryptoKey, prfOutput: BufferSource): Promise<string> {
 	const salt = crypto.getRandomValues(new Uint8Array(16));
-	return wrapWith(await kekFromPrf(prfOutput, salt), vaultKey, salt, "passkey");
+	const kek = await kekFromPrf(prfOutput, salt);
+	const raw = new Uint8Array(await exportVaultKey(vaultKey));
+	return new CompactEncrypt(raw)
+		.setProtectedHeader({ alg: "A256GCMKW", enc: WRAP_ENC, prfSalt: toBase64(salt) })
+		.encrypt(kek);
 }
 
-export async function unwrapWithPrf(wrap: KeyWrap, prfOutput: BufferSource): Promise<CryptoKey> {
-	return unwrapWith(await kekFromPrf(prfOutput, wrap.salt), wrap);
+export async function unwrapWithPrf(wrap: string, prfOutput: BufferSource): Promise<CryptoKey> {
+	const header = decodeProtectedHeader(wrap) as { prfSalt?: string };
+	if (!header.prfSalt) throw new Error("Passkey-Verpackung ohne Salz.");
+	const kek = await kekFromPrf(prfOutput, fromBase64(header.prfSalt));
+	const { plaintext } = await compactDecrypt(wrap, kek, {
+		keyManagementAlgorithms: ["A256GCMKW"],
+		contentEncryptionAlgorithms: [WRAP_ENC]
+	});
+	return importVaultKey(plaintext.buffer as ArrayBuffer);
 }
 
 // ---------- Verpackung fuer ein neues Geraet ----------
@@ -245,34 +249,6 @@ export async function createPairingKeyPair(): Promise<CryptoKeyPair> {
 
 export async function exportPairingPublicKey(pair: CryptoKeyPair): Promise<Uint8Array> {
 	return new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey));
-}
-
-async function kekFromEcdh(
-	privateKey: CryptoKey,
-	peerPublicKey: Uint8Array,
-	salt: Uint8Array
-): Promise<CryptoKey> {
-	const peer = await crypto.subtle.importKey(
-		"raw",
-		peerPublicKey as BufferSource,
-		{ name: "ECDH", namedCurve: "P-256" },
-		false,
-		[]
-	);
-	const shared = await crypto.subtle.deriveBits({ name: "ECDH", public: peer }, privateKey, 256);
-	const base = await crypto.subtle.importKey("raw", shared, "HKDF", false, ["deriveKey"]);
-	return crypto.subtle.deriveKey(
-		{
-			name: "HKDF",
-			hash: "SHA-256",
-			salt: salt as BufferSource,
-			info: enc.encode("timetracker-pairing")
-		},
-		base,
-		{ name: "AES-GCM", length: KEY_BITS },
-		false,
-		["encrypt", "decrypt"]
-	);
 }
 
 // ---------- Der Kopplungscode ----------
@@ -338,23 +314,37 @@ export function formatPairingCode(code: string): string {
 	return (code.match(/.{1,4}/g) ?? [code]).join("-");
 }
 
-/** Auf dem entsperrten Geraet: den Tresorschluessel fuer das neue Geraet verpacken. */
+/**
+ * Auf dem entsperrten Geraet: den Tresorschluessel fuer das neue Geraet
+ * verpacken - `ECDH-ES+A256KW`. `jose` erzeugt das fluechtige Schluesselpaar
+ * selbst, macht ECDH+ConcatKDF und AES-Key-Wrap, und legt den oeffentlichen
+ * fluechtigen Schluessel automatisch ins Standard-Header-Feld `epk` - nichts
+ * davon muss hier noch von Hand mitgefuehrt werden.
+ */
 export async function wrapForDevice(
 	vaultKey: CryptoKey,
 	targetPublicKey: Uint8Array
-): Promise<KeyWrap> {
-	const ephemeral = await createPairingKeyPair();
-	const salt = crypto.getRandomValues(new Uint8Array(16));
-	const kek = await kekFromEcdh(ephemeral.privateKey, targetPublicKey, salt);
-	const wrap = await wrapWith(kek, vaultKey, salt, "device");
-	wrap.ephemeralPublicKey = await exportPairingPublicKey(ephemeral);
-	return wrap;
+): Promise<string> {
+	const peer = await crypto.subtle.importKey(
+		"raw",
+		targetPublicKey as BufferSource,
+		{ name: "ECDH", namedCurve: "P-256" },
+		true,
+		[]
+	);
+	const raw = new Uint8Array(await exportVaultKey(vaultKey));
+	return new CompactEncrypt(raw)
+		.setProtectedHeader({ alg: "ECDH-ES+A256KW", enc: WRAP_ENC })
+		.encrypt(peer);
 }
 
 /** Auf dem neuen Geraet: das Paket mit dem eigenen privaten Schluessel oeffnen. */
-export async function unwrapForDevice(wrap: KeyWrap, ownPrivateKey: CryptoKey): Promise<CryptoKey> {
-	if (!wrap.ephemeralPublicKey) throw new Error("Kopplungspaket ohne öffentlichen Schlüssel");
-	return unwrapWith(await kekFromEcdh(ownPrivateKey, wrap.ephemeralPublicKey, wrap.salt), wrap);
+export async function unwrapForDevice(wrap: string, ownPrivateKey: CryptoKey): Promise<CryptoKey> {
+	const { plaintext } = await compactDecrypt(wrap, ownPrivateKey, {
+		keyManagementAlgorithms: ["ECDH-ES+A256KW"],
+		contentEncryptionAlgorithms: [WRAP_ENC]
+	});
+	return importVaultKey(plaintext.buffer as ArrayBuffer);
 }
 
 // ---------- Hilfen ----------
@@ -381,33 +371,4 @@ export function fromBase64(b64: string): Uint8Array {
 	const out = new Uint8Array(s.length);
 	for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
 	return out;
-}
-
-// ---------- Wire-Format einer Verpackung ----------
-//
-// So legt der Server sie ab, und so reist sie durch die Kopplung: JSON mit
-// base64-Feldern. Stand an drei Stellen; drei Fassungen hiessen, dass ein
-// zusaetzliches Feld nur an zweien ankommt.
-
-/** Eine Verpackung als JSON-Objekt - Bytes werden zu base64. */
-export function serializeWrap(wrap: KeyWrap): Record<string, string> {
-	return {
-		kind: wrap.kind,
-		salt: toBase64(wrap.salt),
-		iv: toBase64(wrap.iv),
-		wrapped: toBase64(wrap.wrapped),
-		...(wrap.ephemeralPublicKey ? { ephemeralPublicKey: toBase64(wrap.ephemeralPublicKey) } : {})
-	};
-}
-
-/** Der Weg zurueck. `kind` faellt vor, wo es im JSON fehlt (Kopplung). */
-export function deserializeWrap(payload: string, kind: KeyWrap["kind"] = "device"): KeyWrap {
-	const d = JSON.parse(payload);
-	return {
-		kind: d.kind ?? kind,
-		salt: fromBase64(d.salt),
-		iv: fromBase64(d.iv),
-		wrapped: fromBase64(d.wrapped),
-		...(d.ephemeralPublicKey ? { ephemeralPublicKey: fromBase64(d.ephemeralPublicKey) } : {})
-	};
 }

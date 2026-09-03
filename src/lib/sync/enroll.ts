@@ -10,33 +10,26 @@ import type {
 import {
 	createRecoveryPhrase,
 	createVaultKey,
-	deserializeWrap,
 	fromBase64,
 	importVaultKey,
 	isValidRecoveryPhrase,
 	recoveryLookupId,
-	serializeWrap,
 	toBase64,
 	unwrapWithPhrase,
 	unwrapWithPrf,
 	vaultProof,
 	wrapWithPhrase,
-	wrapWithPrf,
-	type KeyWrap
+	wrapWithPrf
 } from "../crypto/vault";
 import { Api, ApiError } from "./api";
 import { logWarn } from "../log";
 import { platformFetch } from "../platform/http";
 import { CHALLENGE_REUSE_MS } from "$shared/codes";
 
-/** Was der Server unter einer Verpackung versteht - Format siehe vault.ts. */
-const serialize = (wrap: KeyWrap) => JSON.stringify(serializeWrap(wrap));
-const deserialize = deserializeWrap;
-
 /** Die Verpackung mit der Phrase oeffnen - oder verstaendlich scheitern. */
 async function openWithPhrase(payload: string, phrase: string): Promise<CryptoKey> {
 	try {
-		return await unwrapWithPhrase(deserialize(payload), phrase);
+		return await unwrapWithPhrase(payload, phrase);
 	} catch {
 		throw new Error("Die Wörter passen nicht zu diesem Konto – bitte noch einmal prüfen.");
 	}
@@ -45,7 +38,7 @@ async function openWithPhrase(payload: string, phrase: string): Promise<CryptoKe
 /** Die Verpackung mit dem PRF-Wert oeffnen - oder null, wenn sie nicht aufgeht. */
 async function openWithPrf(payload: string, prf: Uint8Array): Promise<CryptoKey | null> {
 	try {
-		return await unwrapWithPrf(deserialize(payload), prf);
+		return await unwrapWithPrf(payload, prf);
 	} catch {
 		// Der Authentifikator lieferte einen Wert, aber nicht den, mit dem verpackt
 		// wurde - etwa nach einem Wechsel des Passkey-Verwalters. Dann bleibt die
@@ -223,11 +216,11 @@ export async function register(
 			email: opts.email,
 			response,
 			recoveryWrap: {
-				payload: serialize(await wrapWithPhrase(key, recoveryPhrase)),
+				payload: await wrapWithPhrase(key, recoveryPhrase),
 				recoveryId: await recoveryLookupId(recoveryPhrase),
 				vaultProof: await vaultProof(key)
 			},
-			passkeyWrap: prf ? { payload: serialize(await wrapWithPrf(key, prf)) } : null
+			passkeyWrap: prf ? { payload: await wrapWithPrf(key, prf) } : null
 		});
 	} finally {
 		forget(registerKey(baseUrl, displayName, opts.invite), task);
@@ -313,7 +306,7 @@ export async function ensurePasskeyWrap(
 			? { ok: true, credentialId, prf }
 			: await harvestPrf(credentialId);
 	if (!found.ok) return found;
-	await api.putWrap("passkey", serialize(await wrapWithPrf(key, found.prf)), found.credentialId);
+	await api.putWrap("passkey", await wrapWithPrf(key, found.prf), found.credentialId);
 	return { ok: true, credentialId: found.credentialId };
 }
 
@@ -444,7 +437,7 @@ export async function registerFromDevice(
 	const recoveryPhrase = createRecoveryPhrase();
 	// Die Phrase zuerst: sie ist der einzige Weg zurueck. Scheitert das, scheitert
 	// das Anlegen sichtbar - statt still ein unbrauchbares Konto zu hinterlassen.
-	await api.putWrap("recovery", serialize(await wrapWithPhrase(key, recoveryPhrase)), undefined, {
+	await api.putWrap("recovery", await wrapWithPhrase(key, recoveryPhrase), undefined, {
 		recoveryId: await recoveryLookupId(recoveryPhrase),
 		vaultProof: await vaultProof(key)
 	});

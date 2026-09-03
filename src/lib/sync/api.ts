@@ -1,5 +1,5 @@
 // Der Draht zum Server.
-import type { KeyWrap } from "../crypto/vault";
+import type { WrapKind } from "../crypto/vault";
 import { TELEMETRY_KEY } from "../defaults";
 
 export type FetchFn = (input: string, init?: RequestInit) => Promise<Response>;
@@ -352,7 +352,7 @@ export class Api {
 	}
 
 	putWrap(
-		kind: KeyWrap["kind"],
+		kind: WrapKind,
 		payload: string,
 		credentialId?: string,
 		/** Nur bei "recovery": Kennung und Nachweis fuer den Weg zurueck. */

@@ -21,14 +21,7 @@ import {
 } from "./outbox";
 import { mergeRecord, resolveOpenEntries } from "./merge";
 import { contentOf } from "./stamp";
-import {
-	bucketFor,
-	fromBase64,
-	openRecord,
-	sealRecord,
-	toBase64,
-	type Sealed
-} from "../crypto/vault";
+import { bucketFor, openRecord, sealRecord } from "../crypto/vault";
 import { logError, logInfo, logWarn } from "../log";
 import { monthKey, prevMonthKey } from "../time";
 
@@ -91,19 +84,6 @@ export interface SyncOutcome {
 	seq: number;
 	/** Ob noch aeltere Monate fehlen. */
 	backfilling: boolean;
-}
-
-/** Das Chiffrat samt Zufallswert als eine Zeichenkette. */
-function packSealed(sealed: Sealed): string {
-	const out = new Uint8Array(sealed.iv.length + sealed.ciphertext.length);
-	out.set(sealed.iv);
-	out.set(sealed.ciphertext, sealed.iv.length);
-	return toBase64(out);
-}
-
-function unpackSealed(payload: string): Sealed {
-	const raw = fromBase64(payload);
-	return { iv: raw.slice(0, 12), ciphertext: raw.slice(12) };
 }
 
 export interface SyncProgress {
@@ -412,7 +392,7 @@ export class SyncEngine {
 		// Fassung, die daraus wird; nachtraeglich am fertigen Datensatz zu drehen
 		// wuerde sie falsch machen und das Oeffnen scheitern lassen.
 		const rev = this.#unknownToServer.has(item.id) ? 0 : (item.rev ?? 0);
-		const sealed = await sealRecord(this.#key, contentOf(item), {
+		const payload = await sealRecord(this.#key, contentOf(item), {
 			id: item.id,
 			kind: change.kind,
 			// Gebunden wird an die Fassung, die daraus WIRD - der Server zaehlt beim
@@ -425,7 +405,7 @@ export class SyncEngine {
 			bucket,
 			baseRev: rev,
 			updatedAt: item.updatedAt ?? Date.now(),
-			payload: packSealed(sealed)
+			payload
 		};
 	}
 
@@ -798,7 +778,7 @@ export class SyncEngine {
 	async #open<T>(r: ServerRecord): Promise<T | undefined> {
 		if (!r.payload) return r.deletedAt ? ({} as T) : undefined;
 		try {
-			return await openRecord<T>(this.#key, unpackSealed(r.payload), {
+			return await openRecord<T>(this.#key, r.payload, {
 				id: r.id,
 				kind: r.kind,
 				rev: r.rev

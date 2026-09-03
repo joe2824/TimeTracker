@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { decodeProtectedHeader } from "jose";
 import {
 	bucketFor,
 	checkedPairingKey,
@@ -53,17 +54,18 @@ describe("Datensaetze versiegeln", () => {
 	it("verraet den Klartext nicht", async () => {
 		const key = await createVaultKey();
 		const sealed = await sealRecord(key, { note: "Geheimprojekt" }, BINDING);
-		expect(new TextDecoder().decode(sealed.ciphertext)).not.toContain("Geheimprojekt");
+		expect(sealed).not.toContain("Geheimprojekt");
 	});
 
 	it("nimmt bei jedem Mal einen neuen Zufallswert", async () => {
 		// Zweimal dasselbe zu verschluesseln darf nicht zweimal dasselbe ergeben,
-		// sonst sieht der Server, dass sich nichts geaendert hat.
+		// sonst sieht der Server, dass sich nichts geaendert hat. JWE-Compact-Form:
+		// header.encryptedKey.iv.ciphertext.tag - bei "dir" bleibt encryptedKey leer.
 		const key = await createVaultKey();
-		const a = await sealRecord(key, { x: 1 }, BINDING);
-		const b = await sealRecord(key, { x: 1 }, BINDING);
-		expect(toHex(a.iv)).not.toBe(toHex(b.iv));
-		expect(toHex(a.ciphertext)).not.toBe(toHex(b.ciphertext));
+		const a = (await sealRecord(key, { x: 1 }, BINDING)).split(".");
+		const b = (await sealRecord(key, { x: 1 }, BINDING)).split(".");
+		expect(a[2]).not.toBe(b[2]); // iv
+		expect(a[3]).not.toBe(b[3]); // ciphertext
 	});
 
 	it("laesst sich nicht auf einen anderen Datensatz umhaengen", async () => {
@@ -79,8 +81,11 @@ describe("Datensaetze versiegeln", () => {
 	it("merkt eine Verfaelschung", async () => {
 		const key = await createVaultKey();
 		const sealed = await sealRecord(key, { x: 1 }, BINDING);
-		sealed.ciphertext[0] ^= 0xff;
-		await expect(openRecord(key, sealed, BINDING)).rejects.toThrow();
+		// Ein Zeichen im Ciphertext-Abschnitt kippen (drittletzter Teil vor dem Tag).
+		const parts = sealed.split(".");
+		const flipped = parts[3][0] === "A" ? "B" : "A";
+		parts[3] = flipped + parts[3].slice(1);
+		await expect(openRecord(key, parts.join("."), BINDING)).rejects.toThrow();
 	});
 
 	it("oeffnet nicht mit einem fremden Schluessel", async () => {
@@ -184,8 +189,9 @@ describe("Wiederherstellungs-Phrase", () => {
 		const phrase = createRecoveryPhrase();
 		const a = await wrapWithPhrase(key, phrase);
 		const b = await wrapWithPhrase(key, phrase);
-		expect(toHex(a.salt)).not.toBe(toHex(b.salt));
-		expect(toHex(a.wrapped)).not.toBe(toHex(b.wrapped));
+		// Salz (im Header, PBES2 "p2s") und Chiffrat unterscheiden sich - die ganze
+		// Verpackung ist also bei jedem Mal eine andere.
+		expect(a).not.toBe(b);
 		// Beide oeffnen trotzdem denselben Tresor.
 		expect(await sameKey(await unwrapWithPhrase(b, phrase), key)).toBe(true);
 	});
@@ -224,12 +230,21 @@ describe("Kopplung eines neuen Geraets", () => {
 		await expect(unwrapForDevice(packet, foreign.privateKey)).rejects.toThrow();
 	});
 
-	it("weist ein Paket ohne oeffentlichen Schluessel ab", async () => {
+	it("weist ein Paket ab, dessen fluechtiger Schluessel im Header fehlt", async () => {
+		// `epk` (der fluechtige oeffentliche Schluessel) liegt im geschuetzten
+		// JWE-Header - der ist Teil der authentisierten Daten. Ein Paket ohne ihn
+		// (oder mit veraendertem Header) faellt beim Oeffnen durch, weil die
+		// Pruefsumme nicht mehr passt - unabhaengig davon, was genau am Header fehlt.
 		const vault = await createVaultKey();
 		const freshPair = await createPairingKeyPair();
 		const packet = await wrapForDevice(vault, await exportPairingPublicKey(freshPair));
-		delete packet.ephemeralPublicKey;
-		await expect(unwrapForDevice(packet, freshPair.privateKey)).rejects.toThrow(/öffentlichen Schlüssel/);
+		const [header, ...rest] = packet.split(".");
+		const headerJson = JSON.parse(Buffer.from(header, "base64url").toString());
+		delete headerJson.epk;
+		const strippedHeader = Buffer.from(JSON.stringify(headerJson)).toString("base64url");
+		await expect(
+			unwrapForDevice([strippedHeader, ...rest].join("."), freshPair.privateKey)
+		).rejects.toThrow();
 	});
 
 	it("jede Kopplung nimmt ein neues fluechtiges Paar", async () => {
@@ -238,7 +253,8 @@ describe("Kopplung eines neuen Geraets", () => {
 		const pub = await exportPairingPublicKey(freshPair);
 		const a = await wrapForDevice(vault, pub);
 		const b = await wrapForDevice(vault, pub);
-		expect(toHex(a.ephemeralPublicKey!)).not.toBe(toHex(b.ephemeralPublicKey!));
+		const epkOf = (jwe: string) => (decodeProtectedHeader(jwe) as { epk?: { x?: string } }).epk?.x;
+		expect(epkOf(a)).not.toBe(epkOf(b));
 	});
 });
 
