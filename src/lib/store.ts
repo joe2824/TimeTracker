@@ -368,6 +368,14 @@ export interface DeviceInfo {
 	/** Anzeigename des Kontos - nur fuer die Oberflaeche. */
 	accountName?: string;
 	/**
+	 * Der Passkey, mit dem dieser Browser zuletzt hereingekommen ist.
+	 *
+	 * Ein Konto kann mehrere haben; von der Kontoliste aus ist nicht zu sehen,
+	 * welcher an DIESEM Browser haengt. Ohne diese Kennung waere nicht zu
+	 * beurteilen, ob der hiesige Passkey die Daten allein oeffnen kann.
+	 */
+	passkeyId?: string;
+	/**
 	 * Zu welchem Konto der hier liegende Schluessel gehoert.
 	 *
 	 * Laeuft die Sitzung im Browser ab, bleibt der Schluessel liegen. Meldet sich

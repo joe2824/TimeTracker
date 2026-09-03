@@ -513,4 +513,34 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 			await account.unlink();
 		}
 	});
+
+	it("der gemerkte Passkey faellt beim Kontowechsel weg", async () => {
+		// Er sagt, welcher Eintrag der Kontoliste an DIESEM Browser haengt. Bliebe
+		// er beim Wechsel stehen, zeigte er auf einen Passkey des vorigen Kontos.
+		const server = new MockServer();
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = server.fetchFor("browser-device");
+
+		try {
+			const keyA = await createVaultKey();
+			await account.linkWithSession("http://test-server/alice", keyA, "Alice");
+			await account.rememberPasskey("passkey-alice");
+
+			expect(account.passkeyId).toBe("passkey-alice");
+			expect(JSON.parse(files.get("data/device.json")!).passkeyId).toBe("passkey-alice");
+
+			// Anmeldung mit demselben Schluessel: die Kennung bleibt.
+			await account.linkWithSession("http://test-server/alice", keyA, "Alice");
+			expect(account.passkeyId).toBe("passkey-alice");
+
+			const keyB = await createVaultKey();
+			await account.linkWithSession("http://test-server/bob", keyB, "Bob");
+
+			expect(account.passkeyId).toBeNull();
+			expect(JSON.parse(files.get("data/device.json")!).passkeyId).toBeUndefined();
+		} finally {
+			globalThis.fetch = originalFetch;
+			await account.unlink();
+		}
+	});
 });

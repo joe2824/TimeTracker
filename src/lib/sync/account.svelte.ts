@@ -135,6 +135,14 @@ class AccountState {
 	/** Weist sich dieses Geraet mit einem eigenen Token aus - oder mit einem Cookie? */
 	hasDeviceToken = $state<boolean>(false);
 	/**
+	 * Der Passkey dieses Browsers - null, solange keiner benutzt wurde.
+	 *
+	 * Ein Konto kann mehrere Passkeys haben. Welcher davon hier liegt, verraet
+	 * die Kontoliste nicht; nur diese Kennung sagt, welcher Eintrag der eigene
+	 * ist.
+	 */
+	passkeyId = $state<string | null>(null);
+	/**
 	 * Ein Kopplungscode, der ueber einen "timetracker://"-Link hereinkam.
 	 *
 	 * Liegt hier und nicht in der Karte: der Link trifft das Fenster, die Karte
@@ -246,6 +254,7 @@ class AccountState {
 			this.serverUrl = info.serverUrl;
 			this.name = info.accountName ?? "";
 			this.secretsProtected = info.protected ?? false;
+			this.passkeyId = info.passkeyId ?? null;
 			this.state = "connecting";
 			try {
 				const token = info.token
@@ -1004,6 +1013,7 @@ class AccountState {
 		// (dann bleibt er hier liegen), sonst diesem. Wer noch nie ein Konto hatte,
 		// dessen Bestand ist der eigene und gehoert hoch.
 		const dataOwner = switched && isTauri() ? info.dataOwner : fingerprint;
+		const keptPasskeyId = switched || foreignCopy ? undefined : info.passkeyId;
 
 		await saveDevice({
 			...info,
@@ -1017,12 +1027,15 @@ class AccountState {
 			// Konto, und `unlockWithStoredKey` haengt allein an diesem Feld: eine
 			// stehengebliebene Kennung gaebe den neuen Schluessel an das alte Konto.
 			accountUserId: userId ?? (switched || foreignCopy ? undefined : info.accountUserId),
+			// Aus demselben Grund: der Passkey gehoert dem vorigen Konto.
+			passkeyId: keptPasskeyId,
 			accountFingerprint: fingerprint,
 			dataOwner,
 			seq: 0,
 			priority: startState.priority
 		});
 		this.name = name || this.name;
+		this.passkeyId = keptPasskeyId ?? null;
 
 		this.serverUrl = url;
 		this.secretsProtected = protectedKey.protected;
@@ -1084,12 +1097,25 @@ class AccountState {
 		return (await this.#api.me()).passkeys;
 	}
 
+	/**
+	 * Merken, welcher Passkey zu diesem Browser gehoert.
+	 *
+	 * Nach einer Anmeldung und nach dem Anlegen. Ohne den Vermerk ist von der
+	 * Kontoliste aus nicht zu sehen, welcher Eintrag der eigene ist.
+	 */
+	async rememberPasskey(id: string): Promise<void> {
+		this.passkeyId = id;
+		const info = await loadDevice();
+		if (info && info.passkeyId !== id) await saveDevice({ ...info, passkeyId: id });
+	}
+
 	/** Einen weiteren Passkey anlegen. */
 	async addPasskey(label: string): Promise<{ prfAvailable: boolean }> {
 		if (!this.#key) throw new Error("Das Konto ist nicht entsperrt");
 		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
 		const { addPasskey } = await import("./enroll");
 		const result = await addPasskey(this.#api, this.#key, label);
+		await this.rememberPasskey(result.id);
 		return { prfAvailable: result.prfAvailable };
 	}
 
@@ -1107,7 +1133,11 @@ class AccountState {
 		if (!this.#key) throw new Error("Das Konto ist nicht entsperrt");
 		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
 		const { ensurePasskeyWrap } = await import("./enroll");
-		return ensurePasskeyWrap(this.#api, this.#key, credentialId, prf);
+		const result = await ensurePasskeyWrap(this.#api, this.#key, credentialId, prf);
+		// Ohne Kennung nimmt der Browser den Passkey, den er anbietet - erst die
+		// Antwort sagt, welcher das war.
+		if (result.ok) await this.rememberPasskey(result.credentialId);
+		return result;
 	}
 
 	/** Die Kennung dieses Geraets - damit die Liste das eigene erkennt. */

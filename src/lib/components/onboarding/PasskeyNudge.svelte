@@ -5,13 +5,11 @@
 	import { toast } from "svelte-sonner";
 	import { account } from "$lib/sync/account.svelte";
 	import { isTauri } from "$lib/platform/env";
+	import { missingPasskey, type MissingPasskey } from "$lib/passkeyStatus";
 	import KeyRoundIcon from "@lucide/svelte/icons/key-round";
 	import XIcon from "@lucide/svelte/icons/x";
 
-	/** Was diesem Browser zum reibungslosen Anmelden fehlt. */
-	type Missing = "passkey" | "wrap" | null;
-
-	let missing = $state<Missing>(null);
+	let missing = $state<MissingPasskey>(null);
 	let asked = $state(false);
 	let running = $state(false);
 	let dismissed = $state(false);
@@ -36,11 +34,7 @@
 	});
 
 	async function check() {
-		const passkeys = await account.passkeys();
-		if (passkeys.length === 0) missing = "passkey";
-		// Kontoweit, nicht je Passkey: welcher an DIESEM Browser haengt, ist von
-		// hier aus nicht zu sehen.
-		else missing = passkeys.every((p) => !p.hasWrap) ? "wrap" : null;
+		missing = missingPasskey(await account.passkeys(), account.passkeyId);
 	}
 
 	async function resolve() {

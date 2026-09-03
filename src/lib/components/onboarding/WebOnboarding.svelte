@@ -55,6 +55,8 @@
 	/** Zu welchem Konto der eben geholte Schluessel gehoert. */
 	let loggedInId = "";
 	let keyValue: CryptoKey | null = null;
+	/** Der Passkey, den das Anlegen eben erzeugt hat. */
+	let newPasskeyId = "";
 	/**
 	 * Der Passkey der letzten Anmeldung. Braucht es gleich die Phrase, bekommt er
 	 * dabei seine fehlende Verpackung - und die nächste Anmeldung kommt ohne die
@@ -93,6 +95,7 @@
 			lastPasskey = { credentialId: r.credentialId, prf: r.prf };
 			if (r.key) {
 				await account.linkWithSession(serverUrl, r.key, r.displayName, r.userId);
+				await account.rememberPasskey(r.credentialId);
 				welcome();
 				return;
 			}
@@ -101,6 +104,7 @@
 			// nachsehen, ob der Schlüssel hier noch liegt. Nach einer abgelaufenen
 			// Sitzung ist das der Normalfall.
 			if (await account.unlockWithStoredKey(serverUrl, r.userId)) {
+				await account.rememberPasskey(r.credentialId);
 				// Und gleich den Passkey in Ordnung bringen, damit es beim nächsten
 				// Mal auch ohne den hinterlegten Schlüssel geht.
 				void account
@@ -192,6 +196,7 @@
 			loggedInName = r.displayName;
 			loggedInId = r.userId;
 			keyValue = r.key;
+			newPasskeyId = r.credentialId;
 			phrase = r.recoveryPhrase!;
 			inviteOpen = false;
 			stepIndex = "phrase";
@@ -215,6 +220,7 @@
 		// das Flag erst danach setzt, sieht ihn nie.
 		onboardingOpen.value = true;
 		await account.linkWithSession(serverUrl, keyValue, loggedInName, loggedInId);
+		if (newPasskeyId) await account.rememberPasskey(newPasskeyId);
 
 		stepIndex = "geraet";
 	}
@@ -260,6 +266,7 @@
 			// Verpackung und öffnet die Daten beim nächsten Mal allein.
 			const key = await unlockWithPhrase(serverUrl, inputValue, lastPasskey);
 			await account.linkWithSession(serverUrl, key, loggedInName, loggedInId);
+			if (lastPasskey) await account.rememberPasskey(lastPasskey.credentialId);
 			toast.success("Entsperrt.");
 		} catch (e) {
 			toast.error(fehlertext(e, "Die Phrase passt nicht zu diesem Konto"));

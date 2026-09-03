@@ -179,6 +179,8 @@ export interface EnrollResult {
 	recoveryPhrase?: string;
 	/** Ob der Passkey den Vault kuenftig allein oeffnen kann. */
 	prfAvailable: boolean;
+	/** Die Kennung des eben angelegten Passkeys. */
+	credentialId: string;
 	key: CryptoKey;
 }
 
@@ -233,6 +235,7 @@ export async function register(
 
 	return {
 		prfAvailable: prf !== null,
+		credentialId: response.id,
 		userId: start.userId,
 		displayName,
 		recoveryPhrase,
@@ -304,14 +307,14 @@ export async function ensurePasskeyWrap(
 	credentialId?: string,
 	/** Ein bereits vorliegender PRF-Wert - dann entfaellt die zweite Abfrage. */
 	prf?: Uint8Array | null
-): Promise<{ ok: true } | { ok: false; reason: PrfFailure }> {
+): Promise<{ ok: true; credentialId: string } | { ok: false; reason: PrfFailure }> {
 	const found: PrfResult =
 		prf && credentialId
 			? { ok: true, credentialId, prf }
 			: await harvestPrf(credentialId);
 	if (!found.ok) return found;
 	await api.putWrap("passkey", serialize(await wrapWithPrf(key, found.prf)), found.credentialId);
-	return { ok: true };
+	return { ok: true, credentialId: found.credentialId };
 }
 
 /** Anmelden. */
