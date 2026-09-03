@@ -170,6 +170,11 @@ export function useBrowserStorage(): void {
 	backend = browserBackend;
 }
 
+/** Ob gerade die Browser-Ablage laeuft - nicht dasselbe wie `isTauri()`, siehe Aufrufer. */
+export function usingBrowserStorage(): boolean {
+	return backend === browserBackend;
+}
+
 export const storage: StorageBackend = {
 	exists: (p) => backend.exists(p),
 	mkdir: (p) => backend.mkdir(p),

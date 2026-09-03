@@ -10,7 +10,9 @@ import {
 	loadTimeReport,
 	saveDevice,
 	saveEntries,
-	saveTimeReport
+	saveTimeReport,
+	setLocalEncryptionKey,
+	type DeviceInfo
 } from "../store";
 import { loadActivities, saveActivities, loadSettings, saveSettings, listEntryMonths } from "../store";
 import { deviceId } from "./device";
@@ -44,8 +46,10 @@ import {
 } from "../crypto/vault";
 import { toast } from "svelte-sonner";
 import { protectSecret, unprotectSecret } from "../platform/secrets";
+import { clearLocalVaultKey, loadLocalVaultKey, saveLocalVaultKey } from "../platform/keyStore";
 import type { PrfFailure } from "./enroll";
 import { isTauri } from "../platform/env";
+import { usingBrowserStorage } from "../platform/fs";
 import { platformFetch } from "../platform/http";
 import { notifyDataChanged } from "../platform/windows";
 import { APP_VERSION, DEFAULT_SERVER, TELEMETRY_KEY } from "../defaults";
@@ -230,16 +234,42 @@ class AccountState {
 
 	// ---------- Start ----------
 
+	/**
+	 * Der zuletzt hinterlegte Schluessel - fuer den Wiedereinstieg beim Start und
+	 * nach einer abgelaufenen Sitzung (`unlockWithStoredKey`).
+	 *
+	 * Auf dem Rechner aus `device.json` (echter Schutz durchs Betriebssystem),
+	 * im Browser aus der eigenen, nicht-exportierbaren Ablage
+	 * (`platform/keyStore.ts`) - dort liegt seit diesem Umbau kein lesbarer
+	 * Schluessel mehr in `device.json`.
+	 */
+	async #loadStoredKey(info: DeviceInfo): Promise<CryptoKey | null> {
+		// Welche Ablage gilt, nicht welche Huelle laeuft: Tests laufen mit
+		// isTauri() === false, ohne je useBrowserStorage() aufzurufen, und muessen
+		// dabei die Datei-Ablage (device.json) treffen, nicht IndexedDB.
+		if (!usingBrowserStorage()) {
+			if (!info.vaultKey) return null;
+			const raw = await unprotectSecret(info.vaultKey, info.protected ?? false);
+			return importVaultKey(fromBase64(raw).buffer as ArrayBuffer);
+		}
+		return loadLocalVaultKey();
+	}
+
 	/** Beim Programmstart: falls ein Konto verknuepft ist, alles hochfahren. */
 	async init(): Promise<void> {
 		try {
 			const info = await loadDevice();
+			const storedKey = info ? await this.#loadStoredKey(info) : null;
 			// Ohne Adresse oder Schluessel gibt es nichts zu verbinden. Das Token darf
 			// fehlen: im Browser weist das Sitzungs-Cookie aus.
-			if (!info?.serverUrl || !info.vaultKey) {
+			if (!info?.serverUrl || !storedKey) {
 				if (!isTauri()) {
 					// Im Browser ohne verknüpftes Konto: keine Altlasten im Speicher belassen
 					await clearAccountData();
+					if (usingBrowserStorage()) {
+						await clearLocalVaultKey();
+						setLocalEncryptionKey(null);
+					}
 					app.clearLocalData();
 				}
 				return;
@@ -254,8 +284,7 @@ class AccountState {
 				const token = info.token
 					? await unprotectSecret(info.token, info.protected ?? false)
 					: null;
-				const rawKey = await unprotectSecret(info.vaultKey, info.protected ?? false);
-				this.#key = await importVaultKey(fromBase64(rawKey).buffer as ArrayBuffer);
+				this.#key = storedKey;
 				this.#device = await deviceId();
 				this.hasDeviceToken = token !== null;
 				await this.#startEngine(info.serverUrl, token, {
@@ -939,12 +968,12 @@ class AccountState {
 	 */
 	async unlockWithStoredKey(url: string, userId: string): Promise<boolean> {
 		const info = await loadDevice();
-		if (!info?.vaultKey || !info.accountUserId) return false;
+		if (!info?.accountUserId) return false;
 		// Ohne diesen Vergleich bekaeme ein fremdes Konto den Schluessel des vorigen.
 		if (info.accountUserId !== userId) return false;
 		try {
-			const raw = await unprotectSecret(info.vaultKey, info.protected ?? false);
-			const key = await importVaultKey(fromBase64(raw).buffer as ArrayBuffer);
+			const key = await this.#loadStoredKey(info);
+			if (!key) return false;
 			await this.#persistLink(url.replace(/\/+$/, ""), null, key, info.accountName ?? "", userId);
 			return true;
 		} catch (e) {
@@ -964,12 +993,34 @@ class AccountState {
 	): Promise<void> {
 		this.#key = key;
 		this.#device = await deviceId();
-		const raw = toBase64(new Uint8Array(await exportVaultKey(key)));
-		const protectedKey = await protectSecret(raw);
-		// Im Browser gibt es kein Geraete-Token: dort weist das Sitzungs-Cookie
-		// aus. Der Tresorschluessel wird trotzdem abgelegt, damit die Anwendung
-		// nach einem Neuladen nicht wieder nach der Anmeldung fragen muss.
+		// Im Browser gibt es kein Geraete-Token: dort weist das Sitzungs-Cookie aus.
 		const protectedToken = token ? await protectSecret(token) : null;
+
+		// Wie der Tresorschluessel liegen bleibt, damit die Anwendung nach einem
+		// Neuladen nicht wieder nach der Anmeldung fragen muss - je Plattform anders:
+		// auf dem Rechner schuetzt das Betriebssystem (protectSecret), im Browser
+		// gibt es dafuer keinen echten Schutz - dort liegt seit diesem Umbau
+		// stattdessen eine nicht-exportierbare Kopie in einer eigenen IndexedDB
+		// (keyStore.ts). `exportKey` schlaegt fuer so eine Kopie fuer immer fehl,
+		// auch fuer den eigenen Code - schlaegt der Export hier fehl, ist `key`
+		// selbst schon so eine Kopie (z.B. aus `unlockWithStoredKey`), und die
+		// bereits abgelegte bleibt einfach stehen.
+		let vaultKeyData: string | undefined;
+		let vaultKeyProtected = true;
+		if (!usingBrowserStorage()) {
+			const raw = toBase64(new Uint8Array(await exportVaultKey(key)));
+			const wrapped = await protectSecret(raw);
+			vaultKeyData = wrapped.data;
+			vaultKeyProtected = wrapped.protected;
+		} else {
+			try {
+				const copy = await importVaultKey(await exportVaultKey(key), false);
+				await saveLocalVaultKey(copy);
+				setLocalEncryptionKey(copy);
+			} catch {
+				setLocalEncryptionKey(key);
+			}
+		}
 
 		const info = (await loadDevice()) ?? { id: this.#device };
 
@@ -1014,8 +1065,8 @@ class AccountState {
 			id: this.#device,
 			serverUrl: url,
 			token: protectedToken?.data,
-			vaultKey: protectedKey.data,
-			protected: protectedKey.protected && (protectedToken?.protected ?? true),
+			vaultKey: vaultKeyData,
+			protected: vaultKeyProtected && (protectedToken?.protected ?? true),
 			accountName: name || info.accountName,
 			// Beim Wechsel NICHTS erben. Der Schluessel gehoert dann einem anderen
 			// Konto, und `unlockWithStoredKey` haengt allein an diesem Feld: eine
@@ -1032,7 +1083,7 @@ class AccountState {
 		this.passkeyId = keptPasskeyId ?? null;
 
 		this.serverUrl = url;
-		this.secretsProtected = protectedKey.protected;
+		this.secretsProtected = vaultKeyProtected;
 		this.hasDeviceToken = token !== null;
 		this.state = "connected";
 		await this.#startEngine(url, token, startState);
@@ -1302,8 +1353,16 @@ class AccountState {
 		const unlinked = await detachLocalData();
 		// Im Browser war der Bestand nur eine Kopie des Servers. Bliebe er liegen,
 		// sieht der naechste Mensch an diesem Rechner die Zeiten des vorigen.
+		//
+		// Der Schluessel geht erst HIER, nicht schon in #forgetLocally: detachLocalData
+		// (oben) liest die Eintraege noch einmal - ohne Schluessel waere das ein
+		// Fehlschlag, keine Entschluesselung.
 		if (!isTauri()) {
 			await clearAccountData();
+			if (usingBrowserStorage()) {
+				await clearLocalVaultKey();
+				setLocalEncryptionKey(null);
+			}
 			app.clearLocalData();
 		}
 		logInfo("Verknüpfung gelöst", { ...opts, ...unlinked });

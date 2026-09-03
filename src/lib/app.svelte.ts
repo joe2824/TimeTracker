@@ -28,16 +28,22 @@ import { isTauri } from "./platform/env";
 import {
 	deleteYear,
 	listEntryMonths,
+	listTimeReportMonths,
 	loadDevice,
 	loadActivities,
 	loadEntries,
 	loadSettings,
+	loadTimeReport,
+	preloadLocalEncryptionKey,
 	pruneEmptyMonthFiles,
 	saveActivities,
+	saveDevice,
 	saveEntries,
 	saveSettings,
+	saveTimeReport,
 	settingsFileExists
 } from "./store";
+import { usingBrowserStorage } from "./platform/fs";
 
 function uid(): string {
 	return crypto.randomUUID();
@@ -130,6 +136,10 @@ class AppState {
 			this.initError = null;
 			const started = Date.now();
 			try {
+				// Vor jedem Lesen: der Schluessel fuer die verschluesselte Browser-Ablage
+				// muss stehen, bevor gleich Aktivitaeten/Einstellungen/Eintraege kommen -
+				// unabhaengig vom Konto-Abgleich, der erst nach diesem init() anlaeuft.
+				await this.#step("Verschlüsselung vorbereiten", preloadLocalEncryptionKey);
 				// Erster Start? (settings.json noch nicht vorhanden – vor dem ersten Speichern pruefen)
 				const firstRun = !(await this.#step("Einstellungen suchen", settingsFileExists));
 				this.activities = await this.#step("Aktivitäten laden", loadActivities);
@@ -159,6 +169,9 @@ class AppState {
 				await this.#step(`Einträge ${month} laden`, () => this.ensureMonth(month));
 				const prev = prevMonthKey();
 				await this.#step(`Einträge ${prev} laden`, () => this.ensureMonth(prev));
+				await this.#step("Verschlüsselung nachholen", () =>
+					this.#encryptExistingLocalFiles(month, prev)
+				);
 				await this.#step("Laufenden Timer suchen", () => this.#findRunning());
 				this.showOnboarding = firstRun;
 				this.loaded = true;
@@ -211,6 +224,42 @@ class AppState {
 		// Von selbst weiter, statt fuer immer zu stehen – wer nur schauen wollte,
 		// muss die App sonst neu laden.
 		await new Promise((resolve) => setTimeout(resolve, DEV_HANG_MS));
+	}
+
+	/**
+	 * Einmaliger Nachhol-Durchlauf: bestehende Dateien im Browser verschluesseln,
+	 * die von vor diesem Umbau stammen. Aktivitaeten, Einstellungen und die
+	 * beiden gerade geladenen Monate kosten hier nichts extra - sie liegen schon
+	 * im Speicher. Der Rest (aeltere Monate, eingelesene Reports) wird einmalig
+	 * gelesen und zurueckgeschrieben, dann verschluesselt auch er.
+	 *
+	 * Laeuft VOR account.init() (siehe Aufrufer), also bevor der Abgleich seinen
+	 * Schreib-Haken einhaengt - ein reines Neu-Verschluesseln ohne jede
+	 * Wechselwirkung mit dem naechsten Push.
+	 */
+	async #encryptExistingLocalFiles(month: string, prev: string): Promise<void> {
+		if (!usingBrowserStorage()) return;
+		const info = await loadDevice();
+		if (!info || info.localFilesEncrypted) return;
+		try {
+			await saveActivities(this.activities);
+			await saveSettings(this.settings);
+			if (this.entriesByMonth[month]) await saveEntries(month, this.entriesByMonth[month]);
+			if (this.entriesByMonth[prev]) await saveEntries(prev, this.entriesByMonth[prev]);
+			for (const m of await listEntryMonths()) {
+				if (m === month || m === prev) continue;
+				await saveEntries(m, await loadEntries(m));
+			}
+			for (const m of await listTimeReportMonths()) {
+				const report = await loadTimeReport(m);
+				if (report) await saveTimeReport(report);
+			}
+			await saveDevice({ ...(await loadDevice())!, localFilesEncrypted: true });
+		} catch (e) {
+			// Kein Blocker: was diesmal nicht verschluesselt wurde, holt der naechste
+			// Start nach - der Merker wird nur nach vollstaendigem Erfolg gesetzt.
+			logWarn("Nachhol-Verschlüsselung bestehender Dateien fehlgeschlagen", e);
+		}
 	}
 
 	#startTick(): void {

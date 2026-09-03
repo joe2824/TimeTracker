@@ -4,12 +4,14 @@
 //   data/settings.json            (global)
 //   data/entries-YYYY-MM.json     (eine Datei pro Monat)
 //   data/timereport-YYYY-MM.json  (eingelesener LOGA-Report, eine Datei pro Monat)
-import { storage } from "./platform/fs";
+import { storage, usingBrowserStorage } from "./platform/fs";
 import type { Activity, Entry, Settings, SyncMeta } from "./types";
 import type { TimeReportDay, TimeReportFlag } from "./timeReport";
 import type { SyncPriority } from "./sync/engine";
 import { defaultSettings } from "./types";
 import { logError, logWarn } from "./log";
+import { openRecord, sealRecord } from "./crypto/vault";
+import { loadLocalVaultKey } from "./platform/keyStore";
 
 const DIR = "data";
 
@@ -17,12 +19,82 @@ async function ensureDir(): Promise<void> {
 	if (!(await storage.exists(DIR))) await storage.mkdir(DIR);
 }
 
-async function readJson<T>(file: string, fallback: T): Promise<T> {
+// ---- Verschluesselung der lokalen Ablage (nur Browser) ----
+//
+// Auf dem Rechner schuetzt das Betriebssystem den App-Datenordner bereits.
+// Im Browser liegt IndexedDB offen - fuer jede Erweiterung mit Speicherzugriff
+// oder jeden zweiten Blick ins Profil. Verschluesselt wird mit demselben
+// AES-GCM/JWE, das auch fuer den Server-Abgleich laeuft (sealRecord/
+// openRecord, crypto/vault.ts) - hier mit `kind:"local"` gebunden an den
+// Dateinamen, damit eine vertauschte Datei nicht unbemerkt durchgeht.
+//
+// `device.json` und `outbox.json` bleiben aussen vor (kein `encrypted`-Aufruf
+// an ihren Lese-/Schreibstellen): `device.json` enthaelt den Schluessel selbst
+// - zirkulaer -, `outbox.json` nur Referenzen, keine Inhalte.
+let localKey: CryptoKey | null = null;
+
+/** Den Schluessel setzen, mit dem die Browser-Ablage ver-/entschluesselt wird. */
+export function setLocalEncryptionKey(key: CryptoKey | null): void {
+	localKey = key;
+}
+
+function encryptsHere(): boolean {
+	return usingBrowserStorage() && localKey !== null;
+}
+
+/** JWE-Compact-Strings bestehen nur aus Base64url und Punkten - nie aus "{" oder "[". */
+function looksEncrypted(txt: string): boolean {
+	const t = txt.trimStart();
+	return t.length > 0 && t[0] !== "{" && t[0] !== "[";
+}
+
+async function encryptForStorage(file: string, data: unknown): Promise<string> {
+	if (!encryptsHere()) return JSON.stringify(data, null, 2);
+	return sealRecord(localKey!, data, { kind: "local", id: file, rev: 0 });
+}
+
+/**
+ * Alte Dateien liegen noch als Klartext da - kein Fehler, sondern der Stand
+ * vor dieser Aenderung. Sie werden beim naechsten Speichern verschluesselt
+ * (siehe `app.svelte.ts`s einmaligem Nachhol-Durchlauf); bis dahin bleiben
+ * sie lesbar.
+ */
+async function decryptFromStorage<T>(file: string, txt: string): Promise<T> {
+	if (!looksEncrypted(txt)) return JSON.parse(txt) as T;
+	if (!localKey) throw new Error(`${file} ist verschlüsselt, aber es liegt kein Schlüssel vor`);
+	return openRecord<T>(localKey, txt, { kind: "local", id: file, rev: 0 });
+}
+
+/**
+ * Beim Start: den Tresorschluessel aus der Geraetedatei vorladen, damit
+ * verschluesselte Dateien gleich beim ersten Lesen aufgehen - unabhaengig
+ * vom Konto-Abgleich, der erst danach anlaeuft und das Netz braucht (siehe
+ * `app.svelte.ts`, `init()` laeuft vor `account.init()`).
+ *
+ * Nur im Browser: auf dem Rechner schuetzt das Betriebssystem den
+ * Datenordner bereits.
+ */
+export async function preloadLocalEncryptionKey(): Promise<void> {
+	if (!usingBrowserStorage()) return;
+	try {
+		setLocalEncryptionKey(await loadLocalVaultKey());
+	} catch (e) {
+		logWarn("Tresorschlüssel ließ sich beim Start nicht vorladen", e);
+	}
+}
+
+interface JsonOpts {
+	/** Nur im Browser wirksam - siehe `encryptsHere`. */
+	encrypted?: boolean;
+}
+
+async function readJson<T>(file: string, fallback: T, opts: JsonOpts = {}): Promise<T> {
 	const path = `${DIR}/${file}`;
 	if (!(await storage.exists(path))) return fallback;
 	try {
 		const txt = await storage.readTextFile(path);
-		return txt.trim() ? (JSON.parse(txt) as T) : fallback;
+		if (!txt.trim()) return fallback;
+		return opts.encrypted ? await decryptFromStorage<T>(file, txt) : (JSON.parse(txt) as T);
 	} catch {
 		return fallback;
 	}
@@ -54,8 +126,8 @@ function queued(file: string, op: () => Promise<void>): Promise<void> {
 	return next;
 }
 
-function writeJson(file: string, data: unknown): Promise<void> {
-	return queued(file, () => writeJsonNow(file, data));
+function writeJson(file: string, data: unknown, opts: JsonOpts = {}): Promise<void> {
+	return queued(file, () => writeJsonNow(file, data, opts));
 }
 
 /**
@@ -82,10 +154,10 @@ export function setWriteHook(hook: WriteHook | null): void {
 	writeHook = hook;
 }
 
-async function writeJsonNow(file: string, data: unknown): Promise<void> {
+async function writeJsonNow(file: string, data: unknown, opts: JsonOpts = {}): Promise<void> {
 	await ensureDir();
 	const target = `${DIR}/${file}`;
-	const json = JSON.stringify(data, null, 2);
+	const json = opts.encrypted ? await encryptForStorage(file, data) : JSON.stringify(data, null, 2);
 	// Bevorzugt atomar: temp-Datei + rename (überschreibt das Ziel atomar).
 	// Falls rename nicht erlaubt/möglich ist, direkt schreiben – Speichern darf
 	// nie fehlschlagen, sonst bliebe z.B. ein gestarteter Timer ungespeichert.
@@ -128,13 +200,15 @@ async function dataFiles(re: RegExp): Promise<[string, string][]> {
 
 // ---- Aktivitaeten ----
 export async function loadActivities(): Promise<Activity[]> {
-	return readJson<Activity[]>("activities.json", []);
+	return readJson<Activity[]>("activities.json", [], { encrypted: true });
 }
 export async function saveActivities(activities: Activity[]): Promise<void> {
-	if (!writeHook) return writeJson("activities.json", activities);
+	if (!writeHook) return writeJson("activities.json", activities, { encrypted: true });
 	return queued("activities.json", async () => {
-		const before = await readJson<Activity[]>("activities.json", []);
-		await writeJsonNow("activities.json", await writeHook!.activities(before, activities));
+		const before = await readJson<Activity[]>("activities.json", [], { encrypted: true });
+		await writeJsonNow("activities.json", await writeHook!.activities(before, activities), {
+			encrypted: true
+		});
 	});
 }
 
@@ -144,14 +218,16 @@ export async function settingsFileExists(): Promise<boolean> {
 	return storage.exists(`${DIR}/settings.json`);
 }
 export async function loadSettings(): Promise<Settings> {
-	const stored = await readJson<Partial<Settings>>("settings.json", {});
+	const stored = await readJson<Partial<Settings>>("settings.json", {}, { encrypted: true });
 	return { ...defaultSettings, ...stored };
 }
 export async function saveSettings(settings: Settings): Promise<void> {
-	if (!writeHook) return writeJson("settings.json", settings);
+	if (!writeHook) return writeJson("settings.json", settings, { encrypted: true });
 	return queued("settings.json", async () => {
-		const before = await readJson<Settings | null>("settings.json", null);
-		await writeJsonNow("settings.json", await writeHook!.settings(before, settings));
+		const before = await readJson<Settings | null>("settings.json", null, { encrypted: true });
+		await writeJsonNow("settings.json", await writeHook!.settings(before, settings), {
+			encrypted: true
+		});
 	});
 }
 
@@ -164,7 +240,7 @@ export async function loadEntries(month: string): Promise<Entry[]> {
 	const txt = await storage.readTextFile(path);
 	if (!txt.trim()) return [];
 	try {
-		return JSON.parse(txt) as Entry[];
+		return await decryptFromStorage<Entry[]>(file, txt);
 	} catch (e) {
 		// Eine beschaedigte Datei darf NICHT als "leer" durchgehen: pruneEmptyMonthFiles
 		// und der naechste Speichervorgang haetten sie sonst geloescht.
@@ -193,16 +269,18 @@ export async function saveEntries(month: string, entries: Entry[]): Promise<void
 			if (await storage.exists(path)) await storage.remove(path);
 		});
 	}
-	if (!writeHook) return writeJson(file, entries);
+	if (!writeHook) return writeJson(file, entries, { encrypted: true });
 	return queued(file, async () => {
 		const before = await readEntriesRaw(month);
-		await writeJsonNow(file, await writeHook!.entries(month, before, entries));
+		await writeJsonNow(file, await writeHook!.entries(month, before, entries), {
+			encrypted: true
+		});
 	});
 }
 
 /** Der Stand einer Monatsdatei ohne die Quarantaene-Behandlung von `loadEntries`. */
 async function readEntriesRaw(month: string): Promise<Entry[]> {
-	return readJson<Entry[]>(entriesFile(month), []);
+	return readJson<Entry[]>(entriesFile(month), [], { encrypted: true });
 }
 
 /** Alle Monats-Keys mit Eintraegen, neueste zuerst. */
@@ -210,8 +288,12 @@ export async function listEntryMonths(): Promise<string[]> {
 	return (await dataFiles(MONTH_FILE_RE)).map(([, month]) => month).sort().reverse();
 }
 
-/** Bis hierhin kann eine Monatsdatei leer sein ("[]"); ein Eintrag braucht ueber 150 Zeichen. */
-const EMPTY_MONTH_MAX_BYTES = 64;
+/**
+ * Bis hierhin kann eine Monatsdatei leer sein ("[]"); ein Eintrag braucht ueber
+ * 150 Zeichen. Im Browser ist eine leere Datei verschluesselt etwas groesser
+ * als das rohe "[]" (JWE-Huelle mit IV und Pruefsumme) - der Rahmen ist grosszuegig.
+ */
+const EMPTY_MONTH_MAX_BYTES = 200;
 
 /**
  * Beim Start: leere "[]"-Monatsdateien entfernen, die fruehere Versionen liegen
@@ -270,7 +352,9 @@ const LEGACY_FLAG_KEYS: Record<string, TimeReportFlag["key"]> = {
 
 /** Den gespeicherten Report eines Monats lesen. Null, wenn keiner vorliegt. */
 export async function loadTimeReport(month: string): Promise<StoredTimeReport | null> {
-	const stored = await readJson<StoredTimeReport | null>(reportFile(month), null);
+	const stored = await readJson<StoredTimeReport | null>(reportFile(month), null, {
+		encrypted: true
+	});
 	// Eine Datei aus einer aelteren/kaputten Fassung soll die Ansicht nicht kippen.
 	if (!stored || !Array.isArray(stored.days)) return null;
 
@@ -300,11 +384,11 @@ export async function loadTimeReport(month: string): Promise<StoredTimeReport | 
 
 export async function saveTimeReport(report: StoredTimeReport): Promise<void> {
 	const file = reportFile(report.month);
-	if (!writeHook) return writeJson(file, report);
+	if (!writeHook) return writeJson(file, report, { encrypted: true });
 	return queued(file, async () => {
 		const before = await loadTimeReportRaw(report.month);
 		const stamped = await writeHook!.timeReport(report.month, before, report);
-		await writeJsonNow(file, stamped ?? report);
+		await writeJsonNow(file, stamped ?? report, { encrypted: true });
 	});
 }
 
@@ -325,7 +409,7 @@ export async function deleteTimeReport(month: string): Promise<void> {
 
 /** Der Stand einer Reportdatei, wie er auf der Platte liegt. */
 async function loadTimeReportRaw(month: string): Promise<StoredTimeReport | null> {
-	return readJson<StoredTimeReport | null>(reportFile(month), null);
+	return readJson<StoredTimeReport | null>(reportFile(month), null, { encrypted: true });
 }
 
 /** Monate, zu denen ein eingelesener Report auf der Platte liegt, aufsteigend. */
@@ -401,6 +485,12 @@ export interface DeviceInfo {
 	 * der eigene und gehoert hoch.
 	 */
 	dataOwner?: string;
+	/**
+	 * Ob der einmalige Nachhol-Durchlauf schon lief, der bestehende Dateien im
+	 * Browser verschluesselt (siehe `app.svelte.ts`). Ohne den Merker liefe er
+	 * bei jedem Start erneut - fuer nichts, sobald einmal alles verschluesselt ist.
+	 */
+	localFilesEncrypted?: boolean;
 }
 
 /**
