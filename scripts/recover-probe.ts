@@ -12,17 +12,17 @@ import {
 	wrapWithPhrase
 } from "../src/lib/crypto/vault";
 
-const BASIS = process.env.TT_BASIS ?? "http://127.0.0.1:3000";
-const EINLADUNG = process.env.TT_EINLADUNG ?? "probe-2026";
+const BASE_URL = process.env.TT_BASE_URL ?? "http://127.0.0.1:3000";
+const INVITE = process.env.TT_INVITE ?? "probe-2026";
 
-let fehler = 0;
-function pruefe(was: string, bedingung: boolean, zusatz = ""): void {
-	console.log(`${bedingung ? "  ok  " : " FEHL "} ${was}${zusatz ? ` — ${zusatz}` : ""}`);
-	if (!bedingung) fehler++;
+let failures = 0;
+function check(label: string, ok: boolean, detail = ""): void {
+	console.log(`${ok ? "  ok  " : " FEHL "} ${label}${detail ? ` — ${detail}` : ""}`);
+	if (!ok) failures++;
 }
 
-async function ruf(pfad: string, body: unknown, token?: string) {
-	const res = await fetch(`${BASIS}${pfad}`, {
+async function call(path: string, body: unknown, token?: string) {
+	const res = await fetch(`${BASE_URL}${path}`, {
 		method: "POST",
 		headers: {
 			"content-type": "application/json",
@@ -30,30 +30,30 @@ async function ruf(pfad: string, body: unknown, token?: string) {
 		},
 		body: JSON.stringify(body)
 	});
-	return { status: res.status, daten: (await res.json().catch(() => null)) as Record<string, unknown> | null };
+	return { status: res.status, data: (await res.json().catch(() => null)) as Record<string, unknown> | null };
 }
 
 /** Abbrechen mit Bilanz - sonst stirbt das Skript an einem Folgefehler. */
-function abbrechen(grund: string): never {
-	console.log(`\n Abbruch: ${grund}`);
-	console.log(`\n${fehler} FEHLER\n`);
+function abort(reason: string): never {
+	console.log(`\n Abbruch: ${reason}`);
+	console.log(`\n${failures} FEHLER\n`);
 	process.exit(1);
 }
 
 console.log("\n=== Konto anlegen, verlieren, zurueckholen ===\n");
 
 // 1. Konto vom Rechner aus anlegen
-const angelegt = await ruf("/api/auth/device", { label: "Alter Rechner", invite: EINLADUNG });
-pruefe("Konto angelegt", angelegt.status === 200, `Status ${angelegt.status}`);
-const token = angelegt.daten?.deviceToken;
+const created = await call("/api/auth/device", { label: "Alter Rechner", invite: INVITE });
+check("Konto angelegt", created.status === 200, `Status ${created.status}`);
+const token = created.data?.deviceToken;
 if (typeof token !== "string") {
-	abbrechen(`kein Geraete-Token — Einladung "${EINLADUNG}" gueltig? (TT_EINLADUNG setzen)`);
+	abort(`kein Geraete-Token — Einladung "${INVITE}" gueltig? (TT_INVITE setzen)`);
 }
 
 // 2. Phrase erzeugen und ablegen - wie die Anwendung es tut
 const key = await createVaultKey();
 const phrase = createRecoveryPhrase();
-const wrapAb = await ruf(
+const wrapStored = await call(
 	"/api/wraps",
 	{
 		kind: "recovery",
@@ -63,64 +63,64 @@ const wrapAb = await ruf(
 	},
 	token
 );
-pruefe("Phrase hinterlegt", wrapAb.status === 200, `Status ${wrapAb.status}`);
+check("Phrase hinterlegt", wrapStored.status === 200, `Status ${wrapStored.status}`);
 
 // 3. Etwas hochladen
-const hoch = await ruf(
+const uploaded = await call(
 	"/api/sync",
 	{ records: [{ id: "e1", kind: "entry", bucket: "abc", baseRev: 0, updatedAt: 1, payload: "eA==" }] },
 	token
 );
-pruefe("Daten hochgeladen", hoch.status === 200, `Status ${hoch.status}`);
+check("Daten hochgeladen", uploaded.status === 200, `Status ${uploaded.status}`);
 
 console.log("\n-- Der Rechner ist jetzt kaputt. In der Hand: 24 Woerter. --\n");
 
 // 4. Kennung rechnen, Verpackung holen
-const id = await recoveryLookupId(phrase);
-const geholt = await ruf("/api/auth/recover", { recoveryId: id });
-const verpackung = geholt.daten?.wrap;
-pruefe("Verpackung gefunden", geholt.status === 200 && typeof verpackung === "string");
-pruefe("Dabei KEIN Token", geholt.daten?.deviceToken === undefined);
-if (typeof verpackung !== "string") {
-	abbrechen("der Server gibt zu dieser Kennung keine Verpackung heraus");
+const recoveryId = await recoveryLookupId(phrase);
+const fetched = await call("/api/auth/recover", { recoveryId });
+const wrap = fetched.data?.wrap;
+check("Verpackung gefunden", fetched.status === 200 && typeof wrap === "string");
+check("Dabei KEIN Token", fetched.data?.deviceToken === undefined);
+if (typeof wrap !== "string") {
+	abort("der Server gibt zu dieser Kennung keine Verpackung heraus");
 }
 
 // 5. Oeffnen und nachweisen
-let zurueck;
+let recovered;
 try {
-	zurueck = await unwrapWithPhrase(verpackung, phrase);
+	recovered = await unwrapWithPhrase(wrap, phrase);
 } catch (e) {
-	pruefe("Verpackung geoeffnet", false, e instanceof Error ? e.name : String(e));
-	abbrechen("die Verpackung geht mit ihrer eigenen Phrase nicht auf");
+	check("Verpackung geoeffnet", false, e instanceof Error ? e.name : String(e));
+	abort("die Verpackung geht mit ihrer eigenen Phrase nicht auf");
 }
-pruefe("Verpackung geoeffnet", true);
-pruefe(
+check("Verpackung geoeffnet", true);
+check(
 	"Derselbe Tresorschluessel",
-	toBase64(new Uint8Array(await exportVaultKey(zurueck))) ===
+	toBase64(new Uint8Array(await exportVaultKey(recovered))) ===
 		toBase64(new Uint8Array(await exportVaultKey(key)))
 );
 
-const neu = await ruf("/api/auth/recover", {
-	recoveryId: id,
-	proof: await vaultProof(zurueck),
+const reconnected = await call("/api/auth/recover", {
+	recoveryId,
+	proof: await vaultProof(recovered),
 	label: "Neuer Rechner"
 });
-pruefe("Neues Geraet angemeldet", neu.status === 200, `Status ${neu.status}`);
-const neuesToken = neu.daten?.deviceToken;
-if (typeof neuesToken !== "string") abbrechen("der Nachweis brachte kein Geraete-Token");
+check("Neues Geraet angemeldet", reconnected.status === 200, `Status ${reconnected.status}`);
+const newToken = reconnected.data?.deviceToken;
+if (typeof newToken !== "string") abort("der Nachweis brachte kein Geraete-Token");
 
 // 6. Die Daten sind da
-const seite = await fetch(`${BASIS}/api/sync?since=0`, {
-	headers: { authorization: `Bearer ${neuesToken}` }
+const page = await fetch(`${BASE_URL}/api/sync?since=0`, {
+	headers: { authorization: `Bearer ${newToken}` }
 });
-const inhalt = (await seite.json().catch(() => null)) as { records?: unknown[] } | null;
-pruefe("Die Daten sind noch da", inhalt?.records?.length === 1);
+const content = (await page.json().catch(() => null)) as { records?: unknown[] } | null;
+check("Die Daten sind noch da", content?.records?.length === 1);
 
 // 7. Eine falsche Phrase fuehrt nirgendwohin
-const falsch = await ruf("/api/auth/recover", {
+const wrongPhrase = await call("/api/auth/recover", {
 	recoveryId: await recoveryLookupId(createRecoveryPhrase())
 });
-pruefe("Fremde Phrase findet nichts", falsch.status === 404, `Status ${falsch.status}`);
+check("Fremde Phrase findet nichts", wrongPhrase.status === 404, `Status ${wrongPhrase.status}`);
 
-console.log(`\n${fehler === 0 ? "Alles grün." : `${fehler} FEHLER`}\n`);
-process.exit(fehler === 0 ? 0 : 1);
+console.log(`\n${failures === 0 ? "Alles grün." : `${failures} FEHLER`}\n`);
+process.exit(failures === 0 ? 0 : 1);

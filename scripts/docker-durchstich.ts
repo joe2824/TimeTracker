@@ -1,18 +1,18 @@
 // Ein Durchstich gegen den laufenden Container.
 import { createVaultKey, sealRecord, openRecord, bucketFor } from "../src/lib/crypto/vault";
 
-const BASIS = process.env.TT_BASIS ?? "http://127.0.0.1:3000";
+const BASE_URL = process.env.TT_BASE_URL ?? "http://127.0.0.1:3000";
 const TOKEN = process.env.TT_TOKEN;
 if (!TOKEN) throw new Error("TT_TOKEN fehlt");
 
-let fehler = 0;
-function pruefe(was: string, bedingung: boolean, zusatz = ""): void {
-	console.log(`${bedingung ? "  ok  " : " FEHL "} ${was}${zusatz ? ` — ${zusatz}` : ""}`);
-	if (!bedingung) fehler++;
+let failures = 0;
+function check(label: string, ok: boolean, detail = ""): void {
+	console.log(`${ok ? "  ok  " : " FEHL "} ${label}${detail ? ` — ${detail}` : ""}`);
+	if (!ok) failures++;
 }
 
-async function ruf(pfad: string, init: RequestInit = {}, token = TOKEN) {
-	const res = await fetch(`${BASIS}${pfad}`, {
+async function call(path: string, init: RequestInit = {}, token = TOKEN) {
+	const res = await fetch(`${BASE_URL}${path}`, {
 		...init,
 		headers: {
 			"content-type": "application/json",
@@ -21,20 +21,20 @@ async function ruf(pfad: string, init: RequestInit = {}, token = TOKEN) {
 		}
 	});
 	const text = await res.text();
-	let daten: unknown = null;
+	let data: unknown = null;
 	try {
-		daten = JSON.parse(text);
+		data = JSON.parse(text);
 	} catch {
-		daten = text;
+		data = text;
 	}
-	return { status: res.status, daten: daten as Record<string, never> };
+	return { status: res.status, data: data as Record<string, never> };
 }
 
 // Etwas, das sich in der Datenbank eindeutig wiederfinden liesse, wenn es im
 // Klartext dort landete.
-const GEHEIME_NOTIZ = "Streng-vertraulich-Kundengespraech-Zahnarzt";
-const GEHEIME_AKTIVITAET = "Bewerbungsgespraech-Konkurrenz";
-const MONAT = "2026-08";
+const SECRET_NOTE = "Streng-vertraulich-Kundengespraech-Zahnarzt";
+const SECRET_ACTIVITY = "Bewerbungsgespraech-Konkurrenz";
+const MONTH = "2026-08";
 
 async function main() {
 	console.log("\n=== Durchstich gegen den Container ===\n");
@@ -43,94 +43,94 @@ async function main() {
 
 	// ---------- Hochladen ----------
 	console.log("-- Daten ablegen --");
-	const bucket = await bucketFor(key, MONAT);
-	pruefe("Der Zeitraum ist verschleiert", !bucket.includes("2026") && !bucket.includes("08"), bucket);
+	const bucket = await bucketFor(key, MONTH);
+	check("Der Zeitraum ist verschleiert", !bucket.includes("2026") && !bucket.includes("08"), bucket);
 
-	const eintrag = {
+	const entry = {
 		id: "eintrag-1",
 		activityId: "akt-1",
 		startTs: Date.UTC(2026, 7, 20, 7, 30),
 		endTs: Date.UTC(2026, 7, 20, 16, 15),
-		note: GEHEIME_NOTIZ,
+		note: SECRET_NOTE,
 		source: "manual"
 	};
-	const aktivitaet = { id: "akt-1", name: GEHEIME_AKTIVITAET, sortOrder: 1, archived: false };
+	const activity = { id: "akt-1", name: SECRET_ACTIVITY, sortOrder: 1, archived: false };
 
-	const versiegelt = await sealRecord(key, eintrag, { id: eintrag.id, kind: "entry", rev: 1 });
-	const versiegelteAkt = await sealRecord(key, aktivitaet, {
-		id: aktivitaet.id,
+	const sealedEntry = await sealRecord(key, entry, { id: entry.id, kind: "entry", rev: 1 });
+	const sealedActivity = await sealRecord(key, activity, {
+		id: activity.id,
 		kind: "activity",
 		rev: 1
 	});
 
-	const hoch = await ruf("/api/sync", {
+	const uploaded = await call("/api/sync", {
 		method: "POST",
 		body: JSON.stringify({
 			records: [
-				{ id: eintrag.id, kind: "entry", bucket, baseRev: 0, updatedAt: Date.now(), payload: versiegelt },
-				{ id: aktivitaet.id, kind: "activity", baseRev: 0, updatedAt: Date.now(), payload: versiegelteAkt }
+				{ id: entry.id, kind: "entry", bucket, baseRev: 0, updatedAt: Date.now(), payload: sealedEntry },
+				{ id: activity.id, kind: "activity", baseRev: 0, updatedAt: Date.now(), payload: sealedActivity }
 			]
 		})
 	});
-	pruefe("Zwei Datensaetze angenommen", hoch.status === 200 && hoch.daten.accepted?.length === 2);
+	check("Zwei Datensaetze angenommen", uploaded.status === 200 && uploaded.data.accepted?.length === 2);
 
 	// ---------- Wieder herunterladen und oeffnen ----------
 	console.log("\n-- Auf einem zweiten Geraet lesen --");
-	const runter = await ruf("/api/sync?since=0");
-	pruefe("Beide kommen zurueck", runter.daten.records?.length === 2);
+	const downloaded = await call("/api/sync?since=0");
+	check("Beide kommen zurueck", downloaded.data.records?.length === 2);
 
-	const zurueck = runter.daten.records as unknown as { id: string; rev: number; payload: string }[];
-	const roh = zurueck.find((r) => r.id === "eintrag-1")!;
-	const geoeffnet = (await openRecord(key, roh.payload, {
-		id: roh.id,
+	const records = downloaded.data.records as unknown as { id: string; rev: number; payload: string }[];
+	const raw = records.find((r) => r.id === "eintrag-1")!;
+	const opened = (await openRecord(key, raw.payload, {
+		id: raw.id,
 		kind: "entry",
-		rev: roh.rev
-	})) as typeof eintrag;
-	pruefe("Der Eintrag laesst sich oeffnen", geoeffnet.note === GEHEIME_NOTIZ);
-	pruefe("Die Zeiten stimmen auf die Millisekunde", geoeffnet.startTs === eintrag.startTs);
+		rev: raw.rev
+	})) as typeof entry;
+	check("Der Eintrag laesst sich oeffnen", opened.note === SECRET_NOTE);
+	check("Die Zeiten stimmen auf die Millisekunde", opened.startTs === entry.startTs);
 
 	// ---------- Was der Server sieht ----------
 	console.log("\n-- Was der Betreiber sehen kann --");
-	const klartextFelder = JSON.stringify(zurueck.map((r) => ({ ...r, payload: "…" })));
-	pruefe("Keine Notiz im Klartext daneben", !klartextFelder.includes(GEHEIME_NOTIZ));
-	pruefe("Kein Aktivitaetsname im Klartext daneben", !klartextFelder.includes("Bewerbungs"));
-	pruefe("Kein Zeitstempel des Eintrags daneben", !klartextFelder.includes(String(eintrag.startTs)));
+	const plaintextFields = JSON.stringify(records.map((r) => ({ ...r, payload: "…" })));
+	check("Keine Notiz im Klartext daneben", !plaintextFields.includes(SECRET_NOTE));
+	check("Kein Aktivitaetsname im Klartext daneben", !plaintextFields.includes("Bewerbungs"));
+	check("Kein Zeitstempel des Eintrags daneben", !plaintextFields.includes(String(entry.startTs)));
 
 	// Anhalten, wenn nur der Bestand aufgebaut werden soll - dann laesst sich in
 	// die Datenbankdatei schauen, SOLANGE die Daten noch da sind. Danach zu
 	// suchen wuerde nichts beweisen.
-	if (process.env.TT_NUR_ABLEGEN) {
+	if (process.env.TT_SEED_ONLY) {
 		console.log(`
-${fehler === 0 ? "Bestand liegt." : `${fehler} FEHLER`}
+${failures === 0 ? "Bestand liegt." : `${failures} FEHLER`}
 `);
-		process.exit(fehler === 0 ? 0 : 1);
+		process.exit(failures === 0 ? 0 : 1);
 	}
 
 	// ---------- Entkoppeln, Stufe 1: dieses Geraet ----------
 	console.log("\n-- Geraet loesen --");
-	const zweitesGeraet = process.env.TT_TOKEN2;
-	if (zweitesGeraet) {
-		const geloest = await ruf("/api/devices", { method: "DELETE", body: "{}" }, zweitesGeraet);
-		pruefe("Das zweite Geraet loest sich selbst", geloest.status === 200);
-		const danach = await ruf("/api/me", {}, zweitesGeraet);
-		pruefe("Es hat danach keinen Zugang mehr", danach.status === 401);
-		const daten = await ruf("/api/sync?since=0");
-		pruefe("Die Daten sind trotzdem noch da", daten.daten.records?.length === 2);
+	const secondDevice = process.env.TT_TOKEN2;
+	if (secondDevice) {
+		const detached = await call("/api/devices", { method: "DELETE", body: "{}" }, secondDevice);
+		check("Das zweite Geraet loest sich selbst", detached.status === 200);
+		const after = await call("/api/me", {}, secondDevice);
+		check("Es hat danach keinen Zugang mehr", after.status === 401);
+		const remaining = await call("/api/sync?since=0");
+		check("Die Daten sind trotzdem noch da", remaining.data.records?.length === 2);
 	}
 
 	// ---------- Entkoppeln, Stufe 2: das ganze Konto ----------
 	console.log("\n-- Konto aufloesen --");
-	const auf = await ruf("/api/me", { method: "DELETE", body: "{}" });
-	pruefe("Aufgeloest", auf.status === 200, JSON.stringify(auf.daten));
-	pruefe("Es wurden zwei Datensaetze gemeldet", auf.daten.records === 2);
+	const deleted = await call("/api/me", { method: "DELETE", body: "{}" });
+	check("Aufgeloest", deleted.status === 200, JSON.stringify(deleted.data));
+	check("Es wurden zwei Datensaetze gemeldet", deleted.data.records === 2);
 
-	const nachher = await ruf("/api/me");
-	pruefe("Kein Zugang mehr", nachher.status === 401);
-	const sync = await ruf("/api/sync?since=0");
-	pruefe("Kein Abgleich mehr", sync.status === 401);
+	const afterwards = await call("/api/me");
+	check("Kein Zugang mehr", afterwards.status === 401);
+	const sync = await call("/api/sync?since=0");
+	check("Kein Abgleich mehr", sync.status === 401);
 
-	console.log(`\n${fehler === 0 ? "Alles grün." : `${fehler} FEHLER`}\n`);
-	process.exit(fehler === 0 ? 0 : 1);
+	console.log(`\n${failures === 0 ? "Alles grün." : `${failures} FEHLER`}\n`);
+	process.exit(failures === 0 ? 0 : 1);
 }
 
 void main();
