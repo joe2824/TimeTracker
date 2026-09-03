@@ -12,35 +12,11 @@
 // Fuer die laufende Sitzung bleibt der Schluessel im Speicher exportierbar
 // (siehe `account.svelte.ts`) - nur die hier abgelegte Kopie ist es nicht.
 
-const DB_NAME = "timetracker-schluessel";
-const STORE = "schluessel";
+import { openIndexedDbStore } from "./indexedDb";
+
 const KEY_ID = "tresor";
 
-let dbPromise: Promise<IDBDatabase> | null = null;
-
-function openDb(): Promise<IDBDatabase> {
-	dbPromise ??= new Promise((resolve, reject) => {
-		const req = indexedDB.open(DB_NAME, 1);
-		req.onupgradeneeded = () => {
-			if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE);
-		};
-		req.onsuccess = () => resolve(req.result);
-		req.onerror = () => reject(req.error);
-	});
-	return dbPromise;
-}
-
-function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-	return openDb().then(
-		(db) =>
-			new Promise<T>((resolve, reject) => {
-				const t = db.transaction(STORE, mode);
-				const req = fn(t.objectStore(STORE));
-				req.onsuccess = () => resolve(req.result);
-				req.onerror = () => reject(req.error);
-			})
-	);
-}
+const { tx } = openIndexedDbStore("timetracker-schluessel", "schluessel");
 
 /** Den Schluessel ablegen - nicht-exportierbar, sonst unveraendert brauchbar. */
 export async function saveLocalVaultKey(key: CryptoKey): Promise<void> {
