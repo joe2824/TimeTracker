@@ -11,6 +11,7 @@ import {
 	saveDevice,
 	saveEntries,
 	saveTimeReport,
+	getLocalEncryptionKey,
 	setLocalEncryptionKey,
 	type DeviceInfo
 } from "../store";
@@ -252,7 +253,27 @@ class AccountState {
 			const raw = await unprotectSecret(info.vaultKey, info.protected ?? false);
 			return importVaultKey(fromBase64(raw).buffer as ArrayBuffer);
 		}
-		return loadLocalVaultKey();
+		// preloadLocalEncryptionKey() (app.init(), laeuft vorher) hat den
+		// Schluessel schon geholt und dabei auch die Migration aus einer alten
+		// device.json uebernommen - hier erst den bereits geladenen Stand nehmen,
+		// kein zweiter IndexedDB-Zugriff fuer denselben Schluessel. Der direkte
+		// Versuch bleibt als Ruecklage, falls dieser Aufruf einmal ohne
+		// vorheriges app.init() laeuft (z.B. in Tests).
+		return getLocalEncryptionKey() ?? (await loadLocalVaultKey());
+	}
+
+	/**
+	 * Den lokalen Bestand vollstaendig aufgeben - Dateien UND, im Browser, den
+	 * abgelegten Schluessel. Von zwei Stellen gebraucht (kein verknuepftes Konto
+	 * beim Start, `unlink()`), deshalb hier gebuendelt statt zweimal hingeschrieben.
+	 */
+	async #wipeLocalData(): Promise<void> {
+		await clearAccountData();
+		if (usingBrowserStorage()) {
+			await clearLocalVaultKey();
+			setLocalEncryptionKey(null);
+		}
+		app.clearLocalData();
 	}
 
 	/** Beim Programmstart: falls ein Konto verknuepft ist, alles hochfahren. */
@@ -265,12 +286,7 @@ class AccountState {
 			if (!info?.serverUrl || !storedKey) {
 				if (!isTauri()) {
 					// Im Browser ohne verknüpftes Konto: keine Altlasten im Speicher belassen
-					await clearAccountData();
-					if (usingBrowserStorage()) {
-						await clearLocalVaultKey();
-						setLocalEncryptionKey(null);
-					}
-					app.clearLocalData();
+					await this.#wipeLocalData();
 				}
 				return;
 			}
@@ -1001,10 +1017,7 @@ class AccountState {
 		// auf dem Rechner schuetzt das Betriebssystem (protectSecret), im Browser
 		// gibt es dafuer keinen echten Schutz - dort liegt seit diesem Umbau
 		// stattdessen eine nicht-exportierbare Kopie in einer eigenen IndexedDB
-		// (keyStore.ts). `exportKey` schlaegt fuer so eine Kopie fuer immer fehl,
-		// auch fuer den eigenen Code - schlaegt der Export hier fehl, ist `key`
-		// selbst schon so eine Kopie (z.B. aus `unlockWithStoredKey`), und die
-		// bereits abgelegte bleibt einfach stehen.
+		// (keyStore.ts).
 		let vaultKeyData: string | undefined;
 		let vaultKeyProtected = true;
 		if (!usingBrowserStorage()) {
@@ -1013,12 +1026,30 @@ class AccountState {
 			vaultKeyData = wrapped.data;
 			vaultKeyProtected = wrapped.protected;
 		} else {
-			try {
-				const copy = await importVaultKey(await exportVaultKey(key), false);
-				await saveLocalVaultKey(copy);
-				setLocalEncryptionKey(copy);
-			} catch {
+			// `exportKey` schlaegt fuer eine bereits nicht-exportierbare Kopie fuer
+			// immer fehl, auch fuer den eigenen Code - `key` ist dann schon so eine
+			// Kopie (z.B. aus `unlockWithStoredKey`), und die bereits abgelegte
+			// passt noch, nichts zu tun.
+			const raw = await exportVaultKey(key).catch(() => null);
+			if (!raw) {
 				setLocalEncryptionKey(key);
+			} else {
+				try {
+					const copy = await importVaultKey(raw, false);
+					await saveLocalVaultKey(copy);
+					setLocalEncryptionKey(copy);
+				} catch (e) {
+					// Ablegen fehlgeschlagen, obwohl ein neuer Schluessel vorliegt - eine
+					// jetzt veraltete Kopie in der Ablage waere schlimmer als keine: sie
+					// saehe beim naechsten Start wie der richtige Schluessel aus und
+					// liesse echte, mit dem NEUEN Schluessel verschluesselte Dateien
+					// falsch entschluesseln. Lieber nichts liegen haben - das fuehrt beim
+					// naechsten Start zu preloadLocalEncryptionKey()s Fehler statt zu
+					// stillem Datenverlust.
+					logWarn("Tresorschlüssel ließ sich nicht lokal ablegen", e);
+					await clearLocalVaultKey().catch(() => {});
+					setLocalEncryptionKey(key);
+				}
 			}
 		}
 
@@ -1058,7 +1089,12 @@ class AccountState {
 		// (dann bleibt er hier liegen), sonst diesem. Wer noch nie ein Konto hatte,
 		// dessen Bestand ist der eigene und gehoert hoch.
 		const dataOwner = switched && isTauri() ? info.dataOwner : fingerprint;
-		const keptPasskeyId = switched || foreignCopy ? undefined : info.passkeyId;
+		// Beim Wechsel wird NICHTS geraetegebundenes vom vorigen Konto geerbt -
+		// weder die Kontokennung (an der `unlockWithStoredKey` haengt: eine
+		// stehengebliebene Kennung gaebe den neuen Schluessel an das alte Konto)
+		// noch der Passkey (der gehoert dem vorigen Konto).
+		const keepsPreviousAccount = !switched && !foreignCopy;
+		const keptPasskeyId = keepsPreviousAccount ? info.passkeyId : undefined;
 
 		await saveDevice({
 			...info,
@@ -1068,11 +1104,7 @@ class AccountState {
 			vaultKey: vaultKeyData,
 			protected: vaultKeyProtected && (protectedToken?.protected ?? true),
 			accountName: name || info.accountName,
-			// Beim Wechsel NICHTS erben. Der Schluessel gehoert dann einem anderen
-			// Konto, und `unlockWithStoredKey` haengt allein an diesem Feld: eine
-			// stehengebliebene Kennung gaebe den neuen Schluessel an das alte Konto.
-			accountUserId: userId ?? (switched || foreignCopy ? undefined : info.accountUserId),
-			// Aus demselben Grund: der Passkey gehoert dem vorigen Konto.
+			accountUserId: userId ?? (keepsPreviousAccount ? info.accountUserId : undefined),
 			passkeyId: keptPasskeyId,
 			accountFingerprint: fingerprint,
 			dataOwner,
@@ -1358,12 +1390,7 @@ class AccountState {
 		// (oben) liest die Eintraege noch einmal - ohne Schluessel waere das ein
 		// Fehlschlag, keine Entschluesselung.
 		if (!isTauri()) {
-			await clearAccountData();
-			if (usingBrowserStorage()) {
-				await clearLocalVaultKey();
-				setLocalEncryptionKey(null);
-			}
-			app.clearLocalData();
+			await this.#wipeLocalData();
 		}
 		logInfo("Verknüpfung gelöst", { ...opts, ...unlinked });
 		return summary;

@@ -21,8 +21,9 @@ vi.mock("svelte-sonner", () => ({
 
 const { account } = await import("./account.svelte");
 const store = await import("../store");
-const { createVaultKey } = await import("../crypto/vault");
-const { loadLocalVaultKey } = await import("../platform/keyStore");
+const { createVaultKey, exportVaultKey, toBase64 } = await import("../crypto/vault");
+const { clearLocalVaultKey, loadLocalVaultKey } = await import("../platform/keyStore");
+const { protectSecret } = await import("../platform/secrets");
 
 const URL = "https://zeit.example";
 
@@ -34,6 +35,7 @@ async function clearData(): Promise<void> {
 
 beforeEach(async () => {
 	await clearData();
+	await clearLocalVaultKey();
 	store.setLocalEncryptionKey(null);
 	globalThis.fetch = (() =>
 		Promise.resolve(new Response("{}", { status: 200 }))) as typeof globalThis.fetch;
@@ -83,5 +85,56 @@ describe("Schlüssel-Verdrahtung im Browser", () => {
 		await store.saveActivities([{ id: "a1", name: "Nach dem Trennen", color: "#fff", sortOrder: 0, archived: false, isAbsence: false }]);
 		const raw = await storage.readTextFile("data/activities.json");
 		expect(raw).toContain("Nach dem Trennen");
+	});
+});
+
+describe("Übernahme eines vor diesem Umbau verknüpften Geräts", () => {
+	// Vor der nicht-exportierbaren Ablage (keyStore.ts) lag der Schlüssel als
+	// lesbare Bytes in device.json - dieselben Rohbytes, nur ohne die neue
+	// IndexedDB. `preloadLocalEncryptionKey` muss das erkennen und übernehmen,
+	// statt das Gerät für nie verknüpft zu halten (siehe OPEN_WORK.md).
+	async function oldStyleDevice(key: CryptoKey): Promise<void> {
+		const raw = toBase64(new Uint8Array(await exportVaultKey(key)));
+		const protectedKey = await protectSecret(raw);
+		await store.saveDevice({
+			id: "altes-geraet",
+			serverUrl: URL,
+			vaultKey: protectedKey.data,
+			protected: protectedKey.protected,
+			accountUserId: "konto-a",
+			accountFingerprint: "fingerabdruck-a"
+		});
+	}
+
+	it("übernimmt den alten Schlüssel aus device.json in die neue Ablage", async () => {
+		const key = await createVaultKey();
+		await oldStyleDevice(key);
+		expect(await loadLocalVaultKey()).toBeNull();
+
+		await store.preloadLocalEncryptionKey();
+
+		const migrated = store.getLocalEncryptionKey();
+		expect(migrated).not.toBeNull();
+		await expect(crypto.subtle.exportKey("raw", migrated!)).rejects.toThrow();
+		// Und dauerhaft abgelegt - nicht nur im Speicher fuer diesen einen Aufruf.
+		expect(await loadLocalVaultKey()).not.toBeNull();
+
+		// Der migrierte Schluessel entschluesselt wirklich, was mit dem
+		// Original verschluesselt wurde - keine zufaellig andere Kopie.
+		const { openRecord, sealRecord } = await import("../crypto/vault");
+		const sealed = await sealRecord(key, { x: 1 }, { kind: "local", id: "probe", rev: 0 });
+		const opened = await openRecord(migrated!, sealed, { kind: "local", id: "probe", rev: 0 });
+		expect(opened).toEqual({ x: 1 });
+	});
+
+	it("wirft, wenn ein verknüpftes Gerät gar keinen Schlüssel herstellen kann", async () => {
+		await store.saveDevice({ id: "kaputtes-geraet", serverUrl: URL });
+		await expect(store.preloadLocalEncryptionKey()).rejects.toThrow();
+	});
+
+	it("ein nie verknüpftes Gerät bleibt still, kein Fehler", async () => {
+		await store.saveDevice({ id: "frisches-geraet" });
+		await expect(store.preloadLocalEncryptionKey()).resolves.toBeUndefined();
+		expect(store.getLocalEncryptionKey()).toBeNull();
 	});
 });

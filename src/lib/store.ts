@@ -10,8 +10,9 @@ import type { TimeReportDay, TimeReportFlag } from "./timeReport";
 import type { SyncPriority } from "./sync/engine";
 import { defaultSettings } from "./types";
 import { logError, logWarn } from "./log";
-import { openRecord, sealRecord } from "./crypto/vault";
-import { loadLocalVaultKey } from "./platform/keyStore";
+import { fromBase64, importVaultKey, openRecord, sealRecord } from "./crypto/vault";
+import { loadLocalVaultKey, saveLocalVaultKey } from "./platform/keyStore";
+import { unprotectSecret } from "./platform/secrets";
 
 const DIR = "data";
 
@@ -38,6 +39,16 @@ export function setLocalEncryptionKey(key: CryptoKey | null): void {
 	localKey = key;
 }
 
+/**
+ * Der schon geladene Schluessel, falls einer vorliegt - ohne erneuten
+ * IndexedDB-Zugriff. `account.svelte.ts` greift beim Wiedereinstieg darauf
+ * zurueck, statt den Schluessel ein zweites Mal zu holen (siehe
+ * `preloadLocalEncryptionKey`, laeuft vorher in `app.init()`).
+ */
+export function getLocalEncryptionKey(): CryptoKey | null {
+	return localKey;
+}
+
 function encryptsHere(): boolean {
 	return usingBrowserStorage() && localKey !== null;
 }
@@ -54,6 +65,13 @@ async function encryptForStorage(file: string, data: unknown): Promise<string> {
 }
 
 /**
+ * Kein Schluessel vorhanden - anders als eine wirklich beschaedigte Datei:
+ * die Datei ist vermutlich in Ordnung, nur (noch) nicht zu oeffnen. Aufrufer
+ * unterscheiden danach, ob sie eine Datei in Quarantaene legen duerfen.
+ */
+class LocalKeyUnavailableError extends Error {}
+
+/**
  * Alte Dateien liegen noch als Klartext da - kein Fehler, sondern der Stand
  * vor dieser Aenderung. Sie werden beim naechsten Speichern verschluesselt
  * (siehe `app.svelte.ts`s einmaligem Nachhol-Durchlauf); bis dahin bleiben
@@ -61,25 +79,55 @@ async function encryptForStorage(file: string, data: unknown): Promise<string> {
  */
 async function decryptFromStorage<T>(file: string, txt: string): Promise<T> {
 	if (!looksEncrypted(txt)) return JSON.parse(txt) as T;
-	if (!localKey) throw new Error(`${file} ist verschlüsselt, aber es liegt kein Schlüssel vor`);
+	if (!localKey) throw new LocalKeyUnavailableError(`${file}: kein Schlüssel geladen`);
 	return openRecord<T>(localKey, txt, { kind: "local", id: file, rev: 0 });
 }
 
 /**
- * Beim Start: den Tresorschluessel aus der Geraetedatei vorladen, damit
- * verschluesselte Dateien gleich beim ersten Lesen aufgehen - unabhaengig
- * vom Konto-Abgleich, der erst danach anlaeuft und das Netz braucht (siehe
- * `app.svelte.ts`, `init()` laeuft vor `account.init()`).
+ * Beim Start: den Tresorschluessel vorladen, damit verschluesselte Dateien
+ * gleich beim ersten Lesen aufgehen - unabhaengig vom Konto-Abgleich, der erst
+ * danach anlaeuft und das Netz braucht (siehe `app.svelte.ts`, `init()` laeuft
+ * vor `account.init()`).
  *
  * Nur im Browser: auf dem Rechner schuetzt das Betriebssystem den
  * Datenordner bereits.
+ *
+ * Ein Geraet, das vor dieser Aenderung verknuepft wurde, traegt den Schluessel
+ * noch als lesbare Bytes in `device.json` (`vaultKey`, `protectSecret`) -
+ * dieselben Rohbytes wie heute, nur ohne die neue, nicht-exportierbare Ablage
+ * (`platform/keyStore.ts`). Der wird hier einmalig uebernommen, statt die
+ * Verknuepfung fuer verloren zu halten.
+ *
+ * War das Geraet schon einmal verknuepft (`serverUrl` gesetzt), laesst sich
+ * aber kein Schluessel herstellen, wird geworfen statt still weiterzumachen:
+ * die naechsten Lesevorgaenge waeren sonst blind, saehen leere Dateien statt
+ * der echten verschluesselten Daten - und ein Speichern kurz danach schriebe
+ * diese leere Sicht ueber die echten Dateien. `app.init()` faengt den Fehler
+ * ab und zeigt ihn, genau wie jeden anderen Startfehler.
  */
 export async function preloadLocalEncryptionKey(): Promise<void> {
 	if (!usingBrowserStorage()) return;
-	try {
-		setLocalEncryptionKey(await loadLocalVaultKey());
-	} catch (e) {
-		logWarn("Tresorschlüssel ließ sich beim Start nicht vorladen", e);
+	const existing = await loadLocalVaultKey().catch(() => null);
+	if (existing) {
+		setLocalEncryptionKey(existing);
+		return;
+	}
+	const info = await loadDevice();
+	if (info?.vaultKey) {
+		try {
+			const raw = await unprotectSecret(info.vaultKey, info.protected ?? false);
+			const migrated = await importVaultKey(fromBase64(raw).buffer as ArrayBuffer, false);
+			await saveLocalVaultKey(migrated);
+			setLocalEncryptionKey(migrated);
+			return;
+		} catch (e) {
+			logWarn("Alter Tresorschlüssel ließ sich nicht übernehmen", e);
+		}
+	}
+	if (info?.serverUrl) {
+		throw new Error(
+			"Der Tresorschlüssel ließ sich nicht öffnen. Bitte die Seite neu laden - hilft das nicht, einmal neu anmelden."
+		);
 	}
 }
 
@@ -95,7 +143,13 @@ async function readJson<T>(file: string, fallback: T, opts: JsonOpts = {}): Prom
 		const txt = await storage.readTextFile(path);
 		if (!txt.trim()) return fallback;
 		return opts.encrypted ? await decryptFromStorage<T>(file, txt) : (JSON.parse(txt) as T);
-	} catch {
+	} catch (e) {
+		// Kein Schluessel ist kein "Datei fehlt" - nur `preloadLocalEncryptionKey`
+		// deckt den Normalfall ab (Start, Kontowechsel); ein Auftreten hier ist
+		// die seltene Ausnahme (Schluessel mitten in der Sitzung verloren) und
+		// bleibt sichtbar, statt in derselben Stille wie ein kaputtes JSON zu
+		// verschwinden.
+		if (e instanceof LocalKeyUnavailableError) logWarn(`${file} konnte nicht gelesen werden`, e);
 		return fallback;
 	}
 }
@@ -242,6 +296,13 @@ export async function loadEntries(month: string): Promise<Entry[]> {
 	try {
 		return await decryptFromStorage<Entry[]>(file, txt);
 	} catch (e) {
+		// Kein Schluessel heisst nicht beschaedigt - die Datei bleibt liegen und
+		// wird beim naechsten Lesen mit vorliegendem Schluessel wieder versucht.
+		// In Quarantaene geht nur, was mit vorliegendem Schluessel nicht aufgeht.
+		if (e instanceof LocalKeyUnavailableError) {
+			logWarn(`${file} konnte nicht gelesen werden`, e);
+			return [];
+		}
 		// Eine beschaedigte Datei darf NICHT als "leer" durchgehen: pruneEmptyMonthFiles
 		// und der naechste Speichervorgang haetten sie sonst geloescht.
 		// Umbenennen statt loeschen – der Name passt dann nicht mehr auf

@@ -34,6 +34,7 @@ import {
 	loadEntries,
 	loadSettings,
 	loadTimeReport,
+	getLocalEncryptionKey,
 	preloadLocalEncryptionKey,
 	pruneEmptyMonthFiles,
 	saveActivities,
@@ -169,8 +170,8 @@ class AppState {
 				await this.#step(`Einträge ${month} laden`, () => this.ensureMonth(month));
 				const prev = prevMonthKey();
 				await this.#step(`Einträge ${prev} laden`, () => this.ensureMonth(prev));
-				await this.#step("Verschlüsselung nachholen", () =>
-					this.#encryptExistingLocalFiles(month, prev)
+				const needsHistoricalEncryption = await this.#step("Verschlüsselung nachholen", () =>
+					this.#encryptCurrentLocalFiles(month, prev)
 				);
 				await this.#step("Laufenden Timer suchen", () => this.#findRunning());
 				this.showOnboarding = firstRun;
@@ -184,6 +185,13 @@ class AppState {
 					entries: this.monthEntries(month).length + this.monthEntries(prev).length,
 					running: this.#runningName()
 				});
+				// Erst NACH "geladen": aeltere Monate/Reports sind fuer die
+				// Bedienbarkeit belanglos, sollen den Start also nicht aufhalten.
+				if (needsHistoricalEncryption) {
+					void this.#encryptHistoricalLocalFiles(month, prev).catch((e) =>
+						logWarn("Nachhol-Verschlüsselung bestehender Dateien fehlgeschlagen", e)
+					);
+				}
 			} catch (e) {
 				// Merken statt werfen: eine abgewiesene Promise landet nur in der
 				// Konsole, und davor sitzt niemand – sonst bliebe der Ladebildschirm bei "Laedt…" haengen.
@@ -227,39 +235,54 @@ class AppState {
 	}
 
 	/**
-	 * Einmaliger Nachhol-Durchlauf: bestehende Dateien im Browser verschluesseln,
-	 * die von vor diesem Umbau stammen. Aktivitaeten, Einstellungen und die
-	 * beiden gerade geladenen Monate kosten hier nichts extra - sie liegen schon
-	 * im Speicher. Der Rest (aeltere Monate, eingelesene Reports) wird einmalig
-	 * gelesen und zurueckgeschrieben, dann verschluesselt auch er.
+	 * Einmaliger Nachhol-Durchlauf, Teil 1: Aktivitaeten, Einstellungen und die
+	 * beiden gerade geladenen Monate verschluesseln - kostet hier nichts extra,
+	 * sie liegen schon im Speicher. Bleibt Teil des blockierenden Starts, weil
+	 * er sofort fertig ist.
 	 *
-	 * Laeuft VOR account.init() (siehe Aufrufer), also bevor der Abgleich seinen
-	 * Schreib-Haken einhaengt - ein reines Neu-Verschluesseln ohne jede
-	 * Wechselwirkung mit dem naechsten Push.
+	 * Gibt zurueck, ob noch etwas fehlt (Teil 2, aeltere Monate/Reports) - ohne
+	 * gesetzten Schluessel oder mit bereits abgeschlossener Migration ist hier
+	 * nichts zu tun.
 	 */
-	async #encryptExistingLocalFiles(month: string, prev: string): Promise<void> {
-		if (!usingBrowserStorage()) return;
+	async #encryptCurrentLocalFiles(month: string, prev: string): Promise<boolean> {
+		if (!usingBrowserStorage() || !getLocalEncryptionKey()) return false;
 		const info = await loadDevice();
-		if (!info || info.localFilesEncrypted) return;
+		if (!info || info.localFilesEncrypted) return false;
 		try {
 			await saveActivities(this.activities);
 			await saveSettings(this.settings);
 			if (this.entriesByMonth[month]) await saveEntries(month, this.entriesByMonth[month]);
 			if (this.entriesByMonth[prev]) await saveEntries(prev, this.entriesByMonth[prev]);
-			for (const m of await listEntryMonths()) {
-				if (m === month || m === prev) continue;
-				await saveEntries(m, await loadEntries(m));
-			}
-			for (const m of await listTimeReportMonths()) {
+			return true;
+		} catch (e) {
+			logWarn("Verschlüsselung des aktuellen Bestands fehlgeschlagen", e);
+			return false;
+		}
+	}
+
+	/**
+	 * Einmaliger Nachhol-Durchlauf, Teil 2: der Rest (aeltere Monate, eingelesene
+	 * Reports). Absichtlich NICHT Teil des blockierenden Starts (siehe Aufrufer,
+	 * laeuft erst nach `loaded = true`) - fuer die Bedienbarkeit zaehlen nur
+	 * Aktivitaeten/Einstellungen/die beiden geladenen Monate, die Teil 1 schon
+	 * erledigt hat. Gebuendelt statt nacheinander: jede Datei ist unabhaengig,
+	 * `queued()` in store.ts serialisiert ohnehin nur je Datei, nicht global.
+	 *
+	 * Der Merker (`localFilesEncrypted`) wird erst hier, nach Teil 2, gesetzt -
+	 * erst dann ist wirklich alles verschluesselt.
+	 */
+	async #encryptHistoricalLocalFiles(month: string, prev: string): Promise<void> {
+		const months = (await listEntryMonths()).filter((m) => m !== month && m !== prev);
+		await Promise.all(months.map(async (m) => saveEntries(m, await loadEntries(m))));
+		const reportMonths = await listTimeReportMonths();
+		await Promise.all(
+			reportMonths.map(async (m) => {
 				const report = await loadTimeReport(m);
 				if (report) await saveTimeReport(report);
-			}
-			await saveDevice({ ...(await loadDevice())!, localFilesEncrypted: true });
-		} catch (e) {
-			// Kein Blocker: was diesmal nicht verschluesselt wurde, holt der naechste
-			// Start nach - der Merker wird nur nach vollstaendigem Erfolg gesetzt.
-			logWarn("Nachhol-Verschlüsselung bestehender Dateien fehlgeschlagen", e);
-		}
+			})
+		);
+		const info = await loadDevice();
+		if (info) await saveDevice({ ...info, localFilesEncrypted: true });
 	}
 
 	#startTick(): void {
