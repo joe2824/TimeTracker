@@ -1,12 +1,5 @@
 // Ein Durchstich gegen den laufenden Container.
-import {
-	createVaultKey,
-	sealRecord,
-	openRecord,
-	bucketFor,
-	toBase64,
-	fromBase64
-} from "../src/lib/crypto/vault";
+import { createVaultKey, sealRecord, openRecord, bucketFor } from "../src/lib/crypto/vault";
 
 const BASIS = process.env.TT_BASIS ?? "http://127.0.0.1:3000";
 const TOKEN = process.env.TT_TOKEN;
@@ -35,19 +28,6 @@ async function ruf(pfad: string, init: RequestInit = {}, token = TOKEN) {
 		daten = text;
 	}
 	return { status: res.status, daten: daten as Record<string, never> };
-}
-
-/** Das Chiffrat samt Zufallswert als eine Zeichenkette - wie in engine.ts. */
-function packe(s: { iv: Uint8Array; ciphertext: Uint8Array }): string {
-	const out = new Uint8Array(s.iv.length + s.ciphertext.length);
-	out.set(s.iv);
-	out.set(s.ciphertext, s.iv.length);
-	return toBase64(out);
-}
-
-function entpacke(payload: string) {
-	const roh = fromBase64(payload);
-	return { iv: roh.slice(0, 12), ciphertext: roh.slice(12) };
 }
 
 // Etwas, das sich in der Datenbank eindeutig wiederfinden liesse, wenn es im
@@ -87,8 +67,8 @@ async function main() {
 		method: "POST",
 		body: JSON.stringify({
 			records: [
-				{ id: eintrag.id, kind: "entry", bucket, baseRev: 0, updatedAt: Date.now(), payload: packe(versiegelt) },
-				{ id: aktivitaet.id, kind: "activity", baseRev: 0, updatedAt: Date.now(), payload: packe(versiegelteAkt) }
+				{ id: eintrag.id, kind: "entry", bucket, baseRev: 0, updatedAt: Date.now(), payload: versiegelt },
+				{ id: aktivitaet.id, kind: "activity", baseRev: 0, updatedAt: Date.now(), payload: versiegelteAkt }
 			]
 		})
 	});
@@ -101,7 +81,7 @@ async function main() {
 
 	const zurueck = runter.daten.records as unknown as { id: string; rev: number; payload: string }[];
 	const roh = zurueck.find((r) => r.id === "eintrag-1")!;
-	const geoeffnet = (await openRecord(key, entpacke(roh.payload), {
+	const geoeffnet = (await openRecord(key, roh.payload, {
 		id: roh.id,
 		kind: "entry",
 		rev: roh.rev

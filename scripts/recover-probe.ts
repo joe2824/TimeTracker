@@ -5,7 +5,6 @@ import {
 	createRecoveryPhrase,
 	createVaultKey,
 	exportVaultKey,
-	fromBase64,
 	recoveryLookupId,
 	toBase64,
 	unwrapWithPhrase,
@@ -34,20 +33,6 @@ async function ruf(pfad: string, body: unknown, token?: string) {
 	return { status: res.status, daten: (await res.json().catch(() => null)) as Record<string, unknown> | null };
 }
 
-/** Was der Server unter einer Verpackung versteht - wie serialize in enroll.ts. */
-const ser = (w: { kind: string; salt: Uint8Array; iv: Uint8Array; wrapped: Uint8Array }) =>
-	JSON.stringify({
-		kind: w.kind,
-		salt: toBase64(w.salt),
-		iv: toBase64(w.iv),
-		wrapped: toBase64(w.wrapped)
-	});
-
-const deser = (s: string) => {
-	const o = JSON.parse(s);
-	return { kind: o.kind, salt: fromBase64(o.salt), iv: fromBase64(o.iv), wrapped: fromBase64(o.wrapped) };
-};
-
 /** Abbrechen mit Bilanz - sonst stirbt das Skript an einem Folgefehler. */
 function abbrechen(grund: string): never {
 	console.log(`\n Abbruch: ${grund}`);
@@ -72,7 +57,7 @@ const wrapAb = await ruf(
 	"/api/wraps",
 	{
 		kind: "recovery",
-		payload: ser(await wrapWithPhrase(key, phrase)),
+		payload: await wrapWithPhrase(key, phrase),
 		recoveryId: await recoveryLookupId(phrase),
 		vaultProof: await vaultProof(key)
 	},
@@ -103,7 +88,7 @@ if (typeof verpackung !== "string") {
 // 5. Oeffnen und nachweisen
 let zurueck;
 try {
-	zurueck = await unwrapWithPhrase(deser(verpackung), phrase);
+	zurueck = await unwrapWithPhrase(verpackung, phrase);
 } catch (e) {
 	pruefe("Verpackung geoeffnet", false, e instanceof Error ? e.name : String(e));
 	abbrechen("die Verpackung geht mit ihrer eigenen Phrase nicht auf");
