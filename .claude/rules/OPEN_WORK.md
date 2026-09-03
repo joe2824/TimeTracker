@@ -1,39 +1,18 @@
 # Was offen ist
 
-Stand 2026-09-02, Branch `feat/passkey-vault`. Nach Prioritaet, nicht nach Thema.
+Stand 2026-09-03, Branch `feat/passkey-vault`. Nach Prioritaet, nicht nach Thema.
 Nichts davon ist deployt - `main` steht bei `0d72a0c`.
 
-## P0 — Sicherheit, eine Zeile
+Offen ist nur noch P2: der Weg durch die echte PWA, von Hand. Alles andere
+haengt an Tests und `svelte-check`.
 
-**`checkPairing` gibt die Kontokennung nicht weiter.**
-`src/lib/sync/account.svelte.ts:883`
+## ~~P0 — die Kontokennung bei der Kopplung~~ erledigt
 
-`#persistLink` schreibt `accountUserId: userId ?? info.accountUserId` (:1016).
-`checkPairing` ist der einzige Aufrufer ohne `userId` - alle anderen wurden in
-diesem Branch nachgezogen. Folge: ein Browserprofil, das zuletzt an Konto A hing
-und dann zu Konto B gekoppelt wird, traegt `accountUserId: "A"` neben
-`vaultKey: K_B`. `unlockWithStoredKey` (:937) haengt allein an diesem Feld und
-gibt A dann B's Schluessel.
-
-Weil danach `fingerprint === accountFingerprint` gilt, greift `foreignCopy`
-nicht: B's entschluesselte Eintraege bleiben liegen, werden A gezeigt und sind
-zum Hochladen in A's Konto freigegeben. A's eigene Datensaetze gehen unter K_B
-nicht auf und werden still verworfen (`engine.ts:603`). Und
-`repairPasskeyWrap` legt `wrapWithPrf(K_B, A's PRF)` in A's `key_wraps` -
-dauerhaft, der Server kann das nicht pruefen.
-
-Vier Bedingungen muessen zusammenkommen (geteiltes Profil, B ueber Kopplung
-verknuepft, B's Geraet spaeter widerrufen, A's naechste Anmeldung ohne
-Verpackung). Selten, aber jeder Schritt ist ein normaler Weg.
-
-Zu tun:
-
-1. `answer.userId` durchreichen - liegt schon vor (`api.ts:512`):
-   `await this.#persistLink(url, answer.deviceToken, key, "", answer.userId);`
-2. Absicherung in `#persistLink`: bei einem Wechsel nichts erben -
-   `accountUserId: userId ?? (switched || foreignCopy ? undefined : info.accountUserId)`
-3. Fall in `storedKey.test.ts` ergaenzen. Die drei vorhandenen decken
-   Kennung-falsch und Kennung-fehlt ab, nicht Kennung-veraltet.
+`checkPairing` reicht `answer.userId` durch (`b0c268e`), und `#persistLink`
+erbt bei einem Wechsel nichts mehr:
+`accountUserId: userId ?? (switched || foreignCopy ? undefined : info.accountUserId)`.
+Der Fall "Kennung veraltet" steht in `storedKey.test.ts` ("erbt die Kennung
+NICHT, wenn ein anderer Schluessel dazukommt").
 
 ## ~~P1 — die Sitzung~~ erledigt
 
@@ -67,20 +46,18 @@ einmalig.
 
 ## P3 — Reste
 
-- **`PasskeyNudge` prueft kontoweit.** `passkeys.every((p) => !p.hasWrap)`
-  (`PasskeyNudge.svelte:43`) uebersieht "einer von drei ist kaputt". Muss je
-  Passkey gelten.
-- **`credentials.has_prf` weg.** Der Wert kommt aus der Anlege-Antwort, dem
-  Signal, das dokumentiert unzuverlaessig ist - dasselbe, an dem `prfCapable`
-  haengengeblieben war. Was zaehlt, ist `hasWrap` aus `key_wraps`, und das steht
-  schon. Spalte und Feld raus.
-- **Deutsche Bezeichner in `WebOnboarding.svelte`**: `fehlertext`, `phraseOffen`,
-  `phraseEingabe`, `zurueckholen`, `kopplungscode`, `koppelnOffen`,
-  `koppelnAbbrechen`, `koppelnAufraeumen`, `pruefen`, Step `"geraet"`. Die
-  Rename-Welle `2e7d1b1` hat die Datei angefasst und diese stehen lassen. Eigener
-  Commit.
-- **`.agents/skills/` und `skills-lock.json`** liegen untracked im Repo.
-  Committen oder in `.gitignore` - nicht von mir angelegt.
+- ~~**`PasskeyNudge` prueft kontoweit.**~~ erledigt. Die Entscheidung liegt jetzt
+  in `missingPasskey` (`src/lib/passkeyStatus.ts`) und geht je Passkey: welcher
+  an diesem Browser haengt, steht als `passkeyId` in der `device.json` (gesetzt
+  bei Anmeldung, Anlegen und Reparatur, faellt beim Kontowechsel weg). Ist er
+  unbekannt - Anmeldung ueber die 24 Woerter oder eine Kopplung -, bleibt es
+  beim Blick aufs ganze Konto.
+- ~~**`credentials.has_prf` weg.**~~ erledigt. Spalte, Schema-Feld, der Parameter
+  von `storeCredential` und das Feld im Wire-Format von `/api/passkeys/finish`
+  sind raus; die Migration haengt hinten an der Liste.
+- ~~**Deutsche Bezeichner in `WebOnboarding.svelte`**~~ erledigt, eigener Commit.
+- ~~**`.agents/skills/` und `skills-lock.json`**~~ erledigt: `.agents/skills/`
+  liegt seit `db06654` im Repo, eine `skills-lock.json` gibt es nicht.
 - **`listEntryYears`** (`store.ts`) liest jede Monatsdatei nur zum Zaehlen.
   Entschaerft, nicht behoben - siehe `SYNC_PRELOAD.md`.
 - **`isPairingCode`-Doppelung** ist erledigt (`shared/codes.ts`). Wer weitere
