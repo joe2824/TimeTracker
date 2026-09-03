@@ -17,7 +17,21 @@ const config = {
     // Desktop-Anwendung waere er ohne Nutzen und mit Ueberraschungen: sie laedt
     // ohnehin aus dem eigenen Paket.
     serviceWorker: { register: web },
-    alias: { $shared: "shared" }
+    alias: { $shared: "shared" },
+    // Nur script-src: der Server (hooks.server.ts) setzt die restliche CSP
+    // schon per Header. Das eine Inline-Skript, das SvelteKit selbst in
+    // index.html einbaut (startet die App, meldet den Dienstmitarbeiter an),
+    // bekommt so seinen eigenen Hash statt eines pauschalen 'unsafe-inline' -
+    // ein eingeschleustes <script> passt nicht auf den Hash und bleibt tot.
+    // "hash" statt "auto": bei adapter-static gibt es keinen Server, der einen
+    // Nonce je Anfrage einsetzen koennte - "auto" liefe bei prerenderten
+    // Seiten ohnehin auf "hash" hinaus.
+    csp: {
+      mode: "hash",
+      directives: {
+        "script-src": ["self"]
+      }
+    }
   }
 };
 
