@@ -9,7 +9,8 @@
     "preview": "node build/index.js",
     "check": "node ../scripts/prepare-sync.mjs && svelte-kit sync && tsc --noEmit",
     "test": "vitest run",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "reset:crypto": "tsx scripts/reset-crypto-data.ts"
   },
   "dependencies": {
     "@simplewebauthn/server": "^13.2.2",
