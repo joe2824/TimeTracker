@@ -7,6 +7,38 @@ Offen: P2 (der Weg durch die echte PWA, von Hand) und das Ausfuehren von
 `npm run reset:crypto -- --yes` beim tatsaechlichen Deployment (siehe unten).
 Alles andere haengt an Tests und `svelte-check`.
 
+## ~~Code-Review des JWE-Umbaus (8 Finder-Agenten)~~ erledigt
+
+`/code-review` auf den vollen Diff der vier Commits unten losgelassen, alle
+Funde am tatsaechlichen Code nachgeprueft (nicht ungeprueft uebernommen),
+15 davon ueber `ReportFindings` gemeldet. Fuenf Commits daraus:
+
+- **`df2f03d`** - der schwerwiegendste Fund: ein vor diesem Branch
+  verknuepftes Geraet haette beim ersten Laden nach dem Update seine
+  gesamten lokalen Daten verloren (`clearAccountData()`, weil der alte
+  Schluessel aus `device.json` nie in die neue Ablage uebernommen wurde).
+  Dazu ein zusammenhaengender Fund-Cluster: eine Race beim Schluessel-
+  Vorladen konnte echte verschluesselte Dateien mit Klartext-Leerzustand
+  ueberschreiben oder faelschlich in Quarantaene schicken - der Start wirft
+  jetzt sichtbar, statt still weiterzulaufen. Nebenbei: doppelter
+  IndexedDB-Abruf beim Start behoben, der blockierende Verschluesselungs-
+  Sweep laeuft jetzt erst nach dem Laden.
+- **`04acd30`** - die CSP-Kopfzeile des Servers erlaubte trotz des
+  Hash-Modus im Meta-Tag weiterhin pauschal `unsafe-inline` fuer
+  `script-src`. Uebernimmt den Hash jetzt aus derselben Datei.
+- **`4a42058`** - die drei Ver-/Entpackwege in `vault.ts` (Phrase/PRF/
+  Geraet) auf einen gemeinsamen Kern zusammengelegt.
+- **`7670df1`** - `fs.ts` und `keyStore.ts` teilten sich die
+  IndexedDB-Verdrahtung nicht, jetzt ein gemeinsames Modul, dabei eine
+  fehlende Absicherung gegen eine blockierte Verbindung nachgezogen.
+
+**Nicht behoben, bewusst so belassen:** zwei der Review-Funde betreffen
+bereits bestehende Commit-Nachrichten (`f3d27b5`, `18cc68e` nutzen das
+verbotene Wort "Tresorschluessel" laut `AI_GUIDELINES.md`; `70caa24` nutzt
+`security(csp):` als Typ, der nicht in der erlaubten Liste steht). Das
+Umschreiben bestehender Commit-Nachrichten haette ein `git commit --amend`/
+`rebase` gebraucht - macht dieser Branch nicht ohne ausdrueckliche Bitte.
+
 ## ~~Krypto-Schicht auf JWE + lokale Verschlüsselung im Browser~~ erledigt
 
 Ausgangspunkt war der unten stehende P1-Punkt (lokale Eintraege im Browser
@@ -42,7 +74,7 @@ Krypto-Schicht, nicht nur der neue Teil. Vier Commits, in dieser Reihenfolge:
    schon (`server/src/hooks.server.ts`) - das war eine falsche Annahme
    unterwegs, korrigiert.
 
-Dazu `6f9880b`: `scripts/recover-probe.ts`/`docker-durchstich.ts` ans neue
+Dazu `6f9880b`: `scripts/recover-probe.ts`/`docker-smoke-test.ts` ans neue
 Wireformat angepasst (waren sonst kaputt, kein `svelte-check`/`vitest` deckt
 `scripts/` ab) und komplett auf englische Bezeichner umbenannt (waren
 durchgehend deutsch, kein `svelte-check` haette das gemeldet).
