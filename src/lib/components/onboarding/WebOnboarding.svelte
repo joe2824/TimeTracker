@@ -165,18 +165,6 @@
 	if (fromLink) invite = fromLink;
 
 	/**
-	 * Der Kopplungscode, den der Link mitgebracht hat - zum Bestaetigen, nicht
-	 * confirmed.
-	 *
-	 * Er wird ausdruecklich NICHT von allein durchgewinkt. Wer den Link geschickt
-	 * hat, muss nicht der sein, dem der Rechner gehoert: ein untergeschobenes
-	 * `?pair=` verpackte sonst still den Tresorschluessel fuer ein fremdes Geraet,
-	 * und der Link waere aus der Adresszeile schon wieder verschwunden. Der Code
-	 * landet deshalb nur im Feld. Bestaetigt wird er von Hand - nachdem jemand ihn
-	 * mit dem Bildschirm des Rechners verglichen hat, der wirklich dazusoll.
-	 */
-
-	/**
 	 * Ein Konto anlegen - ohne vorher nach einem Einladungscode zu fragen.
 	 *
 	 * Ob einer noetig ist, weiss nur der Server, und die meisten Installationen

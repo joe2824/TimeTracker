@@ -149,9 +149,6 @@ class AccountState {
 	 * ist zu dem Zeitpunkt vielleicht gar nicht aufgebaut. Wer ihn abholt, raeumt
 	 * ihn weg.
 	 */
-	/**
-	 * Ein Kopplungscode, der ueber einen "timetracker://"-Link hereinkam.
-	 */
 	pairCodeFromLink = $state<string>("");
 	/** Fortschritt des aktuellen Synchronisationsvorgangs (z.B. wie viele Datensätze geladen wurden). */
 	syncProgress = $state<{
