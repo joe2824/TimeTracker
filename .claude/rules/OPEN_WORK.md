@@ -3,8 +3,61 @@
 Stand 2026-09-03, Branch `feat/passkey-vault`. Nach Prioritaet, nicht nach Thema.
 Nichts davon ist deployt - `main` steht bei `0d72a0c`.
 
-Offen ist nur noch P2: der Weg durch die echte PWA, von Hand. Alles andere
-haengt an Tests und `svelte-check`.
+Offen: P2 (der Weg durch die echte PWA, von Hand) und das Ausfuehren von
+`npm run reset:crypto -- --yes` beim tatsaechlichen Deployment (siehe unten).
+Alles andere haengt an Tests und `svelte-check`.
+
+## ~~Krypto-Schicht auf JWE + lokale Verschlüsselung im Browser~~ erledigt
+
+Ausgangspunkt war der unten stehende P1-Punkt (lokale Eintraege im Browser
+unverschluesselt). Beim Entwurf des Formats zeigte sich, dass die drei
+hand-gebauten Schluessel-Verpackungen (Wiederherstellungsphrase/PBKDF2,
+Passkey-PRF/HKDF, Geraete-Kopplung/ECDH) fast 1:1 auf JWE (RFC 7516/7518,
+Bibliothek `jose`) abbilden - daraus wurde ein kompletter Umbau der
+Krypto-Schicht, nicht nur der neue Teil. Vier Commits, in dieser Reihenfolge:
+
+1. **`f3d27b5`** - `sealRecord`/`openRecord` (Sync-Wireformat) und die drei
+   Verpackungswege auf JWE umgestellt (`alg:"dir"`, `PBES2-HS512+A256KW`,
+   `A256GCMKW`, `ECDH-ES+A256KW`). `packSealed`/`unpackSealed`,
+   `serializeWrap`/`deserializeWrap`, `wrapWith`/`unwrapWith`, `kekFromPhrase`,
+   `kekFromEcdh`, `KeyWrap`/`Sealed` ersatzlos weg - der JWE-Compact-String ist
+   bereits das fertige Wire-Format. Server unveraendert (prueft `payload`/
+   `wrapped_key` nie inhaltlich, nur Laenge).
+2. **`18cc68e`** - lokale Ablage im Browser verschluesselt (`activities.json`,
+   `settings.json`, `entries-*.json`, `timereport-*.json`; `device.json`/
+   `outbox.json` bleiben Klartext). Schluessel-Persistenz: nicht-exportierbarer
+   `CryptoKey` in einer eigenen IndexedDB (`platform/keyStore.ts`) statt
+   lesbarer Bytes in `device.json` - `exportKey` schlaegt dafuer fuer immer
+   fehl, eine Zusage der Web-Crypto-Spezifikation. Migration: alte
+   Klartextdateien lesen sich weiter, werden beim naechsten Speichern
+   verschluesselt, dazu ein einmaliger Nachhol-Durchlauf beim Start
+   (`DeviceInfo.localFilesEncrypted`).
+3. **`cbdf872`** - `server/scripts/reset-crypto-data.ts`
+   (`npm run reset:crypto -- --yes`, Server-Verzeichnis): leert `records`,
+   `key_wraps`, `pairings` - mit dem neuen Format unlesbare Altdaten. **Noch
+   nicht gegen die echte Server-DB ausgefuehrt**, das ist ein bewusst
+   getrennter, von Hand anzustossender Schritt beim Deployment.
+4. **`70caa24`** - `script-src` der CSP ohne pauschales `unsafe-inline`
+   (SvelteKits CSP-Hash-Modus, `svelte.config.js`). Die CSP selbst gab es
+   schon (`server/src/hooks.server.ts`) - das war eine falsche Annahme
+   unterwegs, korrigiert.
+
+Dazu `6f9880b`: `scripts/recover-probe.ts`/`docker-durchstich.ts` ans neue
+Wireformat angepasst (waren sonst kaputt, kein `svelte-check`/`vitest` deckt
+`scripts/` ab) und komplett auf englische Bezeichner umbenannt (waren
+durchgehend deutsch, kein `svelte-check` haette das gemeldet).
+
+**Akzeptierte Konsequenz:** jede vor `f3d27b5` synchronisierte Zeiterfassung
+und jede alte Passkey-/Phrasen-/Kopplungs-Verpackung ist mit dem neuen Format
+unlesbar. Keine Migration - lokale Daten auf den Geraeten bleiben erhalten,
+betroffene Konten brauchen neue Verpackungen oder ein neues Konto.
+
+**Fuer P2 kommt dazu:** IndexedDB im Browser auf JWE-Strings statt Klartext
+pruefen (`Application → IndexedDB → timetracker → dateien` fuer die Dateien,
+`timetracker-schluessel` fuer den nicht-exportierbaren Schluessel), und alle
+drei Verpackungswege einmal durchspielen (Passkey anlegen, mit Phrase
+wiederherstellen, Geraet koppeln) - komplett neue Krypto, nicht nur neu
+verpackt.
 
 ## ~~P0 — die Kontokennung bei der Kopplung~~ erledigt
 
@@ -21,10 +74,8 @@ NICHT, wenn ein anderer Schluessel dazukommt").
 Rueckgabewert ist `{userId, slid}`, weil auch das Cookie mitwandern muss.
 Wer die Anwendung benutzt, wird nicht mehr abgemeldet.
 
-Offen und AELTER als dieser Branch: **die lokalen Eintraege liegen im Browser
-unverschluesselt** (`store.ts:85`, IndexedDB). Das ist der Grund, warum die
-Frage nach dem liegenden Vault-Key so wenig Gewicht hat - und der eigentliche
-Punkt, wenn jemand das ernst nehmen will.
+~~Offen und AELTER als dieser Branch: die lokalen Eintraege liegen im Browser
+unverschluesselt (`store.ts:85`, IndexedDB).~~ Erledigt, siehe oben.
 
 ## P2 — im Browser durchklicken
 
