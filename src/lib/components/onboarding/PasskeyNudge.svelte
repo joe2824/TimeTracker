@@ -16,12 +16,12 @@
 
 	const texts = {
 		passkey: {
-			text: "Dieser Browser hat noch keinen Passkey. Ohne ihn brauchst du beim nächsten Mal wieder die Kopplung oder deine 24 Wörter.",
+			text: "Dieser Browser hat noch keinen Passkey. Beim nächsten Anmelden brauchst du deshalb wieder deine 24 Wörter oder ein gekoppeltes Gerät. Leg jetzt einen an – danach kommst du hier mit Fingerabdruck, Gesicht oder PIN herein.",
 			button: "Passkey anlegen"
 		},
 		wrap: {
-			text: "Dein Passkey meldet dich an, entsperrt deine Daten aber noch nicht. Einmal bestätigen – danach brauchst du die 24 Wörter beim Anmelden nicht mehr.",
-			button: "Jetzt verbinden"
+			text: "Dein Passkey meldet dich zwar an, kann deine Zeiten aber noch nicht entsperren – dafür brauchst du bisher deine 24 Wörter. Einmal an diesem Gerät bestätigen, dann macht der Passkey künftig beides.",
+			button: "Passkey verbinden"
 		}
 	};
 

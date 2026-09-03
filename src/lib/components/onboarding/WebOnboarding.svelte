@@ -106,8 +106,10 @@
 			if (await account.unlockWithStoredKey(serverUrl, r.userId)) {
 				await account.rememberPasskey(r.credentialId);
 				// Und gleich den Passkey in Ordnung bringen, damit es beim nächsten
-				// Mal auch ohne den hinterlegten Schlüssel geht.
-				void account
+				// Mal auch ohne den hinterlegten Schlüssel geht. Abgewartet, nicht
+				// nebenher: der Hinweis oben in der App fragt den Server, sobald sie
+				// aufgebaut ist, und faende sonst den Stand von vorher vor.
+				await account
 					.repairPasskeyWrap(r.credentialId, r.prf)
 					.catch((e) => logWarn("Passkey-Verpackung konnte nicht abgelegt werden", e));
 				welcome();
