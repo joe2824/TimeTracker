@@ -1,10 +1,9 @@
 // Der Tresorschluessel und alles, was mit ihm geschieht.
 //
-// Verpackt wird als JWE (RFC 7516/7518, ueber die Bibliothek `jose`) statt mit
-// selbstgebautem AES-GCM/PBKDF2/ECDH: die drei Verpackungswege unten bilden
-// fast 1:1 auf JWE-Standardalgorithmen ab (PBES2 fuer die Phrase, ECDH-ES fuer
-// die Kopplung), inklusive automatischer Ephemeral-Key-Verwaltung bei der
-// Kopplung (`epk`-Header), die vorher von Hand mitgefuehrt wurde.
+// Verpackt wird als JWE (RFC 7516/7518, ueber die Bibliothek `jose`): die drei
+// Verpackungswege unten bilden fast 1:1 auf JWE-Standardalgorithmen ab
+// (PBES2 fuer die Phrase, ECDH-ES fuer die Kopplung inklusive automatischer
+// Ephemeral-Key-Verwaltung im `epk`-Header).
 
 import { generateMnemonic, mnemonicToEntropy, validateMnemonic } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english.js";
@@ -152,6 +151,43 @@ export async function vaultProof(key: CryptoKey): Promise<string> {
 	return toHex(await hmacWithVaultKey(key, "vault-proof-v1"));
 }
 
+// ---------- Verpackung des Tresorschluessels: gemeinsamer Kern ----------
+//
+// Alle drei Wege (Phrase, Passkey-PRF, Geraete-Kopplung) verschluesseln
+// denselben Inhalt (den exportierten Tresorschluessel) auf dieselbe Art -
+// nur der JWE-Header und der Schluessel/das Geheimnis, mit dem verpackt wird,
+// unterscheiden sich. Ein Fund im Ver-/Entpacken selbst (z.B. an `.buffer`,
+// siehe unten) muss so nur an einer Stelle stimmen, nicht an dreien.
+
+/** Grundform aller drei Ver-/Entpackwege - `wrap*`/`unwrap*` liefern nur noch Header, Schluessel, Algorithmen. */
+async function wrapVaultKey(
+	vaultKey: CryptoKey,
+	header: { alg: string; [claim: string]: unknown },
+	key: Parameters<InstanceType<typeof CompactEncrypt>["encrypt"]>[0],
+	keyManagementParameters?: Parameters<
+		InstanceType<typeof CompactEncrypt>["setKeyManagementParameters"]
+	>[0]
+): Promise<string> {
+	const raw = new Uint8Array(await exportVaultKey(vaultKey));
+	const jwe = new CompactEncrypt(raw).setProtectedHeader({ ...header, enc: WRAP_ENC } as never);
+	if (keyManagementParameters) jwe.setKeyManagementParameters(keyManagementParameters);
+	return jwe.encrypt(key);
+}
+
+async function unwrapVaultKey(
+	wrap: string,
+	key: Parameters<typeof compactDecrypt>[1],
+	keyManagementAlgorithms: string[],
+	decryptOptions: Partial<Parameters<typeof compactDecrypt>[2]> = {}
+): Promise<CryptoKey> {
+	const { plaintext } = await compactDecrypt(wrap, key, {
+		keyManagementAlgorithms: keyManagementAlgorithms as never,
+		contentEncryptionAlgorithms: [WRAP_ENC],
+		...decryptOptions
+	});
+	return importVaultKey(plaintext.buffer as ArrayBuffer);
+}
+
 // ---------- Verpackung aus der Wiederherstellungs-Phrase ----------
 
 /** Eine neue Wiederherstellungs-Phrase: 24 Woerter, 256 Bit Entropie. */
@@ -176,21 +212,16 @@ export function normalizePhrase(phrase: string): string {
  */
 export async function wrapWithPhrase(vaultKey: CryptoKey, phrase: string): Promise<string> {
 	const entropy = mnemonicToEntropy(normalizePhrase(phrase), wordlist);
-	const raw = new Uint8Array(await exportVaultKey(vaultKey));
-	return new CompactEncrypt(raw)
-		.setProtectedHeader({ alg: "PBES2-HS512+A256KW", enc: WRAP_ENC })
-		.setKeyManagementParameters({ p2c: PBES2_ITERATIONS })
-		.encrypt(entropy as Uint8Array);
+	return wrapVaultKey(vaultKey, { alg: "PBES2-HS512+A256KW" }, entropy as Uint8Array, {
+		p2c: PBES2_ITERATIONS
+	});
 }
 
 export async function unwrapWithPhrase(wrap: string, phrase: string): Promise<CryptoKey> {
 	const entropy = mnemonicToEntropy(normalizePhrase(phrase), wordlist);
-	const { plaintext } = await compactDecrypt(wrap, entropy as Uint8Array, {
-		keyManagementAlgorithms: ["PBES2-HS512+A256KW"],
-		contentEncryptionAlgorithms: [WRAP_ENC],
+	return unwrapVaultKey(wrap, entropy as Uint8Array, ["PBES2-HS512+A256KW"], {
 		maxPBES2Count: PBES2_ITERATIONS
 	});
-	return importVaultKey(plaintext.buffer as ArrayBuffer);
 }
 
 // ---------- Verpackung aus einem Passkey (PRF) ----------
@@ -221,21 +252,14 @@ export async function kekFromPrf(prfOutput: BufferSource, salt: Uint8Array): Pro
 export async function wrapWithPrf(vaultKey: CryptoKey, prfOutput: BufferSource): Promise<string> {
 	const salt = crypto.getRandomValues(new Uint8Array(16));
 	const kek = await kekFromPrf(prfOutput, salt);
-	const raw = new Uint8Array(await exportVaultKey(vaultKey));
-	return new CompactEncrypt(raw)
-		.setProtectedHeader({ alg: "A256GCMKW", enc: WRAP_ENC, prfSalt: toBase64(salt) })
-		.encrypt(kek);
+	return wrapVaultKey(vaultKey, { alg: "A256GCMKW", prfSalt: toBase64(salt) }, kek);
 }
 
 export async function unwrapWithPrf(wrap: string, prfOutput: BufferSource): Promise<CryptoKey> {
 	const header = decodeProtectedHeader(wrap) as { prfSalt?: string };
 	if (!header.prfSalt) throw new Error("Passkey-Verpackung ohne Salz.");
 	const kek = await kekFromPrf(prfOutput, fromBase64(header.prfSalt));
-	const { plaintext } = await compactDecrypt(wrap, kek, {
-		keyManagementAlgorithms: ["A256GCMKW"],
-		contentEncryptionAlgorithms: [WRAP_ENC]
-	});
-	return importVaultKey(plaintext.buffer as ArrayBuffer);
+	return unwrapVaultKey(wrap, kek, ["A256GCMKW"]);
 }
 
 // ---------- Verpackung fuer ein neues Geraet ----------
@@ -332,19 +356,12 @@ export async function wrapForDevice(
 		true,
 		[]
 	);
-	const raw = new Uint8Array(await exportVaultKey(vaultKey));
-	return new CompactEncrypt(raw)
-		.setProtectedHeader({ alg: "ECDH-ES+A256KW", enc: WRAP_ENC })
-		.encrypt(peer);
+	return wrapVaultKey(vaultKey, { alg: "ECDH-ES+A256KW" }, peer);
 }
 
 /** Auf dem neuen Geraet: das Paket mit dem eigenen privaten Schluessel oeffnen. */
 export async function unwrapForDevice(wrap: string, ownPrivateKey: CryptoKey): Promise<CryptoKey> {
-	const { plaintext } = await compactDecrypt(wrap, ownPrivateKey, {
-		keyManagementAlgorithms: ["ECDH-ES+A256KW"],
-		contentEncryptionAlgorithms: [WRAP_ENC]
-	});
-	return importVaultKey(plaintext.buffer as ArrayBuffer);
+	return unwrapVaultKey(wrap, ownPrivateKey, ["ECDH-ES+A256KW"]);
 }
 
 // ---------- Hilfen ----------
