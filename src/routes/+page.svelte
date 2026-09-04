@@ -628,21 +628,11 @@
 							></span>
 						</button>
 					{/if}
-					{#if app.running}
-						<span
-							class="border-primary/20 bg-primary/10 text-primary inline-flex max-w-45 items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium"
-						>
-							<span class="relative flex size-2 shrink-0">
-								<span
-									class="bg-primary absolute inline-flex size-full animate-ping rounded-full opacity-75"
-								></span>
-								<span class="bg-primary relative inline-flex size-2 rounded-full"></span>
-							</span>
-							<span class="truncate">{app.activityName(app.running.activityId)}</span>
-						</span>
-					{/if}
-					<!-- Nach dem laufenden Timer: der Abgleich ist meist nur ein Punkt und
-					     stoert am Rand niemanden. -->
+					<!-- Der laufende Timer stand hier einmal als Kachel mit dem Namen der
+					     Aktivitaet. Das Logo links sagt dasselbe (es wechselt die Farbe) und
+					     fuehrt mit einem Klick auf die Zeiterfassung - die Kachel war die
+					     zweite Auskunft ueber denselben Umstand, und sie war unterschiedlich
+					     breit: mit ihr wanderte bei jedem Start und Stopp alles daneben. -->
 					<SyncHint />
 					{#if account.linked && !capabilities.tray}
 						<button

@@ -82,19 +82,28 @@
 	const spinning = $derived(statusInfo?.busy === true);
 </script>
 
+<!--
+	Feste Breite, rechts ausgerichtet.
+
+	Der Text wechselt bei jedem Abgleich: "vor 3 Min" -> "" (der Stand ist wieder
+	frisch) -> "Daten werden geladen …" -> "". Ohne den festen Platz aendert sich
+	dabei die Breite dieser Zeile, und weil die Kopfzeile rechtsbuendig steht,
+	wandert alles daneben kurz mit - bei jedem Abgleich, im Browser wie in der
+	Anwendung.
+-->
 {#if statusInfo}
 	<span
-		class="text-muted-foreground inline-flex items-center gap-1.5 text-xs whitespace-nowrap"
+		class="text-muted-foreground inline-flex w-24 shrink-0 items-center justify-end gap-1.5 overflow-hidden text-xs whitespace-nowrap sm:w-36"
 		title={statusInfo.titleText}
 	>
 		{#if spinning}
 			<RefreshCwIcon class="size-3 shrink-0 animate-spin opacity-70" />
-			<span class="max-w-32 truncate sm:max-w-none">{statusInfo.text}</span>
+			<span class="truncate">{statusInfo.text}</span>
 		{:else}
 			<span
 				class="size-1.5 shrink-0 rounded-full {statusInfo.tone} {account.phase === 'running' ? 'animate-pulse ring-2 ring-emerald-500/30' : ''}"
 			></span>
-			{#if statusInfo.text}{statusInfo.text}{/if}
+			{#if statusInfo.text}<span class="truncate">{statusInfo.text}</span>{/if}
 		{/if}
 	</span>
 {/if}
