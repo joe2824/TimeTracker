@@ -7,6 +7,64 @@ Offen: P2 (der Weg durch die echte PWA, von Hand) und das Ausfuehren von
 `npm run reset:crypto -- --yes` beim tatsaechlichen Deployment (siehe unten).
 Alles andere haengt an Tests und `svelte-check`.
 
+**Zur Ruecksicht auf Bestandsdaten:** den Server benutzt derzeit nur eine
+Person, die ihre Daten lokal hat und sich neu verknuepfen kann. Auf alte
+Serverdaten muss also nichts Ruecksicht nehmen. Was der lokale Browser
+mitbringt, ist die Ausnahme - dort kommt man vom Fehlerbildschirm des Starts
+nicht mehr heraus (kein Knopf zum Loesen der Verknuepfung), deshalb bleibt die
+einmalige Uebernahme eines alten Schluessels aus der `device.json` stehen.
+
+## ~~Security-Review + der Fund daraus~~ erledigt
+
+`/security-review` ueber den ganzen Branch: **keine** Sicherheitsluecke. Die
+Algorithmen sind auf allen vier Entschluesselungswegen festgenagelt, die
+Bindung der Datensaetze wird wirklich geprueft, die Kopplung weist einen
+vertauschten Schluessel und einen vertauschten Anspruch ab, jede API-Route
+haengt an `locals.userId`, und der CSP-Hash kommt aus dem Build, nicht aus
+einer Anfrage.
+
+Dabei fiel dafuer ein Fehler auf, der KEINE Sicherheitsluecke ist, aber
+schwerer wog als alles, was die Review gesucht hat - behoben in `ada4ba1`:
+
+Nach jedem Neuladen im Browser liegt auf `#key` die abgelegte, nicht-
+exportierbare Kopie. `hmacWithVaultKey` holte sich die Bytes ueber
+`exportKey` - fuer diese Kopie schlaegt das mit Absicht fehl. Folgen:
+
+- `bucketFor` warf in jeder Abgleichsrunde, der Fehler wurde verschluckt:
+  **der Abgleich war nach jedem Neuladen still tot.**
+- `vaultProof` genauso - `unlockWithStoredKey` fiel grundlos auf die 24
+  Woerter zurueck.
+- `addPasskey` legte einen Passkey OHNE Verpackung an und meldete "kein
+  PRF" - genau der kaputte Zustand, gegen den dieser Branch gebaut wurde.
+- `approvePairing` warf mit einer DOMException.
+
+Kein Test kam an die Stelle: `linkWithSession` bekommt ueberall einen frisch
+erzeugten, exportierbaren Schluessel.
+
+Behoben ueber Schluesseltrennung. `VaultKey` haelt zwei Schluessel aus
+demselben Geheimnis - AES-GCM fuers Ver-/Entschluesseln, HMAC fuer die
+abgeleiteten Kennungen. Keine Kennung braucht mehr einen Export, die Werte
+selbst sind unveraendert. Wer eine NEUE Verpackung schreibt (weiterer
+Passkey, weiteres Geraet), braucht die Bytes weiterhin: dafuer gibt es
+`reunlockWithPasskey` - eine Bestaetigung mit dem Passkey dieses Browsers
+liefert den Schluessel erneut, statt nach 24 Woertern zu fragen.
+`#exportableKey()` prueft ueber den Nachweis, dass es derselbe Vault ist.
+
+Dazu: die IndexedDB des Schluessels heisst englisch
+(`timetracker-keys`/`keys`), und die zwei Stellen, die einen geschuetzten
+Schluessel aus der `device.json` lasen, liegen jetzt einmal in `store.ts`
+(`readProtectedVaultKey`).
+
+**Bewusst NICHT umbenannt:** die Datei-IndexedDB in `platform/fs.ts` heisst
+weiter `timetracker`/`dateien`. Der Name steht so auf `main` - ein Rename
+laesst die lokalen Dateien jedes bestehenden Browsers verwaisen, und die
+Regel (englische Bezeichner) meint Code, nicht Ablagenamen. Wer es trotzdem
+will, braucht einen einmaligen Umzug beim Start.
+
+**Fuer P2 kommt dazu:** einmal die Seite neu laden und nachsehen, dass der
+Abgleich weiterlaeuft - danach einen Passkey anlegen und ein Geraet koppeln,
+beides loest jetzt eine zusaetzliche Passkey-Bestaetigung aus.
+
 ## ~~Code-Review des JWE-Umbaus (8 Finder-Agenten)~~ erledigt
 
 `/code-review` auf den vollen Diff der vier Commits unten losgelassen, alle
@@ -146,6 +204,12 @@ einmalig.
   liegt seit `db06654` im Repo, eine `skills-lock.json` gibt es nicht.
 - **`listEntryYears`** (`store.ts`) liest jede Monatsdatei nur zum Zaehlen.
   Entschaerft, nicht behoben - siehe `SYNC_PRELOAD.md`.
+- **Fehlerbildschirm des Starts hat keinen Weg zurueck.** `+page.svelte` bietet
+  dort nur "Erneut versuchen", "Neu laden" und "Protokoll oeffnen". Kommt der
+  Start nicht durch, weil sich der Schluessel dieses Browsers nicht oeffnen
+  laesst, bleibt nur, die Website-Daten von Hand zu loeschen. Ein Knopf
+  "Verknuepfung loesen" (im Browser, nicht auf dem Rechner - dort liegen die
+  Zeiten als Dateien) waere der Weg heraus.
 - **`isPairingCode`-Doppelung** ist erledigt (`shared/codes.ts`). Wer weitere
   sucht: gleiche Namen finden geht mit
   `grep -rhoE "^(export )?(async )?function [a-zA-Z0-9_]+" src/lib server/src`,
