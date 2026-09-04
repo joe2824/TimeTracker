@@ -1426,6 +1426,24 @@ class AccountState {
 		return { challengeId, response };
 	}
 
+	/**
+	 * Der Weg zurueck, wenn der Start gar nicht durchkommt.
+	 *
+	 * `unlink()` setzt eine laufende Verknuepfung voraus - es meldet sich beim
+	 * Server ab und rechnet den lokalen Bestand ab. Bleibt `app.init()` schon
+	 * vorher stehen (etwa, weil sich der Schluessel dieses Browsers nicht mehr
+	 * oeffnen laesst), ist davon nichts erreichbar, und ohne diesen Weg bliebe
+	 * nur, die Website-Daten von Hand zu loeschen.
+	 *
+	 * Nur im Browser aufrufen: dort ist der lokale Bestand die Kopie eines
+	 * Kontos und liegt nach dem naechsten Anmelden wieder da. Auf dem Rechner
+	 * gehoeren die Zeiten dem Menschen - sie sind Dateien, und die bleiben.
+	 */
+	async forgetLink(): Promise<void> {
+		await this.#forgetLocally();
+		await this.#wipeLocalData();
+	}
+
 	/** Alles abstellen und die Kontodaten dieses Geraets vergessen. */
 	async #forgetLocally(): Promise<void> {
 		// Zuerst die Engine, und zwar ohne ein einziges await davor: eine laufende

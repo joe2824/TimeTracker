@@ -377,6 +377,30 @@
 	});
 
 	/** Protokollordner im Explorer zeigen – vom Fehlerbildschirm aus. */
+	/**
+	 * Zweiter Klick statt Dialog: der Fehlerbildschirm laeuft, wenn die Anwendung
+	 * sonst nichts kann - je weniger daran haengt, desto besser.
+	 */
+	let confirmReset = $state(false);
+	let isResetting = $state(false);
+
+	/**
+	 * Der Weg heraus, wenn der Start nicht durchkommt. Nur im Browser: dort ist
+	 * der lokale Bestand die Kopie eines Kontos, auf dem Rechner sind es die
+	 * Dateien des Menschen.
+	 */
+	async function resetLink() {
+		isResetting = true;
+		try {
+			await account.forgetLink();
+			location.reload();
+		} catch (e) {
+			isResetting = false;
+			confirmReset = false;
+			toast.error(`Zurücksetzen fehlgeschlagen: ${errorText(e)}`, { duration: 30000 });
+		}
+	}
+
 	async function openLogFolder() {
 		try {
 			await revealInFolder(await join(await appDataDir(), logFile()));
@@ -446,6 +470,34 @@
 					     mehr ueber die Ursache zu erfahren als diese eine Zeile. -->
 					<Button variant="outline" onclick={openLogFolder}>Protokoll öffnen</Button>
 				</div>
+
+				<!-- Hilft "Erneut versuchen" nicht, gaebe es im Browser sonst keinen Weg
+				     mehr: die Einstellungen sind von hier aus nicht erreichbar. Auf dem
+				     Rechner nicht angeboten - dort wuerde es die Zeiten des Menschen
+				     loeschen, und der Datenordner steht ihm ohnehin offen. -->
+				{#if !isTauri()}
+					{#if confirmReset}
+						<div class="space-y-2 rounded-md border border-destructive/40 p-3">
+							<p class="text-muted-foreground text-xs">
+								Dabei werden die Daten in diesem Browser gelöscht und du musst dich neu
+								anmelden. Deine erfassten Zeiten liegen auf dem Server und sind danach
+								wieder da.
+							</p>
+							<div class="flex flex-wrap justify-center gap-2">
+								<Button variant="destructive" size="sm" disabled={isResetting} onclick={() => void resetLink()}>
+									{isResetting ? "Wird zurückgesetzt…" : "Ja, zurücksetzen"}
+								</Button>
+								<Button variant="ghost" size="sm" disabled={isResetting} onclick={() => (confirmReset = false)}>
+									Abbrechen
+								</Button>
+							</div>
+						</div>
+					{:else}
+						<Button variant="ghost" size="sm" onclick={() => (confirmReset = true)}>
+							Anmeldung zurücksetzen
+						</Button>
+					{/if}
+				{/if}
 			{:else}
 				<!-- Im Browser bleibt es still: dort dauert der Start Millisekunden, und
 				     "Einstellungen suchen…" waere ein Aufblitzen, das nur Unruhe stiftet.

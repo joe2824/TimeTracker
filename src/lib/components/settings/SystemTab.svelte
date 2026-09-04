@@ -125,7 +125,11 @@
 		}
 	});
 
+	// Nur auf dem Rechner: die Karte darunter steht unter `{#if isTauri()}`, im
+	// Browser wuerde hier bei jeder Aenderung jede Monatsdatei gelesen - fuer
+	// Zahlen, die niemand zu sehen bekommt.
 	$effect(() => {
+		if (!isTauri()) return;
 		app.entriesVersion;
 		void listEntryYears().then((y) => (storedYears = y));
 	});
