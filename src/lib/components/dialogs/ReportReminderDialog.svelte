@@ -2,6 +2,7 @@
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { Button } from "$lib/components/ui/button";
 	import { app } from "$lib/app.svelte";
+	import { account } from "$lib/sync/account.svelte";
 	import { monthLabel } from "$lib/time";
 	import { sendReport } from "$lib/reportSend";
 	import { capabilities } from "$lib/platform/env";
@@ -16,9 +17,19 @@
 	const month = $derived(app.pendingReportMonth);
 	// Dev-Override: erzwungen anzeigen; Anzeige-Monat dann auf aktuellen Monat zurückfallen.
 	const shownMonth = $derived(month ?? app.currentMonth);
+	// Erst nach dem ersten Abgleich fragen. Ein gerade verknuepftes Geraet ist
+	// lokal leer: die Eintraege des Vormonats kommen herein, welche Berichte
+	// laengst raus sind steht aber in den Einstellungen - und die kommen mit
+	// derselben Runde. Vorher waere die Frage nicht bloss laestig mitten im
+	// Einrichten, sondern schlicht falsch: sie gilt einem Bericht, den jemand
+	// vor Wochen von einem anderen Geraet aus geschickt hat.
+	const synced = $derived(!account.linked || account.firstSyncDone);
 	const open = $derived(
 		watchers.forceReportReminder ||
-			(!!month && app.settings.reportReminderEnabled && !watchers.reportReminderDismissed)
+			(!!month &&
+				synced &&
+				app.settings.reportReminderEnabled &&
+				!watchers.reportReminderDismissed)
 	);
 
 	async function send() {
