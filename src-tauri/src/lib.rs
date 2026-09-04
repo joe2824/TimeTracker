@@ -185,7 +185,7 @@ fn handle_menu_event(app: &tauri::AppHandle, event: tauri::menu::MenuEvent) {
         "stop" => {
             let _ = app.emit("tray-stop-timer", ());
         }
-        "quit" => app.exit(0),
+        "quit" => request_quit(app),
         _ => {}
     }
 }
@@ -435,6 +435,34 @@ fn set_tray_tooltip(app: tauri::AppHandle, text: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Wie lange das Beenden auf den letzten Abgleich wartet.
+///
+/// Reicht fuer eine Handvoll Datensaetze ueber eine normale Leitung. Laenger
+/// wartet niemand: ohne Netz oder mit haengender Oberflaeche muss "Beenden"
+/// trotzdem beenden.
+const QUIT_GRACE_MS: u64 = 3000;
+
+/// Beenden, aber der Oberflaeche vorher kurz Zeit geben.
+///
+/// Sie laedt auf `app-quit` hin den letzten Stand hoch und ruft danach
+/// `quit_now`. Der Wecker hier laeuft unabhaengig davon weiter - kommt die
+/// Antwort nicht, wird trotzdem beendet.
+#[cfg(desktop)]
+fn request_quit(app: &tauri::AppHandle) {
+    let _ = app.emit("app-quit", ());
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(QUIT_GRACE_MS));
+        handle.exit(0);
+    });
+}
+
+/// Die Oberflaeche ist fertig - jetzt wirklich beenden.
+#[tauri::command]
+fn quit_now(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
 fn show_main(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
@@ -622,6 +650,7 @@ pub fn run() {
             show_flyout,
             idle_seconds,
             set_tray_tooltip,
+            quit_now,
             write_export_file,
             outlook::create_outlook_draft,
             outlook::read_outlook_calendar,

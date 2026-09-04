@@ -306,6 +306,7 @@
 			if (unlisteners.length === 0) {
 				unlisteners.push(
 					await listen("tray-stop-timer", () => void app.stop()),
+					await listen("app-quit", () => void syncAndQuit()),
 					await listen<string>("tray-start-activity", (e) => void app.startActivity(e.payload)),
 					// Flyout-Fenster hat Daten geändert -> neu laden.
 					// Ein Klick auf "In der App öffnen" im Browser landet hier.
@@ -399,6 +400,22 @@
 			confirmReset = false;
 			toast.error(`Zurücksetzen fehlgeschlagen: ${errorText(e)}`, { duration: 30000 });
 		}
+	}
+
+	/**
+	 * „Beenden“ aus dem Tray: erst den letzten Stand hochladen, dann schliessen.
+	 *
+	 * Der Rust-Teil beendet nach drei Sekunden von sich aus - hier geht es nur
+	 * frueher, wenn der Abgleich schneller fertig ist. Ohne Netz laeuft `syncNow`
+	 * in seinen eigenen Fehler und `quit_now` kommt sofort danach.
+	 */
+	async function syncAndQuit() {
+		try {
+			await account.syncNow();
+		} catch (e) {
+			logWarn("Letzter Abgleich vor dem Beenden fehlgeschlagen", e);
+		}
+		await invoke("quit_now").catch((e) => logWarn("Beenden fehlgeschlagen", e));
 	}
 
 	async function openLogFolder() {
