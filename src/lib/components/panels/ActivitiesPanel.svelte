@@ -1,6 +1,12 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
-	import { BUILTIN_OTHERS, ACTIVITY_COLORS, type Activity } from "$lib/types";
+	import {
+		BUILTIN_OTHERS,
+		ACTIVITY_COLORS,
+		byActivityOrder,
+		isBuiltinActivity,
+		type Activity
+	} from "$lib/types";
 	import { acceleratorFromEvent, applyShortcuts } from "$lib/shortcuts";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
@@ -146,7 +152,7 @@
 	const listed = $derived(
 		[...app.activities]
 			.filter((a) => (showArchived || !a.archived) && (showHidden || !a.hidden || a.archived))
-			.sort((a, b) => a.sortOrder - b.sortOrder)
+			.sort(byActivityOrder)
 	);
 	const hiddenCount = $derived(app.activities.filter((a) => a.hidden && !a.archived).length);
 </script>
@@ -274,8 +280,8 @@
 						<input
 							class="hover:bg-muted/60 focus:bg-muted/60 focus-visible:ring-ring/50 min-w-0 grow basis-40 rounded-md bg-transparent px-1.5 py-1 text-sm transition-colors outline-none focus-visible:ring-3 disabled:cursor-default disabled:bg-transparent disabled:opacity-100"
 							value={a.name}
-							disabled={app.isBuiltinActivity(a)}
-							title={app.isBuiltinActivity(a) ? "Eingebaute Zeile – nicht umbenennbar" : "Umbenennen"}
+							disabled={isBuiltinActivity(a)}
+							title={isBuiltinActivity(a) ? "Eingebaute Zeile – nicht umbenennbar" : "Umbenennen"}
 							onchange={(e: Event) => app.renameActivity(a.id, (e.target as HTMLInputElement).value)}
 						/>
 						<!-- Aktionen als eine Gruppe, nicht als fuenf lose Knoepfe: so brechen

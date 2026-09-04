@@ -6,6 +6,8 @@ import {
 	BUILTIN_ABSENCE_ID,
 	BUILTIN_OTHERS,
 	BUILTIN_OTHERS_ID,
+	byActivityOrder,
+	isBuiltinActivity,
 	defaultSettings
 } from "./types";
 import {
@@ -387,9 +389,7 @@ class AppState {
 
 	// ---------- Aktivitaeten ----------
 	get visibleActivities(): Activity[] {
-		return this.activities
-			.filter((a) => !a.archived)
-			.sort((a, b) => a.sortOrder - b.sortOrder);
+		return this.activities.filter((a) => !a.archived).sort(byActivityOrder);
 	}
 
 	get absenceActivity(): Activity | undefined {
@@ -548,6 +548,10 @@ class AppState {
 	}
 
 	async persistActivities(): Promise<void> {
+		// Jeder Schreibvorgang laeuft hier durch - Anlegen, Import, Umsortieren,
+		// Loeschen. Die Regel steht deshalb an dieser einen Stelle statt an jeder
+		// davon.
+		this.#reindexBuiltinsLast();
 		await saveActivities($state.snapshot(this.activities) as Activity[]);
 		this.trayVersion = (this.trayVersion + 1) % 1000;
 		void notifyDataChanged();
@@ -571,15 +575,12 @@ class AppState {
 			});
 			added++;
 		}
-		this.#reindexBuiltinsLast();
 		if (added) await this.persistActivities();
 		return added;
 	}
 
 	#reindexBuiltinsLast(): void {
-		const builtins = this.activities.filter((a) => a.isAbsence || a.name === BUILTIN_OTHERS);
-		const rest = this.activities.filter((a) => !(a.isAbsence || a.name === BUILTIN_OTHERS));
-		[...rest, ...builtins].forEach((a, i) => (a.sortOrder = i));
+		[...this.activities].sort(byActivityOrder).forEach((a, i) => (a.sortOrder = i));
 	}
 
 	/**
@@ -610,14 +611,9 @@ class AppState {
 	/** Umbenennen – ausser bei den eingebauten Zeilen. */
 	async renameActivity(id: string, name: string): Promise<void> {
 		const a = this.activities.find((x) => x.id === id);
-		if (!a || a.isAbsence || a.name === BUILTIN_OTHERS) return;
+		if (!a || isBuiltinActivity(a)) return;
 		a.name = name.trim() || a.name;
 		await this.persistActivities();
-	}
-
-	/** Eingebaute Zeile? Die sind nicht umbenennbar/loeschbar. */
-	isBuiltinActivity(a: Activity): boolean {
-		return a.isAbsence || a.name === BUILTIN_OTHERS;
 	}
 
 	async toggleFavorite(id: string): Promise<void> {
@@ -655,7 +651,7 @@ class AppState {
 	/** Aus der Auswahl ausblenden – erscheint aber weiterhin im Bericht/E-Mail. */
 	async toggleHidden(id: string): Promise<void> {
 		const a = this.activities.find((x) => x.id === id);
-		if (a && !a.isAbsence && a.name !== BUILTIN_OTHERS) {
+		if (a && !isBuiltinActivity(a)) {
 			a.hidden = !a.hidden;
 			await this.persistActivities();
 		}
@@ -663,7 +659,7 @@ class AppState {
 
 	async setArchived(id: string, archived: boolean): Promise<void> {
 		const a = this.activities.find((x) => x.id === id);
-		if (a && !a.isAbsence && a.name !== BUILTIN_OTHERS) {
+		if (a && !isBuiltinActivity(a)) {
 			a.archived = archived;
 			await this.persistActivities();
 		}
@@ -685,7 +681,7 @@ class AppState {
 	 */
 	async deleteActivity(id: string): Promise<number> {
 		const a = this.activities.find((x) => x.id === id);
-		if (!a || a.isAbsence || a.name === BUILTIN_OTHERS) return 0;
+		if (!a || isBuiltinActivity(a)) return 0;
 
 		let removed = 0;
 		for (const m of await listEntryMonths()) {
@@ -962,7 +958,7 @@ class AppState {
 	get trackableActivities(): Activity[] {
 		return this.visibleActivities
 			.filter((a) => !a.isAbsence && !a.hidden)
-			.sort((a, b) => Number(!!b.favorite) - Number(!!a.favorite) || a.sortOrder - b.sortOrder);
+			.sort((a, b) => Number(!!b.favorite) - Number(!!a.favorite) || byActivityOrder(a, b));
 	}
 
 	/** Die zuletzt genutzten trackbaren Aktivitaeten (fuer Tray-Schnellstart). */

@@ -210,3 +210,29 @@ export const BUILTIN_ABSENCE = "Abwesenheiten";
  */
 export const BUILTIN_OTHERS_ID = "builtin-others";
 export const BUILTIN_ABSENCE_ID = "builtin-absence";
+
+/**
+ * Die eingebauten Zeilen - „Others“ und die Abwesenheiten.
+ *
+ * Ueber den Namen und nicht ueber die feste Id: aeltere Fassungen vergaben
+ * hier Zufalls-Ids, und solange die noch nicht zusammengefuehrt sind
+ * (`app.svelte.ts`), traegt die Zeile eine andere Id als heute.
+ */
+export function isBuiltinActivity(a: Activity): boolean {
+	return a.isAbsence || a.name === BUILTIN_OTHERS;
+}
+
+/**
+ * Die Reihenfolge der Aktivitaetenliste: eingebaute Zeilen immer zuletzt.
+ *
+ * Sie lassen sich weder loeschen noch umbenennen und gehoeren deshalb nicht
+ * zwischen die selbst angelegten. `persistActivities` zieht die
+ * gespeicherte Reihenfolge nach; hier steht dieselbe Regel fuer das, was
+ * angezeigt wird - eine Liste von einem anderen Geraet stimmt sonst erst
+ * nach dem naechsten Schreibvorgang.
+ */
+export function byActivityOrder(a: Activity, b: Activity): number {
+	return (
+		Number(isBuiltinActivity(a)) - Number(isBuiltinActivity(b)) || a.sortOrder - b.sortOrder
+	);
+}
