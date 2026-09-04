@@ -3,7 +3,7 @@
 //   - Ein GERAET loesen. Der Zugang dieses einen Geraets erlischt, das Konto und
 //     alle anderen Geraete bleiben. Das macht `revokeDevice` in auth.ts.
 //   - Das KONTO aufloesen. Dann verschwindet alles, was der Server hat.
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { DbLike } from "./db";
 import {
 	challenges,
@@ -16,6 +16,12 @@ import {
 	sessions,
 	users
 } from "./db/schema";
+
+/** Wie viele Konten es auf diesem Server gibt. Fuer die Verwaltungsansicht. */
+export function countUsers(db: DbLike): number {
+	const row = db.select({ n: sql<number>`count(*)` }).from(users).get();
+	return Number(row?.n ?? 0);
+}
 
 /** Was entfernt wurde - damit der Client es dem Menschen zeigen kann. */
 export interface DeleteSummary {

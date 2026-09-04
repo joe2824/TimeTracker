@@ -56,6 +56,8 @@ export interface BackupInfo {
 }
 
 export interface ServerStats {
+	/** Konten auf diesem Server - keine Telemetrie, sondern eine echte Zaehlung. */
+	users: number;
 	summary: {
 		today: number;
 		yesterday: number;

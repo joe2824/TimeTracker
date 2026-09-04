@@ -1033,6 +1033,20 @@ describe("Verwaltung", () => {
 		db.$client.prepare("UPDATE users SET is_admin = 1 WHERE id = ?").run(id);
 	}
 
+	it("nennt dem Verwalter die Zahl der Konten", async () => {
+		makeAdmin(ANNA);
+		const stats = await (await api(annaToken, "/api/admin/stats")).json();
+		// Anna und Bodo. Gezaehlt werden Konten - nicht Geraete und nicht Telemetrie,
+		// von der hier gar keine vorliegt.
+		expect(stats.users).toBe(2);
+		expect(stats.summary.mau).toBe(0);
+	});
+
+	it("gibt die Zahl der Konten nicht ohne Verwalterrechte heraus", async () => {
+		expect((await api(annaToken, "/api/admin/stats")).status).toBe(403);
+		expect((await api(null, "/api/admin/stats")).status).toBe(401);
+	});
+
 	it("weist einen gewoehnlichen Angemeldeten ab", async () => {
 		expect((await api(annaToken, "/api/admin/invites")).status).toBe(403);
 		const post = await api(annaToken, "/api/admin/invites", { method: "POST", body: "{}" });

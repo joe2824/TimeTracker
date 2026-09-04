@@ -372,19 +372,24 @@
 					{/if}
 				</div>
 				<Card.Description>
-					Anonyme Zählung aktiver Installationen (DAU/WAU/MAU), Versionen und Plattformen auf dem eigenen Server.
+					Wie viele Konten es auf diesem Server gibt, dazu die anonyme Zählung aktiver
+					Installationen (DAU/WAU/MAU), Versionen und Plattformen.
 				</Card.Description>
 			</Card.Header>
 
 			<Card.Content class="space-y-6">
 				{#if !isLoaded}
-					<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-						{#each Array(4) as _}
+					<div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+						{#each Array(5) as _}
 							<Skeleton class="h-20 rounded-lg" />
 						{/each}
 					</div>
 				{:else if stats}
-					<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+					<div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+						<div class="rounded-lg border bg-primary/5 p-3 text-center">
+							<div class="text-2xl font-bold tracking-tight text-foreground">{stats.users}</div>
+							<div class="text-xs text-muted-foreground mt-0.5">Benutzer</div>
+						</div>
 						<div class="rounded-lg border bg-muted/30 p-3 text-center">
 							<div class="text-2xl font-bold tracking-tight text-foreground">{stats.summary.today}</div>
 							<div class="text-xs text-muted-foreground mt-0.5">Heute (DAU)</div>
@@ -404,6 +409,8 @@
 					</div>
 
 					<p class="text-xs text-muted-foreground leading-relaxed">
+						„Benutzer" ist die Zahl der angelegten Konten – unabhängig davon, ob und wann
+						jemand die Anwendung zuletzt benutzt hat. Alle anderen Zahlen zählen Geräte:
 						DAU, WAU und MAU sind die üblichen Abkürzungen für die Zahl der aktiven Geräte pro Tag,
 						Woche und Monat (englisch <em>daily</em>, <em>weekly</em>, <em>monthly active users</em>).
 						Jedes Gerät wird höchstens einmal pro Tag gezählt. Wer an mehreren Tagen gearbeitet hat,
