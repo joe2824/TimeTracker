@@ -142,7 +142,32 @@ const MIGRATIONS: string[] = [
 	// `key_wraps`: liegt sie, oeffnet der Passkey die Daten. Wie oben steht der
 	// Schritt hinten statt in der CREATE-Anweisung; eine frische Datenbank legt
 	// die Spalte also an und wirft sie hier wieder weg.
-	`ALTER TABLE credentials DROP COLUMN has_prf`
+	`ALTER TABLE credentials DROP COLUMN has_prf`,
+	// `pairings.user_id` war einmal NOT NULL. Der Wert steht aber erst fest, wenn
+	// ein entsperrtes Geraet die Kopplung bestaetigt - bis dahin ist die Spalte
+	// leer, und genau so legt `POST /api/pair/start` die Zeile an. Die Definition
+	// oben wurde damals an Ort und Stelle geaendert, statt hier einen Schritt
+	// anzuhaengen: eine frische Datenbank bekam die richtige Form, eine gewachsene
+	// behielt die alte - und auf ihr scheitert JEDE Kopplung mit "NOT NULL
+	// constraint failed". SQLite kann NOT NULL nicht nachtraeglich loesen, dafuer
+	// muss die Tabelle neu gebaut werden. Laeuft auch auf einer Datenbank, die die
+	// Spalte schon richtig hat - dort aendert sich nichts ausser der Reihenfolge.
+	`CREATE TABLE pairings_new (
+		code TEXT PRIMARY KEY,
+		user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+		public_key TEXT NOT NULL,
+		label TEXT NOT NULL,
+		claim_hash TEXT,
+		wrapped_key TEXT,
+		device_token TEXT,
+		created_at INTEGER NOT NULL,
+		expires_at INTEGER NOT NULL
+	);
+	INSERT INTO pairings_new (code, user_id, public_key, label, claim_hash, wrapped_key, device_token, created_at, expires_at)
+		SELECT code, user_id, public_key, label, claim_hash, wrapped_key, device_token, created_at, expires_at FROM pairings;
+	DROP TABLE pairings;
+	ALTER TABLE pairings_new RENAME TO pairings;
+	CREATE INDEX IF NOT EXISTS pairings_user ON pairings(user_id);`
 ];
 
 
