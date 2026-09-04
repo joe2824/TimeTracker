@@ -89,6 +89,54 @@ describe("Schlüssel-Verdrahtung im Browser", () => {
 	});
 });
 
+describe("Abmelden", () => {
+	// Nach dem Abmelden darf im Browser nichts Lesbares zurueckbleiben - weder die
+	// verschluesselten Dateien noch der Schluessel, der sie oeffnet. Der naechste
+	// Mensch an diesem Rechner saehe sonst die Zeiten des vorigen.
+	async function linkedWithData(): Promise<void> {
+		await account.linkWithSession(URL, await createVaultKey(), "Testperson");
+		await store.saveActivities([
+			{ id: "a1", name: "Kundengespräch", color: "#fff", sortOrder: 0, archived: false, isAbsence: false }
+		]);
+		await store.saveEntries("2026-08", [
+			{ id: "e1", activityId: "a1", startTs: 1000, endTs: 2000, note: "Geheim", source: "manual" }
+		]);
+	}
+
+	it("nimmt den Schluessel mit", async () => {
+		await linkedWithData();
+		expect(await loadLocalVaultKey()).not.toBeNull();
+
+		await account.logout();
+
+		expect(await loadLocalVaultKey()).toBeNull();
+		expect(store.getLocalEncryptionKey()).toBeNull();
+	});
+
+	it("laesst keine Datei mit Inhalt zurueck", async () => {
+		await linkedWithData();
+
+		await account.logout();
+
+		// device.json bleibt mit Absicht: darin steht die Geraetekennung, damit ein
+		// erneutes Koppeln dasselbe Geraet wiedererkennt. Sonst nichts.
+		const left = (await storage.readDir("data")).map((e) => e.name);
+		expect(left.filter((n) => n !== "device.json")).toEqual([]);
+	});
+
+	it("die Geraetekennung bleibt, die Kontodaten nicht", async () => {
+		await linkedWithData();
+
+		await account.logout();
+
+		const info = await store.loadDevice();
+		expect(info?.id).toBeTruthy();
+		expect(info?.serverUrl).toBeUndefined();
+		expect(info?.accountUserId).toBeUndefined();
+		expect(info?.vaultKey).toBeUndefined();
+	});
+});
+
 describe("Gerät, das vor diesem Umbau verknüpft war", () => {
 	// Damals lag der Schlüssel als lesbare Bytes in device.json. Wird er nicht
 	// übernommen, wirft der Start - und der Fehlerbildschirm bietet keinen Weg
