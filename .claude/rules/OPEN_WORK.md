@@ -1,11 +1,15 @@
 # Was offen ist
 
-Stand 2026-09-03, Branch `feat/passkey-vault`. Nach Prioritaet, nicht nach Thema.
+Stand 2026-09-04, Branch `feat/passkey-vault`. Nach Prioritaet, nicht nach Thema.
 Nichts davon ist deployt - `main` steht bei `0d72a0c`.
 
-Offen: P2 (der Weg durch die echte PWA, von Hand) und das Ausfuehren von
+**Hier weitermachen:** die fuenf Funde der Code-Review vom 2026-09-04 (gleich
+unten, keiner behoben). Fund 1 - `repairPasskeyWrap` ist zirkular geworden -
+gehoert vor einen Merge.
+
+Weiter offen: P2 (der Weg durch die echte PWA, von Hand; ein Teil ist am
+2026-09-04 gelaufen, siehe dort) und das Ausfuehren von
 `npm run reset:crypto -- --yes` beim tatsaechlichen Deployment (siehe unten).
-Alles andere haengt an Tests und `svelte-check`.
 
 **Zur Ruecksicht auf Bestandsdaten:** den Server benutzt derzeit nur eine
 Person, die ihre Daten lokal hat und sich neu verknuepfen kann. Auf alte
@@ -13,6 +17,120 @@ Serverdaten muss also nichts Ruecksicht nehmen. Was der lokale Browser
 mitbringt, ist die Ausnahme - dort kommt man vom Fehlerbildschirm des Starts
 nicht mehr heraus (kein Knopf zum Loesen der Verknuepfung), deshalb bleibt die
 einmalige Uebernahme eines alten Schluessels aus der `device.json` stehen.
+
+## OFFEN: Code-Review vom 2026-09-04 (nichts davon behoben)
+
+`/code-review` ueber den ganzen Branch (`main..HEAD`, 92 Dateien, ~4200 neue
+Zeilen, 30 Commits). Fuenf Funde, alle am Code nachgeprueft, **keiner
+behoben** - hier steht, was zu tun ist. Nach Gewicht sortiert.
+
+### 1. `repairPasskeyWrap` ist zirkular geworden
+
+`src/lib/sync/account.svelte.ts:1207`. Die Reparatur existiert genau fuer den
+Fall, dass ein Passkey KEINE Verpackung hat. Sie geht jetzt aber ueber
+`#exportableKey()`, und das holt sich den Schluessel nach einem Neuladen ueber
+`reunlockWithPasskey()` - was eine vorhandene Verpackung oeffnet. Also: es
+braucht das, was fehlt.
+
+Folge nach jedem Neuladen (und im Pfad `unlockWithStoredKey` in
+`WebOnboarding.signIn`): eine zusaetzliche WebAuthn-Abfrage, danach die
+Meldung "Dein Passkey konnte die Daten nicht oeffnen…". Derselbe Grund
+blockiert `addPasskey` fuer einen Browser, der ueber die 24 Woerter
+hereingekommen ist.
+
+**Wichtig fuer die Loesung:** der `prf`, den der Aufrufer mitgibt, hilft NICHT.
+Er ist das Ziel der neuen Verpackung, nicht eine Quelle fuer den Schluessel.
+Ohne Rohbytes laesst sich keine neue Verpackung schreiben - und die gibt die
+abgelegte Kopie mit Absicht nie her. Es bleiben also nur: ein ANDERER Passkey,
+der eine Verpackung hat, oder die 24 Woerter. Zu tun ist damit zweierlei -
+die vergebliche WebAuthn-Abfrage gar nicht erst ausloesen (vorher pruefen, ob
+zu diesem Passkey ueberhaupt eine Verpackung liegt), und die Meldung auf den
+Weg zeigen lassen, der wirklich hilft.
+
+**Vorher war es nicht besser**, nur haesslicher: `repairPasskeyWrap` nahm
+`this.#key` direkt, und `exportVaultKey` warf dort einen `InvalidAccessError`.
+Der Umbau hat den Fehler nicht erzeugt, sondern seine Gestalt geaendert.
+
+### 2. Umbenannte Schluessel-Datenbank ohne Uebergang
+
+`src/lib/platform/keyStore.ts:24`. Datenbank, Objektspeicher UND die Kennung
+des Datensatzes heissen neu (`timetracker-schluessel/schluessel/tresor` ->
+`timetracker-keys/keys/vault`), dazu hat sich die Form des Werts geaendert
+(einzelner `CryptoKey` -> `{enc, mac}`). Kein Uebergang, und die alte Datenbank
+bleibt liegen.
+
+Ein Browser, der einen frueheren Commit DIESES Branches laufen hatte, landet
+damit auf "Start fehlgeschlagen": der neue Speicher ist leer, `device.json`
+traegt keinen `vaultKey` (den gibt es auf diesem Branch nicht mehr), also
+wirft `preloadLocalEncryptionKey`. Seine lokalen verschluesselten Dateien
+sind unlesbar.
+
+Entschaerft, nicht behoben: der Knopf "Anmeldung zuruecksetzen" auf dem
+Fehlerbildschirm (`938145a`) ist der Weg heraus - er kostet den lokalen
+Bestand, der Server hat ihn aber.
+
+**Das Gegenargument steht in derselben Datei:** `platform/fs.ts` wurde aus
+genau diesem Grund NICHT umbenannt (siehe unten). Fuer `keyStore.ts` galt es
+ebenso, nur war der Kreis der Betroffenen kleiner - dieser Branch ist nicht
+deployt.
+
+### 3. `readJson` verschluckt gescheiterte Entschluesselung
+
+`src/lib/store.ts:174`. Der `catch` gibt fuer JEDEN Fehler den Ersatzwert
+zurueck - auch dafuer, dass sich `activities.json`, `settings.json` oder ein
+`timereport-*.json` nicht entschluesseln liess. Der naechste Speichervorgang
+schreibt dann ueber die intakte Datei, und der Schreib-Haken schiebt die
+Vorgabe-Einstellungen auf den Server, also auf alle Geraete.
+
+`loadEntries` macht es richtig (`store.ts:321-335`): kein Schluessel heisst
+"Datei bleibt liegen", beschaedigt heisst Quarantaene (`.beschaedigt-*`). Die
+drei anderen brauchen dieselbe Unterscheidung.
+
+### 4. Wettlauf um `device.json` beim Nachhol-Durchlauf
+
+`src/lib/app.svelte.ts:286`. `#encryptHistoricalLocalFiles` liest `device.json`
+ganz am Ende und schreibt `localFilesEncrypted: true` zurueck - dazwischen
+liegen die `await`s ueber alle Monate und Reports, also unter Umstaenden
+Sekunden. In derselben Zeit schreibt `saveState` der Engine `seq`/`priority`
+in dieselbe Datei. Geht ein Stand verloren, holt das Geraet Datensaetze ein
+zweites Mal, und die Sperren fuer Sicherung und Monatsauswahl koennen wieder
+aufgehen.
+
+### 5. Der Tracking-Tab springt auch beim Koppeln
+
+`src/routes/+page.svelte:458`. Der Effekt haengt am Uebergang
+"nicht verknuepft" -> "verknuepft" (`ee69307`). Der tritt aber nicht nur beim
+Anmelden ein, sondern auch, wenn ein Geraet gerade gekoppelt wurde - und das
+passiert aus den Einstellungen heraus. Wer dort mitten im Koppeln steht,
+findet sich in der Zeiterfassung wieder. Zu klaeren: ob das nur beim Anmelden
+gelten soll (dann braucht es ein genaueres Signal als `account.linked`).
+
+### Geprueft und sauber
+
+Die `pairings`-Migration (mehrere Anweisungen in einem `raw.exec` innerhalb der
+Transaktion ist richtig, Index wieder da, `migrate.test.ts` deckt es ab), die
+CSP-Hash-Verdrahtung, die gleitende Sitzung (`SESSION_REFRESH_MS`, Cookie
+wandert mit), `storeWrap`/`readWrap`, die 401/403-Trennung der Tagesmeldung
+gegen `classifyPingFailure`, `contentOf` in `stamp.ts` (gleiche Ausgabe),
+`byActivityOrder`/`#reindexBuiltinsLast` (mehrfach anwendbar, keine
+Abgleich-Schleife) und der Rust-Handschlag `request_quit`/`quit_now`
+(`cfg(desktop)` durchgaengig, der 3-Sekunden-Wecker haengt nicht an der
+Oberflaeche).
+
+### Zur Umgebungs-Notiz der Review: stimmt hier NICHT
+
+Die Review meldet, `npm test` scheitere fuer alle 56 Client-Dateien mit
+"Vitest failed to find the runner", also sei nichts davon wirklich gelaufen.
+**In dieser Arbeitskopie laeuft die Suite.** Mehrfach an diesem Tag, zuletzt
+15:53: 56 Dateien, 949 Tests, gruen; dazu `svelte-check` ohne Befund und
+`cargo check` sauber. Der Serverlauf (11 Dateien, 221 Tests) ebenso. Wer die
+Meldung wiedersieht, sucht sie in seiner eigenen Umgebung, nicht im Repo.
+
+Ein echter Fallstrick beim Serverlauf ist dagegen: `npm run server:test`
+startet den GEBAUTEN Server (`server/build/handler.js`). Wer eine Route
+aendert und nicht vorher `npm --workspace server run build` laufen laesst,
+testet den alten Stand - das hat heute einen neuen Endpunkt still danebengehen
+lassen.
 
 ## ~~Security-Review + der Fund daraus~~ erledigt
 
@@ -172,17 +290,42 @@ unverschluesselt (`store.ts:85`, IndexedDB).~~ Erledigt, siehe oben.
 
 ## P2 — im Browser durchklicken
 
-Nichts aus diesem Branch ist von Hand geprueft, alles haengt an Tests und
-`svelte-check`. Der Weg, der zaehlt:
+Am 2026-09-04 zum Teil gelaufen. **Wichtig fuer den naechsten Anlauf:**
 
-```
-npm run server:dev
-npm run dev:web
-```
+- **Nicht Port 1420 nehmen.** `WebOnboarding.svelte:49` nimmt `location.origin`
+  als Serveradresse. Auf dem Vite-Port zeigt das auf Vite, und der antwortet
+  auf `/api/...` mit der `index.html` - sichtbar als HTML-Text in einer
+  Fehlermeldung. Richtig ist **`http://localhost:5173`**: dort liegen App und
+  API auf derselben Adresse.
+- Der Server liefert die PWA **statisch** aus, kein HMR. Nach jeder
+  Frontend-Aenderung `npm run pwa:bundle` und den Server neu starten.
+- Registrierung ohne Einladungscode: `REGISTRATION_OPEN=true npm run server:dev`
+  (Umgebungsvariable, kein `.env` im Repo).
 
-Konto anlegen -> Passkey traegt sofort „entschluesselt" -> zweites
-Browserprofil, nur Passkey, keine 24 Woerter -> Desktop koppeln -> abmelden ->
-wieder anmelden.
+Geprueft und in Ordnung:
+
+- Konto anlegen ohne Einladungscode, Abgleich laeuft (Protokoll:
+  „Abgeglichen | pushed/pulled“).
+- Die lokale Ablage im Browser: `activities.json`, `settings.json`,
+  `entries-*.json` liegen als JWE-Compact-Strings in IndexedDB,
+  `device.json`/`outbox.json` als Klartext - und in `device.json` steht KEIN
+  `vaultKey` mehr.
+- `timetracker-keys/keys/vault` traegt `{enc, mac}`, beide mit
+  `extractable: false`.
+- Abmelden raeumt auf. Die DevTools-Ansicht zeigt danach noch alles, das ist
+  aber nur ihr veralteter Stand („Data may be stale“, oben im Panel) - drei
+  Tests in `browserKeyWiring.test.ts` belegen es.
+
+Noch NICHT geprueft:
+
+- **Neu laden und nachsehen, ob der Abgleich weiterlaeuft.** Das war der Fehler
+  aus `ada4ba1`, und genau dieser Weg lief noch nie von Hand.
+- **Kopplung.** Sie scheiterte an der fehlenden Migration (`5e5e0ad`); seit die
+  durch ist, wurde es nicht noch einmal versucht.
+- Passkey anlegen (loest jetzt eine zusaetzliche Passkey-Bestaetigung aus,
+  siehe Fund 1 oben - dort steht auch, wann das schiefgeht).
+- Zweites Browserprofil, nur Passkey, keine 24 Woerter.
+- Wiederherstellung ueber die 24 Woerter.
 
 Danach nach `main` und deployen. Der Fix aus `058f86b` wirkt nur fuer NEUE
 Konten; bestehende Passkeys ohne Verpackung repariert die Passkey-Verwaltung
