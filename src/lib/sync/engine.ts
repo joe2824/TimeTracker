@@ -21,7 +21,7 @@ import {
 } from "./outbox";
 import { mergeRecord, resolveOpenEntries } from "./merge";
 import { contentOf } from "./stamp";
-import { bucketFor, openRecord, sealRecord } from "../crypto/vault";
+import { bucketFor, openRecord, sealRecord, type VaultKey } from "../crypto/vault";
 import { logError, logInfo, logWarn } from "../log";
 import { monthKey, prevMonthKey } from "../time";
 
@@ -99,7 +99,7 @@ export interface SyncProgress {
 
 export class SyncEngine {
 	#api: Api;
-	#key: CryptoKey;
+	#key: VaultKey;
 	#store: LocalStore;
 	#deviceId: string;
 	#state: SyncState;
@@ -116,7 +116,7 @@ export class SyncEngine {
 
 	constructor(opts: {
 		api: Api;
-		key: CryptoKey;
+		key: VaultKey;
 		store: LocalStore;
 		deviceId: string;
 		state: SyncState;

@@ -19,6 +19,7 @@
 		register,
 		unlockWithPhrase
 	} from "$lib/sync/enroll";
+	import type { VaultKey } from "$lib/crypto/vault";
 	import { onIntent } from "$lib/prefetch";
 	import * as Dialog from "$lib/components/ui/dialog";
 	import PairingCode from "$lib/components/onboarding/PairingCode.svelte";
@@ -54,7 +55,7 @@
 	let loggedInName = $state("");
 	/** Zu welchem Konto der eben geholte Schluessel gehoert. */
 	let loggedInId = "";
-	let keyValue: CryptoKey | null = null;
+	let keyValue: VaultKey | null = null;
 	/** Der Passkey, den das Anlegen eben erzeugt hat. */
 	let newPasskeyId = "";
 	/**

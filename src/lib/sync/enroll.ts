@@ -18,6 +18,7 @@ import {
 	unwrapWithPhrase,
 	unwrapWithPrf,
 	vaultProof,
+	type VaultKey,
 	wrapWithPhrase,
 	wrapWithPrf
 } from "../crypto/vault";
@@ -27,7 +28,7 @@ import { platformFetch } from "../platform/http";
 import { CHALLENGE_REUSE_MS } from "$shared/codes";
 
 /** Die Verpackung mit der Phrase oeffnen - oder verstaendlich scheitern. */
-async function openWithPhrase(payload: string, phrase: string): Promise<CryptoKey> {
+async function openWithPhrase(payload: string, phrase: string): Promise<VaultKey> {
 	try {
 		return await unwrapWithPhrase(payload, phrase);
 	} catch {
@@ -36,7 +37,7 @@ async function openWithPhrase(payload: string, phrase: string): Promise<CryptoKe
 }
 
 /** Die Verpackung mit dem PRF-Wert oeffnen - oder null, wenn sie nicht aufgeht. */
-async function openWithPrf(payload: string, prf: Uint8Array): Promise<CryptoKey | null> {
+async function openWithPrf(payload: string, prf: Uint8Array): Promise<VaultKey | null> {
 	try {
 		return await unwrapWithPrf(payload, prf);
 	} catch {
@@ -174,7 +175,7 @@ export interface EnrollResult {
 	prfAvailable: boolean;
 	/** Die Kennung des eben angelegten Passkeys. */
 	credentialId: string;
-	key: CryptoKey;
+	key: VaultKey;
 }
 
 /** Ein neues Konto anlegen. */
@@ -278,7 +279,7 @@ export interface LoginResult {
 	userId: string;
 	displayName: string;
 	/** Der Tresorschluessel - oder null, wenn er noch entsperrt werden muss. */
-	key: CryptoKey | null;
+	key: VaultKey | null;
 	/** Ob eine Phrasen-Verpackung vorliegt, mit der entsperrt werden kann. */
 	canUnlockWithPhrase: boolean;
 	/** Was der Authentifikator ueber PRF ausgegeben hat. Null, wenn er es nicht kann. */
@@ -295,7 +296,7 @@ export interface LoginResult {
  */
 export async function ensurePasskeyWrap(
 	api: Api,
-	key: CryptoKey,
+	key: VaultKey,
 	/** Nur dieser Passkey zaehlt. Ohne Angabe: der, den der Browser anbietet. */
 	credentialId?: string,
 	/** Ein bereits vorliegender PRF-Wert - dann entfaellt die zweite Abfrage. */
@@ -308,6 +309,34 @@ export async function ensurePasskeyWrap(
 	if (!found.ok) return found;
 	await api.putWrap("passkey", await wrapWithPrf(key, found.prf), found.credentialId);
 	return { ok: true, credentialId: found.credentialId };
+}
+
+/**
+ * Den Tresorschluessel noch einmal aus dem Passkey holen.
+ *
+ * Nach einem Neuladen der Seite liegt hier nur noch die Kopie, die ihre Bytes
+ * nicht mehr herausgibt (`platform/keyStore.ts`). Zum Ansehen, Bearbeiten und
+ * Abgleichen reicht sie; einen WEITEREN Passkey oder ein weiteres Geraet
+ * anzulernen braucht dagegen die Bytes. Statt dafuer 24 Woerter abzutippen,
+ * genuegt eine Bestaetigung mit dem Passkey, der ohnehin an diesem Browser
+ * haengt.
+ */
+export async function reunlockWithPasskey(api: Api, credentialId?: string): Promise<VaultKey> {
+	const found = await harvestPrf(credentialId);
+	if (found.ok) {
+		const { wraps } = await api.wraps();
+		const wrap = wraps.find((w) => w.kind === "passkey" && w.credentialId === found.credentialId);
+		const key = wrap ? await openWithPrf(wrap.payload, found.prf) : null;
+		if (key) return key;
+	}
+	if (found.ok === false && found.reason === "otherPasskey") {
+		throw new Error(
+			"Bestätigt wurde ein anderer Passkey als der von diesem Gerät. Bitte noch einmal versuchen."
+		);
+	}
+	throw new Error(
+		"Dein Passkey konnte die Daten nicht öffnen. Bitte melde dich einmal ab und mit deinen 24 Wörtern wieder an."
+	);
 }
 
 /** Anmelden. */
@@ -359,7 +388,7 @@ export async function unlockWithPhrase(
 	baseUrl: string,
 	phrase: string,
 	repair?: { credentialId: string; prf: Uint8Array | null }
-): Promise<CryptoKey> {
+): Promise<VaultKey> {
 	const api = new Api({ baseUrl, fetchFn: platformFetch });
 	const { wraps } = await api.wraps();
 	const wrap = wraps.find((w) => w.kind === "recovery");
@@ -378,7 +407,7 @@ export async function recoverWithPhrase(
 	baseUrl: string,
 	phrase: string,
 	label: string
-): Promise<{ userId: string; displayName: string; deviceToken: string; key: CryptoKey }> {
+): Promise<{ userId: string; displayName: string; deviceToken: string; key: VaultKey }> {
 	if (!isValidRecoveryPhrase(phrase)) {
 		throw new Error("Das sind nicht 24 gültige Wörter – bitte noch einmal prüfen.");
 	}
@@ -418,7 +447,7 @@ export async function registerFromDevice(
 	userId: string;
 	displayName: string;
 	deviceToken: string;
-	key: CryptoKey;
+	key: VaultKey;
 	recoveryPhrase: string;
 }> {
 	const api = new Api({ baseUrl, fetchFn: platformFetch });
@@ -459,7 +488,7 @@ export async function registerFromDevice(
  */
 export async function addPasskey(
 	api: Api,
-	key: CryptoKey,
+	key: VaultKey,
 	label: string
 ): Promise<{ id: string; label: string | null; prfAvailable: boolean }> {
 	// Die Api des Kontos, keine frisch gebaute: nach einer Anmeldung mit der

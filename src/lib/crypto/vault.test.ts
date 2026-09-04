@@ -25,6 +25,7 @@ import {
 	toBase64,
 	toHex,
 	type RecordBinding,
+	type VaultKey,
 	unwrapForDevice,
 	unwrapWithPhrase,
 	unwrapWithPrf,
@@ -39,7 +40,7 @@ const BINDING: RecordBinding = { id: "eintrag-1", kind: "entry", rev: 3 };
 /** Was ein Authentifikator mit PRF liefern wuerde: 32 stabile Bytes. */
 const prf = (seed = 7) => new Uint8Array(32).fill(seed).buffer;
 
-async function sameKey(a: CryptoKey, b: CryptoKey): Promise<boolean> {
+async function sameKey(a: VaultKey, b: VaultKey): Promise<boolean> {
 	return toHex(new Uint8Array(await exportVaultKey(a))) === toHex(new Uint8Array(await exportVaultKey(b)));
 }
 

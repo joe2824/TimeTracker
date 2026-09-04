@@ -1,5 +1,6 @@
 // Zwei Geraete an einem Konto - der ganze Weg.
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { VaultKey } from "../crypto/vault";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("../testing/fakeFs")).fakeFs);
 
@@ -151,7 +152,7 @@ class Device {
 }
 
 let server: FakeServer;
-let key: CryptoKey;
+let key: VaultKey;
 
 /** Etwas AUF einem Device tun. */
 async function on<T>(g: Device, fn: (engine: InstanceType<typeof SyncEngine>) => Promise<T>): Promise<T> {

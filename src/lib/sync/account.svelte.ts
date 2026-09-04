@@ -12,6 +12,7 @@ import {
 	saveEntries,
 	saveTimeReport,
 	getLocalEncryptionKey,
+	readProtectedVaultKey,
 	setLocalEncryptionKey,
 	type DeviceInfo
 } from "../store";
@@ -35,15 +36,16 @@ import {
 	exportPairingPublicKey,
 	checkedPairingKey,
 	exportVaultKey,
-	fromBase64,
 	importVaultKey,
+	isExportable,
 	normalizePairingCode,
 	pairingCode,
 	bucketFor,
 	createClaimSecret,
 	toBase64,
 	unwrapForDevice,
-	vaultProof
+	vaultProof,
+	type VaultKey
 } from "../crypto/vault";
 import { toast } from "svelte-sonner";
 import { protectSecret, unprotectSecret } from "../platform/secrets";
@@ -200,7 +202,7 @@ class AccountState {
 
 	#api: Api | null = null;
 	#engine: SyncEngine | null = null;
-	#key: CryptoKey | null = null;
+	#key: VaultKey | null = null;
 	#stream: EventSource | null = null;
 	#debounce: ReturnType<typeof setTimeout> | null = null;
 	/** Eigener Takt fuer die Historie - der geteilte Entpreller gehoert dem Nutzer. */
@@ -244,18 +246,13 @@ class AccountState {
 	 * (`platform/keyStore.ts`) - dort liegt seit diesem Umbau kein lesbarer
 	 * Schluessel mehr in `device.json`.
 	 */
-	async #loadStoredKey(info: DeviceInfo): Promise<CryptoKey | null> {
+	async #loadStoredKey(info: DeviceInfo): Promise<VaultKey | null> {
 		// Welche Ablage gilt, nicht welche Huelle laeuft: Tests laufen mit
 		// isTauri() === false, ohne je useBrowserStorage() aufzurufen, und muessen
 		// dabei die Datei-Ablage (device.json) treffen, nicht IndexedDB.
-		if (!usingBrowserStorage()) {
-			if (!info.vaultKey) return null;
-			const raw = await unprotectSecret(info.vaultKey, info.protected ?? false);
-			return importVaultKey(fromBase64(raw).buffer as ArrayBuffer);
-		}
+		if (!usingBrowserStorage()) return readProtectedVaultKey(info, true);
 		// preloadLocalEncryptionKey() (app.init(), laeuft vorher) hat den
-		// Schluessel schon geholt und dabei auch die Migration aus einer alten
-		// device.json uebernommen - hier erst den bereits geladenen Stand nehmen,
+		// Schluessel schon geholt - hier erst den bereits geladenen Stand nehmen,
 		// kein zweiter IndexedDB-Zugriff fuer denselben Schluessel. Der direkte
 		// Versuch bleibt als Ruecklage, falls dieser Aufruf einmal ohne
 		// vorheriges app.init() laeuft (z.B. in Tests).
@@ -941,9 +938,11 @@ class AccountState {
 
 	/** Einen Code bestaetigen. */
 	async approvePairing(code: string): Promise<string> {
-		if (!this.#api || !this.#key) throw new Error("Dieses Gerät ist nicht verknüpft");
+		// Zuerst der Schluessel: er kann eine Bestaetigung per Passkey verlangen,
+		// und die soll vor dem Nachschlagen kommen, nicht mittendrin.
+		const { api, key } = await this.#exportableKey();
 		const typed = normalizePairingCode(code);
-		const { publicKey, label } = await this.#api.pairLookup(typed);
+		const { publicKey, label } = await api.pairLookup(typed);
 
 		// Wirft, wenn unter diesem Code ein anderer Schluessel liegt als der, dessen
 		// Abdruck er ist. Dann wird NICHTS verpackt: wer immer den Schluessel
@@ -954,8 +953,8 @@ class AccountState {
 		});
 
 		const { wrapForDevice } = await import("../crypto/vault");
-		const wrap = await wrapForDevice(this.#key, raw);
-		await this.#api.pairApprove(typed, wrap);
+		const wrap = await wrapForDevice(key, raw);
+		await api.pairApprove(typed, wrap);
 		logInfo("Gerät gekoppelt", { label });
 		void this.syncWithFollowUp();
 		return label;
@@ -964,7 +963,7 @@ class AccountState {
 	/** Nach Registrierung oder Anmeldung im Browser: die Verknuepfung uebernehmen. */
 	async linkWithSession(
 		url: string,
-		key: CryptoKey,
+		key: VaultKey,
 		name: string,
 		userId?: string
 	): Promise<void> {
@@ -1003,7 +1002,7 @@ class AccountState {
 	async #persistLink(
 		url: string,
 		token: string | null,
-		key: CryptoKey,
+		key: VaultKey,
 		name = "",
 		userId?: string
 	): Promise<void> {
@@ -1026,14 +1025,13 @@ class AccountState {
 			vaultKeyData = wrapped.data;
 			vaultKeyProtected = wrapped.protected;
 		} else {
-			// `exportKey` schlaegt fuer eine bereits nicht-exportierbare Kopie fuer
-			// immer fehl, auch fuer den eigenen Code - `key` ist dann schon so eine
-			// Kopie (z.B. aus `unlockWithStoredKey`), und die bereits abgelegte
-			// passt noch, nichts zu tun.
-			const raw = await exportVaultKey(key).catch(() => null);
-			if (!raw) {
+			// Eine bereits nicht-exportierbare Kopie gibt ihre Bytes nie wieder her
+			// (`key` ist dann eine solche, z.B. aus `unlockWithStoredKey`) - die
+			// abgelegte ist dieselbe und passt noch, nichts zu tun.
+			if (!isExportable(key)) {
 				setLocalEncryptionKey(key);
 			} else {
+				const raw = await exportVaultKey(key);
 				try {
 					const copy = await importVaultKey(raw, false);
 					await saveLocalVaultKey(copy);
@@ -1188,10 +1186,9 @@ class AccountState {
 
 	/** Einen weiteren Passkey anlegen. */
 	async addPasskey(label: string): Promise<{ prfAvailable: boolean }> {
-		if (!this.#key) throw new Error("Das Konto ist nicht entsperrt");
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		const { api, key } = await this.#exportableKey();
 		const { addPasskey } = await import("./enroll");
-		const result = await addPasskey(this.#api, this.#key, label);
+		const result = await addPasskey(api, key, label);
 		await this.rememberPasskey(result.id);
 		return { prfAvailable: result.prfAvailable };
 	}
@@ -1207,14 +1204,36 @@ class AccountState {
 		credentialId?: string,
 		prf?: Uint8Array | null
 	): Promise<{ ok: true } | { ok: false; reason: PrfFailure }> {
-		if (!this.#key) throw new Error("Das Konto ist nicht entsperrt");
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		const { api, key } = await this.#exportableKey();
 		const { ensurePasskeyWrap } = await import("./enroll");
-		const result = await ensurePasskeyWrap(this.#api, this.#key, credentialId, prf);
+		const result = await ensurePasskeyWrap(api, key, credentialId, prf);
 		// Ohne Kennung nimmt der Browser den Passkey, den er anbietet - erst die
 		// Antwort sagt, welcher das war.
 		if (result.ok) await this.rememberPasskey(result.credentialId);
 		return result;
+	}
+
+	/**
+	 * Ein Schluessel, der seine Bytes noch hergibt.
+	 *
+	 * Nach einem Neuladen der Seite liegt hier die Kopie aus der eigenen Ablage -
+	 * sie kann alles ausser das eine: einen weiteren Passkey oder ein weiteres
+	 * Geraet anlernen. Dafuer liefert der Passkey dieses Browsers den Schluessel
+	 * erneut. Dass es wirklich derselbe Vault ist, sagt der Nachweis - er laesst
+	 * sich aus beiden rechnen, ohne dass einer von beiden Bytes herausgeben muss.
+	 */
+	async #exportableKey(): Promise<{ api: Api; key: VaultKey }> {
+		if (!this.#key) throw new Error("Das Konto ist nicht entsperrt");
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		const api = this.#api;
+		if (isExportable(this.#key)) return { api, key: this.#key };
+		const { reunlockWithPasskey } = await import("./enroll");
+		const key = await reunlockWithPasskey(api, this.passkeyId ?? undefined);
+		if ((await vaultProof(key)) !== (await vaultProof(this.#key))) {
+			throw new Error("Der bestätigte Passkey gehört zu einem anderen Konto.");
+		}
+		this.#key = key;
+		return { api, key };
 	}
 
 	/** Die Kennung dieses Geraets - damit die Liste das eigene erkennt. */

@@ -11,21 +11,26 @@
 //
 // Fuer die laufende Sitzung bleibt der Schluessel im Speicher exportierbar
 // (siehe `account.svelte.ts`) - nur die hier abgelegte Kopie ist es nicht.
+//
+// Abgelegt wird das ganze `VaultKey`-Paar (AES und HMAC): der HMAC-Teil rechnet
+// die Monats- und Nachweiskennungen, und ohne ihn muesste dafuer exportiert
+// werden - was fuer diese Kopie mit Absicht fuer immer fehlschlaegt.
 
 import { openIndexedDbStore } from "./indexedDb";
+import type { VaultKey } from "../crypto/vault";
 
-const KEY_ID = "tresor";
+const KEY_ID = "vault";
 
-const { tx } = openIndexedDbStore("timetracker-schluessel", "schluessel");
+const { tx } = openIndexedDbStore("timetracker-keys", "keys");
 
 /** Den Schluessel ablegen - nicht-exportierbar, sonst unveraendert brauchbar. */
-export async function saveLocalVaultKey(key: CryptoKey): Promise<void> {
+export async function saveLocalVaultKey(key: VaultKey): Promise<void> {
 	await tx("readwrite", (s) => s.put(key, KEY_ID));
 }
 
 /** Der abgelegte Schluessel, oder `null`, wenn keiner liegt. */
-export async function loadLocalVaultKey(): Promise<CryptoKey | null> {
-	const key = await tx<CryptoKey | undefined>("readonly", (s) => s.get(KEY_ID));
+export async function loadLocalVaultKey(): Promise<VaultKey | null> {
+	const key = await tx<VaultKey | undefined>("readonly", (s) => s.get(KEY_ID));
 	return key ?? null;
 }
 

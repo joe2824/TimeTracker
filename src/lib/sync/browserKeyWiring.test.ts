@@ -21,7 +21,8 @@ vi.mock("svelte-sonner", () => ({
 
 const { account } = await import("./account.svelte");
 const store = await import("../store");
-const { createVaultKey, exportVaultKey, toBase64 } = await import("../crypto/vault");
+const { bucketFor, createVaultKey, exportVaultKey, isExportable, toBase64, vaultProof } =
+	await import("../crypto/vault");
 const { clearLocalVaultKey, loadLocalVaultKey } = await import("../platform/keyStore");
 const { protectSecret } = await import("../platform/secrets");
 
@@ -43,19 +44,18 @@ beforeEach(async () => {
 
 describe("Schlüssel-Verdrahtung im Browser", () => {
 	it("legt beim Verknüpfen einen nicht-exportierbaren Schlüssel ab", async () => {
-		const key = await createVaultKey();
-		await account.linkWithSession(URL, key, "Testperson");
+		await account.linkWithSession(URL, await createVaultKey(), "Testperson");
 
 		const stored = await loadLocalVaultKey();
 		expect(stored).not.toBeNull();
-		await expect(crypto.subtle.exportKey("raw", stored!)).rejects.toThrow();
+		expect(isExportable(stored!)).toBe(false);
+		await expect(exportVaultKey(stored!)).rejects.toThrow();
 
 		await account.unlink();
 	});
 
 	it("ein danach gespeicherter Eintrag liegt auf der Ablage als JWE", async () => {
-		const key = await createVaultKey();
-		await account.linkWithSession(URL, key, "Testperson");
+		await account.linkWithSession(URL, await createVaultKey(), "Testperson");
 
 		await store.saveEntries("2026-08", [
 			{
@@ -77,57 +77,87 @@ describe("Schlüssel-Verdrahtung im Browser", () => {
 	});
 
 	it("nach dem Trennen ist der Schlüssel weg, neue Dateien bleiben Klartext", async () => {
-		const key = await createVaultKey();
-		await account.linkWithSession(URL, key, "Testperson");
+		await account.linkWithSession(URL, await createVaultKey(), "Testperson");
 		await account.unlink();
 
 		expect(await loadLocalVaultKey()).toBeNull();
-		await store.saveActivities([{ id: "a1", name: "Nach dem Trennen", color: "#fff", sortOrder: 0, archived: false, isAbsence: false }]);
+		await store.saveActivities([
+			{ id: "a1", name: "Nach dem Trennen", color: "#fff", sortOrder: 0, archived: false, isAbsence: false }
+		]);
 		const raw = await storage.readTextFile("data/activities.json");
 		expect(raw).toContain("Nach dem Trennen");
 	});
 });
 
-describe("Übernahme eines vor diesem Umbau verknüpften Geräts", () => {
-	// Vor der nicht-exportierbaren Ablage (keyStore.ts) lag der Schlüssel als
-	// lesbare Bytes in device.json - dieselben Rohbytes, nur ohne die neue
-	// IndexedDB. `preloadLocalEncryptionKey` muss das erkennen und übernehmen,
-	// statt das Gerät für nie verknüpft zu halten (siehe OPEN_WORK.md).
-	async function oldStyleDevice(key: CryptoKey): Promise<void> {
-		const raw = toBase64(new Uint8Array(await exportVaultKey(key)));
-		const protectedKey = await protectSecret(raw);
+describe("Gerät, das vor diesem Umbau verknüpft war", () => {
+	// Damals lag der Schlüssel als lesbare Bytes in device.json. Wird er nicht
+	// übernommen, wirft der Start - und der Fehlerbildschirm bietet keinen Weg
+	// zurück, dieser Browser hinge fest.
+	it("übernimmt den alten Schlüssel aus device.json in die neue Ablage", async () => {
+		const key = await createVaultKey();
+		const held = await protectSecret(toBase64(new Uint8Array(await exportVaultKey(key))));
 		await store.saveDevice({
 			id: "altes-geraet",
 			serverUrl: URL,
-			vaultKey: protectedKey.data,
-			protected: protectedKey.protected,
+			vaultKey: held.data,
+			protected: held.protected,
 			accountUserId: "konto-a",
 			accountFingerprint: "fingerabdruck-a"
 		});
-	}
-
-	it("übernimmt den alten Schlüssel aus device.json in die neue Ablage", async () => {
-		const key = await createVaultKey();
-		await oldStyleDevice(key);
 		expect(await loadLocalVaultKey()).toBeNull();
 
 		await store.preloadLocalEncryptionKey();
 
 		const migrated = store.getLocalEncryptionKey();
 		expect(migrated).not.toBeNull();
-		await expect(crypto.subtle.exportKey("raw", migrated!)).rejects.toThrow();
-		// Und dauerhaft abgelegt - nicht nur im Speicher fuer diesen einen Aufruf.
+		expect(isExportable(migrated!)).toBe(false);
+		// Dauerhaft abgelegt, nicht nur im Speicher für diesen einen Aufruf.
 		expect(await loadLocalVaultKey()).not.toBeNull();
+		// Und wirklich derselbe Schlüssel, keine zufällig andere Kopie.
+		expect(await vaultProof(migrated!)).toBe(await vaultProof(key));
+	});
+});
 
-		// Der migrierte Schluessel entschluesselt wirklich, was mit dem
-		// Original verschluesselt wurde - keine zufaellig andere Kopie.
-		const { openRecord, sealRecord } = await import("../crypto/vault");
-		const sealed = await sealRecord(key, { x: 1 }, { kind: "local", id: "probe", rev: 0 });
-		const opened = await openRecord(migrated!, sealed, { kind: "local", id: "probe", rev: 0 });
-		expect(opened).toEqual({ x: 1 });
+describe("Neuladen der Seite", () => {
+	// Der Weg, der im echten Betrieb bei jedem Neuladen läuft und in keinem
+	// bisherigen Test vorkam: nicht der frisch erzeugte, exportierbare Schlüssel
+	// aus der Anmeldung, sondern die abgelegte Kopie, die ihre Bytes nie wieder
+	// herausgibt. Der Abgleich rechnet damit Monatskennungen (bucketFor) und
+	// den Kontonachweis (vaultProof) - beides ging über einen Export, der für
+	// diese Kopie mit Absicht für immer fehlschlägt.
+	it("die abgelegte Kopie rechnet dieselben Kennungen wie das Original", async () => {
+		const original = await createVaultKey();
+		await account.linkWithSession(URL, original, "Testperson");
+
+		// Was nach einem Neuladen passiert: nichts mehr im Speicher, alles kommt
+		// aus der Ablage.
+		store.setLocalEncryptionKey(null);
+		await store.preloadLocalEncryptionKey();
+
+		const reloaded = store.getLocalEncryptionKey();
+		expect(reloaded).not.toBeNull();
+		expect(isExportable(reloaded!)).toBe(false);
+		expect(await bucketFor(reloaded!, "2026-08")).toBe(await bucketFor(original, "2026-08"));
+		expect(await vaultProof(reloaded!)).toBe(await vaultProof(original));
+
+		await account.unlink();
 	});
 
-	it("wirft, wenn ein verknüpftes Gerät gar keinen Schlüssel herstellen kann", async () => {
+	it("liest die Einträge, die vor dem Neuladen geschrieben wurden", async () => {
+		await account.linkWithSession(URL, await createVaultKey(), "Testperson");
+		await store.saveEntries("2026-08", [
+			{ id: "e1", activityId: "a1", startTs: 1000, endTs: 2000, note: "Vorher", source: "manual" }
+		]);
+
+		store.setLocalEncryptionKey(null);
+		await store.preloadLocalEncryptionKey();
+
+		expect((await store.loadEntries("2026-08"))[0].note).toBe("Vorher");
+
+		await account.unlink();
+	});
+
+	it("wirft, wenn ein verknüpftes Gerät gar keinen Schlüssel hat", async () => {
 		await store.saveDevice({ id: "kaputtes-geraet", serverUrl: URL });
 		await expect(store.preloadLocalEncryptionKey()).rejects.toThrow();
 	});

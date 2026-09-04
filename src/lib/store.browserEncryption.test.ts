@@ -27,12 +27,7 @@ async function clear(): Promise<void> {
 	}
 }
 
-async function freshKey(): Promise<CryptoKey> {
-	return crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, [
-		"encrypt",
-		"decrypt"
-	]);
-}
+const { createVaultKey: freshKey } = await import("./crypto/vault");
 
 beforeEach(async () => {
 	await clear();

@@ -10,7 +10,13 @@ import type { TimeReportDay, TimeReportFlag } from "./timeReport";
 import type { SyncPriority } from "./sync/engine";
 import { defaultSettings } from "./types";
 import { logError, logWarn } from "./log";
-import { fromBase64, importVaultKey, openRecord, sealRecord } from "./crypto/vault";
+import {
+	fromBase64,
+	importVaultKey,
+	openRecord,
+	sealRecord,
+	type VaultKey
+} from "./crypto/vault";
 import { loadLocalVaultKey, saveLocalVaultKey } from "./platform/keyStore";
 import { unprotectSecret } from "./platform/secrets";
 
@@ -32,10 +38,10 @@ async function ensureDir(): Promise<void> {
 // `device.json` und `outbox.json` bleiben aussen vor (kein `encrypted`-Aufruf
 // an ihren Lese-/Schreibstellen): `device.json` enthaelt den Schluessel selbst
 // - zirkulaer -, `outbox.json` nur Referenzen, keine Inhalte.
-let localKey: CryptoKey | null = null;
+let localKey: VaultKey | null = null;
 
 /** Den Schluessel setzen, mit dem die Browser-Ablage ver-/entschluesselt wird. */
-export function setLocalEncryptionKey(key: CryptoKey | null): void {
+export function setLocalEncryptionKey(key: VaultKey | null): void {
 	localKey = key;
 }
 
@@ -45,7 +51,7 @@ export function setLocalEncryptionKey(key: CryptoKey | null): void {
  * zurueck, statt den Schluessel ein zweites Mal zu holen (siehe
  * `preloadLocalEncryptionKey`, laeuft vorher in `app.init()`).
  */
-export function getLocalEncryptionKey(): CryptoKey | null {
+export function getLocalEncryptionKey(): VaultKey | null {
 	return localKey;
 }
 
@@ -84,6 +90,20 @@ async function decryptFromStorage<T>(file: string, txt: string): Promise<T> {
 }
 
 /**
+ * Der Schluessel, wie ihn die `device.json` auf dem Rechner fuehrt: base64,
+ * dazu vom Betriebssystem geschuetzt. Im Browser gibt es ihn dort nicht - dort
+ * liegt er in `platform/keyStore.ts`.
+ */
+export async function readProtectedVaultKey(
+	info: DeviceInfo,
+	extractable: boolean
+): Promise<VaultKey | null> {
+	if (!info.vaultKey) return null;
+	const raw = await unprotectSecret(info.vaultKey, info.protected ?? false);
+	return importVaultKey(fromBase64(raw).buffer as ArrayBuffer, extractable);
+}
+
+/**
  * Beim Start: den Tresorschluessel vorladen, damit verschluesselte Dateien
  * gleich beim ersten Lesen aufgehen - unabhaengig vom Konto-Abgleich, der erst
  * danach anlaeuft und das Netz braucht (siehe `app.svelte.ts`, `init()` laeuft
@@ -93,10 +113,11 @@ async function decryptFromStorage<T>(file: string, txt: string): Promise<T> {
  * Datenordner bereits.
  *
  * Ein Geraet, das vor dieser Aenderung verknuepft wurde, traegt den Schluessel
- * noch als lesbare Bytes in `device.json` (`vaultKey`, `protectSecret`) -
- * dieselben Rohbytes wie heute, nur ohne die neue, nicht-exportierbare Ablage
- * (`platform/keyStore.ts`). Der wird hier einmalig uebernommen, statt die
- * Verknuepfung fuer verloren zu halten.
+ * noch als lesbare Bytes in `device.json` - dieselben Rohbytes, nur ohne die
+ * neue Ablage. Der wird hier einmalig uebernommen. Nicht wegen alter Bestaende
+ * am Server (die gibt es nicht mehr), sondern weil der Fehlerbildschirm des
+ * Starts keinen Weg zurueck anbietet: ohne diese Uebernahme haengt ein solcher
+ * Browser fest, bis jemand die Website-Daten von Hand loescht.
  *
  * War das Geraet schon einmal verknuepft (`serverUrl` gesetzt), laesst sich
  * aber kein Schluessel herstellen, wird geworfen statt still weiterzumachen:
@@ -113,13 +134,14 @@ export async function preloadLocalEncryptionKey(): Promise<void> {
 		return;
 	}
 	const info = await loadDevice();
-	if (info?.vaultKey) {
+	if (info) {
 		try {
-			const raw = await unprotectSecret(info.vaultKey, info.protected ?? false);
-			const migrated = await importVaultKey(fromBase64(raw).buffer as ArrayBuffer, false);
-			await saveLocalVaultKey(migrated);
-			setLocalEncryptionKey(migrated);
-			return;
+			const migrated = await readProtectedVaultKey(info, false);
+			if (migrated) {
+				await saveLocalVaultKey(migrated);
+				setLocalEncryptionKey(migrated);
+				return;
+			}
 		} catch (e) {
 			logWarn("Alter Tresorschlüssel ließ sich nicht übernehmen", e);
 		}

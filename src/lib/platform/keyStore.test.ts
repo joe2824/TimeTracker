@@ -1,19 +1,27 @@
-// Der abgelegte Schluessel darf nie wieder Bytes herausgeben - nur noch
-// ver-/entschluesseln.
+// Der abgelegte Schluessel darf nie wieder Bytes herausgeben - aber alles
+// koennen, was der laufende Betrieb braucht: ver-/entschluesseln UND die
+// abgeleiteten Kennungen rechnen (bucketFor, vaultProof).
 import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { clearLocalVaultKey, loadLocalVaultKey, saveLocalVaultKey } from "./keyStore";
+import {
+	bucketFor,
+	createVaultKey,
+	exportVaultKey,
+	importVaultKey,
+	isExportable,
+	openRecord,
+	sealRecord,
+	vaultProof,
+	type VaultKey
+} from "../crypto/vault";
 
-async function freshKey(): Promise<CryptoKey> {
-	return crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, [
-		"encrypt",
-		"decrypt"
-	]);
-}
+const BINDING = { kind: "local", id: "probe", rev: 0 };
 
-async function nonExtractableCopy(key: CryptoKey): Promise<CryptoKey> {
-	const raw = await crypto.subtle.exportKey("raw", key);
-	return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
+/** Genau die Kopie, die `#persistLink` im Browser ablegt. */
+async function storedCopy(of?: VaultKey): Promise<VaultKey> {
+	const source = of ?? (await createVaultKey());
+	return importVaultKey(await exportVaultKey(source), false);
 }
 
 beforeEach(clearLocalVaultKey);
@@ -24,49 +32,52 @@ describe("keyStore", () => {
 	});
 
 	it("gibt den abgelegten Schluessel zurueck", async () => {
-		const key = await nonExtractableCopy(await freshKey());
-		await saveLocalVaultKey(key);
-		const back = await loadLocalVaultKey();
-		expect(back).not.toBeNull();
+		await saveLocalVaultKey(await storedCopy());
+		expect(await loadLocalVaultKey()).not.toBeNull();
 	});
 
 	it("der zurueckgegebene Schluessel gibt nie wieder Bytes heraus", async () => {
-		const key = await nonExtractableCopy(await freshKey());
-		await saveLocalVaultKey(key);
+		await saveLocalVaultKey(await storedCopy());
 		const back = await loadLocalVaultKey();
-		await expect(crypto.subtle.exportKey("raw", back!)).rejects.toThrow();
+		expect(isExportable(back!)).toBe(false);
+		await expect(exportVaultKey(back!)).rejects.toThrow();
 	});
 
 	it("der zurueckgegebene Schluessel kann trotzdem ver- und entschluesseln", async () => {
-		const key = await nonExtractableCopy(await freshKey());
-		await saveLocalVaultKey(key);
+		await saveLocalVaultKey(await storedCopy());
 		const back = await loadLocalVaultKey();
-		const iv = crypto.getRandomValues(new Uint8Array(12));
-		const ct = await crypto.subtle.encrypt(
-			{ name: "AES-GCM", iv },
-			back!,
-			new TextEncoder().encode("hallo")
-		);
-		const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, back!, ct);
-		expect(new TextDecoder().decode(pt)).toBe("hallo");
+		const sealed = await sealRecord(back!, { note: "hallo" }, BINDING);
+		expect(await openRecord(back!, sealed, BINDING)).toEqual({ note: "hallo" });
+	});
+
+	it("rechnet dieselben Kennungen wie das exportierbare Original", async () => {
+		// Der Punkt, an dem der Abgleich haengt: bucketFor und vaultProof laufen
+		// beim Wiedereinstieg auf dieser Kopie. Kaemen dort andere Werte heraus -
+		// oder wuerde geworfen -, faende das Geraet seine eigenen Monate nicht mehr.
+		const original = await createVaultKey();
+		await saveLocalVaultKey(await storedCopy(original));
+		const back = await loadLocalVaultKey();
+		expect(await bucketFor(back!, "2026-07")).toBe(await bucketFor(original, "2026-07"));
+		expect(await vaultProof(back!)).toBe(await vaultProof(original));
+	});
+
+	it("oeffnet, was das exportierbare Original versiegelt hat", async () => {
+		const original = await createVaultKey();
+		await saveLocalVaultKey(await storedCopy(original));
+		const sealed = await sealRecord(original, { x: 1 }, BINDING);
+		expect(await openRecord((await loadLocalVaultKey())!, sealed, BINDING)).toEqual({ x: 1 });
 	});
 
 	it("ueberschreibt den vorigen Schluessel beim erneuten Ablegen", async () => {
-		const a = await nonExtractableCopy(await freshKey());
-		const b = await nonExtractableCopy(await freshKey());
-		await saveLocalVaultKey(a);
-		await saveLocalVaultKey(b);
-		// Kein direkter Vergleich moeglich (nicht-exportierbar) - stattdessen:
-		// ein mit `a` verschluesseltes Chiffrat oeffnet sich nicht mehr mit dem,
-		// was jetzt abgelegt ist.
-		const iv = crypto.getRandomValues(new Uint8Array(12));
-		const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, a, new TextEncoder().encode("x"));
-		const back = await loadLocalVaultKey();
-		await expect(crypto.subtle.decrypt({ name: "AES-GCM", iv }, back!, ct)).rejects.toThrow();
+		const a = await createVaultKey();
+		await saveLocalVaultKey(await storedCopy(a));
+		await saveLocalVaultKey(await storedCopy());
+		const sealed = await sealRecord(a, { x: 1 }, BINDING);
+		await expect(openRecord((await loadLocalVaultKey())!, sealed, BINDING)).rejects.toThrow();
 	});
 
 	it("loescht den Schluessel", async () => {
-		await saveLocalVaultKey(await nonExtractableCopy(await freshKey()));
+		await saveLocalVaultKey(await storedCopy());
 		await clearLocalVaultKey();
 		expect(await loadLocalVaultKey()).toBeNull();
 	});

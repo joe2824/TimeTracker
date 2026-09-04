@@ -1,5 +1,6 @@
 // Der Bestand, der nie einen Schreib-Haken gesehen hat - findet er den Server?
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { VaultKey } from "../crypto/vault";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("../testing/fakeFs")).fakeFs);
 
@@ -109,7 +110,7 @@ class Device {
 }
 
 let server: FakeServer;
-let key: CryptoKey;
+let key: VaultKey;
 
 /** Etwas tun, BEVOR ein Konto verknuepft ist - also ohne Schreib-Haken. */
 async function withoutAccount(g: Device, fn: () => Promise<void>): Promise<void> {
