@@ -202,14 +202,17 @@ einmalig.
 - ~~**Deutsche Bezeichner in `WebOnboarding.svelte`**~~ erledigt, eigener Commit.
 - ~~**`.agents/skills/` und `skills-lock.json`**~~ erledigt: `.agents/skills/`
   liegt seit `db06654` im Repo, eine `skills-lock.json` gibt es nicht.
-- **`listEntryYears`** (`store.ts`) liest jede Monatsdatei nur zum Zaehlen.
-  Entschaerft, nicht behoben - siehe `SYNC_PRELOAD.md`.
-- **Fehlerbildschirm des Starts hat keinen Weg zurueck.** `+page.svelte` bietet
-  dort nur "Erneut versuchen", "Neu laden" und "Protokoll oeffnen". Kommt der
-  Start nicht durch, weil sich der Schluessel dieses Browsers nicht oeffnen
-  laesst, bleibt nur, die Website-Daten von Hand zu loeschen. Ein Knopf
-  "Verknuepfung loesen" (im Browser, nicht auf dem Rechner - dort liegen die
-  Zeiten als Dateien) waere der Weg heraus.
+- ~~**`listEntryYears`** (`store.ts`) liest jede Monatsdatei nur zum Zaehlen.~~
+  erledigt (`938145a`). Im Browser lief das fuer nichts: die Karte "Daten auf
+  diesem Geraet" steht unter `{#if isTauri()}`, der `$effect` in `SystemTab`
+  nicht. Jetzt haengt er an derselben Bedingung. Auf dem Rechner bleibt das
+  Lesen - die exakte Zahl der Eintraege steht nirgends sonst, und der Aufruf
+  faellt nur bei offenem Tab an.
+- ~~**Fehlerbildschirm des Starts hat keinen Weg zurueck.**~~ erledigt
+  (`938145a`). "Anmeldung zuruecksetzen" mit einer zweiten Frage davor (kein
+  Dialog - auf diesem Bildschirm soll so wenig wie moeglich haengen), nur im
+  Browser. `account.forgetLink()` setzt die zwei Schritte zusammen, die
+  `unlink()` auch macht, ohne den Teil, der einen Server braucht.
 - **`isPairingCode`-Doppelung** ist erledigt (`shared/codes.ts`). Wer weitere
   sucht: gleiche Namen finden geht mit
   `grep -rhoE "^(export )?(async )?function [a-zA-Z0-9_]+" src/lib server/src`,
