@@ -432,6 +432,17 @@
 		});
 	});
 
+	// Nach dem Anmelden steht die Zeiterfassung vorn. Ohne das bleibt stehen, wo
+	// man vorher war - und angemeldet wird man aus den Einstellungen heraus bzw.
+	// aus der Anmeldeseite, die den Tab gar nicht anfasst. Nur beim Uebergang
+	// "nicht verknuepft" -> "verknuepft": wer danach umschaltet, bleibt dort.
+	let wasLinked = false;
+	$effect(() => {
+		const linked = account.linked;
+		if (linked && !wasLinked) tab = "tracking";
+		wasLinked = linked;
+	});
+
 	// Chef-Modus abgeschaltet, während der Team-Tab offen war: sonst bliebe eine
 	// leere Seite ohne zugehörigen Reiter stehen.
 	$effect(() => {
