@@ -870,6 +870,14 @@ describe("onProgress – Ladeanzeige beim Massenimport", () => {
 });
 
 describe("Vorgezogenes Laden", () => {
+	/** Ein Laptop, das den vorgezogenen Teil vor sich hat - Server schon gefuellt. */
+	async function laptopAtStart(): Promise<FakeDevice> {
+		await seedServer();
+		const laptop = new FakeDevice("laptop");
+		laptop.state = startState();
+		return laptop;
+	}
+
 	/**
 	 * Ein Monat, der nie der laufende ist - die Tests haengen sonst am Kalendertag,
 	 * an dem sie laufen.
@@ -901,9 +909,7 @@ describe("Vorgezogenes Laden", () => {
 	}
 
 	it("fragt zuerst die vorgezogenen Monate ab und nimmt die ohne Zeitraum mit", async () => {
-		await seedServer();
-		const laptop = new FakeDevice("laptop");
-		laptop.state = startState();
+		const laptop = await laptopAtStart();
 		server.queries = [];
 		await on(laptop, (engine) => engine.sync());
 
@@ -916,9 +922,7 @@ describe("Vorgezogenes Laden", () => {
 
 	it("bringt Aktivitaeten und Einstellungen im vorgezogenen Teil mit", async () => {
 		// Ohne sie stuende die Oberflaeche ohne Namen und ohne Sollstunden da.
-		await seedServer();
-		const laptop = new FakeDevice("laptop");
-		laptop.state = startState();
+		const laptop = await laptopAtStart();
 		await on(laptop, (engine) => engine.sync());
 
 		const activities = await on(laptop, () => store.loadActivities());
@@ -928,9 +932,7 @@ describe("Vorgezogenes Laden", () => {
 	});
 
 	it("legt den vorgezogenen Teil ab, sobald die Historie durch ist", async () => {
-		await seedServer();
-		const laptop = new FakeDevice("laptop");
-		laptop.state = startState();
+		const laptop = await laptopAtStart();
 		await on(laptop, (engine) => engine.sync());
 
 		expect(laptop.state.priority).toBeUndefined();
@@ -938,9 +940,7 @@ describe("Vorgezogenes Laden", () => {
 	});
 
 	it("holt einen alten Monat auf Zuruf, ohne die Historie zu durchlaufen", async () => {
-		await seedServer();
-		const laptop = new FakeDevice("laptop");
-		laptop.state = startState();
+		const laptop = await laptopAtStart();
 		server.queries = [];
 		await on(laptop, (engine) => engine.ensureMonthSynced(OLD));
 
@@ -957,9 +957,7 @@ describe("Vorgezogenes Laden", () => {
 		// Der Stand darf hinterher sein - dann kommt der Monat noch einmal, was
 		// nichts kostet. Vorziehen wuerde ueberspringen, was die anderen Monate
 		// noch nicht kennen.
-		await seedServer();
-		const laptop = new FakeDevice("laptop");
-		laptop.state = startState();
+		const laptop = await laptopAtStart();
 		await on(laptop, (engine) => engine.ensureMonthSynced(OLD));
 
 		expect(laptop.state.priority?.months).toContain(OLD);
@@ -968,9 +966,7 @@ describe("Vorgezogenes Laden", () => {
 	});
 
 	it("nach dem Backfill kostet ein Nachladen keine Anfrage mehr", async () => {
-		await seedServer();
-		const laptop = new FakeDevice("laptop");
-		laptop.state = startState();
+		const laptop = await laptopAtStart();
 		await on(laptop, (engine) => engine.sync());
 		server.queries = [];
 		await on(laptop, (engine) => engine.ensureMonthSynced("2019-05"));
@@ -979,9 +975,7 @@ describe("Vorgezogenes Laden", () => {
 
 	it("zweimal Nachladen laedt nur einmal", async () => {
 		// Der Prefetch beim Hovern feuert sonst bei jeder Mausbewegung erneut.
-		await seedServer();
-		const laptop = new FakeDevice("laptop");
-		laptop.state = startState();
+		const laptop = await laptopAtStart();
 		server.queries = [];
 		await on(laptop, (engine) =>
 			Promise.all([engine.ensureMonthSynced(OLD), engine.ensureMonthSynced(OLD)])
@@ -993,9 +987,7 @@ describe("Vorgezogenes Laden", () => {
 		// Spekulation darf die Leitung nicht zumachen, die einer braucht, der
 		// gerade hinsieht. Ausgesetzt wird nur, nicht gewartet - sonst hielten
 		// sich beide gegenseitig auf.
-		await seedServer();
-		const laptop = new FakeDevice("laptop");
-		laptop.state = startState();
+		const laptop = await laptopAtStart();
 
 		await on(laptop, async (engine) => {
 			server.hold("bucket");
@@ -1017,9 +1009,7 @@ describe("Vorgezogenes Laden", () => {
 	it("nach stop() spielt eine laufende Runde nichts mehr ein", async () => {
 		// Beim Abmelden ist ein Abruf unterwegs. Seine Seite kommt an, wenn der
 		// lokale Bestand geloescht ist - ohne stop() schreibt er ihn zurueck.
-		await seedServer();
-		const laptop = new FakeDevice("laptop");
-		laptop.state = startState();
+		const laptop = await laptopAtStart();
 
 		await on(laptop, async (engine) => {
 			server.hold("bucket");

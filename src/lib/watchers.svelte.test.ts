@@ -399,12 +399,17 @@ describe("Tagesmeldung", () => {
 		expect(accountMock.sendUsagePing).toHaveBeenCalledTimes(1);
 
 		// Nach fuenf Minuten wieder erlaubt - diesmal nimmt der Server ihn an.
+		await retryAccepted(zwoelf);
+	});
+
+	/** Nach der Wartezeit noch einmal - und diesmal nimmt der Server ihn an. */
+	async function retryAccepted(noon: number): Promise<void> {
 		accountMock.sendUsagePing.mockResolvedValue("sent");
-		vi.setSystemTime(zwoelf + 6 * 60_000);
+		vi.setSystemTime(noon + 6 * 60_000);
 		await tickPing();
 		expect(accountMock.sendUsagePing).toHaveBeenCalledTimes(2);
 		expect(app.settings.usageLastDay).toBe("2026-08-24");
-	});
+	}
 
 	/** Ein erster Ping um 12:00, den der Server ablehnt. Gibt 12:00 zurueck. */
 	async function declinedAtNoon(): Promise<number> {
@@ -436,12 +441,7 @@ describe("Tagesmeldung", () => {
 		const zwoelf = await declinedAtNoon();
 
 		accountMock.serverUrl = "https://anderer.example.de";
-		accountMock.sendUsagePing.mockResolvedValue("sent");
-		vi.setSystemTime(zwoelf + 6 * 60_000);
-		await tickPing();
-
-		expect(accountMock.sendUsagePing).toHaveBeenCalledTimes(2);
-		expect(app.settings.usageLastDay).toBe("2026-08-24");
+		await retryAccepted(zwoelf);
 	});
 
 	// Nicht jeder Fehlschlag heilt: ein falscher Schluessel bleibt falsch. Ohne
