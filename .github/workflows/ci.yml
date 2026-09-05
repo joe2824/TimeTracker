@@ -1,11 +1,14 @@
 name: CI
 
-# Bei jedem Push nach main und jedem PR. Was genau geprueft wird, steht in
+# Bei jedem Push auf JEDEN Branch und jedem PR. Was genau geprueft wird, steht in
 # verify.yml - dasselbe Werk benutzt auch das Release, damit ein Tag nicht durch
 # ein schwaecheres Gate geht als ein gewoehnlicher Push.
+#
+# Vorher nur `main`: `feat/passkey-vault` sammelte 27 Commits und einen
+# History-Rewrite, ohne dass je ein Lauf stattfand. Die concurrency unten raeumt
+# ueberholte Laeufe weg, teuer wird es dadurch nicht.
 on:
   push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
 

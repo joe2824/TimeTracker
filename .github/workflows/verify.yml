@@ -106,3 +106,10 @@ jobs:
       - name: Clippy
         working-directory: src-tauri
         run: cargo clippy --all-targets -- -D warnings
+
+      # `clippy --all-targets` kompiliert die Tests, fuehrt sie aber nie aus -
+      # die vier in secret.rs (DPAPI hin und zurueck) liefen bisher nur lokal.
+      # Der Toolchain und der Cache stehen hier ohnehin schon.
+      - name: Tests
+        working-directory: src-tauri
+        run: cargo test
