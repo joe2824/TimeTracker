@@ -85,6 +85,22 @@ const rec = (id: string, over: Record<string, unknown> = {}) => ({
 	...over
 });
 
+/**
+ * Ein Push mit Sitzungs-Cookie: der Ausweis faehrt automatisch mit, deshalb
+ * entscheidet hier die Herkunft. `headers` setzt origin/host/x-forwarded-host.
+ */
+function pushWithSession(userId: string, headers: Record<string, string> = {}): Promise<Response> {
+	return fetch(`${base}/api/sync`, {
+		method: "POST",
+		headers: {
+			"content-type": "application/json",
+			cookie: `tt_session=${createSession(db, userId)}`,
+			...headers
+		},
+		body: JSON.stringify({ records: [rec("x")] })
+	});
+}
+
 beforeAll(async () => {
 	dir = mkdtempSync(join(tmpdir(), "tt-api-"));
 	const dbFile = join(dir, "test.db");
@@ -935,30 +951,12 @@ describe("Bremse und Herkunft", () => {
 	});
 
 	it("weist eine schreibende Anfrage von fremder Herkunft ab", async () => {
-		const session = createSession(db, ANNA);
-		const res = await fetch(`${base}/api/sync`, {
-			method: "POST",
-			headers: {
-				"content-type": "application/json",
-				origin: "https://boeswillig.example",
-				cookie: `tt_session=${session}`
-			},
-			body: JSON.stringify({ records: [rec("x")] })
-		});
+		const res = await pushWithSession(ANNA, { origin: "https://boeswillig.example" });
 		expect(res.status).toBe(403);
 	});
 
 	it("laesst die eigene Herkunft durch", async () => {
-		const session = createSession(db, ANNA);
-		const res = await fetch(`${base}/api/sync`, {
-			method: "POST",
-			headers: {
-				"content-type": "application/json",
-				origin: base,
-				cookie: `tt_session=${session}`
-			},
-			body: JSON.stringify({ records: [rec("x")] })
-		});
+		const res = await pushWithSession(ANNA, { origin: base });
 		expect(res.status).toBe(200);
 	});
 
@@ -999,31 +997,12 @@ describe("Herkunft unter verschiedenen Namen", () => {
 	// von der eigenen Seite dieselbe Seite - und muss durchkommen. Sonst kann
 	// sich niemand registrieren, der die Adresse anders tippt als ORIGIN.
 	it("laesst die eigene Adresse durch, auch wenn sie nicht ORIGIN ist", async () => {
-		const session = createSession(db, ANNA);
-		const res = await fetch(`${base}/api/sync`, {
-			method: "POST",
-			headers: {
-				"content-type": "application/json",
-				// Genau die Adresse, unter der diese Anfrage hereinkommt.
-				origin: base,
-				cookie: `tt_session=${session}`
-			},
-			body: JSON.stringify({ records: [rec("x")] })
-		});
+		const res = await pushWithSession(ANNA, { origin: base });
 		expect(res.status).toBe(200);
 	});
 
 	it("weist eine wirklich fremde Seite weiterhin ab", async () => {
-		const session = createSession(db, ANNA);
-		const res = await fetch(`${base}/api/sync`, {
-			method: "POST",
-			headers: {
-				"content-type": "application/json",
-				origin: "https://boeswillig.example",
-				cookie: `tt_session=${session}`
-			},
-			body: JSON.stringify({ records: [rec("x")] })
-		});
+		const res = await pushWithSession(ANNA, { origin: "https://boeswillig.example" });
 		expect(res.status).toBe(403);
 	});
 });
@@ -1293,31 +1272,14 @@ describe("Herkunft unter einem fremden Namen", () => {
 	});
 
 	it("weist ab, wenn Origin nicht zum Host passt", async () => {
-		const session = createSession(db, ANNA);
-		const res = await fetch(`${base}/api/sync`, {
-			method: "POST",
-			headers: {
-				"content-type": "application/json",
-				host: "tracker.fritz.box",
-				origin: "https://boeswillig.example",
-				cookie: `tt_session=${session}`
-			},
-			body: JSON.stringify({ records: [rec("x")] })
-		});
+		const res = await pushWithSession(ANNA, { host: "tracker.fritz.box", origin: "https://boeswillig.example" });
 		expect(res.status).toBe(403);
 	});
 
 	it("beruecksichtigt die weitergereichte Kopfzeile hinter einem Proxy", async () => {
-		const session = createSession(db, ANNA);
-		const res = await fetch(`${base}/api/sync`, {
-			method: "POST",
-			headers: {
-				"content-type": "application/json",
-				"x-forwarded-host": "tracker.example.de",
-				origin: "https://tracker.example.de",
-				cookie: `tt_session=${session}`
-			},
-			body: JSON.stringify({ records: [rec("x")] })
+		const res = await pushWithSession(ANNA, {
+			"x-forwarded-host": "tracker.example.de",
+			origin: "https://tracker.example.de"
 		});
 		expect(res.status).toBe(200);
 	});
@@ -1490,15 +1452,19 @@ describe("Konto von einem Geraet aus anlegen", () => {
 		expect(self.devices).toHaveLength(1);
 	});
 
+	/** Ein frisches Konto samt Geraet - der Weg ohne Passkey. */
+	async function newDeviceAccount(): Promise<{ userId: string; deviceToken: string }> {
+		const res = await api(null, "/api/auth/device", {
+			method: "POST",
+			body: JSON.stringify({ displayName: "Neuling", label: "Rechner", invite: inviteRow() })
+		});
+		return res.json();
+	}
+
 	it("kann sofort abgleichen", async () => {
 		// Der eigentliche Zweck: die Daten liegen auf diesem Rechner und sollen
 		// hoch. Ein Konto, das erst noch einen Passkey braucht, waere ein Umweg.
-		const { deviceToken } = await (
-			await api(null, "/api/auth/device", {
-				method: "POST",
-				body: JSON.stringify({ displayName: "Neuling", label: "Rechner", invite: inviteRow() })
-			})
-		).json();
+		const { deviceToken } = await newDeviceAccount();
 
 		const up = await api(deviceToken, "/api/sync", {
 			method: "POST",
@@ -1509,12 +1475,7 @@ describe("Konto von einem Geraet aus anlegen", () => {
 	});
 
 	it("nimmt die Verpackung der Phrase an", async () => {
-		const { deviceToken } = await (
-			await api(null, "/api/auth/device", {
-				method: "POST",
-				body: JSON.stringify({ displayName: "Neuling", label: "Rechner", invite: inviteRow() })
-			})
-		).json();
+		const { deviceToken } = await newDeviceAccount();
 
 		const res = await api(deviceToken, "/api/wraps", {
 			method: "POST",
@@ -1544,16 +1505,7 @@ describe("Herkunft ohne Sitzung", () => {
 
 	it("weist eine fremde Seite MIT Sitzung weiterhin ab", async () => {
 		// Hier faehrt der Ausweis automatisch mit - und genau darum geht es.
-		const session = createSession(db, ANNA);
-		const res = await fetch(`${base}/api/sync`, {
-			method: "POST",
-			headers: {
-				"content-type": "application/json",
-				origin: "https://boeswillig.example",
-				cookie: `tt_session=${session}`
-			},
-			body: JSON.stringify({ records: [rec("x")] })
-		});
+		const res = await pushWithSession(ANNA, { origin: "https://boeswillig.example" });
 		expect(res.status).toBe(403);
 	});
 });

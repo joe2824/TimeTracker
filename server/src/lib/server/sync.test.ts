@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { openDb, type Db } from "./db";
+import { type Db } from "./db";
+import { ANNA, BODO, freshDb } from "./testing/fixtures";
 import { records, users } from "./db/schema";
 import {
 	currentSeq,
@@ -14,12 +15,6 @@ import { eq } from "drizzle-orm";
 
 let db: Db;
 
-const ANNA = "user-anna";
-const BODO = "user-bodo";
-
-function create(id: string) {
-	db.insert(users).values({ id, displayName: id, createdAt: 1, seqCounter: 0 }).run();
-}
 
 const rec = (id: string, over: Partial<IncomingRecord> = {}): IncomingRecord => ({
 	id,
@@ -32,9 +27,7 @@ const rec = (id: string, over: Partial<IncomingRecord> = {}): IncomingRecord => 
 });
 
 beforeEach(() => {
-	db = openDb(":memory:").db;
-	create(ANNA);
-	create(BODO);
+	db = freshDb();
 });
 
 describe("Ablegen", () => {

@@ -1,5 +1,6 @@
 // Was im Schluesselbund steht, wenn ein Passkey angelegt wird.
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { keepEnv } from "./testing/fixtures";
 
 /** Das Modul mit dieser Umgebung frisch laden - RP_ID und RP_NAME kommen von dort. */
 async function withEnv(env: Record<string, string>) {
@@ -10,20 +11,10 @@ async function withEnv(env: Record<string, string>) {
 
 const BASIS = { ORIGIN: "https://tracker.example.de", RP_ID: "tracker.example.de" };
 
-// Vitest verwendet Worker-Prozesse fuer mehrere Test-Dateien wieder, `process.env`
-// ueberlebt den Wechsel. Was hier gesetzt wird, muss also wieder weg.
-const TOUCHED_ENV = ["ORIGIN", "RP_ID", "RP_NAME"] as const;
-const envBefore = new Map(TOUCHED_ENV.map((k) => [k, process.env[k]] as const));
+keepEnv("ORIGIN", "RP_ID", "RP_NAME");
 
 beforeEach(() => {
 	delete process.env.RP_NAME;
-});
-
-afterAll(() => {
-	for (const [k, v] of envBefore) {
-		if (v === undefined) delete process.env[k];
-		else process.env[k] = v;
-	}
 });
 
 describe("passkeyLabel", () => {

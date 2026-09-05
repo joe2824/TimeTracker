@@ -2,7 +2,8 @@
 // erst auf, wenn jemand sich auf einem neuen Geraet anmeldet. Deshalb entstehen
 // beide in EINER Transaktion.
 import { beforeEach, describe, expect, it } from "vitest";
-import { openDb, type Db } from "./db";
+import { type Db } from "./db";
+import { ANNA, BODO, freshDb } from "./testing/fixtures";
 import { credentials, keyWraps, users } from "./db/schema";
 import { storeWrap, readWrap } from "./wraps";
 import { storeCredential } from "./webauthn";
@@ -12,19 +13,11 @@ import { eq } from "drizzle-orm";
 
 let db: Db;
 
-const ANNA = "user-anna";
-const BODO = "user-bodo";
-
-function create(id: string) {
-	db.insert(users).values({ id, displayName: id, createdAt: 1, seqCounter: 0 }).run();
-}
 
 const cred = (id: string) => ({ id, publicKey: new Uint8Array([1, 2, 3]), counter: 0 });
 
 beforeEach(() => {
-	db = openDb(":memory:").db;
-	create(ANNA);
-	create(BODO);
+	db = freshDb();
 });
 
 describe("storeWrap", () => {
