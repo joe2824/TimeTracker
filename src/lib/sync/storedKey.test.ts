@@ -6,16 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("../testing/fakeFs")).fakeFs);
-vi.mock("svelte-sonner", () => ({
-	toast: Object.assign(() => {}, {
-		info() {},
-		error() {},
-		success() {},
-		warning() {},
-		loading() {},
-		dismiss() {}
-	})
-}));
+vi.mock("svelte-sonner", () => import("../testing/toastStub"));
 
 const { resetFakeFs } = await import("../testing/fakeFs");
 const { account } = await import("./account.svelte");

@@ -6,16 +6,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("../testing/fakeFs")).fakeFs);
-vi.mock("svelte-sonner", () => ({
-	toast: Object.assign(() => {}, {
-		info() {},
-		error() {},
-		success() {},
-		warning() {},
-		loading() {},
-		dismiss() {}
-	})
-}));
+vi.mock("svelte-sonner", () => import("../testing/toastStub"));
 
 const build = vi.hoisted(() => ({ server: "https://tracker.example.de", key: "schluessel" }));
 vi.mock("../defaults", () => ({

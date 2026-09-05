@@ -6,16 +6,7 @@ import { defaultSettings } from "../types";
 import { files, resetFakeFs } from "../testing/fakeFs";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("../testing/fakeFs")).fakeFs);
-vi.mock("svelte-sonner", () => ({
-	toast: Object.assign(() => {}, {
-		info() {},
-		error() {},
-		success() {},
-		warning() {},
-		loading() {},
-		dismiss() {}
-	})
-}));
+vi.mock("svelte-sonner", () => import("../testing/toastStub"));
 
 const { createVaultKey, vaultProof } = await import("../crypto/vault");
 const { account } = await import("./account.svelte");

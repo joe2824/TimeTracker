@@ -8,16 +8,7 @@ import { storage, useBrowserStorage } from "../platform/fs";
 
 useBrowserStorage();
 
-vi.mock("svelte-sonner", () => ({
-	toast: Object.assign(() => {}, {
-		info() {},
-		error() {},
-		success() {},
-		warning() {},
-		loading() {},
-		dismiss() {}
-	})
-}));
+vi.mock("svelte-sonner", () => import("../testing/toastStub"));
 
 const { account } = await import("./account.svelte");
 const store = await import("../store");
