@@ -37,13 +37,17 @@ async function afterwards(): Promise<void> {
 	while (Date.now() === now) await new Promise((r) => setTimeout(r, 1));
 }
 
+/** Auf einem Geraet etwas aendern und gleich abgleichen. */
+const changeAndSync = (g: FakeDevice, change: () => Promise<unknown>) =>
+	on(g, async (engine) => {
+		await change();
+		return engine.sync();
+	});
+
 /** Ein Geraet, das die genannten Eintraege hochgeladen hat. */
 async function deviceWith(id: string, ...list: Entry[]): Promise<FakeDevice> {
 	const device = new FakeDevice(id);
-	await on(device, async (engine) => {
-		await store.saveEntries(MONTH, list);
-		return engine.sync();
-	});
+	await changeAndSync(device, () => store.saveEntries(MONTH, list));
 	return device;
 }
 
@@ -248,10 +252,7 @@ describe("Zwei Geraete", () => {
 
 	it("gleicht Einstellungen ab, ohne die geliehene Id zu hinterlassen", async () => {
 		const phone = new FakeDevice("handy");
-		await on(phone, async (engine) => {
-			await store.saveSettings({ ...defaultSettings, hoursPerDay: 8, timeZone: "Europe/Berlin" });
-			return engine.sync();
-		});
+		await changeAndSync(phone, () => store.saveSettings({ ...defaultSettings, hoursPerDay: 8, timeZone: "Europe/Berlin" }));
 
 		const desktop = new FakeDevice("rechner");
 		await on(desktop, (engine) => engine.sync());
@@ -344,10 +345,7 @@ describe("Ueber Monatsgrenzen hinweg", () => {
 		const phone = await deviceWith("handy", entry("h1", { startTs: ts(30, 10), endTs: null }));
 
 		const desktop = new FakeDevice("rechner");
-		await on(desktop, async (engine) => {
-			await store.saveEntries("2026-08", [entry("r1", { startTs: tsAug(2, 10), endTs: null })]);
-			return engine.sync();
-		});
+		await changeAndSync(desktop, () => store.saveEntries("2026-08", [entry("r1", { startTs: tsAug(2, 10), endTs: null })]));
 
 		const july = await entries(desktop, MONTH);
 		const august = await entries(desktop, "2026-08");
@@ -521,10 +519,7 @@ describe("Robustheit", () => {
 		const otherKey = key;
 		key = await createVaultKey();
 		const foreign = new FakeDevice("fremd");
-		await on(foreign, async (engine) => {
-			await store.saveEntries("2026-08", [entry("e2", { startTs: ts(20, 9) })]);
-			return engine.sync();
-		});
+		await changeAndSync(foreign, () => store.saveEntries("2026-08", [entry("e2", { startTs: ts(20, 9) })]));
 		key = otherKey;
 
 		// Ein Device mit dem RICHTIGEN Schluessel bekommt e1 und ueberspringt e2.
@@ -649,6 +644,15 @@ describe("Der Server kennt den Bestand nicht mehr", () => {
 });
 
 describe("Eingelesene Reports", () => {
+	/** Ein Rechner mit hochgeladenem Report - und ein Laptop, der ihn schon hat. */
+	async function reportOnBoth(): Promise<{ desktop: FakeDevice; laptop: FakeDevice }> {
+		const desktop = new FakeDevice("rechner");
+		await changeAndSync(desktop, () => store.saveTimeReport(report()));
+		const laptop = new FakeDevice("laptop");
+		await on(laptop, (engine) => engine.sync());
+		return { desktop, laptop };
+	}
+
 	const day = (date: string, hours: number) => ({
 		date,
 		firstIn: "07:30",
@@ -666,10 +670,7 @@ describe("Eingelesene Reports", () => {
 
 	it("traegt einen Report zum anderen Device", async () => {
 		const desktop = new FakeDevice("rechner");
-		await on(desktop, async (engine) => {
-			await store.saveTimeReport(report());
-			return engine.sync();
-		});
+		await changeAndSync(desktop, () => store.saveTimeReport(report()));
 
 		const laptop = new FakeDevice("laptop");
 		await on(laptop, (engine) => engine.sync());
@@ -682,10 +683,7 @@ describe("Eingelesene Reports", () => {
 		// Ein Report sagt aus, wann jemand gekommen und gegangen ist. Nichts davon
 		// darf im Klartext beim Server liegen.
 		const desktop = new FakeDevice("rechner");
-		await on(desktop, async (engine) => {
-			await store.saveTimeReport(report());
-			return engine.sync();
-		});
+		await changeAndSync(desktop, () => store.saveTimeReport(report()));
 		const line = [...server.rows.values()][0];
 		const everything = JSON.stringify(line);
 		expect(everything).not.toContain("07:30");
@@ -696,61 +694,37 @@ describe("Eingelesene Reports", () => {
 	it("stellt die Id dem Monat voran, damit sie mit keiner anderen Art zusammenstoesst", async () => {
 		// Der Server fuehrt seine Datensaetze allein ueber die Id.
 		const desktop = new FakeDevice("rechner");
-		await on(desktop, async (engine) => {
-			await store.saveTimeReport(report());
-			return engine.sync();
-		});
+		await changeAndSync(desktop, () => store.saveTimeReport(report()));
 		expect([...server.rows.keys()]).toEqual([`timereport:${MONTH}`]);
 	});
 
 	it("laedt beim zweiten Durchgang nichts erneut hoch", async () => {
 		// Haengt daran, dass loadTimeReport die Fassung mitliest.
 		const desktop = new FakeDevice("rechner");
-		await on(desktop, async (engine) => {
-			await store.saveTimeReport(report());
-			return engine.sync();
-		});
+		await changeAndSync(desktop, () => store.saveTimeReport(report()));
 		const zweiter = await on(desktop, (engine) => engine.sync());
 		expect(zweiter!.pushed).toBe(0);
 		expect(await on(desktop, () => store.loadTimeReport(MONTH))).toMatchObject({ rev: 1 });
 	});
 
 	it("ersetzt drueben den Report, wenn er neu eingelesen wird", async () => {
-		const desktop = new FakeDevice("rechner");
-		await on(desktop, async (engine) => {
-			await store.saveTimeReport(report());
-			return engine.sync();
-		});
-		const laptop = new FakeDevice("laptop");
-		await on(laptop, (engine) => engine.sync());
+		const { desktop, laptop } = await reportOnBoth();
 
 		// Ein neuer Import legt ein frisches Objekt ohne Fassung an - genau so, wie
 		// es aus der Datei kommt.
 		await afterwards();
-		await on(desktop, async (engine) => {
-			await store.saveTimeReport(report(MONTH, 9));
-			return engine.sync();
-		});
+		await changeAndSync(desktop, () => store.saveTimeReport(report(MONTH, 9)));
 		await on(laptop, (engine) => engine.sync());
 		const drueben = await on(laptop, () => store.loadTimeReport(MONTH));
 		expect(drueben?.days[0].hours).toBe(9);
 	});
 
 	it("nimmt den Report drueben weg, wenn er hier geloescht wird", async () => {
-		const desktop = new FakeDevice("rechner");
-		await on(desktop, async (engine) => {
-			await store.saveTimeReport(report());
-			return engine.sync();
-		});
-		const laptop = new FakeDevice("laptop");
-		await on(laptop, (engine) => engine.sync());
+		const { desktop, laptop } = await reportOnBoth();
 		expect(await on(laptop, () => store.loadTimeReport(MONTH))).not.toBeNull();
 
 		await afterwards();
-		await on(desktop, async (engine) => {
-			await store.deleteTimeReport(MONTH);
-			return engine.sync();
-		});
+		await changeAndSync(desktop, () => store.deleteTimeReport(MONTH));
 		await on(laptop, (engine) => engine.sync());
 		expect(await on(laptop, () => store.loadTimeReport(MONTH))).toBeNull();
 		expect(await on(laptop, () => store.listTimeReportMonths())).toEqual([]);
@@ -770,10 +744,7 @@ describe("Eingelesene Reports", () => {
 		}));
 
 		const desktop = new FakeDevice("rechner");
-		await on(desktop, async (engine) => {
-			await store.saveTimeReport({ month: MONTH, importedAt: Date.now(), days });
-			return engine.sync();
-		});
+		await changeAndSync(desktop, () => store.saveTimeReport({ month: MONTH, importedAt: Date.now(), days }));
 		const payload = [...server.rows.values()][0].payload ?? "";
 		expect(payload.length).toBeGreaterThan(0);
 		expect(payload.length).toBeLessThan(MAX_RECORD_BYTES);
@@ -782,34 +753,19 @@ describe("Eingelesene Reports", () => {
 	it("nimmt den Report drueben weg, wenn hier das Jahr geloescht wird", async () => {
 		// „Einstellungen -> Daten -> Jahr loeschen" nimmt die Reports des Jahres
 		// mit. Ginge das am Haken vorbei, holte der naechste Abgleich sie zurueck.
-		const desktop = new FakeDevice("rechner");
-		await on(desktop, async (engine) => {
-			await store.saveTimeReport(report());
-			return engine.sync();
-		});
-		const laptop = new FakeDevice("laptop");
-		await on(laptop, (engine) => engine.sync());
+		const { desktop, laptop } = await reportOnBoth();
 
 		await afterwards();
-		await on(desktop, async (engine) => {
-			await store.deleteYear(2026);
-			return engine.sync();
-		});
+		await changeAndSync(desktop, () => store.deleteYear(2026));
 		await on(laptop, (engine) => engine.sync());
 		expect(await on(laptop, () => store.listTimeReportMonths())).toEqual([]);
 	});
 
 	it("legt aus einer Loeschung, die wir nie kannten, keine leere Datei an", async () => {
 		const desktop = new FakeDevice("rechner");
-		await on(desktop, async (engine) => {
-			await store.saveTimeReport(report());
-			return engine.sync();
-		});
+		await changeAndSync(desktop, () => store.saveTimeReport(report()));
 		await afterwards();
-		await on(desktop, async (engine) => {
-			await store.deleteTimeReport(MONTH);
-			return engine.sync();
-		});
+		await changeAndSync(desktop, () => store.deleteTimeReport(MONTH));
 
 		// Der Laptop war die ganze Zeit weg und sieht nur noch den Loeschmarker.
 		const laptop = new FakeDevice("laptop");
@@ -834,10 +790,7 @@ describe("onProgress – Ladeanzeige beim Massenimport", () => {
 		const entries25 = Array.from({ length: 25 }, (_, i) =>
 			entry(`e${i}`, { startTs: ts(1 + (i % 15), 9 + (i % 8)) })
 		);
-		await on(sender, async (engine) => {
-			await store.saveEntries(MONTH, entries25);
-			return engine.sync();
-		});
+		await changeAndSync(sender, () => store.saveEntries(MONTH, entries25));
 
 		// Device 2 zieht die 25 Eintraege herunter - onProgress soll firing.
 		const recipient = new FakeDevice("empfaenger");
@@ -856,10 +809,7 @@ describe("onProgress – Ladeanzeige beim Massenimport", () => {
 		// Nur 5 Eintraege hochladen.
 		const sender = new FakeDevice("sender2");
 		const entries5 = Array.from({ length: 5 }, (_, i) => entry(`f${i}`));
-		await on(sender, async (engine) => {
-			await store.saveEntries(MONTH, entries5);
-			return engine.sync();
-		});
+		await changeAndSync(sender, () => store.saveEntries(MONTH, entries5));
 
 		const recipient = new FakeDevice("empfaenger2");
 		const { events } = await syncWithProgress(recipient);
@@ -877,10 +827,7 @@ describe("onProgress – Ladeanzeige beim Massenimport", () => {
 		const old25 = Array.from({ length: 25 }, (_, i) =>
 			entry(`g${i}`, { startTs: ts(1 + (i % 15), 9 + (i % 8)) })
 		);
-		await on(sender, async (engine) => {
-			await store.saveEntries(MONTH, old25);
-			return engine.sync();
-		});
+		await changeAndSync(sender, () => store.saveEntries(MONTH, old25));
 
 		const recipient = new FakeDevice("empfaenger-hintergrund");
 		recipient.state = { seq: 0, priority: { seq: 0, months: [monthKey(Date.now()), prevMonthKey()] } };
@@ -908,10 +855,7 @@ describe("onProgress – Ladeanzeige beim Massenimport", () => {
 		const entries250 = Array.from({ length: 250 }, (_, i) =>
 			entry(`bulk-${i}`, { startTs: ts(1 + (i % 20), 8 + (i % 8)) })
 		);
-		await on(sender, async (engine) => {
-			await store.saveEntries(MONTH, entries250);
-			return engine.sync();
-		});
+		await changeAndSync(sender, () => store.saveEntries(MONTH, entries250));
 
 		const recipient = new FakeDevice("empfaenger-bulk");
 		const { events } = await syncWithProgress(recipient);

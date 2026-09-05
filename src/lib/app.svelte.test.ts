@@ -149,15 +149,23 @@ describe("stop() – Lauf über mehrere Tage nachträglich beenden", () => {
 		expect(es[0].endTs).toBe(at(16, 9)); // Dauer 0 statt negativ
 	});
 
+	/**
+	 * Zwei offene Stuecke desselben Laufs, getrennt an Mitternacht - das
+	 * Folgestueck laeuft.
+	 */
+	function twoOpenPieces(): void {
+		const prevDay = entry("t1", P1, at(16, 9), null);
+		const followUp = entry("t2", P1, at(17, 0), null);
+		reset({ "2026-07": [prevDay, followUp] });
+		app.running = followUp;
+	}
+
 	it("räumt das Folgestück auch dann weg, wenn beide Stücke offen stehen", async () => {
 		// Aus dem Protokoll: die Mitternachts-Teilung hat das Vorgaengerstueck offen
 		// stehen lassen, damit fehlte das Bindeglied `endTs`. Das Folgestueck galt
 		// als eigener Lauf, dessen Beginn schon hinter der Endzeit lag – und blieb
 		// als Eintrag ueber 00:00–00:00 zurueck.
-		const prevDay = entry("t1", P1, at(16, 9), null);
-		const followUp = entry("t2", P1, at(17, 0), null);
-		reset({ "2026-07": [prevDay, followUp] });
-		app.running = followUp;
+		twoOpenPieces();
 
 		await app.stop(at(16, 19)); // "aufgehört habe ich gestern um 19 Uhr"
 
@@ -170,10 +178,7 @@ describe("stop() – Lauf über mehrere Tage nachträglich beenden", () => {
 	it("erkennt den Lauf über ein offenes Vorgängerstück hinweg", async () => {
 		// Dieselbe Lage, aber die Endzeit liegt im Folgestueck: dann bleiben beide
 		// stehen – nur eben als ein Lauf.
-		const prevDay = entry("t1", P1, at(16, 9), null);
-		const followUp = entry("t2", P1, at(17, 0), null);
-		reset({ "2026-07": [prevDay, followUp] });
-		app.running = followUp;
+		twoOpenPieces();
 
 		await app.stop(at(17, 8));
 

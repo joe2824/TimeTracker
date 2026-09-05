@@ -41,6 +41,21 @@ async function link(g: FakeDevice, opts: { nurEigenes?: boolean } = {}): Promise
 	});
 }
 
+/**
+ * Dasselbe Geraet an einem ANDEREN Konto: neuer Server, neuer Schluessel - und
+ * der Vermerk, den `#persistLink` beim Wechsel hinterlaesst (der Bestand
+ * gehoert noch dem alten Konto).
+ */
+async function switchAccount(g: FakeDevice): Promise<FakeSyncServer> {
+	server = new FakeSyncServer();
+	key = await createVaultKey();
+	await on(g, async () => {
+		const info = (await store.loadDevice()) ?? { id: g.id };
+		await store.saveDevice({ ...info, accountFingerprint: "neu", dataOwner: "alt" });
+	});
+	return server;
+}
+
 const activity = (id: string, name: string, color: string): Activity =>
 	anActivity(id, { name, color });
 
@@ -126,16 +141,8 @@ describe("Nachlese: was der Schreib-Haken nie gesehen hat", () => {
 		expect(server.kinds()).toEqual({ entry: 1, activity: 1 });
 
 		// Jetzt haengt dasselbe Geraet an einem ANDEREN Konto - anderer Schluessel.
-		const foreign = new FakeSyncServer();
 		const oldServer = server;
-		server = foreign;
-		key = await createVaultKey();
-		await on(desktop, async () => {
-			// Was #persistLink beim Kontowechsel vermerkt: der Bestand gehoert noch
-			// dem alten Konto.
-			const info = (await store.loadDevice()) ?? { id: desktop.id };
-			await store.saveDevice({ ...info, accountFingerprint: "neu", dataOwner: "alt" });
-		});
+		const foreign = await switchAccount(desktop);
 		await link(desktop, { nurEigenes: true });
 
 		expect(foreign.kinds()).toEqual({});
@@ -164,13 +171,7 @@ describe("Nachlese: was der Schreib-Haken nie gesehen hat", () => {
 			await store.clearOutbox();
 		});
 
-		const foreign = new FakeSyncServer();
-		server = foreign;
-		key = await createVaultKey();
-		await on(desktop, async () => {
-			const info = (await store.loadDevice()) ?? { id: desktop.id };
-			await store.saveDevice({ ...info, accountFingerprint: "neu", dataOwner: "alt" });
-		});
+		const foreign = await switchAccount(desktop);
 		await link(desktop, { nurEigenes: true });
 
 		expect(foreign.kinds()).toEqual({});

@@ -128,18 +128,7 @@ describe.each([true, false])("Durchstich mit Pausenabzug=%s", (deductBreaks) => 
 		// reihenweise und mit je einer Fehlermeldung.
 		for (const month of months) {
 			const { entries } = fillMonth(month, deductBreaks);
-			const byDay = new Map<string, Entry[]>();
-			for (const e of entries) {
-				if (e.activityId === ABS) continue;
-				const key = new Date(e.startTs).toDateString();
-				(byDay.get(key) ?? byDay.set(key, []).get(key)!).push(e);
-			}
-			for (const list of byDay.values()) {
-				list.sort((a, b) => a.startTs - b.startTs);
-				for (let i = 1; i < list.length; i++) {
-					expect(list[i].startTs).toBeGreaterThanOrEqual(list[i - 1].endTs!);
-				}
-			}
+			expectNoOverlap(entries);
 		}
 	});
 
@@ -167,6 +156,22 @@ describe.each([true, false])("Durchstich mit Pausenabzug=%s", (deductBreaks) => 
 		}
 	});
 });
+
+/** Kein Eintrag eines Tages faengt an, bevor der vorige zu Ende ist. */
+function expectNoOverlap(entries: Entry[]): void {
+	const byDay = new Map<string, Entry[]>();
+	for (const e of entries) {
+		if (e.activityId === ABS) continue;
+		const key = new Date(e.startTs).toDateString();
+		(byDay.get(key) ?? byDay.set(key, []).get(key)!).push(e);
+	}
+	for (const list of byDay.values()) {
+		list.sort((a, b) => a.startTs - b.startTs);
+		for (let i = 1; i < list.length; i++) {
+			expect(list[i].startTs).toBeGreaterThanOrEqual(list[i - 1].endTs!);
+		}
+	}
+}
 
 describe("Nachtrag und Stempelzeiten", () => {
 	it("bleibt an gestempelten Tagen zwischen Kommen und Gehen", () => {
@@ -247,18 +252,7 @@ describe("Verteilung auf mehrere Projekte", () => {
 	it("legt auch verteilt keine sich ueberschneidenden Eintraege an", () => {
 		for (const month of months) {
 			const { entries } = fillMonth(month, false, SHARES);
-			const byDay = new Map<string, Entry[]>();
-			for (const e of entries) {
-				if (e.activityId === ABS) continue;
-				const key = new Date(e.startTs).toDateString();
-				(byDay.get(key) ?? byDay.set(key, []).get(key)!).push(e);
-			}
-			for (const list of byDay.values()) {
-				list.sort((a, b) => a.startTs - b.startTs);
-				for (let i = 1; i < list.length; i++) {
-					expect(list[i].startTs).toBeGreaterThanOrEqual(list[i - 1].endTs!);
-				}
-			}
+			expectNoOverlap(entries);
 		}
 	});
 

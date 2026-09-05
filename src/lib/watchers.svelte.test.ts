@@ -406,14 +406,19 @@ describe("Tagesmeldung", () => {
 		expect(app.settings.usageLastDay).toBe("2026-08-24");
 	});
 
+	/** Ein erster Ping um 12:00, den der Server ablehnt. Gibt 12:00 zurueck. */
+	async function declinedAtNoon(): Promise<number> {
+		accountMock.sendUsagePing.mockResolvedValue("declined");
+		await startPingAt("12:00");
+		expect(accountMock.sendUsagePing).toHaveBeenCalledTimes(1);
+		return wallStringToTs("2026-08-24", "12:00");
+	}
+
 	// Ein aelterer Server kennt den Endpunkt nicht und antwortet dauerhaft mit
 	// 404. Ohne diesen Riegel klopfte jedes Geraet alle fuenf Minuten an - hinter
 	// einer gemeinsamen Adresse bis die Bremse anschlaegt.
 	it("fragt nicht weiter, wenn der Server die Meldung ablehnt", async () => {
-		accountMock.sendUsagePing.mockResolvedValue("declined");
-		const zwoelf = wallStringToTs("2026-08-24", "12:00");
-		await startPingAt("12:00");
-		expect(accountMock.sendUsagePing).toHaveBeenCalledTimes(1);
+		const zwoelf = await declinedAtNoon();
 
 		// Auch nach der Wartezeit und in der naechsten Stunde kein zweiter Versuch.
 		vi.setSystemTime(zwoelf + 10 * 60_000);
@@ -428,10 +433,7 @@ describe("Tagesmeldung", () => {
 	// Die Absage gilt dem Server, nicht dem Programmlauf: wer sich danach mit
 	// einem anderen verknuepft, soll dort wieder zaehlen duerfen.
 	it("fragt nach einem Serverwechsel wieder", async () => {
-		accountMock.sendUsagePing.mockResolvedValue("declined");
-		const zwoelf = wallStringToTs("2026-08-24", "12:00");
-		await startPingAt("12:00");
-		expect(accountMock.sendUsagePing).toHaveBeenCalledTimes(1);
+		const zwoelf = await declinedAtNoon();
 
 		accountMock.serverUrl = "https://anderer.example.de";
 		accountMock.sendUsagePing.mockResolvedValue("sent");

@@ -6,6 +6,7 @@
 // trotzdem weiter. Ohne einen einmaligen Nachlauf waeren die uebersprungenen
 // Datensaetze fuer dieses Geraet dauerhaft unerreichbar.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { DeviceInfo } from "../store";
 import { FakeSyncServer } from "../testing/fakeSyncServer";
 import { freshAccountEnv, restoreFetch, settled } from "../testing/accountHarness";
 import { files } from "../testing/fakeFs";
@@ -43,6 +44,19 @@ async function asIfUpdatedFromOldVersion(): Promise<void> {
 	// diese Art gar nicht, sie hat also auch keinen Loeschmarker hinterlassen.
 	files.delete(`data/timereport-${MONTH}.json`);
 	resetOutboxForTests();
+}
+
+/**
+ * Ein Geraet, wie eine aeltere Fassung es hinterlassen hat: der Nachlauf-Merker
+ * fehlt, Stand und vorgezogener Teil kommen aus `state`. Danach laeuft
+ * `account.init()` - also genau der Start nach dem Update.
+ */
+async function restartFromOldVersion(state: Partial<DeviceInfo>): Promise<void> {
+	await account.linkWithSession("http://test", await createVaultKey(), "Ich");
+	const info = (await store.loadDevice())!;
+	delete (info as { resyncGeneration?: number }).resyncGeneration;
+	await store.saveDevice({ ...info, ...state });
+	await account.init();
 }
 
 let server: FakeSyncServer;
@@ -210,16 +224,7 @@ describe("Nachlauf fuer eine neue Datensatzart", () => {
 		// Monatsauswahl still auf, und eine Teilsicherung traegt "vollstaendig".
 		server.hold();
 		try {
-			await account.linkWithSession("http://test", await createVaultKey(), "Ich");
-			const info = (await store.loadDevice())!;
-			delete (info as { resyncGeneration?: number }).resyncGeneration;
-			await store.saveDevice({
-				...info,
-				seq: 42,
-				priority: { seq: 17, months: [monthKey(Date.now())] }
-			});
-
-			await account.init();
+			await restartFromOldVersion({ seq: 42, priority: { seq: 17, months: [monthKey(Date.now())] } });
 
 			const after = (await store.loadDevice())!;
 			expect(after.seq).toBe(0);
@@ -242,12 +247,7 @@ describe("Nachlauf fuer eine neue Datensatzart", () => {
 		// zuletzt, und davor stuende das Modal.
 		server.hold();
 		try {
-			await account.linkWithSession("http://test", await createVaultKey(), "Ich");
-			const info = (await store.loadDevice())!;
-			delete (info as { resyncGeneration?: number }).resyncGeneration;
-			await store.saveDevice({ ...info, seq: 42, priority: undefined });
-
-			await account.init();
+			await restartFromOldVersion({ seq: 42, priority: undefined });
 
 			const after = (await store.loadDevice())!;
 			expect(after.seq).toBe(0);
