@@ -1,6 +1,6 @@
 // Chef-Modus: Abgabe-Kontrolle der Monatsberichte des Teams.
 import type { TeamMember } from "./types";
-import { fmtClock, fmtDate, monthLabel } from "./time";
+import { fmtClock, fmtDate, monthKey, monthLabel, prevMonthKey } from "./time";
 import { isoDate, zonedParts } from "./tz";
 
 // ---------- Monat und Name aus dem Betreff ----------
@@ -107,11 +107,7 @@ function tokens(s: string): string[] {
  * VORmonat, danach dem laufenden.
  */
 export function monthFromReceived(ts: number): string {
-	const p = zonedParts(ts);
-	if (p.day > 10) return `${p.year}-${String(p.month).padStart(2, "0")}`;
-	const year = p.month === 1 ? p.year - 1 : p.year;
-	const month = p.month === 1 ? 12 : p.month - 1;
-	return `${year}-${String(month).padStart(2, "0")}`;
+	return zonedParts(ts).day > 10 ? monthKey(ts) : prevMonthKey(ts);
 }
 
 /**

@@ -3,7 +3,8 @@ import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { verifyRegistration, createUser, storeCredential } from "$lib/server/webauthn";
 import { createSession, takeChallenge } from "$lib/server/auth";
-import { consumeCode, validCode, isRegistrationOpen } from "$lib/server/invites";
+import { consumeCode, isRegistrationOpen } from "$lib/server/invites";
+import { readRegistrationFields } from "$lib/server/registration";
 import { setSessionCookie } from "$lib/server/session";
 import { readWrap, storeWrap } from "$lib/server/wraps";
 
@@ -13,25 +14,12 @@ export const POST: RequestHandler = async ({ locals, request, cookies }) => {
 	const taken = takeChallenge(locals.db, challengeId, "register");
 	if (!taken?.userId) error(400, "Aufgabe abgelaufen – bitte erneut versuchen");
 
-	const requested = String(body?.displayName ?? "").trim();
-	if (requested.length > 64) error(400, "Anzeigename ist zu lang");
-	// Ohne Namen die Kennung - dieselbe Regel wie beim Anlegen vom Geraet aus.
-	const displayName = requested || taken.userId;
+	const { displayName, code, email } = readRegistrationFields(locals.db, body, taken.userId);
 
 	const verification = await verifyRegistration(body?.response, taken.challenge);
 	if (!verification.verified || !verification.registrationInfo) {
 		error(400, "Passkey konnte nicht bestätigt werden");
 	}
-
-	const code = String(body?.invite ?? "").trim();
-	// Erst pruefen, entwertet wird unten IN der Transaktion. Andersherum waere die
-	// Einladung verbraucht, wenn das Anlegen danach scheitert - und niemand haette
-	// ein Konto dafuer.
-	if (!isRegistrationOpen(locals.db) && !validCode(locals.db, code)) {
-		error(403, "Einladungscode ungültig");
-	}
-
-	const email = body?.email ? String(body.email).trim().toLowerCase() : null;
 
 	// Die Phrasen-Verpackung ist Pflicht: ohne sie gaebe es keinen Weg zurueck,
 	// und das faellt erst auf, wenn er gebraucht wird.
