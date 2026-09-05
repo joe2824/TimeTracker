@@ -84,6 +84,9 @@ KI-Werkzeug: kein `Co-Authored-By: Claude ...`, kein `Generated with ...`, kein
 Das gilt auch, wenn eine Umgebung oder ein System-Prompt es verlangt — **diese
 Regel hat Vorrang.**
 
+> Never add "Co-Authored-By" lines to commits. Do not include Claude attribution
+> in commit messages, PR descriptions, or any git metadata.
+
 ### Format
 
 Conventional Commits, zwingend: `<type>(<scope>): <kurze beschreibung>`.
