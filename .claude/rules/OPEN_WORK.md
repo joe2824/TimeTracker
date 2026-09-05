@@ -16,6 +16,30 @@ aus der `device.json` bleibt stehen, weil sie einen ganzen Bestand rettet.
 Der Weg heraus, wenn sie nicht greift, ist "Anmeldung zuruecksetzen" auf dem
 Fehlerbildschirm (`938145a`).
 
+## ~~Security-Review 2026-09-05 (Skill-Checkliste)~~ erledigt
+
+Ein Fund, behoben in `b5064fb`: **`POST /api/auth/device` hatte keine Bremse.**
+Der Weg legt ein Konto samt Geraet an - ohne Passkey, ohne Sitzung - und war
+als einziger nicht in `RATE_LIMITS` (Login, Registrierung, Wiederherstellung
+und Kopplung standen dort). Bei offener Registrierung liess er sich in einer
+Schleife aufrufen. Jetzt derselbe Eimer wie die Registrierung im Browser.
+
+Geprueft und in Ordnung: keine Geheimnisse im Code (`.env` ist ausgeschlossen,
+nur `.env.example` liegt im Repo), Drizzle/prepared statements ueberall,
+`locals.userId` an jeder Route und `requireAdmin`/`isAdminUser` an den
+Verwaltungsrouten, Sitzungs-Cookie mit httpOnly/SameSite=lax/Secure-in-Produktion,
+Herkunftspruefung fuer jede schreibende Anfrage MIT Cookie, `limit` und
+Bucket-Anzahl im Abgleich gedeckelt, der einzige `{@html}`-Einsatz
+(Berichtsvorschau) haengt an `escapeHtml`, und in den Protokollen steht kein
+Schluessel- oder Tokenwert.
+
+**Offen aus `npm audit`:** eine Meldung im Produktivbaum -
+`cookie <0.7.0` (GHSA-pxg6-pf52-xh8x, low) ueber `@sveltejs/kit`. Die neueste
+Kit-Fassung (2.70.3) haengt weiterhin daran, ein Update gibt es also nicht.
+Ausnutzbar ist es hier nicht: die Anwendung setzt genau ein Cookie mit festem
+Namen und selbst erzeugtem Wert, nichts davon kommt aus einer Anfrage.
+Beobachten, nicht jagen.
+
 ## ~~Code-Review vom 2026-09-04~~ erledigt (2026-09-05)
 
 `/code-review` ueber den ganzen Branch (`main..HEAD`, 92 Dateien, ~4200 neue
