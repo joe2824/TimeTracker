@@ -73,8 +73,9 @@ vi.mock("./api", () => {
 	return { Api, ApiError };
 });
 
-const { register, login, prepareLogin } = await import("./enroll");
-const { exportVaultKey } = await import("../crypto/vault");
+const { register, login, prepareLogin, reunlockWithPasskey } = await import("./enroll");
+const { Api } = await import("./api");
+const { createVaultKey, exportVaultKey, wrapWithPrf } = await import("../crypto/vault");
 
 /** Was der Authentifikator zurueckgibt. Ohne `prf`: kein Wert bei dieser Zeremonie. */
 function response(id: string, prf: number[] | null) {
@@ -193,5 +194,59 @@ describe("login", () => {
 		expect(r.credentialId).toBe("cred-e");
 		// Damit repariert unlockWithPhrase den Passkey gleich mit.
 		expect(r.prf).not.toBeNull();
+	});
+});
+
+describe("reunlockWithPasskey", () => {
+	const api = new Api({ baseUrl: "https://r.example" });
+
+	/** Die Kennungen, nach denen der Browser gefragt wurde. */
+	function askedFor(): string[] {
+		const options = webauthn.startAuthentication.mock.calls[0][0].optionsJSON;
+		return (options.allowCredentials ?? []).map((c: { id: string }) => c.id);
+	}
+
+	it("fragt gar nicht erst, wenn kein Passkey die Daten öffnen kann", async () => {
+		// Der Kreis, um den es geht: wer eine FEHLENDE Verpackung nachtragen will,
+		// wurde bisher nach genau dem Passkey gefragt, der nichts oeffnen kann.
+		server.wraps = [{ id: "r", kind: "recovery", credentialId: null, payload: "{}" }];
+
+		await expect(reunlockWithPasskey(api, "cred-ohne")).rejects.toThrow(/24 Wörtern/);
+		expect(webauthn.startAuthentication).not.toHaveBeenCalled();
+	});
+
+	it("fragt nur nach den Passkeys, zu denen eine Verpackung liegt", async () => {
+		const key = await createVaultKey();
+		server.wraps = [
+			{ id: "r", kind: "recovery", credentialId: null, payload: "{}" },
+			{
+				id: "w",
+				kind: "passkey",
+				credentialId: "cred-mit",
+				payload: await wrapWithPrf(key, Uint8Array.from(PRF))
+			}
+		];
+		webauthn.startAuthentication.mockResolvedValue(response("cred-mit", PRF));
+
+		const back = await reunlockWithPasskey(api, "cred-ohne");
+
+		expect(askedFor()).toEqual(["cred-mit"]);
+		expect(new Uint8Array(await exportVaultKey(back))).toEqual(
+			new Uint8Array(await exportVaultKey(key))
+		);
+	});
+
+	it("nimmt den Passkey dieses Browsers, wenn der es kann", async () => {
+		const key = await createVaultKey();
+		const payload = await wrapWithPrf(key, Uint8Array.from(PRF));
+		server.wraps = [
+			{ id: "w1", kind: "passkey", credentialId: "cred-hier", payload },
+			{ id: "w2", kind: "passkey", credentialId: "cred-woanders", payload }
+		];
+		webauthn.startAuthentication.mockResolvedValue(response("cred-hier", PRF));
+
+		await reunlockWithPasskey(api, "cred-hier");
+
+		expect(askedFor()).toEqual(["cred-hier"]);
 	});
 });

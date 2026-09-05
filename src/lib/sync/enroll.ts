@@ -197,7 +197,7 @@ export async function register(
 	// im Authentifikator, und die Antwort wird nirgends geprueft.
 	const harvested = prfOf(response)
 		? null
-		: await harvestPrf(response.id).catch((e) => {
+		: await harvestPrf([response.id]).catch((e) => {
 				logWarn("PRF-Wert ließ sich beim Anlegen nicht nachholen", e);
 				return { ok: false as const, reason: "noPrf" as const };
 			});
@@ -257,18 +257,24 @@ type PrfResult =
  * Beim Anlegen geben die meisten Browser noch keinen heraus - er faellt erst bei
  * einer Anmeldung an. Eigene Aufgabe statt einer vom Server: die Antwort wird
  * nirgends geprueft, gebraucht wird allein der Wert, den der Authentifikator
- * dazu ausrechnet. Ohne Kennung nimmt der Browser den, den er anbietet.
+ * dazu ausrechnet. Ohne Kennungen nimmt der Browser den Passkey, den er anbietet.
  */
-async function harvestPrf(credentialId?: string): Promise<PrfResult> {
+async function harvestPrf(credentialIds: string[] = []): Promise<PrfResult> {
 	const options: PublicKeyCredentialRequestOptionsJSON = {
 		challenge: toBase64Url(crypto.getRandomValues(new Uint8Array(32))),
 		userVerification: "required",
-		...(credentialId ? { allowCredentials: [{ id: credentialId, type: "public-key" }] } : {})
+		...(credentialIds.length
+			? {
+					allowCredentials: credentialIds.map((id) => ({ id, type: "public-key" as const }))
+				}
+			: {})
 	};
 	const response = await startAuthentication({ optionsJSON: withPrf(options) });
-	// allowCredentials sollte das schon erzwingen - ein Wert vom falschen Passkey
-	// wuerde den gemeinten aber nicht reparieren.
-	if (credentialId && response.id !== credentialId) return { ok: false, reason: "otherPasskey" };
+	// allowCredentials sollte das schon erzwingen - ein Wert von einem Passkey
+	// ausserhalb der Liste hilft hier aber nicht weiter.
+	if (credentialIds.length && !credentialIds.includes(response.id)) {
+		return { ok: false, reason: "otherPasskey" };
+	}
 	const prf = prfOf(response);
 	return prf
 		? { ok: true, credentialId: response.id, prf }
@@ -305,33 +311,50 @@ export async function ensurePasskeyWrap(
 	const found: PrfResult =
 		prf && credentialId
 			? { ok: true, credentialId, prf }
-			: await harvestPrf(credentialId);
+			: await harvestPrf(credentialId ? [credentialId] : []);
 	if (!found.ok) return found;
 	await api.putWrap("passkey", await wrapWithPrf(key, found.prf), found.credentialId);
 	return { ok: true, credentialId: found.credentialId };
 }
 
 /**
- * Den Tresorschluessel noch einmal aus dem Passkey holen.
+ * Den Tresorschluessel noch einmal aus einem Passkey holen.
  *
  * Nach einem Neuladen der Seite liegt hier nur noch die Kopie, die ihre Bytes
  * nicht mehr herausgibt (`platform/keyStore.ts`). Zum Ansehen, Bearbeiten und
  * Abgleichen reicht sie; einen WEITEREN Passkey oder ein weiteres Geraet
  * anzulernen braucht dagegen die Bytes. Statt dafuer 24 Woerter abzutippen,
- * genuegt eine Bestaetigung mit dem Passkey, der ohnehin an diesem Browser
- * haengt.
+ * genuegt eine Bestaetigung mit einem Passkey, zu dem eine Verpackung liegt.
+ *
+ * Gefragt wird nur nach solchen Passkeys. Ohne diese Vorauswahl liefe der Weg
+ * im Kreis: gerade wer eine FEHLENDE Verpackung nachtragen will, wuerde nach
+ * genau dem Passkey gefragt, der nichts oeffnen kann - eine Bestaetigung fuer
+ * nichts, gefolgt von einer Fehlermeldung.
  */
-export async function reunlockWithPasskey(api: Api, credentialId?: string): Promise<VaultKey> {
-	const found = await harvestPrf(credentialId);
+export async function reunlockWithPasskey(api: Api, preferred?: string): Promise<VaultKey> {
+	const { wraps } = await api.wraps();
+	const usable = wraps.filter(
+		(w): w is typeof w & { credentialId: string } => w.kind === "passkey" && Boolean(w.credentialId)
+	);
+	if (usable.length === 0) {
+		throw new Error(
+			"Dafür müssen deine Daten hier einmal geöffnet werden, und das kann bisher keiner deiner Passkeys. Melde dich einmal ab und mit deinen 24 Wörtern wieder an."
+		);
+	}
+	// Der Passkey dieses Browsers, wenn er kann - sonst jeder andere, der es kann.
+	const ids = preferred && usable.some((w) => w.credentialId === preferred)
+		? [preferred]
+		: usable.map((w) => w.credentialId);
+
+	const found = await harvestPrf(ids);
 	if (found.ok) {
-		const { wraps } = await api.wraps();
-		const wrap = wraps.find((w) => w.kind === "passkey" && w.credentialId === found.credentialId);
+		const wrap = usable.find((w) => w.credentialId === found.credentialId);
 		const key = wrap ? await openWithPrf(wrap.payload, found.prf) : null;
 		if (key) return key;
 	}
 	if (found.ok === false && found.reason === "otherPasskey") {
 		throw new Error(
-			"Bestätigt wurde ein anderer Passkey als der von diesem Gerät. Bitte noch einmal versuchen."
+			"Bestätigt wurde ein anderer Passkey als der, der deine Daten öffnen kann. Bitte noch einmal versuchen."
 		);
 	}
 	throw new Error(

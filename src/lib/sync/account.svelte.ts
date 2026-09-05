@@ -1208,6 +1208,13 @@ class AccountState {
 	 *
 	 * Liegt der PRF-Wert schon vor (er faellt bei jeder Anmeldung an), kostet das
 	 * keine zweite Abfrage.
+	 *
+	 * Eine NEUE Verpackung braucht die Rohbytes des Schluessels, und die gibt der
+	 * PRF-Wert des Aufrufers nicht her - er ist das Ziel der Verpackung, nicht
+	 * ihre Quelle. Nach einem Neuladen kommen sie deshalb aus einem anderen
+	 * Passkey, der schon eine Verpackung hat (siehe `#exportableKey`); gibt es
+	 * keinen, wird mit einem Hinweis auf die 24 Woerter geworfen, statt eine
+	 * Bestaetigung fuer nichts zu verlangen.
 	 */
 	async repairPasskeyWrap(
 		credentialId?: string,
@@ -1227,9 +1234,10 @@ class AccountState {
 	 *
 	 * Nach einem Neuladen der Seite liegt hier die Kopie aus der eigenen Ablage -
 	 * sie kann alles ausser das eine: einen weiteren Passkey oder ein weiteres
-	 * Geraet anlernen. Dafuer liefert der Passkey dieses Browsers den Schluessel
-	 * erneut. Dass es wirklich derselbe Vault ist, sagt der Nachweis - er laesst
-	 * sich aus beiden rechnen, ohne dass einer von beiden Bytes herausgeben muss.
+	 * Geraet anlernen. Dafuer liefert ein Passkey mit Verpackung den Schluessel
+	 * erneut - bevorzugt der dieses Browsers. Dass es wirklich derselbe Vault ist,
+	 * sagt der Nachweis - er laesst sich aus beiden rechnen, ohne dass einer von
+	 * beiden Bytes herausgeben muss.
 	 */
 	async #exportableKey(): Promise<{ api: Api; key: VaultKey }> {
 		if (!this.#key) throw new Error("Das Konto ist nicht entsperrt");
