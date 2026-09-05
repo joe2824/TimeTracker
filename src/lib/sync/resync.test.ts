@@ -6,6 +6,7 @@
 // trotzdem weiter. Ohne einen einmaligen Nachlauf waeren die uebersprungenen
 // Datensaetze fuer dieses Geraet dauerhaft unerreichbar.
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { FakeSyncServer } from "../testing/fakeSyncServer";
 import { files, resetFakeFs } from "../testing/fakeFs";
 import type { ServerRecord } from "./api";
 
@@ -27,89 +28,6 @@ const { app } = await import("../app.svelte");
 const store = await import("../store");
 const { resetOutboxForTests } = await import("./outbox");
 const { monthKey, shiftMonthKey } = await import("../time");
-
-/** Nur so viel Server, wie der Abgleich anfasst. */
-class MiniServer {
-	rows = new Map<string, ServerRecord>();
-	seq = 0;
-	/** Ab welchem Stand jeweils abgerufen wurde - daran haengt der zweite Test. */
-	pulledSince: number[] = [];
-	/** Haelt den Abruf an, damit ein Test den Stand direkt nach dem Verknuepfen sieht. */
-	gate: { blocked: Promise<void>; open: () => void } | null = null;
-
-	hold() {
-		let open!: () => void;
-		const blocked = new Promise<void>((r) => (open = r));
-		this.gate = { blocked, open };
-	}
-
-	push(deviceId: string, records: unknown[]) {
-		const accepted: { id: string; rev: number; seq: number }[] = [];
-		for (const raw of records as {
-			id: string;
-			kind: string;
-			bucket?: string | null;
-			baseRev: number;
-			updatedAt: number;
-			deletedAt?: number | null;
-			payload?: string | null;
-		}[]) {
-			const present = this.rows.get(raw.id);
-			const serverRev = present?.rev ?? 0;
-			if (serverRev !== raw.baseRev) continue;
-			this.seq++;
-			const rev = serverRev + 1;
-			this.rows.set(raw.id, {
-				id: raw.id,
-				kind: raw.kind,
-				bucket: raw.bucket ?? null,
-				seq: this.seq,
-				rev,
-				updatedAt: raw.updatedAt,
-				deviceId,
-				deletedAt: raw.deletedAt ?? null,
-				payload: raw.deletedAt ? null : (raw.payload ?? null)
-			});
-			accepted.push({ id: raw.id, rev, seq: this.seq });
-		}
-		return { accepted, conflicts: [], seq: this.seq };
-	}
-
-	pull(since: number) {
-		this.pulledSince.push(since);
-		const all = [...this.rows.values()].filter((r) => r.seq > since).sort((a, b) => a.seq - b.seq);
-		return { records: all, nextSeq: all.length > 0 ? all[all.length - 1].seq : since, hasMore: false };
-	}
-
-	fetchFor(deviceId: string) {
-		return async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
-			const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-			const url = new URL(raw, "http://test");
-			const method = init?.method ?? "GET";
-			if (url.pathname === "/api/sync" && method === "GET") {
-				if (this.gate) await this.gate.blocked;
-				const since = Number(url.searchParams.get("since") ?? 0);
-				return new Response(JSON.stringify(this.pull(since)), { status: 200 });
-			}
-			if (url.pathname === "/api/sync" && method === "POST") {
-				const body = JSON.parse(String(init!.body));
-				return new Response(JSON.stringify(this.push(deviceId, body.records)), { status: 200 });
-			}
-			if (url.pathname === "/api/sync/buckets") {
-				const buckets = [...new Set([...this.rows.values()].map((r) => r.bucket))].filter(
-					(b): b is string => b !== null
-				);
-				return new Response(JSON.stringify({ buckets }), { status: 200 });
-			}
-			if (url.pathname === "/api/me") {
-				return new Response(JSON.stringify({ userId: "u1", displayName: "Ich", isAdmin: false }), {
-					status: 200
-				});
-			}
-			return new Response(JSON.stringify({ message: "unbekannt" }), { status: 404 });
-		};
-	}
-}
 
 const MONTH = "2026-07";
 
@@ -154,7 +72,7 @@ async function asIfUpdatedFromOldVersion(): Promise<void> {
 	resetOutboxForTests();
 }
 
-let server: MiniServer;
+let server: FakeSyncServer;
 let originalFetch: typeof globalThis.fetch;
 
 beforeEach(async () => {
@@ -162,7 +80,7 @@ beforeEach(async () => {
 	resetOutboxForTests();
 	app.dispose();
 	app.clearLocalData();
-	server = new MiniServer();
+	server = new FakeSyncServer();
 	originalFetch = globalThis.fetch;
 	globalThis.fetch = server.fetchFor("dieses-geraet");
 });
@@ -238,8 +156,7 @@ describe("Erstes Verknuepfen", () => {
 			// Frisch verknuepft: hier fehlt wirklich alles Aeltere.
 			expect(account.historyIncomplete).toBe(true);
 		} finally {
-			server.gate?.open();
-			server.gate = null;
+			server.release();
 			globalThis.fetch = originalFetch;
 			await account.unlink();
 		}
@@ -261,13 +178,11 @@ describe("Monat auf Zuruf", () => {
 			await Promise.resolve();
 			expect(account.fetchingMonths).toContain(old);
 
-			server.gate!.open();
-			server.gate = null;
+			server.release();
 			await running;
 			expect(account.fetchingMonths).not.toContain(old);
 		} finally {
-			server.gate?.open();
-			server.gate = null;
+			server.release();
 			globalThis.fetch = originalFetch;
 			await account.unlink();
 		}
@@ -346,8 +261,7 @@ describe("Nachlauf fuer eine neue Datensatzart", () => {
 			expect(after.priority?.seq).toBe(0);
 			expect(account.backfilling).toBe(true);
 		} finally {
-			server.gate?.open();
-			server.gate = null;
+			server.release();
 			globalThis.fetch = originalFetch;
 			await account.unlink();
 		}
@@ -377,8 +291,7 @@ describe("Nachlauf fuer eine neue Datensatzart", () => {
 			expect(account.backfilling).toBe(true);
 			expect(account.historyIncomplete).toBe(false);
 		} finally {
-			server.gate?.open();
-			server.gate = null;
+			server.release();
 			globalThis.fetch = originalFetch;
 			await account.unlink();
 		}

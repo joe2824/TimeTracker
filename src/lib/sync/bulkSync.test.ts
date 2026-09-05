@@ -4,6 +4,7 @@
 // Historie im Hintergrund laeuft, muss es weg - sonst sperrt es die App zu,
 // waehrend das Hinweisband daneben sagt, man koenne schon arbeiten.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { FakeSyncServer } from "../testing/fakeSyncServer";
 import { files, resetFakeFs } from "../testing/fakeFs";
 import type { ServerRecord } from "./api";
 
@@ -25,109 +26,6 @@ const { app } = await import("../app.svelte");
 const store = await import("../store");
 const { resetOutboxForTests } = await import("./outbox");
 const { monthKey, prevMonthKey } = await import("../time");
-
-/** Nur so viel Server, wie der gestufte Abruf anfasst - samt Zeitraum-Filter. */
-class MiniServer {
-	rows = new Map<string, ServerRecord>();
-	seq = 0;
-	/** Wie oft ein Abruf ohne Zeitraum-Filter - also die Historie - anstand. */
-	backlogCalls = 0;
-	/** Haelt genau diese Abrufe an, damit der Test dazwischen hinsehen kann. */
-	#backlogGate: { blocked: Promise<void>; open: () => void } | null = null;
-
-	holdBacklog(): void {
-		let open!: () => void;
-		const blocked = new Promise<void>((r) => (open = r));
-		this.#backlogGate = { blocked, open };
-	}
-
-	releaseBacklog(): void {
-		this.#backlogGate?.open();
-		this.#backlogGate = null;
-	}
-
-	push(deviceId: string, records: unknown[]) {
-		const accepted: { id: string; rev: number; seq: number }[] = [];
-		for (const raw of records as {
-			id: string;
-			kind: string;
-			bucket?: string | null;
-			baseRev: number;
-			updatedAt: number;
-			deletedAt?: number | null;
-			payload?: string | null;
-		}[]) {
-			const present = this.rows.get(raw.id);
-			const serverRev = present?.rev ?? 0;
-			if (serverRev !== raw.baseRev) continue;
-			this.seq++;
-			const rev = serverRev + 1;
-			this.rows.set(raw.id, {
-				id: raw.id,
-				kind: raw.kind,
-				bucket: raw.bucket ?? null,
-				seq: this.seq,
-				rev,
-				updatedAt: raw.updatedAt,
-				deviceId,
-				deletedAt: raw.deletedAt ?? null,
-				payload: raw.deletedAt ? null : (raw.payload ?? null)
-			});
-			accepted.push({ id: raw.id, rev, seq: this.seq });
-		}
-		return { accepted, conflicts: [], seq: this.seq };
-	}
-
-	pull(url: URL) {
-		const since = Number(url.searchParams.get("since") ?? 0);
-		const buckets = url.searchParams.getAll("bucket");
-		const unbucketed = url.searchParams.get("unbucketed") === "1";
-		let rows = [...this.rows.values()].filter((r) => r.seq > since);
-		if (buckets.length > 0) {
-			rows = rows.filter(
-				(r) => (r.bucket !== null && buckets.includes(r.bucket)) || (unbucketed && r.bucket === null)
-			);
-		}
-		rows.sort((a, b) => a.seq - b.seq);
-		return {
-			records: rows,
-			nextSeq: rows.length > 0 ? rows[rows.length - 1].seq : since,
-			hasMore: false
-		};
-	}
-
-	fetchFor(deviceId: string) {
-		return async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
-			const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-			const url = new URL(raw, "http://test");
-			const method = init?.method ?? "GET";
-			if (url.pathname === "/api/sync" && method === "GET") {
-				// Ohne Zeitraum-Filter ist es die Historie.
-				if (url.searchParams.getAll("bucket").length === 0) {
-					this.backlogCalls++;
-					if (this.#backlogGate) await this.#backlogGate.blocked;
-				}
-				return new Response(JSON.stringify(this.pull(url)), { status: 200 });
-			}
-			if (url.pathname === "/api/sync" && method === "POST") {
-				const body = JSON.parse(String(init!.body));
-				return new Response(JSON.stringify(this.push(deviceId, body.records)), { status: 200 });
-			}
-			if (url.pathname === "/api/sync/buckets") {
-				const buckets = [...new Set([...this.rows.values()].map((r) => r.bucket))].filter(
-					(b): b is string => b !== null
-				);
-				return new Response(JSON.stringify({ buckets }), { status: 200 });
-			}
-			if (url.pathname === "/api/me") {
-				return new Response(JSON.stringify({ userId: "u1", displayName: "Ich", isAdmin: false }), {
-					status: 200
-				});
-			}
-			return new Response(JSON.stringify({ message: "unbekannt" }), { status: 404 });
-		};
-	}
-}
 
 const OLD = "2020-03";
 
@@ -184,7 +82,7 @@ async function asIfFreshlyLinked(): Promise<void> {
 	server.backlogCalls = 0;
 }
 
-let server: MiniServer;
+let server: FakeSyncServer;
 let originalFetch: typeof globalThis.fetch;
 
 beforeEach(async () => {
@@ -192,13 +90,13 @@ beforeEach(async () => {
 	resetOutboxForTests();
 	app.dispose();
 	app.clearLocalData();
-	server = new MiniServer();
+	server = new FakeSyncServer();
 	originalFetch = globalThis.fetch;
 	globalThis.fetch = server.fetchFor("dieses-geraet");
 });
 
 // Symmetrisch zum Aufbau: geht ein Test unterwegs verloren, faengt der naechste
-// sonst den MiniServer des vorigen als "Original" ein.
+// sonst den Nachbau des vorigen als "Original" ein.
 afterEach(() => {
 	globalThis.fetch = originalFetch;
 });
@@ -212,7 +110,7 @@ describe("Lade-Modal beim gestuften Abruf", () => {
 			await settled();
 
 			await asIfFreshlyLinked();
-			server.holdBacklog();
+			server.hold("backlog");
 			await account.init();
 			await waitFor(() => server.backlogCalls > 0);
 
@@ -225,11 +123,11 @@ describe("Lade-Modal beim gestuften Abruf", () => {
 			expect(account.bulkSync?.phase).toBe("done");
 			expect(account.bulkSync!.pulled).toBeGreaterThanOrEqual(25);
 
-			server.releaseBacklog();
+			server.release();
 			await settled();
 			expect((await store.loadEntries(OLD)).length).toBe(3);
 		} finally {
-			server.releaseBacklog();
+			server.release();
 			globalThis.fetch = originalFetch;
 			await account.unlink();
 		}
@@ -244,7 +142,7 @@ describe("Lade-Modal beim gestuften Abruf", () => {
 			await settled();
 
 			await asIfFreshlyLinked();
-			server.holdBacklog();
+			server.hold("backlog");
 			await account.init();
 			await waitFor(() => server.backlogCalls > 0);
 
@@ -252,13 +150,13 @@ describe("Lade-Modal beim gestuften Abruf", () => {
 			// nichts, wofuer sich ein Modal lohnt.
 			expect(account.bulkSync).toBeNull();
 
-			server.releaseBacklog();
+			server.release();
 			await waitFor(async () => (await store.loadEntries(OLD)).length === 25);
 			// Die 25 alten Eintraege sind da - und zwar ohne dass die App dabei
 			// hinter dem Modal stand.
 			expect(account.bulkSync).toBeNull();
 		} finally {
-			server.releaseBacklog();
+			server.release();
 			globalThis.fetch = originalFetch;
 			await account.unlink();
 		}

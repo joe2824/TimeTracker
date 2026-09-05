@@ -1,5 +1,6 @@
 // Der Bestand, der nie einen Schreib-Haken gesehen hat - findet er den Server?
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { FakeSyncServer } from "../testing/fakeSyncServer";
 import type { VaultKey } from "../crypto/vault";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("../testing/fakeFs")).fakeFs);
@@ -18,98 +19,13 @@ import type { ServerRecord } from "./api";
 const MONTH = "2026-07";
 const ts = (day: number, hour: number) => Date.UTC(2026, 6, day, hour) + 2 * 3600_000;
 
-class FakeServer {
-	rows = new Map<string, ServerRecord>();
-	seq = 0;
-
-	push(deviceId: string, records: unknown[]) {
-		const accepted: { id: string; rev: number; seq: number }[] = [];
-		const conflicts: { id: string; current: ServerRecord }[] = [];
-		for (const raw of records as {
-			id: string;
-			kind: string;
-			bucket?: string | null;
-			baseRev: number;
-			updatedAt: number;
-			deletedAt?: number | null;
-			payload?: string | null;
-		}[]) {
-			const present = this.rows.get(raw.id);
-			const serverRev = present?.rev ?? 0;
-			if (serverRev !== raw.baseRev) {
-				conflicts.push({
-					id: raw.id,
-					current: present ?? {
-						id: raw.id,
-						kind: raw.kind,
-						bucket: null,
-						seq: 0,
-						rev: 0,
-						updatedAt: 0,
-						deviceId: null,
-						deletedAt: null,
-						payload: null
-					}
-				});
-				continue;
-			}
-			this.seq++;
-			const rev = serverRev + 1;
-			this.rows.set(raw.id, {
-				id: raw.id,
-				kind: raw.kind,
-				bucket: raw.bucket ?? null,
-				seq: this.seq,
-				rev,
-				updatedAt: raw.updatedAt,
-				deviceId,
-				deletedAt: raw.deletedAt ?? null,
-				payload: raw.deletedAt ? null : (raw.payload ?? null)
-			});
-			accepted.push({ id: raw.id, rev, seq: this.seq });
-		}
-		return { accepted, conflicts, seq: this.seq };
-	}
-
-	pull(since: number, limit = 200) {
-		const all = [...this.rows.values()].filter((r) => r.seq > since).sort((a, b) => a.seq - b.seq);
-		const page = all.slice(0, limit);
-		return {
-			records: page,
-			nextSeq: page.length > 0 ? page[page.length - 1].seq : since,
-			hasMore: all.length > limit
-		};
-	}
-
-	kinds(): Record<string, number> {
-		const out: Record<string, number> = {};
-		for (const r of this.rows.values()) out[r.kind] = (out[r.kind] ?? 0) + 1;
-		return out;
-	}
-
-	fetchFor(deviceId: string) {
-		return async (input: string, init?: RequestInit): Promise<Response> => {
-			const url = new URL(input, "http://test");
-			if (url.pathname === "/api/sync" && (init?.method ?? "GET") === "GET") {
-				const since = Number(url.searchParams.get("since") ?? 0);
-				return new Response(JSON.stringify(this.pull(since)), { status: 200 });
-			}
-			if (url.pathname === "/api/sync" && init?.method === "POST") {
-				const body = JSON.parse(String(init.body));
-				return new Response(JSON.stringify(this.push(deviceId, body.records)), { status: 200 });
-			}
-			return new Response(JSON.stringify({ message: "unbekannt" }), { status: 404 });
-		};
-	}
-}
-
 class Device {
 	files = new Map<string, string>();
 	state = { seq: 0 };
 	constructor(readonly id: string) {}
 }
 
-let server: FakeServer;
+let server: FakeSyncServer;
 let key: VaultKey;
 
 /** Etwas tun, BEVOR ein Konto verknuepft ist - also ohne Schreib-Haken. */
@@ -195,7 +111,7 @@ const entry = (id: string, activityId: string): Entry => ({
 
 beforeEach(async () => {
 	resetFakeFs();
-	server = new FakeServer();
+	server = new FakeSyncServer();
 	key = await createVaultKey();
 });
 
@@ -272,7 +188,7 @@ describe("Nachlese: was der Schreib-Haken nie gesehen hat", () => {
 		expect(server.kinds()).toEqual({ entry: 1, activity: 1 });
 
 		// Jetzt haengt dasselbe Geraet an einem ANDEREN Konto - anderer Schluessel.
-		const foreign = new FakeServer();
+		const foreign = new FakeSyncServer();
 		const oldServer = server;
 		server = foreign;
 		key = await createVaultKey();
@@ -310,7 +226,7 @@ describe("Nachlese: was der Schreib-Haken nie gesehen hat", () => {
 			await store.clearOutbox();
 		});
 
-		const foreign = new FakeServer();
+		const foreign = new FakeSyncServer();
 		server = foreign;
 		key = await createVaultKey();
 		await on(desktop, async () => {

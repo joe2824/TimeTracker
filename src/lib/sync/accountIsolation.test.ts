@@ -1,9 +1,9 @@
 // Scharfer Test für strikte Kontoisolation bei Neuregistrierung und Kontowechsel.
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { FakeSyncServer } from "../testing/fakeSyncServer";
 import type { Activity, Entry, Settings, SyncMeta } from "../types";
 import { defaultSettings } from "../types";
 import { files, resetFakeFs } from "../testing/fakeFs";
-import type { ServerRecord } from "./api";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("../testing/fakeFs")).fakeFs);
 vi.mock("svelte-sonner", () => ({
@@ -24,81 +24,26 @@ const store = await import("../store");
 const { resetOutboxForTests } = await import("./outbox");
 
 class MockServer {
-	userVaults = new Map<string, Map<string, ServerRecord>>();
-	userSeqs = new Map<string, number>();
+	/** Ein eigener Nachbau je Konto - eigener Bestand, eigener Stand. */
+	userVaults = new Map<string, FakeSyncServer>();
 	userDisplayNames = new Map<string, string>();
 	currentUser = "u1";
 
-	private getRows(user = this.currentUser) {
-		let map = this.userVaults.get(user);
-		if (!map) {
-			map = new Map();
-			this.userVaults.set(user, map);
+	private vault(user = this.currentUser): FakeSyncServer {
+		let server = this.userVaults.get(user);
+		if (!server) {
+			server = new FakeSyncServer();
+			this.userVaults.set(user, server);
 		}
-		return map;
+		return server;
 	}
 
 	push(deviceId: string, records: unknown[], user = this.currentUser) {
-		const rows = this.getRows(user);
-		let seq = this.userSeqs.get(user) ?? 0;
-		const accepted: { id: string; rev: number; seq: number }[] = [];
-		const conflicts: { id: string; current: ServerRecord }[] = [];
-		for (const raw of records as {
-			id: string;
-			kind: string;
-			bucket?: string | null;
-			baseRev: number;
-			updatedAt: number;
-			deletedAt?: number | null;
-			payload?: string | null;
-		}[]) {
-			const present = rows.get(raw.id);
-			const serverRev = present?.rev ?? 0;
-			if (serverRev !== raw.baseRev) {
-				conflicts.push({
-					id: raw.id,
-					current: present ?? {
-						id: raw.id,
-						kind: raw.kind,
-						bucket: null,
-						seq: 0,
-						rev: 0,
-						updatedAt: 0,
-						deviceId: null,
-						deletedAt: null,
-						payload: null
-					}
-				});
-				continue;
-			}
-			seq++;
-			const rev = serverRev + 1;
-			rows.set(raw.id, {
-				id: raw.id,
-				kind: raw.kind,
-				bucket: raw.bucket ?? null,
-				seq,
-				rev,
-				updatedAt: raw.updatedAt,
-				deviceId,
-				deletedAt: raw.deletedAt ?? null,
-				payload: raw.deletedAt ? null : (raw.payload ?? null)
-			});
-			accepted.push({ id: raw.id, rev, seq });
-		}
-		this.userSeqs.set(user, seq);
-		return { accepted, conflicts, seq };
+		return this.vault(user).push(deviceId, records);
 	}
 
 	pull(since: number, limit = 200, user = this.currentUser) {
-		const rows = this.getRows(user);
-		const all = [...rows.values()].filter((r) => r.seq > since).sort((a, b) => a.seq - b.seq);
-		const page = all.slice(0, limit);
-		return {
-			records: page,
-			nextSeq: page.length > 0 ? page[page.length - 1].seq : since,
-			hasMore: all.length > limit
-		};
+		return this.vault(user).pull(since, limit);
 	}
 
 	/**
@@ -470,7 +415,7 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 
 			// 2. Im Tresor auf dem Server darf KEIN Datensatz von den Altdaten liegen
 			const vaultNew = freshServer.userVaults.get("user-neu");
-			expect(vaultNew?.size ?? 0).toBe(0);
+			expect(vaultNew?.rows.size ?? 0).toBe(0);
 		} finally {
 			globalThis.fetch = originalFetch;
 			await account.unlink();
@@ -507,7 +452,7 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 			await new Promise((r) => setTimeout(r, 50));
 			await account.syncNow();
 			const vault = server.userVaults.get("frischer-user");
-			expect(vault?.size).toBeGreaterThan(0);
+			expect(vault?.rows.size).toBeGreaterThan(0);
 		} finally {
 			globalThis.fetch = originalFetch;
 			await account.unlink();

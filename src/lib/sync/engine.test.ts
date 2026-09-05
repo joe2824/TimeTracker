@@ -1,5 +1,6 @@
 // Zwei Geraete an einem Konto - der ganze Weg.
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { FakeSyncServer } from "../testing/fakeSyncServer";
 import type { VaultKey } from "../crypto/vault";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("../testing/fakeFs")).fakeFs);
@@ -16,131 +17,6 @@ import type { Entry } from "../types";
 import type { LocalStore, SyncState } from "./engine";
 import type { ServerRecord } from "./api";
 
-// ---------- Der nachgebaute Server ----------
-
-class FakeServer {
-	rows = new Map<string, ServerRecord>();
-	seq = 0;
-	/** Alle Anfragen, die je kamen - fuer Aussagen ueber den Datenverkehr. */
-	calls: string[] = [];
-	/** Dasselbe mit Suchteil - fuer Aussagen ueber die Einschraenkung. */
-	queries: string[] = [];
-
-	push(deviceId: string, records: unknown[]) {
-		const accepted: { id: string; rev: number; seq: number }[] = [];
-		const conflicts: { id: string; current: ServerRecord }[] = [];
-		for (const raw of records as {
-			id: string;
-			kind: string;
-			bucket?: string | null;
-			baseRev: number;
-			updatedAt: number;
-			deletedAt?: number | null;
-			payload?: string | null;
-		}[]) {
-			const present = this.rows.get(raw.id);
-			const serverRev = present?.rev ?? 0;
-			if (serverRev !== raw.baseRev) {
-				conflicts.push({
-					id: raw.id,
-					current: present ?? {
-						id: raw.id,
-						kind: raw.kind,
-						bucket: null,
-						seq: 0,
-						rev: 0,
-						updatedAt: 0,
-						deviceId: null,
-						deletedAt: null,
-						payload: null
-					}
-				});
-				continue;
-			}
-			this.seq++;
-			const rev = serverRev + 1;
-			this.rows.set(raw.id, {
-				id: raw.id,
-				kind: raw.kind,
-				bucket: raw.bucket ?? null,
-				seq: this.seq,
-				rev,
-				updatedAt: raw.updatedAt,
-				deviceId,
-				deletedAt: raw.deletedAt ?? null,
-				payload: raw.deletedAt ? null : (raw.payload ?? null)
-			});
-			accepted.push({ id: raw.id, rev, seq: this.seq });
-		}
-		return { accepted, conflicts, seq: this.seq };
-	}
-
-	pull(since: number, limit = 200, filter?: { buckets?: string[]; unbucketed: boolean }) {
-		const matches = (r: ServerRecord) => {
-			if (!filter?.buckets) return true;
-			if (r.bucket === null) return filter.unbucketed;
-			return filter.buckets.includes(r.bucket);
-		};
-		const all = [...this.rows.values()]
-			.filter((r) => r.seq > since && matches(r))
-			.sort((a, b) => a.seq - b.seq);
-		const page = all.slice(0, limit);
-		return {
-			records: page,
-			nextSeq: page.length > 0 ? page[page.length - 1].seq : since,
-			hasMore: all.length > limit
-		};
-	}
-
-	/**
-	 * Ein Tor vor gefilterten Abrufen - damit ein Test einen laufenden
-	 * Monats-Nachschlag festhalten kann, waehrend nebenan ein Durchgang laeuft.
-	 */
-	gate: Promise<void> | null = null;
-	openGate: () => void = () => {};
-
-	holdBucketPulls(): void {
-		this.gate = new Promise((r) => (this.openGate = r));
-	}
-
-	/** Eine Abrufmethode, die statt ins Netz in diesen Nachbau greift. */
-	fetchFor(deviceId: string) {
-		return async (input: string, init?: RequestInit): Promise<Response> => {
-			const url = new URL(input, "http://test");
-			this.calls.push(`${init?.method ?? "GET"} ${url.pathname}`);
-			this.queries.push(`${init?.method ?? "GET"} ${url.pathname}${url.search}`);
-			if (url.pathname === "/api/sync" && (init?.method ?? "GET") === "GET") {
-				// Nur den Nachschlag auf Zuruf festhalten, nicht die vorgezogene
-				// Menge - die traegt zusaetzlich "unbucketed".
-				if (
-					this.gate &&
-					url.searchParams.has("bucket") &&
-					!url.searchParams.has("unbucketed")
-				) {
-					await this.gate;
-				}
-				const since = Number(url.searchParams.get("since") ?? 0);
-				const limit = Number(url.searchParams.get("limit") ?? 200);
-				const buckets = url.searchParams.getAll("bucket");
-				return new Response(
-					JSON.stringify(
-						this.pull(since, limit, {
-							buckets: url.searchParams.has("bucket") ? buckets : undefined,
-							unbucketed: url.searchParams.get("unbucketed") === "1"
-						})
-					),
-					{ status: 200 }
-				);
-			}
-			if (url.pathname === "/api/sync" && init?.method === "POST") {
-				const body = JSON.parse(String(init.body));
-				return new Response(JSON.stringify(this.push(deviceId, body.records)), { status: 200 });
-			}
-			return new Response(JSON.stringify({ message: "unbekannt" }), { status: 404 });
-		};
-	}
-}
-
 // ---------- Ein Device ----------
 
 /** Ein Device ist ein Dateibestand plus ein Stand. */
@@ -151,7 +27,7 @@ class Device {
 	constructor(readonly id: string) {}
 }
 
-let server: FakeServer;
+let server: FakeSyncServer;
 let key: VaultKey;
 
 /** Etwas AUF einem Device tun. */
@@ -223,7 +99,7 @@ async function entries(g: Device, month = MONTH): Promise<Entry[]> {
 beforeEach(async () => {
 	resetFakeFs();
 	resetOutboxForTests();
-	server = new FakeServer();
+	server = new FakeSyncServer();
 	key = await createVaultKey();
 });
 
@@ -1301,15 +1177,14 @@ describe("Vorgezogenes Laden", () => {
 		laptop.state = startState();
 
 		await on(laptop, async (engine) => {
-			server.holdBucketPulls();
+			server.hold("bucket");
 			// Laeuft los und bleibt am Tor stehen.
 			const fetching = engine.ensureMonthSynced(OLD);
 			const before = laptop.state.seq;
 			await engine.sync();
 			expect(engine.seq).toBe(before);
 
-			server.openGate();
-			server.gate = null;
+			server.release();
 			await fetching;
 		});
 
@@ -1326,12 +1201,11 @@ describe("Vorgezogenes Laden", () => {
 		laptop.state = startState();
 
 		await on(laptop, async (engine) => {
-			server.holdBucketPulls();
+			server.hold("bucket");
 			const fetching = engine.ensureMonthSynced(OLD);
 
 			engine.stop();
-			server.openGate();
-			server.gate = null;
+			server.release();
 			await fetching;
 
 			expect(await store.loadEntries(OLD)).toEqual([]);
