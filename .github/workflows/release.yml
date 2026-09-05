@@ -93,6 +93,19 @@ jobs:
           STABLE: ${{ needs.target.outputs.stable }}
         run: |
           if [ -f "RELEASE_NOTES.md" ]; then
+            # Die Datei ueberschreibt die generierten Notes komplett. Bleibt sie
+            # beim Versionswechsel stehen, traegt das Release den Text der
+            # Vorversion - genau das ist v0.9.2 bis v0.9.4 passiert. Deshalb muss
+            # die erste Zeile den Tag nennen, sonst bricht der Release hier ab.
+            head1="$(head -n1 RELEASE_NOTES.md)"
+            case "$head1" in
+              *"$TAG"*) ;;
+              *)
+                echo "::error file=RELEASE_NOTES.md::Erste Zeile nennt ${TAG} nicht: '${head1}'"
+                echo "::error::RELEASE_NOTES.md ueberschreibt die generierten Release-Notes. Entweder auf ${TAG} aktualisieren oder die Datei loeschen - dann uebernimmt der Generator aus den Commits."
+                exit 1
+                ;;
+            esac
             body="$(cat RELEASE_NOTES.md)"$'\n\n'"Installer/Bundles siehe Assets unten."
           else
             # Für ein stabiles Release den letzten STABILEN Tag als Startpunkt: sonst

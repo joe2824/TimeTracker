@@ -1,5 +1,16 @@
 ## TimeTracker v0.9.1 – Bugfix-Release
 
+<!--
+  Diese Datei UEBERSCHREIBT die aus den Commits generierten Release-Notes
+  (.github/workflows/release.yml). Die erste Zeile muss den Tag des Releases
+  nennen, sonst bricht der Workflow ab - so kann kein Release mehr mit dem Text
+  der Vorversion herausgehen.
+
+  Wer die Handfassung nicht mehr braucht: Datei loeschen, dann uebernimmt der
+  Generator (gruppiert nach Neue Funktionen / Fehlerbehebungen / Sonstiges und
+  haengt das vollstaendige Changelog an).
+-->
+
 Dieses Update behebt wichtige Probleme bei der Konto-Isolation und verbessert das Onboarding im Web.
 
 ### Fehlerbehebungen & Verbesserungen
