@@ -1,81 +1,32 @@
 // Der Bestand, der nie einen Schreib-Haken gesehen hat - findet er den Server?
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeSyncServer } from "../testing/fakeSyncServer";
+import { FakeDevice, onDevice, withoutAccount } from "../testing/syncDevice";
 import type { VaultKey } from "../crypto/vault";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("../testing/fakeFs")).fakeFs);
 
-const { SyncEngine } = await import("./engine");
-const { Api } = await import("./api");
 const { createVaultKey } = await import("../crypto/vault");
-const { resetOutboxForTests, startTracking, rememberUnstamped } = await import("./outbox");
-const { files, resetFakeFs } = await import("../testing/fakeFs");
+const { rememberUnstamped } = await import("./outbox");
+const { resetFakeFs } = await import("../testing/fakeFs");
 const store = await import("../store");
 const { defaultSettings } = await import("../types");
 import type { Activity, Entry } from "../types";
-import type { LocalStore } from "./engine";
-import type { ServerRecord } from "./api";
+import type { SyncEngine } from "./engine";
 
 const MONTH = "2026-07";
 const ts = (day: number, hour: number) => Date.UTC(2026, 6, day, hour) + 2 * 3600_000;
 
-class Device {
-	files = new Map<string, string>();
-	state = { seq: 0 };
-	constructor(readonly id: string) {}
-}
 
 let server: FakeSyncServer;
 let key: VaultKey;
 
-/** Etwas tun, BEVOR ein Konto verknuepft ist - also ohne Schreib-Haken. */
-async function withoutAccount(g: Device, fn: () => Promise<void>): Promise<void> {
-	resetFakeFs();
-	for (const [k, v] of g.files) files.set(k, v);
-	resetOutboxForTests();
-	await fn();
-	g.files = new Map(files);
-}
 
-/** Etwas MIT verknuepftem Konto tun. */
-async function on<T>(g: Device, fn: (engine: InstanceType<typeof SyncEngine>) => Promise<T>): Promise<T> {
-	resetFakeFs();
-	for (const [k, v] of g.files) files.set(k, v);
-	resetOutboxForTests();
-	await startTracking(g.id);
-
-	const localStore: LocalStore = {
-		entriesOfMonth: (m) => store.loadEntries(m),
-		saveEntries: (m, list) => store.saveEntries(m, list),
-		activities: () => store.loadActivities(),
-		saveActivities: (l) => store.saveActivities(l),
-		settings: () => store.loadSettings(),
-		saveSettings: (s) => store.saveSettings(s),
-		timeReport: (m) => store.loadTimeReport(m),
-		saveTimeReport: (r) => store.saveTimeReport(r),
-		deleteTimeReport: (m) => store.deleteTimeReport(m)
-	};
-	const engine = new SyncEngine({
-		api: new Api({ baseUrl: "http://test", token: "t", fetchFn: server.fetchFor(g.id) }),
-		key,
-		store: localStore,
-		deviceId: g.id,
-		state: g.state,
-		saveState: async (s) => {
-			g.state = s;
-		}
-	});
-	engine.setMonthLister(() => store.listEntryMonths());
-
-	try {
-		return await fn(engine);
-	} finally {
-		g.files = new Map(files);
-	}
-}
+const on = <T,>(g: FakeDevice, fn: (engine: SyncEngine) => Promise<T>): Promise<T> =>
+	onDevice({ server, key }, g, fn);
 
 /** Was AccountState bei jedem Start tut: holen, Ungestempeltes vormerken, hochladen. */
-async function link(g: Device, opts: { nurEigenes?: boolean } = {}): Promise<void> {
+async function link(g: FakeDevice, opts: { nurEigenes?: boolean } = {}): Promise<void> {
 	await on(g, async (engine) => {
 		await engine.sync();
 		// Was AccountState prueft, bevor es nachliest: gehoert der ungestempelte
@@ -117,7 +68,7 @@ beforeEach(async () => {
 
 describe("Nachlese: was der Schreib-Haken nie gesehen hat", () => {
 	it("laedt den GESAMTEN lokalen Bestand hoch, nicht nur das danach Geaenderte", async () => {
-		const desktop = new Device("rechner");
+		const desktop = new FakeDevice("rechner");
 
 		// Der Mensch benutzt die App eine Weile ohne Konto.
 		await withoutAccount(desktop, async () => {
@@ -136,7 +87,7 @@ describe("Nachlese: was der Schreib-Haken nie gesehen hat", () => {
 	});
 
 	it("bringt einem zweiten Geraet Aktivitaeten UND Einstellungen mit", async () => {
-		const desktop = new Device("rechner");
+		const desktop = new FakeDevice("rechner");
 		await withoutAccount(desktop, async () => {
 			await store.saveActivities([activity("akt-1", "Projekt A", "#ff0000")]);
 			await store.saveSettings({ ...defaultSettings, hoursPerDay: 7 });
@@ -144,7 +95,7 @@ describe("Nachlese: was der Schreib-Haken nie gesehen hat", () => {
 		});
 		await link(desktop);
 
-		const browser = new Device("browser");
+		const browser = new FakeDevice("browser");
 		await link(browser);
 
 		const loaded = await on(browser, () => store.loadActivities());
@@ -156,7 +107,7 @@ describe("Nachlese: was der Schreib-Haken nie gesehen hat", () => {
 	});
 
 	it("ueberschreibt die Einstellungen des Kontos NICHT mit den Voreinstellungen des Neulings", async () => {
-		const desktop = new Device("rechner");
+		const desktop = new FakeDevice("rechner");
 		await withoutAccount(desktop, async () => {
 			await store.saveSettings({ ...defaultSettings, hoursPerDay: 7 });
 		});
@@ -164,7 +115,7 @@ describe("Nachlese: was der Schreib-Haken nie gesehen hat", () => {
 
 		// Ein zweites Geraet, das schon einmal lief und dabei Voreinstellungen
 		// weggeschrieben hat - der haeufigste Fall im Browser.
-		const browser = new Device("browser");
+		const browser = new FakeDevice("browser");
 		await withoutAccount(browser, async () => {
 			await store.saveSettings({ ...defaultSettings });
 		});
@@ -179,7 +130,7 @@ describe("Nachlese: was der Schreib-Haken nie gesehen hat", () => {
 	it("traegt den Bestand NICHT in ein fremdes Konto", async () => {
 		// Abgemeldet, neues Konto angelegt: der alte Bestand darf nicht ins neue
 		// Konto wandern.
-		const desktop = new Device("rechner");
+		const desktop = new FakeDevice("rechner");
 		await withoutAccount(desktop, async () => {
 			await store.saveActivities([activity("akt-1", "Geheim", "#ff0000")]);
 			await store.saveEntries(MONTH, [entry("e1", "akt-1")]);
@@ -208,7 +159,7 @@ describe("Nachlese: was der Schreib-Haken nie gesehen hat", () => {
 		// Der Stempel-Waechter allein reicht nicht: `#pushAll` liest die OUTBOX -
 		// was dort vom vorigen Konto liegen blieb, ginge sonst hoch, ohne dass je
 		// eine Nachlese lief.
-		const desktop = new Device("rechner");
+		const desktop = new FakeDevice("rechner");
 		await withoutAccount(desktop, async () => {
 			await store.saveActivities([activity("akt-1", "Geheim", "#ff0000")]);
 			await store.saveEntries(MONTH, [entry("e1", "akt-1")]);
@@ -239,7 +190,7 @@ describe("Nachlese: was der Schreib-Haken nie gesehen hat", () => {
 	});
 
 	it("laedt spaeter Angelegtes weiterhin hoch", async () => {
-		const desktop = new Device("rechner");
+		const desktop = new FakeDevice("rechner");
 		await link(desktop);
 		await on(desktop, async (engine) => {
 			await store.saveActivities([activity("akt-9", "Danach", "#0000ff")]);
