@@ -35,3 +35,8 @@ wiki/
 # Server-Datenbank aus Testlaeufen im Repo-Wurzelverzeichnis
 # (vitest --root server, von hier aus gestartet)
 /data/
+
+# Lokale Einstellungen der KI-Werkzeuge (maschinenspezifisch, nicht geteilt).
+# Die geteilten Anweisungen stehen in AGENTS.md, CLAUDE.md bindet sie ein.
+.claude/settings.local.json
+.claude/*.local.json

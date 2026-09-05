@@ -1,4 +1,4 @@
-# Sync: Vorladen statt Voll-Download — Plan
+# Sync: Vorladen statt Voll-Download — Plan (umgesetzt, Historie)
 
 Status: **fertig** (Stand 2026-09-01). Alle elf Schritte stehen, siehe "Was
 steht" unten. Offen ist nur noch ein bewusst liegengelassener Nebenpunkt.
@@ -124,20 +124,6 @@ Tabs.Trigger).
   der Einlese-Dialog das. Das Einlesen war ueberhaupt nicht gesperrt, obwohl es
   denselben Schaden anrichtet: die Zeiten aus der Datei tragen ihren alten
   Zeitstempel, nachkommende Monate laufen also stellenweise darueber.
-
-## Namenskonvention (gilt fuer alles hier)
-
-Funktionsnamen, Variablen, Felder, Typen, Dateinamen: **immer Englisch**.
-Deutsch nur in Kommentaren, UI-Texten und Commit-Messages.
-
-Der Bestand war gemischt (`#unbekanntBeimServer`, `monatVon`, `beruehrt`,
-`#merkeMonat`, `abgleichMitNachlese`, `#warteschleife`); das ist erledigt.
-Ausnahme mit Absicht: `kontoKennung` und `bestandGehoertZu` in `store.ts` —
-so heissen die Felder in alten `device.json`, sie werden nur noch gelesen.
-
-Wenn doch wieder etwas Deutsches auftaucht: NICHT nebenbei umbenennen, das
-gehoert in einen eigenen Commit — sonst verdeckt der Diff die eigentliche
-Aenderung.
 
 ## Befund (Ausgangslage, historisch)
 

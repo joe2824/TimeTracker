@@ -1,4 +1,4 @@
-# Kommentar- & Text-Aufraeumung — Fortschritt
+# Aufraeumung September 2026 — Historie
 
 Laufende Aufgabe: jede Datei einmal durchgehen, Kommentare und Anwender-Texte
 pruefen, fixen, committen. Diese Datei ist der Fortschritts-Tracker — sie liegt
@@ -17,7 +17,7 @@ Ein Durchlauf ueber den ganzen Baum, drei Commits:
   Grund. Der sachliche Teil steht jeweils noch, die Vorher-Nachher-Haelfte ist
   weg. In `TrackingPanel.svelte` lag zusaetzlich ein verwaistes JSDoc.
 - **Vokabular.** "Tresorschluessel" (45x) und "Abbild" (5x) sind laut
-  `AI_GUIDELINES.md` verboten; jetzt "Vault-Schluessel" und "Image". Zwei
+  `AGENTS.md` verboten; jetzt "Vault-Schluessel" und "Image". Zwei
   sichtbare Texte dabei umgeschrieben statt nur ersetzt.
 
 **Beides frueher hier Geflaggte ist erledigt.** Der Satz in
@@ -59,28 +59,4 @@ und `feat/cloud-sync`. Backup der alten History vorher als Bundle unter
 SHA-URL weiter abrufbar, bis der Support sie loescht - das ist ein eigenes
 Ticket. Wer vorher geklont oder geforkt hat, hat sie ohnehin.
 
-## Regeln
-
-**Code-Kommentare:**
-- Kein Storytelling ("vorher war es X, jetzt Y, weil Z..."). Keine Romane.
-- Wenn eine Funktion/Stelle einfach und offensichtlich ist: **kein Kommentar**.
-- Wenn sie gross/komplex ist oder einen nicht offensichtlichen Grund hat
-  (Bug-Vermeidung, Plattform-Eigenheit, Reihenfolge-Zwang): **ein kurzer Satz**,
-  was/warum — keine Vorher-Nachher-Geschichte.
-- Beispiel schlecht (real aus dem Code entfernt):
-  > // Geschlossener Betrieb: der Code wird hier nur GEPRUEFT, nicht entwertet.
-  > // Entwertet wird er erst, wenn das Konto wirklich entsteht - sonst verbraucht
-  > // ein abgebrochener Versuch ihn ersatzlos.
-- Wenn ein Kommentar nur wiederholt, was direkt darunter im UI-Text (z. B.
-  Card.Description) schon steht: Kommentar loeschen, nicht doppelt pflegen.
-
-**Anwender-sichtbare Texte (Labels, Beschreibungen, Fehlermeldungen):**
-- Zielgruppe: normale Anwender ohne technisches Vorwissen. Kein Insider-/Dev-Jargon.
-- Beispiel schlecht (real):
-  > „Passkeys hängen an der Adresse des Servers – die Desktop-Anwendung hat keine.
-  > Angelegt wird einer im Browser, sobald du ihn dort gekoppelt hast."
-  So redet niemand mit normalen Nutzern. Umschreiben in klares, einfaches Deutsch.
-- Business-/Fachbegriffe, die zur Zielgruppe gehoeren (z. B. Arbeitszeitgesetz,
-  LOGA-Bezug bei Pausenregeln), sind KEIN Jargon-Problem — die App ist fuer
-  deutsche Buero-Anwender mit genau diesem Kontext gebaut. Nur echtes
-  Technik-/Architektur-Vokabular raus, das ein Endanwender nicht braucht.
+Die Regeln, die daraus dauerhaft gelten, stehen in [`../AGENTS.md`](../AGENTS.md).
