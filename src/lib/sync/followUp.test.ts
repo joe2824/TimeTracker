@@ -25,14 +25,14 @@ const on = <T,>(g: FakeDevice, fn: (engine: SyncEngine) => Promise<T>): Promise<
 	onDevice({ server, key }, g, fn);
 
 /** Was AccountState bei jedem Start tut: holen, Ungestempeltes vormerken, hochladen. */
-async function link(g: FakeDevice, opts: { nurEigenes?: boolean } = {}): Promise<void> {
+async function link(g: FakeDevice, opts: { ownDataOnly?: boolean } = {}): Promise<void> {
 	await on(g, async (engine) => {
 		await engine.sync();
 		// Was AccountState prueft, bevor es nachliest: gehoert der ungestempelte
 		// Bestand ueberhaupt zu DIESEM Konto?
 		const info = await store.loadDevice();
 		const own =
-			!opts.nurEigenes ||
+			!opts.ownDataOnly ||
 			!info?.dataOwner ||
 			!info.accountFingerprint ||
 			info.dataOwner === info.accountFingerprint;
@@ -143,7 +143,7 @@ describe("Nachlese: was der Schreib-Haken nie gesehen hat", () => {
 		// Jetzt haengt dasselbe Geraet an einem ANDEREN Konto - anderer Schluessel.
 		const oldServer = server;
 		const foreign = await switchAccount(desktop);
-		await link(desktop, { nurEigenes: true });
+		await link(desktop, { ownDataOnly: true });
 
 		expect(foreign.kinds()).toEqual({});
 		expect(oldServer.kinds()).toEqual({ entry: 1, activity: 1 });
@@ -172,7 +172,7 @@ describe("Nachlese: was der Schreib-Haken nie gesehen hat", () => {
 		});
 
 		const foreign = await switchAccount(desktop);
-		await link(desktop, { nurEigenes: true });
+		await link(desktop, { ownDataOnly: true });
 
 		expect(foreign.kinds()).toEqual({});
 	});

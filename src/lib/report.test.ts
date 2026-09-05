@@ -190,8 +190,8 @@ describe("buildReport – Zeitausgleich", () => {
 		// Eine eigene Zeile bekommt er nicht - der Bericht geht an den Chef, und dort
 		// ist es schlicht eine Abwesenheit.
 		const report = buildReport("2026-06", activities, [timeOff("t", 1, 5)], 0.5, HPD);
-		const abwesenheiten = report.rows.find((r) => r.name === "Abwesenheiten");
-		expect(abwesenheiten?.hours).toBe(7.5);
+		const absences = report.rows.find((r) => r.name === "Abwesenheiten");
+		expect(absences?.hours).toBe(7.5);
 		expect(reportToHtml(report)).not.toContain("Zeitausgleich");
 	});
 

@@ -674,9 +674,9 @@ describe("Eingelesene Reports", () => {
 
 		const laptop = new FakeDevice("laptop");
 		await on(laptop, (engine) => engine.sync());
-		const drueben = await on(laptop, () => store.loadTimeReport(MONTH));
-		expect(drueben?.days).toHaveLength(1);
-		expect(drueben?.days[0].hours).toBe(7.5);
+		const onLaptop = await on(laptop, () => store.loadTimeReport(MONTH));
+		expect(onLaptop?.days).toHaveLength(1);
+		expect(onLaptop?.days[0].hours).toBe(7.5);
 	});
 
 	it("legt beim Server nur Chiffrat ab", async () => {
@@ -702,8 +702,8 @@ describe("Eingelesene Reports", () => {
 		// Haengt daran, dass loadTimeReport die Fassung mitliest.
 		const desktop = new FakeDevice("rechner");
 		await changeAndSync(desktop, () => store.saveTimeReport(report()));
-		const zweiter = await on(desktop, (engine) => engine.sync());
-		expect(zweiter!.pushed).toBe(0);
+		const secondRun = await on(desktop, (engine) => engine.sync());
+		expect(secondRun!.pushed).toBe(0);
 		expect(await on(desktop, () => store.loadTimeReport(MONTH))).toMatchObject({ rev: 1 });
 	});
 
@@ -715,8 +715,8 @@ describe("Eingelesene Reports", () => {
 		await afterwards();
 		await changeAndSync(desktop, () => store.saveTimeReport(report(MONTH, 9)));
 		await on(laptop, (engine) => engine.sync());
-		const drueben = await on(laptop, () => store.loadTimeReport(MONTH));
-		expect(drueben?.days[0].hours).toBe(9);
+		const onLaptop = await on(laptop, () => store.loadTimeReport(MONTH));
+		expect(onLaptop?.days[0].hours).toBe(9);
 	});
 
 	it("nimmt den Report drueben weg, wenn er hier geloescht wird", async () => {

@@ -673,7 +673,7 @@ export class SyncEngine {
 				touched.add(month);
 			}
 		}
-		logInfo("Mehrere laufende Timer zusammengeführt", { geschlossen: toClose.length });
+		logInfo("Mehrere laufende Timer zusammengeführt", { closed: toClose.length });
 	}
 
 	async #applyActivities(records: ServerRecord[], open: Set<string>): Promise<number> {

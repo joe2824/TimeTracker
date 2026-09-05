@@ -303,8 +303,8 @@ describe("Kodierung", () => {
 
 	it("Schluessel ueberstehen den Umweg ueber Rohbytes", async () => {
 		const key = await createVaultKey();
-		const wieder = await importVaultKey(await exportVaultKey(key));
-		expect(await sameKey(wieder, key)).toBe(true);
+		const restored = await importVaultKey(await exportVaultKey(key));
+		expect(await sameKey(restored, key)).toBe(true);
 	});
 });
 
@@ -436,8 +436,8 @@ describe("checkedPairingKey", () => {
 		const checked = await checkedPairingKey(code, toBase64(pub));
 		const packet = await wrapForDevice(vault, checked);
 
-		const wieder = await unwrapForDevice(packet, pair.privateKey);
-		expect(await sameKey(wieder, vault)).toBe(true);
+		const restored = await unwrapForDevice(packet, pair.privateKey);
+		expect(await sameKey(restored, vault)).toBe(true);
 	});
 });
 

@@ -241,7 +241,7 @@ fn b64_decode(text: &str) -> Option<Vec<u8>> {
 /// damit die Wahrheit, statt einen Schutz zu behaupten, den es nicht gibt.
 #[tauri::command]
 pub fn protect_secret(mut plain: String) -> Protected {
-    let ergebnis = match imp::protect(plain.as_bytes()) {
+    let sealed_value = match imp::protect(plain.as_bytes()) {
         Some(mut sealed) => {
             let data = b64_encode(&sealed);
             sealed.zeroize();
@@ -258,7 +258,7 @@ pub fn protect_secret(mut plain: String) -> Protected {
     // Die Kopie, die ueber die Bruecke kam, wird hier nicht mehr gebraucht.
     // Ohne das bliebe sie bis zur naechsten Wiederverwendung im Speicher stehen.
     plain.zeroize();
-    ergebnis
+    sealed_value
 }
 
 /// Einen geschuetzten Wert wieder oeffnen.
@@ -269,7 +269,7 @@ pub fn protect_secret(mut plain: String) -> Protected {
 pub fn unprotect_secret(data: String, protected: bool) -> Result<String, String> {
     let mut raw = b64_decode(&data).ok_or_else(|| "Ungültige Ablage".to_string())?;
     let plain = if protected {
-        let geoeffnet = imp::unprotect(&raw).ok_or_else(|| {
+        let opened = imp::unprotect(&raw).ok_or_else(|| {
             // Der haeufigste Grund: die Datei stammt von einem anderen
             // Benutzerkonto oder einem anderen Rechner. Genau so soll es sein.
             "Wert lässt sich auf diesem Benutzerkonto nicht entschlüsseln".to_string()
@@ -277,7 +277,7 @@ pub fn unprotect_secret(data: String, protected: bool) -> Result<String, String>
         // Die Kennung bzw. der Blob wird nicht mehr gebraucht - auch dann nicht,
         // wenn das Oeffnen scheiterte.
         raw.zeroize();
-        geoeffnet?
+        opened?
     } else {
         raw
     };
@@ -289,21 +289,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn base64_hin_und_zurueck() {
+    fn base64_round_trip() {
         for probe in ["", "a", "ab", "abc", "abcd", "Ümläute und Zeichen +/="] {
-            let kodiert = b64_encode(probe.as_bytes());
-            assert_eq!(b64_decode(&kodiert).unwrap(), probe.as_bytes());
+            let encoded = b64_encode(probe.as_bytes());
+            assert_eq!(b64_decode(&encoded).unwrap(), probe.as_bytes());
         }
     }
 
     #[test]
-    fn base64_deckt_alle_bytewerte_ab() {
-        let alle: Vec<u8> = (0..=255u8).collect();
-        assert_eq!(b64_decode(&b64_encode(&alle)).unwrap(), alle);
+    fn base64_covers_every_byte_value() {
+        let every: Vec<u8> = (0..=255u8).collect();
+        assert_eq!(b64_decode(&b64_encode(&every)).unwrap(), every);
     }
 
     #[test]
-    fn geschuetzter_wert_kommt_wieder_heraus() {
+    fn protected_value_comes_back() {
         let p = protect_secret("geheimer-schlüssel".into());
         assert!(p.protected, "Schutz sollte auf Desktop greifen");
         // Der Klartext darf in der Ablage nicht mehr zu sehen sein.
@@ -315,7 +315,7 @@ mod tests {
     }
 
     #[test]
-    fn kaputte_ablage_wird_abgewiesen() {
+    fn corrupt_blob_is_rejected() {
         assert!(unprotect_secret("!!! kein base64 !!!".into(), false).is_err());
     }
 }

@@ -457,7 +457,7 @@ class AccountState {
 			(cur) => cur && { ...cur, seq: 0, priority, resyncGeneration: RESYNC_GENERATION }
 		);
 		this.#rewound = true;
-		logInfo("Hole den Serverstand einmalig von vorne", { grund: "neue Datensatzart" });
+		logInfo("Hole den Serverstand einmalig von vorne", { reason: "neue Datensatzart" });
 		return rewound;
 	}
 
@@ -757,7 +757,7 @@ class AccountState {
 		// Token aus, und EventSource kann keine Kopfzeilen setzen. Stattdessen eine
 		// Anfrage, die der Server offen haelt, bis sich etwas tut.
 		if (isTauri()) {
-			void this.#warteschleife();
+			void this.#longPoll();
 			return;
 		}
 
@@ -798,7 +798,7 @@ class AccountState {
 	 * schnell wie der Browser mit seinem Stream, ohne dass ein Token in eine
 	 * Adresse wandern muesste.
 	 */
-	async #warteschleife(): Promise<void> {
+	async #longPoll(): Promise<void> {
 		const abort = new AbortController();
 		this.#wait = abort;
 		// Der langsame Takt bleibt als Netz darunter: faellt die Schleife aus,
@@ -1454,7 +1454,7 @@ class AccountState {
 			// Zuerst der Server, solange Zugang und Token noch stehen. Danach ist
 			// beides weg und der Vorgang liesse sich nicht mehr nachholen.
 			if (opts.deleteRemote) {
-				summary = await this.#api.deleteAccount(await this.#bestaetigung());
+				summary = await this.#api.deleteAccount(await this.#confirmWithPasskey());
 			} else {
 				await this.#api.revokeDevice();
 			}
@@ -1479,7 +1479,7 @@ class AccountState {
 	}
 
 	/** Den Menschen bestaetigen lassen - mit dem Passkey, nicht mit einem Haken. */
-	async #bestaetigung(): Promise<{ challengeId: string; response: unknown } | undefined> {
+	async #confirmWithPasskey(): Promise<{ challengeId: string; response: unknown } | undefined> {
 		if (isTauri()) return undefined;
 		const { startAuthentication } = await import("@simplewebauthn/browser");
 		const { challengeId, options } = await this.#api!.confirmStart();

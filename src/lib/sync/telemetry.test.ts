@@ -63,10 +63,10 @@ describe("Api.telemetry", () => {
 	it("meldet einen Netzfehler als Status 0", async () => {
 		fetchMock.mockRejectedValue(new Error("kein Netz"));
 
-		const fehler = await api("t")
+		const failure = await api("t")
 			.telemetry(ping)
 			.catch((e) => e);
-		expect(fehler).toBeInstanceOf(ApiError);
-		expect(fehler.status).toBe(0);
+		expect(failure).toBeInstanceOf(ApiError);
+		expect(failure.status).toBe(0);
 	});
 });

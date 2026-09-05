@@ -113,13 +113,13 @@ describe("recordTelemetryPing", () => {
 		});
 
 		const all = db.select().from(telemetryPings).all();
-		const muell = all.find((r) => r.deviceId === "dev-muell");
-		expect(muell?.version).toBe("unbekannt");
-		expect(muell?.platform).toBe("unbekannt");
+		const junk = all.find((r) => r.deviceId === "dev-muell");
+		expect(junk?.version).toBe("unbekannt");
+		expect(junk?.platform).toBe("unbekannt");
 
-		const echt = all.find((r) => r.deviceId === "dev-echt");
-		expect(echt?.version).toBe("0.9.3-beta.2");
-		expect(echt?.platform).toBe("web-linux");
+		const real = all.find((r) => r.deviceId === "dev-echt");
+		expect(real?.version).toBe("0.9.3-beta.2");
+		expect(real?.platform).toBe("web-linux");
 	});
 });
 
@@ -202,16 +202,16 @@ describe("getTelemetryStats", () => {
 		}
 
 		// Verlauf ueber nur 2 Tage - WAU und MAU bleiben davon unberuehrt.
-		const kurz = getTelemetryStats(db, 2, fixedNow);
-		expect(kurz.history.length).toBe(1);
-		expect(kurz.summary.totalPings).toBe(1);
-		expect(kurz.summary.wau).toBe(2); // heute + vor 3 Tagen
-		expect(kurz.summary.mau).toBe(3); // dazu vor 10 Tagen, nicht der vor 40
+		const short = getTelemetryStats(db, 2, fixedNow);
+		expect(short.history.length).toBe(1);
+		expect(short.summary.totalPings).toBe(1);
+		expect(short.summary.wau).toBe(2); // heute + vor 3 Tagen
+		expect(short.summary.mau).toBe(3); // dazu vor 10 Tagen, nicht der vor 40
 
-		const lang = getTelemetryStats(db, 90, fixedNow);
-		expect(lang.summary.wau).toBe(2);
-		expect(lang.summary.mau).toBe(3);
-		expect(lang.summary.totalPings).toBe(4);
+		const long = getTelemetryStats(db, 90, fixedNow);
+		expect(long.summary.wau).toBe(2);
+		expect(long.summary.mau).toBe(3);
+		expect(long.summary.totalPings).toBe(4);
 	});
 
 	// heute/gestern lasen frueher aus dem Verlauf. Bei days=1 reicht der nur bis

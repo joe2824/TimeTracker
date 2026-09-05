@@ -389,17 +389,17 @@ describe("Tagesmeldung", () => {
 	// Server.
 	it("wiederholt einen abgewiesenen Ping erst nach einer Wartezeit", async () => {
 		accountMock.sendUsagePing.mockResolvedValue("retry");
-		const zwoelf = wallStringToTs("2026-08-24", "12:00");
+		const noon = wallStringToTs("2026-08-24", "12:00");
 		await startPingAt("12:00");
 		expect(accountMock.sendUsagePing).toHaveBeenCalledTimes(1);
 
 		// Eine Minute spaeter: noch gesperrt.
-		vi.setSystemTime(zwoelf + 60_000);
+		vi.setSystemTime(noon + 60_000);
 		await tickPing(3);
 		expect(accountMock.sendUsagePing).toHaveBeenCalledTimes(1);
 
 		// Nach fuenf Minuten wieder erlaubt - diesmal nimmt der Server ihn an.
-		await retryAccepted(zwoelf);
+		await retryAccepted(noon);
 	});
 
 	/** Nach der Wartezeit noch einmal - und diesmal nimmt der Server ihn an. */
@@ -423,10 +423,10 @@ describe("Tagesmeldung", () => {
 	// 404. Ohne diesen Riegel klopfte jedes Geraet alle fuenf Minuten an - hinter
 	// einer gemeinsamen Adresse bis die Bremse anschlaegt.
 	it("fragt nicht weiter, wenn der Server die Meldung ablehnt", async () => {
-		const zwoelf = await declinedAtNoon();
+		const noon = await declinedAtNoon();
 
 		// Auch nach der Wartezeit und in der naechsten Stunde kein zweiter Versuch.
-		vi.setSystemTime(zwoelf + 10 * 60_000);
+		vi.setSystemTime(noon + 10 * 60_000);
 		await tickPing(3);
 		vi.setSystemTime(wallStringToTs("2026-08-24", "15:00"));
 		await tickPing(3);
@@ -438,22 +438,22 @@ describe("Tagesmeldung", () => {
 	// Die Absage gilt dem Server, nicht dem Programmlauf: wer sich danach mit
 	// einem anderen verknuepft, soll dort wieder zaehlen duerfen.
 	it("fragt nach einem Serverwechsel wieder", async () => {
-		const zwoelf = await declinedAtNoon();
+		const noon = await declinedAtNoon();
 
 		accountMock.serverUrl = "https://anderer.example.de";
-		await retryAccepted(zwoelf);
+		await retryAccepted(noon);
 	});
 
 	// Nicht jeder Fehlschlag heilt: ein falscher Schluessel bleibt falsch. Ohne
 	// Deckel klopfte so ein Geraet alle fuenf Minuten weiter.
 	it("hoert nach fuenf vergeblichen Versuchen in dieser Stunde auf", async () => {
 		accountMock.sendUsagePing.mockResolvedValue("retry");
-		const zwoelf = wallStringToTs("2026-08-24", "12:00");
+		const noon = wallStringToTs("2026-08-24", "12:00");
 		await startPingAt("12:00");
 
 		// Sechs weitere Anlaeufe im Abstand der Wartezeit - nur vier duerfen durch.
 		for (let i = 1; i < 7; i++) {
-			vi.setSystemTime(zwoelf + i * 6 * 60_000);
+			vi.setSystemTime(noon + i * 6 * 60_000);
 			await tickPing();
 		}
 
@@ -465,10 +465,10 @@ describe("Tagesmeldung", () => {
 	// 9 Uhr den ganzen Tag ab, obwohl das Geraet um 12 laengst wieder da ist.
 	it("bekommt zur naechsten Stunde ein neues Budget", async () => {
 		accountMock.sendUsagePing.mockResolvedValue("retry");
-		const neun = wallStringToTs("2026-08-24", "09:00");
+		const nine = wallStringToTs("2026-08-24", "09:00");
 		await startPingAt("09:00");
 		for (let i = 1; i < 7; i++) {
-			vi.setSystemTime(neun + i * 6 * 60_000);
+			vi.setSystemTime(nine + i * 6 * 60_000);
 			await tickPing();
 		}
 		expect(accountMock.sendUsagePing).toHaveBeenCalledTimes(5);
@@ -486,17 +486,17 @@ describe("Tagesmeldung", () => {
 	// Budget verbrauchen duerfte. Wer sich um 10 Uhr verknuepft, zaehlt danach.
 	it("verbraucht ohne verknuepftes Konto kein Budget", async () => {
 		accountMock.serverUrl = "";
-		const neun = wallStringToTs("2026-08-24", "09:00");
+		const nine = wallStringToTs("2026-08-24", "09:00");
 		await startPingAt("09:00");
 		for (let i = 1; i < 7; i++) {
-			vi.setSystemTime(neun + i * 6 * 60_000);
+			vi.setSystemTime(nine + i * 6 * 60_000);
 			await tickPing();
 		}
 		expect(accountMock.sendUsagePing).not.toHaveBeenCalled();
 
 		// Jetzt verknuepft, dieselbe Stunde.
 		accountMock.serverUrl = "https://tracker.example.de";
-		vi.setSystemTime(neun + 8 * 6 * 60_000);
+		vi.setSystemTime(nine + 8 * 6 * 60_000);
 		await tickPing();
 
 		expect(accountMock.sendUsagePing).toHaveBeenCalledTimes(1);

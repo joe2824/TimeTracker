@@ -110,7 +110,7 @@ describe("Backup & Restore", () => {
 	});
 
 	it("meldet eine Sicherung ohne Vollständigkeits-Vermerk als ungeprüft", () => {
-		const alt: TimeTrackerBackup = {
+		const legacy: TimeTrackerBackup = {
 			version: 1,
 			format: "timetracker-backup",
 			createdAt: "2026-08-30T12:00:00.000Z",
@@ -119,8 +119,8 @@ describe("Backup & Restore", () => {
 			entries: { "2026-07": sampleEntries202607 }
 		};
 
-		expect(inspectBackup(JSON.stringify(alt)).stats?.complete).toBe(false);
-		expect(inspectBackup(JSON.stringify({ ...alt, complete: true })).stats?.complete).toBe(true);
+		expect(inspectBackup(JSON.stringify(legacy)).stats?.complete).toBe(false);
+		expect(inspectBackup(JSON.stringify({ ...legacy, complete: true })).stats?.complete).toBe(true);
 	});
 
 	it("prüft und analysiert eine Sicherungsdatei korrekt", () => {
