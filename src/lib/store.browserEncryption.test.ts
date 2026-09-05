@@ -144,10 +144,47 @@ describe("lokale Verschlüsselung im Browser", () => {
 		expect(names.some((n) => n.includes("entries-2026-08.json.beschaedigt-"))).toBe(true);
 	});
 
-	it("falscher Schlüssel öffnet nichts", async () => {
+	it("falscher Schlüssel öffnet nichts - und die Datei bleibt erhalten", async () => {
+		// Der gefaehrliche Fall: Aktivitaeten, Einstellungen und Report gaeben ohne
+		// Quarantaene den Ersatzwert zurueck, und der naechste Speichervorgang
+		// schriebe diese leere Sicht ueber die intakten Dateien - beim Abgleich bis
+		// auf die anderen Geraete.
 		setLocalEncryptionKey(await freshKey());
 		await saveActivities([{ id: "a1", name: "x", color: "#fff", sortOrder: 0, archived: false, isAbsence: false }]);
+		await saveSettings({ bossEmail: "chef@geheim.de" } as never);
+		await saveTimeReport({
+			month: "2026-08",
+			importedAt: 1,
+			updatedAt: 1,
+			rev: 1,
+			deviceId: "d1",
+			days: []
+		});
+
 		setLocalEncryptionKey(await freshKey());
 		expect(await loadActivities()).toEqual([]);
+		expect((await loadSettings()).bossEmail).toBe("");
+		expect(await loadTimeReport("2026-08")).toBeNull();
+
+		const names = (await storage.readDir("data")).map((e) => e.name);
+		for (const file of ["activities.json", "settings.json", "timereport-2026-08.json"]) {
+			expect(names).not.toContain(file);
+			expect(names.some((n) => n.startsWith(`${file}.beschaedigt-`))).toBe(true);
+		}
+	});
+
+	it("ohne Schlüssel bleibt die verschlüsselte Datei unangetastet liegen", async () => {
+		// Kein Schluessel heisst nicht beschaedigt - hier darf NICHTS umbenannt
+		// werden, sonst raeumte ein Start ohne Schluessel den ganzen Bestand weg.
+		const key = await freshKey();
+		setLocalEncryptionKey(key);
+		await saveActivities([{ id: "a1", name: "Bleibt", color: "#fff", sortOrder: 0, archived: false, isAbsence: false }]);
+
+		setLocalEncryptionKey(null);
+		expect(await loadActivities()).toEqual([]);
+		expect((await storage.readDir("data")).map((e) => e.name)).toContain("activities.json");
+
+		setLocalEncryptionKey(key);
+		expect((await loadActivities())[0].name).toBe("Bleibt");
 	});
 });

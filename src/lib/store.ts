@@ -158,20 +158,56 @@ interface JsonOpts {
 	encrypted?: boolean;
 }
 
+/**
+ * Eine Datei, die sich mit vorliegendem Schluessel nicht oeffnen laesst, aus dem
+ * Weg legen statt sie ueberschreiben zu lassen.
+ *
+ * Umbenennen, nicht loeschen - der neue Name passt auf keines der Muster
+ * (MONTH_FILE_RE, REPORT_FILE_RE), die Datei wird also weder gelistet noch
+ * aufgeraeumt und bleibt fuer eine Rettung von Hand liegen.
+ */
+async function quarantine(file: string, e: unknown): Promise<void> {
+	const path = `${DIR}/${file}`;
+	const target = `${path}.beschaedigt-${Date.now()}`;
+	logError(`${file} ist beschädigt, abgelegt als ${target}`, e);
+	try {
+		await storage.rename(path, target);
+	} catch (renameErr) {
+		logError("Beschädigte Datei konnte nicht abgelegt werden", renameErr);
+	}
+}
+
+/**
+ * Eine Datei lesen. Drei Ausgaenge, und der Unterschied zaehlt:
+ *
+ * - kein Schluessel: die Datei ist vermutlich in Ordnung, nur (noch) nicht zu
+ *   oeffnen. Sie bleibt unangetastet liegen und wird beim naechsten Lesen mit
+ *   vorliegendem Schluessel wieder versucht.
+ * - beschaedigt (oder mit vorliegendem Schluessel nicht zu entschluesseln): in
+ *   Quarantaene. Ohne das gaebe der Ersatzwert eine leere Sicht vor, und der
+ *   naechste Speichervorgang schriebe sie ueber die intakte Datei - beim
+ *   Abgleich bis auf die anderen Geraete.
+ * - sonst: der Inhalt.
+ */
 async function readJson<T>(file: string, fallback: T, opts: JsonOpts = {}): Promise<T> {
 	const path = `${DIR}/${file}`;
 	if (!(await storage.exists(path))) return fallback;
+	let txt: string;
 	try {
-		const txt = await storage.readTextFile(path);
-		if (!txt.trim()) return fallback;
+		txt = await storage.readTextFile(path);
+	} catch (e) {
+		logWarn(`${file} konnte nicht gelesen werden`, e);
+		return fallback;
+	}
+	if (!txt.trim()) return fallback;
+	try {
 		return opts.encrypted ? await decryptFromStorage<T>(file, txt) : (JSON.parse(txt) as T);
 	} catch (e) {
-		// Kein Schluessel ist kein "Datei fehlt" - nur `preloadLocalEncryptionKey`
-		// deckt den Normalfall ab (Start, Kontowechsel); ein Auftreten hier ist
-		// die seltene Ausnahme (Schluessel mitten in der Sitzung verloren) und
-		// bleibt sichtbar, statt in derselben Stille wie ein kaputtes JSON zu
-		// verschwinden.
-		if (e instanceof LocalKeyUnavailableError) logWarn(`${file} konnte nicht gelesen werden`, e);
+		if (e instanceof LocalKeyUnavailableError) {
+			logWarn(`${file} konnte nicht gelesen werden`, e);
+			return fallback;
+		}
+		await quarantine(file, e);
 		return fallback;
 	}
 }
@@ -308,36 +344,15 @@ export async function saveSettings(settings: Settings): Promise<void> {
 }
 
 // ---- Eintraege (pro Monat) ----
-/** Eintraege eines Monats lesen. */
+/**
+ * Eintraege eines Monats lesen.
+ *
+ * Eine beschaedigte Datei darf NICHT als "leer" durchgehen: pruneEmptyMonthFiles
+ * und der naechste Speichervorgang haetten sie sonst geloescht. Darum kuemmert
+ * sich `readJson` (Quarantaene).
+ */
 export async function loadEntries(month: string): Promise<Entry[]> {
-	const file = entriesFile(month);
-	const path = `${DIR}/${file}`;
-	if (!(await storage.exists(path))) return [];
-	const txt = await storage.readTextFile(path);
-	if (!txt.trim()) return [];
-	try {
-		return await decryptFromStorage<Entry[]>(file, txt);
-	} catch (e) {
-		// Kein Schluessel heisst nicht beschaedigt - die Datei bleibt liegen und
-		// wird beim naechsten Lesen mit vorliegendem Schluessel wieder versucht.
-		// In Quarantaene geht nur, was mit vorliegendem Schluessel nicht aufgeht.
-		if (e instanceof LocalKeyUnavailableError) {
-			logWarn(`${file} konnte nicht gelesen werden`, e);
-			return [];
-		}
-		// Eine beschaedigte Datei darf NICHT als "leer" durchgehen: pruneEmptyMonthFiles
-		// und der naechste Speichervorgang haetten sie sonst geloescht.
-		// Umbenennen statt loeschen – der Name passt dann nicht mehr auf
-		// MONTH_FILE_RE, wird also weder gelistet noch aufgeraeumt.
-		const quarantine = `${path}.beschaedigt-${Date.now()}`;
-		logError(`${file} ist beschädigt, abgelegt als ${quarantine}`, e);
-		try {
-			await storage.rename(path, quarantine);
-		} catch (renameErr) {
-			logError("Beschädigte Datei konnte nicht abgelegt werden", renameErr);
-		}
-		return [];
-	}
+	return readJson<Entry[]>(entriesFile(month), [], { encrypted: true });
 }
 export async function saveEntries(month: string, entries: Entry[]): Promise<void> {
 	// Ein leerer Monat hinterlaesst keine Datei: sonst bliebe eine "[]"-Datei liegen
@@ -348,22 +363,17 @@ export async function saveEntries(month: string, entries: Entry[]): Promise<void
 			const path = `${DIR}/${file}`;
 			// Auch das Leeren geht durch den Haken: sonst verschwaende ein
 			// geleerter Monat, ohne dass der Abgleich die Loeschungen je erfaehrt.
-			if (writeHook) await writeHook.entries(month, await readEntriesRaw(month), []);
+			if (writeHook) await writeHook.entries(month, await loadEntries(month), []);
 			if (await storage.exists(path)) await storage.remove(path);
 		});
 	}
 	if (!writeHook) return writeJson(file, entries, { encrypted: true });
 	return queued(file, async () => {
-		const before = await readEntriesRaw(month);
+		const before = await loadEntries(month);
 		await writeJsonNow(file, await writeHook!.entries(month, before, entries), {
 			encrypted: true
 		});
 	});
-}
-
-/** Der Stand einer Monatsdatei ohne die Quarantaene-Behandlung von `loadEntries`. */
-async function readEntriesRaw(month: string): Promise<Entry[]> {
-	return readJson<Entry[]>(entriesFile(month), [], { encrypted: true });
 }
 
 /** Alle Monats-Keys mit Eintraegen, neueste zuerst. */
