@@ -650,6 +650,30 @@ export async function saveDevice(info: DeviceInfo): Promise<void> {
 	return writeJson("device.json", info);
 }
 
+/**
+ * `device.json` lesen, aendern und schreiben, ohne dass dazwischen jemand
+ * anders schreibt.
+ *
+ * Mehrere Stellen schreiben je ihr eigenes Feld fort: der Abgleich seinen Stand,
+ * die Anmeldung den Passkey, der Nachhol-Durchlauf seinen Merker. Zwei
+ * ueberlappende Lese-Aendern-Schreib-Folgen verlieren dabei den Stand der
+ * jeweils anderen - geht der Abgleichstand verloren, holt das Geraet die
+ * Datensaetze ein zweites Mal, und die Sperren fuer Sicherung und Monatsauswahl
+ * gehen wieder auf.
+ *
+ * `patch` bekommt den frisch gelesenen Stand und gibt den neuen zurueck; `null`
+ * heisst "nichts schreiben". Innerhalb von `patch` NICHT `saveDevice` oder
+ * `updateDevice` aufrufen - beide warten dann auf diesen Aufruf.
+ */
+export function updateDevice(
+	patch: (info: DeviceInfo | null) => DeviceInfo | null | Promise<DeviceInfo | null>
+): Promise<void> {
+	return queued("device.json", async () => {
+		const next = await patch(await loadDevice());
+		if (next) await writeJsonNow("device.json", next);
+	});
+}
+
 /** Ausstehende Aenderungen. Der Inhalt steht in sync/outbox.ts. */
 export async function loadOutbox<T>(): Promise<T[]> {
 	const stored = await readJson<T[]>("outbox.json", []);

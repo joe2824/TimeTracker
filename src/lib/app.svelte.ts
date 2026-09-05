@@ -40,11 +40,11 @@ import {
 	preloadLocalEncryptionKey,
 	pruneEmptyMonthFiles,
 	saveActivities,
-	saveDevice,
 	saveEntries,
 	saveSettings,
 	saveTimeReport,
-	settingsFileExists
+	settingsFileExists,
+	updateDevice
 } from "./store";
 import { usingBrowserStorage } from "./platform/fs";
 
@@ -283,8 +283,9 @@ class AppState {
 				if (report) await saveTimeReport(report);
 			})
 		);
-		const info = await loadDevice();
-		if (info) await saveDevice({ ...info, localFilesEncrypted: true });
+		// Lesen und Schreiben in einem Zug: zwischen den awaits oben schreibt der
+		// Abgleich seinen Stand in dieselbe Datei.
+		await updateDevice((info) => info && { ...info, localFilesEncrypted: true });
 	}
 
 	#startTick(): void {

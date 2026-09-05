@@ -8,12 +8,12 @@ import {
 	loadDevice,
 	loadEntries,
 	loadTimeReport,
-	saveDevice,
 	saveEntries,
 	saveTimeReport,
 	getLocalEncryptionKey,
 	readProtectedVaultKey,
 	setLocalEncryptionKey,
+	updateDevice,
 	type DeviceInfo
 } from "../store";
 import { loadActivities, saveActivities, loadSettings, saveSettings, listEntryMonths } from "../store";
@@ -361,13 +361,14 @@ class AccountState {
 			deviceId: this.#device,
 			state,
 			saveState: async (s) => {
-				const info = await loadDevice();
-				// Erst hier pruefen, nicht vor dem Lesen: zwischen beidem kann das
-				// Abmelden liegen. Eine Runde von vorher schriebe sonst den ganzen
-				// gelesenen Stand zurueck - Tresorschluessel eingeschlossen - oder
-				// ihren Stand in die device.json des naechsten Kontos.
-				if (!info || this.#engine !== engine) return;
-				await saveDevice({ ...info, seq: s.seq, priority: s.priority });
+				await updateDevice((info) => {
+					// Erst hier pruefen, nicht vor dem Lesen: zwischen beidem kann das
+					// Abmelden liegen. Eine Runde von vorher schriebe sonst den ganzen
+					// gelesenen Stand zurueck - Tresorschluessel eingeschlossen - oder
+					// ihren Stand in die device.json des naechsten Kontos.
+					if (!info || this.#engine !== engine) return null;
+					return { ...info, seq: s.seq, priority: s.priority };
+				});
 			},
 			store: {
 				entriesOfMonth: loadEntries,
@@ -445,10 +446,12 @@ class AccountState {
 		// hier NICHT gesetzt werden: sonst gilt das Konto als schon benutzt, und
 		// der lokale Bestand faende nie den Weg hinauf.
 		if (state.seq === 0) {
-			await saveDevice({ ...info, priority, resyncGeneration: RESYNC_GENERATION });
+			await updateDevice((cur) => cur && { ...cur, priority, resyncGeneration: RESYNC_GENERATION });
 			return rewound;
 		}
-		await saveDevice({ ...info, seq: 0, priority, resyncGeneration: RESYNC_GENERATION });
+		await updateDevice(
+			(cur) => cur && { ...cur, seq: 0, priority, resyncGeneration: RESYNC_GENERATION }
+		);
 		this.#rewound = true;
 		logInfo("Hole den Serverstand einmalig von vorne", { grund: "neue Datensatzart" });
 		return rewound;
@@ -1051,8 +1054,6 @@ class AccountState {
 			}
 		}
 
-		const info = (await loadDevice()) ?? { id: this.#device };
-
 		// Der erste Abgleich zieht vor, was der Mensch sofort sieht. Ohne das kaeme
 		// der laufende Monat zuletzt: der Server liefert nach Stand aufsteigend,
 		// also die aeltesten Eintraege zuerst.
@@ -1064,50 +1065,60 @@ class AccountState {
 		// Wessen Konto ist das? Zwei Konten haben verschiedene Tresorschluessel,
 		// also verschiedene Nachweise.
 		const fingerprint = await vaultProof(key);
-		const switched = Boolean(info.accountFingerprint && info.accountFingerprint !== fingerprint);
 
-		// Im Browser gibt es keinen Bestand ohne Konto - man kommt ohne Anmeldung
-		// gar nicht hinein. Was hier liegt, ist die Kopie IRGENDEINES Kontos. Laesst
-		// sich nicht beweisen, dass es dieses ist, kommt es weg; der Server hat es.
-		// Auf dem Rechner sind die Zeiten die Sache des Menschen: sie bleiben, gehen
-		// aber nicht hoch (siehe dataOwner).
-		const foreignCopy = !isTauri() && info.accountFingerprint !== fingerprint;
-		if (foreignCopy) {
-			await clearAccountData();
-			app.clearLocalData();
-			logInfo("Kontowechsel / Neuverknüpfung: lokale Kopie entfernt");
-		}
+		let keptPasskeyId: string | undefined;
+		// Lesen, entscheiden und schreiben in einem Zug: parallel dazu schreibt der
+		// Abgleich seinen Stand in dieselbe Datei, und ein verlorener Stand hier
+		// hiesse Kontodaten von zwei Konten nebeneinander.
+		await updateDevice(async (stored) => {
+			const info = stored ?? { id: this.#device };
+			const switched = Boolean(
+				info.accountFingerprint && info.accountFingerprint !== fingerprint
+			);
 
-		// Die Merkliste gehoert IMMER dem vorigen Konto - auf beiden Plattformen.
-		// Ohne diese Zeile laedt sie der naechste Abgleich ins neue Konto: `#pushAll`
-		// liest die Outbox, nicht den Stempel.
-		if (switched || foreignCopy) await clearOutbox();
+			// Im Browser gibt es keinen Bestand ohne Konto - man kommt ohne Anmeldung
+			// gar nicht hinein. Was hier liegt, ist die Kopie IRGENDEINES Kontos. Laesst
+			// sich nicht beweisen, dass es dieses ist, kommt es weg; der Server hat es.
+			// Auf dem Rechner sind die Zeiten die Sache des Menschen: sie bleiben, gehen
+			// aber nicht hoch (siehe dataOwner).
+			const foreignCopy = !isTauri() && info.accountFingerprint !== fingerprint;
+			if (foreignCopy) {
+				await clearAccountData();
+				app.clearLocalData();
+				logInfo("Kontowechsel / Neuverknüpfung: lokale Kopie entfernt");
+			}
 
-		// Wem der Bestand gehoert: nach einem Wechsel weiterhin dem alten Konto
-		// (dann bleibt er hier liegen), sonst diesem. Wer noch nie ein Konto hatte,
-		// dessen Bestand ist der eigene und gehoert hoch.
-		const dataOwner = switched && isTauri() ? info.dataOwner : fingerprint;
-		// Beim Wechsel wird NICHTS geraetegebundenes vom vorigen Konto geerbt -
-		// weder die Kontokennung (an der `unlockWithStoredKey` haengt: eine
-		// stehengebliebene Kennung gaebe den neuen Schluessel an das alte Konto)
-		// noch der Passkey (der gehoert dem vorigen Konto).
-		const keepsPreviousAccount = !switched && !foreignCopy;
-		const keptPasskeyId = keepsPreviousAccount ? info.passkeyId : undefined;
+			// Die Merkliste gehoert IMMER dem vorigen Konto - auf beiden Plattformen.
+			// Ohne diese Zeile laedt sie der naechste Abgleich ins neue Konto: `#pushAll`
+			// liest die Outbox, nicht den Stempel.
+			if (switched || foreignCopy) await clearOutbox();
 
-		await saveDevice({
-			...info,
-			id: this.#device,
-			serverUrl: url,
-			token: protectedToken?.data,
-			vaultKey: vaultKeyData,
-			protected: vaultKeyProtected && (protectedToken?.protected ?? true),
-			accountName: name || info.accountName,
-			accountUserId: userId ?? (keepsPreviousAccount ? info.accountUserId : undefined),
-			passkeyId: keptPasskeyId,
-			accountFingerprint: fingerprint,
-			dataOwner,
-			seq: 0,
-			priority: startState.priority
+			// Wem der Bestand gehoert: nach einem Wechsel weiterhin dem alten Konto
+			// (dann bleibt er hier liegen), sonst diesem. Wer noch nie ein Konto hatte,
+			// dessen Bestand ist der eigene und gehoert hoch.
+			const dataOwner = switched && isTauri() ? info.dataOwner : fingerprint;
+			// Beim Wechsel wird NICHTS geraetegebundenes vom vorigen Konto geerbt -
+			// weder die Kontokennung (an der `unlockWithStoredKey` haengt: eine
+			// stehengebliebene Kennung gaebe den neuen Schluessel an das alte Konto)
+			// noch der Passkey (der gehoert dem vorigen Konto).
+			const keepsPreviousAccount = !switched && !foreignCopy;
+			keptPasskeyId = keepsPreviousAccount ? info.passkeyId : undefined;
+
+			return {
+				...info,
+				id: this.#device,
+				serverUrl: url,
+				token: protectedToken?.data,
+				vaultKey: vaultKeyData,
+				protected: vaultKeyProtected && (protectedToken?.protected ?? true),
+				accountName: name || info.accountName,
+				accountUserId: userId ?? (keepsPreviousAccount ? info.accountUserId : undefined),
+				passkeyId: keptPasskeyId,
+				accountFingerprint: fingerprint,
+				dataOwner,
+				seq: 0,
+				priority: startState.priority
+			};
 		});
 		this.name = name || this.name;
 		this.passkeyId = keptPasskeyId ?? null;
@@ -1144,8 +1155,7 @@ class AccountState {
 			try {
 				const res = await this.#api.updateMe({ displayName: trimmed });
 				this.name = res.displayName;
-				const info = await loadDevice();
-				if (info) await saveDevice({ ...info, accountName: res.displayName });
+				await updateDevice((info) => info && { ...info, accountName: res.displayName });
 				if (app.settings.senderName !== res.displayName) {
 					await app.updateSettings({ senderName: res.displayName });
 				}
@@ -1180,8 +1190,7 @@ class AccountState {
 	 */
 	async rememberPasskey(id: string): Promise<void> {
 		this.passkeyId = id;
-		const info = await loadDevice();
-		if (info && info.passkeyId !== id) await saveDevice({ ...info, passkeyId: id });
+		await updateDevice((info) => (info && info.passkeyId !== id ? { ...info, passkeyId: id } : null));
 	}
 
 	/** Einen weiteren Passkey anlegen. */
@@ -1456,10 +1465,9 @@ class AccountState {
 		// Dann der Schluessel - vor allem, was fremden Code ruft (Timer, Haken,
 		// Oberflaeche). Wirft dort etwas, laege er sonst weiter im Browser, und
 		// mit ihm die Adresse des Servers.
-		const info = await loadDevice();
 		// Nur die Kontodaten loeschen, nicht die Geraetekennung: die soll
 		// dieselbe bleiben, falls jemand erneut koppelt.
-		if (info) await saveDevice({ id: info.id });
+		await updateDevice((info) => info && { id: info.id });
 
 		this.#closeStream();
 		if (this.#debounce) clearTimeout(this.#debounce);

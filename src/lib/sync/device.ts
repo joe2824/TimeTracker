@@ -1,5 +1,5 @@
 // Die dauerhafte Kennung dieses Geraets.
-import { loadDevice, saveDevice } from "../store";
+import { loadDevice, updateDevice } from "../store";
 import { logInfo } from "../log";
 
 let cached: string | null = null;
@@ -12,8 +12,16 @@ export async function deviceId(): Promise<string> {
 		cached = stored.id;
 		return cached;
 	}
-	const id = crypto.randomUUID();
-	await saveDevice({ id });
+	let id: string = crypto.randomUUID();
+	await updateDevice((info) => {
+		// Zwischen Lesen und Schreiben kann eine andere Stelle eine Kennung
+		// angelegt haben - dann gilt deren, sonst haetten zwei Aufrufe zwei.
+		if (info?.id) {
+			id = info.id;
+			return null;
+		}
+		return { ...(info ?? {}), id };
+	});
 	cached = id;
 	logInfo("Geraetekennung angelegt", { id });
 	return id;

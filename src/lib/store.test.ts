@@ -16,7 +16,8 @@ const {
 	pruneEmptyMonthFiles,
 	saveActivities,
 	saveEntries,
-	saveSettings
+	saveSettings,
+	updateDevice
 } = await import("./store");
 
 function entry(id: string): Entry {
@@ -394,6 +395,35 @@ describe("loadDevice", () => {
 
 	it("gibt null zurueck, wenn es noch keine device.json gibt", async () => {
 		expect(await loadDevice()).toBeNull();
+	});
+});
+
+describe("updateDevice", () => {
+	it("verliert keinen Stand, wenn zwei Stellen gleichzeitig schreiben", async () => {
+		files.set("data/device.json", JSON.stringify({ id: "d1" }));
+
+		// Genau der Fall aus dem Betrieb: der Nachhol-Durchlauf setzt seinen Merker,
+		// waehrend der Abgleich seinen Stand fortschreibt. Lesen beide vorher, geht
+		// einer der beiden Staende unter.
+		await Promise.all([
+			updateDevice(async (info) => {
+				await Promise.resolve();
+				return info && { ...info, localFilesEncrypted: true };
+			}),
+			updateDevice((info) => info && { ...info, seq: 42 })
+		]);
+
+		const info = await loadDevice();
+		expect(info?.localFilesEncrypted).toBe(true);
+		expect(info?.seq).toBe(42);
+	});
+
+	it("schreibt nicht, wenn der Patch null zurueckgibt", async () => {
+		files.set("data/device.json", JSON.stringify({ id: "d1", seq: 7 }));
+
+		await updateDevice(() => null);
+
+		expect((await loadDevice())?.seq).toBe(7);
 	});
 });
 
