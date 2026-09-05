@@ -23,7 +23,9 @@ const { account } = await import("./account.svelte");
 const store = await import("../store");
 const { bucketFor, createVaultKey, exportVaultKey, isExportable, toBase64, vaultProof } =
 	await import("../crypto/vault");
-const { clearLocalVaultKey, loadLocalVaultKey } = await import("../platform/keyStore");
+const { clearLocalVaultKey, discardLegacyVaultKey, hasLegacyVaultKey, loadLocalVaultKey } =
+	await import("../platform/keyStore");
+const { writeLegacyVaultKey } = await import("../testing/legacyKeyStore");
 const { protectSecret } = await import("../platform/secrets");
 
 const URL = "https://zeit.example";
@@ -208,6 +210,29 @@ describe("Neuladen der Seite", () => {
 	it("wirft, wenn ein verknüpftes Gerät gar keinen Schlüssel hat", async () => {
 		await store.saveDevice({ id: "kaputtes-geraet", serverUrl: URL });
 		await expect(store.preloadLocalEncryptionKey()).rejects.toThrow();
+	});
+
+	it("nennt den Grund, wenn nur die Schlüssel-Ablage von vorher dasteht", async () => {
+		// Ein Browser, der einen früheren Stand dieses Umbaus laufen hatte. Die alte
+		// Ablage ist nicht zu übernehmen - dann soll wenigstens dastehen, warum, und
+		// nicht "bitte neu laden", was hier nie hilft.
+		await writeLegacyVaultKey();
+		await store.saveDevice({ id: "alter-browser", serverUrl: URL });
+
+		await expect(store.preloadLocalEncryptionKey()).rejects.toThrow(/anders ab/);
+
+		await discardLegacyVaultKey();
+	});
+
+	it("räumt die alte Schlüssel-Ablage weg, sobald wieder einer dasteht", async () => {
+		await writeLegacyVaultKey();
+		await account.linkWithSession(URL, await createVaultKey(), "Testperson");
+
+		store.setLocalEncryptionKey(null);
+		await store.preloadLocalEncryptionKey();
+
+		expect(await hasLegacyVaultKey()).toBe(false);
+		await account.unlink();
 	});
 
 	it("ein nie verknüpftes Gerät bleibt still, kein Fehler", async () => {

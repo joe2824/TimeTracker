@@ -17,7 +17,12 @@ import {
 	sealRecord,
 	type VaultKey
 } from "./crypto/vault";
-import { loadLocalVaultKey, saveLocalVaultKey } from "./platform/keyStore";
+import {
+	discardLegacyVaultKey,
+	hasLegacyVaultKey,
+	loadLocalVaultKey,
+	saveLocalVaultKey
+} from "./platform/keyStore";
 import { unprotectSecret } from "./platform/secrets";
 
 const DIR = "data";
@@ -131,6 +136,7 @@ export async function preloadLocalEncryptionKey(): Promise<void> {
 	const existing = await loadLocalVaultKey().catch(() => null);
 	if (existing) {
 		setLocalEncryptionKey(existing);
+		await discardLegacyVaultKey().catch(() => {});
 		return;
 	}
 	const info = await loadDevice();
@@ -140,6 +146,7 @@ export async function preloadLocalEncryptionKey(): Promise<void> {
 			if (migrated) {
 				await saveLocalVaultKey(migrated);
 				setLocalEncryptionKey(migrated);
+				await discardLegacyVaultKey().catch(() => {});
 				return;
 			}
 		} catch (e) {
@@ -147,6 +154,15 @@ export async function preloadLocalEncryptionKey(): Promise<void> {
 		}
 	}
 	if (info?.serverUrl) {
+		// Ein Browser, der eine fruehere Fassung dieses Umbaus laufen hatte, traegt
+		// den Schluessel noch in der alten Ablage - und der ist nicht mehr zu
+		// gebrauchen (siehe platform/keyStore.ts). Ohne diesen Hinweis stuende
+		// dort "bitte neu laden", was nie hilft.
+		if (await hasLegacyVaultKey().catch(() => false)) {
+			throw new Error(
+				"Diese Version legt den Schlüssel für deine Daten anders ab - der auf diesem Gerät gespeicherte passt nicht mehr dazu. Setze die Anmeldung zurück und melde dich neu an; deine Zeiten kommen danach wieder vom Server."
+			);
+		}
 		throw new Error(
 			"Der Tresorschlüssel ließ sich nicht öffnen. Bitte die Seite neu laden - hilft das nicht, einmal neu anmelden."
 		);

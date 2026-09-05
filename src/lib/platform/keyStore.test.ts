@@ -3,7 +3,14 @@
 // abgeleiteten Kennungen rechnen (bucketFor, vaultProof).
 import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
-import { clearLocalVaultKey, loadLocalVaultKey, saveLocalVaultKey } from "./keyStore";
+import {
+	clearLocalVaultKey,
+	discardLegacyVaultKey,
+	hasLegacyVaultKey,
+	loadLocalVaultKey,
+	saveLocalVaultKey
+} from "./keyStore";
+import { writeLegacyVaultKey } from "../testing/legacyKeyStore";
 import {
 	bucketFor,
 	createVaultKey,
@@ -80,5 +87,24 @@ describe("keyStore", () => {
 		await saveLocalVaultKey(await storedCopy());
 		await clearLocalVaultKey();
 		expect(await loadLocalVaultKey()).toBeNull();
+	});
+});
+
+describe("Ablage von vor der Umbenennung", () => {
+	it("sagt nein, wenn gar keine dasteht", async () => {
+		await discardLegacyVaultKey();
+		expect(await hasLegacyVaultKey()).toBe(false);
+	});
+
+	it("erkennt sie und raeumt sie weg", async () => {
+		// Uebernehmen laesst sie sich nicht: dort lag ein einzelner, nicht-
+		// exportierbarer AES-Schluessel, und der HMAC-Teil braeuchte dessen Bytes.
+		// Bleibt sie liegen, liegt sie fuer immer im Profil.
+		await writeLegacyVaultKey();
+		expect(await hasLegacyVaultKey()).toBe(true);
+
+		await discardLegacyVaultKey();
+
+		expect(await hasLegacyVaultKey()).toBe(false);
 	});
 });
