@@ -3,7 +3,7 @@ import type { Passkey } from "$lib/sync/api";
 
 /**
  * Was diesem Browser fehlt: ein eigener Passkey, die Verpackung des
- * Tresorschluessels fuer ihn - oder nichts.
+ * Vault-Schluessels fuer ihn - oder nichts.
  *
  * Ohne Verpackung meldet der Passkey zwar an, oeffnet die Daten aber nicht;
  * dann braucht es weiterhin die 24 Woerter.

@@ -29,7 +29,7 @@ export const DEFAULT_SERVER =
  * Kommt aus `TELEMETRY_KEY` und wird beim Bauen eingesetzt. Leer heisst nicht
  * "meldet nichts": mit verknuepftem Konto laeuft die Meldung ueber denselben Weg
  * wie jeder andere Serveraufruf und weist sich mit Geraetetoken bzw. Sitzung aus
- * - so kommt die PWA durch, die im Server-Abbild liegt und gar keinen
+ * - so kommt die PWA durch, die im Server-Image liegt und gar keinen
  * Schluessel mitbekommen kann.
  *
  * OHNE Konto ist der Schluessel der einzige Ausweis. Er entscheidet damit, ob

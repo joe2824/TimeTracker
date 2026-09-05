@@ -64,7 +64,7 @@ export const ORIGINS_WITHOUT_PASSKEY = ALLOWED_ORIGINS.filter((o) => !matchesRpI
 export const DATA_DIR = process.env.DATA_DIR ?? "./data";
 export const DB_FILE = process.env.DB_FILE ?? `${DATA_DIR}/timetracker.db`;
 
-/** Wo die gebaute PWA liegt - im Abbild neben dem Server. */
+/** Wo die gebaute PWA liegt - im Image neben dem Server. */
 export const CLIENT_DIR = process.env.CLIENT_DIR ?? "static";
 
 /**

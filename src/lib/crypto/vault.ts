@@ -1,4 +1,4 @@
-// Der Tresorschluessel und alles, was mit ihm geschieht.
+// Der Vault-Schluessel und alles, was mit ihm geschieht.
 //
 // Verpackt wird als JWE (RFC 7516/7518, ueber die Bibliothek `jose`): die drei
 // Verpackungswege unten bilden fast 1:1 auf JWE-Standardalgorithmen ab
@@ -17,17 +17,17 @@ import {
 
 const enc = new TextEncoder();
 
-/** Laenge des Tresorschluessels in Bit. */
+/** Laenge des Vault-Schluessels in Bit. */
 const KEY_BITS = 256;
 /** Iterationen fuer die Phrase - grosszuegig, aber nicht entscheidend (siehe unten). */
 const PBES2_ITERATIONS = 600_000;
-/** Alle drei Verpackungswege verschluesseln denselben Inhalt (den Tresorschluessel) gleich. */
+/** Alle drei Verpackungswege verschluesseln denselben Inhalt (den Vault-Schluessel) gleich. */
 const WRAP_ENC = "A256GCM";
 
-// ---------- Tresorschluessel ----------
+// ---------- Vault-Schluessel ----------
 
 /**
- * Der Tresorschluessel - zwei Schluessel aus demselben Geheimnis, je einer fuer
+ * Der Vault-Schluessel - zwei Schluessel aus demselben Geheimnis, je einer fuer
  * seinen Zweck.
  *
  * Getrennt, weil ein `CryptoKey` immer zu genau einem Algorithmus gehoert: die
@@ -52,13 +52,13 @@ async function vaultKeyFromRaw(raw: BufferSource, extractable: boolean): Promise
 	return { enc, mac };
 }
 
-/** Einen neuen, zufaelligen Tresorschluessel erzeugen. */
+/** Einen neuen, zufaelligen Vault-Schluessel erzeugen. */
 export async function createVaultKey(): Promise<VaultKey> {
 	return vaultKeyFromRaw(crypto.getRandomValues(new Uint8Array(KEY_BITS / 8)), true);
 }
 
 /**
- * Rohbytes zu einem Tresorschluessel machen.
+ * Rohbytes zu einem Vault-Schluessel machen.
  *
  * `extractable: false` fuer eine Kopie, die nur noch ver-/entschluesseln und
  * Kennungen rechnen kann, nie wieder Bytes herausgibt - siehe
@@ -99,11 +99,11 @@ interface RecordHeader {
 	recRev: number;
 }
 
-/** Wie eine Verpackung des Tresorschluessels entstanden ist. */
+/** Wie eine Verpackung des Vault-Schluessels entstanden ist. */
 export type WrapKind = "recovery" | "passkey" | "device";
 
 /**
- * Einen Datensatz verschluesseln - `alg:"dir"`, der Tresorschluessel wird
+ * Einen Datensatz verschluesseln - `alg:"dir"`, der Vault-Schluessel wird
  * direkt als Inhaltsschluessel benutzt. `binding` liegt als Header-Claims im
  * JWE und ist damit Teil der authentisierten Daten: eine vertauschte Datei
  * (falscher Monat, falsche Kennung) faellt beim Oeffnen auf.
@@ -143,7 +143,7 @@ export async function openRecord<T>(
 
 // ---------- Abgeleitete Werte ----------
 
-/** Ein fester Wert aus dem Tresorschluessel, je Verwendungszweck ein anderer. */
+/** Ein fester Wert aus dem Vault-Schluessel, je Verwendungszweck ein anderer. */
 async function hmacWithVaultKey(key: VaultKey, message: string): Promise<Uint8Array> {
 	return new Uint8Array(await crypto.subtle.sign("HMAC", key.mac, enc.encode(message)));
 }
@@ -176,15 +176,15 @@ export async function recoveryLookupId(phrase: string): Promise<string> {
 	return toHex(new Uint8Array(bits));
 }
 
-/** Ein Nachweis, dass jemand den Tresorschluessel wirklich hat. */
+/** Ein Nachweis, dass jemand den Vault-Schluessel wirklich hat. */
 export async function vaultProof(key: VaultKey): Promise<string> {
 	return toHex(await hmacWithVaultKey(key, "vault-proof-v1"));
 }
 
-// ---------- Verpackung des Tresorschluessels: gemeinsamer Kern ----------
+// ---------- Verpackung des Vault-Schluessels: gemeinsamer Kern ----------
 //
 // Alle drei Wege (Phrase, Passkey-PRF, Geraete-Kopplung) verschluesseln
-// denselben Inhalt (den exportierten Tresorschluessel) auf dieselbe Art -
+// denselben Inhalt (den exportierten Vault-Schluessel) auf dieselbe Art -
 // nur der JWE-Header und der Schluessel/das Geheimnis, mit dem verpackt wird,
 // unterscheiden sich. Ein Fund im Ver-/Entpacken selbst (z.B. an `.buffer`,
 // siehe unten) muss so nur an einer Stelle stimmen, nicht an dreien.
@@ -235,7 +235,7 @@ export function normalizePhrase(phrase: string): string {
 }
 
 /**
- * Die Phrase verpackt den Tresorschluessel - `PBES2-HS512+A256KW`, das
+ * Die Phrase verpackt den Vault-Schluessel - `PBES2-HS512+A256KW`, das
  * Passwort ist die Entropie der Phrase, nicht ihr Text (derselbe Schluessel
  * auch dann, wenn jemand sie in einer anderen Schreibweise eingibt). Salz und
  * Iterationszahl liegen automatisch im JWE-Header, `p2c` explizit gesetzt.
@@ -276,7 +276,7 @@ export async function kekFromPrf(prfOutput: BufferSource, salt: Uint8Array): Pro
 /**
  * Der PRF-Wert selbst ist kein Standard-JWE-Schluessel (kein Passwort, kein
  * EC-Schluessel) - `kekFromPrf` leitet erst einen ab (HKDF, wie bisher), der
- * dann als `A256GCMKW`-Schluessel den Tresorschluessel verpackt. Das
+ * dann als `A256GCMKW`-Schluessel den Vault-Schluessel verpackt. Das
  * HKDF-Salz reist als eigenes Header-Claim mit, da JWE dafuer kein Feld kennt.
  */
 export async function wrapWithPrf(vaultKey: VaultKey, prfOutput: BufferSource): Promise<string> {
@@ -369,7 +369,7 @@ export function formatPairingCode(code: string): string {
 }
 
 /**
- * Auf dem entsperrten Geraet: den Tresorschluessel fuer das neue Geraet
+ * Auf dem entsperrten Geraet: den Vault-Schluessel fuer das neue Geraet
  * verpacken - `ECDH-ES+A256KW`. `jose` erzeugt das fluechtige Schluesselpaar
  * selbst, macht ECDH+ConcatKDF und AES-Key-Wrap, und legt den oeffentlichen
  * fluechtigen Schluessel automatisch ins Standard-Header-Feld `epk` - nichts

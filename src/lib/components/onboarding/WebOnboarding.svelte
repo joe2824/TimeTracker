@@ -365,7 +365,7 @@
 {#if stepIndex === "start"}
 	<!-- Der Startschritt IST die Landing Page: Werbung und Anmeldung auf einer
 	     Seite. Landing traegt nur die Seite, die Karte kommt als Snippet von
-	     hier - der Tresorschluessel hat in einer Marketingkomponente nichts zu
+	     hier - der Vault-Schluessel hat in einer Marketingkomponente nichts zu
 	     suchen. -->
 	<Landing {os}>
 		{#snippet auth()}

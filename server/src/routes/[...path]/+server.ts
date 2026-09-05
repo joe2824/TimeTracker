@@ -43,6 +43,6 @@ export const GET: RequestHandler = async ({ params }) => {
 			}
 		});
 	} catch {
-		error(503, "Die Anwendung ist in diesem Abbild nicht enthalten");
+		error(503, "Die Anwendung ist in diesem Server-Image nicht enthalten");
 	}
 };

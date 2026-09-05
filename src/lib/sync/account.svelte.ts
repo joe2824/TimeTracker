@@ -364,7 +364,7 @@ class AccountState {
 				await updateDevice((info) => {
 					// Erst hier pruefen, nicht vor dem Lesen: zwischen beidem kann das
 					// Abmelden liegen. Eine Runde von vorher schriebe sonst den ganzen
-					// gelesenen Stand zurueck - Tresorschluessel eingeschlossen - oder
+					// gelesenen Stand zurueck - Vault-Schluessel eingeschlossen - oder
 					// ihren Stand in die device.json des naechsten Kontos.
 					if (!info || this.#engine !== engine) return null;
 					return { ...info, seq: s.seq, priority: s.priority };
@@ -953,7 +953,7 @@ class AccountState {
 
 		// Wirft, wenn unter diesem Code ein anderer Schluessel liegt als der, dessen
 		// Abdruck er ist. Dann wird NICHTS verpackt: wer immer den Schluessel
-		// hinterlegt hat, bekaeme sonst den Tresorschluessel.
+		// hinterlegt hat, bekaeme sonst den Vault-Schluessel.
 		const raw = await checkedPairingKey(typed, publicKey).catch((e) => {
 			logWarn("Kopplung abgebrochen: hinterlegter Schlüssel passt nicht zum Code");
 			throw e;
@@ -1020,7 +1020,7 @@ class AccountState {
 		// Im Browser gibt es kein Geraete-Token: dort weist das Sitzungs-Cookie aus.
 		const protectedToken = token ? await protectSecret(token) : null;
 
-		// Wie der Tresorschluessel liegen bleibt, damit die Anwendung nach einem
+		// Wie der Vault-Schluessel liegen bleibt, damit die Anwendung nach einem
 		// Neuladen nicht wieder nach der Anmeldung fragen muss - je Plattform anders:
 		// auf dem Rechner schuetzt das Betriebssystem (protectSecret), im Browser
 		// gibt es dafuer keinen echten Schutz - dort liegt seit diesem Umbau
@@ -1053,7 +1053,7 @@ class AccountState {
 					// falsch entschluesseln. Lieber nichts liegen haben - das fuehrt beim
 					// naechsten Start zu preloadLocalEncryptionKey()s Fehler statt zu
 					// stillem Datenverlust.
-					logWarn("Tresorschlüssel ließ sich nicht lokal ablegen", e);
+					logWarn("Vault-Schlüssel ließ sich nicht lokal ablegen", e);
 					await clearLocalVaultKey().catch(() => {});
 					setLocalEncryptionKey(key);
 				}
@@ -1068,7 +1068,7 @@ class AccountState {
 			priority: { seq: 0, months: [monthKey(Date.now()), prevMonthKey()] }
 		};
 
-		// Wessen Konto ist das? Zwei Konten haben verschiedene Tresorschluessel,
+		// Wessen Konto ist das? Zwei Konten haben verschiedene Vault-Schluessel,
 		// also verschiedene Nachweise.
 		const fingerprint = await vaultProof(key);
 
@@ -1512,7 +1512,7 @@ class AccountState {
 		// Zuerst die Engine, und zwar ohne ein einziges await davor: eine laufende
 		// Runde antwortet noch, wenn hier laengst aufgeraeumt ist. Ohne stop()
 		// spielt sie die Daten des alten Kontos wieder ein, und ihr `saveState`
-		// traegt den Tresorschluessel in die gerade geleerte device.json zurueck.
+		// traegt den Vault-Schluessel in die gerade geleerte device.json zurueck.
 		this.#engine?.stop();
 		this.#engine = null;
 

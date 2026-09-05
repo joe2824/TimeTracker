@@ -80,7 +80,7 @@ export interface Passkey {
 	id: string;
 	/** Wie der Mensch ihn nennt. Null, solange niemand ihn benannt hat. */
 	label: string | null;
-	/** Ob der Tresorschluessel fuer ihn verpackt vorliegt - dann oeffnet er die Daten allein. */
+	/** Ob der Vault-Schluessel fuer ihn verpackt vorliegt - dann oeffnet er die Daten allein. */
 	hasWrap: boolean;
 	createdAt: number;
 	lastUsedAt: number | null;
@@ -249,7 +249,7 @@ export class Api {
 	}
 
 	logout(): Promise<{ ok: boolean }> {
-		// Mit Zeitlimit, als einziger Aufruf: das oertliche Abmelden - Tresor-
+		// Mit Zeitlimit, als einziger Aufruf: das oertliche Abmelden - Vault-
 		// schluessel und Bestand weg - darf nicht daran haengen, ob der Server
 		// gerade antwortet. Bleibt die Verbindung stumm, laeuft die Sitzung dort
 		// von selbst ab; hier zaehlt, dass nichts liegen bleibt.

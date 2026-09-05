@@ -284,7 +284,7 @@ async function harvestPrf(credentialIds: string[] = []): Promise<PrfResult> {
 export interface LoginResult {
 	userId: string;
 	displayName: string;
-	/** Der Tresorschluessel - oder null, wenn er noch entsperrt werden muss. */
+	/** Der Vault-Schluessel - oder null, wenn er noch entsperrt werden muss. */
 	key: VaultKey | null;
 	/** Ob eine Phrasen-Verpackung vorliegt, mit der entsperrt werden kann. */
 	canUnlockWithPhrase: boolean;
@@ -318,7 +318,7 @@ export async function ensurePasskeyWrap(
 }
 
 /**
- * Den Tresorschluessel noch einmal aus einem Passkey holen.
+ * Den Vault-Schluessel noch einmal aus einem Passkey holen.
  *
  * Nach einem Neuladen der Seite liegt hier nur noch die Kopie, die ihre Bytes
  * nicht mehr herausgibt (`platform/keyStore.ts`). Zum Ansehen, Bearbeiten und
@@ -519,7 +519,7 @@ export async function registerFromDevice(
  * Einen WEITEREN Passkey an ein bestehendes Konto haengen.
  *
  *   1. Passkey beim Server hinterlegen - damit meldet er an.
- *   2. Tresorschluessel gegen ihn verpacken - damit oeffnet er die Daten.
+ *   2. Vault-Schluessel gegen ihn verpacken - damit oeffnet er die Daten.
  */
 export async function addPasskey(
 	api: Api,

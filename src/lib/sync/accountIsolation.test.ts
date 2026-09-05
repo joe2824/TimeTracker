@@ -172,7 +172,7 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 			await account.linkWithSession("http://test-server", keyNew, "Neuer Nutzer");
 
 			// 4. Prüfungen:
-			// a) Der Server-Tresor von User 2 darf KEINE Zeilen mit den alten Einstellungen oder Einträgen von User 1 enthalten!
+			// a) Der Server-Vault von User 2 darf KEINE Zeilen mit den alten Einstellungen oder Einträgen von User 1 enthalten!
 			expect(newServer.userVaults.size).toBe(0);
 
 			// b) Im lokalen State von User 2 müssen saubere defaultSettings stehen
@@ -220,7 +220,7 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 
 	it("räumt lokal auch dann auf, wenn der Server auf das Abmelden nicht antwortet", async () => {
 		// Ohne Zeitlimit haengt account.logout() vor dem Aufräumen: der Hinweis ist
-		// weg, der Tresorschlüssel bleibt liegen, und niemand sieht, dass nichts
+		// weg, der Vault-Schlüssel bleibt liegen, und niemand sieht, dass nichts
 		// passiert ist.
 		await withServer("browser-device", async (server) => {
 			const key = await createVaultKey();
@@ -309,7 +309,7 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 			]);
 
 			// Und in der Geraetedatei steht wirklich nur sie. Bliebe der
-			// Tresorschluessel liegen, koennte der naechste Mensch an diesem Rechner
+			// Vault-Schluessel liegen, koennte der naechste Mensch an diesem Rechner
 			// den Bestand des Kontos entschluesseln, den der Server noch hat.
 			expect(JSON.parse(files.get("data/device.json")!)).toEqual({
 				id: expect.any(String)
@@ -394,7 +394,7 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 			expect(app.settings.hoursPerDay).toBe(defaultSettings.hoursPerDay);
 			expect(app.activities).toEqual([]);
 
-			// 2. Im Tresor auf dem Server darf KEIN Datensatz von den Altdaten liegen
+			// 2. Im Vault auf dem Server darf KEIN Datensatz von den Altdaten liegen
 			const vaultNew = freshServer.userVaults.get("user-neu");
 			expect(vaultNew?.rows.size ?? 0).toBe(0);
 		});
@@ -422,7 +422,7 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 			expect(app.settings.senderName).toBe("Max Mustermann");
 			expect(app.settings.bossEmail).toBe("chef@firma.de");
 
-			// 4. Daten werden in den neuen Tresor synchronisiert
+			// 4. Daten werden in den neuen Vault synchronisiert
 			await new Promise((r) => setTimeout(r, 50));
 			await account.syncNow();
 			const vault = server.userVaults.get("frischer-user");

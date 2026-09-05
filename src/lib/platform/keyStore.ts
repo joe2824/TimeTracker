@@ -1,4 +1,4 @@
-// Der Tresorschluessel, so lange abgelegt, dass eine neue Sitzung ihn nicht
+// Der Vault-Schluessel, so lange abgelegt, dass eine neue Sitzung ihn nicht
 // mehr abfragen muss - aber ohne dass jemand die rohen Bytes je wieder
 // herausbekommt.
 //

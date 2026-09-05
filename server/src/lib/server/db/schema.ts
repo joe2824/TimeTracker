@@ -21,7 +21,7 @@ export const users = sqliteTable("users", {
 	isAdmin: integer("is_admin", { mode: "boolean" }).notNull().default(false),
 	/** Unter welcher Kennung dieses Konto seine Phrasen-Verpackung findet. */
 	recoveryId: text("recovery_id"),
-	/** Der Nachweis, dass jemand den Tresorschluessel wirklich hat - abgelegt nur als Hash. */
+	/** Der Nachweis, dass jemand den Vault-Schluessel wirklich hat - abgelegt nur als Hash. */
 	vaultProof: text("vault_proof")
 });
 
@@ -44,7 +44,7 @@ export const credentials = sqliteTable(
 	(t) => [index("credentials_user").on(t.userId)]
 );
 
-/** Die verpackten Tresorschluessel - fuer den Server undurchsichtige Bytes. */
+/** Die verpackten Vault-Schluessel - fuer den Server undurchsichtige Bytes. */
 export const keyWraps = sqliteTable(
 	"key_wraps",
 	{

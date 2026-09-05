@@ -141,7 +141,7 @@ describe("Wiederherstellungs-Phrase", () => {
 		expect(createRecoveryPhrase()).not.toBe(createRecoveryPhrase());
 	});
 
-	it("oeffnet den Tresor wieder", async () => {
+	it("oeffnet den Vault wieder", async () => {
 		const key = await createVaultKey();
 		const phrase = createRecoveryPhrase();
 		const wrap = await wrapWithPhrase(key, phrase);
@@ -193,13 +193,13 @@ describe("Wiederherstellungs-Phrase", () => {
 		// Salz (im Header, PBES2 "p2s") und Chiffrat unterscheiden sich - die ganze
 		// Verpackung ist also bei jedem Mal eine andere.
 		expect(a).not.toBe(b);
-		// Beide oeffnen trotzdem denselben Tresor.
+		// Beide oeffnen trotzdem denselben Vault.
 		expect(await sameKey(await unwrapWithPhrase(b, phrase), key)).toBe(true);
 	});
 });
 
 describe("Passkey-Verpackung (PRF)", () => {
-	it("oeffnet den Tresor mit demselben PRF-Wert", async () => {
+	it("oeffnet den Vault mit demselben PRF-Wert", async () => {
 		const key = await createVaultKey();
 		const wrap = await wrapWithPrf(key, prf());
 		expect(await sameKey(await unwrapWithPrf(wrap, prf()), key)).toBe(true);
@@ -259,9 +259,9 @@ describe("Kopplung eines neuen Geraets", () => {
 	});
 });
 
-describe("mehrere Wege zum selben Tresor", () => {
+describe("mehrere Wege zum selben Vault", () => {
 	it("Phrase, Passkey und Geraet oeffnen denselben Schluessel", async () => {
-		// Das ist der Kern des Entwurfs: EIN Tresorschluessel, mehrere Oeffner.
+		// Das ist der Kern des Entwurfs: EIN Vault-Schluessel, mehrere Oeffner.
 		// Geht ein Weg verloren, bleiben die anderen.
 		const vault = await createVaultKey();
 		const phrase = createRecoveryPhrase();
@@ -405,7 +405,7 @@ describe("checkedPairingKey", () => {
 		// GENAU der Angriff, gegen den die Bindung da ist: das neue Geraet
 		// hinterlegt seinen Schluessel und zeigt dessen Code an. Wer den Server
 		// beherrscht, tauscht den hinterlegten Schluessel gegen einen eigenen -
-		// und bekaeme vom bestaetigenden Geraet den Tresorschluessel dagegen
+		// und bekaeme vom bestaetigenden Geraet den Vault-Schluessel dagegen
 		// verpackt. Danach koennte er jeden Datensatz des Kontos lesen.
 		const real = await exportPairingPublicKey(await createPairingKeyPair());
 		const attacker = await exportPairingPublicKey(await createPairingKeyPair());
@@ -492,7 +492,7 @@ describe("Wiederherstellung ueber die Phrase", () => {
 		await expect(unwrapWithPhrase(wrap, id)).rejects.toThrow();
 	});
 
-	it("der Nachweis ist an den Tresorschluessel gebunden", async () => {
+	it("der Nachweis ist an den Vault-Schluessel gebunden", async () => {
 		const a = await createVaultKey();
 		const b = await createVaultKey();
 		expect(await vaultProof(a)).toBe(await vaultProof(a));
@@ -509,7 +509,7 @@ describe("Wiederherstellung ueber die Phrase", () => {
 		expect(proof).not.toContain(hex.slice(0, 16));
 	});
 
-	it("der ganze Weg: Phrase rein, Tresorschluessel raus", async () => {
+	it("der ganze Weg: Phrase rein, Vault-Schluessel raus", async () => {
 		const key = await createVaultKey();
 		const p = createRecoveryPhrase();
 		const wrap = await wrapWithPhrase(key, p);

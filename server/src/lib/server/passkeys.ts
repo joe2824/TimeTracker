@@ -11,7 +11,7 @@ import { credentials, keyWraps } from "./db/schema";
 export interface PasskeyView {
 	id: string;
 	label: string | null;
-	/** Ob der Tresorschluessel fuer ihn verpackt vorliegt - dann oeffnet er die Daten allein. */
+	/** Ob der Vault-Schluessel fuer ihn verpackt vorliegt - dann oeffnet er die Daten allein. */
 	hasWrap: boolean;
 	createdAt: number;
 	lastUsedAt: number | null;

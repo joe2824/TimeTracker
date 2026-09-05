@@ -109,7 +109,7 @@ export async function readProtectedVaultKey(
 }
 
 /**
- * Beim Start: den Tresorschluessel vorladen, damit verschluesselte Dateien
+ * Beim Start: den Vault-Schluessel vorladen, damit verschluesselte Dateien
  * gleich beim ersten Lesen aufgehen - unabhaengig vom Konto-Abgleich, der erst
  * danach anlaeuft und das Netz braucht (`app.init()` laeuft vor `account.init()`).
  * Nur im Browser: auf dem Rechner schuetzt das Betriebssystem den Datenordner.
@@ -143,7 +143,7 @@ export async function preloadLocalEncryptionKey(): Promise<void> {
 				return;
 			}
 		} catch (e) {
-			logWarn("Alter Tresorschlüssel ließ sich nicht übernehmen", e);
+			logWarn("Alter Vault-Schlüssel ließ sich nicht übernehmen", e);
 		}
 	}
 	if (info?.serverUrl) {
@@ -155,7 +155,7 @@ export async function preloadLocalEncryptionKey(): Promise<void> {
 			);
 		}
 		throw new Error(
-			"Der Tresorschlüssel ließ sich nicht öffnen. Bitte die Seite neu laden - hilft das nicht, einmal neu anmelden."
+			"Der Schlüssel für deine Daten ließ sich nicht öffnen. Bitte die Seite neu laden - hilft das nicht, einmal neu anmelden."
 		);
 	}
 }
@@ -523,7 +523,7 @@ export async function listTimeReportMonths(): Promise<string[]> {
 /**
  * Was dieses Geraet ueber sich und seine Verknuepfung weiss.
  *
- * Eigene Datei, bewusst NICHT settings.json: Token und Tresorschluessel gehoeren
+ * Eigene Datei, bewusst NICHT settings.json: Token und Vault-Schluessel gehoeren
  * nicht in etwas, das in jedem Backup und jedem Fehlerbericht landet.
  */
 export interface DeviceInfo {
@@ -533,7 +533,7 @@ export interface DeviceInfo {
 	serverUrl?: string;
 	/** Das Geraete-Token, geschuetzt ueber das Betriebssystem (siehe secret.rs). */
 	token?: string;
-	/** Der Tresorschluessel, ebenso geschuetzt. */
+	/** Der Vault-Schluessel, ebenso geschuetzt. */
 	vaultKey?: string;
 	/** Ob Token und Schluessel wirklich vom Betriebssystem geschuetzt sind. */
 	protected?: boolean;
@@ -570,7 +570,7 @@ export interface DeviceInfo {
 	 */
 	accountUserId?: string;
 	/**
-	 * Welches Konto hier haengt - der Nachweis aus seinem Tresorschluessel.
+	 * Welches Konto hier haengt - der Nachweis aus seinem Vault-Schluessel.
 	 *
 	 * Zwei Konten haben verschiedene Schluessel, also verschiedene Nachweise.
 	 * Damit laesst sich ein Kontowechsel erkennen, ohne die Kontokennung selbst

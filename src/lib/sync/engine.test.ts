@@ -515,7 +515,7 @@ describe("Robustheit", () => {
 		// steckengebliebener Abgleich ein Ausfall.
 		const phone = await deviceWith("handy", entry("e1"));
 
-		// Ein Datensatz mit Chiffrat aus einem FREMDEN Tresor.
+		// Ein Datensatz mit Chiffrat aus einem FREMDEN Vault.
 		const otherKey = key;
 		key = await createVaultKey();
 		const foreign = new FakeDevice("fremd");

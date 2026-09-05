@@ -50,5 +50,5 @@ export const RELEASES_URL = `${REPO_URL}/releases/latest`;
 /** Das Nachschlagewerk. */
 export const WIKI_URL = `${REPO_URL}/wiki`;
 
-/** Das Server-Abbild in der GitHub-Registry. Siehe .github/workflows/docker.yml. */
+/** Das Server-Image in der GitHub-Registry. Siehe .github/workflows/docker.yml. */
 export const IMAGE_REF = "ghcr.io/joe2824/timetracker-server:latest";

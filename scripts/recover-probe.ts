@@ -95,7 +95,7 @@ try {
 }
 check("Verpackung geoeffnet", true);
 check(
-	"Derselbe Tresorschluessel",
+	"Derselbe Vault-Schluessel",
 	toBase64(new Uint8Array(await exportVaultKey(recovered))) ===
 		toBase64(new Uint8Array(await exportVaultKey(key)))
 );

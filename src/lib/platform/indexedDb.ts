@@ -1,5 +1,5 @@
 // Gemeinsame IndexedDB-Verdrahtung fuer die Browser-Ablagen dieser App -
-// platform/fs.ts (Dateien) und platform/keyStore.ts (Tresorschluessel) rufen
+// platform/fs.ts (Dateien) und platform/keyStore.ts (Vault-Schluessel) rufen
 // dies je einmal fuer ihre eigene Datenbank auf, statt beide dieselbe
 // Oeffnen/Transaktion-Logik von Hand nachzubauen.
 

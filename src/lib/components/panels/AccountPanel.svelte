@@ -201,7 +201,7 @@
 
 	// Ein Code aus einem Link landet nur im Feld, er wird nicht durchgewunken.
 	// Wer den Link geschickt hat, muss nicht der sein, dem der Rechner gehoert:
-	// ein untergeschobenes `?pair=` verpackte sonst still den Tresorschluessel
+	// ein untergeschobenes `?pair=` verpackte sonst still den Vault-Schluessel
 	// fuer ein fremdes Geraet. Bestaetigt wird von Hand, nach dem Blick auf den
 	// Bildschirm des Rechners, der wirklich dazusoll.
 	$effect(() => {

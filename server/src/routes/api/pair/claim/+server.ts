@@ -11,7 +11,7 @@ import { normalizePairingCode } from "$lib/server/pairing";
  *
  * Der Code allein reicht bewusst nicht: er ist der Abdruck des Geraeteschluessels
  * und steht zum Vergleichen auf dem Bildschirm. Wer ihn mitliest, bekaeme sonst
- * das Geraete-Token - zwar nicht den Tresorschluessel, aber Zugang zu den
+ * das Geraete-Token - zwar nicht den Vault-Schluessel, aber Zugang zu den
  * versiegelten Datensaetzen, und der echte Vorgang waere abgeraeumt.
  *
  * Ein falsches Geheimnis antwortet wie ein unbekannter Code: 404. Sonst verriete

@@ -453,7 +453,7 @@ describe("Kopplung", () => {
 	// Der Kopplungscode ist der Abdruck des Geraeteschluessels. Er MUSS sichtbar
 	// sein, sonst kann ihn niemand vergleichen - er steht am Bildschirm und wird
 	// abgetippt. Als Ausweis beim Abholen taugt er damit nicht: wer ihn mitliest,
-	// bekaeme sonst das Geraete-Token. Den Tresor oeffnet er damit zwar nicht,
+	// bekaeme sonst das Geraete-Token. Den Vault oeffnet er damit zwar nicht,
 	// aber er haette Zugang zu den versiegelten Datensaetzen - und der echte
 	// Vorgang waere abgeraeumt, weil das Abholen die Zeile loescht.
 
@@ -769,7 +769,7 @@ describe("Konto aufloesen", () => {
 	it("nimmt das Geraete-Token als Nachweis - es ist der Zugangscode selbst", async () => {
 		// 256 Bit Zufall, genau einmal bei der Kopplung uebertragen, in keinem
 		// Browser-Kontext, faehrt nirgends automatisch mit. Wer es hat, hat das
-		// gekoppelte Geraet - und damit ohnehin den Tresorschluessel.
+		// gekoppelte Geraet - und damit ohnehin den Vault-Schluessel.
 		const res = await api(annaToken, "/api/me", { method: "DELETE", body: "{}" });
 		expect(res.status).toBe(200);
 	});
@@ -1723,7 +1723,7 @@ describe("Telemetrie", () => {
 		expect((await ping(goodPing, null)).status).toBe(401);
 	});
 
-	// Die PWA liegt im Server-Abbild, das fuer alle Betreiber dasselbe ist -
+	// Die PWA liegt im Server-Image, das fuer alle Betreiber dasselbe ist -
 	// einen Schluessel kann sie gar nicht mitbekommen. Sie weist sich mit ihrer
 	// Anmeldung aus.
 	it("nimmt einen Ping ohne Schluessel an, wenn jemand angemeldet ist", async () => {
