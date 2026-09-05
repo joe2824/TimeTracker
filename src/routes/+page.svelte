@@ -450,14 +450,16 @@
 	});
 
 	// Nach dem Anmelden steht die Zeiterfassung vorn. Ohne das bleibt stehen, wo
-	// man vorher war - und angemeldet wird man aus den Einstellungen heraus bzw.
-	// aus der Anmeldeseite, die den Tab gar nicht anfasst. Nur beim Uebergang
-	// "nicht verknuepft" -> "verknuepft": wer danach umschaltet, bleibt dort.
-	let wasLinked = false;
+	// man vorher war - die Anmeldeseite legt sich davor und fasst den Tab nicht an.
+	//
+	// Am Verschwinden der Anmeldeseite, NICHT am Verknuepfen: gekoppelt wird aus
+	// den Einstellungen heraus, und wer dort mitten im Koppeln steht, fand sich
+	// sonst in der Zeiterfassung wieder.
+	let wasLoggedOut = false;
 	$effect(() => {
-		const linked = account.linked;
-		if (linked && !wasLinked) tab = "tracking";
-		wasLinked = linked;
+		const loggedOut = needsLogin;
+		if (wasLoggedOut && !loggedOut) tab = "tracking";
+		wasLoggedOut = loggedOut;
 	});
 
 	// Chef-Modus abgeschaltet, während der Team-Tab offen war: sonst bliebe eine
