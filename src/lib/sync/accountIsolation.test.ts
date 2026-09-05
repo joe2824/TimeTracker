@@ -123,6 +123,26 @@ beforeEach(async () => {
 	app.clearLocalData();
 });
 
+/**
+ * Einen Nachbau hinter `globalThis.fetch` haengen, den Test laufen lassen und
+ * danach aufraeumen: echtes `fetch` zurueck, und die Verknuepfung loesen, falls
+ * der Test eine hinterlassen hat.
+ */
+async function withServer<T>(
+	deviceId: string,
+	fn: (server: MockServer) => Promise<T>
+): Promise<T> {
+	const server = new MockServer();
+	const originalFetch = globalThis.fetch;
+	globalThis.fetch = server.fetchFor(deviceId);
+	try {
+		return await fn(server);
+	} finally {
+		globalThis.fetch = originalFetch;
+		if (account.linked) await account.unlink();
+	}
+}
+
 describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 	it("Neuregistrierung auf neuem Server übernimmt KEINE Einstellungen eines alten Nutzers", async () => {
 		// 1. Altes Konto hinterlässt Daten im Speicher (z. B. vorherige Browser-Session)
@@ -146,11 +166,7 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 		);
 
 		// 2. Neuer Server mit komplett frischer Datenbank
-		const newServer = new MockServer();
-		const originalFetch = globalThis.fetch;
-		globalThis.fetch = newServer.fetchFor("browser-device");
-
-		try {
+		await withServer("browser-device", async (newServer) => {
 			// 3. Neuer User registriert sich und verknüpft Session im Browser
 			const keyNew = await createVaultKey();
 			await account.linkWithSession("http://test-server", keyNew, "Neuer Nutzer");
@@ -173,21 +189,14 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 			const savedSettings = await store.loadSettings();
 			expect(savedSettings.bossEmail).toBe("");
 			expect(savedSettings.senderName).toBe("");
-		} finally {
-			globalThis.fetch = originalFetch;
-			await account.unlink();
-		}
+		});
 	});
 
 	it("eine Runde, die beim Abmelden noch läuft, füllt den Speicher nicht wieder", async () => {
 		// Der Fall aus der Praxis: beim Klick auf Abmelden ist ein Abgleich
 		// unterwegs. Seine Antwort kommt, wenn lokal schon aufgeräumt ist - und
 		// schreibt Daten und Gerätestand des abgemeldeten Kontos zurück.
-		const server = new MockServer();
-		const originalFetch = globalThis.fetch;
-		globalThis.fetch = server.fetchFor("browser-device");
-
-		try {
+		await withServer("browser-device", async (server) => {
 			const key = await createVaultKey();
 			await account.linkWithSession("http://test-server", key, "Alice");
 			await app.updateSettings({ bossEmail: "chef@alice.de", senderName: "Alice" });
@@ -206,20 +215,14 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 			]);
 			expect(JSON.parse(files.get("data/device.json")!)).toEqual({ id: expect.any(String) });
 			expect(app.settings.bossEmail).toBe("");
-		} finally {
-			globalThis.fetch = originalFetch;
-		}
+		});
 	});
 
 	it("räumt lokal auch dann auf, wenn der Server auf das Abmelden nicht antwortet", async () => {
 		// Ohne Zeitlimit haengt account.logout() vor dem Aufräumen: der Hinweis ist
 		// weg, der Tresorschlüssel bleibt liegen, und niemand sieht, dass nichts
 		// passiert ist.
-		const server = new MockServer();
-		const originalFetch = globalThis.fetch;
-		globalThis.fetch = server.fetchFor("browser-device");
-
-		try {
+		await withServer("browser-device", async (server) => {
 			const key = await createVaultKey();
 			await account.linkWithSession("http://test-server", key, "Alice");
 			await app.updateSettings({ bossEmail: "chef@alice.de" });
@@ -239,9 +242,7 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 				"data/device.json"
 			]);
 			expect(JSON.parse(files.get("data/device.json")!)).toEqual({ id: expect.any(String) });
-		} finally {
-			globalThis.fetch = originalFetch;
-		}
+		});
 	});
 
 	it("account.init() im Browser ohne aktive Sitzung bereinigt alte Speicher-Rückstände", async () => {
@@ -267,11 +268,7 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 	});
 
 	it("Kontowechsel: User A und User B bleiben auf demselben Server strikt voneinander isoliert", async () => {
-		const server = new MockServer();
-		const originalFetch = globalThis.fetch;
-		globalThis.fetch = server.fetchFor("browser-device");
-
-		try {
+		await withServer("browser-device", async (server) => {
 			// User A anlegen & konfigurieren
 			const keyA = await createVaultKey();
 			await account.linkWithSession("http://test-server/alice", keyA, "Alice");
@@ -350,10 +347,7 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 			expect(app.settings.senderName).toBe("Alice Wunder");
 			expect(app.settings.bossEmail).toBe("chef@alice.de");
 			expect(app.settings.hoursPerDay).toBe(7);
-		} finally {
-			globalThis.fetch = originalFetch;
-			await account.unlink();
-		}
+		});
 	});
 
 	it("Bug-Reproduktionstest: Neuregistrierung nach alter Session darf NIEMALS Altdaten in Einstellungen oder Server laden", async () => {
@@ -378,12 +372,8 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 		);
 
 		// Neuer Server, neue DB
-		const freshServer = new MockServer();
-		freshServer.currentUser = "user-neu";
-		const originalFetch = globalThis.fetch;
-		globalThis.fetch = freshServer.fetchFor("device-neu");
-
-		try {
+		await withServer("device-neu", async (freshServer) => {
+			freshServer.currentUser = "user-neu";
 			// Vor dem Linken: account.init() läuft beim Aufruf der Seite
 			await account.init();
 
@@ -407,19 +397,12 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 			// 2. Im Tresor auf dem Server darf KEIN Datensatz von den Altdaten liegen
 			const vaultNew = freshServer.userVaults.get("user-neu");
 			expect(vaultNew?.rows.size ?? 0).toBe(0);
-		} finally {
-			globalThis.fetch = originalFetch;
-			await account.unlink();
-		}
+		});
 	});
 
 	it("Nach Neuregistrierung im Browser und Überspringen der Desktop-Kopplung öffnet sich das Onboarding", async () => {
-		const server = new MockServer();
-		server.currentUser = "frischer-user";
-		const originalFetch = globalThis.fetch;
-		globalThis.fetch = server.fetchFor("device-web");
-
-		try {
+		await withServer("device-web", async (server) => {
+			server.currentUser = "frischer-user";
 			// 1. Neuer User registriert sich im Browser
 			const keyNew = await createVaultKey();
 			await account.linkWithSession("http://test-server/frischer-user", keyNew, "Mein Account");
@@ -444,20 +427,13 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 			await account.syncNow();
 			const vault = server.userVaults.get("frischer-user");
 			expect(vault?.rows.size).toBeGreaterThan(0);
-		} finally {
-			globalThis.fetch = originalFetch;
-			await account.unlink();
-		}
+		});
 	});
 
 	it("der gemerkte Passkey faellt beim Kontowechsel weg", async () => {
 		// Er sagt, welcher Eintrag der Kontoliste an DIESEM Browser haengt. Bliebe
 		// er beim Wechsel stehen, zeigte er auf einen Passkey des vorigen Kontos.
-		const server = new MockServer();
-		const originalFetch = globalThis.fetch;
-		globalThis.fetch = server.fetchFor("browser-device");
-
-		try {
+		await withServer("browser-device", async (server) => {
 			const keyA = await createVaultKey();
 			await account.linkWithSession("http://test-server/alice", keyA, "Alice");
 			await account.rememberPasskey("passkey-alice");
@@ -474,9 +450,6 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 
 			expect(account.passkeyId).toBeNull();
 			expect(JSON.parse(files.get("data/device.json")!).passkeyId).toBeUndefined();
-		} finally {
-			globalThis.fetch = originalFetch;
-			await account.unlink();
-		}
+		});
 	});
 });

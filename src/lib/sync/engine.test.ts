@@ -13,7 +13,7 @@ const { resetFakeFs } = await import("../testing/fakeFs");
 const store = await import("../store");
 const { defaultSettings } = await import("../types");
 import type { Entry } from "../types";
-import { anEntry } from "../testing/fixtures";
+import { anEntry, MONTH, ts } from "../testing/fixtures";
 import type { SyncEngine, SyncProgress, SyncState } from "./engine";
 
 let server: FakeSyncServer;
@@ -22,8 +22,6 @@ let key: VaultKey;
 const on = <T,>(g: FakeDevice, fn: (engine: SyncEngine) => Promise<T>): Promise<T> =>
 	onDevice({ server, key }, g, fn);
 
-const MONTH = "2026-07";
-const ts = (day: number, hour: number) => Date.UTC(2026, 6, day, hour) + 2 * 3600_000;
 
 const entry = (id: string, over: Partial<Entry> = {}): Entry =>
 	anEntry(id, { activityId: "akt-1", startTs: ts(15, 9), endTs: ts(15, 12), ...over });
@@ -38,6 +36,19 @@ async function afterwards(): Promise<void> {
 	const now = Date.now();
 	while (Date.now() === now) await new Promise((r) => setTimeout(r, 1));
 }
+
+/** Ein Geraet, das die genannten Eintraege hochgeladen hat. */
+async function deviceWith(id: string, ...list: Entry[]): Promise<FakeDevice> {
+	const device = new FakeDevice(id);
+	await on(device, async (engine) => {
+		await store.saveEntries(MONTH, list);
+		return engine.sync();
+	});
+	return device;
+}
+
+/** Ein Handy mit einem hochgeladenen Eintrag - die Ausgangslage vieler Faelle. */
+const phoneWith = (e: Entry) => deviceWith("handy", e);
 
 /** Was auf einem Device in einem Monat liegt. */
 async function entries(g: FakeDevice, month = MONTH): Promise<Entry[]> {
@@ -66,11 +77,7 @@ describe("Ein Device allein", () => {
 
 	it("legt beim Server nur Chiffrat ab", async () => {
 		// Die Zusage des ganzen Entwurfs, hier nachgesehen statt behauptet.
-		const phone = new FakeDevice("handy");
-		await on(phone, async (engine) => {
-			await store.saveEntries(MONTH, [entry("e1", { note: "Kundengespräch" })]);
-			return engine.sync();
-		});
+		const phone = await deviceWith("handy", entry("e1", { note: "Kundengespräch" }));
 		const line = [...server.rows.values()][0];
 		const everything = JSON.stringify(line);
 		expect(everything).not.toContain("Kundengespräch");
@@ -84,20 +91,12 @@ describe("Ein Device allein", () => {
 	it("schreibt die Fassung des Servers auf die Platte zurueck", async () => {
 		// Daran haengt alles Weitere: eine Folgeaenderung wird nur angenommen, wenn
 		// sie auf der Fassung des Servers aufsetzt.
-		const phone = new FakeDevice("handy");
-		await on(phone, async (engine) => {
-			await store.saveEntries(MONTH, [entry("e1")]);
-			return engine.sync();
-		});
+		const phone = await deviceWith("handy", entry("e1"));
 		expect((await entries(phone))[0].rev).toBe(1);
 	});
 
 	it("laedt beim zweiten Durchgang nichts erneut hoch", async () => {
-		const phone = new FakeDevice("handy");
-		await on(phone, async (engine) => {
-			await store.saveEntries(MONTH, [entry("e1")]);
-			return engine.sync();
-		});
+		const phone = await deviceWith("handy", entry("e1"));
 		const before = server.seq;
 		const secondOne = await on(phone, (engine) => engine.sync());
 		expect(secondOne!.pushed).toBe(0);
@@ -106,16 +105,6 @@ describe("Ein Device allein", () => {
 });
 
 describe("Zwei Geraete", () => {
-	/** Ein Handy mit einem hochgeladenen Eintrag - die Ausgangslage vieler Faelle. */
-	async function phoneWith(e: Entry): Promise<FakeDevice> {
-		const phone = new FakeDevice("handy");
-		await on(phone, async (engine) => {
-			await store.saveEntries(MONTH, [e]);
-			return engine.sync();
-		});
-		return phone;
-	}
-
 	it("das zweite Device bekommt den Eintrag des ersten - entschluesselt", async () => {
 		await phoneWith(entry("e1", { note: "vom Handy" }));
 
@@ -328,11 +317,7 @@ describe("Ueber Monatsgrenzen hinweg", () => {
 		// mit ihm. In der Outbox bleibt davon EINE Aenderung stehen (die spaetere
 		// gewinnt), der Server sieht also nie eine Loeschung - das andere Device
 		// muss den Umzug am neuen Startzeitpunkt selbst erkennen.
-		const phone = new FakeDevice("handy");
-		await on(phone, async (engine) => {
-			await store.saveEntries(MONTH, [entry("e1")]);
-			return engine.sync();
-		});
+		const phone = await deviceWith("handy", entry("e1"));
 		const desktop = new FakeDevice("rechner");
 		await on(desktop, (engine) => engine.sync());
 		expect(await entries(desktop, MONTH)).toHaveLength(1);
@@ -356,11 +341,7 @@ describe("Ueber Monatsgrenzen hinweg", () => {
 		// Am Monatsende am Handy gestartet, im naechsten Monat am Rechner noch
 		// einmal. Zwei laufende Timer in zwei Dateien - monatsweise betrachtet stand
 		// in jeder genau einer, und beide zaehlten weiter.
-		const phone = new FakeDevice("handy");
-		await on(phone, async (engine) => {
-			await store.saveEntries(MONTH, [entry("h1", { startTs: ts(30, 10), endTs: null })]);
-			return engine.sync();
-		});
+		const phone = await deviceWith("handy", entry("h1", { startTs: ts(30, 10), endTs: null }));
 
 		const desktop = new FakeDevice("rechner");
 		await on(desktop, async (engine) => {
@@ -380,11 +361,7 @@ describe("Ueber Monatsgrenzen hinweg", () => {
 		// Ein Programm, das laeuft und laeuft. Die Monatsliste darf ihm nicht
 		// einfrieren: sonst faende die Loeschung ihren Monat nicht, wuerde still
 		// verworfen - und `seq` liefe trotzdem weiter. Endgueltig verloren.
-		const phone = new FakeDevice("handy");
-		await on(phone, async (engine) => {
-			await store.saveEntries(MONTH, [entry("e1")]);
-			return engine.sync();
-		});
+		const phone = await deviceWith("handy", entry("e1"));
 		// Ein Loeschmarker fuer etwas, das der Rechner nie hatte. Er ist der Grund,
 		// weshalb die Monatsliste im ersten Durchgang ueberhaupt gezogen wird - zu
 		// einem Zeitpunkt, an dem es noch keine Monatsdatei gibt.
@@ -438,11 +415,7 @@ describe("Was der Mensch erfahren muss", () => {
 		// entlang: die eigene Aenderung stoesst auf einen Konflikt, und beim
 		// Aufloesen gewinnt der Server. Bliebe die Zahl dort liegen, stuende am Ende
 		// "abgeglichen" da - ohne ein Wort darueber, dass etwas ueberschrieben wurde.
-		const phone = new FakeDevice("handy");
-		await on(phone, async (engine) => {
-			await store.saveEntries(MONTH, [entry("e1", { note: "handy" })]);
-			return engine.sync();
-		});
+		const phone = await deviceWith("handy", entry("e1", { note: "handy" }));
 		const desktop = new FakeDevice("rechner");
 		await on(desktop, (engine) => engine.sync());
 
@@ -542,11 +515,7 @@ describe("Robustheit", () => {
 	it("ein unlesbarer Datensatz haelt den Abgleich nicht an", async () => {
 		// Ein einzelner unlesbarer Datensatz ist ein Aergernis, ein
 		// steckengebliebener Abgleich ein Ausfall.
-		const phone = new FakeDevice("handy");
-		await on(phone, async (engine) => {
-			await store.saveEntries(MONTH, [entry("e1")]);
-			return engine.sync();
-		});
+		const phone = await deviceWith("handy", entry("e1"));
 
 		// Ein Datensatz mit Chiffrat aus einem FREMDEN Tresor.
 		const otherKey = key;
@@ -566,11 +535,7 @@ describe("Robustheit", () => {
 	});
 
 	it("merkt sich den Stand, damit der naechste Durchgang nur das Delta holt", async () => {
-		const phone = new FakeDevice("handy");
-		await on(phone, async (engine) => {
-			await store.saveEntries(MONTH, [entry("e1")]);
-			return engine.sync();
-		});
+		const phone = await deviceWith("handy", entry("e1"));
 		const desktop = new FakeDevice("rechner");
 		await on(desktop, (engine) => engine.sync());
 		expect(desktop.state.seq).toBe(server.seq);
@@ -929,11 +894,7 @@ describe("onProgress – Ladeanzeige beim Massenimport", () => {
 	});
 
 	it("endet immer mit phase=idle", async () => {
-		const sender = new FakeDevice("sender3");
-		await on(sender, async (engine) => {
-			await store.saveEntries(MONTH, [entry("g1")]);
-			return engine.sync();
-		});
+		const sender = await deviceWith("sender3", entry("g1"));
 
 		const recipient = new FakeDevice("empfaenger3");
 		const { events } = await syncWithProgress(recipient);

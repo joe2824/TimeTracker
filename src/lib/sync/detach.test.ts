@@ -8,10 +8,8 @@ const { resetOutboxForTests, startTracking, stopTracking, pendingChanges } = awa
 const { resetFakeFs } = await import("../testing/fakeFs");
 const store = await import("../store");
 import type { Activity, Entry } from "../types";
-import { anActivity, anEntry } from "../testing/fixtures";
+import { anActivity, anEntry, MONTH, ts } from "../testing/fixtures";
 
-const MONTH = "2026-07";
-const ts = (day: number, hour: number) => Date.UTC(2026, 6, day, hour) + 2 * 3600_000;
 
 const entry = (id: string, over: Partial<Entry> = {}): Entry =>
 	anEntry(id, {

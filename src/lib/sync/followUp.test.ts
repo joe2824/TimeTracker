@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeSyncServer } from "../testing/fakeSyncServer";
 import { FakeDevice, onDevice, withoutAccount } from "../testing/syncDevice";
-import { anActivity, anEntry } from "../testing/fixtures";
+import { anActivity, anEntry, MONTH, ts } from "../testing/fixtures";
 import type { VaultKey } from "../crypto/vault";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("../testing/fakeFs")).fakeFs);
@@ -15,8 +15,6 @@ const { defaultSettings } = await import("../types");
 import type { Activity, Entry } from "../types";
 import type { SyncEngine } from "./engine";
 
-const MONTH = "2026-07";
-const ts = (day: number, hour: number) => Date.UTC(2026, 6, day, hour) + 2 * 3600_000;
 
 
 let server: FakeSyncServer;
