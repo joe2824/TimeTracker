@@ -2,8 +2,8 @@
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { Button } from "$lib/components/ui/button";
 	import { app } from "$lib/app.svelte";
-	import { fmtClock, fmtHMS } from "$lib/time";
-	import { watchers, resolveIdle } from "$lib/watchers.svelte";
+	import { fmtClock, fmtHMS } from "$lib/time/time";
+	import { watchers, resolveIdle } from "$lib/ui/watchers.svelte";
 
 	const p = $derived(watchers.idlePrompt);
 	const open = $derived(!!p);

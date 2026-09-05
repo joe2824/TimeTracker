@@ -5,7 +5,7 @@
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { Button } from "$lib/components/ui/button";
 	import { app } from "$lib/app.svelte";
-	import { fmtDateHuman } from "$lib/time";
+	import { fmtDateHuman } from "$lib/time/time";
 	import PalmtreeIcon from "@lucide/svelte/icons/palmtree";
 
 	const p = $derived(app.absenceOverridePrompt);

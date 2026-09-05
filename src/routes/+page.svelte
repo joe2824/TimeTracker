@@ -4,7 +4,7 @@
 	import { getCurrentWindow } from "@tauri-apps/api/window";
 	import { invoke } from "@tauri-apps/api/core";
 	import { enable, isEnabled } from "@tauri-apps/plugin-autostart";
-	import { checkForUpdate, openUpdateDialog, updater } from "$lib/updater.svelte";
+	import { checkForUpdate, openUpdateDialog, updater } from "$lib/release/updater.svelte";
 	import { getVersion } from "@tauri-apps/api/app";
 	import { toast } from "svelte-sonner";
 	import { app } from "$lib/app.svelte";
@@ -13,7 +13,7 @@
 	import type { DataChanged } from "$lib/platform/windows";
 	import { onPairLink } from "$lib/platform/deeplink";
 	import WebOnboarding from "$lib/components/onboarding/WebOnboarding.svelte";
-	import { onboardingOpen } from "$lib/onboarding.svelte";
+	import { onboardingOpen } from "$lib/account/onboarding.svelte";
 	import PasskeyNudge from "$lib/components/onboarding/PasskeyNudge.svelte";
 	import { errorText, logError, logFile, logInfo, logWarn, pruneOldLogs } from "$lib/log";
 	import { appDataDir, join } from "@tauri-apps/api/path";
@@ -21,18 +21,18 @@
 	import { Button } from "$lib/components/ui/button";
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { Badge } from "$lib/components/ui/badge";
-	import { scheduleReminders, scheduleReportReminder } from "$lib/reminders";
+	import { scheduleReminders, scheduleReportReminder } from "$lib/ui/reminders";
 	import { installNotificationClickListener } from "$lib/platform/notify";
-	import { applyShortcuts } from "$lib/shortcuts";
+	import { applyShortcuts } from "$lib/ui/shortcuts";
 	import {
 		startUsagePing,
 		startWatchers,
 		stopUsagePing,
 		stopWatchers,
 		watchers
-	} from "$lib/watchers.svelte";
-	import { entriesFocus } from "$lib/entriesFocus.svelte";
-	import { onIntent, prefetchSettings } from "$lib/prefetch";
+	} from "$lib/ui/watchers.svelte";
+	import { entriesFocus } from "$lib/ui/entriesFocus.svelte";
+	import { onIntent, prefetchSettings } from "$lib/ui/prefetch";
 	import * as Tabs from "$lib/components/ui/tabs";
 	import SyncHint from "$lib/components/shared/SyncHint.svelte";
 	import TimerIcon from "@lucide/svelte/icons/timer";
@@ -59,7 +59,7 @@
 	import AbsenceOverrideDialog from "$lib/components/dialogs/AbsenceOverrideDialog.svelte";
 	import UpdateDialog from "$lib/components/dialogs/UpdateDialog.svelte";
 	import WhatsNewDialog from "$lib/components/dialogs/WhatsNewDialog.svelte";
-	import { whatsNew } from "$lib/whatsNew.svelte";
+	import { whatsNew } from "$lib/release/whatsNew.svelte";
 
 	let tab = $state("tracking");
 

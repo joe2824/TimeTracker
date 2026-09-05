@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
-	import type { MonthReport } from "$lib/report";
-	import { dayActivityHours, heatmapYear, sumPerDay, targetHours } from "$lib/stats";
-	import { fmtDateHuman, fmtHoursClock, MINUTE_MS, monthLabel, noonTs, quantize } from "$lib/time";
-	import { zonedParts } from "$lib/tz";
+	import type { MonthReport } from "$lib/report/report";
+	import { dayActivityHours, heatmapYear, sumPerDay, targetHours } from "$lib/report/stats";
+	import { fmtDateHuman, fmtHoursClock, MINUTE_MS, monthLabel, noonTs, quantize } from "$lib/time/time";
+	import { zonedParts } from "$lib/time/tz";
 	import type { Entry } from "$lib/types";
 	import * as Card from "$lib/components/ui/card";
 	import * as Chart from "$lib/components/ui/chart";

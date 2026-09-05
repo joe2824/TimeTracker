@@ -20,7 +20,7 @@
 		unlockWithPhrase
 	} from "$lib/sync/enroll";
 	import type { VaultKey } from "$lib/crypto/vault";
-	import { onIntent } from "$lib/prefetch";
+	import { onIntent } from "$lib/ui/prefetch";
 	import * as Dialog from "$lib/components/ui/dialog";
 	import PairingCode from "$lib/components/onboarding/PairingCode.svelte";
 	import Landing from "$lib/components/onboarding/Landing.svelte";
@@ -30,8 +30,8 @@
 	import KeyRoundIcon from "@lucide/svelte/icons/key-round";
 	import { RELEASES_URL, detectOs, hasDesktopApp } from "$lib/platform/os";
 	import { errorText, logWarn } from "$lib/log";
-	import { linkParameter } from "$lib/invite";
-	import { onboardingOpen } from "$lib/onboarding.svelte";
+	import { linkParameter } from "$lib/account/invite";
+	import { onboardingOpen } from "$lib/account/onboarding.svelte";
 	import { onMount } from "svelte";
 	import {
 		isPairingCode,

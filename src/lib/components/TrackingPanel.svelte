@@ -10,12 +10,12 @@
 		fmtHoursClock,
 		midnightSplitHint,
 		noonTs
-	} from "$lib/time";
+	} from "$lib/time/time";
 	import { TIME_OFF_COLOR } from "$lib/types";
-	import { breakDeduction } from "$lib/breaks";
-	import { dayTotals } from "$lib/dayTotals";
-	import { arbzgMonths, checkArbZg, dataFromEntries, MIN_HINT_WEEKS } from "$lib/arbzg";
-	import { START_PRESETS, resolveStartTs, toStartArg } from "$lib/startTime";
+	import { breakDeduction } from "$lib/time/breaks";
+	import { dayTotals } from "$lib/time/dayTotals";
+	import { arbzgMonths, checkArbZg, dataFromEntries, MIN_HINT_WEEKS } from "$lib/time/arbzg";
+	import { START_PRESETS, resolveStartTs, toStartArg } from "$lib/time/startTime";
 	import { Button } from "$lib/components/ui/button";
 	import * as ButtonGroup from "$lib/components/ui/button-group";
 	import { Input } from "$lib/components/ui/input";

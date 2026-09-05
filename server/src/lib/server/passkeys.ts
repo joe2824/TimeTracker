@@ -5,7 +5,7 @@
 // heraus, und die Verwaltung zeigte daraufhin jeden Passkey als unbenannt und
 // unverschluesselt an - auch die, die beides hatten.
 import { and, eq } from "drizzle-orm";
-import type { DbLike } from "./db";
+import type { DbLike } from "./db/index";
 import { credentials, keyWraps } from "./db/schema";
 
 export interface PasskeyView {

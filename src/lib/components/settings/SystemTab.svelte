@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from "svelte";
 	import { app } from "$lib/app.svelte";
-	import { createSettingsForm } from "$lib/settingsForm.svelte";
+	import { createSettingsForm } from "$lib/ui/settingsForm.svelte";
 	import { listEntryYears, type StoredYear } from "$lib/store";
 	import { Button } from "$lib/components/ui/button";
 	import * as Dialog from "$lib/components/ui/dialog";
@@ -11,7 +11,7 @@
 	import { capabilities, isTauri } from "$lib/platform/env";
 	import { account } from "$lib/sync/account.svelte";
 	import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
-	import { checkForUpdate, updater } from "$lib/updater.svelte";
+	import { checkForUpdate, updater } from "$lib/release/updater.svelte";
 	import { relaunch } from "@tauri-apps/plugin-process";
 	import { errorText, flushLog, logInfo } from "$lib/log";
 	import { toast } from "svelte-sonner";
@@ -28,7 +28,7 @@
 		restoreBackup,
 		type BackupStats,
 		type TimeTrackerBackup
-	} from "$lib/backup";
+	} from "$lib/report/backup";
 
 	const { form, save } = createSettingsForm();
 	let savedSystemAt = $state(0);

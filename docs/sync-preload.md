@@ -1,5 +1,8 @@
 # Sync: Vorladen statt Voll-Download — Plan (umgesetzt, Historie)
 
+> Die Pfade unten stammen von vor der Neuordnung von `src/lib` (2026-09-05).
+> `prefetch.ts` liegt jetzt in `ui/`, `reportSend.ts` und `backup.ts` in `report/`.
+
 Status: **fertig** (Stand 2026-09-01). Alle elf Schritte stehen, siehe "Was
 steht" unten. Offen ist nur noch ein bewusst liegengelassener Nebenpunkt.
 Diese Datei liegt im Repo, damit die Arbeit auf einer anderen Maschine

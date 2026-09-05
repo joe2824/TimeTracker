@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
-	import { fmtDate, noonTs, parseClock, parseHours, startOfNextDay, toTs } from "$lib/time";
-	import { stepDate } from "$lib/time";
-	import { weekdayOfDate } from "$lib/tz";
+	import { fmtDate, noonTs, parseClock, parseHours, startOfNextDay, toTs } from "$lib/time/time";
+	import { stepDate } from "$lib/time/time";
+	import { weekdayOfDate } from "$lib/time/tz";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";

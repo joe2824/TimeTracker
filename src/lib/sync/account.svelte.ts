@@ -28,7 +28,7 @@ import {
 import { Api, ApiError, type AccountInfo, type BackupInfo, type DeleteSummary, type Invite, type Passkey, type ServerStats } from "./api";
 
 import { detachLocalData } from "./detach";
-import { monthKey, prevMonthKey, shiftMonthKey } from "../time";
+import { monthKey, prevMonthKey, shiftMonthKey } from "../time/time";
 import { SyncEngine, type SyncState } from "./engine";
 import {
 	createPairingKeyPair,

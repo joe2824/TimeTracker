@@ -7,7 +7,7 @@
 		isBuiltinActivity,
 		type Activity
 	} from "$lib/types";
-	import { acceleratorFromEvent, applyShortcuts } from "$lib/shortcuts";
+	import { acceleratorFromEvent, applyShortcuts } from "$lib/ui/shortcuts";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Textarea } from "$lib/components/ui/textarea";

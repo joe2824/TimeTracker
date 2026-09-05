@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { openDb, type Db } from "./db";
+import { openDb, type Db } from "./db/index";
 import { devices, pairings, sessions, users } from "./db/schema";
 import { cleanupExpired, createDevice, deviceFromToken, hashSecret, userFromSession } from "./auth";
 import { SESSION_REFRESH_MS, SESSION_TTL_MS } from "./config";

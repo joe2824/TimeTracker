@@ -1,0 +1,306 @@
+import type { Entry } from "../types";
+import { addCalendarDays, appTimeZone, isoDate, wallStringToTs, zonedParts } from "./tz";
+
+/**
+ * "YYYY-MM" fuer einen Zeitstempel – in der Zeitzone des Kontos, nicht der des
+ * Geraets. Welcher Monat ein Zeitstempel ist, muss auf jedem Geraet dieselbe
+ * Antwort haben, sonst landet derselbe Eintrag in zwei Monatsdateien.
+ */
+export function monthKey(ts: number): string {
+	const p = zonedParts(ts);
+	return `${p.year}-${String(p.month).padStart(2, "0")}`;
+}
+
+/** Der Vormonat als "YYYY-MM". */
+export function prevMonthKey(now = Date.now()): string {
+	const p = zonedParts(now);
+	const year = p.month === 1 ? p.year - 1 : p.year;
+	const month = p.month === 1 ? 12 : p.month - 1;
+	return `${year}-${String(month).padStart(2, "0")}`;
+}
+
+/**
+ * Einen Monatsschluessel um `delta` Monate verschieben.
+ *
+ * Reine Rechnung auf "YYYY-MM", ohne Date: ein Date-Cursor haengt an der Zone
+ * des Geraets, und an einer Sommerzeit-Grenze trifft er den falschen Monat.
+ */
+export function shiftMonthKey(month: string, delta: number): string {
+	const [y, m] = month.split("-").map(Number);
+	if (!y || !m) return month;
+	const total = y * 12 + (m - 1) + delta;
+	const year = Math.floor(total / 12);
+	const index = total - year * 12;
+	return `${year}-${String(index + 1).padStart(2, "0")}`;
+}
+
+/** Dauer eines Eintrags in Sekunden (laufende Eintraege bis `now`). */
+export function durationSeconds(e: Entry, now = Date.now()): number {
+	const end = e.endTs ?? now;
+	return Math.max(0, Math.floor((end - e.startTs) / 1000));
+}
+
+/**
+ * Stunden eines Eintrags. Abwesenheits-Eintraege zaehlen als Tagesanteil * hoursPerDay
+ * (ganzer Tag = hoursPerDay, halber Tag = hoursPerDay/2); sonst aus der Dauer.
+ */
+export function entryHours(
+	e: Entry,
+	isAbsence: boolean,
+	hoursPerDay: number,
+	now = Date.now()
+): number {
+	if (isAbsence) return (e.dayFraction ?? 1) * hoursPerDay;
+	return durationSeconds(e, now) / 3600;
+}
+
+/**
+ * Ende eines offenen Eintrags (endTs === null) fuer Auswertungen: gekappt auf
+ * das Ende SEINES Tages, nie unbegrenzt bis `now`.
+ */
+export function openEntryUntil(e: Entry, now: number): number {
+	return e.endTs === null ? Math.min(now, startOfNextDay(e.startTs)) : now;
+}
+
+export function roundHours(hours: number, step: number): number {
+	if (!step || step <= 0) return hours;
+	return Math.round(hours / step) * step;
+}
+
+/** "1:05:09" */
+export function fmtHMS(totalSeconds: number): string {
+	const s = Math.max(0, Math.floor(totalSeconds));
+	const h = Math.floor(s / 3600);
+	const m = Math.floor((s % 3600) / 60);
+	const sec = s % 60;
+	const pad = (n: number) => String(n).padStart(2, "0");
+	return `${h}:${pad(m)}:${pad(sec)}`;
+}
+
+/** Uhrzeit "HH:MM" eines Zeitstempels in der Zeitzone des Kontos. */
+export function fmtClock(ts: number): string {
+	const p = zonedParts(ts);
+	return `${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}`;
+}
+
+/** Eine Minute in Millisekunden – Schrittweite fuer `quantize`. */
+export const MINUTE_MS = 60_000;
+
+/** Einen Zeitstempel auf ein Vielfaches von `stepMs` abrunden. */
+export function quantize(ts: number, stepMs: number): number {
+	return Math.floor(ts / stepMs) * stepMs;
+}
+
+/** Datum "YYYY-MM-DD" eines Zeitstempels in der Zeitzone des Kontos. */
+export function fmtDate(ts: number): string {
+	const p = zonedParts(ts);
+	return isoDate(p.year, p.month, p.day);
+}
+
+/**
+ * Epoch-ms fuer "YYYY-MM-DD" + "HH:MM" in der Zeitzone des Kontos. NaN bei
+ * ungueltiger Eingabe.
+ */
+export function toTs(date: string, time: string): number {
+	return wallStringToTs(date, time);
+}
+
+/**
+ * Einen minutengenau bearbeiteten Zeitpunkt auf den gespeicherten zurueckfuehren,
+ * solange die MINUTE dieselbe geblieben ist.
+ *
+ * @param original der gespeicherte Zeitpunkt, oder null bei einem neuen Eintrag
+ */
+export function keepSeconds(ts: number, original: number | null): number {
+	if (original === null || Number.isNaN(ts)) return ts;
+	return Math.floor(ts / 60000) === Math.floor(original / 60000) ? original : ts;
+}
+
+/** Epoch-ms fuer die Tagesmitte eines "YYYY-MM-DD". */
+export function noonTs(date: string): number {
+	return toTs(date, "12:00");
+}
+
+/** Mitternacht (Tagesbeginn) eines "YYYY-MM-DD" in der Zeitzone des Kontos. */
+export function startOfDay(date: string): number {
+	return wallStringToTs(date, "00:00");
+}
+
+/** Verschiebt ein "YYYY-MM-DD"-Datum um `delta` Tage – mit Monats-/Jahresübergang. */
+export function stepDate(date: string, delta: number): string {
+	return addCalendarDays(date, delta);
+}
+
+/** Ist der Tag von `ts` ein regulärer Arbeitstag? (workdays: Wochentagsnummern 0=So..6=Sa) */
+export function isWorkday(ts: number, workdays: number[]): boolean {
+	return workdays.includes(zonedParts(ts).weekday);
+}
+
+/**
+ * Tages-Mitten (12:00 lokal) aller Tage eines Ganztags-Termins.
+ * Outlook liefert das Ende exklusiv (nächster Tag 00:00), daher Iteration bis < Ende-Mitternacht.
+ * Fällt immer auf mindestens den Starttag zurück (z. B. wenn Ende <= Start).
+ */
+export function allDayNoons(startTs: number, endExclusiveTs: number): number[] {
+	const out: number[] = [];
+	let date = fmtDate(startTs);
+	const endDate = fmtDate(endExclusiveTs);
+	// Ueber die Kalendertage laufen, nicht ueber Zeitstempel: an einer
+	// Sommerzeit-Grenze traefe eine 24-Stunden-Addition den Tag daneben.
+	while (date < endDate) {
+		out.push(noonTs(date));
+		date = addCalendarDays(date, 1);
+	}
+	if (out.length === 0) out.push(noonTs(fmtDate(startTs)));
+	return out;
+}
+
+/** Stundenzahl deutsch formatiert, z.B. "4,5". */
+export function fmtHours(h: number): string {
+	return h.toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 2 });
+}
+
+/** Stundenzahl als Zeitformat "H:MM", z.B. 7.5 -> "7:30", 40 -> "40:00". */
+export function fmtHoursClock(hours: number): string {
+	const totalMin = Math.round(hours * 60);
+	const sign = totalMin < 0 ? "-" : "";
+	const abs = Math.abs(totalMin);
+	return `${sign}${Math.floor(abs / 60)}:${String(abs % 60).padStart(2, "0")}`;
+}
+
+/** "HH:MM" -> Minuten seit Mitternacht, oder null bei ungültiger Eingabe. */
+export function clockToMin(t: string): number | null {
+	const m = /^(\d{1,2}):(\d{2})$/.exec(t.trim());
+	if (!m) return null;
+	const h = Number(m[1]);
+	const min = Number(m[2]);
+	if (h > 23 || min > 59) return null;
+	return h * 60 + min;
+}
+
+/** Minuten -> "HH:MM" (modulo 24h, rundet auf ganze Minuten). */
+export function minToClock(min: number): string {
+	const x = ((Math.round(min) % 1440) + 1440) % 1440;
+	return `${String(Math.floor(x / 60)).padStart(2, "0")}:${String(x % 60).padStart(2, "0")}`;
+}
+
+/**
+ * Uhrzeit-Eingabe flexibel parsen und auf "HH:MM" normalisieren. Akzeptiert
+ * "18:00", "1800", "830", "8", "18.30", "18,30", "18h30". Null bei ungültiger Eingabe.
+ */
+export function parseClock(input: string): string | null {
+	const t = input.trim();
+	if (!t) return null;
+	let h: number;
+	let min: number;
+	const sep = /^(\d{1,2})[:.,h](\d{1,2})$/i.exec(t);
+	if (sep) {
+		h = Number(sep[1]);
+		min = Number(sep[2]);
+	} else if (/^\d+$/.test(t)) {
+		if (t.length <= 2) {
+			h = Number(t);
+			min = 0;
+		} else if (t.length === 3) {
+			h = Number(t.slice(0, 1));
+			min = Number(t.slice(1));
+		} else if (t.length === 4) {
+			h = Number(t.slice(0, 2));
+			min = Number(t.slice(2));
+		} else {
+			return null;
+		}
+	} else {
+		return null;
+	}
+	if (h > 23 || min > 59) return null;
+	return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+}
+
+/**
+ * Stunden-Eingabe parsen. Akzeptiert Dezimal ("7,5" / "7.5", unbegrenzt – z.B. 80
+ * für Monatspauschalen), Uhrzeit-Format mit Doppelpunkt ("7:30", Stunden 0–23) und
+ * vierstellige HHMM-Eingabe ohne Trenner ("0741" = 7:41, "1230" = 12:30). Im
+ * Uhrzeit-Format wird einstellige Minutenangabe als 0–9 Minuten gelesen ("7:5" = 7:05).
+ * Liefert Dezimalstunden oder null bei ungültiger Eingabe.
+ */
+export function parseHours(input: string): number | null {
+	const t = input.trim();
+	if (!t) return null;
+	const colon = /^(\d{1,2}):(\d{1,2})$/.exec(t);
+	if (colon) {
+		const h = Number(colon[1]);
+		const min = Number(colon[2]);
+		if (h > 23 || min > 59) return null;
+		return h + min / 60;
+	}
+	// Vierstellige HHMM-Eingabe ("0741" -> 7:41). Vierstellige Stundenzahlen wären
+	// als Tagesdauer ohnehin unsinnig, daher als Uhrzeit interpretieren.
+	const hhmm = /^(\d{2})(\d{2})$/.exec(t);
+	if (hhmm) {
+		const h = Number(hhmm[1]);
+		const min = Number(hhmm[2]);
+		if (h <= 23 && min <= 59) return h + min / 60;
+	}
+	const n = Number(t.replace(",", "."));
+	return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+/** Dauer in Stunden zwischen zwei "HH:MM"-Zeiten (über Mitternacht zählt +24h). */
+export function durationHours(start: string, end: string): number {
+	const a = clockToMin(start);
+	const b = clockToMin(end);
+	if (a == null || b == null) return 0;
+	let d = b - a;
+	if (d < 0) d += 1440;
+	return d / 60;
+}
+
+/** Mitternacht des Folgetags, in der Zeitzone des Kontos. */
+export function startOfNextDay(ts: number): number {
+	return startOfDay(addCalendarDays(fmtDate(ts), 1));
+}
+
+/** Zerlegt [startTs, endTs] an Mitternacht in Tagesstuecke. */
+export function splitAtMidnight(
+	startTs: number,
+	endTs: number
+): { startTs: number; endTs: number }[] {
+	const parts: { startTs: number; endTs: number }[] = [];
+	let cur = startTs;
+	while (cur < endTs) {
+		const end = Math.min(startOfNextDay(cur), endTs);
+		parts.push({ startTs: cur, endTs: end });
+		cur = end;
+	}
+	return parts.length > 0 ? parts : [{ startTs, endTs }];
+}
+
+/** Hinweistext, wenn eine Spanne ueber Mitternacht geht – sonst null. */
+export function midnightSplitHint(startTs: number, endTs: number): string | null {
+	const parts = splitAtMidnight(startTs, endTs).length;
+	return parts > 1 ? `über Mitternacht, wird in ${parts} Einträge geteilt` : null;
+}
+
+/** Datum deutsch mit Wochentag, z.B. "Do., 16.07.2026" – fuer Meldungen und Tooltips. */
+export function fmtDateHuman(ts: number): string {
+	return new Date(ts).toLocaleDateString("de-DE", {
+		timeZone: appTimeZone(),
+		weekday: "short",
+		day: "2-digit",
+		month: "2-digit",
+		year: "numeric"
+	});
+}
+
+/** Monatsname deutsch, z.B. "Juni 2026" aus "2026-06". */
+export function monthLabel(monthKey: string): string {
+	const [y, m] = monthKey.split("-").map(Number);
+	// Ueber UTC bauen und in UTC formatieren: eine lokale Konstruktion des
+	// Monatsersten kann in westlichen Zonen auf den Vormonat kippen.
+	return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("de-DE", {
+		timeZone: "UTC",
+		month: "long",
+		year: "numeric"
+	});
+}

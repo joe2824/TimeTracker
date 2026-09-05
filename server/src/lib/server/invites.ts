@@ -1,7 +1,7 @@
 // Invite management: creation, validation, consumption, and admin role checking.
 import { error } from "@sveltejs/kit";
 import { and, desc, eq, isNull } from "drizzle-orm";
-import type { Db, DbLike } from "./db";
+import type { Db, DbLike } from "./db/index";
 import { invites, serverSettings, users } from "./db/schema";
 import { INVITE_CODES, REGISTRATION_OPEN } from "./config";
 import { randomInt } from "node:crypto";

@@ -4,9 +4,9 @@
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
 	import { app } from "$lib/app.svelte";
-	import { fmtClock, fmtDate, fmtDateHuman, fmtHMS, monthKey } from "$lib/time";
-	import { checkEnd, suggestLongTimerEnd } from "$lib/longTimer";
-	import { watchers, resolveLongTimer } from "$lib/watchers.svelte";
+	import { fmtClock, fmtDate, fmtDateHuman, fmtHMS, monthKey } from "$lib/time/time";
+	import { checkEnd, suggestLongTimerEnd } from "$lib/time/longTimer";
+	import { watchers, resolveLongTimer } from "$lib/ui/watchers.svelte";
 
 	const p = $derived(watchers.longTimerPrompt);
 	const open = $derived(!!p);

@@ -5,7 +5,7 @@
 	import { toast } from "svelte-sonner";
 	import { account } from "$lib/sync/account.svelte";
 	import { isTauri } from "$lib/platform/env";
-	import { missingPasskey, type MissingPasskey } from "$lib/passkeyStatus";
+	import { missingPasskey, type MissingPasskey } from "$lib/account/passkeyStatus";
 	import KeyRoundIcon from "@lucide/svelte/icons/key-round";
 	import XIcon from "@lucide/svelte/icons/x";
 

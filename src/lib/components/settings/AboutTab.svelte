@@ -17,11 +17,11 @@
 		devTriggerIdle,
 		devTriggerLongTimer,
 		devTriggerReportReminder
-	} from "$lib/watchers.svelte";
+	} from "$lib/ui/watchers.svelte";
 	import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
 	import WrenchIcon from "@lucide/svelte/icons/wrench";
 	import SparklesIcon from "@lucide/svelte/icons/sparkles";
-	import { whatsNew } from "$lib/whatsNew.svelte";
+	import { whatsNew } from "$lib/release/whatsNew.svelte";
 
 	const REPO_URL = "https://github.com/joe2824/TimeTracker";
 

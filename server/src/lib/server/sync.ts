@@ -1,6 +1,6 @@
 // Abholen und Ablegen versiegelter Datensaetze.
 import { and, asc, eq, gt, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
-import type { Db } from "./db";
+import type { Db } from "./db/index";
 import { records, users } from "./db/schema";
 import {
 	DEFAULT_PAGE,

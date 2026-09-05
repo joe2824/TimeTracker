@@ -3,10 +3,10 @@
 	import { Button } from "$lib/components/ui/button";
 	import { app } from "$lib/app.svelte";
 	import { account } from "$lib/sync/account.svelte";
-	import { monthLabel } from "$lib/time";
-	import { sendReport } from "$lib/reportSend";
+	import { monthLabel } from "$lib/time/time";
+	import { sendReport } from "$lib/report/reportSend";
 	import { capabilities } from "$lib/platform/env";
-	import { watchers } from "$lib/watchers.svelte";
+	import { watchers } from "$lib/ui/watchers.svelte";
 	import { toast } from "svelte-sonner";
 	import MailIcon from "@lucide/svelte/icons/mail";
 

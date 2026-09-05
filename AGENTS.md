@@ -24,18 +24,27 @@ ohne vorherigen Build testet man den alten Stand. Und der Server liefert die PWA
 dabei **nicht Port 1420** nehmen (`WebOnboarding.svelte` nimmt `location.origin`
 als Serveradresse, das zeigt dort auf Vite). Richtig ist `http://localhost:5173`.
 
+## Wo etwas hingehört
+
+`src/lib/` hatte 77 flache Dateien. Jetzt: oben nur die Primitive, die fast
+jedes Modul braucht (`types`, `app.svelte`, `store`, `log`, `defaults`,
+`utils`, `analytics`), darunter `time/`, `report/`, `account/`, `ui/`,
+`release/` sowie `components/`, `sync/`, `platform/`, `crypto/`, `testing/`.
+
+Der Test liegt **neben** seinem Modul (`store.ts` → `store.test.ts`), nicht in
+einem eigenen Baum: so wandert er beim Verschieben mit. `testing/` enthält keine
+Tests, sondern Fakes und Fixtures, die Tests importieren.
+
 ## Svelte 5
 
 Runes, ausnahmslos: `$state`, `$derived`, `$effect`, `$props()`. Kein
 `export let`, kein `svelte/store` — beides kommt im Repo null mal vor, wird von
 älteren Modellen aber verlässlich vorgeschlagen.
 
-`src/lib/components/ui/` gehört der shadcn-svelte-CLI (98 Dateien). Handedits
-überschreibt der nächste `shadcn-svelte add` — Abweichendes gehört in eine
-eigene Komponente daneben.
-
-Was nur auf einer Plattform läuft, hängt an `isTauri()` (24 Dateien): im Browser
-gibt es keine Dateien, auf dem Rechner keine Passkeys.
+`components/ui/` gehört der shadcn-svelte-CLI (98 Dateien) — Handedits
+überschreibt der nächste `shadcn-svelte add`. Was nur auf einer Plattform läuft,
+hängt an `isTauri()`: im Browser gibt es keine Dateien, auf dem Rechner keine
+Passkeys.
 
 ## Doppelungen
 

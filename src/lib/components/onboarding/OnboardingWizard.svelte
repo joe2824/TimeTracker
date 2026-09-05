@@ -3,8 +3,8 @@
 	import { app } from "$lib/app.svelte";
 	import { account } from "$lib/sync/account.svelte";
 	import { DEFAULT_SERVER } from "$lib/defaults";
-	import { clockToMin } from "$lib/time";
-	import { scheduleReminders } from "$lib/reminders";
+	import { clockToMin } from "$lib/time/time";
+	import { scheduleReminders } from "$lib/ui/reminders";
 	import { errorText, logInfo, logWarn } from "$lib/log";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
@@ -14,7 +14,7 @@
 	import WorkdayPicker from "$lib/components/shared/WorkdayPicker.svelte";
 	import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 	import { openExternal } from "$lib/platform/open";
-	import { createLink } from "$lib/invite";
+	import { createLink } from "$lib/account/invite";
 	import { toast } from "svelte-sonner";
 	import TimerIcon from "@lucide/svelte/icons/timer";
 	import MailIcon from "@lucide/svelte/icons/mail";
@@ -29,7 +29,7 @@
 	import SmartphoneIcon from "@lucide/svelte/icons/smartphone";
 	import CheckCircle2Icon from "@lucide/svelte/icons/check-circle-2";
 	import PairingCode from "$lib/components/onboarding/PairingCode.svelte";
-	import { PairingFlow } from "$lib/pairingFlow.svelte";
+	import { PairingFlow } from "$lib/account/pairingFlow.svelte";
 
 	const STEPS = 5;
 	let step = $state(0);

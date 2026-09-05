@@ -5,7 +5,7 @@
 // derselben Transaktion entstehen wie der Passkey, zu dem sie gehoeren.
 import { error } from "@sveltejs/kit";
 import { and, eq } from "drizzle-orm";
-import type { DbLike } from "./db";
+import type { DbLike } from "./db/index";
 import { keyWraps, users } from "./db/schema";
 import { MAX_RECORD_BYTES } from "./config";
 import { hashSecret } from "./auth";

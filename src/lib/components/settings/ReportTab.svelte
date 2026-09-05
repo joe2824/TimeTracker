@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { account } from "$lib/sync/account.svelte";
-	import { createSettingsForm } from "$lib/settingsForm.svelte";
+	import { createSettingsForm } from "$lib/ui/settingsForm.svelte";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";

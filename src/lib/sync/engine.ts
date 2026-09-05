@@ -23,7 +23,7 @@ import { mergeRecord, resolveOpenEntries } from "./merge";
 import { contentOf } from "./stamp";
 import { bucketFor, openRecord, sealRecord, type VaultKey } from "../crypto/vault";
 import { logError, logInfo, logWarn } from "../log";
-import { monthKey, prevMonthKey } from "../time";
+import { monthKey, prevMonthKey } from "../time/time";
 
 /** Wie oft nach einem Konflikt neu versucht wird, bevor aufgegeben wird. */
 const MAX_ROUNDS = 5;

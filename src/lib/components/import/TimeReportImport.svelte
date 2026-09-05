@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
 	import { toast } from "svelte-sonner";
-	import { readXlsx, XlsxError } from "$lib/xlsx";
+	import { readXlsx, XlsxError } from "$lib/report/xlsx";
 	import {
 		parseTimeReport,
 		TimeReportError,
@@ -11,7 +11,7 @@
 		ruleBreakHours,
 		type ParsedTimeReport,
 		type TimeReportPerson
-	} from "$lib/timeReport";
+	} from "$lib/report/timeReport";
 	import {
 		DEFAULT_FILL_OPTIONS,
 		distributeDays,
@@ -24,7 +24,7 @@
 		type ReconcileStatus,
 		type Share,
 		type SplitMode
-	} from "$lib/timeReconcile";
+	} from "$lib/time/timeReconcile";
 	import {
 		listTimeReportMonths,
 		loadTimeReport,
@@ -41,7 +41,7 @@
 		noonTs,
 		startOfNextDay,
 		toTs
-	} from "$lib/time";
+	} from "$lib/time/time";
 	import { Button } from "$lib/components/ui/button";
 	import { Badge } from "$lib/components/ui/badge";
 	import { Checkbox } from "$lib/components/ui/checkbox";

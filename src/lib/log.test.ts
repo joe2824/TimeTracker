@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { files, fsFaults, resetFakeFs } from "./testing/fakeFs";
-import { wallToTs } from "./tz";
+import { wallToTs } from "./time/tz";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("./testing/fakeFs")).fakeFs);
 

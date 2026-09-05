@@ -6,9 +6,9 @@
 	import ActivityCombobox from "$lib/components/shared/ActivityCombobox.svelte";
 	import PlusIcon from "@lucide/svelte/icons/plus";
 	import XIcon from "@lucide/svelte/icons/x";
-	import { fmtHoursClock } from "$lib/time";
+	import { fmtHoursClock } from "$lib/time/time";
 	import type { Activity } from "$lib/types";
-	import { rebalanceShares, type Share, type SplitMode } from "$lib/timeReconcile";
+	import { rebalanceShares, type Share, type SplitMode } from "$lib/time/timeReconcile";
 
 	let {
 		options,

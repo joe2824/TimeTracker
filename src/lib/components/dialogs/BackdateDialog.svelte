@@ -4,7 +4,7 @@
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { Button } from "$lib/components/ui/button";
 	import { app } from "$lib/app.svelte";
-	import { fmtClock, fmtDateHuman, fmtHoursClock } from "$lib/time";
+	import { fmtClock, fmtDateHuman, fmtHoursClock } from "$lib/time/time";
 	import ActivityDot from "$lib/components/shared/ActivityDot.svelte";
 
 	interface Props {

@@ -20,10 +20,10 @@ import {
 	splitAtMidnight,
 	startOfNextDay,
 	stepDate
-} from "./time";
-import { setAppTimeZone, systemTimeZone, weekdayOfDate } from "./tz";
-import { dayConflict, overlapConflict } from "./conflicts";
-import { planBackdate, planNeedsConfirm, type BackdatePlan } from "./backdate";
+} from "./time/time";
+import { setAppTimeZone, systemTimeZone, weekdayOfDate } from "./time/tz";
+import { dayConflict, overlapConflict } from "./time/conflicts";
+import { planBackdate, planNeedsConfirm, type BackdatePlan } from "./time/backdate";
 import { errorText, logDebug, logError, logInfo, logWarn } from "./log";
 import { notifyDataChanged } from "./platform/windows";
 import { isTauri } from "./platform/env";

@@ -2,7 +2,7 @@
 // erst auf, wenn jemand sich auf einem neuen Geraet anmeldet. Deshalb entstehen
 // beide in EINER Transaktion.
 import { beforeEach, describe, expect, it } from "vitest";
-import { type Db } from "./db";
+import { type Db } from "./db/index";
 import { ANNA, BODO, freshDb } from "./testing/fixtures";
 import { credentials, keyWraps, users } from "./db/schema";
 import { storeWrap, readWrap } from "./wraps";

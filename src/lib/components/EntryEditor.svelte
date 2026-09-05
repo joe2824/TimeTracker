@@ -2,7 +2,7 @@
 	import { tick } from "svelte";
 	import { toast } from "svelte-sonner";
 	import { app } from "$lib/app.svelte";
-	import { entriesFocus } from "$lib/entriesFocus.svelte";
+	import { entriesFocus } from "$lib/ui/entriesFocus.svelte";
 	import {
 		clockToMin,
 		durationHours,
@@ -20,8 +20,8 @@
 		parseClock,
 		parseHours,
 		toTs
-	} from "$lib/time";
-	import { daysInMonth, weekdayOfDate, zonedParts } from "$lib/tz";
+	} from "$lib/time/time";
+	import { daysInMonth, weekdayOfDate, zonedParts } from "$lib/time/tz";
 	import type { Entry, EntrySource } from "$lib/types";
 	import { loadTimeReport, type StoredTimeReport } from "$lib/store";
 	import {
@@ -29,8 +29,8 @@
 		targetEntryHours,
 		type Interval,
 		type ReconcileDay
-	} from "$lib/timeReconcile";
-	import { dayTotals } from "$lib/dayTotals";
+	} from "$lib/time/timeReconcile";
+	import { dayTotals } from "$lib/time/dayTotals";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";

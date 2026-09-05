@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Activity, Entry } from "./types";
 import { BUILTIN_ABSENCE_ID, BUILTIN_OTHERS_ID, defaultSettings } from "./types";
 import { fakeFs, files, fsFaults, resetFakeFs } from "./testing/fakeFs";
-import { appTimeZone, wallToTs } from "./tz";
+import { appTimeZone, wallToTs } from "./time/tz";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("./testing/fakeFs")).fakeFs);
 // Toasts sind hier Beiwerk; die Meldungen selbst prueft niemand.

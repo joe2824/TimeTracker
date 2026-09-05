@@ -1,7 +1,7 @@
 <script lang="ts">
 	// Nachbau der App-Shell: kennt den Tab. `wiring` waehlt den alten Aufbau
 	// (Effekt auf pendingDate) oder den neuen (Rueckruf).
-	import { entriesFocus } from "../../entriesFocus.svelte";
+	import { entriesFocus } from "../../ui/entriesFocus.svelte";
 	import Child from "./Child.svelte";
 
 	let {

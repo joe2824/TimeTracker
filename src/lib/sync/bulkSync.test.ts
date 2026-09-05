@@ -17,7 +17,7 @@ const { account } = await import("./account.svelte");
 const { app } = await import("../app.svelte");
 const store = await import("../store");
 const { resetOutboxForTests } = await import("./outbox");
-const { monthKey, prevMonthKey } = await import("../time");
+const { monthKey, prevMonthKey } = await import("../time/time");
 
 const OLD = "2020-03";
 

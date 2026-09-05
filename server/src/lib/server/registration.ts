@@ -2,7 +2,7 @@
 // Passkey-Weg (api/auth/register/finish) und der Weg vom Rechner aus
 // (api/auth/device).
 import { error } from "@sveltejs/kit";
-import type { DbLike } from "./db";
+import type { DbLike } from "./db/index";
 import { isRegistrationOpen, validCode } from "./invites";
 
 export interface RegistrationFields {

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
-	import { fmtHoursClock } from "$lib/time";
+	import { fmtHoursClock } from "$lib/time/time";
 	import RadioCards from "./RadioCards.svelte";
 
 	interface Props {

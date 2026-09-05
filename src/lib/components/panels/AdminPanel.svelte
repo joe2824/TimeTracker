@@ -7,11 +7,11 @@
 	import { Label } from "$lib/components/ui/label";
 	import { toast } from "svelte-sonner";
 	import { account } from "$lib/sync/account.svelte";
-	import { BACKUPS_KEY, INVITES_KEY, invalidate, warm } from "$lib/prefetch";
+	import { BACKUPS_KEY, INVITES_KEY, invalidate, warm } from "$lib/ui/prefetch";
 	import type { BackupInfo, Invite, ServerStats } from "$lib/sync/api";
 
-	import { fmtDateHuman } from "$lib/time";
-	import { inviteLink } from "$lib/invite";
+	import { fmtDateHuman } from "$lib/time/time";
+	import { inviteLink } from "$lib/account/invite";
 	import LinkIcon from "@lucide/svelte/icons/link";
 	import CopyIcon from "@lucide/svelte/icons/copy";
 	import CheckIcon from "@lucide/svelte/icons/check";

@@ -1,7 +1,7 @@
 // Anonyme Nutzungsstatistik und Telemetrie auf dem TimeTracker-Server.
 // Erfasst ausschliesslich: Datum, anonyme Geraetekennung, App-Version und Betriebssystem/Plattform.
 import { eq, gte, sql } from "drizzle-orm";
-import type { Db, DbLike } from "./db";
+import type { Db, DbLike } from "./db/index";
 import { telemetryPings } from "./db/schema";
 import type Database from "better-sqlite3";
 

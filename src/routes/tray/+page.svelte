@@ -2,8 +2,8 @@
 	import { onMount, untrack } from "svelte";
 	import { app } from "$lib/app.svelte";
 	import { errorText, logError, logInfo } from "$lib/log";
-	import { fmtClock, fmtHMS, midnightSplitHint } from "$lib/time";
-	import { START_PRESETS, resolveStartTs, toStartArg } from "$lib/startTime";
+	import { fmtClock, fmtHMS, midnightSplitHint } from "$lib/time/time";
+	import { START_PRESETS, resolveStartTs, toStartArg } from "$lib/time/startTime";
 	import { Button } from "$lib/components/ui/button";
 	import * as ButtonGroup from "$lib/components/ui/button-group";
 	import { Input } from "$lib/components/ui/input";

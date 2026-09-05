@@ -5,7 +5,7 @@
 //   - Desktop: einmalige Kopplung -> langlebiges Geraete-Token
 import { and, eq, isNull, lt } from "drizzle-orm";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import type { Db, DbLike } from "./db";
+import type { Db, DbLike } from "./db/index";
 import { challenges, devices, pairings, sessions, users } from "./db/schema";
 import { CHALLENGE_TTL_MS, HMAC_SECRET, SESSION_REFRESH_MS, SESSION_TTL_MS } from "./config";
 

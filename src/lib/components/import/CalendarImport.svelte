@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
-	import { readOutlookCalendar, reportOutlookError, type CalendarEvent } from "$lib/outlook";
-	import { allDayNoons, fmtDate, isWorkday } from "$lib/time";
-	import { activityOptions, guessActivity } from "$lib/calendarMap";
+	import { readOutlookCalendar, reportOutlookError, type CalendarEvent } from "$lib/report/outlook";
+	import { allDayNoons, fmtDate, isWorkday } from "$lib/time/time";
+	import { activityOptions, guessActivity } from "$lib/report/calendarMap";
 	import { Button } from "$lib/components/ui/button";
 	import { Badge } from "$lib/components/ui/badge";
 	import * as Card from "$lib/components/ui/card";

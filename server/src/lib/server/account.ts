@@ -4,7 +4,7 @@
 //     alle anderen Geraete bleiben. Das macht `revokeDevice` in auth.ts.
 //   - Das KONTO aufloesen. Dann verschwindet alles, was der Server hat.
 import { eq, sql } from "drizzle-orm";
-import type { DbLike } from "./db";
+import type { DbLike } from "./db/index";
 import {
 	challenges,
 	credentials,

@@ -19,7 +19,7 @@ const { createVaultKey } = await import("../crypto/vault");
 const { account, RESYNC_GENERATION } = await import("./account.svelte");
 const store = await import("../store");
 const { resetOutboxForTests } = await import("./outbox");
-const { monthKey, shiftMonthKey } = await import("../time");
+const { monthKey, shiftMonthKey } = await import("../time/time");
 
 const MONTH = "2026-07";
 

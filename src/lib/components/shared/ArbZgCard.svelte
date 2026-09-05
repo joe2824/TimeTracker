@@ -9,8 +9,8 @@
 		type ArbZgFinding,
 		type ArbZgLevel,
 		type Forecast
-	} from "$lib/arbzg";
-	import { entriesFocus } from "$lib/entriesFocus.svelte";
+	} from "$lib/time/arbzg";
+	import { entriesFocus } from "$lib/ui/entriesFocus.svelte";
 	import {
 		fmtDate,
 		fmtDateHuman,
@@ -19,8 +19,8 @@
 		monthLabel,
 		noonTs,
 		quantize
-	} from "$lib/time";
-	import { appTimeZone, wallToTs, zonedParts } from "$lib/tz";
+	} from "$lib/time/time";
+	import { appTimeZone, wallToTs, zonedParts } from "$lib/time/tz";
 	import type { Entry } from "$lib/types";
 	import { Badge } from "$lib/components/ui/badge";
 	import { Button } from "$lib/components/ui/button";

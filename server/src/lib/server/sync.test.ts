@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { type Db } from "./db";
+import { type Db } from "./db/index";
 import { ANNA, BODO, freshDb } from "./testing/fixtures";
 import { records, users } from "./db/schema";
 import {

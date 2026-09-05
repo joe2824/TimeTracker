@@ -1,7 +1,7 @@
 // Datei-Protokoll fuer die Fehlersuche nach dem Fakt.
 import { storage } from "./platform/fs";
-import { fmtDate } from "./time";
-import { zonedParts } from "./tz";
+import { fmtDate } from "./time/time";
+import { zonedParts } from "./time/tz";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 

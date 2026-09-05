@@ -3,7 +3,7 @@
 	// um ±1 Tag (mit Monats-/Jahresübergang), statt nur das Tages-Segment umzubrechen.
 	// Ein vom Aufrufer übergebenes onkeydown wird zuerst ausgeführt und respektiert.
 	import { Input } from "$lib/components/ui/input";
-	import { stepDate } from "$lib/time";
+	import { stepDate } from "$lib/time/time";
 	import type { HTMLInputAttributes } from "svelte/elements";
 
 	type KeydownHandler = NonNullable<HTMLInputAttributes["onkeydown"]>;

@@ -11,7 +11,7 @@ import type {
 	RegistrationResponseJSON
 } from "@simplewebauthn/server";
 import { eq } from "drizzle-orm";
-import type { Db, DbLike } from "./db";
+import type { Db, DbLike } from "./db/index";
 import { credentials, users } from "./db/schema";
 import { RP_ID, RP_NAME, WEBAUTHN_ORIGINS } from "./config";
 

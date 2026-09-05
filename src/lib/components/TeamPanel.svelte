@@ -7,15 +7,15 @@
 		readOutlookMails,
 		reportOutlookError,
 		type OutlookMail
-	} from "$lib/outlook";
+	} from "$lib/report/outlook";
 	import {
 		buildTeamSummary,
 		scanRange,
 		teamReminderHtml,
 		teamReminderSubject,
 		teamSummaryToCsv
-	} from "$lib/teamReport";
-	import { fmtClock, fmtDateHuman, prevMonthKey } from "$lib/time";
+	} from "$lib/report/teamReport";
+	import { fmtClock, fmtDateHuman, prevMonthKey } from "$lib/time/time";
 	import { errorText, logError, logInfo } from "$lib/log";
 	import { Button } from "$lib/components/ui/button";
 	import { Badge } from "$lib/components/ui/badge";

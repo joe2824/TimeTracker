@@ -1,7 +1,7 @@
 // Was die Server-Tests gemeinsam brauchen: eine Datenbank im Speicher mit zwei
 // Konten, und das Zuruecksetzen von Umgebungsvariablen nach der Datei.
 import { afterAll } from "vitest";
-import { openDb, type Db } from "../db";
+import { openDb, type Db } from "../db/index";
 import { users } from "../db/schema";
 
 export const ANNA = "user-anna";

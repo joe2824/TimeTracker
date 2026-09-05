@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { openDb, type Db } from "./db";
+import { openDb, type Db } from "./db/index";
 import {
 	MAX_DEVICE_ID_LEN,
 	cleanupOldTelemetry,

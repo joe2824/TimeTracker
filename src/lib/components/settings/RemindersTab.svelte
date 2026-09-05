@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
-	import { createSettingsForm } from "$lib/settingsForm.svelte";
-	import { scheduleReminders, scheduleReportReminder, ensureNotificationPermission } from "$lib/reminders";
+	import { createSettingsForm } from "$lib/ui/settingsForm.svelte";
+	import { scheduleReminders, scheduleReportReminder, ensureNotificationPermission } from "$lib/ui/reminders";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";

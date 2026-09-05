@@ -2,7 +2,7 @@
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { Button } from "$lib/components/ui/button";
 	import { Badge } from "$lib/components/ui/badge";
-	import { CURRENT_RELEASE, whatsNew } from "$lib/whatsNew.svelte";
+	import { CURRENT_RELEASE, whatsNew } from "$lib/release/whatsNew.svelte";
 	import CloudIcon from "@lucide/svelte/icons/cloud";
 	import ShieldCheckIcon from "@lucide/svelte/icons/shield-check";
 	import KeyRoundIcon from "@lucide/svelte/icons/key-round";

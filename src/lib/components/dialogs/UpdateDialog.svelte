@@ -3,8 +3,8 @@
 	// Update kommt beim Start, lange bevor jemand die Einstellungen öffnet.
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { Button } from "$lib/components/ui/button";
-	import { installUpdate, updater } from "$lib/updater.svelte";
-	import { breakingNotes } from "$lib/releaseNotes";
+	import { installUpdate, updater } from "$lib/release/updater.svelte";
+	import { breakingNotes } from "$lib/release/releaseNotes";
 
 	const u = $derived(updater.pending);
 	// Nur Breaking Changes. Was sonst neu ist, erzaehlt der „Was ist neu"-Dialog

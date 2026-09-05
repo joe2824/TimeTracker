@@ -6,7 +6,7 @@
 //   data/timereport-YYYY-MM.json  (eingelesener LOGA-Report, eine Datei pro Monat)
 import { storage, usingBrowserStorage } from "./platform/fs";
 import type { Activity, Entry, Settings, SyncMeta } from "./types";
-import type { TimeReportDay, TimeReportFlag } from "./timeReport";
+import type { TimeReportDay, TimeReportFlag } from "./report/timeReport";
 import type { SyncPriority } from "./sync/engine";
 import { defaultSettings } from "./types";
 import { logError, logWarn } from "./log";

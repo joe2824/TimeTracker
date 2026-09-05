@@ -7,7 +7,7 @@ import type { VaultKey } from "../crypto/vault";
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("../testing/fakeFs")).fakeFs);
 
 const { createVaultKey, bucketFor } = await import("../crypto/vault");
-const { monthKey, prevMonthKey } = await import("../time");
+const { monthKey, prevMonthKey } = await import("../time/time");
 const { resetOutboxForTests, pendingChanges } = await import("./outbox");
 const { resetFakeFs } = await import("../testing/fakeFs");
 const store = await import("../store");

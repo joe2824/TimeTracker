@@ -7,7 +7,7 @@
 	import DayFractionSwitch from "$lib/components/shared/DayFractionSwitch.svelte";
 	import AbsenceKindChoice from "$lib/components/shared/AbsenceKindChoice.svelte";
 	import { toast } from "svelte-sonner";
-	import { fmtDate } from "$lib/time";
+	import { fmtDate } from "$lib/time/time";
 
 	let { open = $bindable(false), onsaved }: { open?: boolean; onsaved?: (month?: string) => void } =
 		$props();

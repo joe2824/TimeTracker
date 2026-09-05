@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
 	import { listEntryMonths } from "$lib/store";
-	import { monthLabel, shiftMonthKey } from "$lib/time";
-	import { onIntent, prefetchMonth, prefetchRemoteMonths } from "$lib/prefetch";
+	import { monthLabel, shiftMonthKey } from "$lib/time/time";
+	import { onIntent, prefetchMonth, prefetchRemoteMonths } from "$lib/ui/prefetch";
 	import { account } from "$lib/sync/account.svelte";
 	import { Button } from "$lib/components/ui/button";
 	import * as ButtonGroup from "$lib/components/ui/button-group";

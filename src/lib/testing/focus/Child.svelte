@@ -1,6 +1,6 @@
 <script lang="ts">
 	// Nachbau des Verbrauchers in EntryEditor: liest den Wunsch und raeumt ihn ab.
-	import { entriesFocus } from "../../entriesFocus.svelte";
+	import { entriesFocus } from "../../ui/entriesFocus.svelte";
 	let { seen }: { seen: { date: string | null } } = $props();
 
 	$effect(() => {

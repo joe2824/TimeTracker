@@ -7,9 +7,9 @@
 	import { Label } from "$lib/components/ui/label";
 	import { toast } from "svelte-sonner";
 	import { account } from "$lib/sync/account.svelte";
-	import { ACCOUNT_KEY, invalidate, warm } from "$lib/prefetch";
+	import { ACCOUNT_KEY, invalidate, warm } from "$lib/ui/prefetch";
 	import type { Passkey } from "$lib/sync/api";
-	import { fmtDateHuman } from "$lib/time";
+	import { fmtDateHuman } from "$lib/time/time";
 	import { isTauri } from "$lib/platform/env";
 	import { openExternal } from "$lib/platform/open";
 	import KeyRoundIcon from "@lucide/svelte/icons/key-round";

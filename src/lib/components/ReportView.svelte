@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
-	import { buildReport, reportToHtml, reportToText } from "$lib/report";
-	import { copyReportToClipboard, openMailWithReport, reportSubject } from "$lib/reportSend";
-	import { fmtHoursClock } from "$lib/time";
-	import { createOutlookDraft, reportOutlookError } from "$lib/outlook";
+	import { buildReport, reportToHtml, reportToText } from "$lib/report/report";
+	import { copyReportToClipboard, openMailWithReport, reportSubject } from "$lib/report/reportSend";
+	import { fmtHoursClock } from "$lib/time/time";
+	import { createOutlookDraft, reportOutlookError } from "$lib/report/outlook";
 	import { capabilities } from "$lib/platform/env";
 	import { logInfo } from "$lib/log";
 	import { Button } from "$lib/components/ui/button";

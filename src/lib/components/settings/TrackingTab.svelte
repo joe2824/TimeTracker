@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
-	import { createSettingsForm } from "$lib/settingsForm.svelte";
+	import { createSettingsForm } from "$lib/ui/settingsForm.svelte";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
@@ -11,7 +11,7 @@
 	import ShortcutKey from "$lib/components/shared/ShortcutKey.svelte";
 	import * as Select from "$lib/components/ui/select";
 	import { capabilities } from "$lib/platform/env";
-	import { acceleratorFromEvent, applyShortcuts } from "$lib/shortcuts";
+	import { acceleratorFromEvent, applyShortcuts } from "$lib/ui/shortcuts";
 	import XIcon from "@lucide/svelte/icons/x";
 
 	const ROUNDINGS: Record<string, string> = {

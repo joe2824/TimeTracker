@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { openDb } from "./db";
+import { openDb } from "./db/index";
 import {
 	cleanupBackups,
 	deleteBackupFile,

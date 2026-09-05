@@ -1,6 +1,6 @@
 // Durchstich durch die Endpunkte - gegen einen echten Server, ueber echtes HTTP.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { openDb, type Db } from "./db";
+import { openDb, type Db } from "./db/index";
 import { telemetryPings, users } from "./db/schema";
 import { createDevice, createSession, hashSecret, sha256Hex } from "./auth";
 import { mkdtempSync, rmSync } from "node:fs";
