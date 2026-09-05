@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onDestroy } from "svelte";
 	import * as Card from "$lib/components/ui/card";
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { Button } from "$lib/components/ui/button";
@@ -7,6 +8,7 @@
 	import { Checkbox } from "$lib/components/ui/checkbox";
 	import { Badge } from "$lib/components/ui/badge";
 	import PairingCode from "$lib/components/onboarding/PairingCode.svelte";
+	import { PairingFlow, suggestDeviceName } from "$lib/pairingFlow.svelte";
 	import { toast } from "svelte-sonner";
 	import { account } from "$lib/sync/account.svelte";
 	import { ACCOUNT_KEY, invalidate, warm } from "$lib/prefetch";
@@ -14,7 +16,7 @@
 	import { app } from "$lib/app.svelte";
 	import { isPairingCode, normalizePairingCode } from "$lib/crypto/vault";
 	import { fmtDateHuman } from "$lib/time";
-	import { capabilities, isTauri } from "$lib/platform/env";
+	import { isTauri } from "$lib/platform/env";
 	import { errorText } from "$lib/log";
 	import { DEFAULT_SERVER } from "$lib/defaults";
 	import { createLink } from "$lib/invite";
@@ -41,7 +43,6 @@
 			localStorage.setItem("tt_server_url", serverUrl);
 		}
 	});
-	let pairingCode = $state("");
 	let remotePairingCode = $state("");
 	let inviteCode = $state("");
 	let recoveryPhrase = $state("");
@@ -49,8 +50,13 @@
 	let phraseRecoveryInput = $state("");
 	let isPhraseConfirmed = $state(false);
 	let isLoading = $state(false);
-	let isWaitingForApproval = $state(false);
-	let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+	const pairing = new PairingFlow({
+		done: () => toast.success("Gerät verknüpft – der erste Abgleich läuft."),
+		failed: (e) => toast.error(formatError(e, "Kopplung fehlgeschlagen"))
+	});
+	// Sonst sieht der Timer weiter nach, wenn dieser Bereich verschwindet.
+	onDestroy(() => pairing.stop());
 
 	const connectionStatus = $derived.by(() => {
 		if (account.state === "off")
@@ -71,12 +77,8 @@
 		return { text: "Verbunden", dot: "bg-emerald-500" };
 	});
 
-	function suggestDeviceName(): string {
-		const p = navigator.platform || "Gerät";
-		return capabilities.tray ? `Rechner (${p})` : `Browser (${p})`;
-	}
-
-	async function handleStartRegistration() {
+	/** `openBrowser`: erst das Konto im Browser anlegen, dann hier bestätigen. */
+	async function beginPairing(openBrowser: boolean) {
 		const url = serverUrl.trim();
 		if (!url) {
 			toast.error("Bitte die Adresse des Servers angeben.");
@@ -84,53 +86,15 @@
 		}
 		isLoading = true;
 		try {
-			pairingCode = await account.startPairing(url, suggestDeviceName());
-			isWaitingForApproval = true;
-			pollTimer = setInterval(checkPairingStatus, 2000);
-			await openExternal(createLink(url));
+			await pairing.start(url);
+			if (openBrowser) await openExternal(createLink(url));
 		} catch (e) {
-			toast.error(formatError(e, "Konnte nicht beginnen"));
+			toast.error(
+				formatError(e, openBrowser ? "Konnte nicht beginnen" : "Kopplung nicht möglich")
+			);
 		} finally {
 			isLoading = false;
 		}
-	}
-
-	async function handleStartPairing() {
-		const url = serverUrl.trim();
-		if (!url) {
-			toast.error("Bitte die Adresse des Servers angeben.");
-			return;
-		}
-		isLoading = true;
-		try {
-			pairingCode = await account.startPairing(url, suggestDeviceName());
-			isWaitingForApproval = true;
-			pollTimer = setInterval(checkPairingStatus, 2000);
-		} catch (e) {
-			toast.error(formatError(e, "Kopplung nicht möglich"));
-		} finally {
-			isLoading = false;
-		}
-	}
-
-	async function checkPairingStatus() {
-		try {
-			if (await account.checkPairing()) {
-				cancelPairingFlow();
-				toast.success("Gerät verknüpft – der erste Abgleich läuft.");
-			}
-		} catch (e) {
-			cancelPairingFlow();
-			toast.error(formatError(e, "Kopplung fehlgeschlagen"));
-		}
-	}
-
-	function cancelPairingFlow() {
-		if (pollTimer) clearInterval(pollTimer);
-		pollTimer = null;
-		isWaitingForApproval = false;
-		pairingCode = "";
-		account.cancelPairing();
 	}
 
 	async function handleApprovePairing() {
@@ -246,9 +210,6 @@
 		account.pairCodeFromLink = "";
 	});
 
-	$effect(() => () => {
-		if (pollTimer) clearInterval(pollTimer);
-	});
 </script>
 
 <Card.Root>
@@ -463,9 +424,9 @@
 					</Button>
 				</div>
 			</div>
-		{:else if isWaitingForApproval}
+		{:else if pairing.waiting}
 			<div class="border-t pt-3">
-				<PairingCode code={pairingCode} onCancel={cancelPairingFlow} />
+				<PairingCode code={pairing.code} onCancel={() => pairing.cancel()} />
 			</div>
 		{:else}
 			<div class="space-y-2 border-t pt-3">
@@ -475,7 +436,7 @@
 				</div>
 
 				<div class="space-y-2 pt-3">
-					<Button disabled={isLoading || !serverUrl.trim()} onclick={handleStartRegistration}>
+					<Button disabled={isLoading || !serverUrl.trim()} onclick={() => beginPairing(true)}>
 						{isLoading ? "Öffnet…" : "Konto anlegen und verknüpfen"}
 					</Button>
 					<p class="text-muted-foreground text-xs">
@@ -487,7 +448,7 @@
 
 				<div class="space-y-2 border-t pt-3">
 					<p class="text-sm font-medium">Mit bestehendem Konto verbinden</p>
-					<Button variant="outline" onclick={handleStartPairing} disabled={isLoading}>
+					<Button variant="outline" onclick={() => beginPairing(false)} disabled={isLoading}>
 						Kopplungscode anzeigen
 					</Button>
 					<p class="text-muted-foreground text-xs">

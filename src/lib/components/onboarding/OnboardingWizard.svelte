@@ -13,7 +13,6 @@
 	import { Textarea } from "$lib/components/ui/textarea";
 	import WorkdayPicker from "$lib/components/shared/WorkdayPicker.svelte";
 	import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
-	import { capabilities } from "$lib/platform/env";
 	import { openExternal } from "$lib/platform/open";
 	import { createLink } from "$lib/invite";
 	import { toast } from "svelte-sonner";
@@ -30,6 +29,7 @@
 	import SmartphoneIcon from "@lucide/svelte/icons/smartphone";
 	import CheckCircle2Icon from "@lucide/svelte/icons/check-circle-2";
 	import PairingCode from "$lib/components/onboarding/PairingCode.svelte";
+	import { PairingFlow } from "$lib/pairingFlow.svelte";
 
 	const STEPS = 5;
 	let step = $state(0);
@@ -58,81 +58,34 @@
 		account.serverUrl || (typeof localStorage !== "undefined" && localStorage.getItem("preferred_server_url")) || DEFAULT_SERVER
 	);
 	let isStartingSync = $state(false);
-	let isWaitingForApproval = $state(false);
-	let pairingCode = $state("");
-	let pollTimer: ReturnType<typeof setInterval> | null = null;
 
-	function suggestDeviceName(): string {
-		const p = navigator.platform || "Gerät";
-		return capabilities.tray ? `Rechner (${p})` : `Browser (${p})`;
-	}
-
-	async function handleStartRegistration() {
-		const url = serverUrl.trim();
-		if (!url) {
-			toast.error("Bitte die Adresse des Servers angeben.");
-			return;
-		}
-		if (typeof localStorage !== "undefined") {
-			localStorage.setItem("preferred_server_url", url);
-		}
-		isStartingSync = true;
-		try {
-			pairingCode = await account.startPairing(url, suggestDeviceName());
-			isWaitingForApproval = true;
-			pollTimer = setInterval(checkPairingStatus, 2000);
-			await openExternal(createLink(url));
-		} catch (e) {
-			toast.error(errorText(e));
-		} finally {
-			isStartingSync = false;
-		}
-	}
-
-	async function handleStartPairing() {
-		const url = serverUrl.trim();
-		if (!url) {
-			toast.error("Bitte die Adresse des Servers angeben.");
-			return;
-		}
-		if (typeof localStorage !== "undefined") {
-			localStorage.setItem("preferred_server_url", url);
-		}
-		isStartingSync = true;
-		try {
-			pairingCode = await account.startPairing(url, suggestDeviceName());
-			isWaitingForApproval = true;
-			pollTimer = setInterval(checkPairingStatus, 2000);
-		} catch (e) {
-			toast.error(errorText(e));
-		} finally {
-			isStartingSync = false;
-		}
-	}
-
-	async function checkPairingStatus() {
-		try {
-			if (await account.checkPairing()) {
-				cancelPairingFlow();
-				toast.success("Gerät erfolgreich mit Server verknüpft!");
-			}
-		} catch (e) {
-			cancelPairingFlow();
-			toast.error(errorText(e));
-		}
-	}
-
-	function cancelPairingFlow() {
-		if (pollTimer) clearInterval(pollTimer);
-		pollTimer = null;
-		isWaitingForApproval = false;
-		pairingCode = "";
-		account.cancelPairing();
-	}
-
-	onDestroy(() => {
-		if (pollTimer) clearInterval(pollTimer);
+	const pairing = new PairingFlow({
+		done: () => toast.success("Gerät erfolgreich mit Server verknüpft!"),
+		failed: (e) => toast.error(errorText(e))
 	});
+
+	/** `openBrowser`: erst das Konto im Browser anlegen, dann hier bestätigen. */
+	async function beginPairing(openBrowser: boolean) {
+		const url = serverUrl.trim();
+		if (!url) {
+			toast.error("Bitte die Adresse des Servers angeben.");
+			return;
+		}
+		if (typeof localStorage !== "undefined") {
+			localStorage.setItem("preferred_server_url", url);
+		}
+		isStartingSync = true;
+		try {
+			await pairing.start(url);
+			if (openBrowser) await openExternal(createLink(url));
+		} catch (e) {
+			toast.error(errorText(e));
+		} finally {
+			isStartingSync = false;
+		}
+	}
+
+	onDestroy(() => pairing.stop());
 
 	/** Aktivitäten aus einer Textdatei ins Eingabefeld übernehmen. */
 	async function onActivityFile(ev: Event) {
@@ -188,7 +141,7 @@
 	}
 
 	async function persist() {
-		cancelPairingFlow();
+		pairing.cancel();
 		// Aktivitäten importieren (jede Zeile eine; Duplikate ignoriert importActivities).
 		const actLines = activitiesText.split(/\r?\n/);
 		if (actLines.some((l) => l.trim())) await app.importActivities(actLines);
@@ -365,9 +318,9 @@
 								<div class="opacity-90 font-mono text-[11px] truncate max-w-[280px]">{account.serverUrl}</div>
 							</div>
 						</div>
-					{:else if isWaitingForApproval}
+					{:else if pairing.waiting}
 						<div class="rounded-lg border bg-muted/20 p-2">
-							<PairingCode code={pairingCode} onCancel={cancelPairingFlow} />
+							<PairingCode code={pairing.code} onCancel={() => pairing.cancel()} />
 						</div>
 					{:else}
 						<div class="space-y-2.5 rounded-lg border bg-muted/10 p-3">
@@ -387,7 +340,7 @@
 									class="w-full gap-1.5 text-xs h-8"
 									size="sm"
 									disabled={isStartingSync}
-									onclick={handleStartRegistration}
+									onclick={() => beginPairing(true)}
 								>
 									<KeyRoundIcon class="size-3.5 shrink-0" />
 									<span class="truncate">Konto anlegen</span>
@@ -397,7 +350,7 @@
 									class="w-full gap-1.5 text-xs h-8"
 									size="sm"
 									disabled={isStartingSync}
-									onclick={handleStartPairing}
+									onclick={() => beginPairing(false)}
 								>
 									<SmartphoneIcon class="size-3.5 shrink-0" />
 									<span class="truncate">Gerät koppeln</span>
