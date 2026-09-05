@@ -42,6 +42,11 @@ const RATE_LIMITS: [string, LimitOptions][] = [
 	["/api/auth/login/start", LIMIT_AUTH_START],
 	["/api/auth/login", LIMIT_AUTH],
 	["/api/auth/register", LIMIT_AUTH],
+	// Der Weg vom Rechner aus legt ein Konto samt Geraet an, ohne Passkey und
+	// ohne Sitzung - dieselbe Bremse wie fuer die Registrierung im Browser. Ohne
+	// sie liesse sich der Endpunkt bei offener Registrierung in einer Schleife
+	// aufrufen, und jede Runde kostet eine Konto- und eine Geraetezeile.
+	["/api/auth/device", LIMIT_AUTH],
 	["/api/auth/recover", LIMIT_RECOVER],
 	["/api/telemetry", LIMIT_TELEMETRY]
 ];

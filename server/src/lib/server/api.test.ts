@@ -1418,6 +1418,26 @@ describe("Konto von einem Geraet aus anlegen", () => {
 		return code;
 	}
 
+	it("bremst das Anlegen vom Rechner aus", async () => {
+		// Ohne Bremse liesse sich der Endpunkt in einer Schleife aufrufen - bei
+		// offener Registrierung entsteht dabei jedes Mal ein Konto samt Geraet.
+		let throttled = false;
+		for (let i = 0; i < 40; i++) {
+			// Eigene Absenderadresse: der Eimer haengt daran, und die anderen Tests
+			// dieser Datei sollen nicht in einem leergelaufenen landen.
+			const res = await api(null, "/api/auth/device", {
+				method: "POST",
+				headers: { "x-echte-adresse": "10.9.9.9" },
+				body: JSON.stringify({ label: "Rechner", invite: "GIBT-ES-NICHT" })
+			});
+			if (res.status === 429) {
+				throttled = true;
+				break;
+			}
+		}
+		expect(throttled).toBe(true);
+	});
+
 	it("verlangt eine Einladung", async () => {
 		const res = await api(null, "/api/auth/device", {
 			method: "POST",
