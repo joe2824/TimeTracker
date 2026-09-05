@@ -5,9 +5,10 @@
 // Art nicht kennt, ueberspringt sie stillschweigend - und schiebt den Stand
 // trotzdem weiter. Ohne einen einmaligen Nachlauf waeren die uebersprungenen
 // Datensaetze fuer dieses Geraet dauerhaft unerreichbar.
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeSyncServer } from "../testing/fakeSyncServer";
-import { files, resetFakeFs } from "../testing/fakeFs";
+import { freshAccountEnv, restoreFetch, settled } from "../testing/accountHarness";
+import { files } from "../testing/fakeFs";
 import type { ServerRecord } from "./api";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("../testing/fakeFs")).fakeFs);
@@ -15,7 +16,6 @@ vi.mock("svelte-sonner", () => import("../testing/toastStub"));
 
 const { createVaultKey } = await import("../crypto/vault");
 const { account, RESYNC_GENERATION } = await import("./account.svelte");
-const { app } = await import("../app.svelte");
 const store = await import("../store");
 const { resetOutboxForTests } = await import("./outbox");
 const { monthKey, shiftMonthKey } = await import("../time");
@@ -28,24 +28,6 @@ const report = () => ({
 	days: [{ date: `${MONTH}-15`, firstIn: "07:30", lastOut: "16:45", hours: 7.5, flags: [] }]
 });
 
-/**
- * Warten, bis nichts mehr offen ist.
- *
- * Das Verknuepfen stoesst selbst einen Abgleich an; laeuft der noch, kommt
- * `syncNow` sofort und ohne Wirkung zurueck.
- */
-async function settled(): Promise<void> {
-	let previous = -1;
-	for (let i = 0; i < 30; i++) {
-		await new Promise((r) => setTimeout(r, 3));
-		await account.syncNow();
-		const seq = (await store.loadDevice())?.seq ?? 0;
-		// Zweimal derselbe Stand und nichts mehr offen: jetzt liegt alles still.
-		if (account.pending === 0 && seq === previous) return;
-		previous = seq;
-	}
-	throw new Error("Der Abgleich kam nicht zur Ruhe");
-}
 
 /**
  * Ein Geraet, das mit einer Fassung ohne Reports abgeglichen hat: der Report
@@ -64,17 +46,12 @@ async function asIfUpdatedFromOldVersion(): Promise<void> {
 }
 
 let server: FakeSyncServer;
-let originalFetch: typeof globalThis.fetch;
 
-beforeEach(async () => {
-	resetFakeFs();
-	resetOutboxForTests();
-	app.dispose();
-	app.clearLocalData();
-	server = new FakeSyncServer();
-	originalFetch = globalThis.fetch;
-	globalThis.fetch = server.fetchFor("dieses-geraet");
+beforeEach(() => {
+	server = freshAccountEnv();
 });
+
+afterEach(restoreFetch);
 
 describe("Monate beim Server", () => {
 	it("erkennt aus den Kennungen, zu welchen Monaten es Daten gibt", async () => {
@@ -96,7 +73,7 @@ describe("Monate beim Server", () => {
 			// Ein Monat ohne Daten steht nicht drin.
 			expect(months).not.toContain("2026-05");
 		} finally {
-			globalThis.fetch = originalFetch;
+			restoreFetch();
 			await account.unlink();
 		}
 	});
@@ -123,7 +100,7 @@ describe("Monate beim Server", () => {
 
 			expect(await account.remoteMonths()).toContain(future);
 		} finally {
-			globalThis.fetch = originalFetch;
+			restoreFetch();
 			await account.unlink();
 		}
 	});
@@ -148,7 +125,7 @@ describe("Erstes Verknuepfen", () => {
 			expect(account.historyIncomplete).toBe(true);
 		} finally {
 			server.release();
-			globalThis.fetch = originalFetch;
+			restoreFetch();
 			await account.unlink();
 		}
 	});
@@ -174,7 +151,7 @@ describe("Monat auf Zuruf", () => {
 			expect(account.fetchingMonths).not.toContain(old);
 		} finally {
 			server.release();
-			globalThis.fetch = originalFetch;
+			restoreFetch();
 			await account.unlink();
 		}
 	});
@@ -186,7 +163,7 @@ describe("Monat auf Zuruf", () => {
 			await account.ensureMonthSynced(monthKey(Date.now()));
 			expect(account.fetchingMonths).toEqual([]);
 		} finally {
-			globalThis.fetch = originalFetch;
+			restoreFetch();
 			await account.unlink();
 		}
 	});
@@ -220,7 +197,7 @@ describe("Nachlauf fuer eine neue Datensatzart", () => {
 			expect(await store.loadTimeReport(MONTH)).not.toBeNull();
 			expect((await store.loadDevice())!.resyncGeneration).toBe(RESYNC_GENERATION);
 		} finally {
-			globalThis.fetch = originalFetch;
+			restoreFetch();
 			await account.unlink();
 		}
 	});
@@ -253,7 +230,7 @@ describe("Nachlauf fuer eine neue Datensatzart", () => {
 			expect(account.backfilling).toBe(true);
 		} finally {
 			server.release();
-			globalThis.fetch = originalFetch;
+			restoreFetch();
 			await account.unlink();
 		}
 	});
@@ -283,7 +260,7 @@ describe("Nachlauf fuer eine neue Datensatzart", () => {
 			expect(account.historyIncomplete).toBe(false);
 		} finally {
 			server.release();
-			globalThis.fetch = originalFetch;
+			restoreFetch();
 			await account.unlink();
 		}
 	});
@@ -306,7 +283,7 @@ describe("Nachlauf fuer eine neue Datensatzart", () => {
 			expect(server.pulledSince.length).toBeGreaterThan(0);
 			expect(server.pulledSince).not.toContain(0);
 		} finally {
-			globalThis.fetch = originalFetch;
+			restoreFetch();
 			await account.unlink();
 		}
 	});

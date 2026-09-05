@@ -5,7 +5,8 @@
 // waehrend das Hinweisband daneben sagt, man koenne schon arbeiten.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeSyncServer } from "../testing/fakeSyncServer";
-import { files, resetFakeFs } from "../testing/fakeFs";
+import { freshAccountEnv, restoreFetch, settled, waitFor } from "../testing/accountHarness";
+import { files } from "../testing/fakeFs";
 import type { ServerRecord } from "./api";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("../testing/fakeFs")).fakeFs);
@@ -33,26 +34,6 @@ function entriesIn(month: string, count: number, prefix: string) {
 	}));
 }
 
-/** Warten, bis nichts mehr offen ist. */
-async function settled(): Promise<void> {
-	let previous = -1;
-	for (let i = 0; i < 30; i++) {
-		await new Promise((r) => setTimeout(r, 3));
-		await account.syncNow();
-		const seq = (await store.loadDevice())?.seq ?? 0;
-		if (account.pending === 0 && seq === previous) return;
-		previous = seq;
-	}
-	throw new Error("Der Abgleich kam nicht zur Ruhe");
-}
-
-async function waitFor(cond: () => boolean | Promise<boolean>): Promise<void> {
-	for (let i = 0; i < 200; i++) {
-		if (await cond()) return;
-		await new Promise((r) => setTimeout(r, 5));
-	}
-	throw new Error("Bedingung trat nicht ein");
-}
 
 /**
  * Das Geraet auf Anfang stellen: lokal leer, Stand 0, vorgezogene Monate gesetzt.
@@ -74,23 +55,12 @@ async function asIfFreshlyLinked(): Promise<void> {
 }
 
 let server: FakeSyncServer;
-let originalFetch: typeof globalThis.fetch;
 
-beforeEach(async () => {
-	resetFakeFs();
-	resetOutboxForTests();
-	app.dispose();
-	app.clearLocalData();
-	server = new FakeSyncServer();
-	originalFetch = globalThis.fetch;
-	globalThis.fetch = server.fetchFor("dieses-geraet");
+beforeEach(() => {
+	server = freshAccountEnv();
 });
 
-// Symmetrisch zum Aufbau: geht ein Test unterwegs verloren, faengt der naechste
-// sonst den Nachbau des vorigen als "Original" ein.
-afterEach(() => {
-	globalThis.fetch = originalFetch;
-});
+afterEach(restoreFetch);
 
 describe("Lade-Modal beim gestuften Abruf", () => {
 	it("endet mit dem vorgezogenen Teil, waehrend die Historie noch laeuft", async () => {
@@ -119,7 +89,7 @@ describe("Lade-Modal beim gestuften Abruf", () => {
 			expect((await store.loadEntries(OLD)).length).toBe(3);
 		} finally {
 			server.release();
-			globalThis.fetch = originalFetch;
+			restoreFetch();
 			await account.unlink();
 		}
 	});
@@ -148,7 +118,7 @@ describe("Lade-Modal beim gestuften Abruf", () => {
 			expect(account.bulkSync).toBeNull();
 		} finally {
 			server.release();
-			globalThis.fetch = originalFetch;
+			restoreFetch();
 			await account.unlink();
 		}
 	});
