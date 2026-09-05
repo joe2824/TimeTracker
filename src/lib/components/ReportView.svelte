@@ -155,10 +155,8 @@
 			</Card.Action>
 		</Card.Header>
 		<Card.Content class="space-y-3">
-			<!-- Vier Zahlen, die man gegen den Zeitnachweis haelt - vorher standen sie
-			     als Fliesstext in einer Zeile und waren zum Vergleichen erst zu
-			     suchen. Gesamt ist die Zahl, um die es geht, und traegt deshalb als
-			     einzige Farbe. -->
+			<!-- Vier Zahlen, die man gegen den Zeitnachweis haelt. Gesamt ist die Zahl,
+			     um die es geht, und traegt deshalb als einzige Farbe. -->
 			<div class="grid grid-cols-2 gap-3 {report.breakHours > 0 ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}">
 				<StatTile label="Arbeitszeit">{fmtHoursClock(report.workHours)} h</StatTile>
 				{#if report.breakHours > 0}

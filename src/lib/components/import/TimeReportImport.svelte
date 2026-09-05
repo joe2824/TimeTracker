@@ -316,11 +316,10 @@
 		try {
 			const report = parseTimeReport(await readXlsx(await file.arrayBuffer()));
 			parsed = report;
-			// Eine Datei mit genau einer Person wurde bisher ungefragt uebernommen.
-			// Die Anzeige weist den Report ab hier mit DEM eigenen Namen aus - bei
-			// der Datei eines Kollegen stuende er also ueber fremden Zahlen, und
-			// abgeglichen wuerde gegen die eigenen Zeiten. Steht dort ein anderer
-			// Name, wird deshalb gefragt statt gemeldet: eine Meldung uebersieht man.
+			// Auch bei genau einer Person wird geprueft, ob es die eigene ist: die
+			// Anzeige weist den Report ab hier mit dem eigenen Namen aus, und
+			// abgeglichen wuerde gegen die eigenen Zeiten. Bei einem fremden Namen
+			// wird gefragt statt gemeldet - eine Meldung uebersieht man.
 			if (report.people.length === 1) {
 				personKey = isOwnPerson(report.people[0]) ? report.people[0].key : "";
 			} else {

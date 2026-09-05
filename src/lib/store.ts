@@ -111,25 +111,18 @@ export async function readProtectedVaultKey(
 /**
  * Beim Start: den Tresorschluessel vorladen, damit verschluesselte Dateien
  * gleich beim ersten Lesen aufgehen - unabhaengig vom Konto-Abgleich, der erst
- * danach anlaeuft und das Netz braucht (siehe `app.svelte.ts`, `init()` laeuft
- * vor `account.init()`).
+ * danach anlaeuft und das Netz braucht (`app.init()` laeuft vor `account.init()`).
+ * Nur im Browser: auf dem Rechner schuetzt das Betriebssystem den Datenordner.
  *
- * Nur im Browser: auf dem Rechner schuetzt das Betriebssystem den
- * Datenordner bereits.
+ * Ein Schluessel, der noch als lesbare Bytes in `device.json` liegt, wird dabei
+ * einmalig in die neue Ablage uebernommen - sonst haengt ein solcher Browser
+ * fest, bis jemand die Website-Daten von Hand loescht.
  *
- * Ein Geraet, das vor dieser Aenderung verknuepft wurde, traegt den Schluessel
- * noch als lesbare Bytes in `device.json` - dieselben Rohbytes, nur ohne die
- * neue Ablage. Der wird hier einmalig uebernommen. Nicht wegen alter Bestaende
- * am Server (die gibt es nicht mehr), sondern weil der Fehlerbildschirm des
- * Starts keinen Weg zurueck anbietet: ohne diese Uebernahme haengt ein solcher
- * Browser fest, bis jemand die Website-Daten von Hand loescht.
- *
- * War das Geraet schon einmal verknuepft (`serverUrl` gesetzt), laesst sich
- * aber kein Schluessel herstellen, wird geworfen statt still weiterzumachen:
- * die naechsten Lesevorgaenge waeren sonst blind, saehen leere Dateien statt
- * der echten verschluesselten Daten - und ein Speichern kurz danach schriebe
- * diese leere Sicht ueber die echten Dateien. `app.init()` faengt den Fehler
- * ab und zeigt ihn, genau wie jeden anderen Startfehler.
+ * Ist das Geraet verknuepft (`serverUrl` gesetzt), laesst sich aber kein
+ * Schluessel herstellen, wird geworfen statt still weiterzumachen: die
+ * naechsten Lesevorgaenge saehen sonst leere Dateien statt der echten
+ * verschluesselten Daten, und ein Speichern kurz danach schriebe diese leere
+ * Sicht darueber. `app.init()` zeigt den Fehler wie jeden anderen Startfehler.
  */
 export async function preloadLocalEncryptionKey(): Promise<void> {
 	if (!usingBrowserStorage()) return;
@@ -154,10 +147,8 @@ export async function preloadLocalEncryptionKey(): Promise<void> {
 		}
 	}
 	if (info?.serverUrl) {
-		// Ein Browser, der eine fruehere Fassung dieses Umbaus laufen hatte, traegt
-		// den Schluessel noch in der alten Ablage - und der ist nicht mehr zu
-		// gebrauchen (siehe platform/keyStore.ts). Ohne diesen Hinweis stuende
-		// dort "bitte neu laden", was nie hilft.
+		// Ein Schluessel in der alten Ablage ist nicht mehr zu gebrauchen (siehe
+		// platform/keyStore.ts). Eigener Hinweis, weil "bitte neu laden" hier nie hilft.
 		if (await hasLegacyVaultKey().catch(() => false)) {
 			throw new Error(
 				"Diese Version legt den Schlüssel für deine Daten anders ab - der auf diesem Gerät gespeicherte passt nicht mehr dazu. Setze die Anmeldung zurück und melde dich neu an; deine Zeiten kommen danach wieder vom Server."
@@ -202,10 +193,8 @@ async function quarantine(file: string, e: unknown): Promise<void> {
  * - beschaedigt (oder mit vorliegendem Schluessel nicht zu entschluesseln): in
  *   Quarantaene. Ohne das gaebe der Ersatzwert eine leere Sicht vor, und der
  *   naechste Speichervorgang schriebe sie ueber die intakte Datei - beim
- *   Abgleich bis auf die anderen Geraete. Das gilt auch fuer die
- *   Klartextdateien (`device.json`, `outbox.json`): ein kaputtes JSON galt dort
- *   schon vorher als "nicht vorhanden", jetzt bleibt es wenigstens lesbar
- *   liegen, statt beim naechsten Schreiben ueberschrieben zu werden.
+ *   Abgleich bis auf die anderen Geraete. Gilt auch fuer die Klartextdateien
+ *   (`device.json`, `outbox.json`).
  * - sonst: der Inhalt.
  */
 async function readJson<T>(file: string, fallback: T, opts: JsonOpts = {}): Promise<T> {

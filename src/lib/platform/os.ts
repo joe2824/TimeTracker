@@ -41,13 +41,13 @@ export function hasDesktopApp(os: OperatingSystem): boolean {
 	return os === "windows";
 }
 
-/** Das Vorhaben selbst. Stand vorher dreimal woertlich in der Oberflaeche. */
+/** Das Vorhaben selbst. */
 export const REPO_URL = "https://github.com/joe2824/TimeTracker";
 
 /** Wo die Installer liegen. Die Dateinamen tragen die Version, die Seite nicht. */
 export const RELEASES_URL = `${REPO_URL}/releases/latest`;
 
-/** Das Nachschlagewerk. Was frueher im README stand, steht jetzt dort. */
+/** Das Nachschlagewerk. */
 export const WIKI_URL = `${REPO_URL}/wiki`;
 
 /** Das Server-Abbild in der GitHub-Registry. Siehe .github/workflows/docker.yml. */

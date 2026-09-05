@@ -129,14 +129,12 @@
 		return v.requiresAction ? v : null;
 	});
 
-	/** Tagesbilanz: erfasst, Pausenabzug, Arbeitszeit. */
 	/**
 	 * Form und Toenung der Hinweiszeile.
 	 *
 	 * Gedeckt gehalten: der Hinweis steht ueber dem Timer und darf ihn nicht
-	 * uebertoenen – er soll auffallen, wenn man hinsieht, nicht bevor. Dieselben
-	 * Stufen wie das Urteil im Arbeitszeit-Check, damit dieselbe Farbe dasselbe
-	 * heisst (frueher zwei getrennte <style>-Bloecke mit denselben Werten).
+	 * uebertoenen. Dieselben Stufen wie das Urteil im Arbeitszeit-Check, damit
+	 * dieselbe Farbe dasselbe heisst.
 	 */
 	const HINT_FORM = "flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-xs";
 	const hintTone = $derived(

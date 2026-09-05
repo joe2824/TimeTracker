@@ -359,10 +359,8 @@
 			entriesFocus.pendingDate = date;
 			return;
 		}
-		// Nach einem Monatswechsel haengen die Zeilen an Daten, die erst nach
-		// weiteren Durchlaeufen stehen – ein `tick()` reicht dann nicht, und der
-		// Sprung fiel bisher still aus ("Scroll bleibt haengen"). Ein paar Frames
-		// nachfassen, danach war es kein Ladeproblem mehr.
+		// Nach einem Monatswechsel stehen die Zeilen erst nach weiteren
+		// Durchlaeufen - ein einzelnes `tick()` reicht nicht.
 		for (let i = 0; i < 10; i++) {
 			await new Promise(requestAnimationFrame);
 			if (centerRow(date)) return;

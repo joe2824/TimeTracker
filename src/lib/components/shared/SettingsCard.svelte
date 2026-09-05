@@ -1,8 +1,6 @@
 <script lang="ts">
-	// Einheitlicher Rahmen fuer eine Gruppe von Einstellungen. Nimmt der Seite die
-	// Wiederholung aus Card.Root/Header/Content ab und sorgt vor allem dafuer, dass
-	// die Trennlinien zwischen den Zeilen ueberall gleich sitzen - vorher stand an
-	// jeder zweiten Zeile ein handgesetztes "border-t pt-3", mal mit, mal ohne.
+	// Einheitlicher Rahmen fuer eine Gruppe von Einstellungen - vor allem, damit
+	// die Trennlinien zwischen den Zeilen ueberall gleich sitzen.
 	import type { Snippet } from "svelte";
 	import * as Card from "$lib/components/ui/card";
 	import SavedHint from "$lib/components/shared/SavedHint.svelte";

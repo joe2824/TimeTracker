@@ -1,8 +1,5 @@
 <script lang="ts">
-	// Eine Kennzahl: Beschriftung, Wert, Einordnung. Vorher standen die Zahlen in
-	// Auswertung und Arbeitszeit-Check als lose Bloecke mit `gap-8` nebeneinander –
-	// bei fuenf Stueck war weder zu sehen, was zusammengehoert, noch passte die
-	// Reihe auf ein schmales Fenster.
+	// Eine Kennzahl: Beschriftung, Wert, Einordnung.
 	import type { Snippet } from "svelte";
 	import { cn } from "$lib/utils";
 

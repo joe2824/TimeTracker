@@ -881,11 +881,10 @@ export function checkArbZg(entries: Entry[], opts: ArbZgOptions): ArbZgResult {
 		deductBreaks: opts.deductBreaks
 	});
 
-	// Der gerissene Durchschnitt ist bewusst KEIN Tagesbefund. Er gehoert keinem
-	// Tag – er faellt am Stichtag an und galt genauso am Tag davor. Als Zeile in
-	// "Auffaellige Tage" stand er doppelt (einmal je Lesart) am selben Datum, und
-	// weil die Liste nach Regel adressiert wird, war das ausserdem ein doppelter
-	// Schluessel. Sichtbar ist er da, wo er hingehoert: im Urteil ganz oben.
+	// Der gerissene Durchschnitt ist bewusst KEIN Tagesbefund: er gehoert keinem
+	// Tag, sondern faellt am Stichtag an und galt genauso am Tag davor. Als Zeile
+	// in "Auffaellige Tage" stuende er je Lesart einmal am selben Datum - und weil
+	// die Liste nach Regel adressiert wird, waere das ein doppelter Schluessel.
 	const windows = {
 		legal: avgWindow(facts, "legal", base, pre),
 		strict: avgWindow(facts, "strict", base, pre)
