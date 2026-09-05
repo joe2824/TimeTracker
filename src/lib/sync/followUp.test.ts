@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeSyncServer } from "../testing/fakeSyncServer";
 import { FakeDevice, onDevice, withoutAccount } from "../testing/syncDevice";
+import { anActivity, anEntry } from "../testing/fixtures";
 import type { VaultKey } from "../crypto/vault";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("../testing/fakeFs")).fakeFs);
@@ -42,23 +43,11 @@ async function link(g: FakeDevice, opts: { nurEigenes?: boolean } = {}): Promise
 	});
 }
 
-const activity = (id: string, name: string, color: string): Activity => ({
-	id,
-	name,
-	color,
-	sortOrder: 0,
-	archived: false,
-	isAbsence: false
-});
+const activity = (id: string, name: string, color: string): Activity =>
+	anActivity(id, { name, color });
 
-const entry = (id: string, activityId: string): Entry => ({
-	id,
-	activityId,
-	startTs: ts(15, 9),
-	endTs: ts(15, 12),
-	note: "",
-	source: "manual"
-});
+const entry = (id: string, activityId: string): Entry =>
+	anEntry(id, { activityId, startTs: ts(15, 9), endTs: ts(15, 12) });
 
 beforeEach(async () => {
 	resetFakeFs();

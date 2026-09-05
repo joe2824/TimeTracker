@@ -5,14 +5,7 @@ import { defaultSettings } from "./types";
 import { files, resetFakeFs } from "./testing/fakeFs";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("./testing/fakeFs")).fakeFs);
-vi.mock("svelte-sonner", () => ({
-	toast: Object.assign(vi.fn(), {
-		info() {},
-		error() {},
-		success() {},
-		warning() {}
-	})
-}));
+vi.mock("svelte-sonner", () => import("./testing/toastStub"));
 
 // Mit ausgeschriebenen Parametern: sonst haelt TypeScript die Aufrufliste des
 // Mocks fuer leer, und jeder Zugriff auf ein Argument ist ein Typfehler.

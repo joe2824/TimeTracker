@@ -5,9 +5,7 @@ import { resetFakeFs } from "./testing/fakeFs";
 import { monthKey } from "./time";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("./testing/fakeFs")).fakeFs);
-vi.mock("svelte-sonner", () => ({
-	toast: Object.assign(vi.fn(), { info() {}, error() {}, success() {}, warning() {} })
-}));
+vi.mock("svelte-sonner", () => import("./testing/toastStub"));
 
 /**
  * IPC-Ersatz. `idle_seconds` liefert, was der jeweilige Test vorgibt – ohne das

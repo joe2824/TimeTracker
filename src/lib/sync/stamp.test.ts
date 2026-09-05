@@ -1,19 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { diffAndStamp } from "./stamp";
-import type { Entry } from "../types";
+import { anEntry as e } from "../testing/fixtures";
 
 const DEV = "geraet-1";
 const NOW = 1_700_000_000_000;
 
-const e = (id: string, over: Partial<Entry> = {}): Entry => ({
-	id,
-	activityId: "a",
-	startTs: 1000,
-	endTs: 2000,
-	note: "",
-	source: "manual",
-	...over
-});
 
 describe("diffAndStamp", () => {
 	it("stempelt einen neuen Datensatz", () => {

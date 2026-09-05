@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { mergeRecord, pickWinner, resolveOpenEntries } from "./merge";
 import type { Entry } from "../types";
+import { anEntry } from "../testing/fixtures";
 
 interface TestRecord {
 	id: string;
@@ -21,17 +22,9 @@ const s = (over: Partial<TestRecord> = {}): TestRecord => ({
 
 const tomb = (v: TestRecord) => v.deletedAt !== undefined;
 
-const e = (id: string, over: Partial<Entry> = {}): Entry => ({
-	id,
-	activityId: "a",
-	startTs: 1000,
-	endTs: null,
-	note: "",
-	source: "timer",
-	updatedAt: 1000,
-	deviceId: "geraet-a",
-	...over
-});
+/** Ein laufender Eintrag mit Stempel - die Ausgangslage jedes Falls hier. */
+const e = (id: string, over: Partial<Entry> = {}): Entry =>
+	anEntry(id, { endTs: null, source: "timer", updatedAt: 1000, deviceId: "geraet-a", ...over });
 
 describe("pickWinner", () => {
 	it("der juengere Stempel gewinnt", () => {

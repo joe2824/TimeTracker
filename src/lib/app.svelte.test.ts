@@ -6,9 +6,7 @@ import { appTimeZone, wallToTs } from "./tz";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("./testing/fakeFs")).fakeFs);
 // Toasts sind hier Beiwerk; die Meldungen selbst prueft niemand.
-vi.mock("svelte-sonner", () => ({
-	toast: Object.assign(() => {}, { info() {}, error() {}, success() {}, warning() {} })
-}));
+vi.mock("svelte-sonner", () => import("./testing/toastStub"));
 
 const { app } = await import("./app.svelte");
 

@@ -7,27 +7,11 @@ const store = await import("../store");
 const { startTracking, stopTracking, pendingChanges, clearChanges, resetOutboxForTests, mergePending, SETTINGS_ID } =
 	await import("./outbox");
 const { defaultSettings } = await import("../types");
-import type { Activity, Entry } from "../types";
+import type { Entry } from "../types";
+import { anActivity, anEntry as e } from "../testing/fixtures";
 
 const DEV = "geraet-1";
 
-const e = (id: string, over: Partial<Entry> = {}): Entry => ({
-	id,
-	activityId: "a",
-	startTs: 1000,
-	endTs: 2000,
-	note: "",
-	source: "manual",
-	...over
-});
-
-const act = (id: string, name: string): Activity => ({
-	id,
-	name,
-	sortOrder: 0,
-	archived: false,
-	isAbsence: false
-});
 
 const onDisk = (m: string): Entry[] => JSON.parse(files.get(`data/entries-${m}.json`) ?? "[]");
 
@@ -104,7 +88,7 @@ describe("Eintraege", () => {
 
 describe("Aktivitaeten und Einstellungen", () => {
 	it("stempelt Aktivitaeten und merkt sie vor", async () => {
-		await store.saveActivities([act("a1", "Projekt")]);
+		await store.saveActivities([anActivity("a1", { name: "Projekt" })]);
 		const read = await store.loadActivities();
 		expect(read[0].deviceId).toBe(DEV);
 		expect(pendingChanges()).toEqual([expect.objectContaining({ kind: "activity", id: "a1" })]);

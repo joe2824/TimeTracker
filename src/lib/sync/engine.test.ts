@@ -13,6 +13,7 @@ const { resetFakeFs } = await import("../testing/fakeFs");
 const store = await import("../store");
 const { defaultSettings } = await import("../types");
 import type { Entry } from "../types";
+import { anEntry } from "../testing/fixtures";
 import type { SyncEngine, SyncProgress, SyncState } from "./engine";
 
 let server: FakeSyncServer;
@@ -24,15 +25,8 @@ const on = <T,>(g: FakeDevice, fn: (engine: SyncEngine) => Promise<T>): Promise<
 const MONTH = "2026-07";
 const ts = (day: number, hour: number) => Date.UTC(2026, 6, day, hour) + 2 * 3600_000;
 
-const entry = (id: string, over: Partial<Entry> = {}): Entry => ({
-	id,
-	activityId: "akt-1",
-	startTs: ts(15, 9),
-	endTs: ts(15, 12),
-	note: "",
-	source: "manual",
-	...over
-});
+const entry = (id: string, over: Partial<Entry> = {}): Entry =>
+	anEntry(id, { activityId: "akt-1", startTs: ts(15, 9), endTs: ts(15, 12), ...over });
 
 /**
  * Warten, bis die Uhr weiterspringt.

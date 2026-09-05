@@ -4,9 +4,7 @@ import { defaultSettings } from "./types";
 import { resetFakeFs } from "./testing/fakeFs";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("./testing/fakeFs")).fakeFs);
-vi.mock("svelte-sonner", () => ({
-	toast: Object.assign(vi.fn(), { info() {}, error() {}, success() {}, warning() {} })
-}));
+vi.mock("svelte-sonner", () => import("./testing/toastStub"));
 
 /**
  * Ersatz fuer das global-shortcut-Plugin.
