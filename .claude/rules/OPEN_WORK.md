@@ -1,109 +1,81 @@
 # Was offen ist
 
-Stand 2026-09-04, Branch `feat/passkey-vault`. Nach Prioritaet, nicht nach Thema.
+Stand 2026-09-05, Branch `feat/passkey-vault`. Nach Prioritaet, nicht nach Thema.
 Nichts davon ist deployt - `main` steht bei `0d72a0c`.
 
-**Hier weitermachen:** die fuenf Funde der Code-Review vom 2026-09-04 (gleich
-unten, keiner behoben). Fund 1 - `repairPasskeyWrap` ist zirkular geworden -
-gehoert vor einen Merge.
-
-Weiter offen: P2 (der Weg durch die echte PWA, von Hand; ein Teil ist am
-2026-09-04 gelaufen, siehe dort) und das Ausfuehren von
-`npm run reset:crypto -- --yes` beim tatsaechlichen Deployment (siehe unten).
+**Hier weitermachen:** P2 - der Weg durch die echte PWA, von Hand. Alles andere
+haengt an Tests und `svelte-check`, und die fuenf Funde der Code-Review sind
+abgearbeitet (siehe unten). Beim tatsaechlichen Deployment kommt
+`npm run reset:crypto -- --yes` dazu.
 
 **Zur Ruecksicht auf Bestandsdaten:** den Server benutzt derzeit nur eine
 Person, die ihre Daten lokal hat und sich neu verknuepfen kann. Auf alte
 Serverdaten muss also nichts Ruecksicht nehmen. Was der lokale Browser
-mitbringt, ist die Ausnahme - dort kommt man vom Fehlerbildschirm des Starts
-nicht mehr heraus (kein Knopf zum Loesen der Verknuepfung), deshalb bleibt die
-einmalige Uebernahme eines alten Schluessels aus der `device.json` stehen.
+mitbringt, ist die Ausnahme: die einmalige Uebernahme eines alten Schluessels
+aus der `device.json` bleibt stehen, weil sie einen ganzen Bestand rettet.
+Der Weg heraus, wenn sie nicht greift, ist "Anmeldung zuruecksetzen" auf dem
+Fehlerbildschirm (`938145a`).
 
-## OFFEN: Code-Review vom 2026-09-04 (nichts davon behoben)
+## ~~Code-Review vom 2026-09-04~~ erledigt (2026-09-05)
 
 `/code-review` ueber den ganzen Branch (`main..HEAD`, 92 Dateien, ~4200 neue
-Zeilen, 30 Commits). Fuenf Funde, alle am Code nachgeprueft, **keiner
-behoben** - hier steht, was zu tun ist. Nach Gewicht sortiert.
+Zeilen, 30 Commits). Fuenf Funde, alle am Code nachgeprueft, alle behoben - je
+ein eigener Commit, jeder mit Test. Nach Gewicht sortiert.
 
-### 1. `repairPasskeyWrap` ist zirkular geworden
+### 1. `repairPasskeyWrap` war zirkular - `aa071f2`
 
-`src/lib/sync/account.svelte.ts:1207`. Die Reparatur existiert genau fuer den
-Fall, dass ein Passkey KEINE Verpackung hat. Sie geht jetzt aber ueber
-`#exportableKey()`, und das holt sich den Schluessel nach einem Neuladen ueber
-`reunlockWithPasskey()` - was eine vorhandene Verpackung oeffnet. Also: es
-braucht das, was fehlt.
+Die Reparatur existiert fuer den Fall, dass ein Passkey KEINE Verpackung hat,
+holte den Schluessel aber ueber `reunlockWithPasskey` - und das oeffnet eine
+vorhandene Verpackung. Sie brauchte also genau das, was fehlt: nach jedem
+Neuladen eine zusaetzliche WebAuthn-Abfrage, danach "Dein Passkey konnte die
+Daten nicht oeffnen…". Dasselbe blockierte `addPasskey` in einem Browser, der
+ueber die 24 Woerter hereingekommen ist.
 
-Folge nach jedem Neuladen (und im Pfad `unlockWithStoredKey` in
-`WebOnboarding.signIn`): eine zusaetzliche WebAuthn-Abfrage, danach die
-Meldung "Dein Passkey konnte die Daten nicht oeffnen…". Derselbe Grund
-blockiert `addPasskey` fuer einen Browser, der ueber die 24 Woerter
-hereingekommen ist.
+`reunlockWithPasskey` sieht jetzt zuerst nach, zu welchen Passkeys ueberhaupt
+eine Verpackung liegt, und fragt nur nach denen (`allowCredentials`) -
+bevorzugt nach dem dieses Browsers. Liegt keine, wird ohne Abfrage geworfen,
+mit dem Weg, der wirklich hilft (abmelden, mit den 24 Woertern anmelden).
+`harvestPrf` nimmt dafuer eine Liste statt einer Kennung.
 
-**Wichtig fuer die Loesung:** der `prf`, den der Aufrufer mitgibt, hilft NICHT.
-Er ist das Ziel der neuen Verpackung, nicht eine Quelle fuer den Schluessel.
-Ohne Rohbytes laesst sich keine neue Verpackung schreiben - und die gibt die
-abgelegte Kopie mit Absicht nie her. Es bleiben also nur: ein ANDERER Passkey,
-der eine Verpackung hat, oder die 24 Woerter. Zu tun ist damit zweierlei -
-die vergebliche WebAuthn-Abfrage gar nicht erst ausloesen (vorher pruefen, ob
-zu diesem Passkey ueberhaupt eine Verpackung liegt), und die Meldung auf den
-Weg zeigen lassen, der wirklich hilft.
+Zwei Bestaetigungen bleiben im Fall "anderer Passkey liefert den Schluessel,
+dieser bekommt die Verpackung" - eine je Passkey, anders geht es nicht.
 
-**Vorher war es nicht besser**, nur haesslicher: `repairPasskeyWrap` nahm
-`this.#key` direkt, und `exportVaultKey` warf dort einen `InvalidAccessError`.
-Der Umbau hat den Fehler nicht erzeugt, sondern seine Gestalt geaendert.
+### 2. Umbenannte Schluessel-Datenbank - `b54b5cb`
 
-### 2. Umbenannte Schluessel-Datenbank ohne Uebergang
+Eine Uebernahme aus `timetracker-schluessel`/`schluessel`/`tresor` gibt es
+nicht und kann es nicht geben: dort lag ein EINZELNER nicht-exportierbarer
+AES-Schluessel, hier liegt das Paar `{enc, mac}`, und der HMAC-Teil braeuchte
+die Bytes des alten - die gibt er mit Absicht nie wieder her.
 
-`src/lib/platform/keyStore.ts:24`. Datenbank, Objektspeicher UND die Kennung
-des Datensatzes heissen neu (`timetracker-schluessel/schluessel/tresor` ->
-`timetracker-keys/keys/vault`), dazu hat sich die Form des Werts geaendert
-(einzelner `CryptoKey` -> `{enc, mac}`). Kein Uebergang, und die alte Datenbank
-bleibt liegen.
+Deshalb zweierlei: der Start sagt jetzt, was los ist ("Diese Version legt den
+Schluessel … anders ab") und zeigt auf "Anmeldung zuruecksetzen", statt zum
+Neuladen zu raten, was hier nie hilft. Und die alte Datenbank wird geloescht,
+sobald wieder ein brauchbarer Schluessel dasteht - sie laege sonst fuer immer
+im Profil (`hasLegacyVaultKey`/`discardLegacyVaultKey`).
 
-Ein Browser, der einen frueheren Commit DIESES Branches laufen hatte, landet
-damit auf "Start fehlgeschlagen": der neue Speicher ist leer, `device.json`
-traegt keinen `vaultKey` (den gibt es auf diesem Branch nicht mehr), also
-wirft `preloadLocalEncryptionKey`. Seine lokalen verschluesselten Dateien
-sind unlesbar.
+### 3. `readJson` verschluckte gescheiterte Entschluesselung - `641858b`
 
-Entschaerft, nicht behoben: der Knopf "Anmeldung zuruecksetzen" auf dem
-Fehlerbildschirm (`938145a`) ist der Weg heraus - er kostet den lokalen
-Bestand, der Server hat ihn aber.
+Jetzt gilt ueberall, was `loadEntries` schon machte: kein Schluessel heisst
+"Datei bleibt liegen", beschaedigt heisst Quarantaene (`.beschaedigt-*`). Damit
+schreibt kein Speichervorgang mehr die leere Sicht ueber eine intakte
+`activities.json`/`settings.json`/`timereport-*.json`. Die Sonderbehandlung in
+`loadEntries` faellt weg, `readEntriesRaw` ebenso.
 
-**Das Gegenargument steht in derselben Datei:** `platform/fs.ts` wurde aus
-genau diesem Grund NICHT umbenannt (siehe unten). Fuer `keyStore.ts` galt es
-ebenso, nur war der Kreis der Betroffenen kleiner - dieser Branch ist nicht
-deployt.
+### 4. Wettlauf um `device.json` - `823ebed`
 
-### 3. `readJson` verschluckt gescheiterte Entschluesselung
+`updateDevice(patch)` macht Lesen, Aendern und Schreiben in einem Zug - durch
+dieselbe Warteschlange, die schon jedes Schreiben je Datei serialisiert. Alle
+Lese-Aendern-Schreib-Stellen laufen darueber: Abgleichstand (`saveState`),
+Nachlauf-Merker, Nachhol-Durchlauf, Anzeigename, Passkey, `#persistLink` und
+`#forgetLocally`. Innerhalb von `patch` darf nicht `saveDevice`/`updateDevice`
+stehen - beide warten dann auf denselben Aufruf.
 
-`src/lib/store.ts:174`. Der `catch` gibt fuer JEDEN Fehler den Ersatzwert
-zurueck - auch dafuer, dass sich `activities.json`, `settings.json` oder ein
-`timereport-*.json` nicht entschluesseln liess. Der naechste Speichervorgang
-schreibt dann ueber die intakte Datei, und der Schreib-Haken schiebt die
-Vorgabe-Einstellungen auf den Server, also auf alle Geraete.
+### 5. Der Tracking-Tab sprang auch beim Koppeln - `d699556`
 
-`loadEntries` macht es richtig (`store.ts:321-335`): kein Schluessel heisst
-"Datei bleibt liegen", beschaedigt heisst Quarantaene (`.beschaedigt-*`). Die
-drei anderen brauchen dieselbe Unterscheidung.
-
-### 4. Wettlauf um `device.json` beim Nachhol-Durchlauf
-
-`src/lib/app.svelte.ts:286`. `#encryptHistoricalLocalFiles` liest `device.json`
-ganz am Ende und schreibt `localFilesEncrypted: true` zurueck - dazwischen
-liegen die `await`s ueber alle Monate und Reports, also unter Umstaenden
-Sekunden. In derselben Zeit schreibt `saveState` der Engine `seq`/`priority`
-in dieselbe Datei. Geht ein Stand verloren, holt das Geraet Datensaetze ein
-zweites Mal, und die Sperren fuer Sicherung und Monatsauswahl koennen wieder
-aufgehen.
-
-### 5. Der Tracking-Tab springt auch beim Koppeln
-
-`src/routes/+page.svelte:458`. Der Effekt haengt am Uebergang
-"nicht verknuepft" -> "verknuepft" (`ee69307`). Der tritt aber nicht nur beim
-Anmelden ein, sondern auch, wenn ein Geraet gerade gekoppelt wurde - und das
-passiert aus den Einstellungen heraus. Wer dort mitten im Koppeln steht,
-findet sich in der Zeiterfassung wieder. Zu klaeren: ob das nur beim Anmelden
-gelten soll (dann braucht es ein genaueres Signal als `account.linked`).
+Der Effekt haengt jetzt am Verschwinden der Anmeldeseite (`needsLogin`) statt
+am Uebergang "nicht verknuepft" -> "verknuepft". **Bewusste Nebenwirkung:** auf
+dem Rechner gibt es keine Anmeldeseite, dort springt der Tab nach einem
+Verknuepfen aus den Einstellungen gar nicht mehr - genau der Fall, der stoerte.
 
 ### Geprueft und sauber
 
@@ -121,16 +93,15 @@ Oberflaeche).
 
 Die Review meldet, `npm test` scheitere fuer alle 56 Client-Dateien mit
 "Vitest failed to find the runner", also sei nichts davon wirklich gelaufen.
-**In dieser Arbeitskopie laeuft die Suite.** Mehrfach an diesem Tag, zuletzt
-15:53: 56 Dateien, 949 Tests, gruen; dazu `svelte-check` ohne Befund und
-`cargo check` sauber. Der Serverlauf (11 Dateien, 221 Tests) ebenso. Wer die
-Meldung wiedersieht, sucht sie in seiner eigenen Umgebung, nicht im Repo.
+**In dieser Arbeitskopie laeuft die Suite.** Stand 2026-09-05: 56 Dateien, 959
+Tests, gruen; `svelte-check` ohne Befund. Wer die Meldung wiedersieht, sucht
+sie in seiner eigenen Umgebung, nicht im Repo. Ein `npm install` kann noetig
+sein - `jose` fehlte in einer frischen Arbeitskopie.
 
 Ein echter Fallstrick beim Serverlauf ist dagegen: `npm run server:test`
 startet den GEBAUTEN Server (`server/build/handler.js`). Wer eine Route
 aendert und nicht vorher `npm --workspace server run build` laufen laesst,
-testet den alten Stand - das hat heute einen neuen Endpunkt still danebengehen
-lassen.
+testet den alten Stand.
 
 ## ~~Security-Review + der Fund daraus~~ erledigt
 
@@ -322,8 +293,14 @@ Noch NICHT geprueft:
   aus `ada4ba1`, und genau dieser Weg lief noch nie von Hand.
 - **Kopplung.** Sie scheiterte an der fehlenden Migration (`5e5e0ad`); seit die
   durch ist, wurde es nicht noch einmal versucht.
-- Passkey anlegen (loest jetzt eine zusaetzliche Passkey-Bestaetigung aus,
-  siehe Fund 1 oben - dort steht auch, wann das schiefgeht).
+- Passkey anlegen. Nach einem Neuladen kommt eine zusaetzliche
+  Passkey-Bestaetigung dazu (der Schluessel muss erst wieder aufgemacht werden);
+  gefragt wird dabei nur nach Passkeys, die das koennen - siehe Fund 1.
+- Den Fall aus Fund 1: ein Passkey OHNE Verpackung, Seite neu geladen, dann
+  "Passkey verbinden". Es darf KEIN Passkey-Dialog aufgehen, sondern der Satz
+  mit den 24 Woertern stehen.
+- Koppeln aus den Einstellungen heraus: der Tab darf danach nicht mehr in die
+  Zeiterfassung springen (Fund 5).
 - Zweites Browserprofil, nur Passkey, keine 24 Woerter.
 - Wiederherstellung ueber die 24 Woerter.
 
