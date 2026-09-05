@@ -121,26 +121,56 @@ jobs:
             if [ -n "$PREV" ]; then RANGE="${PREV}..${TAG}"; else RANGE="${TAG}"; fi
             echo "Changelog-Bereich: ${RANGE:-<alle>}"
 
-            # Commits seit dem letzten Tag (ohne Merge- und Release-Commits).
-            commits=$(git log --no-merges --pretty=format:'%s|%h' "$RANGE" | grep -viE '^chore(\(.*\))?: release' || true)
+            # In die Notes kommt NUR, was einen Release-Note-Trailer traegt. Der
+            # Commit-Betreff ist fuer Entwickler geschrieben und half Nutzern nie
+            # ("device.json wird nicht mehr aus zwei Richtungen ueberschrieben").
+            # Der Trailer ist der Satz fuer Nutzer:
+            #
+            #   fix(sync): device.json wird nicht mehr doppelt geschrieben
+            #
+            #   Release-Note: Daten gehen nicht mehr verloren, wenn zwei Geraete
+            #   gleichzeitig abgleichen.
+            breaking=""; feats=""; fixes=""
+            while IFS='|' read -r hash subject note; do
+              [ -z "$hash" ] && continue
+              case "$subject" in 'chore'*[Rr]elease*) continue ;; esac
+              [ -z "$note" ] && continue
 
-            feats=""; fixes=""; others=""
-            while IFS='|' read -r subject hash; do
-              [ -z "$subject" ] && continue
-              clean=$(printf '%s' "$subject" | sed -E 's/^[a-z]+(\([^)]*\))?!?: //')
-              line="- ${clean} (${hash})"
-              case "$subject" in
-                feat*) feats="${feats}${line}"$'\n' ;;
-                fix*)  fixes="${fixes}${line}"$'\n' ;;
-                *)     others="${others}${line}"$'\n' ;;
-              esac
-            done <<< "$commits"
+              # Breaking: Bang im Typ oder BREAKING CHANGE im Body.
+              bang=""
+              case "$subject" in *'!:'*) bang="yes" ;; esac
+              git log -1 --pretty=%b "$hash" | grep -q '^BREAKING CHANGE' && bang="yes"
+
+              entry="- ${note}"$'\n'
+              if   [ -n "$bang" ]; then breaking="${breaking}${entry}"
+              else
+                case "$subject" in
+                  feat*) feats="${feats}${entry}" ;;
+                  *)     fixes="${fixes}${entry}" ;;
+                esac
+              fi
+            # tformat, NICHT format: format laesst den Umbruch nach dem letzten
+            # Datensatz weg, `read` verwirft ihn dann - der aelteste Commit des
+            # Bereichs fiele stillschweigend aus den Notes.
+            done < <(git log --no-merges \
+                       --pretty=tformat:'%H|%s|%(trailers:key=Release-Note,valueonly,separator=%x20)' \
+                       "$RANGE")
+
+            # Kein Trailer, aber es gab feat/fix im Bereich? Dann wurde er vergessen -
+            # lieber abbrechen als ein Release mit leeren Notes herausgeben.
+            if [ -z "$breaking$feats$fixes" ]; then
+              relevant=$(git log --no-merges --pretty=%s "$RANGE" | grep -cE '^(feat|fix)' || true)
+              if [ "$relevant" -gt 0 ]; then
+                echo "::error::${relevant} feat/fix-Commits in ${RANGE}, aber kein einziger Release-Note-Trailer. Entweder die Trailer nachtragen (git rebase) oder RELEASE_NOTES.md fuer dieses Release anlegen."
+                exit 1
+              fi
+            fi
 
             body="## TimeTracker ${TAG}"$'\n'
-            [ -n "$feats" ]  && body="${body}"$'\n'"### Neue Funktionen"$'\n'"${feats}"
-            [ -n "$fixes" ]  && body="${body}"$'\n'"### Fehlerbehebungen"$'\n'"${fixes}"
-            [ -n "$others" ] && body="${body}"$'\n'"### Sonstiges"$'\n'"${others}"
-            [ -z "$feats$fixes$others" ] && body="${body}"$'\n'"_Keine nennenswerten Änderungen._"$'\n'
+            [ -n "$breaking" ] && body="${body}"$'\n'"### ⚠️ Wichtig vor dem Update"$'\n'"${breaking}"
+            [ -n "$feats" ]    && body="${body}"$'\n'"### Neue Funktionen"$'\n'"${feats}"
+            [ -n "$fixes" ]    && body="${body}"$'\n'"### Fehlerbehebungen"$'\n'"${fixes}"
+            [ -z "$breaking$feats$fixes" ] && body="${body}"$'\n'"_Wartungsrelease ohne sichtbare Änderungen._"$'\n'
             if [ -n "$PREV" ]; then
               body="${body}"$'\n'"**Vollständiges Changelog**: ${{ github.server_url }}/${{ github.repository }}/compare/${PREV}...${TAG}"$'\n'
             fi

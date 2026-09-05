@@ -1,12 +1,10 @@
 # AGENTS.md
 
-Kanonische Anweisungen für KI-Assistenten ([AGENTS.md-Standard](https://agents.md));
-`CLAUDE.md` bindet sie nur ein.
-
-TimeTracker: Zeiterfassung. SvelteKit 2 + Svelte 5 (Runes), Tailwind 4,
-shadcn-svelte, Tauri 2 für Desktop, Server im Workspace `server/` mit
-Drizzle/SQLite. Aufbau und Setup stehen im [README](README.md) — hier nur, was
-daraus nicht hervorgeht.
+Kanonische Anweisungen für KI-Assistenten ([Standard](https://agents.md));
+`CLAUDE.md` bindet sie nur ein. TimeTracker: Zeiterfassung aus SvelteKit 2 +
+Svelte 5 (Runes), Tailwind 4, shadcn-svelte und Tauri 2, Server im Workspace
+`server/` mit Drizzle/SQLite. Aufbau und Setup stehen im [README](README.md) —
+hier nur, was daraus nicht hervorgeht.
 
 ## Befehle
 
@@ -18,18 +16,14 @@ cd src-tauri && cargo test                    # Rust
 npm run dev  /  npm run dev:web               # Vite für Desktop bzw. Browser
 ```
 
-**Fertig heißt fertig:** erst wenn die ersten vier ohne Befund durchlaufen —
-nicht drei davon. Schlägt etwas fehl: das Ergebnis melden, nicht die Aussage
-abschwächen.
+**Fertig heißt fertig:** erst wenn die ersten vier ohne Befund durchlaufen, nicht
+drei davon. Schlägt etwas fehl: Ergebnis melden, Aussage nicht abschwächen.
 
-**Zwei Fallstricke, die Zeit kosten:**
-
-- `npm run server:test` startet den **gebauten** Server (`server/build/handler.js`).
-  Wer eine Route ändert und nicht vorher baut, testet den alten Stand.
-- Der Server liefert die PWA **statisch** aus, kein HMR. Nach jeder
-  Frontend-Änderung `npm run pwa:bundle` und neu starten. Und **nicht Port 1420
-  nehmen** — `WebOnboarding.svelte` nimmt `location.origin` als Serveradresse,
-  auf dem Vite-Port zeigt das auf Vite. Richtig ist `http://localhost:5173`.
+**Zwei Fallstricke:** `npm run server:test` startet den **gebauten** Server —
+ohne vorherigen Build testet man den alten Stand. Und der Server liefert die PWA
+**statisch** aus: nach Frontend-Änderungen `npm run pwa:bundle` und neu starten,
+dabei **nicht Port 1420** nehmen (`WebOnboarding.svelte` nimmt `location.origin`
+als Serveradresse, das zeigt dort auf Vite). Richtig ist `http://localhost:5173`.
 
 ## Svelte 5
 
@@ -37,12 +31,12 @@ Runes, ausnahmslos: `$state`, `$derived`, `$effect`, `$props()`. Kein
 `export let`, kein `svelte/store` — beides kommt im Repo null mal vor, wird von
 älteren Modellen aber verlässlich vorgeschlagen.
 
-`src/lib/components/ui/` gehört der shadcn-svelte-CLI (98 Dateien, siehe
-`components.json`). Handedits überschreibt der nächste `shadcn-svelte add` —
-Abweichendes gehört in eine eigene Komponente daneben.
+`src/lib/components/ui/` gehört der shadcn-svelte-CLI (98 Dateien). Handedits
+überschreibt der nächste `shadcn-svelte add` — Abweichendes gehört in eine
+eigene Komponente daneben.
 
-Was nur auf einer Plattform läuft, hängt an `isTauri()` (24 Dateien). Beide Wege
-mitdenken: im Browser gibt es keine Dateien, auf dem Rechner keine Passkeys.
+Was nur auf einer Plattform läuft, hängt an `isTauri()` (24 Dateien): im Browser
+gibt es keine Dateien, auf dem Rechner keine Passkeys.
 
 ## Doppelungen
 
@@ -54,20 +48,20 @@ grep -rhoE "^export (async )?function [a-zA-Z0-9_]+" src/lib server/src shared \
   --include="*.ts" | grep -v test | awk '{print $NF}' | sort | uniq -d
 ```
 
-Gleiche **Namen** findet das. Gleiche **Logik** unter verschiedenen Namen nicht —
-und das ist der häufigere Fall: die drei Fassungen des Sync-Wireformats hießen
-alle anders. Umgekehrt sind gleiche Namen oft harmlos (`sha256Hex` ist WebCrypto
-gegen Node-crypto). Der Befehl gibt einen Hinweis, kein Urteil.
+Gleiche **Namen** findet das, gleiche **Logik** unter anderem Namen nicht — und
+das ist der häufigere Fall (die drei Fassungen des Sync-Wireformats hießen alle
+anders). Umgekehrt sind gleiche Namen oft harmlos: `sha256Hex` ist WebCrypto
+gegen Node-crypto. Ein Hinweis, kein Urteil.
 
 ## Namenskonvention
 
 Funktionsnamen, Variablen, Felder, Typen, Dateinamen: **immer Englisch**.
 Deutsch nur in Kommentaren, UI-Texten und Commit-Messages.
 
-Ausnahme sind **Ablagenamen** — sie stehen so auf der Platte oder im Wire-Format,
-ein Rename ließe Bestandsdaten verwaisen: `kontoKennung` und `bestandGehoertZu`
-(alte `device.json`), `LEGACY_FLAG_KEYS` (`store.ts`), `gueltigTage` (altes
-Invite-Format), die IndexedDB-Namen `timetracker`/`dateien` und `tresor`.
+Ausnahme sind **Ablagenamen** — ein Rename ließe Bestandsdaten verwaisen:
+`kontoKennung`/`bestandGehoertZu` (alte `device.json`), `LEGACY_FLAG_KEYS`,
+`gueltigTage` (altes Invite-Format), die IndexedDB-Namen `timetracker`/`dateien`
+und `tresor`.
 
 Taucht doch wieder etwas Deutsches auf: **nicht nebenbei umbenennen** — das
 gehört in einen eigenen Commit, sonst verdeckt der Diff die eigentliche Änderung.
@@ -78,9 +72,8 @@ Keine echten Personendaten in Tests und Fixtures: keine realen Namen,
 Firmendomains, Personalnummern oder Mailadressen. Erfundene nehmen — im Bestand
 stehen `Anna Meier`, `firma.de` und `00123456` als Vorlage.
 
-Grund: eine echte Firmendomain und der Name eines Kollegen lagen unbemerkt seit
-`7c92f69` in `teamReport.test.ts`. Das Repo ist öffentlich; herauszubekommen
-waren sie nur noch per History-Rewrite über alle Refs.
+Grund: Firmendomain und Kollegenname lagen unbemerkt in `teamReport.test.ts`.
+Das Repo ist öffentlich — heraus kamen sie nur per History-Rewrite über alle Refs.
 
 ## Commits
 
@@ -95,24 +88,41 @@ Regel hat Vorrang.**
 
 ### Format
 
-Conventional Commits, zwingend — `.github/workflows/release.yml` sortiert die
-Release-Notes anhand der Präfixe:
+Conventional Commits, zwingend: `<type>(<scope>): <kurze beschreibung>`.
+Erlaubte Typen: `feat`, `fix`, `chore`, `refactor`, `style`, `docs`, `build`,
+`ci`, `test` — andere kennt der Workflow nicht. Beschreibung auf Deutsch, ohne
+Füllwörter („Dieser Commit macht…"), kein Punkt am Ende der ersten Zeile.
+
+Der Typ entscheidet **nicht**, ob etwas in den Release-Notes landet — das tut
+der Trailer unten. Er entscheidet nur die Überschrift: `feat` → „Neue
+Funktionen", alles andere → „Fehlerbehebungen".
+
+### Release-Note-Trailer
+
+Was Nutzer merken, bekommt einen Trailer — sonst taucht es in **keinen**
+Release-Notes auf. `release.yml` nimmt ausschließlich diesen Text; der Betreff
+ist für Entwickler geschrieben und wird nicht verwendet.
 
 ```
-<type>(<scope>): <kurze beschreibung>
+fix(sync): device.json wird nicht mehr doppelt geschrieben
+
+Release-Note: Daten gehen nicht mehr verloren, wenn zwei Geräte gleichzeitig abgleichen.
 ```
 
-`feat:` → „✨ Neue Funktionen", `fix:` → „🐛 Fehlerbehebungen",
-`chore:`/`refactor:`/`style:`/`docs:`/`build:`/`ci:`/`test:` → „🔧 Sonstiges".
-Andere Typen kennt der Workflow nicht.
+**Eine Zeile, eigener Absatz am Ende.** Git parst den Trailer sonst nicht: ein
+Umbruch macht ihn unsichtbar, und im selben Absatz wie `BREAKING CHANGE:` ebenso
+(beides geprüft). Lieber eine lange Zeile.
 
-Beschreibung auf Deutsch, ohne Füllwörter („Dieser Commit macht…"), kein Punkt
-am Ende der ersten Zeile.
+Ein ganzer Satz in der Sprache der Anwender-Texte (siehe unten), kein Datei- oder
+Funktionsname. Rein Internes (Tests, CI, Refactoring, Doku) bekommt keinen.
+Breaking Changes mit `!:` oder `BREAKING CHANGE:` landen in einem eigenen
+Abschnitt ganz oben. Fehlt bei `feat`/`fix` im Release-Bereich **jeder** Trailer,
+bricht der Release ab — dann wurde er vergessen.
 
 ### Vokabular: kein KI-Slop
 
-Etablierte englische Fachbegriffe **nicht** ins Deutsche zwingen. Gilt für
-Commits, Release-Notes und Kommentare gleichermaßen.
+Etablierte englische Fachbegriffe **nicht** ins Deutsche zwingen — in Commits,
+Release-Notes und Kommentaren gleichermaßen.
 
 | Verboten | Richtig |
 |---|---|
@@ -133,11 +143,10 @@ Commits, Release-Notes und Kommentare gleichermaßen.
 
 ## Anwender-sichtbare Texte
 
-Zielgruppe sind normale Anwender ohne technisches Vorwissen. Schlecht:
-„Passkeys hängen an der Adresse des Servers – die Desktop-Anwendung hat keine."
-
-Fachbegriffe der Zielgruppe sind **kein** Jargon-Problem (Arbeitszeitgesetz,
-LOGA-Bezug bei Pausenregeln). Nur Technik- und Architektur-Vokabular raus.
+Zielgruppe sind Anwender ohne technisches Vorwissen. Schlecht: „Passkeys hängen
+an der Adresse des Servers – die Desktop-Anwendung hat keine." Fachbegriffe der
+Zielgruppe sind **kein** Jargon-Problem (Arbeitszeitgesetz, LOGA-Bezug bei
+Pausenregeln) — nur Technik- und Architektur-Vokabular raus.
 
 ## Stand der Arbeit
 
