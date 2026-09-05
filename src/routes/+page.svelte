@@ -675,29 +675,31 @@
 
 		<PasskeyNudge />
 
+		<!-- Der Abstand zur Kopfzeile gehoert hierher, nicht an jeden Tab: sonst
+		     springt das Layout beim Wechsel, sobald einer davon abweicht. -->
 		<div
-			class="mx-auto w-full max-w-6xl px-4 pb-[calc(3rem+env(safe-area-inset-bottom))] sm:px-6"
+			class="mx-auto w-full max-w-6xl px-4 pt-4 pb-[calc(3rem+env(safe-area-inset-bottom))] sm:px-6"
 		>
-			<Tabs.Content value="tracking" class="mt-0">
+			<Tabs.Content value="tracking">
 				<TrackingPanel onShowEntries={showEntriesToday} onShowReport={showArbZgCheck} />
 			</Tabs.Content>
-			<Tabs.Content value="entries" class="mt-4">
+			<Tabs.Content value="entries">
 				<EntryEditor />
 			</Tabs.Content>
-			<Tabs.Content value="report" class="mt-4">
+			<Tabs.Content value="report">
 				<ReportView />
 			</Tabs.Content>
 			<!-- Nur bei aktivem Chef-Modus einhaengen: bits-ui baut sonst alle
 			     Tab-Inhalte mit auf, und im Browser gibt es kein Outlook dafuer. -->
 			{#if app.settings.bossMode && capabilities.outlook}
-				<Tabs.Content value="team" class="mt-4">
+				<Tabs.Content value="team">
 					<TeamPanel />
 				</Tabs.Content>
 			{/if}
-			<Tabs.Content value="activities" class="mt-4">
+			<Tabs.Content value="activities">
 				<ActivitiesPanel />
 			</Tabs.Content>
-			<Tabs.Content value="settings" class="mt-4">
+			<Tabs.Content value="settings">
 				<SettingsPanel active={tab === "settings"} />
 			</Tabs.Content>
 		</div>
