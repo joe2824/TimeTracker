@@ -1,8 +1,7 @@
 <script lang="ts">
 	import { onMount } from "svelte";
 	import { app } from "$lib/app.svelte";
-	import { formFromSettings, patchFrom, syncForm } from "$lib/settingsSync";
-	import type { Settings } from "$lib/types";
+	import { createSettingsForm } from "$lib/settingsForm.svelte";
 	import { listEntryYears, type StoredYear } from "$lib/store";
 	import { Button } from "$lib/components/ui/button";
 	import * as Dialog from "$lib/components/ui/dialog";
@@ -31,12 +30,7 @@
 		type TimeTrackerBackup
 	} from "$lib/backup";
 
-	function getCurrentSettings(): Settings {
-		return $state.snapshot(app.settings) as Settings;
-	}
-
-	let form = $state(formFromSettings(getCurrentSettings()));
-	let synced = getCurrentSettings();
+	const { form, save } = createSettingsForm();
 	let savedSystemAt = $state(0);
 	let isChannelChanged = $state(false);
 	let storedYears = $state<StoredYear[]>([]);
@@ -111,10 +105,6 @@
 		}
 	}
 
-	$effect(() => {
-		synced = syncForm(form, synced, getCurrentSettings());
-	});
-
 	onMount(async () => {
 		if (capabilities.autostart) {
 			try {
@@ -147,7 +137,7 @@
 	}
 
 	async function saveBetaUpdates() {
-		await app.updateSettings(patchFrom(form, ["betaUpdates"], getCurrentSettings()));
+		await save(["betaUpdates"]);
 		savedSystemAt = Date.now();
 		isChannelChanged = true;
 		logInfo(`Update-Kanal umgestellt auf ${form.betaUpdates ? "Beta" : "stabil"}`);

@@ -1,8 +1,7 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
-	import { formFromSettings, patchFrom, syncForm } from "$lib/settingsSync";
+	import { createSettingsForm } from "$lib/settingsForm.svelte";
 	import { scheduleReminders, scheduleReportReminder, ensureNotificationPermission } from "$lib/reminders";
-	import type { Settings } from "$lib/types";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
@@ -26,20 +25,11 @@
 		"reportReminderLeadDays"
 	] as const;
 
-	function getCurrentSettings(): Settings {
-		return $state.snapshot(app.settings) as Settings;
-	}
-
-	let form = $state(formFromSettings(getCurrentSettings()));
-	let synced = getCurrentSettings();
+	const { form, save } = createSettingsForm();
 	let savedTimesAt = $state(0);
 	let savedReportReminderAt = $state(0);
 	let notificationPermission = $state<NotificationPermission | "unknown">("unknown");
 	let newTimeValue = $state("17:00");
-
-	$effect(() => {
-		synced = syncForm(form, synced, getCurrentSettings());
-	});
 
 	$effect(() => {
 		if (isTauri() || typeof Notification === "undefined") return;
@@ -47,7 +37,7 @@
 	});
 
 	async function saveDailyTimes() {
-		await app.updateSettings(patchFrom(form, ["reminderTimes"], getCurrentSettings()));
+		await save(["reminderTimes"]);
 		scheduleReminders();
 		if (app.settings.reminderTimes.length > 0) {
 			await ensureNotificationPermission();
@@ -56,9 +46,7 @@
 	}
 
 	async function saveReportReminder() {
-		await app.updateSettings(
-			patchFrom(form, ["reportReminderEnabled", "reportReminderTime", "reportReminderLeadDays"], getCurrentSettings())
-		);
+		await save(["reportReminderEnabled", "reportReminderTime", "reportReminderLeadDays"]);
 		scheduleReportReminder();
 		if (form.reportReminderEnabled) {
 			await ensureNotificationPermission();

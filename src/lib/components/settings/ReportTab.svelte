@@ -1,8 +1,6 @@
 <script lang="ts">
-	import { app } from "$lib/app.svelte";
 	import { account } from "$lib/sync/account.svelte";
-	import { formFromSettings, patchFrom, syncForm } from "$lib/settingsSync";
-	import type { Settings } from "$lib/types";
+	import { createSettingsForm } from "$lib/settingsForm.svelte";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
@@ -23,25 +21,12 @@
 
 	const BOSS_KEYS = ["bossMode", "team", "teamSubjectFilter", "teamScanSubfolders"] as const;
 
-	function getCurrentSettings(): Settings {
-		return $state.snapshot(app.settings) as Settings;
-	}
-
-	let form = $state(formFromSettings(getCurrentSettings()));
-	let synced = getCurrentSettings();
+	const { form, save } = createSettingsForm();
 	let savedReportAt = $state(0);
 	let savedBossAt = $state(0);
 
-	$effect(() => {
-		synced = syncForm(form, synced, getCurrentSettings());
-	});
-
-	async function saveFields(keys: readonly (keyof Settings)[]): Promise<void> {
-		await app.updateSettings(patchFrom(form, keys, getCurrentSettings()));
-	}
-
 	async function saveReport() {
-		await saveFields(REPORT_KEYS);
+		await save(REPORT_KEYS);
 		savedReportAt = Date.now();
 		if (form.senderName.trim()) {
 			void account.updateDisplayName(form.senderName.trim());
@@ -49,7 +34,7 @@
 	}
 
 	async function saveBossMode() {
-		await saveFields(BOSS_KEYS);
+		await save(BOSS_KEYS);
 		savedBossAt = Date.now();
 	}
 </script>

@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
-	import { formFromSettings, patchFrom, syncForm } from "$lib/settingsSync";
-	import type { Settings } from "$lib/types";
+	import { createSettingsForm } from "$lib/settingsForm.svelte";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
@@ -32,31 +31,18 @@
 
 	const WORKTIME_KEYS = ["rounding", "hoursPerDay", "breakDeduction", "workdays"] as const;
 
-	function getCurrentSettings(): Settings {
-		return $state.snapshot(app.settings) as Settings;
-	}
-
-	let form = $state(formFromSettings(getCurrentSettings()));
-	let synced = getCurrentSettings();
+	const { form, save } = createSettingsForm();
 	let isRecordingShortcut = $state(false);
 	let savedTrackingAt = $state(0);
 	let savedWorktimeAt = $state(0);
 
-	$effect(() => {
-		synced = syncForm(form, synced, getCurrentSettings());
-	});
-
-	async function saveFields(keys: readonly (keyof Settings)[]): Promise<void> {
-		await app.updateSettings(patchFrom(form, keys, getCurrentSettings()));
-	}
-
 	async function saveTracking() {
-		await saveFields(TRACKING_KEYS);
+		await save(TRACKING_KEYS);
 		savedTrackingAt = Date.now();
 	}
 
 	async function saveWorktime() {
-		await saveFields(WORKTIME_KEYS);
+		await save(WORKTIME_KEYS);
 		savedWorktimeAt = Date.now();
 	}
 
