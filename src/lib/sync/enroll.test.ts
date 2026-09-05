@@ -16,6 +16,8 @@ vi.mock("@simplewebauthn/browser", () => webauthn);
 /** Nur so viel Server, wie Anlegen und Anmelden anfassen. */
 const server = vi.hoisted(() => ({
 	wraps: [] as { id: string; kind: string; credentialId: string | null; payload: string }[],
+	/** Laeuft bei jedem Abruf der Verpackungen - fuer Aussagen ueber die Reihenfolge. */
+	onWraps: (() => {}) as () => void,
 	/** Wie oft eine Anmelde-Aufgabe geholt wurde - daran haengt der Puffer-Test. */
 	loginStarts: 0
 }));
@@ -54,6 +56,7 @@ vi.mock("./api", () => {
 			return Promise.resolve({ userId: "u1", displayName: "Test" });
 		}
 		wraps() {
+			server.onWraps();
 			return Promise.resolve({ wraps: server.wraps });
 		}
 		putWrap(kind: string, payload: string, credentialId?: string) {
@@ -91,6 +94,7 @@ const PRF = Array.from({ length: 32 }, (_, i) => i);
 
 beforeEach(() => {
 	server.wraps = [];
+	server.onWraps = () => {};
 	server.loginStarts = 0;
 	webauthn.startRegistration.mockReset();
 	webauthn.startAuthentication.mockReset();
@@ -209,10 +213,35 @@ describe("reunlockWithPasskey", () => {
 	it("fragt gar nicht erst, wenn kein Passkey die Daten öffnen kann", async () => {
 		// Der Kreis, um den es geht: wer eine FEHLENDE Verpackung nachtragen will,
 		// wurde bisher nach genau dem Passkey gefragt, der nichts oeffnen kann.
-		server.wraps = [{ id: "r", kind: "recovery", credentialId: null, payload: "{}" }];
-
-		await expect(reunlockWithPasskey(api, "cred-ohne")).rejects.toThrow(/24 Wörtern/);
+		await expect(
+			reunlockWithPasskey(api, { preferred: "cred-ohne", usableIds: [] })
+		).rejects.toThrow(/24 Wörtern/);
 		expect(webauthn.startAuthentication).not.toHaveBeenCalled();
+	});
+
+	it("holt die Verpackung erst NACH der Bestätigung", async () => {
+		// Eine Anfrage zwischen Klick und Dialog kostet auf schmaler Leitung die
+		// Berechtigung aus der Berührung - der Browser lehnt dann mit
+		// NotAllowedError ab, und es sieht aus, als ginge der Passkey nicht mehr.
+		const key = await createVaultKey();
+		const order: string[] = [];
+		server.wraps = [
+			{
+				id: "w",
+				kind: "passkey",
+				credentialId: "cred-mit",
+				payload: await wrapWithPrf(key, Uint8Array.from(PRF))
+			}
+		];
+		server.onWraps = () => order.push("wraps");
+		webauthn.startAuthentication.mockImplementation(() => {
+			order.push("dialog");
+			return Promise.resolve(response("cred-mit", PRF));
+		});
+
+		await reunlockWithPasskey(api, { usableIds: ["cred-mit"] });
+
+		expect(order).toEqual(["dialog", "wraps"]);
 	});
 
 	it("fragt nur nach den Passkeys, zu denen eine Verpackung liegt", async () => {
@@ -228,7 +257,10 @@ describe("reunlockWithPasskey", () => {
 		];
 		webauthn.startAuthentication.mockResolvedValue(response("cred-mit", PRF));
 
-		const back = await reunlockWithPasskey(api, "cred-ohne");
+		const back = await reunlockWithPasskey(api, {
+			preferred: "cred-ohne",
+			usableIds: ["cred-mit"]
+		});
 
 		expect(askedFor()).toEqual(["cred-mit"]);
 		expect(new Uint8Array(await exportVaultKey(back))).toEqual(
@@ -245,7 +277,10 @@ describe("reunlockWithPasskey", () => {
 		];
 		webauthn.startAuthentication.mockResolvedValue(response("cred-hier", PRF));
 
-		await reunlockWithPasskey(api, "cred-hier");
+		await reunlockWithPasskey(api, {
+			preferred: "cred-hier",
+			usableIds: ["cred-hier", "cred-woanders"]
+		});
 
 		expect(askedFor()).toEqual(["cred-hier"]);
 	});

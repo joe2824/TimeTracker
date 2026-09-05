@@ -36,6 +36,9 @@ export class PairingFlow {
 	 * `failed`: da schaut niemand mehr auf den Knopf.
 	 */
 	async start(serverUrl: string): Promise<void> {
+		// Ein zweiter Anlauf, waehrend der erste noch nachsieht: ohne das liefe
+		// dessen Timer weiter, und niemand haette ihn mehr in der Hand.
+		this.stop();
 		this.code = await account.startPairing(serverUrl, suggestDeviceName());
 		this.waiting = true;
 		this.#timer = setInterval(() => void this.#check(), POLL_MS);

@@ -414,6 +414,10 @@ class AccountState {
 		// tragen - ohne Haken wuerde rememberUnstamped() sie nicht aufsammeln und
 		// die Umhaengung erreichte den Server nie.
 		await app.mergeDuplicateBuiltins();
+		// Gleich mitholen, welche Passkeys den Schluessel hergeben: im Klickpfad
+		// darf diese Anfrage nicht liegen (siehe #passkeysWithWrap). Nur im
+		// Browser - auf dem Rechner gibt es keine Passkeys.
+		if (!isTauri()) void this.#passkeysWithWrap().catch(() => {});
 		// Jede lokale Aenderung stoesst einen Abgleich an - gesammelt, nicht sofort.
 		setChangeListener(() => this.syncSoon());
 		this.#installNetworkListeners();
@@ -1010,6 +1014,8 @@ class AccountState {
 		userId?: string
 	): Promise<void> {
 		this.#key = key;
+		// Was hier liegt, gehoert dem vorigen Konto.
+		this.#forgetWrapIds();
 		this.#device = await deviceId();
 		// Im Browser gibt es kein Geraete-Token: dort weist das Sitzungs-Cookie aus.
 		const protectedToken = token ? await protectSecret(token) : null;
@@ -1198,6 +1204,7 @@ class AccountState {
 		const { api, key } = await this.#exportableKey();
 		const { addPasskey } = await import("./enroll");
 		const result = await addPasskey(api, key, label);
+		this.#forgetWrapIds();
 		await this.rememberPasskey(result.id);
 		return { prfAvailable: result.prfAvailable };
 	}
@@ -1223,10 +1230,46 @@ class AccountState {
 		const { api, key } = await this.#exportableKey();
 		const { ensurePasskeyWrap } = await import("./enroll");
 		const result = await ensurePasskeyWrap(api, key, credentialId, prf);
+		this.#forgetWrapIds();
 		// Ohne Kennung nimmt der Browser den Passkey, den er anbietet - erst die
 		// Antwort sagt, welcher das war.
 		if (result.ok) await this.rememberPasskey(result.credentialId);
 		return result;
+	}
+
+	/**
+	 * Die Passkeys, zu denen eine Verpackung liegt - im Voraus geholt.
+	 *
+	 * `#exportableKey` braucht die Liste, um nur nach Passkeys zu fragen, die den
+	 * Schluessel wirklich hergeben. Sie darf NICHT im Klickpfad geholt werden:
+	 * WebAuthn will unmittelbar auf die Beruehrung folgen, und eine Anfrage
+	 * dazwischen kostet auf schmaler Leitung genau die Berechtigung, die der
+	 * Dialog braucht (siehe `enroll.ts`, "Die Aufgabe im Voraus holen").
+	 */
+	#wrapIds: Promise<string[]> | null = null;
+
+	#passkeysWithWrap(): Promise<string[]> {
+		if (this.#wrapIds) return this.#wrapIds;
+		const api = this.#api;
+		if (!api) return Promise.resolve([]);
+		const task = api
+			.wraps()
+			.then(({ wraps }) =>
+				wraps
+					.filter((w) => w.kind === "passkey" && w.credentialId)
+					.map((w) => w.credentialId as string)
+			);
+		this.#wrapIds = task;
+		// Ein Fehlschlag darf sich nicht einbrennen - der naechste Versuch fragt wieder.
+		void task.catch(() => {
+			if (this.#wrapIds === task) this.#wrapIds = null;
+		});
+		return task;
+	}
+
+	/** Nach jeder Aenderung an den Verpackungen: die Liste neu holen lassen. */
+	#forgetWrapIds(): void {
+		this.#wrapIds = null;
 	}
 
 	/**
@@ -1245,7 +1288,10 @@ class AccountState {
 		const api = this.#api;
 		if (isExportable(this.#key)) return { api, key: this.#key };
 		const { reunlockWithPasskey } = await import("./enroll");
-		const key = await reunlockWithPasskey(api, this.passkeyId ?? undefined);
+		const key = await reunlockWithPasskey(api, {
+			preferred: this.passkeyId ?? undefined,
+			usableIds: await this.#passkeysWithWrap()
+		});
 		if ((await vaultProof(key)) !== (await vaultProof(this.#key))) {
 			throw new Error("Der bestätigte Passkey gehört zu einem anderen Konto.");
 		}
@@ -1490,6 +1536,7 @@ class AccountState {
 		app.setMonthFetcher(null);
 		this.#api = null;
 		this.#key = null;
+		this.#forgetWrapIds();
 		// Den Prefetch-Puffer leeren: er gehoert dem abgemeldeten Konto. Sonst
 		// koennte ein schneller Re-Login in denselben 30-Sekunden-Fenstern Name,
 		// E-Mail und Geraete-Labels des vorigen Nutzers sehen.

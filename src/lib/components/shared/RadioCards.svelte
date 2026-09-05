@@ -14,6 +14,7 @@
 
 	interface Props {
 		value: string;
+		/** Zwei Spalten breit; ab drei Karten bricht die dritte in die naechste Reihe. */
 		options: RadioCard[];
 		onChange: (value: string) => void;
 		/** Praefix der Feld-ids, damit die Beschriftungen richtig verknuepft sind. */

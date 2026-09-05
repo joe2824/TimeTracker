@@ -330,25 +330,37 @@ export async function ensurePasskeyWrap(
  * im Kreis: gerade wer eine FEHLENDE Verpackung nachtragen will, wuerde nach
  * genau dem Passkey gefragt, der nichts oeffnen kann - eine Bestaetigung fuer
  * nichts, gefolgt von einer Fehlermeldung.
+ *
+ * Welche das sind, gibt der Aufrufer mit: er haelt die Liste schon vor, damit
+ * zwischen Klick und Dialog keine Anfrage liegt.
  */
-export async function reunlockWithPasskey(api: Api, preferred?: string): Promise<VaultKey> {
-	const { wraps } = await api.wraps();
-	const usable = wraps.filter(
-		(w): w is typeof w & { credentialId: string } => w.kind === "passkey" && Boolean(w.credentialId)
-	);
-	if (usable.length === 0) {
+export async function reunlockWithPasskey(
+	api: Api,
+	opts: {
+		/** Der Passkey dieses Browsers, falls bekannt. */
+		preferred?: string;
+		/** Passkeys, zu denen eine Verpackung liegt - siehe `account.svelte.ts`. */
+		usableIds: string[];
+	}
+): Promise<VaultKey> {
+	if (opts.usableIds.length === 0) {
 		throw new Error(
 			"Dafür müssen deine Daten hier einmal geöffnet werden, und das kann bisher keiner deiner Passkeys. Melde dich einmal ab und mit deinen 24 Wörtern wieder an."
 		);
 	}
 	// Der Passkey dieses Browsers, wenn er kann - sonst jeder andere, der es kann.
-	const ids = preferred && usable.some((w) => w.credentialId === preferred)
-		? [preferred]
-		: usable.map((w) => w.credentialId);
+	const ids =
+		opts.preferred && opts.usableIds.includes(opts.preferred) ? [opts.preferred] : opts.usableIds;
 
+	// Der Dialog zuerst, das Paket danach: eine Anfrage VOR der Bestaetigung
+	// kostet auf schmaler Leitung die Berechtigung aus der Beruehrung, und der
+	// Browser lehnt mit NotAllowedError ab (siehe "Die Aufgabe im Voraus holen").
 	const found = await harvestPrf(ids);
 	if (found.ok) {
-		const wrap = usable.find((w) => w.credentialId === found.credentialId);
+		const { wraps } = await api.wraps();
+		const wrap = wraps.find(
+			(w) => w.kind === "passkey" && w.credentialId === found.credentialId
+		);
 		const key = wrap ? await openWithPrf(wrap.payload, found.prf) : null;
 		if (key) return key;
 	}

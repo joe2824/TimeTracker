@@ -202,7 +202,10 @@ async function quarantine(file: string, e: unknown): Promise<void> {
  * - beschaedigt (oder mit vorliegendem Schluessel nicht zu entschluesseln): in
  *   Quarantaene. Ohne das gaebe der Ersatzwert eine leere Sicht vor, und der
  *   naechste Speichervorgang schriebe sie ueber die intakte Datei - beim
- *   Abgleich bis auf die anderen Geraete.
+ *   Abgleich bis auf die anderen Geraete. Das gilt auch fuer die
+ *   Klartextdateien (`device.json`, `outbox.json`): ein kaputtes JSON galt dort
+ *   schon vorher als "nicht vorhanden", jetzt bleibt es wenigstens lesbar
+ *   liegen, statt beim naechsten Schreiben ueberschrieben zu werden.
  * - sonst: der Inhalt.
  */
 async function readJson<T>(file: string, fallback: T, opts: JsonOpts = {}): Promise<T> {

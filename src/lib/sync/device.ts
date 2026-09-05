@@ -13,17 +13,19 @@ export async function deviceId(): Promise<string> {
 		return cached;
 	}
 	let id: string = crypto.randomUUID();
+	let created = true;
 	await updateDevice((info) => {
 		// Zwischen Lesen und Schreiben kann eine andere Stelle eine Kennung
 		// angelegt haben - dann gilt deren, sonst haetten zwei Aufrufe zwei.
 		if (info?.id) {
 			id = info.id;
+			created = false;
 			return null;
 		}
 		return { ...(info ?? {}), id };
 	});
 	cached = id;
-	logInfo("Geraetekennung angelegt", { id });
+	if (created) logInfo("Geraetekennung angelegt", { id });
 	return id;
 }
 
