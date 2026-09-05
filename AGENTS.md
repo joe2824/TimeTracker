@@ -1,7 +1,6 @@
 # AGENTS.md
 
-Kanonische Anweisungen für KI-Assistenten ([Standard](https://agents.md));
-`CLAUDE.md` bindet sie nur ein. TimeTracker: Zeiterfassung aus SvelteKit 2 +
+TimeTracker: Zeiterfassung aus SvelteKit 2 +
 Svelte 5 (Runes), Tailwind 4, shadcn-svelte und Tauri 2, Server im Workspace
 `server/` mit Drizzle/SQLite. Aufbau und Setup stehen im [README](README.md) —
 hier nur, was daraus nicht hervorgeht.
@@ -69,9 +68,7 @@ gehört in einen eigenen Commit, sonst verdeckt der Diff die eigentliche Änderu
 
 Keine echten Personendaten in Tests und Fixtures: keine realen Namen,
 Firmendomains, Personalnummern oder Mailadressen. Vorlage im Bestand:
-`Anna Meier`, `firma.de`, `00123456`. Grund: Firmendomain und Kollegenname lagen
-unbemerkt in `teamReport.test.ts`, das Repo ist öffentlich — heraus kamen sie nur
-per History-Rewrite über alle Refs.
+`Anna Meier`, `firma.de`, `00123456`.
 
 ## Commits
 
