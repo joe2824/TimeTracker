@@ -49,9 +49,8 @@ grep -rhoE "^export (async )?function [a-zA-Z0-9_]+" src/lib server/src shared \
 ```
 
 Gleiche **Namen** findet das, gleiche **Logik** unter anderem Namen nicht — und
-das ist der häufigere Fall (die drei Fassungen des Sync-Wireformats hießen alle
-anders). Umgekehrt sind gleiche Namen oft harmlos: `sha256Hex` ist WebCrypto
-gegen Node-crypto. Ein Hinweis, kein Urteil.
+das ist der häufigere Fall. Umgekehrt sind gleiche Namen oft harmlos (`sha256Hex`
+ist WebCrypto gegen Node-crypto). Ein Hinweis, kein Urteil.
 
 ## Namenskonvention
 
@@ -69,11 +68,10 @@ gehört in einen eigenen Commit, sonst verdeckt der Diff die eigentliche Änderu
 ## Testdaten
 
 Keine echten Personendaten in Tests und Fixtures: keine realen Namen,
-Firmendomains, Personalnummern oder Mailadressen. Erfundene nehmen — im Bestand
-stehen `Anna Meier`, `firma.de` und `00123456` als Vorlage.
-
-Grund: Firmendomain und Kollegenname lagen unbemerkt in `teamReport.test.ts`.
-Das Repo ist öffentlich — heraus kamen sie nur per History-Rewrite über alle Refs.
+Firmendomains, Personalnummern oder Mailadressen. Vorlage im Bestand:
+`Anna Meier`, `firma.de`, `00123456`. Grund: Firmendomain und Kollegenname lagen
+unbemerkt in `teamReport.test.ts`, das Repo ist öffentlich — heraus kamen sie nur
+per History-Rewrite über alle Refs.
 
 ## Commits
 
@@ -112,6 +110,12 @@ Release-Note: Daten gehen nicht mehr verloren, wenn zwei Geräte gleichzeitig ab
 **Eine Zeile, eigener Absatz am Ende.** Git parst den Trailer sonst nicht: ein
 Umbruch macht ihn unsichtbar, und im selben Absatz wie `BREAKING CHANGE:` ebenso
 (beides geprüft). Lieber eine lange Zeile.
+
+**Wo der Text landet:** über `latest.json` im Update-Dialog der Desktop-App —
+der zeigt aber nur den Warnabschnitt. Der große Auftritt beim Start ist
+`CURRENT_RELEASE` in `whatsNew.svelte.ts`: handgepflegt, und nur bei einem
+Haupt-Release mitzuziehen (Nummer **und** Text zusammen, sonst sehen alle
+denselben Dialog erneut).
 
 Ein ganzer Satz in der Sprache der Anwender-Texte (siehe unten), kein Datei- oder
 Funktionsname. Rein Internes (Tests, CI, Refactoring, Doku) bekommt keinen.
