@@ -24,6 +24,7 @@ COPY svelte.config.js vite.config.js tsconfig.json tt ./
 COPY scripts ./scripts
 COPY src ./src
 COPY static ./static
+COPY shared ./shared
 RUN BUILD_TARGET=web npx vite build
 
 # Server-JS bauen und statische PWA-Dateien einbetten
