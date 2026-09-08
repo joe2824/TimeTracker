@@ -1,0 +1,41 @@
+name: Beta aus dev
+
+# Manuell ausgeloest (kein Push-Trigger): erzeugt aus dem aktuellen Stand von
+# dev einen neuen Beta-Tag und pusht ihn. release.yml uebernimmt danach Build,
+# Signierung und Veroeffentlichung selbst - hier passiert nur das Taggen.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - name: Naechste Beta-Nummer bestimmen und taggen
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
+          BASE="v${VERSION}"
+
+          n=1
+          while git rev-parse "${BASE}-beta.${n}" >/dev/null 2>&1; do
+            n=$((n + 1))
+          done
+          TAG="${BASE}-beta.${n}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "$TAG"
+          git push origin "$TAG"
+
+          echo "### Beta getaggt" >> "$GITHUB_STEP_SUMMARY"
+          echo "$TAG (von dev, $(git rev-parse --short HEAD))" >> "$GITHUB_STEP_SUMMARY"
