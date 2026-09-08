@@ -650,7 +650,6 @@ class AccountState {
 			if (result && result.pulled > 0 && app.showOnboarding) {
 				app.dismissOnboarding();
 			}
-			this.firstSyncDone = true;
 			this.backfilling = this.#engine.backfilling;
 			this.historyIncomplete = this.#engine.historyIncomplete;
 			this.phase = "idle";
@@ -678,8 +677,15 @@ class AccountState {
 			// Platte zu lesen und /me zu fragen.
 			if (result && (result.pulled > 0 || result.pushed > 0) && this.#reloadIsDue()) {
 				await app.reload();
+				// Erst NACH dem Reload gilt "abgeglichen" nach aussen - sonst sieht
+				// z.B. die Berichts-Erinnerung kurz firstSyncDone=true neben noch
+				// unaufgefrischten Einstellungen (reportSentMonths) und meldet einen
+				// Monat als offen, der auf einem anderen Gerät längst erledigt wurde.
+				this.firstSyncDone = true;
 				void this.accountInfo().catch(() => {});
 				void notifyDataChanged({ from: "sync" });
+			} else {
+				this.firstSyncDone = true;
 			}
 		} catch (e) {
 			// Auch ein gescheiterter Versuch beantwortet die Frage "warten oder
