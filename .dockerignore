@@ -1,0 +1,29 @@
+# Was nicht in den Bau-Kontext gehoert.
+#
+# Ohne diese Liste wandern node_modules und die fertigen Baue mit - hunderte
+# Megabyte, die im Abbild ohnehin neu entstehen, und jeder Bau dauert unnoetig.
+node_modules
+**/node_modules
+
+# Fertige Baue - entstehen im Abbild neu
+build
+build-web
+.svelte-kit
+server/build
+server/.svelte-kit
+server/static
+
+# Rust/Tauri: gehoert nicht in den Server
+src-tauri
+
+# Zustand und Geheimnisse
+server/data
+server/*.db*
+.env
+**/.env
+
+# Entwicklung
+.git
+.github
+.vscode
+*.log

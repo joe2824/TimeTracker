@@ -1,0 +1,13 @@
+<!-- Das Icon, Zustand „Timer laeuft".
+
+     Zwei Unterschiede zum ruhenden Zustand, nicht einer: Terrakotta statt
+     Salbeigruen UND geschlossener Ring statt offenem Bogen. Bei 16 Pixeln traegt
+     die Farbe die Unterscheidung, ab 20 auch die Form – und wer Rot und Gruen
+     nicht auseinanderhaelt, sieht immer noch die Luecke.
+
+     Sonst gilt alles aus icon.svg: 16er-Raster, dieselbe Zeichnung fuer jede
+     Groesse und fuer static/logo-running.svg. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <circle cx="8" cy="8" r="8" fill="#c67139"></circle>
+  <circle cx="8" cy="8" r="4.5" fill="none" stroke="#ffffff" stroke-width="2"></circle>
+</svg>

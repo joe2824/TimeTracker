@@ -1,0 +1,455 @@
+// Scharfer Test für strikte Kontoisolation bei Neuregistrierung und Kontowechsel.
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { FakeSyncServer } from "../testing/fakeSyncServer";
+import type { Activity, Entry, Settings, SyncMeta } from "../types";
+import { defaultSettings } from "../types";
+import { files, resetFakeFs } from "../testing/fakeFs";
+
+vi.mock("@tauri-apps/plugin-fs", async () => (await import("../testing/fakeFs")).fakeFs);
+vi.mock("svelte-sonner", () => import("../testing/toastStub"));
+
+const { createVaultKey, vaultProof } = await import("../crypto/vault");
+const { account } = await import("./account.svelte");
+const { app } = await import("../app.svelte");
+const store = await import("../store");
+const { resetOutboxForTests } = await import("./outbox");
+
+class MockServer {
+	/** Ein eigener Nachbau je Konto - eigener Bestand, eigener Stand. */
+	userVaults = new Map<string, FakeSyncServer>();
+	userDisplayNames = new Map<string, string>();
+	currentUser = "u1";
+
+	private vault(user = this.currentUser): FakeSyncServer {
+		let server = this.userVaults.get(user);
+		if (!server) {
+			server = new FakeSyncServer();
+			this.userVaults.set(user, server);
+		}
+		return server;
+	}
+
+	push(deviceId: string, records: unknown[], user = this.currentUser) {
+		return this.vault(user).push(deviceId, records);
+	}
+
+	pull(since: number, limit = 200, user = this.currentUser) {
+		return this.vault(user).pull(since, limit);
+	}
+
+	/**
+	 * Ein Tor vor dem Abruf - damit eine Runde beim Abmelden nachweislich noch
+	 * offen steht. Ohne das wäre „während noch abgeglichen wird" nur eine
+	 * Vermutung über Microtask-Reihenfolgen.
+	 */
+	gate: Promise<void> | null = null;
+	openGate: () => void = () => {};
+
+	holdPulls(): void {
+		this.gate = new Promise((r) => (this.openGate = r));
+	}
+
+	/** Das Abmelden bleibt unbeantwortet, bis der Aufrufer aufgibt. */
+	silentLogout = false;
+
+	fetchFor(deviceId: string) {
+		return async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+			const rawUrl = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+			const url = new URL(rawUrl, "http://test-server");
+			const parts = url.pathname.split("/").filter(Boolean);
+			let user = this.currentUser;
+			let pathname = url.pathname;
+			if (parts.length >= 2 && parts[1] === "api") {
+				user = parts[0];
+				pathname = "/" + parts.slice(1).join("/");
+			}
+
+			if (pathname === "/api/sync" && (init?.method ?? "GET") === "GET") {
+				if (this.gate) await this.gate;
+				const since = Number(url.searchParams.get("since") ?? 0);
+				const res = this.pull(since, 200, user);
+				return new Response(JSON.stringify(res), { status: 200 });
+			}
+			if (pathname === "/api/sync" && init?.method === "POST") {
+				const body = JSON.parse(String(init.body));
+				const res = this.push(deviceId, body.records, user);
+				return new Response(JSON.stringify(res), {
+					status: 200
+				});
+			}
+			if (pathname === "/api/me" && init?.method === "PATCH") {
+				const body = JSON.parse(String(init.body));
+				if (body.displayName) this.userDisplayNames.set(user, body.displayName);
+				return new Response(
+					JSON.stringify({
+						userId: user,
+						displayName: this.userDisplayNames.get(user) ?? user,
+						isAdmin: false
+					}),
+					{ status: 200 }
+				);
+			}
+			if (pathname === "/api/me") {
+				return new Response(
+					JSON.stringify({
+						userId: user,
+						displayName: this.userDisplayNames.get(user) ?? user,
+						isAdmin: false
+					}),
+					{
+						status: 200
+					}
+				);
+			}
+			if (pathname === "/api/auth/logout") {
+				// Ein Server, der die Verbindung offen lässt und nie antwortet -
+				// der Fall, den ein `catch` allein nicht abfängt.
+				if (this.silentLogout) {
+					await new Promise((_, reject) => {
+						init?.signal?.addEventListener("abort", () => reject(new Error("abgebrochen")));
+					});
+				}
+				return new Response(JSON.stringify({ ok: true }), { status: 200 });
+			}
+			return new Response(JSON.stringify({ message: "unbekannt" }), { status: 404 });
+		};
+	}
+}
+
+beforeEach(async () => {
+	resetFakeFs();
+	resetOutboxForTests();
+	app.dispose();
+	app.clearLocalData();
+});
+
+/**
+ * Einen Nachbau hinter `globalThis.fetch` hängen, den Test laufen lassen und
+ * danach aufräumen: echtes `fetch` zurück, und die Verknüpfung lösen, falls
+ * der Test eine hinterlassen hat.
+ */
+async function withServer<T>(
+	deviceId: string,
+	fn: (server: MockServer) => Promise<T>
+): Promise<T> {
+	const server = new MockServer();
+	const originalFetch = globalThis.fetch;
+	globalThis.fetch = server.fetchFor(deviceId);
+	try {
+		return await fn(server);
+	} finally {
+		globalThis.fetch = originalFetch;
+		if (account.linked) await account.unlink();
+	}
+}
+
+describe("Scharfe Kontoisolation (Web & Desktop)", () => {
+	it("Neuregistrierung auf neuem Server übernimmt KEINE Einstellungen eines alten Nutzers", async () => {
+		// 1. Altes Konto hinterlässt Daten im Speicher (z. B. vorherige Browser-Session)
+		files.set(
+			"data/settings.json",
+			JSON.stringify({
+				...defaultSettings,
+				bossEmail: "geheim@altes-konto.de",
+				senderName: "Alter Nutzer",
+				rounding: 0.5,
+				hoursPerDay: 6
+			})
+		);
+		files.set(
+			"data/activities.json",
+			JSON.stringify([{ id: "akt-alt", name: "Altes Projekt", color: "#ff0000", sortOrder: 0 }])
+		);
+		files.set(
+			"data/entries-2026-08.json",
+			JSON.stringify([{ id: "e-alt", activityId: "akt-alt", startTs: 1000, endTs: 2000, note: "Alt", source: "timer" }])
+		);
+
+		// 2. Neuer Server mit komplett frischer Datenbank
+		await withServer("browser-device", async (newServer) => {
+			// 3. Neuer User registriert sich und verknüpft Session im Browser
+			const keyNew = await createVaultKey();
+			await account.linkWithSession("http://test-server", keyNew, "Neuer Nutzer");
+
+			// 4. Prüfungen:
+			// a) Der Server-Vault von User 2 darf KEINE Zeilen mit den alten Einstellungen oder Einträgen von User 1 enthalten!
+			expect(newServer.userVaults.size).toBe(0);
+
+			// b) Im lokalen State von User 2 müssen saubere defaultSettings stehen
+			expect(app.settings.bossEmail).toBe("");
+			expect(app.settings.senderName).toBe("");
+			expect(app.settings.rounding).toBe(defaultSettings.rounding);
+			expect(app.settings.hoursPerDay).toBe(defaultSettings.hoursPerDay);
+
+			// c) Aktivitäten und Einträge müssen für den neuen User leer sein
+			expect(app.activities).toEqual([]);
+			expect(await store.loadEntries("2026-08")).toEqual([]);
+
+			// d) Auf der Platte darf keine alte settings.json herumliegen
+			const savedSettings = await store.loadSettings();
+			expect(savedSettings.bossEmail).toBe("");
+			expect(savedSettings.senderName).toBe("");
+		});
+	});
+
+	it("eine Runde, die beim Abmelden noch läuft, füllt den Speicher nicht wieder", async () => {
+		// Der Fall aus der Praxis: beim Klick auf Abmelden ist ein Abgleich
+		// unterwegs. Seine Antwort kommt, wenn lokal schon aufgeräumt ist - und
+		// schreibt Daten und Gerätestand des abgemeldeten Kontos zurück.
+		await withServer("browser-device", async (server) => {
+			const key = await createVaultKey();
+			await account.linkWithSession("http://test-server", key, "Alice");
+			await app.updateSettings({ bossEmail: "chef@alice.de", senderName: "Alice" });
+
+			// Die Runde bleibt im Abruf stehen ...
+			server.holdPulls();
+			const round = account.syncNow();
+			// ... und währenddessen meldet sich Alice ab.
+			await account.logout();
+			server.openGate();
+			server.gate = null;
+			await round;
+
+			expect([...files.keys()].filter((f) => f.startsWith("data/")).sort()).toEqual([
+				"data/device.json"
+			]);
+			expect(JSON.parse(files.get("data/device.json")!)).toEqual({ id: expect.any(String) });
+			expect(app.settings.bossEmail).toBe("");
+		});
+	});
+
+	it("räumt lokal auch dann auf, wenn der Server auf das Abmelden nicht antwortet", async () => {
+		// Ohne Zeitlimit hängt account.logout() vor dem Aufräumen: der Hinweis ist
+		// weg, der Vault-Schlüssel bleibt liegen, und niemand sieht, dass nichts
+		// passiert ist.
+		await withServer("browser-device", async (server) => {
+			const key = await createVaultKey();
+			await account.linkWithSession("http://test-server", key, "Alice");
+			await app.updateSettings({ bossEmail: "chef@alice.de" });
+			server.silentLogout = true;
+
+			vi.useFakeTimers();
+			try {
+				const loggingOut = account.logout();
+				await vi.advanceTimersByTimeAsync(30_000);
+				await loggingOut;
+			} finally {
+				vi.useRealTimers();
+			}
+
+			expect(account.linked).toBe(false);
+			expect([...files.keys()].filter((f) => f.startsWith("data/")).sort()).toEqual([
+				"data/device.json"
+			]);
+			expect(JSON.parse(files.get("data/device.json")!)).toEqual({ id: expect.any(String) });
+		});
+	});
+
+	it("account.init() im Browser ohne aktive Sitzung bereinigt alte Speicher-Rückstände", async () => {
+		// Speicher enthält Rückstände einer alten Sitzung
+		files.set("data/settings.json", JSON.stringify({ ...defaultSettings, bossEmail: "leiche@firma.de" }));
+		files.set("data/activities.json", JSON.stringify([{ id: "a1", name: "Leiche" }]));
+		files.set("data/entries-2026-08.json", JSON.stringify([{ id: "e1", activityId: "a1", startTs: 100 }]));
+		files.set("data/timereport-2026-08.json", JSON.stringify({ month: "2026-08", days: [] }));
+		files.set("data/outbox.json", JSON.stringify([{ kind: "entry", id: "e1" }]));
+
+		// account.init() läuft beim Seitenaufruf
+		await account.init();
+
+		// Alles muss rückstandslos bereinigt sein
+		expect(files.has("data/settings.json")).toBe(false);
+		expect(files.has("data/activities.json")).toBe(false);
+		expect(files.has("data/entries-2026-08.json")).toBe(false);
+		expect(files.has("data/timereport-2026-08.json")).toBe(false);
+		expect(files.has("data/outbox.json")).toBe(false);
+
+		expect(app.settings.bossEmail).toBe("");
+		expect(app.activities).toEqual([]);
+	});
+
+	it("Kontowechsel: User A und User B bleiben auf demselben Server strikt voneinander isoliert", async () => {
+		await withServer("browser-device", async (server) => {
+			// User A anlegen & konfigurieren
+			const keyA = await createVaultKey();
+			await account.linkWithSession("http://test-server/alice", keyA, "Alice");
+			await app.updateSettings({
+				senderName: "Alice Wunder",
+				bossEmail: "chef@alice.de",
+				hoursPerDay: 7
+			});
+			await account.syncNow();
+
+			expect(app.settings.senderName).toBe("Alice Wunder");
+			expect(app.settings.bossEmail).toBe("chef@alice.de");
+
+			// Alice hat ausserdem Zeiten erfasst - die dürfen Bob genauso wenig
+			// erreichen wie ihre Einstellungen.
+			await store.saveEntries("2026-08", [
+				{
+					id: "e-alice",
+					activityId: "akt-alice",
+					startTs: Date.UTC(2026, 7, 3, 8),
+					endTs: Date.UTC(2026, 7, 3, 12),
+					note: "Alice",
+					source: "manual"
+				}
+			]);
+			await account.syncNow();
+
+			// User A meldet sich ab
+			await account.logout();
+
+			// Nach dem Logout ist der Browser komplett leer
+			expect(app.settings.senderName).toBe("");
+			expect(app.settings.bossEmail).toBe("");
+			// Nur die Gerätekennung bleibt - kein Eintrag, keine Aktivität, keine
+			// Merkliste, kein liegengebliebener Zwischenstand.
+			expect([...files.keys()].filter((f) => f.startsWith("data/")).sort()).toEqual([
+				"data/device.json"
+			]);
+
+			// Und in der Gerätedatei steht wirklich nur sie. Bliebe der
+			// Vault-Schlüssel liegen, könnte der nächste Mensch an diesem Rechner
+			// den Bestand des Kontos entschlüsseln, den der Server noch hat.
+			expect(JSON.parse(files.get("data/device.json")!)).toEqual({
+				id: expect.any(String)
+			});
+
+			// User B loggt sich ein / registriert sich mit eigenem Schlüssel
+			const keyB = await createVaultKey();
+			await account.linkWithSession("http://test-server/bob", keyB, "Bob");
+			await account.syncNow();
+
+			// User B hat saubere defaultSettings und sieht NICHTS von Alice!
+			expect(app.settings.senderName).toBe("");
+			expect(app.settings.bossEmail).toBe("");
+			expect(app.settings.hoursPerDay).toBe(defaultSettings.hoursPerDay);
+
+			// User B setzt seine eigenen Einstellungen
+			await app.updateSettings({
+				senderName: "Bob Baumeister",
+				bossEmail: "leitung@bob.de",
+				hoursPerDay: 9
+			});
+			await account.syncNow();
+
+			expect(app.settings.senderName).toBe("Bob Baumeister");
+			expect(app.settings.bossEmail).toBe("leitung@bob.de");
+
+			// User B meldet sich ab
+			await account.logout();
+
+			// Alice meldet sich wieder mit ihrem Schlüssel an
+			await account.linkWithSession("http://test-server/alice", keyA, "Alice");
+			await account.syncNow();
+
+			// Alice bekommt wieder ihre exakten Einstellungen zurück
+			expect(app.settings.senderName).toBe("Alice Wunder");
+			expect(app.settings.bossEmail).toBe("chef@alice.de");
+			expect(app.settings.hoursPerDay).toBe(7);
+		});
+	});
+
+	it("Bug-Reproduktionstest: Neuregistrierung nach alter Session darf NIEMALS Altdaten in Einstellungen oder Server laden", async () => {
+		// Simulation: Der Browser hat noch Überreste von einem früheren Account X
+		files.set(
+			"data/settings.json",
+			JSON.stringify({
+				...defaultSettings,
+				bossEmail: "alt@firma-xyz.de",
+				senderName: "Alter Account",
+				teamSubjectFilter: "StrengGeheim",
+				hoursPerDay: 4
+			})
+		);
+		files.set(
+			"data/activities.json",
+			JSON.stringify([{ id: "akt-alt", name: "Altes Projekt", color: "#123456", sortOrder: 0 }])
+		);
+		files.set(
+			"data/entries-2026-08.json",
+			JSON.stringify([{ id: "e-alt", activityId: "akt-alt", startTs: 100, endTs: 200, note: "Geheim", source: "timer" }])
+		);
+
+		// Neuer Server, neue DB
+		await withServer("device-neu", async (freshServer) => {
+			freshServer.currentUser = "user-neu";
+			// Vor dem Linken: account.init() läuft beim Aufruf der Seite
+			await account.init();
+
+			// Nach init() muss bereits alles abgeräumt sein
+			expect(files.has("data/settings.json")).toBe(false);
+			expect(app.settings.bossEmail).toBe("");
+			expect(app.settings.senderName).toBe("");
+
+			// Neuer User registriert sich und verknüpft Session
+			const keyNew = await createVaultKey();
+			await account.linkWithSession("http://frischer-server", keyNew, "");
+			await account.syncNow();
+
+			// 1. Lokale Einstellungen müssen 100% jungfräulich sein
+			expect(app.settings.bossEmail).toBe("");
+			expect(app.settings.senderName).toBe("");
+			expect(app.settings.teamSubjectFilter).toBe(defaultSettings.teamSubjectFilter);
+			expect(app.settings.hoursPerDay).toBe(defaultSettings.hoursPerDay);
+			expect(app.activities).toEqual([]);
+
+			// 2. Im Vault auf dem Server darf KEIN Datensatz von den Altdaten liegen
+			const vaultNew = freshServer.userVaults.get("user-neu");
+			expect(vaultNew?.rows.size ?? 0).toBe(0);
+		});
+	});
+
+	it("Nach Neuregistrierung im Browser und Überspringen der Desktop-Kopplung öffnet sich das Onboarding", async () => {
+		await withServer("device-web", async (server) => {
+			server.currentUser = "frischer-user";
+			// 1. Neuer User registriert sich im Browser
+			const keyNew = await createVaultKey();
+			await account.linkWithSession("http://test-server/frischer-user", keyNew, "Mein Account");
+
+			// 2. Er entscheidet sich gegen Desktop-Kopplung
+			app.openOnboarding();
+			expect(app.showOnboarding).toBe(true);
+
+			// 3. User durchläuft das Onboarding und speichert seine Werte
+			await app.finishOnboarding({
+				senderName: "Max Mustermann",
+				bossEmail: "chef@firma.de",
+				hoursPerDay: 8
+			});
+
+			expect(app.showOnboarding).toBe(false);
+			expect(app.settings.senderName).toBe("Max Mustermann");
+			expect(app.settings.bossEmail).toBe("chef@firma.de");
+
+			// 4. Daten werden in den neuen Vault synchronisiert
+			await new Promise((r) => setTimeout(r, 50));
+			await account.syncNow();
+			const vault = server.userVaults.get("frischer-user");
+			expect(vault?.rows.size).toBeGreaterThan(0);
+		});
+	});
+
+	it("der gemerkte Passkey faellt beim Kontowechsel weg", async () => {
+		// Er sagt, welcher Eintrag der Kontoliste an DIESEM Browser hängt. Bliebe
+		// er beim Wechsel stehen, zeigte er auf einen Passkey des vorigen Kontos.
+		await withServer("browser-device", async (server) => {
+			const keyA = await createVaultKey();
+			await account.linkWithSession("http://test-server/alice", keyA, "Alice");
+			await account.rememberPasskey("passkey-alice");
+
+			expect(account.passkeyId).toBe("passkey-alice");
+			expect(JSON.parse(files.get("data/device.json")!).passkeyId).toBe("passkey-alice");
+
+			// Anmeldung mit demselben Schlüssel: die Kennung bleibt.
+			await account.linkWithSession("http://test-server/alice", keyA, "Alice");
+			expect(account.passkeyId).toBe("passkey-alice");
+
+			const keyB = await createVaultKey();
+			await account.linkWithSession("http://test-server/bob", keyB, "Bob");
+
+			expect(account.passkeyId).toBeNull();
+			expect(JSON.parse(files.get("data/device.json")!).passkeyId).toBeUndefined();
+		});
+	});
+});

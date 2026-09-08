@@ -1,0 +1,22 @@
+name: CI
+
+# Bei jedem Push auf JEDEN Branch und jedem PR. Was genau geprueft wird, steht in
+# verify.yml - dasselbe Werk benutzt auch das Release, damit ein Tag nicht durch
+# ein schwaecheres Gate geht als ein gewoehnlicher Push.
+#
+# Vorher nur `main`: `feat/passkey-vault` sammelte 27 Commits und einen
+# History-Rewrite, ohne dass je ein Lauf stattfand. Die concurrency unten raeumt
+# ueberholte Laeufe weg, teuer wird es dadurch nicht.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# Ein zweiter Push auf denselben Branch macht den ersten Lauf gegenstandslos.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    uses: ./.github/workflows/verify.yml

@@ -1,0 +1,308 @@
+name: Release
+
+# Ein Tag, ein Gate, dann alles was ausgeliefert wird.
+#
+# Vorher liefen fuer denselben Tag zwei Ablaeufe nebeneinander (dieser und
+# docker.yml), jeder mit einer eigenen, unterschiedlich strengen Testrunde. Der
+# Docker-Ablauf musste danach bis zu 30 Minuten darauf warten, dass dieser hier
+# das Release anlegt. Jetzt haengen Desktop-Build und Abbild am selben `verify`
+# und die Notiz einfach an beiden.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}-server
+
+jobs:
+  # Ein rotes Testergebnis darf gar nicht erst zu einem Build fuehren - weder zu
+  # einem Installer noch zu einem Abbild, das jemand auf seinen Server zieht.
+  verify:
+    uses: ./.github/workflows/verify.yml
+
+  # Tag und Abbildname stehen an einer Stelle, damit Desktop-Build, Abbild und
+  # Notiz nicht jeweils ihre eigene Fassung davon rechnen.
+  target:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.w.outputs.tag }}
+      stable: ${{ steps.w.outputs.stable }}
+      image: ${{ steps.w.outputs.image }}
+    steps:
+      - name: Version bestimmen
+        id: w
+        shell: bash
+        # Der Ref-Name ueber die Umgebung und nicht direkt in den Text: ein
+        # geschickt benannter Tag landete sonst woertlich im Skript - und das
+        # hier haengt an einem Job mit Signierschluessel.
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          set -euo pipefail
+          TAG="$REF_NAME"
+
+          if [ "$REF_TYPE" != "tag" ]; then
+            echo "::error::Dieser Ablauf gehoert an einen Tag. Ausgeloest wurde er auf '${TAG}'."
+            exit 1
+          fi
+
+          # Vorabversion? Erkennbar am Tag: v0.8.0-beta.1 vs. v0.8.0.
+          case "$TAG" in
+            *-beta.*) STABLE=false ;;
+            *)        STABLE=true  ;;
+          esac
+
+          # ghcr.io nimmt nur Kleinbuchstaben. `docker/metadata-action` rechnet
+          # das von allein um, cosign und die Beglaubigung nicht - die bekommen
+          # den Namen woertlich und scheiterten an dem grossen T in TimeTracker.
+          #
+          # tr statt ${IMAGE,,}: die Klammerform gibt es erst ab bash 4, und ein
+          # "bad substitution" waere unter `set -e` ein stiller Abbruch.
+          IMAGE_LC="$(printf '%s' "$IMAGE" | tr '[:upper:]' '[:lower:]')"
+
+          {
+            echo "tag=$TAG"
+            echo "stable=$STABLE"
+            echo "image=$IMAGE_LC"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Release $TAG (stabil: $STABLE) als $IMAGE_LC."
+
+  # Die Desktop-Anwendung. Legt das Release an - daran haengt alles Weitere.
+  desktop:
+    needs: [verify, target]
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # volle History + Tags für das Changelog
+
+      - name: Generate changelog
+        id: changelog
+        shell: bash
+        env:
+          TAG: ${{ needs.target.outputs.tag }}
+          STABLE: ${{ needs.target.outputs.stable }}
+        run: |
+          if [ -f "RELEASE_NOTES.md" ]; then
+            # Die Datei ueberschreibt die generierten Notes komplett. Bleibt sie
+            # beim Versionswechsel stehen, traegt das Release den Text der
+            # Vorversion - genau das ist v0.9.2 bis v0.9.4 passiert. Deshalb muss
+            # die erste Zeile den Tag nennen, sonst bricht der Release hier ab.
+            head1="$(head -n1 RELEASE_NOTES.md)"
+            case "$head1" in
+              *"$TAG"*) ;;
+              *)
+                echo "::error file=RELEASE_NOTES.md::Erste Zeile nennt ${TAG} nicht: '${head1}'"
+                echo "::error::RELEASE_NOTES.md ueberschreibt die generierten Release-Notes. Entweder auf ${TAG} aktualisieren oder die Datei loeschen - dann uebernimmt der Generator aus den Commits."
+                exit 1
+                ;;
+            esac
+            body="$(cat RELEASE_NOTES.md)"$'\n\n'"Installer/Bundles siehe Assets unten."
+          else
+            # Für ein stabiles Release den letzten STABILEN Tag als Startpunkt: sonst
+            # listete es nur, was seit der letzten Beta dazukam, und alles davor
+            # taucht in keinen Release-Notes je auf. Betas vergleichen gegen den
+            # direkten Vorgänger, egal welcher Kanal.
+            if [ "$STABLE" = "true" ]; then
+              MATCH=(--match 'v*' --exclude '*-beta.*')
+            else
+              MATCH=(--match 'v*')
+            fi
+            PREV=$(git describe --tags --abbrev=0 "${MATCH[@]}" "${TAG}^" 2>/dev/null || echo "")
+            if [ -n "$PREV" ]; then RANGE="${PREV}..${TAG}"; else RANGE="${TAG}"; fi
+            echo "Changelog-Bereich: ${RANGE:-<alle>}"
+
+            # In die Notes kommt NUR, was einen Release-Note-Trailer traegt. Der
+            # Commit-Betreff ist fuer Entwickler geschrieben und half Nutzern nie
+            # ("device.json wird nicht mehr aus zwei Richtungen ueberschrieben").
+            # Der Trailer ist der Satz fuer Nutzer:
+            #
+            #   fix(sync): device.json wird nicht mehr doppelt geschrieben
+            #
+            #   Release-Note: Daten gehen nicht mehr verloren, wenn zwei Geraete
+            #   gleichzeitig abgleichen.
+            breaking=""; feats=""; fixes=""
+            while IFS='|' read -r hash subject note; do
+              [ -z "$hash" ] && continue
+              case "$subject" in 'chore'*[Rr]elease*) continue ;; esac
+              [ -z "$note" ] && continue
+
+              # Breaking: Bang im Typ oder BREAKING CHANGE im Body.
+              bang=""
+              case "$subject" in *'!:'*) bang="yes" ;; esac
+              git log -1 --pretty=%b "$hash" | grep -q '^BREAKING CHANGE' && bang="yes"
+
+              entry="- ${note}"$'\n'
+              if   [ -n "$bang" ]; then breaking="${breaking}${entry}"
+              else
+                case "$subject" in
+                  feat*) feats="${feats}${entry}" ;;
+                  *)     fixes="${fixes}${entry}" ;;
+                esac
+              fi
+            # tformat, NICHT format: format laesst den Umbruch nach dem letzten
+            # Datensatz weg, `read` verwirft ihn dann - der aelteste Commit des
+            # Bereichs fiele stillschweigend aus den Notes.
+            done < <(git log --no-merges \
+                       --pretty=tformat:'%H|%s|%(trailers:key=Release-Note,valueonly,separator=%x20)' \
+                       "$RANGE")
+
+            # Kein Trailer, aber es gab feat/fix im Bereich? Dann wurde er vergessen -
+            # lieber abbrechen als ein Release mit leeren Notes herausgeben.
+            if [ -z "$breaking$feats$fixes" ]; then
+              relevant=$(git log --no-merges --pretty=%s "$RANGE" | grep -cE '^(feat|fix)' || true)
+              if [ "$relevant" -gt 0 ]; then
+                echo "::error::${relevant} feat/fix-Commits in ${RANGE}, aber kein einziger Release-Note-Trailer. Entweder die Trailer nachtragen (git rebase) oder RELEASE_NOTES.md fuer dieses Release anlegen."
+                exit 1
+              fi
+            fi
+
+            body="## TimeTracker ${TAG}"$'\n'
+            [ -n "$breaking" ] && body="${body}"$'\n'"### ⚠️ Wichtig vor dem Update"$'\n'"${breaking}"
+            [ -n "$feats" ]    && body="${body}"$'\n'"### Neue Funktionen"$'\n'"${feats}"
+            [ -n "$fixes" ]    && body="${body}"$'\n'"### Fehlerbehebungen"$'\n'"${fixes}"
+            [ -z "$breaking$feats$fixes" ] && body="${body}"$'\n'"_Wartungsrelease ohne sichtbare Änderungen._"$'\n'
+            if [ -n "$PREV" ]; then
+              body="${body}"$'\n'"**Vollständiges Changelog**: ${{ github.server_url }}/${{ github.repository }}/compare/${PREV}...${TAG}"$'\n'
+            fi
+            body="${body}"$'\n'"Installer/Bundles siehe Assets unten."
+          fi
+
+          {
+            echo "body<<CHANGELOG_EOF"
+            echo "$body"
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Der Server, der in der fertigen Anwendung schon eingetragen ist.
+          # Repository-Variable, kein Secret: die Adresse steht ohnehin in jedem
+          # Build. Leer lassen heisst, dass die Anwendung danach fragt.
+          DEFAULT_SERVER: ${{ vars.DEFAULT_SERVER }}
+          # Ausweis der anonymen Tagesmeldung. Muss zu dem TELEMETRY_KEY auf dem
+          # Server passen. Ohne ihn zaehlt nur, wer ein Konto verknuepft hat -
+          # eine Installation ohne Konto kann sich sonst nicht ausweisen.
+          TELEMETRY_KEY: ${{ secrets.TELEMETRY_KEY }}
+        with:
+          tagName: ${{ needs.target.outputs.tag }}
+          releaseName: 'TimeTracker ${{ needs.target.outputs.tag }}'
+          releaseBody: ${{ steps.changelog.outputs.body }}
+          releaseDraft: false
+          prerelease: ${{ needs.target.outputs.stable == 'false' }}
+          # Betas nur als NSIS-Installer: WiX/MSI nimmt keine Vorabversionen an
+          # ("0.8.0-beta.1" ist keine gültige MSI-Version), der Build bräche sonst
+          # genau am Bundle-Schritt ab. Das Update-Artefakt (.nsis.zip + Signatur)
+          # entsteht trotzdem – es hängt an createUpdaterArtifacts, nicht am
+          # Bundle-Ziel; "updater" ist in Tauri v2 kein gültiges Ziel mehr.
+          args: ${{ needs.target.outputs.stable == 'false' && '--bundles nsis' || '' }}
+
+      # Das Manifest des Beta-Kanals liegt an einem Release mit festem Tag `beta`
+      # und wird bei JEDEM Build überschrieben – auch bei einem stabilen. So
+      # bekommt, wer Vorabversionen anhat, immer den neuesten Stand und bleibt
+      # nicht auf einer Beta sitzen, weil länger keine neue kam.
+      #
+      # Das Release selbst ist als Vorabversion markiert und taucht damit nie
+      # unter `releases/latest` auf, wo der stabile Kanal nachsieht.
+      - name: Update beta channel manifest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.target.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --pattern latest.json --dir manifest --clobber
+          if ! gh release view beta >/dev/null 2>&1; then
+            gh release create beta \
+              --prerelease \
+              --title 'Beta-Kanal' \
+              --notes 'Update-Manifest des Beta-Kanals. Die Installer hängen am jeweiligen Release, nicht hier.'
+          fi
+          gh release upload beta manifest/latest.json --clobber
+          echo "Beta-Manifest zeigt jetzt auf ${TAG}."
+
+  # Das Server-Abbild. Laeuft neben dem Desktop-Build, nicht dahinter: beide
+  # haengen nur am selben `verify`.
+  image:
+    needs: [verify, target]
+    uses: ./.github/workflows/docker-build.yml
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    with:
+      tag: ${{ needs.target.outputs.tag }}
+      stable: ${{ needs.target.outputs.stable == 'true' }}
+      image: ${{ needs.target.outputs.image }}
+
+  # Den Startbefehl an das Release haengen. Beide Seiten muessen fertig sein:
+  # das Release entsteht im Desktop-Build, der Abschnitt beschreibt das Abbild.
+  release-note:
+    needs: [target, desktop, image]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Startbefehl anhaengen
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.target.outputs.tag }}
+          IMAGE_LC: ${{ needs.target.outputs.image }}
+        run: |
+          set -euo pipefail
+          BODY="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body -q .body)"
+
+          # Die Marke im Text macht den Schritt wiederholbar: ein zweiter Lauf
+          # desselben Tags haengt den Abschnitt sonst ein zweites Mal an.
+          case "$BODY" in
+            *'<!-- docker-quickstart -->'*)
+              echo "Abschnitt steht schon im Release."
+              exit 0
+              ;;
+          esac
+
+          # Der Text liegt als Vorlage daneben - im Ablauf selbst waere er ein
+          # Heredoc in einem YAML-Blockskalar, und jede Zeile ohne Einrueckung
+          # bricht dort aus dem Block aus.
+          sed -e "s|{{IMAGE}}|${IMAGE_LC}|g" \
+              -e "s|{{VERSION}}|${TAG#v}|g" \
+              -e "s|{{REPO}}|${GITHUB_REPOSITORY}|g" \
+              .github/release-docker.md > abschnitt.md
+
+          { printf '%s\n\n' "$BODY"; cat abschnitt.md; } > notiz.md
+
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notiz.md
+          echo "Startbefehl an $TAG angehaengt."

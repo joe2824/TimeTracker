@@ -1,0 +1,37 @@
+// Die Form der Codes, die ein Mensch abtippt - Kopplung und Einladung.
+//
+// Client und Server müssen sich hier auf das Zeichen genau einig sein: der
+// Server nimmt einen Code nur an, wenn er dieselbe Form erwartet, die der
+// Client gerechnet hat. Deshalb steht das hier einmal und nicht in beiden.
+
+/** Ohne I, O, 0 und 1 - die werden beim Abschreiben verwechselt. */
+export const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+/** Zwölf Stellen zu je fünf Bit. Siehe pairingCode in src/lib/crypto/vault.ts. */
+export const PAIRING_CODE_LENGTH = 12;
+
+/** Getipptes auf die Rechenform bringen: Grossschreibung, nur Alphabet-Zeichen. */
+export function normalizePairingCode(input: unknown): string {
+	return [...String(input ?? "").toUpperCase()].filter((c) => CODE_ALPHABET.includes(c)).join("");
+}
+
+/** Ob eine bereits normalisierte Zeichenkette die Form eines Codes hat. */
+export function isPairingCode(code: string): boolean {
+	return (
+		code.length === PAIRING_CODE_LENGTH && [...code].every((c) => CODE_ALPHABET.includes(c))
+	);
+}
+
+// ---------- Wie lange eine WebAuthn-Aufgabe gilt ----------
+
+/** Was der Server einer Aufgabe zugesteht. */
+export const CHALLENGE_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Wie lange der Client eine vorgeladene Aufgabe liegen lässt.
+ *
+ * Knapp darunter: eine Aufgabe, die hier noch als frisch gilt, während der
+ * Server sie schon verworfen hat, lässt die Anmeldung ohne erkennbaren Grund
+ * scheitern. Deshalb hängt der Wert am Server-Wert und steht nicht daneben.
+ */
+export const CHALLENGE_REUSE_MS = CHALLENGE_TTL_MS - 60 * 1000;

@@ -1,0 +1,550 @@
+// Ein Konto anlegen und sich anmelden - im Browser, weil Passkeys an die Domain
+// gebunden sind. Die Desktop-Anwendung koppelt sich stattdessen (account.svelte.ts).
+import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
+import type {
+	AuthenticationResponseJSON,
+	PublicKeyCredentialCreationOptionsJSON,
+	PublicKeyCredentialRequestOptionsJSON,
+	RegistrationResponseJSON
+} from "@simplewebauthn/browser";
+import {
+	createRecoveryPhrase,
+	createVaultKey,
+	fromBase64,
+	importVaultKey,
+	isValidRecoveryPhrase,
+	recoveryLookupId,
+	toBase64,
+	unwrapWithPhrase,
+	unwrapWithPrf,
+	vaultProof,
+	type VaultKey,
+	wrapWithPhrase,
+	wrapWithPrf
+} from "../crypto/vault";
+import { Api, ApiError } from "./api";
+import { logWarn } from "../log";
+import { platformFetch } from "../platform/http";
+import { CHALLENGE_REUSE_MS } from "$shared/codes";
+
+/** Die Verpackung mit der Phrase öffnen - oder verständlich scheitern. */
+async function openWithPhrase(payload: string, phrase: string): Promise<VaultKey> {
+	try {
+		return await unwrapWithPhrase(payload, phrase);
+	} catch {
+		throw new Error("Die Wörter passen nicht zu diesem Konto – bitte noch einmal prüfen.");
+	}
+}
+
+/** Die Verpackung mit dem PRF-Wert öffnen - oder null, wenn sie nicht aufgeht. */
+async function openWithPrf(payload: string, prf: Uint8Array): Promise<VaultKey | null> {
+	try {
+		return await unwrapWithPrf(payload, prf);
+	} catch {
+		// Der Authentifikator lieferte einen Wert, aber nicht den, mit dem verpackt
+		// wurde - etwa nach einem Wechsel des Passkey-Verwalters. Dann bleibt die
+		// Phrase, statt hier abzubrechen.
+		return null;
+	}
+}
+
+/**
+ * Feste Eingabe für die PRF-Erweiterung - muss bei jeder Anmeldung dieselbe
+ * sein, sonst fällt ein anderer Wert heraus. Kein Geheimnis.
+ */
+const PRF_INPUT = new TextEncoder().encode("timetracker-vault-v1");
+
+/**
+ * Die PRF-Ausgabe in Rohbytes - egal, in welcher Gestalt sie ankommt.
+ *
+ * `clientExtensionResults` ist eine untypisierte Browser-Schnittstelle: je nach
+ * Browser und Bibliothek liegt der Wert als ArrayBuffer, als Ansicht darauf, als
+ * base64 oder als durchnummeriertes Objekt vor. Ungeprüft weitergereicht endet
+ * das in "Key data must be a BufferSource" - einer Meldung, die nichts darüber
+ * sagt, welcher der Werte gemeint ist.
+ */
+export function prfBytes(first: unknown): Uint8Array | null {
+	if (!first) return null;
+	if (first instanceof ArrayBuffer) return new Uint8Array(first);
+	if (ArrayBuffer.isView(first)) {
+		// Auf den Ausschnitt beziehen, nicht auf den ganzen Puffer dahinter: sonst
+		// stimmt der Schlüssel bei jeder Ansicht mit Versatz nicht mehr.
+		const v = first as ArrayBufferView;
+		return new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
+	}
+	if (typeof first === "string") return fromBase64(first.replace(/-/g, "+").replace(/_/g, "/"));
+	if (typeof first === "object") {
+		// Ein ArrayBuffer, der durch structuredClone oder JSON gegangen ist, kommt
+		// als {"0":12,"1":250,...} zurück - oder als leeres Objekt, dann ist er weg.
+		const values = Object.values(first as Record<string, unknown>);
+		if (values.length > 0 && values.every((w) => typeof w === "number")) {
+			return Uint8Array.from(values as number[]);
+		}
+	}
+	throw new Error("Der Passkey lieferte einen PRF-Wert in unbekannter Form.");
+}
+
+/** Was ein Authentifikator zurückgab, sofern er PRF kann. */
+function prfOf(response: RegistrationResponseJSON | AuthenticationResponseJSON): Uint8Array | null {
+	const ext = response.clientExtensionResults as {
+		prf?: { enabled?: boolean; results?: { first?: unknown } };
+	};
+	return prfBytes(ext?.prf?.results?.first);
+}
+
+/** WebAuthn-JSON erwartet base64url, nicht base64. */
+function toBase64Url(bytes: Uint8Array): string {
+	return toBase64(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+/** Die PRF-Eingabe an die Optionen hängen. */
+function withPrf<T extends { extensions?: unknown }>(options: T): T {
+	return {
+		...options,
+		extensions: {
+			...((options.extensions as Record<string, unknown> | undefined) ?? {}),
+			prf: { eval: { first: PRF_INPUT } }
+		}
+	} as T;
+}
+
+// ---------- Die Aufgabe im Voraus holen ----------
+//
+// WebAuthn will unmittelbar auf die Berührung folgen. Liegt eine langsame
+// Verbindung dazwischen - Mobilfunk, gedrosseltes Netz -, ist die Berechtigung
+// aus dem Klick abgelaufen, bevor der Dialog aufgehen kann, und der Browser
+// lehnt mit NotAllowedError ab. Es sieht aus, als könne sich niemand mehr
+// anmelden. Deshalb wird die Aufgabe schon geholt, wenn jemand auf den Knopf
+// zusteuert; der Klick trifft dann auf etwas, das dasteht.
+
+type LoginStart = Awaited<ReturnType<Api["loginStart"]>>;
+type RegisterStart = Awaited<ReturnType<Api["registerStart"]>>;
+
+const challenges = new Map<string, { at: number; task: Promise<unknown> }>();
+
+/**
+ * Eine Aufgabe holen und liegen lassen. Mehrfach aufzurufen kostet nichts -
+ * solange eine frische dahängt, kommt sie zurück.
+ */
+function prepare<T>(key: string, start: () => Promise<T>): Promise<T> {
+	const waiting = challenges.get(key);
+	if (waiting && Date.now() - waiting.at < CHALLENGE_REUSE_MS) return waiting.task as Promise<T>;
+	const task = start();
+	challenges.set(key, { at: Date.now(), task });
+	// Ein Fehlschlag darf sich nicht einbrennen - der nächste Versuch fragt wieder.
+	void task.catch(() => forget(key, task));
+	return task;
+}
+
+/**
+ * Eine verbrauchte Aufgabe wegräumen - der Server löscht sie beim Nachsehen,
+ * gleich wie es ausgeht. Nur die eigene: inzwischen kann eine neue dahängen.
+ */
+function forget(key: string, task: Promise<unknown>): void {
+	if (challenges.get(key)?.task === task) challenges.delete(key);
+}
+
+const loginKey = (baseUrl: string) => `login|${baseUrl}`;
+const registerKey = (baseUrl: string, displayName: string, invite?: string) =>
+	`register|${baseUrl}|${displayName}|${invite ?? ""}`;
+
+/** Die Anmelde-Aufgabe vorladen. */
+export function prepareLogin(baseUrl: string): Promise<LoginStart> {
+	return prepare(loginKey(baseUrl), () =>
+		new Api({ baseUrl, fetchFn: platformFetch }).loginStart()
+	);
+}
+
+/** Dasselbe für das Anlegen eines Kontos. */
+export function prepareRegister(
+	baseUrl: string,
+	displayName = "",
+	invite?: string
+): Promise<RegisterStart> {
+	return prepare(registerKey(baseUrl, displayName, invite), () =>
+		new Api({ baseUrl, fetchFn: platformFetch }).registerStart(displayName, invite)
+	);
+}
+
+export interface EnrollResult {
+	userId: string;
+	displayName: string;
+	/** Nur bei der Registrierung: einmal anzeigen, danach nie wieder. */
+	recoveryPhrase?: string;
+	/** Ob der Passkey den Vault künftig allein öffnen kann. */
+	prfAvailable: boolean;
+	/** Die Kennung des eben angelegten Passkeys. */
+	credentialId: string;
+	key: VaultKey;
+}
+
+/** Ein neues Konto anlegen. */
+export async function register(
+	baseUrl: string,
+	displayName: string,
+	opts: { invite?: string; email?: string } = {}
+): Promise<EnrollResult> {
+	const api = new Api({ baseUrl, fetchFn: platformFetch });
+
+	const task = prepareRegister(baseUrl, displayName, opts.invite);
+	const start = await task;
+	const response = await startRegistration({
+		optionsJSON: withPrf(start.options as PublicKeyCredentialCreationOptionsJSON)
+	});
+
+	// Der PRF-Wert kommt beim Anlegen meist nicht heraus - dann holt ihn eine
+	// eigene Abfrage nach. Sie läuft VOR dem Abschluss: der Passkey liegt schon
+	// im Authentifikator, und die Antwort wird nirgends geprüft.
+	const harvested = prfOf(response)
+		? null
+		: await harvestPrf([response.id]).catch((e) => {
+				logWarn("PRF-Wert ließ sich beim Anlegen nicht nachholen", e);
+				return { ok: false as const, reason: "noPrf" as const };
+			});
+	const prf = prfOf(response) ?? (harvested?.ok ? harvested.prf : null);
+
+	// Beide Verpackungen entstehen hier, nicht in einer zweiten Anfrage. Der
+	// Server schreibt sie zusammen mit Konto und Passkey in EINER Transaktion -
+	// ein Passkey ohne Verpackung kann damit gar nicht erst entstehen.
+	const key = await createVaultKey();
+	const recoveryPhrase = createRecoveryPhrase();
+
+	try {
+		await api.registerFinish({
+			challengeId: start.challengeId,
+			displayName,
+			invite: opts.invite,
+			email: opts.email,
+			response,
+			recoveryWrap: {
+				payload: await wrapWithPhrase(key, recoveryPhrase),
+				recoveryId: await recoveryLookupId(recoveryPhrase),
+				vaultProof: await vaultProof(key)
+			},
+			passkeyWrap: prf ? { payload: await wrapWithPrf(key, prf) } : null
+		});
+	} finally {
+		forget(registerKey(baseUrl, displayName, opts.invite), task);
+	}
+
+	return {
+		prfAvailable: prf !== null,
+		credentialId: response.id,
+		userId: start.userId,
+		displayName,
+		recoveryPhrase,
+		key
+	};
+}
+
+/**
+ * Warum ein Passkey die Daten nicht öffnen kann.
+ *
+ * `otherPasskey`: bestätigt wurde ein anderer als der gemeinte.
+ * `noPrf`: der Authentifikator rechnet keinen PRF-Wert aus - daran ändert auch
+ * ein zweiter Versuch nichts, und die Phrase hilft hier ebenfalls nicht: den
+ * Wert kann nur der Authentifikator selbst liefern.
+ */
+export type PrfFailure = "otherPasskey" | "noPrf";
+
+type PrfResult =
+	| { ok: true; credentialId: string; prf: Uint8Array }
+	| { ok: false; reason: PrfFailure };
+
+/**
+ * Den PRF-Wert eines Passkeys per eigener Abfrage holen.
+ *
+ * Beim Anlegen geben die meisten Browser noch keinen heraus - er fällt erst bei
+ * einer Anmeldung an. Eigene Aufgabe statt einer vom Server: die Antwort wird
+ * nirgends geprüft, gebraucht wird allein der Wert, den der Authentifikator
+ * dazu ausrechnet. Ohne Kennungen nimmt der Browser den Passkey, den er anbietet.
+ */
+async function harvestPrf(credentialIds: string[] = []): Promise<PrfResult> {
+	const options: PublicKeyCredentialRequestOptionsJSON = {
+		challenge: toBase64Url(crypto.getRandomValues(new Uint8Array(32))),
+		userVerification: "required",
+		...(credentialIds.length
+			? {
+					allowCredentials: credentialIds.map((id) => ({ id, type: "public-key" as const }))
+				}
+			: {})
+	};
+	const response = await startAuthentication({ optionsJSON: withPrf(options) });
+	// allowCredentials sollte das schon erzwingen - ein Wert von einem Passkey
+	// ausserhalb der Liste hilft hier aber nicht weiter.
+	if (credentialIds.length && !credentialIds.includes(response.id)) {
+		return { ok: false, reason: "otherPasskey" };
+	}
+	const prf = prfOf(response);
+	return prf
+		? { ok: true, credentialId: response.id, prf }
+		: { ok: false, reason: "noPrf" };
+}
+
+export interface LoginResult {
+	userId: string;
+	displayName: string;
+	/** Der Vault-Schlüssel - oder null, wenn er noch entsperrt werden muss. */
+	key: VaultKey | null;
+	/** Ob eine Phrasen-Verpackung vorliegt, mit der entsperrt werden kann. */
+	canUnlockWithPhrase: boolean;
+	/** Was der Authentifikator über PRF ausgegeben hat. Null, wenn er es nicht kann. */
+	prf: Uint8Array | null;
+	/** Die Kennung des benutzten Passkeys - an ihr hängt die PRF-Verpackung. */
+	credentialId: string;
+}
+
+/**
+ * Dafür sorgen, dass dieser Passkey den Vault allein öffnen kann.
+ *
+ * Gibt `false` zurück, wenn der Authentifikator kein PRF beherrscht - dann
+ * bleiben die 24 Wörter oder ein bereits verknüpftes Gerät.
+ */
+export async function ensurePasskeyWrap(
+	api: Api,
+	key: VaultKey,
+	/** Nur dieser Passkey zählt. Ohne Angabe: der, den der Browser anbietet. */
+	credentialId?: string,
+	/** Ein bereits vorliegender PRF-Wert - dann entfällt die zweite Abfrage. */
+	prf?: Uint8Array | null
+): Promise<{ ok: true; credentialId: string } | { ok: false; reason: PrfFailure }> {
+	const found: PrfResult =
+		prf && credentialId
+			? { ok: true, credentialId, prf }
+			: await harvestPrf(credentialId ? [credentialId] : []);
+	if (!found.ok) return found;
+	await api.putWrap("passkey", await wrapWithPrf(key, found.prf), found.credentialId);
+	return { ok: true, credentialId: found.credentialId };
+}
+
+/**
+ * Den Vault-Schlüssel noch einmal aus einem Passkey holen.
+ *
+ * Nach einem Neuladen der Seite liegt hier nur noch die Kopie, die ihre Bytes
+ * nicht mehr herausgibt (`platform/keyStore.ts`). Zum Ansehen, Bearbeiten und
+ * Abgleichen reicht sie; einen WEITEREN Passkey oder ein weiteres Gerät
+ * anzulernen braucht dagegen die Bytes. Statt dafür 24 Wörter abzutippen,
+ * genügt eine Bestätigung mit einem Passkey, zu dem eine Verpackung liegt.
+ *
+ * Gefragt wird nur nach solchen Passkeys. Ohne diese Vorauswahl liefe der Weg
+ * im Kreis: gerade wer eine FEHLENDE Verpackung nachtragen will, würde nach
+ * genau dem Passkey gefragt, der nichts öffnen kann - eine Bestätigung für
+ * nichts, gefolgt von einer Fehlermeldung.
+ *
+ * Welche das sind, gibt der Aufrufer mit: er hält die Liste schon vor, damit
+ * zwischen Klick und Dialog keine Anfrage liegt.
+ */
+export async function reunlockWithPasskey(
+	api: Api,
+	opts: {
+		/** Der Passkey dieses Browsers, falls bekannt. */
+		preferred?: string;
+		/** Passkeys, zu denen eine Verpackung liegt - siehe `account.svelte.ts`. */
+		usableIds: string[];
+	}
+): Promise<VaultKey> {
+	if (opts.usableIds.length === 0) {
+		throw new Error(
+			"Dafür müssen deine Daten hier einmal geöffnet werden, und das kann bisher keiner deiner Passkeys. Melde dich einmal ab und mit deinen 24 Wörtern wieder an."
+		);
+	}
+	// Der Passkey dieses Browsers, wenn er kann - sonst jeder andere, der es kann.
+	const ids =
+		opts.preferred && opts.usableIds.includes(opts.preferred) ? [opts.preferred] : opts.usableIds;
+
+	// Der Dialog zuerst, das Paket danach: eine Anfrage VOR der Bestätigung
+	// kostet auf schmaler Leitung die Berechtigung aus der Berührung, und der
+	// Browser lehnt mit NotAllowedError ab (siehe "Die Aufgabe im Voraus holen").
+	const found = await harvestPrf(ids);
+	if (found.ok) {
+		const { wraps } = await api.wraps();
+		const wrap = wraps.find(
+			(w) => w.kind === "passkey" && w.credentialId === found.credentialId
+		);
+		const key = wrap ? await openWithPrf(wrap.payload, found.prf) : null;
+		if (key) return key;
+	}
+	if (found.ok === false && found.reason === "otherPasskey") {
+		throw new Error(
+			"Bestätigt wurde ein anderer Passkey als der, der deine Daten öffnen kann. Bitte noch einmal versuchen."
+		);
+	}
+	throw new Error(
+		"Dein Passkey konnte die Daten nicht öffnen. Bitte melde dich einmal ab und mit deinen 24 Wörtern wieder an."
+	);
+}
+
+/** Anmelden. */
+export async function login(baseUrl: string): Promise<LoginResult> {
+	const api = new Api({ baseUrl, fetchFn: platformFetch });
+	const task = prepareLogin(baseUrl);
+	const start = await task;
+	const response = await startAuthentication({
+		optionsJSON: withPrf(start.options as PublicKeyCredentialRequestOptionsJSON)
+	});
+	let account;
+	try {
+		account = await api.loginFinish({ challengeId: start.challengeId, response });
+	} finally {
+		forget(loginKey(baseUrl), task);
+	}
+
+	const { wraps } = await api.wraps();
+	const prf = prfOf(response);
+	const passkeyWrap = wraps.find((w) => w.kind === "passkey" && w.credentialId === response.id);
+	const key = prf && passkeyWrap ? await openWithPrf(passkeyWrap.payload, prf) : null;
+
+	// Sonst ist nicht zu unterscheiden, ob der PRF-Wert fehlte oder die Verpackung.
+	if (!key) {
+		logWarn("Passkey öffnete die Daten nicht", {
+			prf: prf !== null,
+			wrap: passkeyWrap !== undefined
+		});
+	}
+
+	return {
+		userId: account.userId,
+		displayName: account.displayName,
+		key,
+		canUnlockWithPhrase: wraps.some((w) => w.kind === "recovery"),
+		prf,
+		credentialId: response.id
+	};
+}
+
+/**
+ * Den Vault mit der Wiederherstellungs-Phrase öffnen.
+ *
+ * `repair` ist der Passkey, mit dem eben angemeldet wurde: er bekommt dabei die
+ * fehlende Verpackung, damit die Phrase wieder das bleibt, wofür sie gedacht
+ * ist - der Weg zurück, nicht der Weg hinein.
+ */
+export async function unlockWithPhrase(
+	baseUrl: string,
+	phrase: string,
+	repair?: { credentialId: string; prf: Uint8Array | null }
+): Promise<VaultKey> {
+	const api = new Api({ baseUrl, fetchFn: platformFetch });
+	const { wraps } = await api.wraps();
+	const wrap = wraps.find((w) => w.kind === "recovery");
+	if (!wrap) throw new Error("Für dieses Konto ist keine Wiederherstellungs-Phrase hinterlegt.");
+	const key = await openWithPhrase(wrap.payload, phrase);
+	if (repair) {
+		await ensurePasskeyWrap(api, key, repair.credentialId, repair.prf).catch((e) =>
+			logWarn("Passkey-Verpackung konnte nicht abgelegt werden", e)
+		);
+	}
+	return key;
+}
+
+/** Ein Konto allein mit der Wiederherstellungs-Phrase zurückholen. */
+export async function recoverWithPhrase(
+	baseUrl: string,
+	phrase: string,
+	label: string
+): Promise<{ userId: string; displayName: string; deviceToken: string; key: VaultKey }> {
+	if (!isValidRecoveryPhrase(phrase)) {
+		throw new Error("Das sind nicht 24 gültige Wörter – bitte noch einmal prüfen.");
+	}
+	const api = new Api({ baseUrl, fetchFn: platformFetch });
+	const recoveryId = await recoveryLookupId(phrase);
+
+	const { wrap } = await api.recoverWrap(recoveryId);
+	// Hier fällt die Entscheidung: passen die Wörter nicht, geht das Chiffrat
+	// nicht auf. Der Server hat damit nichts zu tun und erfährt es auch nicht.
+	const key = await openWithPhrase(wrap, phrase);
+
+	const loggedIn = await api.recoverDevice({
+		recoveryId,
+		proof: await vaultProof(key),
+		label
+	});
+
+	return {
+		userId: loggedIn.userId,
+		displayName: loggedIn.displayName,
+		deviceToken: loggedIn.deviceToken,
+		key
+	};
+}
+
+/**
+ * Ein Konto von diesem Gerät aus anlegen - ohne Passkey, für die
+ * Desktop-Anwendung.
+ */
+export async function registerFromDevice(
+	baseUrl: string,
+	/** Leer lassen: dann steht die Kennung des Kontos da. Siehe /api/auth/device. */
+	displayName: string,
+	label: string,
+	opts: { invite?: string; email?: string } = {}
+): Promise<{
+	userId: string;
+	displayName: string;
+	deviceToken: string;
+	key: VaultKey;
+	recoveryPhrase: string;
+}> {
+	const api = new Api({ baseUrl, fetchFn: platformFetch });
+	const created = await api.registerDevice({
+		displayName,
+		label,
+		invite: opts.invite,
+		email: opts.email
+	});
+
+	// Ab hier weist sich dieses Gerät mit seinem Token aus - vorher gab es
+	// nichts, womit.
+	api.setToken(created.deviceToken);
+
+	const key = await createVaultKey();
+	const recoveryPhrase = createRecoveryPhrase();
+	// Die Phrase zuerst: sie ist der einzige Weg zurück. Scheitert das, scheitert
+	// das Anlegen sichtbar - statt still ein unbrauchbares Konto zu hinterlassen.
+	await api.putWrap("recovery", await wrapWithPhrase(key, recoveryPhrase), undefined, {
+		recoveryId: await recoveryLookupId(recoveryPhrase),
+		vaultProof: await vaultProof(key)
+	});
+
+	return {
+		userId: created.userId,
+		displayName: created.displayName,
+		deviceToken: created.deviceToken,
+		key,
+		recoveryPhrase
+	};
+}
+
+/**
+ * Einen WEITEREN Passkey an ein bestehendes Konto hängen.
+ *
+ *   1. Passkey beim Server hinterlegen - damit meldet er an.
+ *   2. Vault-Schlüssel gegen ihn verpacken - damit öffnet er die Daten.
+ */
+export async function addPasskey(
+	api: Api,
+	key: VaultKey,
+	label: string
+): Promise<{ id: string; label: string | null; prfAvailable: boolean }> {
+	// Die Api des Kontos, keine frisch gebaute: nach einer Anmeldung mit der
+	// Phrase weist dieses Gerät sich mit seinem Token aus, nicht mit einem
+	// Cookie. Eine Api ohne Token liefe dort in "Nicht angemeldet".
+	const { challengeId, options } = await api.addPasskeyStart();
+
+	const response = await startRegistration({
+		optionsJSON: withPrf(options as Parameters<typeof startRegistration>[0]["optionsJSON"])
+	});
+
+	const prf = prfOf(response);
+	const created = await api.addPasskeyFinish({ challengeId, label, response });
+
+	// Erst jetzt die Verpackung: sie braucht die eben vergebene Kennung.
+	const wrapped = await ensurePasskeyWrap(api, key, created.id, prf).catch((e) => {
+		logWarn("PRF-Wert konnte nicht nachgeholt werden", e);
+		return { ok: false as const, reason: "noPrf" as const };
+	});
+
+	return { id: created.id, label: created.label, prfAvailable: wrapped.ok };
+}
+
+export { ApiError, importVaultKey, toBase64 };

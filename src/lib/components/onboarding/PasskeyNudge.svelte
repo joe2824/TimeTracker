@@ -1,0 +1,82 @@
+<script lang="ts">
+	// Bewusst kein Toast: der ist weg, bevor jemand ihn liest. Deshalb ein
+	// Streifen, der stehen bleibt, bis der Passkey angelegt oder weggeklickt ist.
+	import { Button } from "$lib/components/ui/button";
+	import { toast } from "svelte-sonner";
+	import { account } from "$lib/sync/account.svelte";
+	import { isTauri } from "$lib/platform/env";
+	import { missingPasskey, type MissingPasskey } from "$lib/account/passkeyStatus";
+	import KeyRoundIcon from "@lucide/svelte/icons/key-round";
+	import XIcon from "@lucide/svelte/icons/x";
+
+	let missing = $state<MissingPasskey>(null);
+	let asked = $state(false);
+	let running = $state(false);
+	let dismissed = $state(false);
+
+	const texts = {
+		passkey: {
+			text: "Dieser Browser hat noch keinen Passkey. Beim nächsten Anmelden brauchst du deshalb wieder deine 24 Wörter oder ein gekoppeltes Gerät. Leg jetzt einen an – danach kommst du hier mit Fingerabdruck, Gesicht oder PIN herein.",
+			button: "Passkey anlegen"
+		},
+		wrap: {
+			text: "Dein Passkey meldet dich zwar an, kann deine Zeiten aber noch nicht entsperren – dafür brauchst du bisher deine 24 Wörter. Einmal an diesem Gerät bestätigen, dann macht der Passkey künftig beides.",
+			button: "Passkey verbinden"
+		}
+	};
+
+	$effect(() => {
+		// Nur im Browser: auf dem Rechner trägt das Gerät ein eigenes Token, und
+		// einen Passkey kann es dort ohnehin nicht anlegen.
+		if (isTauri() || !account.linked || asked) return;
+		asked = true;
+		void check().catch(() => (missing = null));
+	});
+
+	async function check() {
+		missing = missingPasskey(await account.passkeys(), account.passkeyId);
+	}
+
+	async function resolve() {
+		running = true;
+		try {
+			const done =
+				missing === "passkey"
+					? (await account.addPasskey("Dieser Browser")).prfAvailable
+					: (await account.repairPasskeyWrap()).ok;
+			await check();
+			if (done) {
+				toast.success("Erledigt. Dein Passkey entsperrt deine Daten jetzt allein.");
+			} else {
+				// Der Authentifikator kann kein PRF - ein zweiter Versuch ändert daran nichts.
+				dismissed = true;
+				toast.error("Dieses Gerät kann deine Daten mit dem Passkey allein nicht entsperren.");
+			}
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : "Hat nicht geklappt");
+		} finally {
+			running = false;
+		}
+	}
+</script>
+
+{#if missing && !dismissed}
+	<div class="border-b border-amber-500/40 bg-amber-500/5">
+		<div class="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 py-2 text-sm sm:px-6">
+			<KeyRoundIcon class="size-4 shrink-0" />
+			<p class="flex-1">{texts[missing].text}</p>
+			<Button size="sm" disabled={running} onclick={resolve}>
+				{running ? "Warte auf Bestätigung…" : texts[missing].button}
+			</Button>
+			<button
+				type="button"
+				title="Ausblenden"
+				aria-label="Ausblenden"
+				class="text-muted-foreground hover:text-foreground shrink-0"
+				onclick={() => (dismissed = true)}
+			>
+				<XIcon class="size-4" />
+			</button>
+		</div>
+	</div>
+{/if}

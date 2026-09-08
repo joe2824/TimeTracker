@@ -1,0 +1,54 @@
+// Schritt 2 der Registrierung: Antwort prüfen, Konto anlegen, anmelden.
+import { error, json } from "@sveltejs/kit";
+import type { RequestHandler } from "./$types";
+import { verifyRegistration, createUser, storeCredential } from "$lib/server/webauthn";
+import { createSession, takeChallenge } from "$lib/server/auth";
+import { consumeCode, isRegistrationOpen } from "$lib/server/invites";
+import { readRegistrationFields } from "$lib/server/registration";
+import { setSessionCookie } from "$lib/server/session";
+import { readWrap, storeWrap } from "$lib/server/wraps";
+
+export const POST: RequestHandler = async ({ locals, request, cookies }) => {
+	const body = await request.json().catch(() => null);
+	const challengeId = String(body?.challengeId ?? "");
+	const taken = takeChallenge(locals.db, challengeId, "register");
+	if (!taken?.userId) error(400, "Aufgabe abgelaufen – bitte erneut versuchen");
+
+	const { displayName, code, email } = readRegistrationFields(locals.db, body, taken.userId);
+
+	const verification = await verifyRegistration(body?.response, taken.challenge);
+	if (!verification.verified || !verification.registrationInfo) {
+		error(400, "Passkey konnte nicht bestätigt werden");
+	}
+
+	// Die Phrasen-Verpackung ist Pflicht: ohne sie gäbe es keinen Weg zurück,
+	// und das fällt erst auf, wenn er gebraucht wird.
+	const recovery = readWrap(body?.recoveryWrap, "recovery");
+	// Die Passkey-Verpackung kann fehlen - dann kann der Authentifikator kein PRF.
+	const passkey = body?.passkeyWrap ? readWrap(body.passkeyWrap, "passkey") : null;
+	if (passkey) passkey.credentialId = verification.registrationInfo.credential.id;
+
+	// Konto, Passkey und Verpackung gehören zusammen: entweder entsteht alles,
+	// oder nichts. Ein Konto ohne Passkey wäre unerreichbar, ein Passkey ohne
+	// Verpackung ein Vault ohne Schlüssel - und das merkt niemand, solange der
+	// Schlüssel noch lokal liegt.
+	locals.db.transaction((tx) => {
+		createUser(tx, taken.userId!, displayName, email);
+		// Ein Code aus der Tabelle gilt genau einmal. Hier drin, damit "Konto
+		// entstanden" und "Einladung verbraucht" nicht auseinanderfallen können.
+		if (!isRegistrationOpen(locals.db) && code) consumeCode(tx, code, taken.userId!);
+		storeCredential(
+			tx,
+			taken.userId!,
+			verification.registrationInfo!.credential,
+			verification.registrationInfo!.credential.transports
+		);
+		storeWrap(tx, taken.userId!, recovery);
+		if (passkey) storeWrap(tx, taken.userId!, passkey);
+	});
+
+	const secret = createSession(locals.db, taken.userId);
+	setSessionCookie(cookies, secret);
+	return json({ userId: taken.userId, displayName });
+};
+

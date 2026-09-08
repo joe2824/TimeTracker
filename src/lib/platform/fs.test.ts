@@ -1,0 +1,149 @@
+// Der Bestand im Browser muss sich genau so verhalten wie der auf der Platte.
+import "fake-indexeddb/auto";
+import { beforeEach, describe, expect, it } from "vitest";
+import { storage, useBrowserStorage } from "./fs";
+
+useBrowserStorage();
+
+async function clear(): Promise<void> {
+	for (const e of await storage.readDir("data")) {
+		await storage.remove(`data/${e.name}`);
+	}
+}
+
+beforeEach(clear);
+
+describe("Ablage im Browser", () => {
+	it("schreibt und liest wieder", async () => {
+		await storage.writeTextFile("data/a.json", '{"x":1}');
+		expect(await storage.readTextFile("data/a.json")).toBe('{"x":1}');
+	});
+
+	it("weiss, was es gibt und was nicht", async () => {
+		expect(await storage.exists("data/a.json")).toBe(false);
+		await storage.writeTextFile("data/a.json", "x");
+		expect(await storage.exists("data/a.json")).toBe(true);
+	});
+
+	it("wirft beim Lesen einer fehlenden Datei", async () => {
+		// store.ts fängt genau das ab. Ein leerer String stattdessen sähe aus wie
+		// eine vorhandene, leere Datei - und die wird anders behandelt.
+		await expect(storage.readTextFile("data/gibts-nicht.json")).rejects.toThrow();
+	});
+
+	it("ueberschreibt beim zweiten Schreiben", async () => {
+		await storage.writeTextFile("data/a.json", "alt");
+		await storage.writeTextFile("data/a.json", "neu");
+		expect(await storage.readTextFile("data/a.json")).toBe("neu");
+	});
+
+	it("loescht", async () => {
+		await storage.writeTextFile("data/a.json", "x");
+		await storage.remove("data/a.json");
+		expect(await storage.exists("data/a.json")).toBe(false);
+	});
+
+	it("benennt um und ersetzt dabei das Ziel", async () => {
+		// Daran hängt das atomare Schreiben in store.ts: erst in eine Zwischendatei,
+		// dann umbenennen. Ersetzt das Umbenennen nicht, bliebe der alte Stand stehen.
+		await storage.writeTextFile("data/ziel.json", "alt");
+		await storage.writeTextFile("data/tmp.json", "neu");
+		await storage.rename("data/tmp.json", "data/ziel.json");
+		expect(await storage.readTextFile("data/ziel.json")).toBe("neu");
+		expect(await storage.exists("data/tmp.json")).toBe(false);
+	});
+
+	it("wirft beim Umbenennen einer fehlenden Datei", async () => {
+		await expect(storage.rename("data/weg.json", "data/x.json")).rejects.toThrow();
+	});
+
+	it("listet nur die eigene Ebene", async () => {
+		await storage.writeTextFile("data/a.json", "1");
+		await storage.writeTextFile("data/b.json", "2");
+		await storage.writeTextFile("logs/c.log", "3");
+		const names = (await storage.readDir("data")).map((e) => e.name).sort();
+		expect(names).toEqual(["a.json", "b.json"]);
+	});
+
+	it("misst die Groesse in Bytes, nicht in Zeichen", async () => {
+		// store.ts entscheidet an dieser Zahl, ob eine Monatsdatei klein genug ist,
+		// um leer zu sein. Ein Umlaut zählt zwei Bytes - wer Zeichen zählt, hält
+		// eine volle Datei für leer und löscht sie.
+		await storage.writeTextFile("data/u.json", "äöü");
+		expect((await storage.stat("data/u.json")).size).toBe(6);
+	});
+
+	it("meldet die Groesse einer leeren Ablage als null", async () => {
+		await storage.writeTextFile("data/leer.json", "");
+		expect((await storage.stat("data/leer.json")).size).toBe(0);
+	});
+
+	it("wirft beim Messen einer fehlenden Datei", async () => {
+		await expect(storage.stat("data/weg.json")).rejects.toThrow();
+	});
+
+	it("nimmt einen Ordner ohne Murren an", async () => {
+		// Es gibt keine Ordner - der Aufruf muss trotzdem durchgehen, weil store.ts
+		// ihn vor jedem Schreiben macht.
+		await expect(storage.mkdir("data")).resolves.toBeUndefined();
+	});
+
+	it("liefert fuer einen leeren Ordner eine leere Liste", async () => {
+		expect(await storage.readDir("data")).toEqual([]);
+	});
+});
+
+describe("store.ts auf der Browser-Ablage", () => {
+	it("legt Eintraege ab und liest sie wieder", async () => {
+		// Der eigentliche Nachweis: nicht die Ablage für sich, sondern store.ts
+		// darauf - mit derselben Quarantäne-, Aufräum- und Löschlogik wie auf
+		// dem Rechner.
+		const store = await import("../store");
+		const entry = {
+			id: "e1",
+			activityId: "a",
+			startTs: 1000,
+			endTs: 2000,
+			note: "Notiz",
+			source: "manual" as const
+		};
+		await store.saveEntries("2026-07", [entry]);
+		expect(await store.loadEntries("2026-07")).toEqual([entry]);
+		expect(await store.listEntryMonths()).toEqual(["2026-07"]);
+
+		// Ein leerer Monat hinterlässt keine Datei.
+		await store.saveEntries("2026-07", []);
+		expect(await store.listEntryMonths()).toEqual([]);
+	});
+
+	it("kennt einen Ordner an dem, was darin liegt", async () => {
+		// Es gibt keine Ordner - der Pfad ist Teil des Schlüssels. Wer trotzdem
+		// erst auf den Ordner prüft (log.ts tut es), bekäme sonst immer "nein"
+		// und damit einen leeren Bestand.
+		expect(await storage.exists("kiste")).toBe(false);
+		await storage.writeTextFile("kiste/inhalt.txt", "etwas\n");
+		expect(await storage.exists("kiste")).toBe(true);
+		expect(await storage.exists("kiste/")).toBe(true);
+		// Ein Präfix, der auf halber Strecke passt, ist noch kein Ordner.
+		expect(await storage.exists("kist")).toBe(false);
+	});
+
+	it("findet die Protokolle im Browser wieder", async () => {
+		const log = await import("../log");
+		log.logWarn("etwas ging schief");
+		await log.flushLog();
+		expect(await log.listLogs()).toHaveLength(1);
+		expect((await log.readLog()).join("\n")).toContain("etwas ging schief");
+	});
+
+	it("legt eine beschaedigte Datei zur Seite, statt sie fuer leer zu halten", async () => {
+		const store = await import("../store");
+		await storage.writeTextFile("data/entries-2026-08.json", "{kaputt");
+		expect(await store.loadEntries("2026-08")).toEqual([]);
+		// Der Monat taucht danach nicht mehr in der Liste auf - die Datei heisst
+		// jetzt anders und wird weder gelistet noch aufgeräumt.
+		expect(await store.listEntryMonths()).toEqual([]);
+		const names = (await storage.readDir("data")).map((e) => e.name);
+		expect(names.some((n) => n.includes("beschaedigt"))).toBe(true);
+	});
+});

@@ -1,0 +1,107 @@
+name: Docker
+
+# Nur noch der Neubau eines bereits veroeffentlichten Abbilds. Zu einer NEUEN
+# Version gehoert das Abbild in release.yml - dort haengt es am selben Gate wie
+# der Desktop-Build, statt eine zweite Testrunde zu fahren und danach eine
+# halbe Stunde auf das Release zu warten.
+#
+# Der Quelltext aendert sich hier nicht - node:22-alpine schon: dort werden
+# Luecken gestopft, und wer ghcr.io/...:latest zieht, soll den geflickten
+# Unterbau bekommen, ohne dass jemand dafuer eine neue Version herausgeben muss.
+# Genau deshalb laeuft hier auch keine Testrunde: geprueft wurde dieser
+# Quelltext, als sein Tag entstand.
+on:
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Welche Version neu bauen? Leer = neuester stabiler Tag.'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}-server
+
+jobs:
+  # Welcher Stand wird gebaut?
+  #
+  # Dieser Ablauf laeuft auf einem BRANCH - und dort waere die naheliegende
+  # Antwort die falsche: main enthaelt unveroeffentlichten Quelltext, und den als
+  # `:latest` auszuliefern, weil ein Grundabbild geflickt wurde, verteilt still
+  # etwas ganz anderes als einen Sicherheitspatch. Gebaut wird deshalb immer ein
+  # Versions-Tag, notfalls derselbe wie beim letzten Mal.
+  target:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.w.outputs.tag }}
+      stable: ${{ steps.w.outputs.stable }}
+      found: ${{ steps.w.outputs.found }}
+      image: ${{ steps.w.outputs.image }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # ohne die Tags gibt es nichts auszuwaehlen
+
+      - name: Version auswaehlen
+        id: w
+        shell: bash
+        # Die Eingabe ueber die Umgebung und nicht direkt in den Text: sonst
+        # landet fremder Inhalt woertlich im Skript.
+        env:
+          WUNSCH: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "${WUNSCH:-}" ]; then
+            TAG="$WUNSCH"
+          else
+            # Betas sind ausgenommen: ein Neubau soll das ausliefern, was unter
+            # `:latest` steht, und dort steht nie eine Vorabversion.
+            TAG="$(git tag --list 'v*' --sort=-v:refname | grep -v -- '-beta' | head -1 || true)"
+          fi
+
+          if [ -z "$TAG" ] || ! git rev-parse -q --verify "refs/tags/$TAG^{commit}" >/dev/null; then
+            echo "::warning::Kein brauchbarer Versions-Tag (‚${TAG:-<leer>}‘) - nichts zu bauen."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          case "$TAG" in
+            *-beta.*) STABLE=false ;;
+            *)        STABLE=true  ;;
+          esac
+
+          # ghcr.io nimmt nur Kleinbuchstaben. `docker/metadata-action` rechnet
+          # das von allein um, cosign und die Beglaubigung nicht - die bekommen
+          # den Namen woertlich und scheiterten an dem grossen T in TimeTracker.
+          #
+          # tr statt ${IMAGE,,}: die Klammerform gibt es erst ab bash 4, und ein
+          # "bad substitution" waere unter `set -e` ein stiller Abbruch.
+          IMAGE_LC="$(printf '%s' "$IMAGE" | tr '[:upper:]' '[:lower:]')"
+
+          {
+            echo "found=true"
+            echo "tag=$TAG"
+            echo "stable=$STABLE"
+            echo "image=$IMAGE_LC"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Neu gebaut wird $TAG (stabil: $STABLE) als $IMAGE_LC."
+
+  build:
+    needs: target
+    if: needs.target.outputs.found == 'true'
+    uses: ./.github/workflows/docker-build.yml
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    with:
+      tag: ${{ needs.target.outputs.tag }}
+      stable: ${{ needs.target.outputs.stable == 'true' }}
+      image: ${{ needs.target.outputs.image }}

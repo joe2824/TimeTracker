@@ -1,0 +1,20 @@
+<!-- Das Icon, Zustand „ruhend". Einzige Zeichnung fuer alle Groessen und auch
+     fuer das Logo in der App (static/logo.svg ist dieselbe Datei).
+
+     Nur zwei Formen: Flaeche und Bogen. Die drei Balken aus dem ersten Entwurf
+     sind raus – sie lasen sich als Menue-Symbol („Burger"), und bei 16 Pixeln
+     waren sie ohnehin nicht mehr als drei graue Streifen.
+
+     Gezeichnet im 16er-Raster: bei 16 Pixeln (Taskleiste, 100 % Skalierung)
+     liegt damit jede Kante auf einem ganzen Pixel und der Strich ist genau
+     2 Pixel stark. Groessere Fassungen sind glatte Vielfache davon. Genau daran
+     hing der Unterschied zu den Nachbarn in der Leiste, nicht an der Zeichnung:
+     ein Strich von 1,4 Pixeln wird als zwei graue Haelften gezeichnet, nie als
+     eine weisse Linie.
+
+     Der Bogen deckt 68 % des Kreises, wie im urspruenglichen Entwurf
+     (dasharray: 0,68 x 2 x pi x 4,5 = 19,2 von 28,3). -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <circle cx="8" cy="8" r="8" fill="#7a8a5e"></circle>
+  <circle cx="8" cy="8" r="4.5" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-dasharray="19.2 28.3" transform="rotate(-90 8 8)"></circle>
+</svg>

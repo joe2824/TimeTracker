@@ -1,0 +1,312 @@
+<script lang="ts">
+	import { app } from "$lib/app.svelte";
+	import { readOutlookCalendar, reportOutlookError, type CalendarEvent } from "$lib/report/outlook";
+	import { allDayNoons, fmtDate, isWorkday } from "$lib/time/time";
+	import { activityOptions, guessActivity } from "$lib/report/calendarMap";
+	import { Button } from "$lib/components/ui/button";
+	import { Badge } from "$lib/components/ui/badge";
+	import * as Card from "$lib/components/ui/card";
+	import { toast } from "svelte-sonner";
+	import CalendarIcon from "@lucide/svelte/icons/calendar";
+	import LoaderCircleIcon from "@lucide/svelte/icons/loader-circle";
+	import PalmtreeIcon from "@lucide/svelte/icons/palmtree";
+	import CheckIcon from "@lucide/svelte/icons/check";
+	import * as Select from "$lib/components/ui/select";
+
+	let {
+		month,
+		previewActive = $bindable(false)
+	}: { month: string; previewActive?: boolean } = $props();
+
+	let loading = $state(false);
+	let applying = $state(false);
+	let events = $state<CalendarEvent[]>([]);
+	/** pro Event: gewählte activityId ("" = ignorieren) */
+	let mapping = $state<string[]>([]);
+	let loaded = $state(false);
+	// true, sobald „Termine laden" gedrückt wurde -> große Import-Ansicht (Monatsliste aus).
+	let active = $state(false);
+
+	/** Auswahl je Termin – bei Uhrzeit ohne "Abwesenheiten" (siehe calendarMap). */
+	const optionsFor = (ev: CalendarEvent) => activityOptions(ev, app.visibleActivities);
+	const guessFor = (ev: CalendarEvent) =>
+		guessActivity(ev, app.visibleActivities, app.settings.calendarKeywordMap);
+
+	/** Fällt (mindestens ein Tag) des Termins auf einen regulären Arbeitstag? */
+	function eventHasWorkday(ev: CalendarEvent): boolean {
+		const start = new Date(ev.start).getTime();
+		if (ev.allDay) {
+			return allDayNoons(start, new Date(ev.end).getTime()).some((ts) =>
+				isWorkday(ts, app.settings.workdays)
+			);
+		}
+		return isWorkday(start, app.settings.workdays);
+	}
+
+	// ---- Duplikat-Erkennung: bereits importierte Termine (source="calendar") ----
+	const monthOf = (ts: number) => fmtDate(ts).slice(0, 7);
+
+	/** Existiert schon eine importierte Abwesenheit mit gleichem Tag + Betreff? */
+	function dayAlreadyImported(dayTs: number, subject: string): boolean {
+		const dstr = fmtDate(dayTs);
+		return app
+			.monthEntries(monthOf(dayTs))
+			.some(
+				(e) =>
+					e.source === "calendar" &&
+					app.isAbsenceId(e.activityId) &&
+					e.note === subject &&
+					fmtDate(e.startTs) === dstr
+			);
+	}
+
+	/** Existiert schon ein importierter Zeit-Eintrag mit gleichem Start/Ende/Betreff? */
+	function timedAlreadyImported(startTs: number, endTs: number, subject: string): boolean {
+		return app
+			.monthEntries(monthOf(startTs))
+			.some(
+				(e) =>
+					e.source === "calendar" &&
+					e.note === subject &&
+					e.startTs === startTs &&
+					e.endTs === endTs
+			);
+	}
+
+	/** Ist der Termin (bzw. all seine Arbeitstage) bereits importiert? */
+	function alreadyImported(ev: CalendarEvent): boolean {
+		const startTs = new Date(ev.start).getTime();
+		const endTs = new Date(ev.end).getTime();
+		if (Number.isNaN(startTs) || Number.isNaN(endTs)) return false;
+		if (ev.allDay) {
+			const days = allDayNoons(startTs, endTs).filter((ts) =>
+				isWorkday(ts, app.settings.workdays)
+			);
+			return days.length > 0 && days.every((ts) => dayAlreadyImported(ts, ev.subject));
+		}
+		return timedAlreadyImported(startTs, endTs, ev.subject);
+	}
+
+	async function load() {
+		if (loading) return; // kein Doppel-Start
+		// Sofort in die große Import-Ansicht wechseln (Monatsliste ausblenden).
+		active = true;
+		loaded = false;
+		loading = true;
+		try {
+			const [y, m] = month.split("-").map(Number);
+			const start = `${month}-01`;
+			const end = fmtDate(new Date(y, m, 0).getTime());
+			events = await readOutlookCalendar(start, end);
+			// Termine ohne Arbeitstag oder bereits importierte standardmäßig auf „ignorieren".
+			mapping = events.map((ev) =>
+				eventHasWorkday(ev) && !alreadyImported(ev) ? guessFor(ev) : ""
+			);
+			loaded = true;
+		} catch (e) {
+			const msg = await reportOutlookError("Outlook-Kalender konnte nicht gelesen werden", e);
+			toast.error(`Outlook-Kalender konnte nicht gelesen werden: ${msg}`);
+			active = false; // bei Fehler zurück zur Normalansicht
+		} finally {
+			loading = false;
+		}
+	}
+
+	// Solange die Import-Ansicht aktiv ist, blendet die übergeordnete Ansicht die
+	// Monatsliste aus (nur ein Scrollbereich).
+	$effect(() => {
+		previewActive = active;
+	});
+
+	/** Import-Ansicht schließen und zur Normalansicht (Einträge) zurück. */
+	function cancel() {
+		if (applying) return;
+		events = [];
+		mapping = [];
+		loaded = false;
+		active = false;
+	}
+
+	async function apply() {
+		if (applying) return; // kein Doppel-Import
+		applying = true;
+		try {
+			await doApply();
+		} finally {
+			applying = false;
+		}
+	}
+
+	async function doApply() {
+		let count = 0;
+		const newMap = { ...app.settings.calendarKeywordMap };
+		for (let i = 0; i < events.length; i++) {
+			const activityId = mapping[i];
+			if (!activityId) continue;
+			const ev = events[i];
+			const startTs = new Date(ev.start).getTime();
+			const endTs = new Date(ev.end).getTime();
+			if (Number.isNaN(startTs) || Number.isNaN(endTs)) continue;
+			const isAbsence = app.isAbsenceId(activityId);
+
+			if (isAbsence && ev.allDay) {
+				// Ganztägig (evtl. mehrtägig): für JEDEN Arbeitstag im Bereich einen ganzen Abwesenheitstag.
+				for (const dayTs of allDayNoons(startTs, endTs)) {
+					if (!isWorkday(dayTs, app.settings.workdays)) continue;
+					await app.ensureMonth(monthOf(dayTs));
+					if (dayAlreadyImported(dayTs, ev.subject)) continue; // schon importiert -> überspringen
+					const created = await app.addEntry(activityId, dayTs, dayTs, ev.subject, "calendar", 1);
+					if (created) count++;
+				}
+			} else {
+				// Abwesenheit mit Uhrzeit gibt es nicht (die Auswahl bietet sie dort gar
+				// nicht an) - fängt nur Altlasten aus der Stichwort-Zuordnung ab.
+				if (isAbsence) continue;
+				// Wochenenden/freie Tage nicht importieren – sind keine Arbeitstage.
+				if (!isWorkday(startTs, app.settings.workdays)) continue;
+				await app.ensureMonth(monthOf(startTs));
+				if (timedAlreadyImported(startTs, endTs, ev.subject)) continue; // schon importiert
+				const created = await app.addEntry(activityId, startTs, endTs, ev.subject, "calendar");
+				if (created) count++;
+			}
+			newMap[ev.subject.toLowerCase()] = activityId; // für nächstes Mal merken
+		}
+		await app.updateSettings({ calendarKeywordMap: newMap });
+		if (count > 0) toast.success(`${count} Kalendereintrag/-einträge übernommen.`);
+		else toast.info("Keine neuen Termine – alles bereits importiert oder ignoriert.");
+		events = [];
+		loaded = false;
+		active = false; // zurück zur Normalansicht
+	}
+
+	function busyLabel(s: number): string {
+		return ["frei", "vorbehalt", "gebucht", "abwesend", "woanders"][s] ?? String(s);
+	}
+</script>
+
+{#snippet loadButton(fullWidth: boolean)}
+	<Button
+		variant="outline"
+		size="sm"
+		class={fullWidth ? "w-full" : ""}
+		onclick={load}
+		disabled={loading}
+	>
+		{#if loading}<LoaderCircleIcon class="size-4 animate-spin" />{/if}
+		{loading ? "Lädt…" : "Termine laden"}
+	</Button>
+{/snippet}
+
+<Card.Root class="h-full">
+	<Card.Header>
+		<Card.Title class="flex items-center gap-2.5">
+			<span
+				class="bg-primary/10 text-primary flex size-8 shrink-0 items-center justify-center rounded-md"
+			>
+				<CalendarIcon class="size-4" />
+			</span>
+			Outlook-Kalender
+		</Card.Title>
+		<Card.Description>
+			Termine des Monats importieren und auf Aktivitäten verteilen. Ganztägige/abwesend-Termine
+			gehen automatisch in „Abwesenheiten“.
+		</Card.Description>
+		<!-- Im Ruhezustand sitzt der Knopf unten (siehe weiter unten), damit diese
+		     Karte dieselbe Höhe füllt wie die daneben, statt oben zu enden. -->
+		{#if active}
+			<Card.Action>{@render loadButton(false)}</Card.Action>
+		{/if}
+	</Card.Header>
+	{#if !active}
+		<Card.Content class="mt-auto">{@render loadButton(true)}</Card.Content>
+	{/if}
+	{#if loading}
+		<Card.Content class="space-y-2">
+			<div class="text-muted-foreground flex items-center gap-2 text-sm">
+				<LoaderCircleIcon class="size-4 shrink-0 animate-spin" />
+				Termine werden aus Outlook geladen… Das klassische Outlook kann beim ersten Zugriff kurz
+				brauchen.
+			</div>
+			<!-- Indeterminater Ladebalken -->
+			<div class="bg-muted h-1.5 w-full overflow-hidden rounded-full">
+				<div
+					class="bg-primary h-full w-1/3 rounded-full animate-[indeterminate_1.1s_ease-in-out_infinite]"
+				></div>
+			</div>
+		</Card.Content>
+	{:else if active && loaded && events.length === 0}
+		<Card.Content class="space-y-3 py-6 text-center">
+			<p class="text-muted-foreground text-sm">
+				Keine Termine zum Importieren in diesem Monat gefunden.
+			</p>
+			<Button variant="outline" size="sm" onclick={cancel}>Zurück zu Einträgen</Button>
+		</Card.Content>
+	{:else if active && loaded && events.length > 0}
+		{#snippet actions()}
+			<div class="flex justify-end gap-2">
+				<Button variant="outline" size="sm" onclick={cancel} disabled={applying}>Abbrechen</Button>
+				<Button size="sm" onclick={apply} disabled={applying}>
+					{#if applying}<LoaderCircleIcon class="size-4 animate-spin" />{/if}
+					{applying ? "Übernehme…" : "Übernehmen"}
+				</Button>
+			</div>
+		{/snippet}
+		<Card.Content class="p-0">
+			<div class="px-4 pb-3">{@render actions()}</div>
+			<!-- Gedeckelt erst ab sm: schmal scrollt die Seite, und 100vh springt auf dem
+			     Handy mit der Adressleiste. -->
+			<ul class="divide-border divide-y overflow-y-auto border-y text-sm sm:max-h-[calc(100dvh-22rem)]">
+				{#each events as ev, i (ev.start + ev.subject)}
+					{@const hasWorkday = eventHasWorkday(ev)}
+						{@const isAbs = !!mapping[i] && app.isAbsenceId(mapping[i])}
+						{@const alreadyImp = alreadyImported(ev)}
+					<li class="flex flex-wrap items-center gap-3 px-4 py-1.5 {hasWorkday && !alreadyImp ? '' : 'opacity-60'} {isAbs ? 'bg-amber-500/15' : ''}">
+						<span class="text-muted-foreground w-28 shrink-0 font-mono text-xs">
+							{fmtDate(new Date(ev.start).getTime()).slice(5)}
+							{new Date(ev.start).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}
+						</span>
+						<span class="flex min-w-40 flex-1 items-center gap-1.5">
+							{#if isAbs}
+								<PalmtreeIcon class="size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+							{/if}
+							<span class="truncate {isAbs ? 'font-medium text-amber-700 dark:text-amber-300' : ''}">
+								{ev.subject || "(ohne Titel)"}
+							</span>
+						</span>
+						{#if ev.allDay}
+							{@const nDays = allDayNoons(
+								new Date(ev.start).getTime(),
+								new Date(ev.end).getTime()
+							).length}
+							<Badge variant="secondary">
+								{nDays > 1 ? `ganztägig · ${nDays} Tage` : "ganztägig"}
+							</Badge>
+						{/if}
+						<Badge variant="outline">{busyLabel(ev.busyStatus)}</Badge>
+						{#if !hasWorkday}
+							<Badge variant="outline" class="text-muted-foreground">kein Arbeitstag</Badge>
+						{:else if alreadyImp}
+							<Badge variant="secondary" class="gap-1">
+								<CheckIcon class="size-3.5" /> bereits importiert
+							</Badge>
+						{:else}
+							<Select.Root type="single" bind:value={mapping[i]}>
+								<Select.Trigger size="sm" class="w-44">
+									{mapping[i] ? app.activityName(mapping[i]) : "— ignorieren —"}
+								</Select.Trigger>
+								<Select.Content>
+									<Select.Item value="" label="— ignorieren —">— ignorieren —</Select.Item>
+									<!-- Bei Uhrzeit ohne „Abwesenheiten“: die ist tagesgenau. -->
+									{#each optionsFor(ev) as a (a.id)}
+										<Select.Item value={a.id} label={a.name}>{a.name}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						{/if}
+					</li>
+				{/each}
+			</ul>
+			<div class="px-4 pt-3">{@render actions()}</div>
+		</Card.Content>
+	{/if}
+</Card.Root>
