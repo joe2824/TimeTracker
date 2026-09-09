@@ -8,6 +8,7 @@ import {
 	joinTeam,
 	listTeamActivities,
 	listTeamMembers,
+	listTeamReports,
 	listTeams,
 	requireOwnTeam,
 	requireTeamMember,
@@ -15,7 +16,8 @@ import {
 	rotateTeamInvite,
 	setTeamActivities,
 	teamFromInviteCode,
-	teamMemberFromToken
+	teamMemberFromToken,
+	upsertTeamReport
 } from "./teams";
 
 let db: Db;
@@ -87,6 +89,16 @@ describe("joinTeam", () => {
 
 	it("liefert null für einen unbekannten Code", () => {
 		expect(joinTeam(db, "UNBEKANNT-CODE", "Anna Meier")).toBeNull();
+	});
+
+	it("die E-Mail ist freiwillig - fehlt sie, steht null im Roster", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		const invite = rotateTeamInvite(db, team.id);
+		joinTeam(db, invite.code, "Anna Meier", "anna@firma.de");
+		joinTeam(db, invite.code, "Bodo Schmidt");
+		const roster = listTeamMembers(db, team.id).sort((a, b) => a.name.localeCompare(b.name));
+		expect(roster[0]).toMatchObject({ name: "Anna Meier", email: "anna@firma.de" });
+		expect(roster[1]).toMatchObject({ name: "Bodo Schmidt", email: null });
 	});
 
 	it("liefert null für einen widerrufenen Code", () => {
@@ -183,5 +195,56 @@ describe("setTeamActivities / listTeamActivities", () => {
 		setTeamActivities(db, teamB.id, [{ name: "B", isAbsence: false, sortOrder: 0, archived: false }]);
 		expect(listTeamActivities(db, teamA.id).map((a) => a.name)).toEqual(["A"]);
 		expect(listTeamActivities(db, teamB.id).map((a) => a.name)).toEqual(["B"]);
+	});
+});
+
+describe("upsertTeamReport / listTeamReports", () => {
+	function memberOf(teamId: string, name = "Anna Meier") {
+		const invite = rotateTeamInvite(db, teamId);
+		return joinTeam(db, invite.code, name)!;
+	}
+
+	it("zeigt fehlende Mitglieder als null, bis ein Bericht eingeht", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		const member = memberOf(team.id);
+
+		const before = listTeamReports(db, team.id, "2026-07");
+		expect(before).toEqual([
+			{
+				memberId: member.teamMemberId,
+				memberName: "Anna Meier",
+				memberEmail: null,
+				submittedAt: null,
+				payload: null
+			}
+		]);
+
+		upsertTeamReport(db, team.id, member.teamMemberId, "2026-07", { total: 40 });
+		const after = listTeamReports(db, team.id, "2026-07");
+		expect(after[0].submittedAt).not.toBeNull();
+		expect(after[0].payload).toEqual({ total: 40 });
+	});
+
+	it("ein erneuter Versand desselben Monats ERSETZT, statt eine zweite Zeile anzulegen", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		const member = memberOf(team.id);
+
+		upsertTeamReport(db, team.id, member.teamMemberId, "2026-07", { total: 40 });
+		const firstSubmittedAt = listTeamReports(db, team.id, "2026-07")[0].submittedAt;
+
+		upsertTeamReport(db, team.id, member.teamMemberId, "2026-07", { total: 42 });
+		const rows = listTeamReports(db, team.id, "2026-07");
+		expect(rows).toHaveLength(1);
+		expect(rows[0].payload).toEqual({ total: 42 });
+		expect(rows[0].submittedAt).toBeGreaterThanOrEqual(firstSubmittedAt!);
+	});
+
+	it("betrifft nur den abgefragten Monat", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		const member = memberOf(team.id);
+		upsertTeamReport(db, team.id, member.teamMemberId, "2026-06", { total: 10 });
+
+		expect(listTeamReports(db, team.id, "2026-07")[0].submittedAt).toBeNull();
+		expect(listTeamReports(db, team.id, "2026-06")[0].submittedAt).not.toBeNull();
 	});
 });

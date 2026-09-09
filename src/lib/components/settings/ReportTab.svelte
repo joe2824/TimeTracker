@@ -7,13 +7,10 @@
 	import { Label } from "$lib/components/ui/label";
 	import SettingToggle from "$lib/components/shared/SettingToggle.svelte";
 	import SettingsCard from "$lib/components/shared/SettingsCard.svelte";
-	import { capabilities } from "$lib/platform/env";
 	import { loadTeamDevice, clearTeamDevice, type TeamDeviceInfo } from "$lib/store";
 	import { syncTeamActivities } from "$lib/team/activities";
 	import { errorText } from "$lib/log";
 	import { toast } from "svelte-sonner";
-	import PlusIcon from "@lucide/svelte/icons/plus";
-	import Trash2Icon from "@lucide/svelte/icons/trash-2";
 	import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
 	import LogOutIcon from "@lucide/svelte/icons/log-out";
 	import UsersIcon from "@lucide/svelte/icons/users";
@@ -54,7 +51,7 @@
 		"arbzgTrackingHint"
 	] as const;
 
-	const BOSS_KEYS = ["bossMode", "team", "teamSubjectFilter", "teamScanSubfolders"] as const;
+	const BOSS_KEYS = ["bossMode"] as const;
 
 	const { form, save } = createSettingsForm();
 	let savedReportAt = $state(0);
@@ -153,82 +150,20 @@
 	/>
 </SettingsCard>
 
-{#if capabilities.outlook}
-	<SettingsCard
+<SettingsCard
+	title="Chef-Modus"
+	description="Ein eigenes Team anlegen, Mitglieder per Link einladen und sehen, wer seinen Bericht schon gesendet hat."
+	savedAt={savedBossAt}
+>
+	<SettingToggle
+		id="bossmode"
 		title="Chef-Modus"
-		description="Prüft im Outlook-Posteingang, wer seinen Monatsbericht geschickt hat und wer nicht."
-		savedAt={savedBossAt}
-	>
-		<SettingToggle
-			id="bossmode"
-			title="Chef-Modus"
-			description="Blendet den Tab „Team“ ein. Es wird ausschließlich gelesen – keine Mail wird verschoben oder markiert."
-			bind:checked={form.bossMode}
-			onCheckedChange={(v) => {
-				form.bossMode = v;
-				void saveBossMode();
-			}}
-		/>
-
-		{#if form.bossMode}
-			<div class="space-y-2">
-				<Label>Team</Label>
-				<p class="text-muted-foreground text-xs leading-relaxed">
-					Von wem monatlich ein Bericht erwartet wird. Die Zuordnung läuft über die E-Mail-Adresse
-					– fehlt jemand hier, taucht sein Bericht trotzdem auf, nur eben ohne „fehlt“-Abgleich.
-				</p>
-				{#each form.team as m, i (m.id)}
-					<div class="flex gap-2">
-						<Input placeholder="Name" bind:value={form.team[i].name} onchange={saveBossMode} />
-						<Input
-							type="email"
-							placeholder="name@firma.de"
-							bind:value={form.team[i].email}
-							onchange={saveBossMode}
-						/>
-						<Button
-							variant="ghost"
-							size="icon"
-							title="Aus dem Team entfernen"
-							onclick={() => {
-								form.team = form.team.filter((_, j) => j !== i);
-								void saveBossMode();
-							}}
-						>
-							<Trash2Icon class="size-4" />
-						</Button>
-					</div>
-				{/each}
-				<Button
-					variant="outline"
-					size="sm"
-					onclick={() =>
-						(form.team = [...form.team, { id: crypto.randomUUID(), name: "", email: "" }])}
-				>
-					<PlusIcon class="size-4" /> Mitarbeiter
-				</Button>
-			</div>
-
-			<div class="space-y-1.5">
-				<Label for="tsubj">Betreff enthält</Label>
-				<Input id="tsubj" bind:value={form.teamSubjectFilter} onchange={saveBossMode} />
-				<p class="text-muted-foreground text-xs leading-relaxed">
-					Nur Mails mit diesem Text im Betreff werden gelesen. Standard ist der Anfang der
-					Betreff-Vorlage, die TimeTracker selbst verschickt.
-				</p>
-			</div>
-
-			<SettingToggle
-				id="tsubf"
-				title="Unterordner mitlesen"
-				description="Auch Unterordner des Posteingangs durchsuchen – für alle, die Berichte per Regel einsortieren lassen."
-				bind:checked={form.teamScanSubfolders}
-				onCheckedChange={(v) => {
-					form.teamScanSubfolders = v;
-					void saveBossMode();
-				}}
-			/>
-		{/if}
-	</SettingsCard>
-{/if}
+		description="Blendet den Tab „Team“ ein."
+		bind:checked={form.bossMode}
+		onCheckedChange={(v) => {
+			form.bossMode = v;
+			void saveBossMode();
+		}}
+	/>
+</SettingsCard>
 

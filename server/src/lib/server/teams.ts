@@ -3,7 +3,7 @@
 import { error } from "@sveltejs/kit";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import type { Db, DbLike } from "./db/index";
-import { teamActivities, teamInvites, teamMembers, teams } from "./db/schema";
+import { teamActivities, teamInvites, teamMembers, teamReports, teams } from "./db/schema";
 import { generateInviteCode } from "./invites";
 import { hashSecret, newSecret } from "./auth";
 
@@ -89,7 +89,8 @@ export interface TeamMemberAuth {
 export function joinTeam(
 	db: DbLike,
 	code: string,
-	name: string
+	name: string,
+	email?: string
 ): { teamMemberId: string; token: string; teamName: string } | null {
 	const team = teamFromInviteCode(db, code);
 	if (!team) return null;
@@ -100,6 +101,7 @@ export function joinTeam(
 			id,
 			teamId: team.id,
 			name: name.slice(0, 100) || "Ohne Namen",
+			email: email?.trim().slice(0, 200) || null,
 			tokenHash: hashSecret(token),
 			createdAt: Date.now()
 		})
@@ -118,6 +120,7 @@ export function teamMemberFromToken(db: Db, token: string): TeamMemberAuth | nul
 export interface TeamMemberRow {
 	id: string;
 	name: string;
+	email: string | null;
 	createdAt: number;
 	lastSeenAt: number | null;
 	revokedAt: number | null;
@@ -129,6 +132,7 @@ export function listTeamMembers(db: Db, teamId: string): TeamMemberRow[] {
 		.select({
 			id: teamMembers.id,
 			name: teamMembers.name,
+			email: teamMembers.email,
 			createdAt: teamMembers.createdAt,
 			lastSeenAt: teamMembers.lastSeenAt,
 			revokedAt: teamMembers.revokedAt
@@ -208,4 +212,56 @@ export function listTeamActivities(db: Db, teamId: string): TeamActivityRow[] {
 		.where(eq(teamActivities.teamId, teamId))
 		.orderBy(teamActivities.sortOrder)
 		.all();
+}
+
+/**
+ * Einen gesendeten Bericht ablegen - Upsert je (Mitglied, Monat): ein
+ * erneuter Versand desselben Monats ERSETZT den vorigen, statt eine zweite
+ * Zeile anzulegen.
+ */
+export function upsertTeamReport(
+	db: DbLike,
+	teamId: string,
+	memberId: string,
+	month: string,
+	payload: unknown
+): void {
+	const submittedAt = Date.now();
+	db.insert(teamReports)
+		.values({ teamId, memberId, month, submittedAt, payload: JSON.stringify(payload) })
+		.onConflictDoUpdate({
+			target: [teamReports.memberId, teamReports.month],
+			set: { submittedAt, payload: JSON.stringify(payload) }
+		})
+		.run();
+}
+
+export interface TeamReportStatus {
+	memberId: string;
+	memberName: string;
+	memberEmail: string | null;
+	/** null = für diesen Monat noch nichts eingegangen. */
+	submittedAt: number | null;
+	payload: unknown | null;
+}
+
+/** Für einen Monat: jedes Mitglied, ob und wann es gesendet hat - samt Inhalt. */
+export function listTeamReports(db: Db, teamId: string, month: string): TeamReportStatus[] {
+	const members = listTeamMembers(db, teamId);
+	const rows = db
+		.select()
+		.from(teamReports)
+		.where(and(eq(teamReports.teamId, teamId), eq(teamReports.month, month)))
+		.all();
+	const byMember = new Map(rows.map((r) => [r.memberId, r]));
+	return members.map((m) => {
+		const row = byMember.get(m.id);
+		return {
+			memberId: m.id,
+			memberName: m.name,
+			memberEmail: m.email,
+			submittedAt: row?.submittedAt ?? null,
+			payload: row ? JSON.parse(row.payload) : null
+		};
+	});
 }

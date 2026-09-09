@@ -54,11 +54,12 @@ export function joinTeam(
 	serverUrl: string,
 	code: string,
 	name: string,
+	email?: string,
 	fetchFn: FetchFn = platformFetch
 ): Promise<TeamJoinResult> {
 	return call(fetchFn, serverUrl, "/api/team/join", {
 		method: "POST",
-		body: JSON.stringify({ code, name })
+		body: JSON.stringify({ code, name, email })
 	});
 }
 
@@ -79,4 +80,19 @@ export function fetchTeamActivities(
 	fetchFn: FetchFn = platformFetch
 ): Promise<{ activities: RemoteTeamActivity[] }> {
 	return call(fetchFn, serverUrl, "/api/team/activities", { headers: { "x-team-token": token } });
+}
+
+/** Den eigenen Monatsbericht ablegen - der Chef bekommt genau das zu sehen. */
+export function uploadTeamReport(
+	serverUrl: string,
+	token: string,
+	month: string,
+	report: unknown,
+	fetchFn: FetchFn = platformFetch
+): Promise<{ ok: boolean }> {
+	return call(fetchFn, serverUrl, "/api/team/reports", {
+		method: "POST",
+		headers: { "x-team-token": token },
+		body: JSON.stringify({ month, report })
+	});
 }

@@ -114,9 +114,21 @@ export interface TeamInvite {
 export interface TeamMemberInfo {
 	id: string;
 	name: string;
+	/** Freiwillig - nur für die Erinnerung an Fehlende. */
+	email: string | null;
 	createdAt: number;
 	lastSeenAt: number | null;
 	revokedAt: number | null;
+}
+
+export interface TeamReportStatus {
+	memberId: string;
+	memberName: string;
+	memberEmail: string | null;
+	/** null = für den abgefragten Monat noch nichts eingegangen. */
+	submittedAt: number | null;
+	/** Die Form von MonthReport (report/report.ts) - dem Transport nach undurchsichtig. */
+	payload: unknown | null;
 }
 
 export interface TeamActivity {
@@ -534,6 +546,12 @@ export class Api {
 			method: "PUT",
 			body: JSON.stringify({ activities })
 		});
+	}
+
+	listTeamReports(teamId: string, month: string): Promise<{ reports: TeamReportStatus[] }> {
+		return this.#call(
+			`/api/team/${encodeURIComponent(teamId)}/reports?month=${encodeURIComponent(month)}`
+		);
 	}
 
 	backups(): Promise<{ backups: BackupInfo[] }> {

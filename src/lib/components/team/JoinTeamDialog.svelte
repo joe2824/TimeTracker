@@ -13,6 +13,7 @@
 	import { toast } from "svelte-sonner";
 
 	let name = $state("");
+	let email = $state("");
 	let busy = $state(false);
 	let preview = $state<{ teamName: string } | "loading" | "error">("loading");
 
@@ -30,6 +31,7 @@
 	function dismiss() {
 		teamJoin.pendingLink = null;
 		name = "";
+		email = "";
 	}
 
 	async function join() {
@@ -37,7 +39,7 @@
 		if (!link) return;
 		busy = true;
 		try {
-			const info = await completeTeamJoin(link.serverUrl, link.code, name.trim());
+			const info = await completeTeamJoin(link.serverUrl, link.code, name.trim(), email.trim());
 			dismiss();
 			toast.success(`Mit „${info.teamName}" verbunden.`);
 		} catch (e) {
@@ -85,6 +87,20 @@
 					disabled={busy}
 					onkeydown={(e) => e.key === "Enter" && name.trim() && join()}
 				/>
+			</div>
+			<div class="space-y-2">
+				<Label for="team-join-email">E-Mail (optional)</Label>
+				<Input
+					id="team-join-email"
+					type="email"
+					bind:value={email}
+					placeholder="anna@firma.de"
+					disabled={busy}
+					onkeydown={(e) => e.key === "Enter" && name.trim() && join()}
+				/>
+				<p class="text-muted-foreground text-xs">
+					Nur damit der Chef dich erinnern kann, falls ein Bericht fehlt.
+				</p>
 			</div>
 		{/if}
 
