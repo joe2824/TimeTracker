@@ -6,11 +6,14 @@ import {
 	activeTeamInvite,
 	createTeam,
 	joinTeam,
+	listTeamActivities,
 	listTeamMembers,
 	listTeams,
 	requireOwnTeam,
+	requireTeamMember,
 	revokeTeamMember,
 	rotateTeamInvite,
+	setTeamActivities,
 	teamFromInviteCode,
 	teamMemberFromToken
 } from "./teams";
@@ -134,5 +137,51 @@ describe("revokeTeamMember", () => {
 		expect(revokeTeamMember(db, teamB.id, joined.teamMemberId)).toBe(false);
 		expect(revokeTeamMember(db, teamA.id, joined.teamMemberId)).toBe(true);
 		expect(revokeTeamMember(db, teamA.id, joined.teamMemberId)).toBe(false);
+	});
+});
+
+describe("requireTeamMember", () => {
+	it("wirft ohne Team-Zugang, gibt sonst die teamId zurück", () => {
+		expect(() => requireTeamMember({ teamMemberId: null, teamId: null })).toThrow();
+		expect(() => requireTeamMember({ teamMemberId: "m1", teamId: null })).toThrow();
+		expect(requireTeamMember({ teamMemberId: "m1", teamId: "t1" })).toBe("t1");
+	});
+});
+
+describe("setTeamActivities / listTeamActivities", () => {
+	it("ersetzt die Liste vollständig, sortiert wie übergeben", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		setTeamActivities(db, team.id, [
+			{ name: "Projekt A", isAbsence: false, sortOrder: 1, archived: false },
+			{ name: "Projekt B", isAbsence: false, sortOrder: 0, archived: false }
+		]);
+		expect(listTeamActivities(db, team.id).map((a) => a.name)).toEqual(["Projekt B", "Projekt A"]);
+
+		// Ein zweiter Speichervorgang ERSETZT, statt anzuhängen.
+		setTeamActivities(db, team.id, [{ name: "Nur noch die", isAbsence: false, sortOrder: 0, archived: false }]);
+		expect(listTeamActivities(db, team.id).map((a) => a.name)).toEqual(["Nur noch die"]);
+	});
+
+	it("behält eine übergebene Id, erfindet sonst eine neue", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		const [row] = setTeamActivities(db, team.id, [
+			{ id: "eigene-id", name: "Projekt A", isAbsence: false, sortOrder: 0, archived: false }
+		]);
+		expect(row.id).toBe("eigene-id");
+
+		const [fresh] = setTeamActivities(db, team.id, [
+			{ name: "Projekt B", isAbsence: false, sortOrder: 0, archived: false }
+		]);
+		expect(fresh.id).toBeTruthy();
+		expect(fresh.id).not.toBe("eigene-id");
+	});
+
+	it("betrifft nur das eigene Team", () => {
+		const teamA = createTeam(db, ANNA, "Vertrieb");
+		const teamB = createTeam(db, ANNA, "Support");
+		setTeamActivities(db, teamA.id, [{ name: "A", isAbsence: false, sortOrder: 0, archived: false }]);
+		setTeamActivities(db, teamB.id, [{ name: "B", isAbsence: false, sortOrder: 0, archived: false }]);
+		expect(listTeamActivities(db, teamA.id).map((a) => a.name)).toEqual(["A"]);
+		expect(listTeamActivities(db, teamB.id).map((a) => a.name)).toEqual(["B"]);
 	});
 });

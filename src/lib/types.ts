@@ -23,6 +23,11 @@ export interface Activity extends SyncMeta {
 	shortcut?: string;
 	/** Farbe (Hex, z.B. "#22c55e") für Punkte in Liste/Bericht/Heatmap */
 	color?: string;
+	/**
+	 * Vom Team vorgegeben, nicht lokal - id trägt das Präfix "team:" (siehe
+	 * team/activities.ts). Bearbeiten/Löschen bleibt dem Chef vorbehalten.
+	 */
+	teamOwned?: boolean;
 }
 
 /**

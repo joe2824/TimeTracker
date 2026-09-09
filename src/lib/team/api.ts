@@ -61,3 +61,22 @@ export function joinTeam(
 		body: JSON.stringify({ code, name })
 	});
 }
+
+export interface RemoteTeamActivity {
+	id: string;
+	name: string;
+	isAbsence: boolean;
+	sortOrder: number;
+	color: string | null;
+	archived: boolean;
+	updatedAt: number;
+}
+
+/** Die gemeinsame Aktivitätenliste - auf Zuruf, kein Push. */
+export function fetchTeamActivities(
+	serverUrl: string,
+	token: string,
+	fetchFn: FetchFn = platformFetch
+): Promise<{ activities: RemoteTeamActivity[] }> {
+	return call(fetchFn, serverUrl, "/api/team/activities", { headers: { "x-team-token": token } });
+}

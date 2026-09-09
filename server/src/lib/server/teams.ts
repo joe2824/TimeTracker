@@ -3,7 +3,7 @@
 import { error } from "@sveltejs/kit";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import type { Db, DbLike } from "./db/index";
-import { teamInvites, teamMembers, teams } from "./db/schema";
+import { teamActivities, teamInvites, teamMembers, teams } from "./db/schema";
 import { generateInviteCode } from "./invites";
 import { hashSecret, newSecret } from "./auth";
 
@@ -147,4 +147,65 @@ export function revokeTeamMember(db: Db, teamId: string, memberId: string): bool
 		.where(and(eq(teamMembers.id, memberId), eq(teamMembers.teamId, teamId), isNull(teamMembers.revokedAt)))
 		.run();
 	return r.changes > 0;
+}
+
+/** Team-Mitglied sein - wirft 401, wenn der `x-team-token`-Kopf fehlt oder ungültig war. */
+export function requireTeamMember(locals: { teamMemberId: string | null; teamId: string | null }): string {
+	if (!locals.teamMemberId || !locals.teamId) error(401, "Kein Team-Zugang");
+	return locals.teamId;
+}
+
+export interface TeamActivityRow {
+	id: string;
+	teamId: string;
+	name: string;
+	isAbsence: boolean;
+	sortOrder: number;
+	color: string | null;
+	archived: boolean;
+	updatedAt: number;
+}
+
+export interface TeamActivityInput {
+	id?: string;
+	name: string;
+	isAbsence: boolean;
+	sortOrder: number;
+	color?: string | null;
+	archived: boolean;
+}
+
+/**
+ * Die gemeinsame Liste ersetzen - voller Ersatz, kein Zusammenführen.
+ *
+ * Es gibt immer nur EINEN Schreiber (den Chef) - anders als bei den
+ * Personendaten braucht es hier kein `updatedAt`/`rev`-Konfliktverfahren.
+ */
+export function setTeamActivities(db: Db, teamId: string, items: TeamActivityInput[]): TeamActivityRow[] {
+	const now = Date.now();
+	const rows: TeamActivityRow[] = items.map((it, i) => ({
+		id: it.id ?? crypto.randomUUID(),
+		teamId,
+		name: it.name.slice(0, 100),
+		isAbsence: it.isAbsence,
+		sortOrder: it.sortOrder ?? i,
+		color: it.color ?? null,
+		archived: it.archived,
+		updatedAt: now
+	}));
+	db.transaction((tx) => {
+		tx.delete(teamActivities).where(eq(teamActivities.teamId, teamId)).run();
+		for (const row of rows) tx.insert(teamActivities).values(row).run();
+	});
+	return rows;
+}
+
+/** Die gemeinsame Liste, sortiert wie der Chef sie angeordnet hat. */
+export function listTeamActivities(db: Db, teamId: string): TeamActivityRow[] {
+	return db
+		.select()
+		.from(teamActivities)
+		.where(eq(teamActivities.teamId, teamId))
+		.orderBy(teamActivities.sortOrder)
+		.all();
 }

@@ -119,6 +119,26 @@ export interface TeamMemberInfo {
 	revokedAt: number | null;
 }
 
+export interface TeamActivity {
+	id: string;
+	name: string;
+	isAbsence: boolean;
+	sortOrder: number;
+	color: string | null;
+	archived: boolean;
+	updatedAt: number;
+}
+
+export interface TeamActivityInput {
+	/** Fehlt sie, vergibt der Server eine neue - so entsteht eine Zeile. */
+	id?: string;
+	name: string;
+	isAbsence: boolean;
+	sortOrder: number;
+	color?: string | null;
+	archived: boolean;
+}
+
 export interface AccountInfo {
 	userId: string;
 	displayName: string;
@@ -501,6 +521,18 @@ export class Api {
 		return this.#call(`/api/team/${encodeURIComponent(teamId)}/members`, {
 			method: "DELETE",
 			body: JSON.stringify({ memberId })
+		});
+	}
+
+	listTeamActivities(teamId: string): Promise<{ activities: TeamActivity[] }> {
+		return this.#call(`/api/team/${encodeURIComponent(teamId)}/activities`);
+	}
+
+	/** Voller Ersatz - der Chef ist die einzige Feder, kein Zusammenführen nötig. */
+	setTeamActivities(teamId: string, activities: TeamActivityInput[]): Promise<{ activities: TeamActivity[] }> {
+		return this.#call(`/api/team/${encodeURIComponent(teamId)}/activities`, {
+			method: "PUT",
+			body: JSON.stringify({ activities })
 		});
 	}
 

@@ -1868,4 +1868,39 @@ describe("Team", () => {
 		}
 		expect(throttled).toBe(true);
 	});
+
+	it("der Chef setzt die gemeinsame Liste, ein Mitglied liest sie ohne Konto", async () => {
+		const team = await createTeamFor(annaToken);
+		const invite = await inviteFor(annaToken, team.id);
+		const join = await apiFrom(null, "/api/team/join", {
+			method: "POST",
+			body: JSON.stringify({ code: invite.code, name: "Anna Meier" })
+		});
+		const { token } = (await join.json()) as { token: string };
+
+		const put = await apiFrom(annaToken, `/api/team/${team.id}/activities`, {
+			method: "PUT",
+			body: JSON.stringify({
+				activities: [{ name: "Projekt A", isAbsence: false, sortOrder: 0, archived: false }]
+			})
+		});
+		expect(put.status).toBe(200);
+
+		const asMember = await apiAsMember(token, "/api/team/activities");
+		expect(asMember.status).toBe(200);
+		expect((await asMember.json()).activities.map((a: { name: string }) => a.name)).toEqual(["Projekt A"]);
+
+		// Ohne (gültiges) Team-Token gibt es nichts zu sehen.
+		expect((await apiFrom(null, "/api/team/activities")).status).toBe(401);
+		expect((await apiAsMember("falsches-token", "/api/team/activities")).status).toBe(401);
+	});
+
+	it("nur der Besitzer darf die Liste eines fremden Teams aendern", async () => {
+		const team = await createTeamFor(annaToken);
+		const res = await apiFrom(bodoToken, `/api/team/${team.id}/activities`, {
+			method: "PUT",
+			body: JSON.stringify({ activities: [] })
+		});
+		expect(res.status).toBe(404);
+	});
 });

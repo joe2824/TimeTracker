@@ -259,6 +259,29 @@ export const teamMembers = sqliteTable(
 	]
 );
 
+/**
+ * Die gemeinsame Aktivitätenliste eines Teams - der Chef ist die einzige
+ * Feder. Voller Ersatz bei jedem Speichern (siehe `setTeamActivities`), kein
+ * Zusammenführen nötig: "kein Echtzeit-Abgleich" heisst, es gibt immer nur
+ * einen Schreiber.
+ */
+export const teamActivities = sqliteTable(
+	"team_activities",
+	{
+		id: text("id").primaryKey(),
+		teamId: text("team_id")
+			.notNull()
+			.references(() => teams.id, { onDelete: "cascade" }),
+		name: text("name").notNull(),
+		isAbsence: integer("is_absence", { mode: "boolean" }).notNull().default(false),
+		sortOrder: integer("sort_order").notNull(),
+		color: text("color"),
+		archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+		updatedAt: integer("updated_at").notNull()
+	},
+	(t) => [index("team_activities_team").on(t.teamId)]
+);
+
 /** Der Zeitpunkt "jetzt" in der Einheit, die alle Tabellen benutzen. */
 export const now = () => Date.now();
 
