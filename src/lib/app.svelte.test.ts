@@ -916,3 +916,61 @@ describe("Reparatur laeuft nicht zweimal ueber dieselbe Liste", () => {
 		expect(merged?.updatedAt).toBeUndefined();
 	});
 });
+
+describe("mergeActivityInto", () => {
+	it("haengt alle Eintraege der Quelle aufs Ziel um und entfernt die Quelle", async () => {
+		reset({ "2026-07": [entry("e1", P1, at(16, 9), at(16, 12)), entry("e2", P1, at(17, 9), at(17, 12))] });
+
+		const moved = await app.mergeActivityInto(P1, P2);
+
+		expect(moved).toBe(2);
+		expect(app.activities.find((a) => a.id === P1)).toBeUndefined();
+		expect(app.activities.find((a) => a.id === P2)).toBeDefined();
+		const es = onDisk("2026-07");
+		expect(es).toHaveLength(2);
+		expect(es.every((e) => e.activityId === P2)).toBe(true);
+	});
+
+	it("haengt einen laufenden Timer mit um", async () => {
+		reset();
+		const running = entry("r", P1, at(16, 9), null);
+		app.entriesByMonth["2026-07"] = [running];
+		files.set(monthFile("2026-07"), JSON.stringify([running]));
+		app.running = running;
+
+		await app.mergeActivityInto(P1, P2);
+
+		expect(app.running?.activityId).toBe(P2);
+	});
+
+	it("tut nichts, wenn Quelle oder Ziel eine eingebaute Zeile ist", async () => {
+		reset();
+		expect(await app.mergeActivityInto(ABS, P1)).toBe(0);
+		expect(await app.mergeActivityInto(P1, ABS)).toBe(0);
+		expect(app.activities).toHaveLength(3);
+	});
+
+	it("tut nichts bei gleicher Quelle und Ziel oder unbekannter Id", async () => {
+		reset();
+		expect(await app.mergeActivityInto(P1, P1)).toBe(0);
+		expect(await app.mergeActivityInto("unbekannt", P1)).toBe(0);
+		expect(await app.mergeActivityInto(P1, "unbekannt")).toBe(0);
+		expect(app.activities).toHaveLength(3);
+	});
+
+	it("verliert keine bereits vom Team vorgegebene Zeile beim Zusammenfuehren hinein", async () => {
+		// Der eigentliche Anlass: eine eigene Aktivität mit derselben Aufgabe wie
+		// eine neu angekommene Team-Aktivität soll ohne Datenverlust darin aufgehen.
+		reset({ "2026-07": [entry("e1", P1, at(16, 9), at(16, 12))] });
+		app.activities = [
+			...app.activities,
+			{ id: "team:x", name: "Vertrieb", sortOrder: 3, archived: false, isAbsence: false, teamOwned: true }
+		];
+
+		const moved = await app.mergeActivityInto(P1, "team:x");
+
+		expect(moved).toBe(1);
+		expect(onDisk("2026-07")[0].activityId).toBe("team:x");
+		expect(app.activities.find((a) => a.id === "team:x")?.teamOwned).toBe(true);
+	});
+});

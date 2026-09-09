@@ -33,6 +33,7 @@
 	import Trash2Icon from "@lucide/svelte/icons/trash-2";
 	import PlusIcon from "@lucide/svelte/icons/plus";
 	import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
+	import XIcon from "@lucide/svelte/icons/x";
 
 	// ---------- Team verwalten (Link, Aktivitäten, Roster) ----------
 
@@ -200,6 +201,38 @@
 
 	function toggleExpanded(memberId: string) {
 		expanded = new Set(expanded.has(memberId) ? [...expanded].filter((id) => id !== memberId) : [...expanded, memberId]);
+	}
+
+	let statusBusyId = $state<string | null>(null);
+
+	/** Von Hand als gesendet markieren - für Berichte, die nicht über die App kamen. */
+	async function markSent(memberId: string) {
+		if (!selectedTeamId || statusBusyId) return;
+		statusBusyId = memberId;
+		try {
+			await account.markTeamReportSent(selectedTeamId, memberId, month);
+			await loadReports(selectedTeamId, month);
+			toast.success("Als gesendet markiert.");
+		} catch (e) {
+			toast.error(`Markieren fehlgeschlagen: ${errorText(e)}`);
+		} finally {
+			statusBusyId = null;
+		}
+	}
+
+	/** Eine Markierung zurücknehmen - auch einen echten Upload, z.B. bei einem Versehen. */
+	async function clearSent(memberId: string) {
+		if (!selectedTeamId || statusBusyId) return;
+		statusBusyId = memberId;
+		try {
+			await account.clearTeamReportStatus(selectedTeamId, memberId, month);
+			await loadReports(selectedTeamId, month);
+			toast.success("Markierung zurückgenommen.");
+		} catch (e) {
+			toast.error(`Zurücknehmen fehlgeschlagen: ${errorText(e)}`);
+		} finally {
+			statusBusyId = null;
+		}
 	}
 
 	/** Grobe Sicht auf payload - dem Transport nach unbekannt, in Wahrheit MonthReport (report/report.ts). */
@@ -432,6 +465,7 @@
 									<Table.Head class="min-w-48">Mitarbeiter</Table.Head>
 									<Table.Head>Status</Table.Head>
 									<Table.Head class="text-right">Eingegangen</Table.Head>
+									<Table.Head class="w-10"></Table.Head>
 								</Table.Row>
 							</Table.Header>
 							<Table.Body>
@@ -446,20 +480,41 @@
 											</div>
 										</Table.Cell>
 										<Table.Cell>
-											<Badge
-												variant="outline"
-												class="border-green-600/40 bg-green-500/10 whitespace-nowrap text-green-700 dark:text-green-400"
-											>
-												<CheckIcon /> abgegeben
-											</Badge>
+											<div class="flex flex-wrap items-center gap-1.5">
+												<Badge
+													variant="outline"
+													class="border-green-600/40 bg-green-500/10 whitespace-nowrap text-green-700 dark:text-green-400"
+												>
+													<CheckIcon /> abgegeben
+												</Badge>
+												{#if r.payload === null}
+													<Badge variant="secondary" title="Vom Chef von Hand markiert, kein Inhalt">
+														von Hand
+													</Badge>
+												{/if}
+											</div>
 										</Table.Cell>
 										<Table.Cell class="text-right text-sm whitespace-nowrap">
 											{fmtDateHuman(r.submittedAt!)}, {fmtClock(r.submittedAt!)}
 										</Table.Cell>
+										<Table.Cell>
+											<Button
+												variant="ghost"
+												size="icon-sm"
+												title="Markierung zurücknehmen"
+												disabled={statusBusyId === r.memberId}
+												onclick={(e) => {
+													e.stopPropagation();
+													clearSent(r.memberId);
+												}}
+											>
+												<XIcon class="size-4" />
+											</Button>
+										</Table.Cell>
 									</Table.Row>
 									{#if expanded.has(r.memberId)}
 										<Table.Row>
-											<Table.Cell colspan={3} class="bg-muted/30">
+											<Table.Cell colspan={4} class="bg-muted/30">
 												{#if reportRows(r.payload).length === 0}
 													<p class="text-muted-foreground text-xs">Kein Inhalt verfügbar.</p>
 												{:else}
@@ -488,6 +543,17 @@
 											</Badge>
 										</Table.Cell>
 										<Table.Cell class="text-muted-foreground text-right">—</Table.Cell>
+										<Table.Cell>
+											<Button
+												variant="ghost"
+												size="icon-sm"
+												title="Von Hand als gesendet markieren"
+												disabled={statusBusyId === r.memberId}
+												onclick={() => markSent(r.memberId)}
+											>
+												<CheckIcon class="size-4" />
+											</Button>
+										</Table.Cell>
 									</Table.Row>
 								{/each}
 							</Table.Body>

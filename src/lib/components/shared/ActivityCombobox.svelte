@@ -4,6 +4,7 @@
 	import { app } from "$lib/app.svelte";
 	import { Input } from "$lib/components/ui/input";
 	import type { Activity } from "$lib/types";
+	import UsersIcon from "@lucide/svelte/icons/users";
 
 	let {
 		value = $bindable(""),
@@ -159,7 +160,10 @@
 							}}
 							onmouseenter={() => (index = i)}
 						>
-							{a.name}
+							<span class="flex-1">{a.name}</span>
+							{#if a.teamOwned}
+								<UsersIcon class="size-3.5 shrink-0 opacity-60" title="Team-Aktivität" />
+							{/if}
 						</button>
 					</li>
 				{/each}

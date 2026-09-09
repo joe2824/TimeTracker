@@ -15,6 +15,7 @@ import {
 	revokeTeamMember,
 	rotateTeamInvite,
 	setTeamActivities,
+	setTeamReportStatus,
 	teamFromInviteCode,
 	teamMemberFromToken,
 	upsertTeamReport
@@ -246,5 +247,42 @@ describe("upsertTeamReport / listTeamReports", () => {
 
 		expect(listTeamReports(db, team.id, "2026-07")[0].submittedAt).toBeNull();
 		expect(listTeamReports(db, team.id, "2026-06")[0].submittedAt).not.toBeNull();
+	});
+});
+
+describe("setTeamReportStatus", () => {
+	function memberOf(teamId: string, name = "Anna Meier") {
+		const invite = rotateTeamInvite(db, teamId);
+		return joinTeam(db, invite.code, name)!;
+	}
+
+	it("markiert von Hand als gesendet - ohne Inhalt", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		const member = memberOf(team.id);
+
+		expect(setTeamReportStatus(db, team.id, member.teamMemberId, "2026-07", true)).toBe(true);
+
+		const [status] = listTeamReports(db, team.id, "2026-07");
+		expect(status.submittedAt).not.toBeNull();
+		expect(status.payload).toBeNull();
+	});
+
+	it("nimmt eine Markierung zurueck - auch einen echten Upload", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		const member = memberOf(team.id);
+		upsertTeamReport(db, team.id, member.teamMemberId, "2026-07", { total: 40 });
+
+		expect(setTeamReportStatus(db, team.id, member.teamMemberId, "2026-07", false)).toBe(true);
+
+		expect(listTeamReports(db, team.id, "2026-07")[0].submittedAt).toBeNull();
+	});
+
+	it("liefert false fuer ein Mitglied, das nicht zu diesem Team gehoert", () => {
+		const teamA = createTeam(db, ANNA, "Vertrieb");
+		const teamB = createTeam(db, ANNA, "Support");
+		const memberOfA = memberOf(teamA.id);
+
+		expect(setTeamReportStatus(db, teamB.id, memberOfA.teamMemberId, "2026-07", true)).toBe(false);
+		expect(listTeamReports(db, teamB.id, "2026-07")).toEqual([]);
 	});
 });
