@@ -10,7 +10,14 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { openDb } from "./index";
+import { openDb, MIGRATIONS } from "./index";
+
+/**
+ * Wo der Reparatur-Schritt im echten Verlauf steht - nicht geraten (z.B. "der
+ * letzte Schritt"), sonst bricht das bei jedem künftigen Anhängen erneut, wie
+ * es hier beim Hinzufügen der Team-Migrationen geschehen ist.
+ */
+const PAIRINGS_FIX_INDEX = MIGRATIONS.findIndex((m) => m.includes("CREATE TABLE pairings_new"));
 
 let dir: string;
 let file: string;
@@ -40,7 +47,9 @@ function agedDatabase(): void {
 	raw.exec("DROP TABLE pairings");
 	raw.exec(OLD_PAIRINGS);
 	raw.exec("CREATE INDEX IF NOT EXISTS pairings_user ON pairings(user_id)");
-	raw.prepare("UPDATE schema_version SET version = version - 1").run();
+	// Genau auf den Stand VOR dem Reparatur-Schritt zurück - nicht "einen
+	// Schritt", das wäre nur richtig, solange er der letzte im Verlauf ist.
+	raw.prepare("UPDATE schema_version SET version = ?").run(PAIRINGS_FIX_INDEX);
 	raw.close();
 }
 

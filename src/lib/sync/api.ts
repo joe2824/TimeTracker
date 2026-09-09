@@ -96,6 +96,29 @@ export interface Invite {
 	revokedAt: number | null;
 }
 
+export interface TeamInfo {
+	id: string;
+	ownerUserId: string;
+	name: string;
+	createdAt: number;
+}
+
+export interface TeamInvite {
+	code: string;
+	teamId: string;
+	createdAt: number;
+	expiresAt: number | null;
+	revokedAt: number | null;
+}
+
+export interface TeamMemberInfo {
+	id: string;
+	name: string;
+	createdAt: number;
+	lastSeenAt: number | null;
+	revokedAt: number | null;
+}
+
 export interface AccountInfo {
 	userId: string;
 	displayName: string;
@@ -444,6 +467,40 @@ export class Api {
 		return this.#call("/api/admin/invites", {
 			method: "DELETE",
 			body: JSON.stringify({ code })
+		});
+	}
+
+	// ---------- Team-Modus ----------
+	//
+	// Der Chef ist hier einfach dieses Konto - eigene, klartext-relationale
+	// Tabellen auf dem Server, ausserhalb des Ende-zu-Ende-verschlüsselten
+	// Sync-Systems. Siehe server/src/lib/server/teams.ts.
+
+	listTeams(): Promise<{ teams: TeamInfo[] }> {
+		return this.#call("/api/team");
+	}
+
+	createTeam(name: string): Promise<TeamInfo> {
+		return this.#call("/api/team", { method: "POST", body: JSON.stringify({ name }) });
+	}
+
+	getTeamInvite(teamId: string): Promise<{ invite: TeamInvite | null }> {
+		return this.#call(`/api/team/${encodeURIComponent(teamId)}/invite`);
+	}
+
+	/** Erzeugt einen neuen Link und widerruft dabei den bisherigen. */
+	rotateTeamInvite(teamId: string): Promise<TeamInvite> {
+		return this.#call(`/api/team/${encodeURIComponent(teamId)}/invite`, { method: "POST" });
+	}
+
+	listTeamMembers(teamId: string): Promise<{ members: TeamMemberInfo[] }> {
+		return this.#call(`/api/team/${encodeURIComponent(teamId)}/members`);
+	}
+
+	revokeTeamMember(teamId: string, memberId: string): Promise<{ ok: boolean }> {
+		return this.#call(`/api/team/${encodeURIComponent(teamId)}/members`, {
+			method: "DELETE",
+			body: JSON.stringify({ memberId })
 		});
 	}
 

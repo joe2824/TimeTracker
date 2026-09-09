@@ -167,7 +167,38 @@ const MIGRATIONS: string[] = [
 		SELECT code, user_id, public_key, label, claim_hash, wrapped_key, device_token, created_at, expires_at FROM pairings;
 	DROP TABLE pairings;
 	ALTER TABLE pairings_new RENAME TO pairings;
-	CREATE INDEX IF NOT EXISTS pairings_user ON pairings(user_id);`
+	CREATE INDEX IF NOT EXISTS pairings_user ON pairings(user_id);`,
+
+	// Team-Modus: eigene, bewusst KLARTEXT-relationale Tabellen, ausserhalb von
+	// `records` - der Chef soll Team-Aktivitaeten und Berichts-Zusammenfassungen
+	// serverseitig sehen koennen, anders als bei den Ende-zu-Ende-verschluesselten
+	// Sync-Daten. Mitglieder brauchen dafuer kein Konto: eigener Token-Raum.
+	`CREATE TABLE IF NOT EXISTS teams (
+		id TEXT PRIMARY KEY,
+		owner_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		name TEXT NOT NULL,
+		created_at INTEGER NOT NULL
+	)`,
+	`CREATE INDEX IF NOT EXISTS teams_owner ON teams(owner_user_id)`,
+	`CREATE TABLE IF NOT EXISTS team_invites (
+		code TEXT PRIMARY KEY,
+		team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+		created_at INTEGER NOT NULL,
+		expires_at INTEGER,
+		revoked_at INTEGER
+	)`,
+	`CREATE INDEX IF NOT EXISTS team_invites_team ON team_invites(team_id)`,
+	`CREATE TABLE IF NOT EXISTS team_members (
+		id TEXT PRIMARY KEY,
+		team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+		name TEXT NOT NULL,
+		token_hash TEXT NOT NULL,
+		created_at INTEGER NOT NULL,
+		last_seen_at INTEGER,
+		revoked_at INTEGER
+	)`,
+	`CREATE INDEX IF NOT EXISTS team_members_team ON team_members(team_id)`,
+	`CREATE UNIQUE INDEX IF NOT EXISTS team_members_token ON team_members(token_hash)`
 ];
 
 
@@ -222,4 +253,7 @@ function migrate(raw: Database.Database): void {
 	})();
 }
 
-export { schema };
+// MIGRATIONS nur für migrate.test.ts: der Test muss den Schritt, den er prüft,
+// im echten Verlauf wiederfinden, statt seine Position zu erraten - sonst
+// bricht er bei jedem künftigen Anhängen erneut.
+export { schema, MIGRATIONS };

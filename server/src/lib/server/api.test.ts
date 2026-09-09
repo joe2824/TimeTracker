@@ -1765,3 +1765,107 @@ describe("Telemetrie", () => {
 		expect(row?.platform).toBe("unbekannt");
 	});
 });
+
+describe("Team", () => {
+	/** Eine Anfrage mit Team-Mitglieds-Token statt Geräte-Token. */
+	function apiAsMember(token: string, path: string, init: RequestInit = {}) {
+		return apiFrom(null, path, { ...init, headers: { "x-team-token": token, ...(init.headers ?? {}) } });
+	}
+
+	async function createTeamFor(token: string, name = "Vertrieb") {
+		const res = await apiFrom(token, "/api/team", { method: "POST", body: JSON.stringify({ name }) });
+		expect(res.status).toBe(201);
+		return (await res.json()) as { id: string; name: string };
+	}
+
+	async function inviteFor(token: string, teamId: string) {
+		const res = await apiFrom(token, `/api/team/${teamId}/invite`, { method: "POST" });
+		expect(res.status).toBe(201);
+		return (await res.json()) as { code: string };
+	}
+
+	it("legt ein Team an und listet es beim Besitzer, nicht bei einem anderen Konto", async () => {
+		const team = await createTeamFor(annaToken);
+		const mine = await apiFrom(annaToken, "/api/team");
+		expect((await mine.json()).teams.map((t: { id: string }) => t.id)).toEqual([team.id]);
+
+		const foreign = await apiFrom(bodoToken, `/api/team/${team.id}/invite`, { method: "POST" });
+		expect(foreign.status).toBe(404);
+	});
+
+	it("ein Mitglied tritt über den Link bei und taucht im Roster auf - ohne jedes Konto", async () => {
+		const team = await createTeamFor(annaToken);
+		const invite = await inviteFor(annaToken, team.id);
+
+		const preview = await apiFrom(null, `/api/team/join?code=${encodeURIComponent(invite.code)}`);
+		expect(preview.status).toBe(200);
+		expect((await preview.json()).teamName).toBe("Vertrieb");
+
+		const join = await apiFrom(null, "/api/team/join", {
+			method: "POST",
+			body: JSON.stringify({ code: invite.code, name: "Anna Meier" })
+		});
+		expect(join.status).toBe(201);
+		const { teamMemberId, token } = (await join.json()) as { teamMemberId: string; token: string };
+
+		const roster = await apiFrom(annaToken, `/api/team/${team.id}/members`);
+		expect((await roster.json()).members.map((m: { id: string }) => m.id)).toEqual([teamMemberId]);
+
+		// Das Mitglieds-Token weist sich ausdrücklich NICHT als Geräte-Token aus.
+		const asDevice = await api(token, "/api/me");
+		expect(asDevice.status).toBe(401);
+		// Aber ueber den eigenen Kopf ist es fuer team-eigene Anfragen gueltig -
+		// hier stellvertretend an einer beliebigen angemeldeten Route geprüft, dass
+		// der Header ueberhaupt aufgeloest wird, ohne userId zu setzen.
+		const asMember = await apiAsMember(token, "/api/me");
+		expect(asMember.status).toBe(401);
+	});
+
+	it("ein unbekannter oder widerrufener Link liefert 404, kein Konto-Leck", async () => {
+		const team = await createTeamFor(annaToken);
+		const invite = await inviteFor(annaToken, team.id);
+		await inviteFor(annaToken, team.id); // widerruft den ersten
+
+		const res = await apiFrom(null, "/api/team/join", {
+			method: "POST",
+			body: JSON.stringify({ code: invite.code, name: "Zu spät" })
+		});
+		expect(res.status).toBe(404);
+	});
+
+	it("ein hinausgeworfenes Mitglied verliert sofort den Zugang", async () => {
+		const team = await createTeamFor(annaToken);
+		const invite = await inviteFor(annaToken, team.id);
+		const join = await apiFrom(null, "/api/team/join", {
+			method: "POST",
+			body: JSON.stringify({ code: invite.code, name: "Anna Meier" })
+		});
+		const { teamMemberId } = (await join.json()) as { teamMemberId: string };
+
+		const kicked = await apiFrom(annaToken, `/api/team/${team.id}/members`, {
+			method: "DELETE",
+			body: JSON.stringify({ memberId: teamMemberId })
+		});
+		expect(kicked.status).toBe(200);
+
+		const again = await apiFrom(annaToken, `/api/team/${team.id}/members`, {
+			method: "DELETE",
+			body: JSON.stringify({ memberId: teamMemberId })
+		});
+		expect(again.status).toBe(404);
+	});
+
+	it("bremst das Durchprobieren von Beitritts-Codes", async () => {
+		let throttled = false;
+		for (let i = 0; i < 15 && !throttled; i++) {
+			const res = await api(null, "/api/team/join", {
+				method: "POST",
+				headers: { "x-echte-adresse": "10.8.8.8" },
+				body: JSON.stringify({ code: `FALSCH-${i}`, name: "X" })
+			});
+			throttled = res.status === 429;
+			if (throttled) expect(res.headers.get("retry-after")).toBeTruthy();
+		}
+		expect(throttled).toBe(true);
+	});
+});

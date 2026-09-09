@@ -11,6 +11,14 @@ declare global {
 			userId: string | null;
 			/** Gesetzt, wenn die Anfrage von einem gekoppelten Gerät kommt. */
 			deviceId: string | null;
+			/**
+			 * Gesetzt, wenn die Anfrage von einem Team-Mitglied kommt (eigener
+			 * Token-Raum, `x-team-token` - siehe teams.ts). Unabhängig von
+			 * userId/deviceId: ein Team-Mitglied hat kein Personenkonto.
+			 */
+			teamMemberId: string | null;
+			/** Zu welchem Team das Mitglied gehört - nur gesetzt zusammen mit teamMemberId. */
+			teamId: string | null;
 		}
 	}
 }
