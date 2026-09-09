@@ -1950,4 +1950,59 @@ describe("Team", () => {
 		});
 		expect(res.status).toBe(401);
 	});
+
+	it("der Chef markiert von Hand als gesendet und nimmt es wieder zurueck", async () => {
+		const team = await createTeamFor(annaToken);
+		const invite = await inviteFor(annaToken, team.id);
+		const join = await apiFrom(null, "/api/team/join", {
+			method: "POST",
+			body: JSON.stringify({ code: invite.code, name: "Anna Meier" })
+		});
+		const { teamMemberId } = (await join.json()) as { teamMemberId: string };
+
+		const mark = await apiFrom(annaToken, `/api/team/${team.id}/reports`, {
+			method: "POST",
+			body: JSON.stringify({ memberId: teamMemberId, month: "2026-07" })
+		});
+		expect(mark.status).toBe(201);
+
+		const afterMark = await apiFrom(annaToken, `/api/team/${team.id}/reports?month=2026-07`);
+		const [status] = (await afterMark.json()).reports;
+		expect(status.submittedAt).toBeTruthy();
+		expect(status.payload).toBeNull();
+
+		const unmark = await apiFrom(annaToken, `/api/team/${team.id}/reports`, {
+			method: "DELETE",
+			body: JSON.stringify({ memberId: teamMemberId, month: "2026-07" })
+		});
+		expect(unmark.status).toBe(200);
+
+		const afterUnmark = await apiFrom(annaToken, `/api/team/${team.id}/reports?month=2026-07`);
+		expect((await afterUnmark.json()).reports[0].submittedAt).toBeNull();
+	});
+
+	it("weist eine Markierung fuer ein fremdes Team/Mitglied ab", async () => {
+		const teamA = await createTeamFor(annaToken);
+		const teamB = await createTeamFor(annaToken, "Support");
+		const inviteA = await inviteFor(annaToken, teamA.id);
+		const join = await apiFrom(null, "/api/team/join", {
+			method: "POST",
+			body: JSON.stringify({ code: inviteA.code, name: "Anna Meier" })
+		});
+		const { teamMemberId } = (await join.json()) as { teamMemberId: string };
+
+		// Eigenes Mitglied, aber falsches Team in der URL.
+		const wrongTeam = await apiFrom(annaToken, `/api/team/${teamB.id}/reports`, {
+			method: "POST",
+			body: JSON.stringify({ memberId: teamMemberId, month: "2026-07" })
+		});
+		expect(wrongTeam.status).toBe(404);
+
+		// Fremdes Konto darf gar nicht erst markieren.
+		const foreign = await apiFrom(bodoToken, `/api/team/${teamA.id}/reports`, {
+			method: "POST",
+			body: JSON.stringify({ memberId: teamMemberId, month: "2026-07" })
+		});
+		expect(foreign.status).toBe(404);
+	});
 });

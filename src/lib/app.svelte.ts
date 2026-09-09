@@ -705,6 +705,27 @@ class AppState {
 		return removed;
 	}
 
+	/**
+	 * Alle Einträge einer Aktivität auf eine andere umhängen und die alte
+	 * entfernen - nichts geht verloren, nur die eigene Zeile verschwindet.
+	 *
+	 * Für "meine Aktivität mit der neu angekommenen Team-Aktivität
+	 * zusammenführen", funktioniert aber für zwei beliebige (nicht eingebaute)
+	 * Zeilen. Liefert die Zahl umgehängter Einträge, 0 wenn nichts zu tun war.
+	 */
+	async mergeActivityInto(fromId: string, toId: string): Promise<number> {
+		if (fromId === toId) return 0;
+		const from = this.activities.find((x) => x.id === fromId);
+		const to = this.activities.find((x) => x.id === toId);
+		if (!from || !to || isBuiltinActivity(from) || isBuiltinActivity(to)) return 0;
+
+		const moved = await this.#repointEntries(new Set([fromId]), toId);
+		this.activities = this.activities.filter((x) => x.id !== fromId);
+		await this.persistActivities();
+		logWarn(`Aktivität zusammengeführt: "${from.name}" → "${to.name}"`, { moved });
+		return moved;
+	}
+
 	/** Verschiebt `draggedId` vor/hinter `targetId` (Drag & Drop). */
 	async reorderActivity(draggedId: string, targetId: string, placeAfter = false): Promise<void> {
 		if (draggedId === targetId) return;

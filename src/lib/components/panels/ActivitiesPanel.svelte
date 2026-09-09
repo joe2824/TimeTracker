@@ -14,6 +14,7 @@
 	import { Badge } from "$lib/components/ui/badge";
 	import * as Card from "$lib/components/ui/card";
 	import * as Dialog from "$lib/components/ui/dialog";
+	import * as Select from "$lib/components/ui/select";
 	import { toast } from "svelte-sonner";
 	import GripVerticalIcon from "@lucide/svelte/icons/grip-vertical";
 	import Trash2Icon from "@lucide/svelte/icons/trash-2";
@@ -24,6 +25,8 @@
 	import EyeOffIcon from "@lucide/svelte/icons/eye-off";
 	import KeyboardIcon from "@lucide/svelte/icons/keyboard";
 	import XIcon from "@lucide/svelte/icons/x";
+	import UsersIcon from "@lucide/svelte/icons/users";
+	import GitMergeIcon from "@lucide/svelte/icons/git-merge";
 	import ShortcutKey from "$lib/components/shared/ShortcutKey.svelte";
 
 	let pasteText = $state("");
@@ -60,6 +63,34 @@
 			deleteTarget = null;
 		} finally {
 			deleting = false;
+		}
+	}
+
+	// Zwei Aktivitäten zusammenführen – vor allem für "meine eigene ist dasselbe
+	// wie die neu angekommene Team-Aktivität": alle Einträge wandern mit, nichts
+	// geht verloren, nur die eigene Zeile verschwindet.
+	let mergeSource = $state<Activity | null>(null);
+	let mergeTargetId = $state<string | undefined>(undefined);
+	let merging = $state(false);
+
+	function askMerge(a: Activity) {
+		mergeSource = a;
+		mergeTargetId = undefined;
+	}
+
+	async function confirmMerge() {
+		if (!mergeSource || !mergeTargetId) return;
+		merging = true;
+		try {
+			const fromName = mergeSource.name;
+			const toName = app.activities.find((x) => x.id === mergeTargetId)?.name ?? "";
+			const moved = await app.mergeActivityInto(mergeSource.id, mergeTargetId);
+			toast.success(
+				`„${fromName}" in „${toName}" zusammengeführt${moved ? ` (${moved} Eintrag/Einträge)` : ""}.`
+			);
+			mergeSource = null;
+		} finally {
+			merging = false;
 		}
 	}
 
@@ -155,6 +186,10 @@
 			.sort(byActivityOrder)
 	);
 	const hiddenCount = $derived(app.activities.filter((a) => a.hidden && !a.archived).length);
+	/** Wohin sich eine Aktivität zusammenführen lässt - alles ausser sich selbst und Eingebautem. */
+	const mergeCandidates = $derived(
+		app.activities.filter((a) => a.id !== mergeSource?.id && !isBuiltinActivity(a))
+	);
 </script>
 
 <svelte:window onkeydown={onRecordKey} />
@@ -280,10 +315,19 @@
 						<input
 							class="hover:bg-muted/60 focus:bg-muted/60 focus-visible:ring-ring/50 min-w-0 grow basis-40 rounded-md bg-transparent px-1.5 py-1 text-sm transition-colors outline-none focus-visible:ring-3 disabled:cursor-default disabled:bg-transparent disabled:opacity-100"
 							value={a.name}
-							disabled={isBuiltinActivity(a)}
-							title={isBuiltinActivity(a) ? "Eingebaute Zeile – nicht umbenennbar" : "Umbenennen"}
+							disabled={isBuiltinActivity(a) || a.teamOwned}
+							title={isBuiltinActivity(a)
+								? "Eingebaute Zeile – nicht umbenennbar"
+								: a.teamOwned
+									? "Vom Team vorgegeben – nur der Chef kann sie ändern"
+									: "Umbenennen"}
 							onchange={(e: Event) => app.renameActivity(a.id, (e.target as HTMLInputElement).value)}
 						/>
+						{#if a.teamOwned}
+							<Badge variant="outline" class="shrink-0 gap-1" title="Vom Chef vorgegeben, für alle im Team gleich">
+								<UsersIcon class="size-3" /> Team
+							</Badge>
+						{/if}
 						<!-- Aktionen als eine Gruppe, nicht als fünf lose Knöpfe: so brechen
 						     sie geschlossen um und lesen sich als ein Satz Werkzeuge zu dieser
 						     Zeile. gap-0.5, weil sie zusammengehören. -->
@@ -342,7 +386,18 @@
 						{/if}
 						{#if isBuiltin(a.name, a.isAbsence)}
 							<Badge variant="secondary">fix</Badge>
+						{:else if a.teamOwned}
+							<!-- Ändern/Löschen nur im Team-Tab durch den Chef - eine lokale
+							     Löschung käme beim nächsten Abgleich ohnehin zurück. -->
 						{:else}
+							<Button
+								variant="ghost"
+								size="icon-sm"
+								title="Mit einer anderen Aktivität zusammenführen – alle Einträge wandern mit, nichts geht verloren"
+								onclick={() => askMerge(a)}
+							>
+								<GitMergeIcon class="size-4" />
+							</Button>
 							{#if a.archived}
 								<Button variant="ghost" size="icon-sm" title="Wiederherstellen (zurück in die Auswahl)" onclick={() => app.setArchived(a.id, false)}>
 									<RotateCcwIcon class="size-4" />
@@ -398,6 +453,44 @@
 			<Button type="button" variant="destructive" onclick={confirmDelete} disabled={deleting}>
 				<Trash2Icon class="size-4" />
 				{deleting ? "Lösche…" : "Endgültig löschen"}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root open={!!mergeSource} onOpenChange={(v) => { if (!v && !merging) mergeSource = null; }}>
+	<Dialog.Content class="sm:max-w-md">
+		<Dialog.Header>
+			<Dialog.Title>„{mergeSource?.name}" zusammenführen</Dialog.Title>
+			<Dialog.Description>
+				Alle Einträge wandern zur ausgewählten Aktivität, „{mergeSource?.name}" verschwindet danach
+				aus der Liste. Nützlich, wenn eine eigene Aktivität dasselbe ist wie eine vom Team
+				vorgegebene – nichts geht dabei verloren.
+			</Dialog.Description>
+		</Dialog.Header>
+		{#if mergeCandidates.length === 0}
+			<p class="text-muted-foreground text-sm">Keine andere Aktivität vorhanden.</p>
+		{:else}
+			<Select.Root type="single" bind:value={mergeTargetId}>
+				<Select.Trigger>
+					{mergeTargetId ? app.activityName(mergeTargetId) : "Ziel wählen"}
+				</Select.Trigger>
+				<Select.Content>
+					{#each mergeCandidates as c (c.id)}
+						<Select.Item value={c.id} label={c.name}>
+							{c.name}{c.teamOwned ? " (Team)" : ""}
+						</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
+		{/if}
+		<Dialog.Footer>
+			<Button type="button" variant="outline" onclick={() => (mergeSource = null)} disabled={merging}>
+				Abbrechen
+			</Button>
+			<Button type="button" onclick={confirmMerge} disabled={merging || !mergeTargetId}>
+				<GitMergeIcon class="size-4" />
+				{merging ? "Wird zusammengeführt…" : "Zusammenführen"}
 			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>

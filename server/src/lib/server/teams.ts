@@ -236,6 +236,39 @@ export function upsertTeamReport(
 		.run();
 }
 
+/**
+ * Der Chef setzt den Status von Hand - für Berichte, die auf einem anderen
+ * Weg ankamen (Zuruf, Zettel). `sent=false` löscht die Zeile wieder (z.B. um
+ * ein Versehen rückgängig zu machen), ohne das Mitglied zu verlieren.
+ *
+ * Prüft die Mitgliedschaft (nicht nur den Teambesitz, den die Route schon
+ * geprüft hat): sonst liesse sich mit einer fremden memberId eine Zeile für
+ * ein Mitglied anlegen, das gar nicht zu diesem Team gehört.
+ */
+export function setTeamReportStatus(
+	db: DbLike,
+	teamId: string,
+	memberId: string,
+	month: string,
+	sent: boolean
+): boolean {
+	const member = db
+		.select({ id: teamMembers.id })
+		.from(teamMembers)
+		.where(and(eq(teamMembers.id, memberId), eq(teamMembers.teamId, teamId)))
+		.get();
+	if (!member) return false;
+
+	if (sent) {
+		upsertTeamReport(db, teamId, memberId, month, null);
+	} else {
+		db.delete(teamReports)
+			.where(and(eq(teamReports.memberId, memberId), eq(teamReports.month, month)))
+			.run();
+	}
+	return true;
+}
+
 export interface TeamReportStatus {
 	memberId: string;
 	memberName: string;

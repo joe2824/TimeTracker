@@ -28,6 +28,7 @@
 	import XIcon from "@lucide/svelte/icons/x";
 	import ActivityDot from "$lib/components/shared/ActivityDot.svelte";
 	import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
+	import UsersIcon from "@lucide/svelte/icons/users";
 	import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
 
 	let {
@@ -348,6 +349,9 @@
 						{/if}
 						<ActivityDot color={a.color} />
 						<span class="flex-1">{a.name}</span>
+						{#if a.teamOwned}
+							<UsersIcon class="size-3.5 shrink-0 opacity-60" title="Team-Aktivität" />
+						{/if}
 						{#if a.shortcut}
 							<span class="shrink-0 font-mono text-[10px] opacity-60">{a.shortcut}</span>
 						{/if}

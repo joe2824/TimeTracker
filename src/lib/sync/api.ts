@@ -554,6 +554,22 @@ export class Api {
 		);
 	}
 
+	/** Von Hand als gesendet markieren - für Berichte, die nicht über die App kamen. */
+	markTeamReportSent(teamId: string, memberId: string, month: string): Promise<{ ok: boolean }> {
+		return this.#call(`/api/team/${encodeURIComponent(teamId)}/reports`, {
+			method: "POST",
+			body: JSON.stringify({ memberId, month })
+		});
+	}
+
+	/** Eine Markierung zurücknehmen - wieder "kein Bericht". */
+	clearTeamReportStatus(teamId: string, memberId: string, month: string): Promise<{ ok: boolean }> {
+		return this.#call(`/api/team/${encodeURIComponent(teamId)}/reports`, {
+			method: "DELETE",
+			body: JSON.stringify({ memberId, month })
+		});
+	}
+
 	backups(): Promise<{ backups: BackupInfo[] }> {
 		return this.#call("/api/admin/backups");
 	}
