@@ -192,6 +192,7 @@ const MIGRATIONS: string[] = [
 		id TEXT PRIMARY KEY,
 		team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
 		name TEXT NOT NULL,
+		email TEXT,
 		token_hash TEXT NOT NULL,
 		created_at INTEGER NOT NULL,
 		last_seen_at INTEGER,
@@ -212,7 +213,20 @@ const MIGRATIONS: string[] = [
 		archived INTEGER NOT NULL DEFAULT 0,
 		updated_at INTEGER NOT NULL
 	)`,
-	`CREATE INDEX IF NOT EXISTS team_activities_team ON team_activities(team_id)`
+	`CREATE INDEX IF NOT EXISTS team_activities_team ON team_activities(team_id)`,
+
+	// Team-Modus, Teil 3: gesendete Berichte - dieselbe Form wie MonthReport
+	// (src/lib/report/report.ts), also schon aggregiert (Stunden je Aktivität),
+	// keine Einzeleintraege/Notizen.
+	`CREATE TABLE IF NOT EXISTS team_reports (
+		team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+		member_id TEXT NOT NULL REFERENCES team_members(id) ON DELETE CASCADE,
+		month TEXT NOT NULL,
+		submitted_at INTEGER NOT NULL,
+		payload TEXT NOT NULL
+	)`,
+	`CREATE UNIQUE INDEX IF NOT EXISTS team_reports_member_month ON team_reports(member_id, month)`,
+	`CREATE INDEX IF NOT EXISTS team_reports_team_month ON team_reports(team_id, month)`
 ];
 
 

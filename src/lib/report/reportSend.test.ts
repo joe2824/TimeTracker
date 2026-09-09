@@ -23,7 +23,11 @@ const opener = vi.hoisted(() => ({
 }));
 vi.mock("../platform/open", () => ({ openExternal: opener.openExternal }));
 
+const http = vi.hoisted(() => ({ platformFetch: vi.fn() }));
+vi.mock("../platform/http", () => ({ platformFetch: http.platformFetch }));
+
 const { app } = await import("../app.svelte");
+const { saveTeamDevice } = await import("../store");
 const { PASTE_HINT, reportSubject, sendReport } = await import("./reportSend");
 
 const P1 = "p1";
@@ -96,6 +100,8 @@ beforeEach(() => {
 	app.entriesByMonth = {};
 	outlook.createOutlookDraft.mockClear();
 	opener.openExternal.mockClear();
+	http.platformFetch.mockReset();
+	http.platformFetch.mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 201 }));
 	clipboard = null;
 	breakClipboard();
 	pretendDesktop(true);
@@ -216,5 +222,50 @@ describe("sendReport ohne Outlook", () => {
 		await expect(sendReport("2026-07")).rejects.toThrow("kein Mailprogramm");
 
 		expect(app.isReportSent("2026-07")).toBe(false);
+	});
+});
+
+describe("sendReport – Team-Upload", () => {
+	beforeEach(() => {
+		app.entriesByMonth["2026-07"] = [entry("e1", at(16, 9), at(16, 12))];
+	});
+
+	it("laedt den Bericht zusaetzlich ans Team hoch, wenn dieses Geraet eines hat", async () => {
+		await saveTeamDevice({
+			teamMemberId: "m1",
+			token: "team-tok",
+			teamName: "Vertrieb",
+			serverUrl: "https://tt.example.de"
+		});
+
+		await sendReport("2026-07");
+
+		// Zwei Anfragen: der gewohnte Mail-Versand laeuft ueber createOutlookDraft
+		// (separat gemockt), platformFetch faengt nur den Team-Upload ab.
+		expect(http.platformFetch).toHaveBeenCalledTimes(1);
+		const [url, init] = http.platformFetch.mock.calls[0];
+		expect(String(url)).toBe("https://tt.example.de/api/team/reports");
+		expect((init.headers as Record<string, string>)["x-team-token"]).toBe("team-tok");
+		const body = JSON.parse(init.body as string);
+		expect(body.month).toBe("2026-07");
+		expect(body.report.rows[0]).toMatchObject({ name: "Projekt 1" });
+	});
+
+	it("bleibt ohne Team-Mitgliedschaft ein No-Op", async () => {
+		await sendReport("2026-07");
+		expect(http.platformFetch).not.toHaveBeenCalled();
+	});
+
+	it("laesst einen fehlgeschlagenen Team-Upload den Bericht trotzdem als gesendet gelten", async () => {
+		await saveTeamDevice({
+			teamMemberId: "m1",
+			token: "team-tok",
+			teamName: "Vertrieb",
+			serverUrl: "https://tt.example.de"
+		});
+		http.platformFetch.mockRejectedValue(new Error("Netzwerk weg"));
+
+		await expect(sendReport("2026-07")).resolves.toBeTruthy();
+		expect(app.isReportSent("2026-07")).toBe(true);
 	});
 });

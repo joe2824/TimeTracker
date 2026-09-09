@@ -248,6 +248,8 @@ export const teamMembers = sqliteTable(
 			.notNull()
 			.references(() => teams.id, { onDelete: "cascade" }),
 		name: text("name").notNull(),
+		/** Freiwillig - nur fuer die Erinnerung an Fehlende, sonst nirgends noetig. */
+		email: text("email"),
 		tokenHash: text("token_hash").notNull(),
 		createdAt: integer("created_at").notNull(),
 		lastSeenAt: integer("last_seen_at"),
@@ -280,6 +282,33 @@ export const teamActivities = sqliteTable(
 		updatedAt: integer("updated_at").notNull()
 	},
 	(t) => [index("team_activities_team").on(t.teamId)]
+);
+
+/**
+ * Ein gesendeter Monatsbericht, wie ihn `sendReport()` ohnehin schon baut
+ * (`MonthReport` - Stunden je Aktivität, keine Einzeleinträge/Notizen). Der
+ * Chef soll ihn sehen dürfen, deshalb ausserhalb der Ende-zu-Ende-
+ * Verschlüsselung. `teamId` steht doppelt (folgt aus `memberId`), erspart dem
+ * Chef-Abruf aber den Join.
+ */
+export const teamReports = sqliteTable(
+	"team_reports",
+	{
+		teamId: text("team_id")
+			.notNull()
+			.references(() => teams.id, { onDelete: "cascade" }),
+		memberId: text("member_id")
+			.notNull()
+			.references(() => teamMembers.id, { onDelete: "cascade" }),
+		month: text("month").notNull(), // "YYYY-MM"
+		submittedAt: integer("submitted_at").notNull(),
+		/** JSON, Form von MonthReport (src/lib/report/report.ts). */
+		payload: text("payload").notNull()
+	},
+	(t) => [
+		uniqueIndex("team_reports_member_month").on(t.memberId, t.month),
+		index("team_reports_team_month").on(t.teamId, t.month)
+	]
 );
 
 /** Der Zeitpunkt "jetzt" in der Einheit, die alle Tabellen benutzen. */

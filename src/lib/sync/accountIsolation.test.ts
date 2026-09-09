@@ -358,7 +358,7 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 				...defaultSettings,
 				bossEmail: "alt@firma-xyz.de",
 				senderName: "Alter Account",
-				teamSubjectFilter: "StrengGeheim",
+				reportSubjectTemplate: "StrengGeheim",
 				hoursPerDay: 4
 			})
 		);
@@ -390,7 +390,7 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 			// 1. Lokale Einstellungen müssen 100% jungfräulich sein
 			expect(app.settings.bossEmail).toBe("");
 			expect(app.settings.senderName).toBe("");
-			expect(app.settings.teamSubjectFilter).toBe(defaultSettings.teamSubjectFilter);
+			expect(app.settings.reportSubjectTemplate).toBe(defaultSettings.reportSubjectTemplate);
 			expect(app.settings.hoursPerDay).toBe(defaultSettings.hoursPerDay);
 			expect(app.activities).toEqual([]);
 

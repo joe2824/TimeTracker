@@ -17,6 +17,7 @@
 	const serverUrl = $derived(page.url.origin);
 
 	let name = $state("");
+	let email = $state("");
 	let busy = $state(false);
 	let preview = $state<{ teamName: string } | "loading" | "error">("loading");
 	let joinedTeamName = $state<string | null>(null);
@@ -34,7 +35,7 @@
 		busy = true;
 		joinError = null;
 		try {
-			const info = await completeTeamJoin(serverUrl, code, name.trim());
+			const info = await completeTeamJoin(serverUrl, code, name.trim(), email.trim());
 			joinedTeamName = info.teamName;
 		} catch (e) {
 			joinError = errorText(e);
@@ -80,6 +81,20 @@
 					disabled={busy}
 					onkeydown={(e) => e.key === "Enter" && name.trim() && join()}
 				/>
+			</div>
+			<div class="space-y-2">
+				<Label for="team-join-email">E-Mail (optional)</Label>
+				<Input
+					id="team-join-email"
+					type="email"
+					bind:value={email}
+					placeholder="anna@firma.de"
+					disabled={busy}
+					onkeydown={(e) => e.key === "Enter" && name.trim() && join()}
+				/>
+				<p class="text-muted-foreground text-xs">
+					Nur damit der Chef dich erinnern kann, falls ein Bericht fehlt.
+				</p>
 			</div>
 
 			{#if joinError}

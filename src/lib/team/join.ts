@@ -12,9 +12,10 @@ export function previewTeam(serverUrl: string, code: string): Promise<{ teamName
 export async function completeTeamJoin(
 	serverUrl: string,
 	code: string,
-	name: string
+	name: string,
+	email?: string
 ): Promise<TeamDeviceInfo> {
-	const joined = await apiJoinTeam(serverUrl, code, name);
+	const joined = await apiJoinTeam(serverUrl, code, name, email);
 	const info: TeamDeviceInfo = {
 		teamMemberId: joined.teamMemberId,
 		token: joined.token,

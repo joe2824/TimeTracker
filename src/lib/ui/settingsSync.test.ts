@@ -58,12 +58,12 @@ describe("formFromSettings", () => {
 	});
 
 	it("kopiert Listen, statt sie zu teilen", () => {
-		const stored = s({ workdays: [1, 2], team: [{ id: "a", name: "Max", email: "m@f.de" }] });
+		const stored = s({ workdays: [1, 2], reminderTimes: ["09:00"] });
 		const form = formFromSettings(stored);
 		form.workdays.push(6);
-		form.team[0].name = "Moritz";
+		form.reminderTimes.push("14:00");
 		expect(stored.workdays).toEqual([1, 2]);
-		expect(stored.team[0].name).toBe("Max");
+		expect(stored.reminderTimes).toEqual(["09:00"]);
 	});
 });
 
@@ -110,15 +110,9 @@ describe("patchFrom", () => {
 		// Eine gerade angelegte, noch leere Zeile darf nicht unter den Händen
 		// verschwinden – gespeichert wird sie trotzdem nicht.
 		const form = formFromSettings(s());
-		form.team = [
-			{ id: "a", name: " Max ", email: " m@f.de " },
-			{ id: "b", name: "", email: "" }
-		];
 		form.reminderTimes = ["09:00", "  "];
-		const patch = patchFrom(form, ["team", "reminderTimes"], s());
-		expect(patch.team).toEqual([{ id: "a", name: "Max", email: "m@f.de" }]);
+		const patch = patchFrom(form, ["reminderTimes"], s());
 		expect(patch.reminderTimes).toEqual(["09:00"]);
-		expect(form.team).toHaveLength(2);
 		expect(form.reminderTimes).toHaveLength(2);
 	});
 

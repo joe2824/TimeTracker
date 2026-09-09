@@ -68,14 +68,7 @@ const TO_SETTING: {
 	idleThresholdMin: (raw) => Math.max(0, Number(raw) || 0),
 	maxTimerHours: (raw) => Math.max(0, Number(raw) || 0),
 	pomodoroMin: (raw, s) => Math.max(1, Number(raw) || s.pomodoroMin),
-	pomodoroBreakMin: (raw) => Math.max(0, Number(raw) || 0),
-	// Namenlose Zeilen entstehen beim Anlegen und wieder Verwerfen einer Zeile;
-	// sie stünden sonst als leere Person in der Team-Übersicht.
-	team: (raw) =>
-		raw
-			.map((m) => ({ ...m, name: m.name.trim(), email: m.email.trim() }))
-			.filter((m) => m.name || m.email),
-	teamSubjectFilter: (raw, s) => raw.trim() || s.teamSubjectFilter
+	pomodoroBreakMin: (raw) => Math.max(0, Number(raw) || 0)
 };
 
 /** Arbeitskopie aus einem Einstellungsstand aufbauen (Listen als eigene Kopie). */

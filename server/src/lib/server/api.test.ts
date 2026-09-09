@@ -1903,4 +1903,51 @@ describe("Team", () => {
 		});
 		expect(res.status).toBe(404);
 	});
+
+	it("ein Mitglied sendet einen Bericht, der Chef sieht ihn samt Inhalt und Zeitpunkt", async () => {
+		const team = await createTeamFor(annaToken);
+		const invite = await inviteFor(annaToken, team.id);
+		const join = await apiFrom(null, "/api/team/join", {
+			method: "POST",
+			body: JSON.stringify({ code: invite.code, name: "Anna Meier" })
+		});
+		const { teamMemberId, token } = (await join.json()) as { teamMemberId: string; token: string };
+
+		// Vor dem Versand: als fehlend gelistet.
+		const before = await apiFrom(annaToken, `/api/team/${team.id}/reports?month=2026-07`);
+		expect(before.status).toBe(200);
+		expect((await before.json()).reports).toEqual([
+			{
+				memberId: teamMemberId,
+				memberName: "Anna Meier",
+				memberEmail: null,
+				submittedAt: null,
+				payload: null
+			}
+		]);
+
+		const send = await apiAsMember(token, "/api/team/reports", {
+			method: "POST",
+			body: JSON.stringify({ month: "2026-07", report: { total: 40, rows: [] } })
+		});
+		expect(send.status).toBe(201);
+
+		const after = await apiFrom(annaToken, `/api/team/${team.id}/reports?month=2026-07`);
+		const [status] = (await after.json()).reports;
+		expect(status.memberId).toBe(teamMemberId);
+		expect(status.submittedAt).toBeTruthy();
+		expect(status.payload).toEqual({ total: 40, rows: [] });
+
+		// Ein anderer Monat bleibt unberuehrt.
+		const otherMonth = await apiFrom(annaToken, `/api/team/${team.id}/reports?month=2026-08`);
+		expect((await otherMonth.json()).reports[0].submittedAt).toBeNull();
+	});
+
+	it("weist einen Bericht ohne (gueltiges) Team-Token ab", async () => {
+		const res = await apiFrom(null, "/api/team/reports", {
+			method: "POST",
+			body: JSON.stringify({ month: "2026-07", report: { total: 1 } })
+		});
+		expect(res.status).toBe(401);
+	});
 });

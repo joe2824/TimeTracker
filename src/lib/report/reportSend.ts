@@ -3,6 +3,7 @@ import { buildReport, buildSubject, reportToHtml, reportToText } from "./report"
 import { createOutlookDraft, mailtoFallback } from "./outlook";
 import { capabilities } from "../platform/env";
 import { openExternal } from "../platform/open";
+import { uploadReportIfTeamMember } from "../team/reports";
 
 /** Betreff aus Vorlage und Einstellungen – Regel siehe report.ts. */
 export function reportSubject(label: string): string {
@@ -104,5 +105,8 @@ export async function sendReport(month: string): Promise<SendResult> {
 		result = { via: "mail", clipboard };
 	}
 	await app.markReportSent(month);
+	// Zusaetzlich, nicht statt dem Mail-Versand - eigenstaendiger Fehlerpfad,
+	// blockiert das oben Erledigte nicht.
+	await uploadReportIfTeamMember(month, report);
 	return result;
 }

@@ -82,16 +82,6 @@ export interface Entry extends SyncMeta {
 	timeOff?: boolean;
 }
 
-/**
- * Ein Teammitglied im Chef-Modus: von dieser Person wird ein Monatsbericht
- * erwartet. Die Zuordnung eingehender Mails läuft über `email`.
- */
-export interface TeamMember {
-	id: string;
-	name: string;
-	email: string;
-}
-
 export interface Settings {
 	/** Erinnerungszeiten im Format "HH:MM" */
 	reminderTimes: string[];
@@ -144,14 +134,8 @@ export interface Settings {
 	arbzgEnabled: boolean;
 	/** Kurzer Hinweis auf der Tracking-Seite, wenn der Arbeitszeit-Check anschlägt. */
 	arbzgTrackingHint: boolean;
-	/** Chef-Modus: Tab „Team" mit Auswertung der eingegangenen Berichts-Mails */
+	/** Chef-Modus: Tab „Team" zum Anlegen von Teams und Verwalten der Mitglieder */
 	bossMode: boolean;
-	/** Team, von dem monatlich ein Bericht erwartet wird */
-	team: TeamMember[];
-	/** Betreff-Merkmal (Teilstring), an dem eine Berichts-Mail erkannt wird */
-	teamSubjectFilter: string;
-	/** Auch Unterordner des Posteingangs durchsuchen (Outlook-Regeln sortieren dorthin) */
-	teamScanSubfolders: boolean;
 	/** Vorabversionen beziehen. Liest auch der Rust-Teil aus der settings.json - wirkt erst nach Neustart. */
 	betaUpdates: boolean;
 	/** Zeitzone des Kontos als IANA-Kennung, z.B. "Europe/Berlin". */
@@ -162,9 +146,6 @@ export interface Settings {
 
 /** Standard-Betreff des Monatsberichts. */
 export const DEFAULT_SUBJECT = "Stundenerfassung {month} – {name}";
-
-/** Standard-Merkmal, an dem der Chef-Modus Berichts-Mails erkennt. */
-export const DEFAULT_TEAM_SUBJECT_FILTER = "Stundenerfassung";
 
 export const defaultSettings: Settings = {
 	reminderTimes: ["14:00"],
@@ -192,9 +173,6 @@ export const defaultSettings: Settings = {
 	arbzgEnabled: true,
 	arbzgTrackingHint: true,
 	bossMode: false,
-	team: [],
-	teamSubjectFilter: DEFAULT_TEAM_SUBJECT_FILTER,
-	teamScanSubfolders: true,
 	betaUpdates: false,
 	timeZone: "",
 	usageLastDay: ""

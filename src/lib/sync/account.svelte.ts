@@ -38,7 +38,8 @@ import {
 	type TeamActivityInput,
 	type TeamInfo,
 	type TeamInvite,
-	type TeamMemberInfo
+	type TeamMemberInfo,
+	type TeamReportStatus
 } from "./api";
 
 import { detachLocalData } from "./detach";
@@ -1475,6 +1476,11 @@ class AccountState {
 	async setTeamActivities(teamId: string, activities: TeamActivityInput[]): Promise<TeamActivity[]> {
 		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
 		return (await this.#api.setTeamActivities(teamId, activities)).activities;
+	}
+
+	async listTeamReports(teamId: string, month: string): Promise<TeamReportStatus[]> {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		return (await this.#api.listTeamReports(teamId, month)).reports;
 	}
 
 	async backups(): Promise<BackupInfo[]> {
