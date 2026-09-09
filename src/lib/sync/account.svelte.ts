@@ -34,6 +34,8 @@ import {
 	type Invite,
 	type Passkey,
 	type ServerStats,
+	type TeamActivity,
+	type TeamActivityInput,
 	type TeamInfo,
 	type TeamInvite,
 	type TeamMemberInfo
@@ -1463,6 +1465,16 @@ class AccountState {
 	async revokeTeamMember(teamId: string, memberId: string): Promise<void> {
 		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
 		await this.#api.revokeTeamMember(teamId, memberId);
+	}
+
+	async listTeamActivities(teamId: string): Promise<TeamActivity[]> {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		return (await this.#api.listTeamActivities(teamId)).activities;
+	}
+
+	async setTeamActivities(teamId: string, activities: TeamActivityInput[]): Promise<TeamActivity[]> {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		return (await this.#api.setTeamActivities(teamId, activities)).activities;
 	}
 
 	async backups(): Promise<BackupInfo[]> {

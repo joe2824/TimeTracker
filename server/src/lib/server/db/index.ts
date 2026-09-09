@@ -198,7 +198,21 @@ const MIGRATIONS: string[] = [
 		revoked_at INTEGER
 	)`,
 	`CREATE INDEX IF NOT EXISTS team_members_team ON team_members(team_id)`,
-	`CREATE UNIQUE INDEX IF NOT EXISTS team_members_token ON team_members(token_hash)`
+	`CREATE UNIQUE INDEX IF NOT EXISTS team_members_token ON team_members(token_hash)`,
+
+	// Team-Modus, Teil 2: die gemeinsame Aktivitätenliste. Voller Ersatz bei
+	// jedem Speichern (siehe setTeamActivities) - der Chef ist die einzige Feder.
+	`CREATE TABLE IF NOT EXISTS team_activities (
+		id TEXT PRIMARY KEY,
+		team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+		name TEXT NOT NULL,
+		is_absence INTEGER NOT NULL DEFAULT 0,
+		sort_order INTEGER NOT NULL,
+		color TEXT,
+		archived INTEGER NOT NULL DEFAULT 0,
+		updated_at INTEGER NOT NULL
+	)`,
+	`CREATE INDEX IF NOT EXISTS team_activities_team ON team_activities(team_id)`
 ];
 
 

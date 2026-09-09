@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from "svelte";
 	import { account } from "$lib/sync/account.svelte";
 	import { createSettingsForm } from "$lib/ui/settingsForm.svelte";
 	import { Button } from "$lib/components/ui/button";
@@ -7,8 +8,42 @@
 	import SettingToggle from "$lib/components/shared/SettingToggle.svelte";
 	import SettingsCard from "$lib/components/shared/SettingsCard.svelte";
 	import { capabilities } from "$lib/platform/env";
+	import { loadTeamDevice, clearTeamDevice, type TeamDeviceInfo } from "$lib/store";
+	import { syncTeamActivities } from "$lib/team/activities";
+	import { errorText } from "$lib/log";
+	import { toast } from "svelte-sonner";
 	import PlusIcon from "@lucide/svelte/icons/plus";
 	import Trash2Icon from "@lucide/svelte/icons/trash-2";
+	import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
+	import LogOutIcon from "@lucide/svelte/icons/log-out";
+	import UsersIcon from "@lucide/svelte/icons/users";
+
+	// ---------- Team-Mitgliedschaft (dieses Gerät ist Mitglied, kein Chef) ----------
+
+	let teamDevice = $state<TeamDeviceInfo | null>(null);
+	let refreshingTeam = $state(false);
+
+	onMount(async () => {
+		teamDevice = await loadTeamDevice();
+	});
+
+	async function refreshTeamActivities() {
+		refreshingTeam = true;
+		try {
+			await syncTeamActivities();
+			toast.success("Team-Aktivitäten aktualisiert.");
+		} catch (e) {
+			toast.error(`Aktualisieren fehlgeschlagen: ${errorText(e)}`);
+		} finally {
+			refreshingTeam = false;
+		}
+	}
+
+	async function leaveTeam() {
+		await clearTeamDevice();
+		teamDevice = null;
+		toast.success("Team verlassen.");
+	}
 
 	const REPORT_KEYS = [
 		"bossEmail",
@@ -38,6 +73,25 @@
 		savedBossAt = Date.now();
 	}
 </script>
+
+{#if teamDevice}
+	<SettingsCard title="Team-Mitgliedschaft" description="Die gemeinsamen Aktivitäten kommen von dort.">
+		<div class="flex flex-wrap items-center justify-between gap-3">
+			<div class="flex items-center gap-2">
+				<UsersIcon class="text-muted-foreground size-4" />
+				<span class="font-medium">{teamDevice.teamName}</span>
+			</div>
+			<div class="flex gap-2">
+				<Button variant="outline" size="sm" disabled={refreshingTeam} onclick={refreshTeamActivities}>
+					<RefreshCwIcon class="size-4" /> Aktualisieren
+				</Button>
+				<Button variant="ghost" size="sm" onclick={leaveTeam}>
+					<LogOutIcon class="size-4" /> Team verlassen
+				</Button>
+			</div>
+		</div>
+	</SettingsCard>
+{/if}
 
 <SettingsCard
 	title="Bericht & E-Mail"

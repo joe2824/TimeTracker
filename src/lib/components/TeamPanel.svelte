@@ -3,7 +3,7 @@
 	import { save } from "@tauri-apps/plugin-dialog";
 	import { app } from "$lib/app.svelte";
 	import { account } from "$lib/sync/account.svelte";
-	import type { TeamInfo, TeamInvite, TeamMemberInfo } from "$lib/sync/api";
+	import type { TeamActivity, TeamActivityInput, TeamInfo, TeamInvite, TeamMemberInfo } from "$lib/sync/api";
 	import {
 		createOutlookDraft,
 		readOutlookMails,
@@ -53,6 +53,9 @@
 	let rotatingInvite = $state(false);
 	let members = $state<TeamMemberInfo[]>([]);
 
+	let activities = $state<TeamActivityInput[]>([]);
+	let savingActivities = $state(false);
+
 	const selectedTeam = $derived(teams.find((t) => t.id === selectedTeamId) ?? null);
 	const inviteUrl = $derived(invite ? `${account.serverUrl}/team/join/${invite.code}` : null);
 
@@ -74,10 +77,14 @@
 	async function loadTeamDetails(teamId: string) {
 		inviteLoading = true;
 		try {
-			[invite, members] = await Promise.all([
+			const [inv, mem, act] = await Promise.all([
 				account.getTeamInvite(teamId),
-				account.listTeamMembers(teamId)
+				account.listTeamMembers(teamId),
+				account.listTeamActivities(teamId)
 			]);
+			invite = inv;
+			members = mem;
+			activities = act;
 		} catch (e) {
 			toast.error(`Team konnte nicht geladen werden: ${errorText(e)}`);
 		} finally {
@@ -90,8 +97,25 @@
 		else {
 			invite = null;
 			members = [];
+			activities = [];
 		}
 	});
+
+	async function saveActivities() {
+		if (!selectedTeamId || savingActivities) return;
+		const cleaned = activities
+			.map((a, i) => ({ ...a, name: a.name.trim(), sortOrder: i }))
+			.filter((a) => a.name);
+		savingActivities = true;
+		try {
+			activities = (await account.setTeamActivities(selectedTeamId, cleaned)) as TeamActivity[];
+			toast.success("Gemeinsame Aktivitäten gespeichert.");
+		} catch (e) {
+			toast.error(`Speichern fehlgeschlagen: ${errorText(e)}`);
+		} finally {
+			savingActivities = false;
+		}
+	}
 
 	async function createTeam() {
 		const name = newTeamName.trim();
@@ -364,6 +388,42 @@
 								</Table.Body>
 							</Table.Root>
 						{/if}
+					</div>
+
+					<div class="space-y-2 border-t pt-4">
+						<Label>Gemeinsame Aktivitäten</Label>
+						<p class="text-muted-foreground text-xs leading-relaxed">
+							Erscheinen auf den Geräten aller Mitglieder - dort nur änderbar von hier aus.
+						</p>
+						{#each activities as a, i (i)}
+							<div class="flex gap-2">
+								<Input placeholder="Name" bind:value={activities[i].name} />
+								<Button
+									variant="ghost"
+									size="icon"
+									title="Entfernen"
+									onclick={() => (activities = activities.filter((_, j) => j !== i))}
+								>
+									<Trash2Icon class="size-4" />
+								</Button>
+							</div>
+						{/each}
+						<div class="flex flex-wrap gap-2">
+							<Button
+								variant="outline"
+								size="sm"
+								onclick={() =>
+									(activities = [
+										...activities,
+										{ name: "", isAbsence: false, sortOrder: activities.length, archived: false }
+									])}
+							>
+								<PlusIcon class="size-4" /> Aktivität
+							</Button>
+							<Button size="sm" disabled={savingActivities} onclick={saveActivities}>
+								{savingActivities ? "Wird gespeichert…" : "Speichern"}
+							</Button>
+						</div>
 					</div>
 				{/if}
 			</Card.Content>

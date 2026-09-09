@@ -13,6 +13,7 @@
 	import type { DataChanged } from "$lib/platform/windows";
 	import { onPairLink, onTeamJoinLink } from "$lib/platform/deeplink";
 	import { teamJoin } from "$lib/team/state.svelte";
+	import { syncTeamActivities } from "$lib/team/activities";
 	import WebOnboarding from "$lib/components/onboarding/WebOnboarding.svelte";
 	import { onboardingOpen } from "$lib/account/onboarding.svelte";
 	import PasskeyNudge from "$lib/components/onboarding/PasskeyNudge.svelte";
@@ -296,6 +297,9 @@
 			// Erst NACH dem Laden: der Abgleich schreibt in denselben Bestand, und
 			// ein nicht erreichbarer Server darf den Start nicht aufhalten.
 			await account.init();
+			// Nicht abwarten: rein additiv (siehe syncTeamActivities), ein
+			// nicht erreichbarer Server darf den Start nicht aufhalten.
+			void syncTeamActivities();
 			whatsNew.checkOnStartup(app.showOnboarding);
 			scheduleReminders();
 			scheduleReportReminder();
