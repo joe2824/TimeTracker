@@ -688,6 +688,26 @@ class AccountState {
 				this.firstSyncDone = true;
 			}
 		} catch (e) {
+			// Auch ein Durchgang, der am Ende scheitert, kann vorher schon Seiten
+			// gepullt und auf die Platte geschrieben haben (Push vor Pull, mehrseitiger
+			// Abruf) - am `app`-Zwischenspeicher geht das vorbei, der schreibt erst bei
+			// reload() nach. Bliebe er stehen, überschriebe der nächste lokale Save
+			// (z.B. Timer-Start) den frischen Diskstand mit dem alten - diffAndStamp
+			// sieht dann einen frisch angekommenen Eintrag als "gelöscht" an und wirft
+			// ihn samt Löschung in die Outbox.
+			// `this.#engine` erneut prüfen, nicht nur beim Eintritt: eine Runde, die
+			// noch lief, als unlink()/#forgetLocally() dazwischenkam, landet auch
+			// hier - und ein Reload würde dann Dateien zurückschreiben (u.a.
+			// #seedBuiltins), die das Abmelden gerade erst gelöscht hat.
+			if (this.#engine && this.#reloadIsDue()) {
+				try {
+					await app.reload();
+				} catch (reloadError) {
+					// Der eigentliche Abgleichsfehler unten zählt - ein Lesefehler hier
+					// darf ihn nicht verdecken.
+					logWarn("Neuladen nach gescheitertem Abgleich fehlgeschlagen", reloadError);
+				}
+			}
 			// Auch ein gescheiterter Versuch beantwortet die Frage "warten oder
 			// anzeigen?": ohne Verbindung bleibt der Willkommensbildschirm sonst
 			// für immer aus.
