@@ -203,6 +203,62 @@ export const telemetryPings = sqliteTable(
 	(t) => [uniqueIndex("telemetry_pings_date_device").on(t.date, t.deviceId)]
 );
 
+/**
+ * Ein Team. Der Chef ist ein normales Konto (`ownerUserId`) - keine eigene
+ * Identität dafür. Kein Unique-Constraint auf `ownerUserId`: ein Chef kann
+ * mehrere Teams führen.
+ */
+export const teams = sqliteTable(
+	"teams",
+	{
+		id: text("id").primaryKey(),
+		ownerUserId: text("owner_user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		name: text("name").notNull(),
+		createdAt: integer("created_at").notNull()
+	},
+	(t) => [index("teams_owner").on(t.ownerUserId)]
+);
+
+/** Ein Einladungslink für ein Team - mehrfach nutzbar, anders als ein Konto-Invite. */
+export const teamInvites = sqliteTable(
+	"team_invites",
+	{
+		code: text("code").primaryKey(),
+		teamId: text("team_id")
+			.notNull()
+			.references(() => teams.id, { onDelete: "cascade" }),
+		createdAt: integer("created_at").notNull(),
+		expiresAt: integer("expires_at"),
+		revokedAt: integer("revoked_at")
+	},
+	(t) => [index("team_invites_team").on(t.teamId)]
+);
+
+/**
+ * Ein Team-Mitglied. Eigener Token-Raum, komplett getrennt von `devices`/
+ * `users` - Mitglieder brauchen kein verschlüsseltes Personenkonto.
+ */
+export const teamMembers = sqliteTable(
+	"team_members",
+	{
+		id: text("id").primaryKey(),
+		teamId: text("team_id")
+			.notNull()
+			.references(() => teams.id, { onDelete: "cascade" }),
+		name: text("name").notNull(),
+		tokenHash: text("token_hash").notNull(),
+		createdAt: integer("created_at").notNull(),
+		lastSeenAt: integer("last_seen_at"),
+		revokedAt: integer("revoked_at")
+	},
+	(t) => [
+		index("team_members_team").on(t.teamId),
+		uniqueIndex("team_members_token").on(t.tokenHash)
+	]
+);
+
 /** Der Zeitpunkt "jetzt" in der Einheit, die alle Tabellen benutzen. */
 export const now = () => Date.now();
 

@@ -682,6 +682,36 @@ export function updateDevice(
 	});
 }
 
+/**
+ * Was dieses Gerät über seine Team-Mitgliedschaft weiss.
+ *
+ * Eigene Datei, nicht `device.json`: ein Team-Mitglied hat kein Konto und
+ * keinen Vault-Schlüssel - beides bleibt hier komplett aussen vor. Wie
+ * `device.json` bewusst NICHT verschlüsselt (siehe oben): das Token ist
+ * selbst schon der Zugang, kein Inhalt, der einen Schlüssel bräuchte.
+ */
+export interface TeamDeviceInfo {
+	teamMemberId: string;
+	/** Das Team-Token - siehe server/src/lib/server/teams.ts. */
+	token: string;
+	teamName: string;
+	serverUrl: string;
+}
+
+export async function loadTeamDevice(): Promise<TeamDeviceInfo | null> {
+	return readJson<TeamDeviceInfo | null>("team.json", null);
+}
+
+export async function saveTeamDevice(info: TeamDeviceInfo): Promise<void> {
+	return writeJson("team.json", info);
+}
+
+/** Die Team-Mitgliedschaft aufgeben - z.B. nach dem Hinauswerfen durch den Chef. */
+export async function clearTeamDevice(): Promise<void> {
+	const path = `${DIR}/team.json`;
+	if (await storage.exists(path)) await storage.remove(path);
+}
+
 /** Ausstehende Änderungen. Der Inhalt steht in sync/outbox.ts. */
 export async function loadOutbox<T>(): Promise<T[]> {
 	const stored = await readJson<T[]>("outbox.json", []);

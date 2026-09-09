@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { openDb } from "$lib/server/db";
 import { cleanupExpired, deviceFromToken, userFromSession } from "$lib/server/auth";
+import { teamMemberFromToken } from "$lib/server/teams";
 import { startBackupScheduler } from "$lib/server/backup";
 import { APP_SHELL_FILE, CLIENT_DIR, DB_FILE } from "$lib/server/config";
 import { SESSION_COOKIE, setSessionCookie } from "$lib/server/session";
@@ -16,6 +17,7 @@ import {
 	LIMIT_PAIR_START,
 	LIMIT_RECOVER,
 	LIMIT_TELEMETRY,
+	LIMIT_TEAM_JOIN,
 	isLocked,
 	takeAttempt,
 	cleanupLimits,
@@ -48,7 +50,8 @@ const RATE_LIMITS: [string, LimitOptions][] = [
 	// aufrufen, und jede Runde kostet eine Konto- und eine Gerätezeile.
 	["/api/auth/device", LIMIT_AUTH],
 	["/api/auth/recover", LIMIT_RECOVER],
-	["/api/telemetry", LIMIT_TELEMETRY]
+	["/api/telemetry", LIMIT_TELEMETRY],
+	["/api/team/join", LIMIT_TEAM_JOIN]
 ];
 
 
@@ -197,6 +200,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.dbPath = DB_FILE;
 	event.locals.userId = null;
 	event.locals.deviceId = null;
+	event.locals.teamMemberId = null;
+	event.locals.teamId = null;
 
 	// Das Token zuerst: es ist die ausdrücklichere Angabe als ein Cookie.
 	const auth = event.request.headers.get("authorization");
@@ -205,6 +210,17 @@ export const handle: Handle = async ({ event, resolve }) => {
 		if (device) {
 			event.locals.userId = device.userId;
 			event.locals.deviceId = device.deviceId;
+		}
+	}
+
+	// Eigener Kopf, eigener Token-Raum: ein Team-Mitglied hat kein Personenkonto
+	// und darf mit userId/deviceId nicht verwechselt werden.
+	const teamAuth = event.request.headers.get("x-team-token");
+	if (teamAuth) {
+		const member = teamMemberFromToken(db, teamAuth);
+		if (member) {
+			event.locals.teamMemberId = member.teamMemberId;
+			event.locals.teamId = member.teamId;
 		}
 	}
 

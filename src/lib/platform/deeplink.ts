@@ -61,19 +61,59 @@ export function alreadyHandled(url: string): boolean {
 }
 
 /**
- * Auf Links horchen. Gibt eine Funktion zum Abmelden zurück.
+ * Der Link, der die Anwendung mit einem Team-Beitrittscode öffnet.
  *
- * Drei Wege, weil die Betriebssysteme sich nicht einig sind: ein Kaltstart
- * bringt die Adresse als Startargument mit, eine laufende Anwendung bekommt sie
- * über das Plugin, und unter Windows startet der Link eine zweite Instanz -
- * deren Argumente reicht lib.rs als Ereignis herein.
+ * Getrennt vom Kopplungslink: ein Team-Mitglied hat kein Konto - anders als
+ * beim Kopplungscode kann die Anwendung den Server also aus keinem
+ * bestehenden Zustand erschliessen. Er muss deshalb, anders als bei
+ * `pairLink`, MIT in den Link.
  */
-export async function onPairLink(
+export function teamJoinLink(serverUrl: string, code: string): string {
+	return `${SCHEMA}://team/join/${encodeURIComponent(code)}?server=${encodeURIComponent(serverUrl)}`;
+}
+
+/** Beitrittscode und Serveradresse aus einem Team-Link ziehen - oder null. */
+export function teamJoinFrom(url: string): { code: string; serverUrl: string } | null {
+	const hit = /^timetracker:\/\/team\/join\/([^/?#]+)\/?(?:\?(.*))?$/i.exec(url.trim());
+	if (!hit) return null;
+	const server = new URLSearchParams(hit[2] ?? "").get("server")?.trim();
+	if (!server) return null;
+	return { code: decodeURIComponent(hit[1]), serverUrl: server };
+}
+
+/**
+ * Auf Links horchen - die drei Wege, über die eine Adresse hereinkommen kann.
+ *
+ * Ein Kaltstart bringt sie als Startargument mit, eine laufende Anwendung
+ * bekommt sie über das Plugin, und unter Windows startet der Link eine zweite
+ * Instanz - deren Argumente reicht lib.rs als Ereignis herein. Gemeinsam für
+ * jede Art von Link, damit die Plugin-/Ereignis-Anbindung nur einmal steht.
+ */
+async function listenDeepLinks(onUrl: (url: string) => void): Promise<() => void> {
+	if (!isTauri()) return () => {};
+	const logout: (() => void)[] = [];
+	try {
+		const { getCurrent, onOpenUrl } = await import("@tauri-apps/plugin-deep-link");
+		for (const url of (await getCurrent()) ?? []) onUrl(url);
+		logout.push(await onOpenUrl((urls) => urls.forEach(onUrl)));
+	} catch {
+		// Ohne Plugin bleibt der Weg über das Ereignis unten.
+	}
+	try {
+		const { listen } = await import("@tauri-apps/api/event");
+		logout.push(await listen<string>("deep-link", (e) => onUrl(String(e.payload ?? ""))));
+	} catch {
+		/* kein Ereigniskanal */
+	}
+	return () => logout.forEach((f) => f());
+}
+
+/** Auf Kopplungs-Links horchen. Gibt eine Funktion zum Abmelden zurück. */
+export function onPairLink(
 	fn: (code: string) => void,
 	onStart?: (serverUrl: string) => void
 ): Promise<() => void> {
-	if (!isTauri()) return () => {};
-	const on = (url: string) => {
+	return listenDeepLinks((url) => {
 		if (alreadyHandled(url)) return;
 		const code = pairCodeFrom(url);
 		if (code) {
@@ -82,20 +122,14 @@ export async function onPairLink(
 		}
 		const server = pairStartFrom(url);
 		if (server && onStart) onStart(server);
-	};
-	const logout: (() => void)[] = [];
-	try {
-		const { getCurrent, onOpenUrl } = await import("@tauri-apps/plugin-deep-link");
-		for (const url of (await getCurrent()) ?? []) on(url);
-		logout.push(await onOpenUrl((urls) => urls.forEach(on)));
-	} catch {
-		// Ohne Plugin bleibt der Weg über das Ereignis unten.
-	}
-	try {
-		const { listen } = await import("@tauri-apps/api/event");
-		logout.push(await listen<string>("deep-link", (e) => on(String(e.payload ?? ""))));
-	} catch {
-		/* kein Ereigniskanal */
-	}
-	return () => logout.forEach((f) => f());
+	});
+}
+
+/** Auf Team-Beitritts-Links horchen. Gibt eine Funktion zum Abmelden zurück. */
+export function onTeamJoinLink(fn: (link: { code: string; serverUrl: string }) => void): Promise<() => void> {
+	return listenDeepLinks((url) => {
+		if (alreadyHandled(url)) return;
+		const link = teamJoinFrom(url);
+		if (link) fn(link);
+	});
 }

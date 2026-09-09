@@ -1,6 +1,14 @@
 // Was aus einem "timetracker://"-Link herausfällt.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { pairCodeFrom, pairLink, pairStartFrom, pairStartLink, alreadyHandled } from "./deeplink";
+import {
+	pairCodeFrom,
+	pairLink,
+	pairStartFrom,
+	pairStartLink,
+	alreadyHandled,
+	teamJoinFrom,
+	teamJoinLink
+} from "./deeplink";
 
 describe("pairCodeAus", () => {
 	it("liest den Code", () => {
@@ -59,6 +67,44 @@ describe("pairStartFrom", () => {
 	it("gibt null ohne Adresse", () => {
 		expect(pairStartFrom("timetracker://pair?server=")).toBeNull();
 		expect(pairStartFrom("timetracker://andere")).toBeNull();
+	});
+});
+
+describe("teamJoinFrom", () => {
+	const url = "https://tt.example.de";
+	const suffix = `?server=${encodeURIComponent(url)}`;
+
+	it("liest Beitrittscode und Serveradresse", () => {
+		expect(teamJoinFrom(`timetracker://team/join/ABCD-EFGH-JKLM-NPQR${suffix}`)).toEqual({
+			code: "ABCD-EFGH-JKLM-NPQR",
+			serverUrl: url
+		});
+	});
+
+	it("vertraegt einen Schraegstrich vor dem Fragezeichen", () => {
+		expect(teamJoinFrom(`timetracker://team/join/ABCD/${suffix}`)).toEqual({ code: "ABCD", serverUrl: url });
+	});
+
+	it("verwechselt sich nicht mit einem Kopplungslink", () => {
+		expect(teamJoinFrom(`timetracker://pair/ABCD${suffix}`)).toBeNull();
+		expect(pairCodeFrom(`timetracker://team/join/ABCD${suffix}`)).toBeNull();
+	});
+
+	it("gibt null ohne Serveradresse", () => {
+		expect(teamJoinFrom("timetracker://team/join/ABCD")).toBeNull();
+	});
+
+	it("gibt null bei allem anderen", () => {
+		expect(teamJoinFrom(`https://example.de/team/join/ABCD${suffix}`)).toBeNull();
+		expect(teamJoinFrom(`timetracker://team/join/${suffix}`)).toBeNull();
+		expect(teamJoinFrom("")).toBeNull();
+	});
+
+	it("passt zu teamJoinLink", () => {
+		expect(teamJoinFrom(teamJoinLink(url, "ABCD-EFGH-JKLM-NPQR"))).toEqual({
+			code: "ABCD-EFGH-JKLM-NPQR",
+			serverUrl: url
+		});
 	});
 });
 

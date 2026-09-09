@@ -11,7 +11,8 @@
 	import { account } from "$lib/sync/account.svelte";
 	import { capabilities, isTauri } from "$lib/platform/env";
 	import type { DataChanged } from "$lib/platform/windows";
-	import { onPairLink } from "$lib/platform/deeplink";
+	import { onPairLink, onTeamJoinLink } from "$lib/platform/deeplink";
+	import { teamJoin } from "$lib/team/state.svelte";
 	import WebOnboarding from "$lib/components/onboarding/WebOnboarding.svelte";
 	import { onboardingOpen } from "$lib/account/onboarding.svelte";
 	import PasskeyNudge from "$lib/components/onboarding/PasskeyNudge.svelte";
@@ -60,6 +61,7 @@
 	import UpdateDialog from "$lib/components/dialogs/UpdateDialog.svelte";
 	import PairApprovalDialog from "$lib/components/dialogs/PairApprovalDialog.svelte";
 	import PairStartDialog from "$lib/components/dialogs/PairStartDialog.svelte";
+	import JoinTeamDialog from "$lib/components/team/JoinTeamDialog.svelte";
 	import LostEditsDialog from "$lib/components/dialogs/LostEditsDialog.svelte";
 	import WhatsNewDialog from "$lib/components/dialogs/WhatsNewDialog.svelte";
 	import { whatsNew } from "$lib/release/whatsNew.svelte";
@@ -324,6 +326,9 @@
 							account.pairStartRequest = server;
 						}
 					),
+					await onTeamJoinLink((link) => {
+						teamJoin.pendingLink = link;
+					}),
 					await listen<DataChanged>("data-reload", (e) => {
 						// Der eigene Ruf ginge sonst im Kreis: syncNow meldet nach jedem
 						// Zulauf, und die Nachlese unten stiesse den naechsten an.
@@ -722,6 +727,7 @@
 	<UpdateDialog />
 	<PairApprovalDialog />
 	<PairStartDialog />
+	<JoinTeamDialog />
 	<LostEditsDialog />
 
 	<!-- Ein frisch gekoppeltes Geraet ist lokal leer: "Willkommen" waere falsch,

@@ -25,7 +25,19 @@ import {
 	setChangeListener,
 	rememberUnstamped
 } from "./outbox";
-import { Api, ApiError, type AccountInfo, type BackupInfo, type DeleteSummary, type Invite, type Passkey, type ServerStats } from "./api";
+import {
+	Api,
+	ApiError,
+	type AccountInfo,
+	type BackupInfo,
+	type DeleteSummary,
+	type Invite,
+	type Passkey,
+	type ServerStats,
+	type TeamInfo,
+	type TeamInvite,
+	type TeamMemberInfo
+} from "./api";
 
 import { detachLocalData } from "./detach";
 import { monthKey, prevMonthKey, shiftMonthKey } from "../time/time";
@@ -1419,6 +1431,38 @@ class AccountState {
 	async revokeInvite(code: string): Promise<void> {
 		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
 		await this.#api.revokeInvite(code);
+	}
+
+	// ---------- Team-Modus ----------
+
+	async listTeams(): Promise<TeamInfo[]> {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		return (await this.#api.listTeams()).teams;
+	}
+
+	async createTeam(name: string): Promise<TeamInfo> {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		return this.#api.createTeam(name);
+	}
+
+	async getTeamInvite(teamId: string): Promise<TeamInvite | null> {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		return (await this.#api.getTeamInvite(teamId)).invite;
+	}
+
+	async rotateTeamInvite(teamId: string): Promise<TeamInvite> {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		return this.#api.rotateTeamInvite(teamId);
+	}
+
+	async listTeamMembers(teamId: string): Promise<TeamMemberInfo[]> {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		return (await this.#api.listTeamMembers(teamId)).members;
+	}
+
+	async revokeTeamMember(teamId: string, memberId: string): Promise<void> {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		await this.#api.revokeTeamMember(teamId, memberId);
 	}
 
 	async backups(): Promise<BackupInfo[]> {
