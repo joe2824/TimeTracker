@@ -75,6 +75,16 @@ export const CLIENT_DIR = process.env.CLIENT_DIR ?? "static";
  */
 export const APP_SHELL_FILE = "app-shell.html";
 
+/**
+ * Konten löschen, an denen sich seither weder ein Gerät gemeldet noch ein
+ * Passkey angemeldet hat (Tage, 0 = aus). Wer so lange nicht vorbeischaut,
+ * benutzt die Anwendung nicht mehr - die Datenbank soll davon nicht anwachsen.
+ * Ein frisch angelegtes, aber nie genutztes Konto zählt erst ab seinem
+ * `createdAt` mit, nicht sofort.
+ */
+export const INACTIVE_ACCOUNT_DAYS = Number(process.env.INACTIVE_ACCOUNT_DAYS ?? 365);
+export const INACTIVE_ACCOUNT_MS = INACTIVE_ACCOUNT_DAYS * 24 * 3600_000;
+
 /** Automatische Sicherungen: Intervall in Stunden (0 = aus, Standard 24h). */
 export const BACKUP_INTERVAL_HOURS = Number(process.env.BACKUP_INTERVAL_HOURS ?? 24);
 /** Wie viele automatische Sicherungen aufgehoben werden (Standard: 7). */

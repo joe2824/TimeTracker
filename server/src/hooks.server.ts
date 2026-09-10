@@ -6,9 +6,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { openDb } from "$lib/server/db";
 import { cleanupExpired, deviceFromToken, userFromSession } from "$lib/server/auth";
+import { deleteInactiveAccounts } from "$lib/server/account";
 import { teamMemberFromToken } from "$lib/server/teams";
 import { startBackupScheduler } from "$lib/server/backup";
-import { APP_SHELL_FILE, CLIENT_DIR, DB_FILE } from "$lib/server/config";
+import { APP_SHELL_FILE, CLIENT_DIR, DB_FILE, INACTIVE_ACCOUNT_DAYS, INACTIVE_ACCOUNT_MS } from "$lib/server/config";
 import { SESSION_COOKIE, setSessionCookie } from "$lib/server/session";
 import {
 	LIMIT_AUTH,
@@ -122,8 +123,22 @@ if (!isValidRpId(RP_ID)) {
 	console.warn("");
 }
 
+/** Inaktive Konten wegräumen - siehe INACTIVE_ACCOUNT_DAYS in config.ts. */
+function purgeInactiveAccounts(): void {
+	if (INACTIVE_ACCOUNT_DAYS <= 0) return;
+	const n = deleteInactiveAccounts(db, INACTIVE_ACCOUNT_MS);
+	if (n > 0) console.log(`[Server] ${n} Konto/Konten wegen Inaktivität (> ${INACTIVE_ACCOUNT_DAYS} Tage) gelöscht.`);
+}
+
+if (INACTIVE_ACCOUNT_DAYS > 0) {
+	console.log(`[Server] Inaktive Konten werden nach ${INACTIVE_ACCOUNT_DAYS} Tagen ohne Gerät/Passkey gelöscht.`);
+} else {
+	console.log("[Server] Löschen inaktiver Konten ist deaktiviert (INACTIVE_ACCOUNT_DAYS=0).");
+}
+
 cleanupExpired(db);
 cleanupOldTelemetry(raw);
+purgeInactiveAccounts();
 // Stündlich, damit abgebrochene Anmeldeversuche und abgelaufene Sitzungen nicht
 // unbegrenzt liegen bleiben. `unref`, damit dieser Zeitgeber den Prozess beim
 // Herunterfahren nicht offenhält.
@@ -131,6 +146,7 @@ setInterval(() => {
 	cleanupExpired(db);
 	cleanupLimits();
 	cleanupOldTelemetry(raw);
+	purgeInactiveAccounts();
 }, 3600_000).unref();
 
 
