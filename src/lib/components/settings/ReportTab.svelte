@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from "svelte";
+	import { app } from "$lib/app.svelte";
 	import { account } from "$lib/sync/account.svelte";
 	import { createSettingsForm } from "$lib/ui/settingsForm.svelte";
 	import { Button } from "$lib/components/ui/button";
@@ -7,8 +7,9 @@
 	import { Label } from "$lib/components/ui/label";
 	import SettingToggle from "$lib/components/shared/SettingToggle.svelte";
 	import SettingsCard from "$lib/components/shared/SettingsCard.svelte";
-	import { loadTeamDevice, clearTeamDevice, type TeamDeviceInfo } from "$lib/store";
+	import { clearTeamDevice } from "$lib/store";
 	import { syncTeamActivities } from "$lib/team/activities";
+	import { teamJoin } from "$lib/team/state.svelte";
 	import { errorText } from "$lib/log";
 	import { toast } from "svelte-sonner";
 	import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
@@ -16,13 +17,12 @@
 	import UsersIcon from "@lucide/svelte/icons/users";
 
 	// ---------- Team-Mitgliedschaft (dieses Gerät ist Mitglied, kein Chef) ----------
+	//
+	// Aus teamJoin.device gelesen, nicht selbst per onMount geladen: bits-ui
+	// baut alle Einstellungs-Tabs beim Start mit auf, ein einmaliges Laden hier
+	// sähe einen späteren Beitritt über den Deep-Link-Dialog nie.
 
-	let teamDevice = $state<TeamDeviceInfo | null>(null);
 	let refreshingTeam = $state(false);
-
-	onMount(async () => {
-		teamDevice = await loadTeamDevice();
-	});
 
 	async function refreshTeamActivities() {
 		refreshingTeam = true;
@@ -38,7 +38,11 @@
 
 	async function leaveTeam() {
 		await clearTeamDevice();
-		teamDevice = null;
+		teamJoin.device = null;
+		// Löst teamOwned-Zeilen aus der gemeinsamen Verwaltung, behält sie aber
+		// (archiviert, mit neuer Id) - ein blosses Entfernen liesse schon
+		// erfasste Stunden lautlos aus dem Bericht verschwinden.
+		await app.detachTeamActivities();
 		toast.success("Team verlassen.");
 	}
 
@@ -71,12 +75,12 @@
 	}
 </script>
 
-{#if teamDevice}
+{#if teamJoin.device}
 	<SettingsCard title="Team-Mitgliedschaft" description="Die gemeinsamen Aktivitäten kommen von dort.">
 		<div class="flex flex-wrap items-center justify-between gap-3">
 			<div class="flex items-center gap-2">
 				<UsersIcon class="text-muted-foreground size-4" />
-				<span class="font-medium">{teamDevice.teamName}</span>
+				<span class="font-medium">{teamJoin.device.teamName}</span>
 			</div>
 			<div class="flex gap-2">
 				<Button variant="outline" size="sm" disabled={refreshingTeam} onclick={refreshTeamActivities}>

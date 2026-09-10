@@ -147,6 +147,9 @@ export async function rememberUnstamped(forceAll = false): Promise<void> {
 		}
 	}
 	for (const a of await loadActivities()) {
+		// Team-Zeilen tragen nie ein rev (siehe hook.activities) - ohne den
+		// Ausschluss versuchte jeder Nachlauf erneut, sie als eigene hochzuladen.
+		if (a.teamOwned) continue;
 		if (forceAll || a.rev === undefined) changes.push({ kind: "activity", id: a.id, deleted: false, at: now });
 	}
 	// Nur wenn dieses Gerät überhaupt schon Einstellungen hat - sonst entstünde
@@ -196,7 +199,19 @@ const hook: WriteHook = {
 	async activities(before, after) {
 		if (suppressed > 0) return after;
 		const now = Date.now();
-		const { changes, stamped } = diffAndStamp(before, after, deviceId, now);
+		// Vom Team vorgegebene Zeilen gehören nicht in dieses Konto - sie kommen
+		// über den eigenen Team-Kanal (team/activities.ts), nicht über den
+		// Ende-zu-Ende-verschlüsselten Sync. Ohne diesen Ausschluss liefen sie
+		// als "persönliche Änderung" hoch und landeten auf JEDEM anderen Gerät
+		// dieses Kontos - auch auf einem ganz ohne Team-Mitgliedschaft.
+		const isTeamOwned = (a: Activity) => a.teamOwned === true;
+		const teamRows = after.filter(isTeamOwned);
+		const { changes, stamped } = diffAndStamp(
+			before.filter((a) => !isTeamOwned(a)),
+			after.filter((a) => !isTeamOwned(a)),
+			deviceId,
+			now
+		);
 		await note([
 			...changes.changed.map((a: Activity) => ({ kind: "activity" as const, id: a.id, deleted: false, at: now })),
 			...changes.deleted.map((a: Activity) => ({
@@ -207,7 +222,7 @@ const hook: WriteHook = {
 				at: now
 			}))
 		]);
-		return stamped;
+		return [...stamped, ...teamRows];
 	},
 
 	async settings(before, after) {

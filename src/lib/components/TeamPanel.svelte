@@ -2,6 +2,7 @@
 	import { invoke } from "@tauri-apps/api/core";
 	import { save } from "@tauri-apps/plugin-dialog";
 	import { account } from "$lib/sync/account.svelte";
+	import { capabilities, isTauri } from "$lib/platform/env";
 	import type {
 		TeamActivity,
 		TeamActivityInput,
@@ -69,7 +70,14 @@
 		}
 	}
 
+	// Zählt jeden Abruf durch - läuft eine spätere Auswahl (anderes Team/Monat)
+	// einer langsameren früheren Antwort den Rang ab, verwirft deren `then` sich
+	// selbst. Ohne das könnte eine veraltete Antwort die gerade angezeigten
+	// Daten des inzwischen ausgewählten Teams überschreiben.
+	let teamDetailsRequest = 0;
+
 	async function loadTeamDetails(teamId: string) {
+		const requestId = ++teamDetailsRequest;
 		inviteLoading = true;
 		try {
 			const [inv, mem, act] = await Promise.all([
@@ -77,13 +85,15 @@
 				account.listTeamMembers(teamId),
 				account.listTeamActivities(teamId)
 			]);
+			if (requestId !== teamDetailsRequest) return;
 			invite = inv;
 			members = mem;
 			activities = act;
 		} catch (e) {
+			if (requestId !== teamDetailsRequest) return;
 			toast.error(`Team konnte nicht geladen werden: ${errorText(e)}`);
 		} finally {
-			inviteLoading = false;
+			if (requestId === teamDetailsRequest) inviteLoading = false;
 		}
 	}
 
@@ -98,12 +108,16 @@
 
 	async function saveActivities() {
 		if (!selectedTeamId || savingActivities) return;
+		const teamId = selectedTeamId;
 		const cleaned = activities
 			.map((a, i) => ({ ...a, name: a.name.trim(), sortOrder: i }))
 			.filter((a) => a.name);
 		savingActivities = true;
 		try {
-			activities = (await account.setTeamActivities(selectedTeamId, cleaned)) as TeamActivity[];
+			const saved = (await account.setTeamActivities(teamId, cleaned)) as TeamActivity[];
+			// Gegen dieselbe Verwechslungsgefahr wie teamDetailsRequest oben: bis zur
+			// Antwort könnte längst ein anderes Team ausgewählt sein.
+			if (teamId === selectedTeamId) activities = saved;
 			toast.success("Gemeinsame Aktivitäten gespeichert.");
 		} catch (e) {
 			toast.error(`Speichern fehlgeschlagen: ${errorText(e)}`);
@@ -183,14 +197,21 @@
 	/** Fehlende mit Adresse – nur die lassen sich per Mail erinnern. */
 	const reachableMissing = $derived(missing.filter((r) => r.memberEmail));
 
+	/** Gegen dieselbe Verwechslungsgefahr wie teamDetailsRequest oben. */
+	let reportsRequest = 0;
+
 	async function loadReports(teamId: string, forMonth: string) {
+		const requestId = ++reportsRequest;
 		reportsLoading = true;
 		try {
-			reports = await account.listTeamReports(teamId, forMonth);
+			const result = await account.listTeamReports(teamId, forMonth);
+			if (requestId !== reportsRequest) return;
+			reports = result;
 		} catch (e) {
+			if (requestId !== reportsRequest) return;
 			toast.error(`Abgaben konnten nicht geladen werden: ${errorText(e)}`);
 		} finally {
-			reportsLoading = false;
+			if (requestId === reportsRequest) reportsLoading = false;
 		}
 	}
 
@@ -237,8 +258,14 @@
 
 	/** Grobe Sicht auf payload - dem Transport nach unbekannt, in Wahrheit MonthReport (report/report.ts). */
 	function reportRows(payload: unknown): { name: string; hours: number }[] {
-		const rows = (payload as { rows?: { name: string; hours: number }[] } | null)?.rows;
-		return Array.isArray(rows) ? rows : [];
+		const rows = (payload as { rows?: unknown } | null)?.rows;
+		if (!Array.isArray(rows)) return [];
+		// Der Inhalt kommt vom Mitglieds-Client, ungeprüft - eine falsch geformte
+		// Zeile darf die Ansicht nicht zum Absturz bringen.
+		return rows.filter(
+			(r): r is { name: string; hours: number } =>
+				typeof r?.name === "string" && typeof r?.hours === "number"
+		);
 	}
 
 	async function draftReminder() {
@@ -428,10 +455,12 @@
 			<div class="flex flex-wrap items-end justify-between gap-3">
 				<MonthSelector bind:month id="tmonth" />
 				<div class="flex flex-wrap gap-2">
-					<Button variant="outline" onclick={exportCsv} disabled={reports.length === 0}>
-						<DownloadIcon class="size-4" /> CSV
-					</Button>
-					{#if reachableMissing.length > 0}
+					{#if isTauri()}
+						<Button variant="outline" onclick={exportCsv} disabled={reports.length === 0}>
+							<DownloadIcon class="size-4" /> CSV
+						</Button>
+					{/if}
+					{#if capabilities.outlook && reachableMissing.length > 0}
 						<Button variant="outline" onclick={draftReminder} disabled={drafting}>
 							<BellIcon class="size-4" /> Fehlende erinnern ({reachableMissing.length})
 						</Button>

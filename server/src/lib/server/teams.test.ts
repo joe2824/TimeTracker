@@ -151,6 +151,18 @@ describe("revokeTeamMember", () => {
 		expect(revokeTeamMember(db, teamA.id, joined.teamMemberId)).toBe(true);
 		expect(revokeTeamMember(db, teamA.id, joined.teamMemberId)).toBe(false);
 	});
+
+	it("ein hinausgeworfenes Mitglied bleibt aus dem Roster - kommt nicht nach dem naechsten Laden zurueck", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		const invite = rotateTeamInvite(db, team.id);
+		const staying = joinTeam(db, invite.code, "Anna Meier")!;
+		const kicked = joinTeam(db, invite.code, "Bodo Schmidt")!;
+
+		revokeTeamMember(db, team.id, kicked.teamMemberId);
+
+		const roster = listTeamMembers(db, team.id);
+		expect(roster.map((m) => m.id)).toEqual([staying.teamMemberId]);
+	});
 });
 
 describe("requireTeamMember", () => {
@@ -196,6 +208,24 @@ describe("setTeamActivities / listTeamActivities", () => {
 		setTeamActivities(db, teamB.id, [{ name: "B", isAbsence: false, sortOrder: 0, archived: false }]);
 		expect(listTeamActivities(db, teamA.id).map((a) => a.name)).toEqual(["A"]);
 		expect(listTeamActivities(db, teamB.id).map((a) => a.name)).toEqual(["B"]);
+	});
+
+	it("lehnt eine Id ab, die einem anderen Team gehört - statt sie zu überschreiben oder abzustürzen", () => {
+		const teamA = createTeam(db, ANNA, "Vertrieb");
+		const teamB = createTeam(db, ANNA, "Support");
+		const [rowA] = setTeamActivities(db, teamA.id, [
+			{ name: "A", isAbsence: false, sortOrder: 0, archived: false }
+		]);
+
+		expect(() =>
+			setTeamActivities(db, teamB.id, [
+				{ id: rowA.id, name: "Uebernommen", isAbsence: false, sortOrder: 0, archived: false }
+			])
+		).toThrow();
+
+		// Team A's Zeile blieb unangetastet - kein stilles Ueberschreiben.
+		expect(listTeamActivities(db, teamA.id)).toEqual([rowA]);
+		expect(listTeamActivities(db, teamB.id)).toEqual([]);
 	});
 });
 
@@ -247,6 +277,18 @@ describe("upsertTeamReport / listTeamReports", () => {
 
 		expect(listTeamReports(db, team.id, "2026-07")[0].submittedAt).toBeNull();
 		expect(listTeamReports(db, team.id, "2026-06")[0].submittedAt).not.toBeNull();
+	});
+
+	it("hoert auf, ein hinausgeworfenes Mitglied als fehlend zu fuehren", () => {
+		// Sonst zielte "Fehlende erinnern" weiter auf jemanden, der laengst nicht
+		// mehr im Team ist.
+		const team = createTeam(db, ANNA, "Vertrieb");
+		const kept = memberOf(team.id, "Anna Meier");
+		const kicked = memberOf(team.id, "Bodo Schmidt");
+		revokeTeamMember(db, team.id, kicked.teamMemberId);
+
+		const reports = listTeamReports(db, team.id, "2026-07");
+		expect(reports.map((r) => r.memberId)).toEqual([kept.teamMemberId]);
 	});
 });
 

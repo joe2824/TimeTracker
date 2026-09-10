@@ -194,6 +194,9 @@ export const BUILTIN_ABSENCE = "Abwesenheiten";
 export const BUILTIN_OTHERS_ID = "builtin-others";
 export const BUILTIN_ABSENCE_ID = "builtin-absence";
 
+/** Präfix der lokalen Id einer vom Team vorgegebenen Zeile - kann nie mit einer selbst angelegten (crypto.randomUUID()) kollidieren. */
+export const TEAM_ACTIVITY_PREFIX = "team:";
+
 /**
  * Die eingebauten Zeilen - „Others“ und die Abwesenheiten.
  *

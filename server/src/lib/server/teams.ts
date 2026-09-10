@@ -1,7 +1,7 @@
 // Team-Modus: Chef, Mitglieder, Einladungslinks. Bewusst ausserhalb des
 // Ende-zu-Ende-verschlüsselten Sync-Systems - siehe db/schema.ts.
 import { error } from "@sveltejs/kit";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
 import type { Db, DbLike } from "./db/index";
 import { teamActivities, teamInvites, teamMembers, teamReports, teams } from "./db/schema";
 import { generateInviteCode } from "./invites";
@@ -109,11 +109,17 @@ export function joinTeam(
 	return { teamMemberId: id, token, teamName: team.name };
 }
 
-/** Das Mitglied hinter einem Token - und `lastSeenAt` gleich mit aktualisiert. */
+/** `lastSeenAt` gilt als aktuell genug, wenn es innerhalb dieser Frist liegt - kein Schreiben bei jeder Anfrage. */
+const LAST_SEEN_THROTTLE_MS = 5 * 60_000;
+
+/** Das Mitglied hinter einem Token - `lastSeenAt` läuft nur alle paar Minuten mit, nicht bei jeder Anfrage. */
 export function teamMemberFromToken(db: Db, token: string): TeamMemberAuth | null {
 	const row = db.select().from(teamMembers).where(eq(teamMembers.tokenHash, hashSecret(token))).get();
 	if (!row || row.revokedAt) return null;
-	db.update(teamMembers).set({ lastSeenAt: Date.now() }).where(eq(teamMembers.id, row.id)).run();
+	const now = Date.now();
+	if (!row.lastSeenAt || now - row.lastSeenAt > LAST_SEEN_THROTTLE_MS) {
+		db.update(teamMembers).set({ lastSeenAt: now }).where(eq(teamMembers.id, row.id)).run();
+	}
 	return { teamMemberId: row.id, teamId: row.teamId };
 }
 
@@ -126,7 +132,12 @@ export interface TeamMemberRow {
 	revokedAt: number | null;
 }
 
-/** Das Roster eines Teams, neueste Mitglieder zuerst. */
+/**
+ * Das Roster eines Teams, neueste Mitglieder zuerst - ein hinausgeworfenes
+ * Mitglied bleibt draussen. Ohne den Filter kaeme es nach jedem Neuladen
+ * zurueck (kickMember in TeamPanel.svelte entfernt es nur lokal/optimistisch)
+ * und die Erinnerung zielte weiter auf jemanden, der laengst nicht mehr da ist.
+ */
 export function listTeamMembers(db: Db, teamId: string): TeamMemberRow[] {
 	return db
 		.select({
@@ -138,7 +149,7 @@ export function listTeamMembers(db: Db, teamId: string): TeamMemberRow[] {
 			revokedAt: teamMembers.revokedAt
 		})
 		.from(teamMembers)
-		.where(eq(teamMembers.teamId, teamId))
+		.where(and(eq(teamMembers.teamId, teamId), isNull(teamMembers.revokedAt)))
 		.orderBy(desc(teamMembers.createdAt))
 		.all();
 }
@@ -186,6 +197,20 @@ export interface TeamActivityInput {
  * Personendaten braucht es hier kein `updatedAt`/`rev`-Konfliktverfahren.
  */
 export function setTeamActivities(db: Db, teamId: string, items: TeamActivityInput[]): TeamActivityRow[] {
+	// `team_activities.id` ist ein blosses globales PRIMARY KEY, nicht je Team.
+	// Eine mitgegebene Id, die schon einem ANDEREN Team gehört, dürfte den
+	// Einfüge-Schritt unten nicht einfach knallen lassen (roher 500) - und erst
+	// recht nicht stillschweigend fremde Zeilen überschreiben. Sauber ablehnen.
+	const suppliedIds = items.map((it) => it.id).filter((id): id is string => !!id);
+	if (suppliedIds.length > 0) {
+		const foreign = db
+			.select({ id: teamActivities.id })
+			.from(teamActivities)
+			.where(and(inArray(teamActivities.id, suppliedIds), ne(teamActivities.teamId, teamId)))
+			.all();
+		if (foreign.length > 0) error(409, "Eine Aktivität gehört zu einem anderen Team");
+	}
+
 	const now = Date.now();
 	const rows: TeamActivityRow[] = items.map((it, i) => ({
 		id: it.id ?? crypto.randomUUID(),
@@ -260,7 +285,15 @@ export function setTeamReportStatus(
 	if (!member) return false;
 
 	if (sent) {
-		upsertTeamReport(db, teamId, memberId, month, null);
+		// Nicht blind upserten: ein Mitglied kann zwischen Laden der Ansicht und
+		// diesem Klick selbst einen echten Bericht hochgeladen haben - der darf
+		// nicht durch die von-Hand-Markierung (payload: null) ersetzt werden.
+		const existing = db
+			.select({ memberId: teamReports.memberId })
+			.from(teamReports)
+			.where(and(eq(teamReports.memberId, memberId), eq(teamReports.month, month)))
+			.get();
+		if (!existing) upsertTeamReport(db, teamId, memberId, month, null);
 	} else {
 		db.delete(teamReports)
 			.where(and(eq(teamReports.memberId, memberId), eq(teamReports.month, month)))
@@ -280,14 +313,36 @@ export interface TeamReportStatus {
 
 /** Für einen Monat: jedes Mitglied, ob und wann es gesendet hat - samt Inhalt. */
 export function listTeamReports(db: Db, teamId: string, month: string): TeamReportStatus[] {
-	const members = listTeamMembers(db, teamId);
 	const rows = db
 		.select()
 		.from(teamReports)
 		.where(and(eq(teamReports.teamId, teamId), eq(teamReports.month, month)))
 		.all();
 	const byMember = new Map(rows.map((r) => [r.memberId, r]));
-	return members.map((m) => {
+
+	const members = listTeamMembers(db, teamId);
+	const activeIds = new Set(members.map((m) => m.id));
+
+	// listTeamMembers lässt hinausgeworfene Mitglieder aussen vor - ausser eines
+	// hat für GENAU diesen Monat schon einen Bericht abgegeben: der darf dem
+	// Chef nicht verloren gehen, nur weil das Mitglied inzwischen weg ist.
+	const revokedSubmitters =
+		rows.length === 0
+			? []
+			: db
+					.select({
+						id: teamMembers.id,
+						name: teamMembers.name,
+						email: teamMembers.email
+					})
+					.from(teamMembers)
+					.where(
+						and(eq(teamMembers.teamId, teamId), inArray(teamMembers.id, rows.map((r) => r.memberId)))
+					)
+					.all()
+					.filter((m) => !activeIds.has(m.id));
+
+	return [...members, ...revokedSubmitters].map((m) => {
 		const row = byMember.get(m.id);
 		return {
 			memberId: m.id,
