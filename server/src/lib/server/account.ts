@@ -3,7 +3,7 @@
 //   - Ein GERAET lösen. Der Zugang dieses einen Geräts erlischt, das Konto und
 //     alle anderen Geräte bleiben. Das macht `revokeDevice` in auth.ts.
 //   - Das KONTO auflösen. Dann verschwindet alles, was der Server hat.
-import { eq, sql } from "drizzle-orm";
+import { eq, gte, lt, sql } from "drizzle-orm";
 import type { DbLike } from "./db/index";
 import {
 	challenges,
@@ -62,6 +62,42 @@ export function deleteAccount(db: DbLike, userId: string): DeleteSummary {
 	db.delete(users).where(eq(users.id, userId)).run();
 
 	return summary;
+}
+
+/**
+ * Konten löschen, die seit `maxAgeMs` weder ein Gerät noch einen Passkey
+ * benutzt haben - wer so lange nicht vorbeischaut, benutzt die Anwendung
+ * nicht mehr. Ein Konto ohne jedes Gerät/Passkey (sollte nicht vorkommen,
+ * ausser bei einem abgebrochenen Anlegen) zählt über sein `createdAt`.
+ * Liefert die Zahl gelöschter Konten.
+ */
+export function deleteInactiveAccounts(db: DbLike, maxAgeMs: number, now = Date.now()): number {
+	const cutoff = now - maxAgeMs;
+
+	const activeIds = new Set([
+		...db
+			.select({ userId: devices.userId })
+			.from(devices)
+			.where(gte(devices.lastSeenAt, cutoff))
+			.all()
+			.map((r) => r.userId),
+		...db
+			.select({ userId: credentials.userId })
+			.from(credentials)
+			.where(gte(credentials.lastUsedAt, cutoff))
+			.all()
+			.map((r) => r.userId)
+	]);
+
+	const inactive = db
+		.select({ id: users.id })
+		.from(users)
+		.where(lt(users.createdAt, cutoff))
+		.all()
+		.filter((u) => !activeIds.has(u.id));
+
+	for (const { id } of inactive) deleteAccount(db, id);
+	return inactive.length;
 }
 
 /** Das Schreibprotokoll in die Datenbank schieben und abschneiden. */
