@@ -4,8 +4,16 @@ vi.mock("@tauri-apps/plugin-fs", async () => (await import("../testing/fakeFs"))
 
 const { files, resetFakeFs } = await import("../testing/fakeFs");
 const store = await import("../store");
-const { startTracking, stopTracking, pendingChanges, clearChanges, resetOutboxForTests, mergePending, SETTINGS_ID } =
-	await import("./outbox");
+const {
+	startTracking,
+	stopTracking,
+	pendingChanges,
+	clearChanges,
+	resetOutboxForTests,
+	mergePending,
+	rememberUnstamped,
+	SETTINGS_ID
+} = await import("./outbox");
 const { defaultSettings } = await import("../types");
 import type { Entry } from "../types";
 import { anActivity, anEntry as e } from "../testing/fixtures";
@@ -108,6 +116,37 @@ describe("Aktivitaeten und Einstellungen", () => {
 		const raw = JSON.parse(files.get("data/settings.json")!);
 		expect(raw.id).toBeUndefined();
 		expect(raw.updatedAt).toBeGreaterThan(0);
+	});
+
+	it("stempelt und merkt eine vom Team vorgegebene Aktivität NICHT vor", async () => {
+		// Sonst liefe sie als "eigene Änderung" hoch und käme auf JEDEM anderen
+		// Gerät dieses Kontos an - auch auf einem ganz ohne Team-Mitgliedschaft.
+		await store.saveActivities([
+			anActivity("p1", { name: "Eigene" }),
+			anActivity("team:x", { name: "Vertrieb", teamOwned: true })
+		]);
+
+		expect(pendingChanges()).toEqual([expect.objectContaining({ kind: "activity", id: "p1" })]);
+
+		// Trotzdem ganz normal auf der Platte - nur eben unangetastet, kein Stempel.
+		const read = await store.loadActivities();
+		const team = read.find((a) => a.id === "team:x");
+		expect(team).toBeDefined();
+		expect(team?.deviceId).toBeUndefined();
+		expect(team?.updatedAt).toBeUndefined();
+	});
+
+	it("rememberUnstamped merkt eine ungestempelte Team-Aktivität ebenfalls nicht vor", async () => {
+		// team:x hat nie ein rev (siehe hook.activities) - ohne den Ausschluss
+		// versuchte jeder Nachlauf erneut, sie als eigene hochzuladen.
+		stopTracking();
+		resetFakeFs();
+		await store.saveActivities([anActivity("team:x", { name: "Vertrieb", teamOwned: true })]);
+		await startTracking(DEV);
+
+		await rememberUnstamped();
+
+		expect(pendingChanges()).toEqual([]);
 	});
 });
 

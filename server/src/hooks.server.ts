@@ -164,7 +164,11 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// Erst bremsen, dann arbeiten: eine Prüfung, die nach der teuren Abfrage
 	// kommt, bremst den Angreifer nicht, sondern nur den Server.
 	const rateLimit = RATE_LIMITS.find(([p]) => urlPath.startsWith(p));
-	const limitKey = rateLimit ? `${rateLimit[0]}|${originAddress(event)}` : "";
+	// Methode mit im Schlüssel: /api/team/join hat ein GET (Vorschau, feuert
+	// automatisch beim Öffnen des Beitritts-Dialogs) UND ein POST (der echte
+	// Beitritt) - ohne die Trennung verbrauchten ein paar Dialog-Öffnungen das
+	// Kontingent, das der eigentliche Beitritt braucht.
+	const limitKey = rateLimit ? `${rateLimit[0]}|${event.request.method}|${originAddress(event)}` : "";
 	// Beim Abfragen eines Kopplungsvorgangs zählen nur Fehlgriffe, und das
 	// entscheidet erst die Antwort - hier nur nachsehen, gezählt wird unten.
 	const onlyFailures = urlPath.startsWith("/api/pair/claim");

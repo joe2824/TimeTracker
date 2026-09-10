@@ -124,7 +124,13 @@
 		await applyShortcuts();
 	}
 
+	function isReorderable(id: string): boolean {
+		const a = app.activities.find((x) => x.id === id);
+		return !!a && !isBuiltinActivity(a) && !a.teamOwned;
+	}
+
 	function onDragStart(e: DragEvent, id: string) {
+		if (!isReorderable(id)) return;
 		draggingId = id;
 		if (e.dataTransfer) {
 			e.dataTransfer.effectAllowed = "move";
@@ -262,13 +268,15 @@
 							></div>
 						{/if}
 						<span
-							class="text-muted-foreground hover:text-foreground shrink-0 cursor-grab active:cursor-grabbing"
-							draggable={true}
+							class={isReorderable(a.id)
+								? "text-muted-foreground hover:text-foreground shrink-0 cursor-grab active:cursor-grabbing"
+								: "text-muted-foreground/40 shrink-0 cursor-default"}
+							draggable={isReorderable(a.id)}
 							role="button"
 							tabindex="-1"
 							ondragstart={(e) => onDragStart(e, a.id)}
 							ondragend={resetDrag}
-							title="Ziehen zum Sortieren"
+							title={isReorderable(a.id) ? "Ziehen zum Sortieren" : "Vom Team vorgegebene und eingebaute Zeilen lassen sich nicht per Ziehen umsortieren"}
 							aria-label="Ziehen zum Sortieren"
 						>
 							<GripVerticalIcon class="size-4" />

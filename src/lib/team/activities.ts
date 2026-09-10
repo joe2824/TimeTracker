@@ -5,11 +5,11 @@
 import { app } from "../app.svelte";
 import { loadTeamDevice } from "../store";
 import { fetchTeamActivities, type RemoteTeamActivity } from "./api";
+import { teamJoin } from "./state.svelte";
 import { logWarn } from "../log";
-import type { Activity } from "../types";
+import { TEAM_ACTIVITY_PREFIX, type Activity } from "../types";
 
-/** Präfix der lokalen Id - kann nie mit einer selbst angelegten (crypto.randomUUID()) kollidieren. */
-export const TEAM_ACTIVITY_PREFIX = "team:";
+export { TEAM_ACTIVITY_PREFIX };
 
 function toLocal(remote: RemoteTeamActivity): Activity {
 	return {
@@ -31,6 +31,10 @@ function toLocal(remote: RemoteTeamActivity): Activity {
  */
 export async function syncTeamActivities(): Promise<void> {
 	const device = await loadTeamDevice();
+	// Hier statt in jeder Komponente einzeln gelesen: läuft beim App-Start, hält
+	// den reaktiven Zustand also auch dann aktuell, wenn niemand die
+	// Einstellungen öffnet.
+	teamJoin.device = device;
 	if (!device) return;
 
 	let remote: RemoteTeamActivity[];
@@ -40,6 +44,12 @@ export async function syncTeamActivities(): Promise<void> {
 		logWarn("Team-Aktivitäten konnten nicht geladen werden", e);
 		return;
 	}
+
+	// Zwischenzeitlich könnte "Team verlassen" gelaufen sein (löscht team.json) -
+	// eine erst jetzt schreibende Antwort würde die gerade entfernten
+	// Team-Aktivitäten sonst wieder aufleben lassen.
+	const stillMember = await loadTeamDevice();
+	if (!stillMember || stillMember.token !== device.token) return;
 
 	const personal = app.activities.filter((a) => !a.teamOwned);
 	app.activities = [...personal, ...remote.map(toLocal)];

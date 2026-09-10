@@ -8,7 +8,8 @@ import {
 	BUILTIN_OTHERS_ID,
 	byActivityOrder,
 	isBuiltinActivity,
-	defaultSettings
+	defaultSettings,
+	TEAM_ACTIVITY_PREFIX
 } from "./types";
 import {
 	fmtClock,
@@ -398,7 +399,13 @@ class AppState {
 	}
 
 	activityName(id: string): string {
-		return this.activities.find((a) => a.id === id)?.name ?? "(gelöscht)";
+		const found = this.activities.find((a) => a.id === id)?.name;
+		if (found) return found;
+		// Ein team:-Eintrag ohne lokale Zeile ist nicht gelöscht, sondern auf
+		// einem anderen Gerät desselben Kontos entstanden, das (anders als dieses)
+		// Mitglied des betreffenden Teams ist - die Definition kommt bewusst nicht
+		// über den Ende-zu-Ende-Sync, siehe team/activities.ts.
+		return id.startsWith(TEAM_ACTIVITY_PREFIX) ? "(Team-Aktivität auf anderem Gerät)" : "(gelöscht)";
 	}
 
 	/**
@@ -724,6 +731,47 @@ class AppState {
 		await this.persistActivities();
 		logWarn(`Aktivität zusammengeführt: "${from.name}" → "${to.name}"`, { moved });
 		return moved;
+	}
+
+	/**
+	 * Team verlassen: löst alle teamOwned-Zeilen aus der gemeinsamen Verwaltung,
+	 * behält sie aber als eigene, archivierte Aktivität. Reines Entfernen liesse
+	 * ihre schon erfassten Stunden lautlos aus dem Bericht verschwinden - der
+	 * baut seine Zeilen nur aus der aktuellen activities-Liste auf (report.ts).
+	 * Neue Id je Zeile, damit ein späterer erneuter Beitritt zum selben Team
+	 * nicht auf dieselbe Id trifft wie diese losgelöste Kopie.
+	 */
+	async detachTeamActivities(): Promise<void> {
+		const teamOwned = this.activities.filter((a) => a.teamOwned);
+		if (teamOwned.length === 0) return;
+		const idMap = new Map(teamOwned.map((a) => [a.id, uid()]));
+
+		for (const m of await listEntryMonths()) {
+			await this.ensureMonth(m);
+			const list = this.entriesByMonth[m];
+			if (!list) continue;
+			let touched = false;
+			for (const e of list) {
+				const newId = idMap.get(e.activityId);
+				if (newId) {
+					e.activityId = newId;
+					touched = true;
+				}
+			}
+			if (touched) await this.#saveMonth(m);
+		}
+		if (this.running) {
+			const newId = idMap.get(this.running.activityId);
+			if (newId) this.running.activityId = newId;
+		}
+
+		this.activities = this.activities.map((a) => {
+			const newId = idMap.get(a.id);
+			if (!newId) return a;
+			const { teamOwned: _teamOwned, ...rest } = a;
+			return { ...rest, id: newId, archived: true };
+		});
+		await this.persistActivities();
 	}
 
 	/** Verschiebt `draggedId` vor/hinter `targetId` (Drag & Drop). */

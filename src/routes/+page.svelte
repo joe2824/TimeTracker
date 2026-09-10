@@ -630,7 +630,7 @@
 					<Tabs.Trigger value="report" title="Bericht">
 						<ChartColumnIcon /><span class="hidden sm:inline">Bericht</span>
 					</Tabs.Trigger>
-					{#if app.settings.bossMode && capabilities.outlook}
+					{#if app.settings.bossMode}
 						<Tabs.Trigger value="team" title="Team">
 							<UsersIcon /><span class="hidden sm:inline">Team</span>
 						</Tabs.Trigger>
@@ -708,8 +708,8 @@
 				<ReportView />
 			</Tabs.Content>
 			<!-- Nur bei aktivem Chef-Modus einhaengen: bits-ui baut sonst alle
-			     Tab-Inhalte mit auf, und im Browser gibt es kein Outlook dafuer. -->
-			{#if app.settings.bossMode && capabilities.outlook}
+			     Tab-Inhalte mit auf, auch wenn niemand den Tab je oeffnet. -->
+			{#if app.settings.bossMode}
 				<Tabs.Content value="team">
 					<TeamPanel />
 				</Tabs.Content>

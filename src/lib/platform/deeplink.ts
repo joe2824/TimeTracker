@@ -108,13 +108,22 @@ async function listenDeepLinks(onUrl: (url: string) => void): Promise<() => void
 	return () => logout.forEach((f) => f());
 }
 
-/** Auf Kopplungs-Links horchen. Gibt eine Funktion zum Abmelden zurück. */
+/**
+ * Auf Kopplungs-Links horchen. Gibt eine Funktion zum Abmelden zurück.
+ *
+ * `alreadyHandled` bekommt die Adresse mit einem Präfix - onPairLink und
+ * onTeamJoinLink hören unabhängig voneinander auf jede eingehende Adresse
+ * (auch auf eine, die gar nicht zu ihnen gehört) und teilten sich sonst EIN
+ * Gedächtnis: eine Team-Adresse, die zuerst hier ankommt, würde als
+ * "abgearbeitet" markiert, obwohl hier nichts damit passiert - onTeamJoinLink
+ * sähe sie danach nie.
+ */
 export function onPairLink(
 	fn: (code: string) => void,
 	onStart?: (serverUrl: string) => void
 ): Promise<() => void> {
 	return listenDeepLinks((url) => {
-		if (alreadyHandled(url)) return;
+		if (alreadyHandled(`pair:${url}`)) return;
 		const code = pairCodeFrom(url);
 		if (code) {
 			fn(code);
@@ -128,7 +137,7 @@ export function onPairLink(
 /** Auf Team-Beitritts-Links horchen. Gibt eine Funktion zum Abmelden zurück. */
 export function onTeamJoinLink(fn: (link: { code: string; serverUrl: string }) => void): Promise<() => void> {
 	return listenDeepLinks((url) => {
-		if (alreadyHandled(url)) return;
+		if (alreadyHandled(`team:${url}`)) return;
 		const link = teamJoinFrom(url);
 		if (link) fn(link);
 	});

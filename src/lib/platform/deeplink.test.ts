@@ -139,4 +139,18 @@ describe("onPairLink: dieselbe Adresse nur einmal", () => {
 		expect(alreadyHandled(b)).toBe(false);
 		expect(alreadyHandled(a)).toBe(true);
 	});
+
+	it("ein Praefix haelt zwei Hoerer auf derselben Adresse auseinander", () => {
+		// onPairLink und onTeamJoinLink horchen unabhaengig auf JEDE Adresse und
+		// pruefen `alreadyHandled` VOR dem eigentlichen Erkennen - ohne eigenen
+		// Praefix markierte der eine eine Adresse als erledigt, die er selbst gar
+		// nicht erkannte, und der andere saehe sie danach nie (der eigentliche
+		// Fehler, den dieser Test verhindert).
+		const url = "timetracker://team/join/ABCD?server=https%3A%2F%2Ftt.example.de";
+		expect(alreadyHandled(`pair:${url}`)).toBe(false);
+		expect(alreadyHandled(`team:${url}`)).toBe(false);
+		// Und innerhalb je eines Praefix gilt weiterhin: nur beim ersten Mal.
+		expect(alreadyHandled(`pair:${url}`)).toBe(true);
+		expect(alreadyHandled(`team:${url}`)).toBe(true);
+	});
 });
