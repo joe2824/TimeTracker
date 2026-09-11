@@ -1473,9 +1473,13 @@ class AccountState {
 		return (await this.#api.listTeamActivities(teamId)).activities;
 	}
 
-	async setTeamActivities(teamId: string, activities: TeamActivityInput[]): Promise<TeamActivity[]> {
+	async setTeamActivities(
+		teamId: string,
+		activities: TeamActivityInput[],
+		expectedVersion?: number
+	): Promise<TeamActivity[]> {
 		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		return (await this.#api.setTeamActivities(teamId, activities)).activities;
+		return (await this.#api.setTeamActivities(teamId, activities, expectedVersion)).activities;
 	}
 
 	async listTeamReports(teamId: string, month: string): Promise<TeamReportStatus[]> {
@@ -1488,9 +1492,14 @@ class AccountState {
 		await this.#api.markTeamReportSent(teamId, memberId, month);
 	}
 
-	async clearTeamReportStatus(teamId: string, memberId: string, month: string): Promise<void> {
+	async clearTeamReportStatus(
+		teamId: string,
+		memberId: string,
+		month: string,
+		expectedSubmittedAt: number
+	): Promise<void> {
 		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		await this.#api.clearTeamReportStatus(teamId, memberId, month);
+		await this.#api.clearTeamReportStatus(teamId, memberId, month, expectedSubmittedAt);
 	}
 
 	async backups(): Promise<BackupInfo[]> {

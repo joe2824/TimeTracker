@@ -974,3 +974,38 @@ describe("mergeActivityInto", () => {
 		expect(app.activities.find((a) => a.id === "team:x")?.teamOwned).toBe(true);
 	});
 });
+
+describe("detachTeamActivities", () => {
+	it("archiviert Team-Zeilen unter neuer Id und behaelt ihre Eintraege", async () => {
+		reset({ "2026-07": [entry("e1", "team:x", at(16, 9), at(16, 12))] });
+		app.activities = [
+			...ACTIVITIES,
+			{ id: "team:x", name: "Vertrieb", sortOrder: 3, archived: false, isAbsence: false, teamOwned: true }
+		];
+
+		await app.detachTeamActivities();
+
+		const detached = app.activities.find((a) => a.name === "Vertrieb");
+		expect(detached).toBeDefined();
+		expect(detached?.id).not.toBe("team:x");
+		expect(detached?.teamOwned).toBeUndefined();
+		expect(detached?.archived).toBe(true);
+		expect(onDisk("2026-07")[0].activityId).toBe(detached?.id);
+	});
+
+	it("traegt Kalender-Stichwortregeln auf die neue Id nach", async () => {
+		reset();
+		app.activities = [
+			...ACTIVITIES,
+			{ id: "team:x", name: "Vertrieb", sortOrder: 3, archived: false, isAbsence: false, teamOwned: true }
+		];
+		await app.updateSettings({ calendarKeywordMap: { vertrieb: "team:x", projekt: P1 } });
+
+		await app.detachTeamActivities();
+
+		const detached = app.activities.find((a) => a.name === "Vertrieb");
+		expect(app.settings.calendarKeywordMap.vertrieb).toBe(detached?.id);
+		// Regeln ohne Bezug zu einer Team-Zeile bleiben unangetastet.
+		expect(app.settings.calendarKeywordMap.projekt).toBe(P1);
+	});
+});

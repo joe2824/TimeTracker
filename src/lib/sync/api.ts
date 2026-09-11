@@ -540,11 +540,20 @@ export class Api {
 		return this.#call(`/api/team/${encodeURIComponent(teamId)}/activities`);
 	}
 
-	/** Voller Ersatz - der Chef ist die einzige Feder, kein Zusammenführen nötig. */
-	setTeamActivities(teamId: string, activities: TeamActivityInput[]): Promise<{ activities: TeamActivity[] }> {
+	/**
+	 * Voller Ersatz - in der Regel die einzige Feder (der Chef), kein
+	 * Zusammenführen nötig. `expectedVersion` (der höchste `updatedAt`-Stand, den
+	 * der Aufrufer zuletzt gesehen hat) lehnt der Server mit 409 ab, wenn sich
+	 * die Liste zwischenzeitlich anderswo geändert hat (z.B. zweiter Tab).
+	 */
+	setTeamActivities(
+		teamId: string,
+		activities: TeamActivityInput[],
+		expectedVersion?: number
+	): Promise<{ activities: TeamActivity[] }> {
 		return this.#call(`/api/team/${encodeURIComponent(teamId)}/activities`, {
 			method: "PUT",
-			body: JSON.stringify({ activities })
+			body: JSON.stringify({ activities, expectedVersion })
 		});
 	}
 
@@ -562,11 +571,21 @@ export class Api {
 		});
 	}
 
-	/** Eine Markierung zurücknehmen - wieder "kein Bericht". */
-	clearTeamReportStatus(teamId: string, memberId: string, month: string): Promise<{ ok: boolean }> {
+	/**
+	 * Eine Markierung zurücknehmen - wieder "kein Bericht". `expectedSubmittedAt`
+	 * ist der Stand, den die Ansicht beim Klick zeigte - stimmt er nicht mehr mit
+	 * dem Server überein (zwischenzeitlich echt eingegangen), lehnt der Server
+	 * mit 409 ab, statt den neueren Bericht zu löschen.
+	 */
+	clearTeamReportStatus(
+		teamId: string,
+		memberId: string,
+		month: string,
+		expectedSubmittedAt: number
+	): Promise<{ ok: boolean }> {
 		return this.#call(`/api/team/${encodeURIComponent(teamId)}/reports`, {
 			method: "DELETE",
-			body: JSON.stringify({ memberId, month })
+			body: JSON.stringify({ memberId, month, expectedSubmittedAt })
 		});
 	}
 

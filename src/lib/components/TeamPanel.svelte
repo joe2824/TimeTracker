@@ -3,18 +3,19 @@
 	import { save } from "@tauri-apps/plugin-dialog";
 	import { account } from "$lib/sync/account.svelte";
 	import { capabilities, isTauri } from "$lib/platform/env";
-	import type {
-		TeamActivity,
-		TeamActivityInput,
-		TeamInfo,
-		TeamInvite,
-		TeamMemberInfo,
-		TeamReportStatus
+	import {
+		ApiError,
+		type TeamActivityInput,
+		type TeamInfo,
+		type TeamInvite,
+		type TeamMemberInfo,
+		type TeamReportStatus
 	} from "$lib/sync/api";
 	import { createOutlookDraft, reportOutlookError } from "$lib/report/outlook";
 	import { teamReminderHtml, teamReminderSubject, teamReportsToCsv } from "$lib/report/teamReport";
 	import { fmtClock, fmtDateHuman, monthLabel, prevMonthKey } from "$lib/time/time";
 	import { errorText, logError, logInfo } from "$lib/log";
+	import { tabFocus } from "$lib/ui/tabFocus.svelte";
 	import { Button } from "$lib/components/ui/button";
 	import { Badge } from "$lib/components/ui/badge";
 	import { Input } from "$lib/components/ui/input";
@@ -50,6 +51,8 @@
 	let members = $state<TeamMemberInfo[]>([]);
 
 	let activities = $state<TeamActivityInput[]>([]);
+	/** Höchster `updatedAt`-Stand der zuletzt geladenen Liste - Gleichzeitigkeitsprüfung beim Speichern. */
+	let activitiesVersion = $state(0);
 	let savingActivities = $state(false);
 
 	const selectedTeam = $derived(teams.find((t) => t.id === selectedTeamId) ?? null);
@@ -89,6 +92,7 @@
 			invite = inv;
 			members = mem;
 			activities = act;
+			activitiesVersion = act.reduce((max, a) => Math.max(max, a.updatedAt), 0);
 		} catch (e) {
 			if (requestId !== teamDetailsRequest) return;
 			toast.error(`Team konnte nicht geladen werden: ${errorText(e)}`);
@@ -114,13 +118,23 @@
 			.filter((a) => a.name);
 		savingActivities = true;
 		try {
-			const saved = (await account.setTeamActivities(teamId, cleaned)) as TeamActivity[];
+			const saved = await account.setTeamActivities(teamId, cleaned, activitiesVersion);
 			// Gegen dieselbe Verwechslungsgefahr wie teamDetailsRequest oben: bis zur
 			// Antwort könnte längst ein anderes Team ausgewählt sein.
-			if (teamId === selectedTeamId) activities = saved;
+			if (teamId === selectedTeamId) {
+				activities = saved;
+				activitiesVersion = saved.reduce((max, a) => Math.max(max, a.updatedAt), 0);
+			}
 			toast.success("Gemeinsame Aktivitäten gespeichert.");
 		} catch (e) {
-			toast.error(`Speichern fehlgeschlagen: ${errorText(e)}`);
+			if (e instanceof ApiError && e.status === 409) {
+				// Ein anderer Tab/Gerät hat zwischenzeitlich gespeichert - die eigene
+				// Fassung war veraltet. Neu laden statt blind darüberzuschreiben.
+				toast.error("Die Liste wurde inzwischen anderswo geändert - neu geladen.");
+				if (teamId === selectedTeamId) await loadTeamDetails(teamId);
+			} else {
+				toast.error(`Speichern fehlgeschlagen: ${errorText(e)}`);
+			}
 		} finally {
 			savingActivities = false;
 		}
@@ -244,13 +258,23 @@
 	/** Eine Markierung zurücknehmen - auch einen echten Upload, z.B. bei einem Versehen. */
 	async function clearSent(memberId: string) {
 		if (!selectedTeamId || statusBusyId) return;
+		const submittedAt = reports.find((r) => r.memberId === memberId)?.submittedAt;
+		if (submittedAt == null) return;
 		statusBusyId = memberId;
 		try {
-			await account.clearTeamReportStatus(selectedTeamId, memberId, month);
+			await account.clearTeamReportStatus(selectedTeamId, memberId, month, submittedAt);
 			await loadReports(selectedTeamId, month);
 			toast.success("Markierung zurückgenommen.");
 		} catch (e) {
-			toast.error(`Zurücknehmen fehlgeschlagen: ${errorText(e)}`);
+			if (e instanceof ApiError && e.status === 409) {
+				// Zwischen Laden und Klick ist ein neuerer, echter Bericht
+				// eingetroffen - der Server hat das Löschen abgelehnt. Die
+				// aktualisierte Ansicht zeigt ihn jetzt statt der veralteten Zeile.
+				toast.error("Inzwischen ein neuer Bericht eingegangen - Ansicht aktualisiert.");
+				await loadReports(selectedTeamId, month);
+			} else {
+				toast.error(`Zurücknehmen fehlgeschlagen: ${errorText(e)}`);
+			}
 		} finally {
 			statusBusyId = null;
 		}
@@ -308,18 +332,31 @@
 	{#if !account.linked}
 		<Card.Root>
 			<Card.Content class="text-muted-foreground py-4 text-sm">
-				Team-Verwaltung braucht ein Konto (Tab „Einstellungen“ → Konto) - der Link und die
-				gemeinsamen Aktivitäten liegen dort, nicht nur auf diesem Gerät.
+				Team-Verwaltung braucht ein Konto - der Link und die gemeinsamen Aktivitäten liegen
+				dort, nicht nur auf diesem Gerät.
+				<Button variant="link" class="h-auto p-0" onclick={() => tabFocus.requestSettings("konto")}>
+					Zu den Konto-Einstellungen
+				</Button>
 			</Card.Content>
 		</Card.Root>
 	{:else}
 		<Card.Root>
-			<Card.Header>
-				<Card.Title>Team</Card.Title>
-				<Card.Description>
-					Mitglieder treten über einen Link bei - ohne eigenes Konto. Der Link führt zu den
-					gemeinsamen Aktivitäten und meldet, wann von dort ein Bericht gesendet wurde.
-				</Card.Description>
+			<Card.Header class="flex-row items-start justify-between gap-2">
+				<div>
+					<Card.Title>Team</Card.Title>
+					<Card.Description>
+						Mitglieder treten über einen Link bei - ohne eigenes Konto. Der Link führt zu den
+						gemeinsamen Aktivitäten und meldet, wann von dort ein Bericht gesendet wurde.
+					</Card.Description>
+				</div>
+				<Button
+					variant="ghost"
+					size="sm"
+					onclick={() => tabFocus.requestSettings("bericht")}
+					title="Chef-Modus abschalten oder Bericht-Einstellungen ändern"
+				>
+					Chef-Modus verwalten
+				</Button>
 			</Card.Header>
 			<Card.Content class="space-y-4">
 				<div class="flex flex-wrap items-end gap-2">
@@ -531,7 +568,7 @@
 												variant="ghost"
 												size="icon-sm"
 												title="Markierung zurücknehmen"
-												disabled={statusBusyId === r.memberId}
+												disabled={statusBusyId !== null}
 												onclick={(e) => {
 													e.stopPropagation();
 													clearSent(r.memberId);
@@ -577,7 +614,7 @@
 												variant="ghost"
 												size="icon-sm"
 												title="Von Hand als gesendet markieren"
-												disabled={statusBusyId === r.memberId}
+												disabled={statusBusyId !== null}
 												onclick={() => markSent(r.memberId)}
 											>
 												<CheckIcon class="size-4" />

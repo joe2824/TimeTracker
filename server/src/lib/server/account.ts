@@ -3,7 +3,7 @@
 //   - Ein GERAET lösen. Der Zugang dieses einen Geräts erlischt, das Konto und
 //     alle anderen Geräte bleiben. Das macht `revokeDevice` in auth.ts.
 //   - Das KONTO auflösen. Dann verschwindet alles, was der Server hat.
-import { eq, gte, lt, sql } from "drizzle-orm";
+import { and, eq, gte, lt, sql } from "drizzle-orm";
 import type { DbLike } from "./db/index";
 import {
 	challenges,
@@ -65,36 +65,51 @@ export function deleteAccount(db: DbLike, userId: string): DeleteSummary {
 }
 
 /**
- * Konten löschen, die seit `maxAgeMs` weder ein Gerät noch einen Passkey
- * benutzt haben - wer so lange nicht vorbeischaut, benutzt die Anwendung
- * nicht mehr. Ein Konto ohne jedes Gerät/Passkey (sollte nicht vorkommen,
+ * Konten löschen, die seit `maxAgeMs` weder ein Gerät noch einen Passkey noch
+ * eine gültige Browser-Sitzung benutzt haben - wer so lange nicht vorbeischaut,
+ * benutzt die Anwendung nicht mehr. Eine Sitzung zählt schon durch ihr blosses
+ * Bestehen: sie verlängert sich bei jeder Nutzung (touchSession in auth.ts),
+ * ein Chef, der nur im Browser arbeitet und nie ein Gerät koppelt oder erneut
+ * einen Passkey anlegt, würde sonst trotz laufender Nutzung als inaktiv
+ * gelten. Ein Konto ohne jedes Gerät/Passkey/Sitzung (sollte nicht vorkommen,
  * ausser bei einem abgebrochenen Anlegen) zählt über sein `createdAt`.
  * Liefert die Zahl gelöschter Konten.
+ *
+ * Prüft je Kandidat statt die kompletten Geräte-/Passkey-/Sitzungstabellen in
+ * den Speicher zu holen: nur Konten, die schon älter als `maxAgeMs` sind,
+ * kommen überhaupt infrage - für die reicht ein indizierter Blick über
+ * `userId` (anders als `lastSeenAt`/`lastUsedAt`/`expiresAt` selbst, die
+ * unindiziert sind).
  */
 export function deleteInactiveAccounts(db: DbLike, maxAgeMs: number, now = Date.now()): number {
 	const cutoff = now - maxAgeMs;
 
-	const activeIds = new Set([
-		...db
-			.select({ userId: devices.userId })
-			.from(devices)
-			.where(gte(devices.lastSeenAt, cutoff))
-			.all()
-			.map((r) => r.userId),
-		...db
-			.select({ userId: credentials.userId })
-			.from(credentials)
-			.where(gte(credentials.lastUsedAt, cutoff))
-			.all()
-			.map((r) => r.userId)
-	]);
+	const candidates = db.select({ id: users.id }).from(users).where(lt(users.createdAt, cutoff)).all();
 
-	const inactive = db
-		.select({ id: users.id })
-		.from(users)
-		.where(lt(users.createdAt, cutoff))
-		.all()
-		.filter((u) => !activeIds.has(u.id));
+	const isActive = (userId: string): boolean => {
+		const recentDevice = db
+			.select({ id: devices.id })
+			.from(devices)
+			.where(and(eq(devices.userId, userId), gte(devices.lastSeenAt, cutoff)))
+			.get();
+		if (recentDevice) return true;
+
+		const recentCredential = db
+			.select({ id: credentials.id })
+			.from(credentials)
+			.where(and(eq(credentials.userId, userId), gte(credentials.lastUsedAt, cutoff)))
+			.get();
+		if (recentCredential) return true;
+
+		const validSession = db
+			.select({ id: sessions.id })
+			.from(sessions)
+			.where(and(eq(sessions.userId, userId), gte(sessions.expiresAt, now)))
+			.get();
+		return !!validSession;
+	};
+
+	const inactive = candidates.filter((u) => !isActive(u.id));
 
 	for (const { id } of inactive) deleteAccount(db, id);
 	return inactive.length;

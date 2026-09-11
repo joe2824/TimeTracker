@@ -23,5 +23,6 @@ export const PUT: RequestHandler = async ({ locals, params, request }) => {
 		archived: Boolean(a?.archived)
 	}));
 	if (items.some((it) => !it.name)) error(400, "Aktivität ohne Namen");
-	return json({ activities: setTeamActivities(locals.db, params.teamId!, items) });
+	const expectedVersion = typeof body?.expectedVersion === "number" ? body.expectedVersion : undefined;
+	return json({ activities: setTeamActivities(locals.db, params.teamId!, items, expectedVersion) });
 };

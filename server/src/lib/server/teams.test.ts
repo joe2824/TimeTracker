@@ -227,6 +227,37 @@ describe("setTeamActivities / listTeamActivities", () => {
 		expect(listTeamActivities(db, teamA.id)).toEqual([rowA]);
 		expect(listTeamActivities(db, teamB.id)).toEqual([]);
 	});
+
+	it("lehnt einen veralteten erwarteten Stand ab - z.B. ein zweiter Tab des Chefs", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		setTeamActivities(db, team.id, [{ name: "A", isAbsence: false, sortOrder: 0, archived: false }]);
+
+		expect(() =>
+			setTeamActivities(
+				db,
+				team.id,
+				[{ name: "B", isAbsence: false, sortOrder: 0, archived: false }],
+				0 // Stand, den ein zweiter Tab noch vor "A" geladen hatte.
+			)
+		).toThrow();
+
+		// Der zuerst gespeicherte Stand blieb unangetastet.
+		expect(listTeamActivities(db, team.id).map((a) => a.name)).toEqual(["A"]);
+	});
+
+	it("speichert, wenn der erwartete Stand noch aktuell ist", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		setTeamActivities(db, team.id, []);
+
+		const rows = setTeamActivities(
+			db,
+			team.id,
+			[{ name: "A", isAbsence: false, sortOrder: 0, archived: false }],
+			0
+		);
+
+		expect(rows.map((a) => a.name)).toEqual(["A"]);
+	});
 });
 
 describe("upsertTeamReport / listTeamReports", () => {
@@ -326,5 +357,33 @@ describe("setTeamReportStatus", () => {
 
 		expect(setTeamReportStatus(db, teamB.id, memberOfA.teamMemberId, "2026-07", true)).toBe(false);
 		expect(listTeamReports(db, teamB.id, "2026-07")).toEqual([]);
+	});
+
+	it("lehnt das Zuruecknehmen ab, wenn zwischenzeitlich ein neuerer Bericht eintraf", () => {
+		// Sonst koennte eine veraltete Ansicht einen inzwischen echten Upload
+		// wegloeschen - siehe upsertTeamReport oben fuer den umgekehrten Fall.
+		const team = createTeam(db, ANNA, "Vertrieb");
+		const member = memberOf(team.id);
+		upsertTeamReport(db, team.id, member.teamMemberId, "2026-07", { total: 40 });
+		const staleSubmittedAt = listTeamReports(db, team.id, "2026-07")[0].submittedAt!;
+
+		upsertTeamReport(db, team.id, member.teamMemberId, "2026-07", { total: 42 });
+
+		expect(() =>
+			setTeamReportStatus(db, team.id, member.teamMemberId, "2026-07", false, staleSubmittedAt)
+		).toThrow();
+		expect(listTeamReports(db, team.id, "2026-07")[0].payload).toEqual({ total: 42 });
+	});
+
+	it("nimmt zurueck, wenn der mitgegebene Stand noch aktuell ist", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		const member = memberOf(team.id);
+		upsertTeamReport(db, team.id, member.teamMemberId, "2026-07", { total: 40 });
+		const submittedAt = listTeamReports(db, team.id, "2026-07")[0].submittedAt!;
+
+		expect(
+			setTeamReportStatus(db, team.id, member.teamMemberId, "2026-07", false, submittedAt)
+		).toBe(true);
+		expect(listTeamReports(db, team.id, "2026-07")[0].submittedAt).toBeNull();
 	});
 });

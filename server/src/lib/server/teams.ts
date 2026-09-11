@@ -190,13 +190,29 @@ export interface TeamActivityInput {
 	archived: boolean;
 }
 
+/** Der Stand der Liste, mit dem ein Client sie zuletzt gesehen hat - fuer die Gleichzeitigkeitsprüfung unten. */
+function teamActivitiesVersion(db: DbLike, teamId: string): number {
+	const rows = db
+		.select({ updatedAt: teamActivities.updatedAt })
+		.from(teamActivities)
+		.where(eq(teamActivities.teamId, teamId))
+		.all();
+	return rows.reduce((max, r) => Math.max(max, r.updatedAt), 0);
+}
+
 /**
  * Die gemeinsame Liste ersetzen - voller Ersatz, kein Zusammenführen.
  *
- * Es gibt immer nur EINEN Schreiber (den Chef) - anders als bei den
- * Personendaten braucht es hier kein `updatedAt`/`rev`-Konfliktverfahren.
+ * In der Regel EIN Schreiber (der Chef) - `expectedVersion` fängt trotzdem den
+ * Fall ab, dass derselbe Chef die Liste in zwei Tabs/Geräten offen hat: ohne
+ * die Prüfung überschriebe der zuletzt speichernde Tab den anderen lautlos.
  */
-export function setTeamActivities(db: Db, teamId: string, items: TeamActivityInput[]): TeamActivityRow[] {
+export function setTeamActivities(
+	db: Db,
+	teamId: string,
+	items: TeamActivityInput[],
+	expectedVersion?: number
+): TeamActivityRow[] {
 	// `team_activities.id` ist ein blosses globales PRIMARY KEY, nicht je Team.
 	// Eine mitgegebene Id, die schon einem ANDEREN Team gehört, dürfte den
 	// Einfüge-Schritt unten nicht einfach knallen lassen (roher 500) - und erst
@@ -223,6 +239,9 @@ export function setTeamActivities(db: Db, teamId: string, items: TeamActivityInp
 		updatedAt: now
 	}));
 	db.transaction((tx) => {
+		if (expectedVersion !== undefined && teamActivitiesVersion(tx, teamId) !== expectedVersion) {
+			error(409, "Die Aktivitätenliste wurde inzwischen geändert");
+		}
 		tx.delete(teamActivities).where(eq(teamActivities.teamId, teamId)).run();
 		for (const row of rows) tx.insert(teamActivities).values(row).run();
 	});
@@ -275,7 +294,9 @@ export function setTeamReportStatus(
 	teamId: string,
 	memberId: string,
 	month: string,
-	sent: boolean
+	sent: boolean,
+	/** Der submittedAt-Stand, den der Chef beim Klick vor Augen hatte - siehe unten. */
+	expectedSubmittedAt?: number | null
 ): boolean {
 	const member = db
 		.select({ id: teamMembers.id })
@@ -295,6 +316,18 @@ export function setTeamReportStatus(
 			.get();
 		if (!existing) upsertTeamReport(db, teamId, memberId, month, null);
 	} else {
+		// Dieselbe Verwechslungsgefahr umgekehrt: zwischen Laden der Ansicht und
+		// diesem Klick könnte ein echter Bericht eingetroffen sein. Stimmt der
+		// mitgegebene Stand nicht mehr mit der Datenbank überein, nicht blind
+		// darüberlöschen, sondern ablehnen - der Client lädt dann neu.
+		const existing = db
+			.select({ submittedAt: teamReports.submittedAt })
+			.from(teamReports)
+			.where(and(eq(teamReports.memberId, memberId), eq(teamReports.month, month)))
+			.get();
+		if (existing && expectedSubmittedAt !== undefined && existing.submittedAt !== expectedSubmittedAt) {
+			error(409, "Der Bericht wurde inzwischen geändert");
+		}
 		db.delete(teamReports)
 			.where(and(eq(teamReports.memberId, memberId), eq(teamReports.month, month)))
 			.run();
