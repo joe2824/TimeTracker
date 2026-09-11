@@ -7,41 +7,25 @@
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
-	import { previewTeam, completeTeamJoin } from "$lib/team/join";
+	import { TeamJoinFlow } from "$lib/team/joinFlow.svelte";
 	import { teamJoinLink } from "$lib/platform/deeplink";
 	import { isTauri } from "$lib/platform/env";
-	import { errorText } from "$lib/log";
 	import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
 
 	const code = $derived(page.params.code ?? "");
 	const serverUrl = $derived(page.url.origin);
 
-	let name = $state("");
-	let email = $state("");
-	let busy = $state(false);
-	let preview = $state<{ teamName: string } | "loading" | "error">("loading");
+	const flow = new TeamJoinFlow();
 	let joinedTeamName = $state<string | null>(null);
-	let joinError = $state<string | null>(null);
 
 	$effect(() => {
 		if (!code) return;
-		preview = "loading";
-		previewTeam(serverUrl, code)
-			.then((p) => (preview = p))
-			.catch(() => (preview = "error"));
+		void flow.loadPreview(serverUrl, code);
 	});
 
 	async function join() {
-		busy = true;
-		joinError = null;
-		try {
-			const info = await completeTeamJoin(serverUrl, code, name.trim(), email.trim());
-			joinedTeamName = info.teamName;
-		} catch (e) {
-			joinError = errorText(e);
-		} finally {
-			busy = false;
-		}
+		const info = await flow.join(serverUrl, code);
+		if (info) joinedTeamName = info.teamName;
 	}
 </script>
 
@@ -53,9 +37,9 @@
 				Die gemeinsamen Aktivitäten dieses Teams sind jetzt hier verfügbar.
 			</p>
 		</div>
-	{:else if preview === "loading"}
+	{:else if flow.preview === "loading"}
 		<p class="text-muted-foreground text-sm">Link wird geprüft…</p>
-	{:else if preview === "error"}
+	{:else if flow.preview === "error"}
 		<div class="space-y-2 text-center">
 			<h1 class="text-xl font-semibold">Link nicht gültig</h1>
 			<p class="text-muted-foreground text-sm">
@@ -65,7 +49,7 @@
 	{:else}
 		<div class="w-full space-y-4">
 			<div class="space-y-2 text-center">
-				<h1 class="text-xl font-semibold">Mit „{preview.teamName}" verbinden?</h1>
+				<h1 class="text-xl font-semibold">Mit „{flow.preview.teamName}" verbinden?</h1>
 				<p class="text-muted-foreground text-sm">
 					Die gemeinsamen Aktivitäten dieses Teams werden auf diesem Gerät verfügbar, und der Chef
 					sieht, wann von hier ein Bericht gesendet wurde.
@@ -76,10 +60,10 @@
 				<Label for="team-join-name">Dein Name</Label>
 				<Input
 					id="team-join-name"
-					bind:value={name}
+					bind:value={flow.name}
 					placeholder="Anna Meier"
-					disabled={busy}
-					onkeydown={(e) => e.key === "Enter" && name.trim() && join()}
+					disabled={flow.busy}
+					onkeydown={(e) => e.key === "Enter" && flow.name.trim() && join()}
 				/>
 			</div>
 			<div class="space-y-2">
@@ -87,22 +71,22 @@
 				<Input
 					id="team-join-email"
 					type="email"
-					bind:value={email}
+					bind:value={flow.email}
 					placeholder="anna@firma.de"
-					disabled={busy}
-					onkeydown={(e) => e.key === "Enter" && name.trim() && join()}
+					disabled={flow.busy}
+					onkeydown={(e) => e.key === "Enter" && flow.name.trim() && join()}
 				/>
 				<p class="text-muted-foreground text-xs">
 					Nur damit der Chef dich erinnern kann, falls ein Bericht fehlt.
 				</p>
 			</div>
 
-			{#if joinError}
-				<p class="text-destructive text-sm">Beitritt nicht möglich: {joinError}</p>
+			{#if flow.joinError}
+				<p class="text-destructive text-sm">Beitritt nicht möglich: {flow.joinError}</p>
 			{/if}
 
-			<Button class="w-full" disabled={busy || !name.trim()} onclick={join}>
-				{busy ? "Wird verbunden…" : "Beitreten"}
+			<Button class="w-full" disabled={flow.busy || !flow.name.trim()} onclick={join}>
+				{flow.busy ? "Wird verbunden…" : "Beitreten"}
 			</Button>
 
 			{#if !isTauri()}

@@ -8,44 +8,33 @@
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
 	import { teamJoin } from "$lib/team/state.svelte";
-	import { completeTeamJoin, previewTeam } from "$lib/team/join";
-	import { errorText } from "$lib/log";
+	import { TeamJoinFlow } from "$lib/team/joinFlow.svelte";
 	import { toast } from "svelte-sonner";
 
-	let name = $state("");
-	let email = $state("");
-	let busy = $state(false);
-	let preview = $state<{ teamName: string } | "loading" | "error">("loading");
+	const flow = new TeamJoinFlow();
 
 	const open = $derived(teamJoin.pendingLink !== null);
 
 	$effect(() => {
 		const link = teamJoin.pendingLink;
 		if (!link) return;
-		preview = "loading";
-		previewTeam(link.serverUrl, link.code)
-			.then((p) => (preview = p))
-			.catch(() => (preview = "error"));
+		void flow.loadPreview(link.serverUrl, link.code);
 	});
 
 	function dismiss() {
 		teamJoin.pendingLink = null;
-		name = "";
-		email = "";
+		flow.reset();
 	}
 
 	async function join() {
 		const link = teamJoin.pendingLink;
 		if (!link) return;
-		busy = true;
-		try {
-			const info = await completeTeamJoin(link.serverUrl, link.code, name.trim(), email.trim());
+		const info = await flow.join(link.serverUrl, link.code);
+		if (info) {
 			dismiss();
 			toast.success(`Mit „${info.teamName}" verbunden.`);
-		} catch (e) {
-			toast.error(`Beitritt nicht möglich: ${errorText(e)}`);
-		} finally {
-			busy = false;
+		} else {
+			toast.error(`Beitritt nicht möglich: ${flow.joinError}`);
 		}
 	}
 </script>
@@ -53,22 +42,22 @@
 <Dialog.Root
 	{open}
 	onOpenChange={(o) => {
-		if (!o && !busy) dismiss();
+		if (!o && !flow.busy) dismiss();
 	}}
 >
 	<Dialog.Content class="sm:max-w-md">
 		<Dialog.Header>
 			<Dialog.Title>
-				{#if preview === "loading"}
+				{#if flow.preview === "loading"}
 					Team-Link wird geprüft…
-				{:else if preview === "error"}
+				{:else if flow.preview === "error"}
 					Link nicht gültig
 				{:else}
-					Mit „{preview.teamName}" verbinden?
+					Mit „{flow.preview.teamName}" verbinden?
 				{/if}
 			</Dialog.Title>
 			<Dialog.Description>
-				{#if preview === "error"}
+				{#if flow.preview === "error"}
 					Dieser Link ist abgelaufen oder wurde zurückgezogen - beim Chef nach einem neuen fragen.
 				{:else}
 					Die gemeinsamen Aktivitäten dieses Teams werden auf diesem Gerät verfügbar, und der Chef
@@ -77,15 +66,15 @@
 			</Dialog.Description>
 		</Dialog.Header>
 
-		{#if preview !== "loading" && preview !== "error"}
+		{#if flow.preview !== "loading" && flow.preview !== "error"}
 			<div class="space-y-2">
 				<Label for="team-join-name">Dein Name</Label>
 				<Input
 					id="team-join-name"
-					bind:value={name}
+					bind:value={flow.name}
 					placeholder="Anna Meier"
-					disabled={busy}
-					onkeydown={(e) => e.key === "Enter" && name.trim() && join()}
+					disabled={flow.busy}
+					onkeydown={(e) => e.key === "Enter" && flow.name.trim() && join()}
 				/>
 			</div>
 			<div class="space-y-2">
@@ -93,10 +82,10 @@
 				<Input
 					id="team-join-email"
 					type="email"
-					bind:value={email}
+					bind:value={flow.email}
 					placeholder="anna@firma.de"
-					disabled={busy}
-					onkeydown={(e) => e.key === "Enter" && name.trim() && join()}
+					disabled={flow.busy}
+					onkeydown={(e) => e.key === "Enter" && flow.name.trim() && join()}
 				/>
 				<p class="text-muted-foreground text-xs">
 					Nur damit der Chef dich erinnern kann, falls ein Bericht fehlt.
@@ -105,10 +94,10 @@
 		{/if}
 
 		<Dialog.Footer>
-			<Button variant="outline" disabled={busy} onclick={dismiss}>Abbrechen</Button>
-			{#if preview !== "loading" && preview !== "error"}
-				<Button disabled={busy || !name.trim()} onclick={join}>
-					{busy ? "Wird verbunden…" : "Beitreten"}
+			<Button variant="outline" disabled={flow.busy} onclick={dismiss}>Abbrechen</Button>
+			{#if flow.preview !== "loading" && flow.preview !== "error"}
+				<Button disabled={flow.busy || !flow.name.trim()} onclick={join}>
+					{flow.busy ? "Wird verbunden…" : "Beitreten"}
 				</Button>
 			{/if}
 		</Dialog.Footer>
