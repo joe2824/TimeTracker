@@ -2,6 +2,7 @@
 	import { cn } from "$lib/utils";
 	import { capabilities, isTauri } from "$lib/platform/env";
 	import { account } from "$lib/sync/account.svelte";
+	import { tabFocus } from "$lib/ui/tabFocus.svelte";
 	import TimerIcon from "@lucide/svelte/icons/timer";
 	import FileTextIcon from "@lucide/svelte/icons/file-text";
 	import BellIcon from "@lucide/svelte/icons/bell";
@@ -40,7 +41,7 @@
 		if (active) opened = true;
 	});
 
-	type SettingsTabId =
+	export type SettingsTabId =
 		| "erfassung"
 		| "bericht"
 		| "erinnerungen"
@@ -117,6 +118,17 @@
 		activeTabId = id;
 		isMobileMenuOpen = false;
 	}
+
+	// Sprung von aussen (z.B. vom Team-Tab): den gewünschten Unterreiter
+	// übernehmen und den Wunsch abräumen, sonst öffnet er sich beim nächsten
+	// Besuch der Einstellungen erneut von selbst.
+	$effect(() => {
+		const target = tabFocus.pendingSettingsTab;
+		if (target && tabs.some((t) => t.id === target)) {
+			activeTabId = target as SettingsTabId;
+			tabFocus.pendingSettingsTab = null;
+		}
+	});
 </script>
 
 {#if opened}
