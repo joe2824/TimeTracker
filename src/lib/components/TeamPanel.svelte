@@ -36,6 +36,7 @@
 	import PlusIcon from "@lucide/svelte/icons/plus";
 	import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
 	import XIcon from "@lucide/svelte/icons/x";
+	import SettingsIcon from "@lucide/svelte/icons/settings";
 
 	// ---------- Team verwalten (Link, Aktivitäten, Roster) ----------
 
@@ -341,22 +342,22 @@
 		</Card.Root>
 	{:else}
 		<Card.Root>
-			<Card.Header class="flex-row items-start justify-between gap-2">
-				<div>
-					<Card.Title>Team</Card.Title>
-					<Card.Description>
-						Mitglieder treten über einen Link bei - ohne eigenes Konto. Der Link führt zu den
-						gemeinsamen Aktivitäten und meldet, wann von dort ein Bericht gesendet wurde.
-					</Card.Description>
-				</div>
-				<Button
-					variant="ghost"
-					size="sm"
-					onclick={() => tabFocus.requestSettings("bericht")}
-					title="Chef-Modus abschalten oder Bericht-Einstellungen ändern"
-				>
-					Chef-Modus verwalten
-				</Button>
+			<Card.Header>
+				<Card.Title>Team</Card.Title>
+				<Card.Description>
+					Mitglieder treten über einen Link bei - ohne eigenes Konto. Der Link führt zu den
+					gemeinsamen Aktivitäten und meldet, wann von dort ein Bericht gesendet wurde.
+				</Card.Description>
+				<Card.Action>
+					<Button
+						variant="ghost"
+						size="icon-sm"
+						onclick={() => tabFocus.requestSettings("bericht")}
+						title="Chef-Modus abschalten oder Bericht-Einstellungen ändern"
+					>
+						<SettingsIcon class="size-4" />
+					</Button>
+				</Card.Action>
 			</Card.Header>
 			<Card.Content class="space-y-4">
 				<div class="flex flex-wrap items-end gap-2">
