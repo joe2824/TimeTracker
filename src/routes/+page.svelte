@@ -34,6 +34,7 @@
 		watchers
 	} from "$lib/ui/watchers.svelte";
 	import { entriesFocus } from "$lib/ui/entriesFocus.svelte";
+	import { tabFocus } from "$lib/ui/tabFocus.svelte";
 	import { onIntent, prefetchSettings } from "$lib/ui/prefetch";
 	import * as Tabs from "$lib/components/ui/tabs";
 	import SyncHint from "$lib/components/shared/SyncHint.svelte";
@@ -98,6 +99,10 @@
 	// Wunsch räumt die Einträge-Ansicht beim Lesen ab, ein zweiter Verbraucher
 	// hätte das Nachsehen (siehe entriesFocus.svelte.ts).
 	entriesFocus.onShow(() => (tab = "entries"));
+
+	// Gleiches Prinzip für Sprünge auf einen beliebigen Haupt-Tab (z.B. vom
+	// Team-Tab in die zugehörigen Einstellungen oder umgekehrt).
+	tabFocus.onNavigate((t) => (tab = t));
 
 	// Jeder Tab fängt oben an. Die Tabs teilen sich den Fensterscroll: wer den
 	// langen Bericht bis ans Ende gescrollt hat, landete danach in der Erfassung

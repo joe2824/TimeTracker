@@ -11,10 +11,12 @@
 	import { syncTeamActivities } from "$lib/team/activities";
 	import { teamJoin } from "$lib/team/state.svelte";
 	import { errorText } from "$lib/log";
+	import { tabFocus } from "$lib/ui/tabFocus.svelte";
 	import { toast } from "svelte-sonner";
 	import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
 	import LogOutIcon from "@lucide/svelte/icons/log-out";
 	import UsersIcon from "@lucide/svelte/icons/users";
+	import ArrowRightIcon from "@lucide/svelte/icons/arrow-right";
 
 	// ---------- Team-Mitgliedschaft (dieses Gerät ist Mitglied, kein Chef) ----------
 	//
@@ -169,5 +171,10 @@
 			void saveBossMode();
 		}}
 	/>
+	{#if form.bossMode}
+		<Button variant="link" class="h-auto p-0" onclick={() => tabFocus.request("team")}>
+			Zum Team-Tab <ArrowRightIcon class="size-4" />
+		</Button>
+	{/if}
 </SettingsCard>
 
