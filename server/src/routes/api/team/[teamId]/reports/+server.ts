@@ -33,7 +33,9 @@ export const DELETE: RequestHandler = async ({ locals, params, request }) => {
 	const memberId = String(body?.memberId ?? "");
 	const month = String(body?.month ?? "");
 	if (!/^\d{4}-\d{2}$/.test(month)) error(400, "month fehlt oder hat nicht die Form YYYY-MM");
-	if (!setTeamReportStatus(locals.db, params.teamId!, memberId, month, false)) {
+	const expectedSubmittedAt =
+		typeof body?.expectedSubmittedAt === "number" ? body.expectedSubmittedAt : undefined;
+	if (!setTeamReportStatus(locals.db, params.teamId!, memberId, month, false, expectedSubmittedAt)) {
 		error(404, "Mitglied unbekannt");
 	}
 	return json({ ok: true });

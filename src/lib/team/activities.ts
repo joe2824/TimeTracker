@@ -51,7 +51,17 @@ export async function syncTeamActivities(): Promise<void> {
 	const stillMember = await loadTeamDevice();
 	if (!stillMember || stillMember.token !== device.token) return;
 
+	const remoteIds = new Set(remote.map((r) => `${TEAM_ACTIVITY_PREFIX}${r.id}`));
 	const personal = app.activities.filter((a) => !a.teamOwned);
-	app.activities = [...personal, ...remote.map(toLocal)];
+	// Eine vom Chef aus der Liste entfernte Zeile nicht einfach verschwinden
+	// lassen: report.ts baut seine Zeilen nur aus der aktuellen activities-Liste,
+	// schon erfasste Stunden gingen sonst lautlos verloren. Dieselbe Statur wie
+	// beim Team verlassen (app.svelte.ts#detachTeamActivities) - nur mit
+	// UNVERÄNDERTER Id, weil der Server-Eintrag endgültig weg ist und nie wieder
+	// mit ihr kollidieren kann.
+	const detached = app.activities
+		.filter((a) => a.teamOwned && !remoteIds.has(a.id))
+		.map(({ teamOwned: _teamOwned, ...rest }) => ({ ...rest, archived: true }));
+	app.activities = [...personal, ...detached, ...remote.map(toLocal)];
 	await app.persistActivities();
 }

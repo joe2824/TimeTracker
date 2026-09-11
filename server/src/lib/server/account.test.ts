@@ -2,7 +2,7 @@
 // (deleteInactiveAccounts).
 import { beforeEach, describe, expect, it } from "vitest";
 import { openDb, type Db } from "./db/index";
-import { credentials, devices, teams, users } from "./db/schema";
+import { credentials, devices, sessions, teams, users } from "./db/schema";
 import { deleteInactiveAccounts } from "./account";
 import { eq } from "drizzle-orm";
 
@@ -37,6 +37,12 @@ function credential(userId: string, lastUsedAgoMs: number): void {
 			createdAt: NOW - YEAR_MS * 2,
 			lastUsedAt: NOW - lastUsedAgoMs
 		})
+		.run();
+}
+
+function session(userId: string, expiresInMs: number): void {
+	db.insert(sessions)
+		.values({ id: `session-${userId}`, userId, createdAt: NOW - YEAR_MS * 2, expiresAt: NOW + expiresInMs })
 		.run();
 }
 
@@ -77,6 +83,24 @@ describe("deleteInactiveAccounts", () => {
 
 		expect(deleteInactiveAccounts(db, YEAR_MS, NOW)).toBe(0);
 		expect(db.select().from(users).where(eq(users.id, "dirk")).get()).toBeDefined();
+	});
+
+	it("lässt ein Konto mit gültiger Browser-Sitzung in Ruhe, auch ohne Gerät oder Passkey", () => {
+		// Ein Chef, der ein Team nur über den Browser führt, koppelt nie ein
+		// Gerät und legt nie erneut einen Passkey an - die Sitzung ist dort der
+		// einzige Beleg, dass das Konto noch benutzt wird.
+		user("frida", YEAR_MS * 2);
+		session("frida", 1000);
+
+		expect(deleteInactiveAccounts(db, YEAR_MS, NOW)).toBe(0);
+		expect(db.select().from(users).where(eq(users.id, "frida")).get()).toBeDefined();
+	});
+
+	it("eine bereits abgelaufene Sitzung zählt nicht als Aktivität", () => {
+		user("greta", YEAR_MS * 2);
+		session("greta", -1000);
+
+		expect(deleteInactiveAccounts(db, YEAR_MS, NOW)).toBe(1);
 	});
 
 	it("ein Gerät, das selbst laenger als die Frist nicht mehr gesehen wurde, zaehlt nicht als Aktivitaet", () => {

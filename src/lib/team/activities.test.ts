@@ -51,7 +51,7 @@ describe("syncTeamActivities", () => {
 		expect(teamActivity).toMatchObject({ name: "Projekt A", teamOwned: true });
 	});
 
-	it("ein zweiter Abruf ERSETZT die vorigen Team-Aktivitäten, statt sie zu verdoppeln", async () => {
+	it("ein zweiter Abruf ERSETZT die vorigen Team-Aktivitäten in der Auswahl, statt sie zu verdoppeln", async () => {
 		await saveTeamDevice({
 			teamMemberId: "m1",
 			token: "tok",
@@ -74,7 +74,31 @@ describe("syncTeamActivities", () => {
 
 		const teamOwned = app.activities.filter((a) => a.teamOwned);
 		expect(teamOwned.map((a) => a.name)).toEqual(["Neu"]);
-		expect(app.activities).toHaveLength(2);
+	});
+
+	it("loest eine vom Chef entfernte Aktivität lokal ab, statt sie zu loeschen", async () => {
+		// Sonst gingen schon erfasste Stunden lautlos aus dem Bericht verloren -
+		// der baut seine Zeilen nur aus der aktuellen activities-Liste (report.ts).
+		await saveTeamDevice({
+			teamMemberId: "m1",
+			token: "tok",
+			teamName: "Vertrieb",
+			serverUrl: "https://tt.example.de"
+		});
+		remote.mockResolvedValue({
+			activities: [
+				{ id: "a1", name: "Alt", isAbsence: false, sortOrder: 0, color: null, archived: false, updatedAt: 1 }
+			]
+		});
+		await syncTeamActivities();
+		const oldId = `${TEAM_ACTIVITY_PREFIX}a1`;
+
+		remote.mockResolvedValue({ activities: [] });
+		await syncTeamActivities();
+
+		const detached = app.activities.find((a) => a.id === oldId);
+		expect(detached).toMatchObject({ name: "Alt", archived: true });
+		expect(detached?.teamOwned).toBeUndefined();
 	});
 
 	it("bricht still ab, wenn der Server nicht erreichbar ist - persönliche Liste bleibt", async () => {

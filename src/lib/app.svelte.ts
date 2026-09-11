@@ -772,6 +772,18 @@ class AppState {
 			return { ...rest, id: newId, archived: true };
 		});
 		await this.persistActivities();
+
+		// Kalender-Stichwortregeln zeigen sonst weiter auf die alte Team-Id - die
+		// Zuordnung würde beim nächsten Import lautlos verstummen, ohne dass
+		// jemand sähe, warum.
+		let keywordsChanged = false;
+		const remappedKeywords: Record<string, string> = {};
+		for (const [kw, id] of Object.entries(this.settings.calendarKeywordMap)) {
+			const newId = idMap.get(id);
+			remappedKeywords[kw] = newId ?? id;
+			if (newId) keywordsChanged = true;
+		}
+		if (keywordsChanged) await this.updateSettings({ calendarKeywordMap: remappedKeywords });
 	}
 
 	/** Verschiebt `draggedId` vor/hinter `targetId` (Drag & Drop). */
