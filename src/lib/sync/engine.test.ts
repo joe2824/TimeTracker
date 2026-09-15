@@ -483,6 +483,35 @@ describe("Was der Mensch erfahren muss", () => {
 		expect(result!.lostEdits).toBe(1);
 		expect((await entries(desktop))[0].note).toBe("handy zwei");
 	});
+
+	it("raeumt eine unterlegene Einstellungs-Aenderung aus der Outbox auf", async () => {
+		// #applySettings schrieb den Serverstand zwar lokal zurueck, hakte die
+		// Outbox dabei aber nicht ab - "1 Aenderung ausstehend" blieb stehen,
+		// obwohl lokal und Server ab hier identisch waren.
+		const phone = new FakeDevice("handy");
+		await on(phone, async (engine) => {
+			await store.saveSettings({ ...defaultSettings, bossEmail: "erst@firma.de" });
+			return engine.sync();
+		});
+		const desktop = new FakeDevice("rechner");
+		await on(desktop, (engine) => engine.sync());
+
+		await on(phone, async (engine) => {
+			await store.saveSettings({ ...defaultSettings, bossEmail: "spaeter@firma.de" });
+			return engine.sync();
+		});
+		const row = server.rows.get("settings")!;
+		server.rows.set("settings", { ...row, updatedAt: Date.now() + 60_000 });
+
+		const result = await on(desktop, async (engine) => {
+			await store.saveSettings({ ...defaultSettings, bossEmail: "rechner@firma.de" });
+			return engine.sync();
+		});
+
+		expect(result!.lostEdits).toBe(1);
+		expect((await on(desktop, () => store.loadSettings())).bossEmail).toBe("spaeter@firma.de");
+		expect(pendingChanges()).toEqual([]);
+	});
 });
 
 describe("Kein Echo", () => {
