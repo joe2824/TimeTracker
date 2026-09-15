@@ -12,7 +12,6 @@
 	import { tabFocus } from "$lib/ui/tabFocus.svelte";
 	import { Button, buttonVariants } from "$lib/components/ui/button";
 	import { Badge } from "$lib/components/ui/badge";
-	import { Label } from "$lib/components/ui/label";
 	import MonthSelector from "$lib/components/shared/MonthSelector.svelte";
 	import StatTile from "$lib/components/shared/StatTile.svelte";
 	import * as Card from "$lib/components/ui/card";
@@ -261,7 +260,24 @@
 		{:else}
 			<Card.Root>
 				<Card.Header>
-					<Card.Title>{chefTeams.selectedTeam?.name ?? "Team"}</Card.Title>
+					<Card.Title>
+						{#if chefTeams.teams.length > 1}
+							<Select.Root type="single" bind:value={chefTeams.selectedTeamId}>
+								<Select.Trigger
+									class="h-auto w-fit gap-1 border-0 bg-transparent p-0 text-base leading-snug font-medium hover:text-foreground"
+								>
+									{chefTeams.selectedTeam?.name ?? "Team wählen"}
+								</Select.Trigger>
+								<Select.Content>
+									{#each chefTeams.teams as t (t.id)}
+										<Select.Item value={t.id} label={t.name}>{t.name}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						{:else}
+							{chefTeams.selectedTeam?.name ?? "Team"}
+						{/if}
+					</Card.Title>
 					<Card.Action>
 						<div class="flex gap-2">
 							<Popover.Root>
@@ -307,23 +323,6 @@
 						</div>
 					</Card.Action>
 				</Card.Header>
-				{#if chefTeams.teams.length > 1}
-					<Card.Content>
-						<div class="flex items-center gap-2">
-							<Label for="teamswitch" class="text-muted-foreground text-xs">Team</Label>
-							<Select.Root type="single" bind:value={chefTeams.selectedTeamId}>
-								<Select.Trigger id="teamswitch" class="w-56">
-									{chefTeams.selectedTeam?.name ?? "Team wählen"}
-								</Select.Trigger>
-								<Select.Content>
-									{#each chefTeams.teams as t (t.id)}
-										<Select.Item value={t.id} label={t.name}>{t.name}</Select.Item>
-									{/each}
-								</Select.Content>
-							</Select.Root>
-						</div>
-					</Card.Content>
-				{/if}
 			</Card.Root>
 
 			<Card.Root>
