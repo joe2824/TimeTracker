@@ -276,7 +276,7 @@ describe("forecast", () => {
 		// Schon drüber: kein Prognosefall mehr, sondern der Stand.
 		const over = forecast(facts(9), "strict", { ...base, pace: 9 }).verdict;
 		expect(over.level).toBe("crit");
-		expect(over.headline).toBe("Grenze bereits gerissen");
+		expect(over.headline).toBe("Schon über der 8-Stunden-Grenze");
 	});
 
 	it("fordert erst kurz vor dem Umkehrpunkt zum Handeln auf", () => {
@@ -323,7 +323,7 @@ describe("forecast", () => {
 	it("nennt das Entlastungsdatum, wenn die Grenze schon gerissen ist", () => {
 		const f = forecast(facts(9.5), "strict", { ...base, pace: 9.5 });
 		expect(f.verdict.level).toBe("crit");
-		expect(f.verdict.headline).toBe("Grenze bereits gerissen");
+		expect(f.verdict.headline).toBe("Schon über der 8-Stunden-Grenze");
 		// Ohne jede weitere Stunde fällt der Schnitt erst, wenn die schweren
 		// Tage hinten herausgefallen sind – dieser Tag gehört genannt.
 		expect(f.reliefDate).not.toBeNull();

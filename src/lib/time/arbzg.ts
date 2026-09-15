@@ -713,7 +713,7 @@ function makeVerdict(f: {
 		return {
 			level: "crit",
 			requiresAction: true,
-			headline: "Grenze bereits gerissen",
+			headline: "Schon über der 8-Stunden-Grenze",
 			detail: f.reliefDate
 				? `Der Schnitt liegt bei ${h(f.currentAverage)}. Auch ohne jede weitere Stunde fällt er erst am ${de(f.reliefDate)} wieder unter ${h(NORM_DAILY)}.`
 				: `Der Schnitt liegt bei ${h(f.currentAverage)} und damit über den erlaubten ${h(NORM_DAILY)}.`
@@ -725,7 +725,7 @@ function makeVerdict(f: {
 		return {
 			level: "crit",
 			requiresAction: true,
-			headline: "Nicht mehr aufzuhalten",
+			headline: "8-Stunden-Grenze nicht mehr zu halten",
 			detail: f.reliefDate
 				? `Selbst wenn du ab sofort gar nicht mehr arbeitest, geht der Schnitt über ${h(NORM_DAILY)}; entlastet ist das Fenster erst am ${de(f.reliefDate)}.`
 				: `Selbst ohne jede weitere Stunde geht der Schnitt über ${h(NORM_DAILY)}.`
