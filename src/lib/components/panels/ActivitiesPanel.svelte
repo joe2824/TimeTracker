@@ -10,6 +10,7 @@
 	import { acceleratorFromEvent, applyShortcuts } from "$lib/ui/shortcuts";
 	import { account } from "$lib/sync/account.svelte";
 	import { chefTeams } from "$lib/team/chef.svelte";
+	import { syncOwnedTeamActivities, TEAM_ACTIVITY_PREFIX } from "$lib/team/activities";
 	import { ApiError, type TeamActivity, type TeamActivityInput } from "$lib/sync/api";
 	import { errorText } from "$lib/log";
 	import { Button } from "$lib/components/ui/button";
@@ -98,6 +99,39 @@
 		}
 	}
 
+	// Dieselbe Zusammenführung, nur mit fester Richtung: eine Team-Aktivität darf
+	// nie die verschwindende Seite sein - der naechste Abgleich brächte sie
+	// unveraendert zurueck, weil der Server sie weiterhin fuehrt. Nur die
+	// EIGENE Aktivitaet darf also die Quelle sein, die Team-Zeile bleibt fest
+	// das Ziel.
+	let mergeIntoTarget = $state<Activity | null>(null);
+	let mergeSourceId = $state<string | undefined>(undefined);
+
+	function askMergeInto(a: Activity) {
+		const target = app.activities.find((x) => x.id === realId(a.id));
+		if (!target) return;
+		mergeIntoTarget = target;
+		mergeSourceId = undefined;
+	}
+
+	const ownCandidates = $derived(app.activities.filter((a) => !a.teamOwned && !isBuiltinActivity(a)));
+
+	async function confirmMergeInto() {
+		if (!mergeIntoTarget || !mergeSourceId) return;
+		merging = true;
+		try {
+			const fromName = app.activityName(mergeSourceId);
+			const toName = mergeIntoTarget.name;
+			const moved = await app.mergeActivityInto(mergeSourceId, mergeIntoTarget.id);
+			toast.success(
+				`„${fromName}" in „${toName}" zusammengeführt${moved ? ` (${moved} Eintrag/Einträge)` : ""}.`
+			);
+			mergeIntoTarget = null;
+		} finally {
+			merging = false;
+		}
+	}
+
 	async function pickColor(id: string, color: string | null) {
 		await app.setColor(id, color);
 		colorOpenId = null;
@@ -179,6 +213,8 @@
 	const TEAM_EDIT_PREFIX = "team-edit:";
 	const isChefTeamRow = (id: string) => id.startsWith(TEAM_EDIT_PREFIX);
 	const teamRowId = (id: string) => id.slice(TEAM_EDIT_PREFIX.length);
+	/** Favorit/Ausblenden/Shortcut gehören der gespiegelten Zeile in app.activities, nicht dem Team-Entwurf. */
+	const realId = (id: string) => (isChefTeamRow(id) ? `${TEAM_ACTIVITY_PREFIX}${teamRowId(id)}` : id);
 
 	let teamActivities = $state<TeamActivity[]>([]);
 	let teamActivitiesVersion = $state(0);
@@ -219,6 +255,9 @@
 				teamActivities = saved;
 				teamActivitiesVersion = saved.reduce((max, a) => Math.max(max, a.updatedAt), 0);
 			}
+			// Sonst sieht die eigene Zeiterfassung (Auswahl, Ausblenden) die Änderung
+			// erst beim nächsten App-Start.
+			void syncOwnedTeamActivities();
 		} catch (e) {
 			if (e instanceof ApiError && e.status === 409) {
 				toast.error("Die Team-Liste wurde inzwischen anderswo geändert - neu geladen.");
@@ -315,27 +354,43 @@
 		newName = "";
 	}
 
-	/** Die eigene Sicht des Chefs auf die Team-Liste, in Aktivitäts-Form fürs gemeinsame Rendern. */
+	/**
+	 * Die eigene Sicht des Chefs auf die Team-Liste, in Aktivitäts-Form fürs
+	 * gemeinsame Rendern. Name/Löschen laufen über die Team-API (chefTeams),
+	 * aber Favorit/Ausblenden/Shortcut sind Geräte-Einstellungen und gehören
+	 * der gespiegelten Zeile in app.activities (syncOwnedTeamActivities) - hier
+	 * nur übernommen, damit ein Umschalten nicht ins Leere greift.
+	 */
 	const teamListed = $derived(
 		teamActivities
 			.filter((a) => showArchived || !a.archived)
-			.map(
-				(a): Activity =>
-					({
-						id: `${TEAM_EDIT_PREFIX}${a.id}`,
-						name: a.name,
-						sortOrder: a.sortOrder,
-						archived: a.archived,
-						isAbsence: a.isAbsence,
-						teamOwned: true
-					}) as Activity
-			)
+			.map((a): Activity => {
+				const mirrored = app.activities.find((m) => m.id === `${TEAM_ACTIVITY_PREFIX}${a.id}`);
+				return {
+					id: `${TEAM_EDIT_PREFIX}${a.id}`,
+					name: a.name,
+					sortOrder: a.sortOrder,
+					archived: a.archived,
+					isAbsence: a.isAbsence,
+					teamOwned: true,
+					teamId: chefTeams.selectedTeamId,
+					teamName: chefTeams.selectedTeam?.name,
+					favorite: mirrored?.favorite,
+					hidden: mirrored?.hidden,
+					shortcut: mirrored?.shortcut
+				} as Activity;
+			})
 	);
 
 	const listed = $derived(
 		[
 			...app.activities.filter(
-				(a) => (showArchived || !a.archived) && (showHidden || !a.hidden || a.archived)
+				(a) =>
+					(showArchived || !a.archived) &&
+					(showHidden || !a.hidden || a.archived) &&
+					// Das aktuell ausgewaehlte Team zeigt teamListed - dieselbe Zeile
+					// spiegelt syncOwnedTeamActivities sonst zusaetzlich aus app.activities.
+					!(a.teamOwned && a.teamId === chefTeams.selectedTeamId)
 			),
 			...teamListed
 		].sort(byActivityOrder)
@@ -529,7 +584,7 @@
 						/>
 						{#if a.teamOwned}
 							<Badge variant="outline" class="shrink-0 gap-1" title="Vom Chef vorgegeben, für alle im Team gleich">
-								<UsersIcon class="size-3" /> Team
+								<UsersIcon class="size-3" /> {a.teamName ?? "Team"}
 							</Badge>
 						{/if}
 						<!-- Aktionen als eine Gruppe, nicht als fünf lose Knöpfe: so brechen
@@ -539,19 +594,19 @@
 						{#if a.hidden && !a.archived}
 							<Badge variant="outline" class="mr-1">ausgeblendet</Badge>
 						{/if}
-						{#if !isBuiltin(a.name, a.isAbsence) && !isChefTeamRow(a.id)}
-							{#if recordingId === a.id}
+						{#if !isBuiltin(a.name, a.isAbsence)}
+							{#if recordingId === realId(a.id)}
 								<span class="text-muted-foreground shrink-0 text-xs italic">
 									Taste drücken… (Esc=Abbruch)
 								</span>
 							{:else if a.shortcut}
-								<ShortcutKey shortcut={a.shortcut} onclick={() => (recordingId = a.id)} />
+								<ShortcutKey shortcut={a.shortcut} onclick={() => (recordingId = realId(a.id))} />
 								<Button
 									variant="ghost"
 									size="icon"
 									class="size-6"
 									title="Shortcut entfernen"
-									onclick={() => clearShortcut(a.id)}
+									onclick={() => clearShortcut(realId(a.id))}
 								>
 									<XIcon class="size-3.5" />
 								</Button>
@@ -560,7 +615,7 @@
 									variant="ghost"
 									size="icon"
 									title="Globalen Shortcut festlegen"
-									onclick={() => (recordingId = a.id)}
+									onclick={() => (recordingId = realId(a.id))}
 								>
 									<KeyboardIcon class="size-4" />
 								</Button>
@@ -569,7 +624,7 @@
 								variant="ghost"
 								size="icon-sm"
 								title={a.favorite ? "Favorit entfernen" : "Als Favorit markieren"}
-								onclick={() => app.toggleFavorite(a.id)}
+								onclick={() => app.toggleFavorite(realId(a.id))}
 							>
 								<StarIcon class={"size-4 " + (a.favorite ? "fill-yellow-400 text-yellow-400" : "")} />
 							</Button>
@@ -578,7 +633,7 @@
 									variant="ghost"
 									size="icon-sm"
 									title={a.hidden ? "In Auswahl einblenden" : "Aus Auswahl ausblenden (bleibt im Bericht)"}
-									onclick={() => app.toggleHidden(a.id)}
+									onclick={() => app.toggleHidden(realId(a.id))}
 								>
 									{#if a.hidden}
 										<EyeOffIcon class="size-4" />
@@ -594,6 +649,14 @@
 							<Button
 								variant="ghost"
 								size="icon-sm"
+								title="Eigene Aktivität hier zusammenführen – z.B. wenn sie dasselbe war, bevor das Team sie vorgab"
+								onclick={() => askMergeInto(a)}
+							>
+								<GitMergeIcon class="size-4" />
+							</Button>
+							<Button
+								variant="ghost"
+								size="icon-sm"
 								disabled={teamActionBusy}
 								title="Aus der Team-Liste entfernen – verschwindet auf allen Geräten des Teams"
 								onclick={() => deleteTeamActivity(teamRowId(a.id))}
@@ -601,9 +664,17 @@
 								<Trash2Icon class="text-destructive size-4" />
 							</Button>
 						{:else if a.teamOwned}
-							<!-- Auf einem Mitglieds-Gerät: Ändern/Löschen nur im Aktivitäten-Tab
-							     des Chefs - eine lokale Löschung käme beim nächsten Abgleich
-							     ohnehin zurück. -->
+							<!-- Ändern/Löschen nur im Aktivitäten-Tab des Chefs - eine lokale
+							     Löschung käme beim nächsten Abgleich ohnehin zurück. Die eigene,
+							     nun überflüssige Aktivität lässt sich aber hier hinein zusammenführen. -->
+							<Button
+								variant="ghost"
+								size="icon-sm"
+								title="Eigene Aktivität hier zusammenführen – z.B. wenn sie dasselbe war, bevor das Team sie vorgab"
+								onclick={() => askMergeInto(a)}
+							>
+								<GitMergeIcon class="size-4" />
+							</Button>
 						{:else}
 							<Button
 								variant="ghost"
@@ -704,6 +775,42 @@
 				Abbrechen
 			</Button>
 			<Button type="button" onclick={confirmMerge} disabled={merging || !mergeTargetId}>
+				<GitMergeIcon class="size-4" />
+				{merging ? "Wird zusammengeführt…" : "Zusammenführen"}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root open={!!mergeIntoTarget} onOpenChange={(v) => { if (!v && !merging) mergeIntoTarget = null; }}>
+	<Dialog.Content class="sm:max-w-md">
+		<Dialog.Header>
+			<Dialog.Title>In „{mergeIntoTarget?.name}" zusammenführen</Dialog.Title>
+			<Dialog.Description>
+				Alle Einträge der ausgewählten eigenen Aktivität wandern zu „{mergeIntoTarget?.name}", sie
+				verschwindet danach aus der Liste. Nützlich, wenn sie dasselbe war, bevor das Team sie
+				vorgab – nichts geht dabei verloren.
+			</Dialog.Description>
+		</Dialog.Header>
+		{#if ownCandidates.length === 0}
+			<p class="text-muted-foreground text-sm">Keine eigene Aktivität vorhanden.</p>
+		{:else}
+			<Select.Root type="single" bind:value={mergeSourceId}>
+				<Select.Trigger>
+					{mergeSourceId ? app.activityName(mergeSourceId) : "Eigene Aktivität wählen"}
+				</Select.Trigger>
+				<Select.Content>
+					{#each ownCandidates as c (c.id)}
+						<Select.Item value={c.id} label={c.name}>{c.name}</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
+		{/if}
+		<Dialog.Footer>
+			<Button type="button" variant="outline" onclick={() => (mergeIntoTarget = null)} disabled={merging}>
+				Abbrechen
+			</Button>
+			<Button type="button" onclick={confirmMergeInto} disabled={merging || !mergeSourceId}>
 				<GitMergeIcon class="size-4" />
 				{merging ? "Wird zusammengeführt…" : "Zusammenführen"}
 			</Button>

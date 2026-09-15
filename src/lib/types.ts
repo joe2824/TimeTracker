@@ -28,6 +28,15 @@ export interface Activity extends SyncMeta {
 	 * team/activities.ts). Bearbeiten/Löschen bleibt dem Chef vorbehalten.
 	 */
 	teamOwned?: boolean;
+	/** Anzeigename des Teams, dem die Zeile gehört - nur bei teamOwned gesetzt. */
+	teamName?: string;
+	/**
+	 * Id des Teams, dem die Zeile gehört - nur gesetzt, wenn dieses Konto sie
+	 * selbst verwaltet (Chef mit ggf. mehreren Teams). Auf einem reinen
+	 * Mitglieds-Gerät (ein Team, kein eigenes Konto) bleibt sie leer, weil
+	 * teamOwned dort schon eindeutig ist.
+	 */
+	teamId?: string;
 }
 
 /**

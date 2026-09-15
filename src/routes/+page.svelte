@@ -13,7 +13,7 @@
 	import type { DataChanged } from "$lib/platform/windows";
 	import { onPairLink, onTeamJoinLink } from "$lib/platform/deeplink";
 	import { teamJoin } from "$lib/team/state.svelte";
-	import { syncTeamActivities } from "$lib/team/activities";
+	import { syncTeamActivities, syncOwnedTeamActivities } from "$lib/team/activities";
 	import WebOnboarding from "$lib/components/onboarding/WebOnboarding.svelte";
 	import { onboardingOpen } from "$lib/account/onboarding.svelte";
 	import PasskeyNudge from "$lib/components/onboarding/PasskeyNudge.svelte";
@@ -306,6 +306,9 @@
 			// Nicht abwarten: rein additiv (siehe syncTeamActivities), ein
 			// nicht erreichbarer Server darf den Start nicht aufhalten.
 			void syncTeamActivities();
+			// Dieselbe Spiegelung für den Chef selbst - sonst sieht er die eigene
+			// Team-Liste nie in der eigenen Zeiterfassung.
+			void syncOwnedTeamActivities();
 			whatsNew.checkOnStartup(app.showOnboarding);
 			scheduleReminders();
 			scheduleReportReminder();
