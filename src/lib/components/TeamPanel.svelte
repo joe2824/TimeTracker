@@ -30,6 +30,7 @@
 	import XIcon from "@lucide/svelte/icons/x";
 	import UserPlusIcon from "@lucide/svelte/icons/user-plus";
 	import SettingsIcon from "@lucide/svelte/icons/settings";
+	import LayersIcon from "@lucide/svelte/icons/layers";
 
 	// ---------- Team verwalten (Roster) ----------
 	//
@@ -293,7 +294,7 @@
 								</Popover.Content>
 							</Popover.Root>
 							<Button variant="outline" size="sm" onclick={() => tabFocus.request("activities")}>
-								Aktivitäten bearbeiten
+								<LayersIcon class="size-4" /> Aktivitäten
 							</Button>
 							<Button
 								variant="ghost"
