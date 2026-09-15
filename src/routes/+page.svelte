@@ -65,6 +65,7 @@
 	import PairStartDialog from "$lib/components/dialogs/PairStartDialog.svelte";
 	import JoinTeamDialog from "$lib/components/team/JoinTeamDialog.svelte";
 	import LostEditsDialog from "$lib/components/dialogs/LostEditsDialog.svelte";
+	import StaleTimerSplitDialog from "$lib/components/dialogs/StaleTimerSplitDialog.svelte";
 	import WhatsNewDialog from "$lib/components/dialogs/WhatsNewDialog.svelte";
 	import { whatsNew } from "$lib/release/whatsNew.svelte";
 
@@ -738,6 +739,7 @@
 	<PairStartDialog />
 	<JoinTeamDialog />
 	<LostEditsDialog />
+	<StaleTimerSplitDialog />
 
 	<!-- Ein frisch gekoppeltes Geraet ist lokal leer: "Willkommen" waere falsch,
 	     solange der erste Abgleich die vorhandenen Daten noch holt. -->

@@ -235,6 +235,52 @@ describe("Zwei Geraete", () => {
 		expect(list.find((e) => e.id === "h1")!.endTs).toBe(ts(15, 14));
 	});
 
+	it("beendet eine offline entstandene Mitternachts-Fortsetzung nicht einfach selbst, wenn der Server den Lauf laengst frueher geschlossen hat", async () => {
+		// Der Rechner startet einen Timer und synct - Server und Rechner kennen
+		// d1 offen.
+		const desktop = await deviceWith("rechner", entry("d1", { startTs: ts(15, 9), endTs: null }));
+
+		// Das Handy zieht den Stand und beendet den Lauf noch am selben Tag um
+		// 17 Uhr - eine echte, bewusste Handlung - und synct das hoch.
+		const phone = new FakeDevice("handy");
+		await on(phone, (engine) => engine.sync());
+		await afterwards();
+		await changeAndSync(phone, async () => {
+			const list = await store.loadEntries(MONTH);
+			await store.saveEntries(
+				MONTH,
+				list.map((e) => (e.id === "d1" ? { ...e, endTs: ts(15, 17) } : e))
+			);
+		});
+
+		// Der Rechner bleibt die ganze Zeit offline: er erlebt lokal Mitternacht
+		// und teilt den Lauf, ohne vom Handy je etwas mitzubekommen.
+		await afterwards();
+		await on(desktop, async () => {
+			const list = await store.loadEntries(MONTH);
+			const split = list.map((e) => (e.id === "d1" ? { ...e, endTs: ts(16, 0) } : e));
+			split.push(entry("d2", { startTs: ts(16, 0), endTs: null }));
+			await store.saveEntries(MONTH, split);
+		});
+
+		// Jetzt kommt der Rechner wieder online.
+		const outcome = await on(desktop, (engine) => engine.sync());
+
+		const list = await entries(desktop);
+		// Die echte Endzeit vom Handy gilt - nicht die Mitternachts-Teilung, die
+		// bloss lokale Buchfuehrung ohne Kenntnis vom echten Ende war. Ohne diese
+		// Regel gewinnt die Teilung rein zufaellig, weil ihr Stempel erst beim
+		// Wieder-online-Kommen entsteht und damit spaeter liegt als die echte,
+		// laengst hochgeladene Handlung vom Handy.
+		expect(list.find((e) => e.id === "d1")!.endTs).toBe(ts(15, 17));
+		// d2 bleibt unangetastet stehen, statt geraten zu werden: vielleicht hat
+		// der Nutzer ab Mitternacht tatsaechlich weitergearbeitet, ohne den Timer
+		// neu zu starten. Das kann nur ein Mensch entscheiden.
+		expect(list.find((e) => e.id === "d2")!.endTs).toBeNull();
+		// Stattdessen wird es gemeldet, damit die Oberflaeche einen Hinweis zeigt.
+		expect(outcome?.staleTimerSplits).toBe(1);
+	});
+
 	it("gleicht Aktivitaeten ab", async () => {
 		const phone = new FakeDevice("handy");
 		await on(phone, async (engine) => {
