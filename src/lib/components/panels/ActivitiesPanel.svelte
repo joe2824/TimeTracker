@@ -242,7 +242,6 @@
 	let teamActivities = $state<TeamActivity[]>([]);
 	let teamActivitiesVersion = $state(0);
 	let teamActionBusy = $state(false);
-	let newTeamActivityName = $state("");
 
 	async function loadTeamActivities(teamId: string) {
 		try {
@@ -311,16 +310,6 @@
 		await saveTeamActivities(teamActivities.filter((a) => a.id !== id).map(toTeamInput));
 	}
 
-	async function addTeamActivity() {
-		const name = newTeamActivityName.trim();
-		if (!name || !chefTeams.selectedTeamId) return;
-		await saveTeamActivities([
-			...teamActivities.map(toTeamInput),
-			{ name, isAbsence: false, sortOrder: teamActivities.length, archived: false }
-		]);
-		newTeamActivityName = "";
-	}
-
 	/** Namen importieren, die es im Team noch nicht gibt - wie app.importActivities, nur serverseitig. */
 	async function importTeamActivities(teamId: string, lines: string[]): Promise<number> {
 		const isSelected = teamId === chefTeams.selectedTeamId;
@@ -377,9 +366,19 @@
 		input.value = "";
 	}
 
+	/** Ein Feld für beides: personlich oder ins gefilterte Team, je nach Filter. */
 	async function addOne() {
-		if (!newName.trim()) return;
-		await app.addActivity(newName);
+		const name = newName.trim();
+		if (!name) return;
+		if (activityTeamFilter !== "alle") {
+			if (!chefTeams.selectedTeamId) return;
+			await saveTeamActivities([
+				...teamActivities.map(toTeamInput),
+				{ name, isAbsence: false, sortOrder: teamActivities.length, archived: false }
+			]);
+		} else {
+			await app.addActivity(name);
+		}
 		newName = "";
 	}
 
@@ -515,34 +514,15 @@
 		</Card.Header>
 		<Card.Content class="space-y-3">
 			<div class="flex gap-2">
-				<Input bind:value={newName} placeholder="Neue Aktivität…" onkeydown={(e) => e.key === "Enter" && addOne()} />
-				<Button onclick={addOne}>Hinzufügen</Button>
+				<Input
+					bind:value={newName}
+					placeholder={activityTeamFilter === "alle" ? "Neue Aktivität…" : "Neue Team-Aktivität…"}
+					onkeydown={(e) => e.key === "Enter" && addOne()}
+				/>
+				<Button onclick={addOne} disabled={activityTeamFilter !== "alle" && teamActionBusy}>
+					{#if activityTeamFilter !== "alle"}<UsersIcon class="size-4" />{/if} Hinzufügen
+				</Button>
 			</div>
-
-			{#if chefTeams.teams.length > 0}
-				<div class="flex gap-2">
-					{#if chefTeams.teams.length > 1 && activityTeamFilter === "alle"}
-						<Select.Root type="single" bind:value={chefTeams.selectedTeamId}>
-							<Select.Trigger class="w-40">
-								{chefTeams.selectedTeam?.name ?? "Team wählen"}
-							</Select.Trigger>
-							<Select.Content>
-								{#each chefTeams.teams as t (t.id)}
-									<Select.Item value={t.id} label={t.name}>{t.name}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-					{/if}
-					<Input
-						bind:value={newTeamActivityName}
-						placeholder="Neue Team-Aktivität…"
-						onkeydown={(e) => e.key === "Enter" && addTeamActivity()}
-					/>
-					<Button variant="outline" disabled={teamActionBusy} onclick={addTeamActivity}>
-						<UsersIcon class="size-4" /> Hinzufügen
-					</Button>
-				</div>
-			{/if}
 
 			<ul class="divide-border divide-y">
 				{#each listed as a (a.id)}
