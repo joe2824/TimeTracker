@@ -16,8 +16,9 @@
 	import StatTile from "$lib/components/shared/StatTile.svelte";
 	import * as Card from "$lib/components/ui/card";
 	import * as Table from "$lib/components/ui/table";
-	import * as Select from "$lib/components/ui/select";
 	import * as Popover from "$lib/components/ui/popover";
+	import * as DropdownMenu from "$lib/components/ui/dropdown-menu";
+	import { cn } from "$lib/utils";
 	import { toast } from "svelte-sonner";
 	import DownloadIcon from "@lucide/svelte/icons/download";
 	import BellIcon from "@lucide/svelte/icons/bell";
@@ -262,18 +263,24 @@
 				<Card.Header>
 					<Card.Title>
 						{#if chefTeams.teams.length > 1}
-							<Select.Root type="single" bind:value={chefTeams.selectedTeamId}>
-								<Select.Trigger
-									class="h-auto w-fit gap-1 border-0 bg-transparent p-0 text-base leading-snug font-medium hover:text-foreground"
+							<DropdownMenu.Root>
+								<DropdownMenu.Trigger
+									class={cn(
+										buttonVariants({ variant: "ghost", size: "sm" }),
+										"h-auto gap-1 px-1.5 text-base font-medium"
+									)}
 								>
 									{chefTeams.selectedTeam?.name ?? "Team wählen"}
-								</Select.Trigger>
-								<Select.Content>
+									<ChevronDownIcon class="text-muted-foreground size-4" />
+								</DropdownMenu.Trigger>
+								<DropdownMenu.Content align="start">
 									{#each chefTeams.teams as t (t.id)}
-										<Select.Item value={t.id} label={t.name}>{t.name}</Select.Item>
+										<DropdownMenu.Item onSelect={() => (chefTeams.selectedTeamId = t.id)}>
+											{t.name}
+										</DropdownMenu.Item>
 									{/each}
-								</Select.Content>
-							</Select.Root>
+								</DropdownMenu.Content>
+							</DropdownMenu.Root>
 						{:else}
 							{chefTeams.selectedTeam?.name ?? "Team"}
 						{/if}
