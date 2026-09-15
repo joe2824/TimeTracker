@@ -5,6 +5,7 @@ import { ANNA, BODO, freshDb } from "./testing/fixtures";
 import {
 	activeTeamInvite,
 	createTeam,
+	deleteTeam,
 	joinTeam,
 	listTeamActivities,
 	listTeamMembers,
@@ -51,6 +52,30 @@ describe("requireOwnTeam", () => {
 	it("gibt das Team zurück, wenn es dem Konto gehört", () => {
 		const team = createTeam(db, ANNA, "Vertrieb");
 		expect(requireOwnTeam(db, ANNA, team.id).id).toBe(team.id);
+	});
+});
+
+describe("deleteTeam", () => {
+	it("nimmt Mitglieder, Aktivitäten und Einladung per Fremdschlüssel-Kaskade mit", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		const invite = rotateTeamInvite(db, team.id);
+		joinTeam(db, invite.code, "Anna Meier");
+		setTeamActivities(db, team.id, [
+			{ name: "Projekt A", isAbsence: false, sortOrder: 0, archived: false }
+		]);
+		expect(listTeamMembers(db, team.id)).toHaveLength(1);
+		expect(listTeamActivities(db, team.id)).toHaveLength(1);
+
+		deleteTeam(db, team.id);
+
+		expect(listTeams(db, ANNA)).toEqual([]);
+		expect(listTeamMembers(db, team.id)).toEqual([]);
+		expect(listTeamActivities(db, team.id)).toEqual([]);
+		expect(activeTeamInvite(db, team.id)).toBeNull();
+	});
+
+	it("ein unbekanntes Team zu löschen ist folgenlos", () => {
+		expect(() => deleteTeam(db, "unbekannt")).not.toThrow();
 	});
 });
 

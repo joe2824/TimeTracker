@@ -1454,6 +1454,11 @@ class AccountState {
 		return this.#api.createTeam(name);
 	}
 
+	async deleteTeam(teamId: string): Promise<void> {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		await this.#api.deleteTeam(teamId);
+	}
+
 	async getTeamInvite(teamId: string): Promise<TeamInvite | null> {
 		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
 		return (await this.#api.getTeamInvite(teamId)).invite;

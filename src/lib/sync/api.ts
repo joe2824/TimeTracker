@@ -516,6 +516,11 @@ export class Api {
 		return this.#call("/api/team", { method: "POST", body: JSON.stringify({ name }) });
 	}
 
+	/** Endgültig - Mitglieder, Aktivitäten und Berichte gehen mit (Server-seitige Kaskade). */
+	deleteTeam(teamId: string): Promise<{ ok: boolean }> {
+		return this.#call(`/api/team/${encodeURIComponent(teamId)}`, { method: "DELETE" });
+	}
+
 	getTeamInvite(teamId: string): Promise<{ invite: TeamInvite | null }> {
 		return this.#call(`/api/team/${encodeURIComponent(teamId)}/invite`);
 	}
