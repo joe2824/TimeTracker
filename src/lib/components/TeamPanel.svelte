@@ -18,7 +18,6 @@
 	import { Button } from "$lib/components/ui/button";
 	import { Badge } from "$lib/components/ui/badge";
 	import { Input } from "$lib/components/ui/input";
-	import { Label } from "$lib/components/ui/label";
 	import MonthSelector from "$lib/components/shared/MonthSelector.svelte";
 	import StatTile from "$lib/components/shared/StatTile.svelte";
 	import * as Card from "$lib/components/ui/card";
@@ -307,8 +306,15 @@
 					Mitglieder treten über einen Link bei - ohne eigenes Konto. Der Link führt zu den
 					gemeinsamen Aktivitäten und meldet, wann von dort ein Bericht gesendet wurde.
 				</Card.Description>
+				{#if selectedTeamId}
+					<Card.Action>
+						<Button variant="outline" size="sm" onclick={() => tabFocus.request("activities")}>
+							Aktivitäten bearbeiten
+						</Button>
+					</Card.Action>
+				{/if}
 			</Card.Header>
-			<Card.Content class="space-y-4">
+			<Card.Content>
 				<div class="flex flex-wrap items-end gap-2">
 					{#if teams.length > 0}
 						<Select.Root type="single" bind:value={selectedTeamId}>
@@ -336,78 +342,79 @@
 						<PlusIcon class="size-4" /> Anlegen
 					</Button>
 				</div>
-
-				{#if selectedTeamId}
-					<div class="space-y-2 border-t pt-4">
-						<Label>Beitritts-Link</Label>
-						{#if inviteLoading}
-							<p class="text-muted-foreground text-sm">Wird geladen…</p>
-						{:else}
-							<div class="flex flex-wrap items-center gap-2">
-								{#if inviteUrl}
-									<code class="bg-muted rounded px-2 py-1 text-xs break-all">{inviteUrl}</code>
-									<Button variant="ghost" size="icon-sm" title="Link kopieren" onclick={copyInviteUrl}>
-										<CopyIcon class="size-4" />
-									</Button>
-								{/if}
-								<Button variant="outline" size="sm" disabled={rotatingInvite} onclick={rotateInvite}>
-									<RefreshCwIcon class="size-4" />
-									{invite ? "Neuen Link erzeugen" : "Link erzeugen"}
-								</Button>
-							</div>
-							<p class="text-muted-foreground text-xs">
-								Ein neuer Link macht den bisherigen ungültig - schon beigetretene Mitglieder bleiben
-								davon unberührt.
-							</p>
-						{/if}
-					</div>
-
-					<div class="space-y-2 border-t pt-4">
-						<Label>Mitglieder ({members.length})</Label>
-						{#if members.length === 0}
-							<p class="text-muted-foreground text-sm">Noch niemand beigetreten.</p>
-						{:else}
-							<Table.Root>
-								<Table.Header>
-									<Table.Row>
-										<Table.Head>Name</Table.Head>
-										<Table.Head>Beigetreten</Table.Head>
-										<Table.Head class="w-10"></Table.Head>
-									</Table.Row>
-								</Table.Header>
-								<Table.Body>
-									{#each members as m (m.id)}
-										<Table.Row>
-											<Table.Cell class="font-medium">{m.name}</Table.Cell>
-											<Table.Cell class="text-muted-foreground text-sm">
-												{fmtDateHuman(m.createdAt)}
-											</Table.Cell>
-											<Table.Cell>
-												<Button
-													variant="ghost"
-													size="icon-sm"
-													title="Aus dem Team entfernen"
-													onclick={() => kickMember(m)}
-												>
-													<Trash2Icon class="size-4" />
-												</Button>
-											</Table.Cell>
-										</Table.Row>
-									{/each}
-								</Table.Body>
-							</Table.Root>
-						{/if}
-					</div>
-
-					<div class="space-y-2 border-t pt-4">
-						<Label>Gemeinsame Aktivitäten</Label>
-						<p class="text-muted-foreground text-xs leading-relaxed">
-							Erscheinen auf den Geräten aller Mitglieder – bearbeitbar im Aktivitäten-Tab.
-						</p>
-					</div>
-				{/if}
 			</Card.Content>
 		</Card.Root>
+
+		{#if selectedTeamId}
+			<Card.Root>
+				<Card.Header>
+					<Card.Title>Beitritts-Link</Card.Title>
+				</Card.Header>
+				<Card.Content class="space-y-2">
+					{#if inviteLoading}
+						<p class="text-muted-foreground text-sm">Wird geladen…</p>
+					{:else}
+						<div class="flex flex-wrap items-center gap-2">
+							{#if inviteUrl}
+								<code class="bg-muted rounded px-2 py-1 text-xs break-all">{inviteUrl}</code>
+								<Button variant="ghost" size="icon-sm" title="Link kopieren" onclick={copyInviteUrl}>
+									<CopyIcon class="size-4" />
+								</Button>
+							{/if}
+							<Button variant="outline" size="sm" disabled={rotatingInvite} onclick={rotateInvite}>
+								<RefreshCwIcon class="size-4" />
+								{invite ? "Neuen Link erzeugen" : "Link erzeugen"}
+							</Button>
+						</div>
+						<p class="text-muted-foreground text-xs">
+							Ein neuer Link macht den bisherigen ungültig - schon beigetretene Mitglieder bleiben
+							davon unberührt.
+						</p>
+					{/if}
+				</Card.Content>
+			</Card.Root>
+
+			<Card.Root>
+				<Card.Header>
+					<Card.Title>Mitglieder ({members.length})</Card.Title>
+				</Card.Header>
+				<Card.Content>
+					{#if members.length === 0}
+						<p class="text-muted-foreground text-sm">Noch niemand beigetreten.</p>
+					{:else}
+						<Table.Root>
+							<Table.Header>
+								<Table.Row>
+									<Table.Head>Name</Table.Head>
+									<Table.Head>Beigetreten</Table.Head>
+									<Table.Head class="w-10"></Table.Head>
+								</Table.Row>
+							</Table.Header>
+							<Table.Body>
+								{#each members as m (m.id)}
+									<Table.Row>
+										<Table.Cell class="font-medium">{m.name}</Table.Cell>
+										<Table.Cell class="text-muted-foreground text-sm">
+											{fmtDateHuman(m.createdAt)}
+										</Table.Cell>
+										<Table.Cell>
+											<Button
+												variant="ghost"
+												size="icon-sm"
+												title="Aus dem Team entfernen"
+												onclick={() => kickMember(m)}
+											>
+												<Trash2Icon class="size-4" />
+											</Button>
+										</Table.Cell>
+									</Table.Row>
+								{/each}
+							</Table.Body>
+						</Table.Root>
+					{/if}
+				</Card.Content>
+			</Card.Root>
+		{/if}
 
 		{#if selectedTeamId}
 			<div class="flex flex-wrap items-end justify-between gap-3">
