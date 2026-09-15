@@ -6,6 +6,7 @@
 	import TimerIcon from "@lucide/svelte/icons/timer";
 	import FileTextIcon from "@lucide/svelte/icons/file-text";
 	import BellIcon from "@lucide/svelte/icons/bell";
+	import UsersIcon from "@lucide/svelte/icons/users";
 	import UserRoundIcon from "@lucide/svelte/icons/user-round";
 	import ShieldCheckIcon from "@lucide/svelte/icons/shield-check";
 	import MonitorCogIcon from "@lucide/svelte/icons/monitor-cog";
@@ -17,6 +18,7 @@
 	import TrackingTab from "./settings/TrackingTab.svelte";
 	import ReportTab from "./settings/ReportTab.svelte";
 	import RemindersTab from "./settings/RemindersTab.svelte";
+	import TeamTab from "./settings/TeamTab.svelte";
 	import AccountTab from "./settings/AccountTab.svelte";
 	import AdminTab from "./settings/AdminTab.svelte";
 	import SystemTab from "./settings/SystemTab.svelte";
@@ -45,6 +47,7 @@
 		| "erfassung"
 		| "bericht"
 		| "erinnerungen"
+		| "team"
 		| "konto"
 		| "verwaltung"
 		| "system"
@@ -76,6 +79,12 @@
 				title: "Erinnerungen",
 				icon: BellIcon,
 				description: "Wann die App sich von selbst meldet."
+			},
+			{
+				id: "team",
+				title: "Team",
+				icon: UsersIcon,
+				description: "Chef-Modus, Team anlegen und der Beitritts-Link."
 			},
 			{
 				id: "konto",
@@ -230,6 +239,8 @@
 			<ReportTab />
 		{:else if activeTabId === "erinnerungen"}
 			<RemindersTab />
+		{:else if activeTabId === "team"}
+			<TeamTab />
 		{:else if activeTabId === "konto"}
 			<AccountTab />
 		{:else if activeTabId === "verwaltung"}
