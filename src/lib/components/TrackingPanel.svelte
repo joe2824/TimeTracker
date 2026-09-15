@@ -98,8 +98,8 @@
 	// Erst urteilen, wenn ALLE zwölf Monate da sind. Während des Ladens liefert
 	// `monthEntries` für noch nicht geladene Monate eine leere Liste – der
 	// Hinweis sähe beim Start also nur den laufenden Monat und meldete einem
-	// Vielarbeiter zuverlässig ein rotes "Grenze bereits gerissen", das eine
-	// Sekunde später wieder verschwindet.
+	// Vielarbeiter zuverlässig ein rotes "Schon über der 8-Stunden-Grenze", das
+	// eine Sekunde später wieder verschwindet.
 	const hintReady = $derived(hintMonths.every((m) => app.monthLoaded(m)));
 
 	const arbzgVerdict = $derived.by(() => {

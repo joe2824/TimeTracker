@@ -249,7 +249,7 @@
 				<StatTile label="Schnitt · 24 Wochen" hint="Grenze {fmtHoursClock(NORM_DAILY)} h" {alarm}>
 					{fmtHoursClock(strictWindow.average)} h
 				</StatTile>
-				<StatTile label="Puffer" hint="im Fenster" {alarm}>
+				<StatTile label="Puffer" hint="im 24-Wochen-Schnitt" {alarm}>
 					{strictWindow.bufferHours >= 0 ? "+" : "−"}{fmtHoursClock(
 						Math.abs(strictWindow.bufferHours)
 					)} h
