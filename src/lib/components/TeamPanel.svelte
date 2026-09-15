@@ -18,6 +18,7 @@
 	import * as Table from "$lib/components/ui/table";
 	import * as Popover from "$lib/components/ui/popover";
 	import * as DropdownMenu from "$lib/components/ui/dropdown-menu";
+	import { Skeleton } from "$lib/components/ui/skeleton";
 	import { cn } from "$lib/utils";
 	import { toast } from "svelte-sonner";
 	import DownloadIcon from "@lucide/svelte/icons/download";
@@ -245,17 +246,23 @@
 			</Card.Content>
 		</Card.Root>
 	{:else}
-		{#if chefTeams.teams.length === 0}
+		{#if chefTeams.teamsLoading && chefTeams.teams.length === 0}
+			<Card.Root>
+				<Card.Header>
+					<Skeleton class="h-5 w-32" />
+				</Card.Header>
+				<Card.Content class="space-y-2">
+					<Skeleton class="h-4 w-full" />
+					<Skeleton class="h-4 w-2/3" />
+				</Card.Content>
+			</Card.Root>
+		{:else if chefTeams.teams.length === 0}
 			<Card.Root>
 				<Card.Content class="text-muted-foreground py-4 text-sm">
-					{#if chefTeams.teamsLoading}
-						Teams werden geladen…
-					{:else}
-						Noch kein Team angelegt.
-						<Button variant="link" class="h-auto p-0" onclick={() => tabFocus.requestSettings("team")}>
-							In den Einstellungen anlegen
-						</Button>
-					{/if}
+					Noch kein Team angelegt.
+					<Button variant="link" class="h-auto p-0" onclick={() => tabFocus.requestSettings("team")}>
+						In den Einstellungen anlegen
+					</Button>
 				</Card.Content>
 			</Card.Root>
 		{:else}
@@ -330,13 +337,9 @@
 						</div>
 					</Card.Action>
 				</Card.Header>
-			</Card.Root>
 
-			<Card.Root>
-				<Card.Header>
-					<Card.Title>Mitglieder ({members.length})</Card.Title>
-				</Card.Header>
-				<Card.Content>
+				<Card.Content class="space-y-2 border-t pt-4">
+					<p class="text-muted-foreground text-xs font-medium">Mitglieder ({members.length})</p>
 					{#if members.length === 0}
 						<p class="text-muted-foreground text-sm">Noch niemand beigetreten.</p>
 					{:else}
