@@ -149,6 +149,11 @@ class AccountState {
 	secretsProtected = $state<boolean>(false);
 	/** Wie viele eigene Änderungen beim Zusammenführen unterlegen sind. */
 	lostEdits = $state<number>(0);
+	/**
+	 * Wie oft eine Mitternachts-Teilung stehen geblieben ist, weil ein anderes
+	 * Gerät denselben Lauf inzwischen frueher beendet hat. Siehe StaleTimerSplitDialog.
+	 */
+	staleTimerSplits = $state<number>(0);
 	/** Darf dieses Konto Einladungen vergeben? */
 	isAdmin = $state<boolean>(false);
 	/** Weist sich dieses Gerät mit einem eigenen Token aus - oder mit einem Cookie? */
@@ -672,6 +677,7 @@ class AccountState {
 			this.#retryStep = 0;
 			if (result) {
 				this.lostEdits += result.lostEdits;
+				this.staleTimerSplits += result.staleTimerSplits;
 				if (result.pushed || result.pulled) {
 					logInfo("Abgeglichen", result);
 				}
