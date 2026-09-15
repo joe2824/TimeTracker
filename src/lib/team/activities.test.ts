@@ -188,3 +188,32 @@ describe("syncOwnedTeamActivities", () => {
 		expect(detachedA?.teamOwned).toBeUndefined();
 	});
 });
+
+describe("Chef ist gleichzeitig Mitglied eines anderen Teams", () => {
+	it("syncTeamActivities loest nur die per Link beigetretene Zeile ab, nie die selbst geführte", async () => {
+		// Regression: die eigene, gefuehrte Zeile traegt eine teamId - ohne das
+		// im Abgleich zu beruecksichtigen, saehe syncTeamActivities sie als "nicht
+		// mehr in der Antwort des beigetretenen Teams" an und loeste sie faelschlich.
+		accountMock.linked = true;
+		accountMock.listTeams.mockResolvedValue([
+			{ id: "own1", name: "Eigenes Team", ownerUserId: "u1", createdAt: 1 }
+		]);
+		accountMock.listTeamActivities.mockResolvedValue([
+			{ id: "oa1", name: "Eigene Team-Aktivität", isAbsence: false, sortOrder: 0, color: null, archived: false, updatedAt: 1 }
+		]);
+		await syncOwnedTeamActivities();
+		const ownRow = app.activities.find((a) => a.id === `${TEAM_ACTIVITY_PREFIX}oa1`);
+		expect(ownRow).toMatchObject({ teamOwned: true, teamId: "own1" });
+
+		await saveTeamDevice({
+			teamMemberId: "m1",
+			token: "tok",
+			teamName: "Beigetretenes Team",
+			serverUrl: "https://tt.example.de"
+		});
+		remote.mockResolvedValue({ activities: [] }); // das beigetretene Team hat keine Aktivitäten
+		await syncTeamActivities();
+
+		expect(app.activities.find((a) => a.id === `${TEAM_ACTIVITY_PREFIX}oa1`)).toEqual(ownRow);
+	});
+});

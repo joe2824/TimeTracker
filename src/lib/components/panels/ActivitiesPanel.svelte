@@ -5,12 +5,13 @@
 		ACTIVITY_COLORS,
 		byActivityOrder,
 		isBuiltinActivity,
+		reorderBySortOrder,
 		type Activity
 	} from "$lib/types";
 	import { acceleratorFromEvent, applyShortcuts } from "$lib/ui/shortcuts";
 	import { account } from "$lib/sync/account.svelte";
 	import { chefTeams } from "$lib/team/chef.svelte";
-	import { syncOwnedTeamActivities, TEAM_ACTIVITY_PREFIX } from "$lib/team/activities";
+	import { syncOwnedTeamActivities, withActivitiesLock, TEAM_ACTIVITY_PREFIX } from "$lib/team/activities";
 	import { ApiError, type TeamActivity, type TeamActivityInput } from "$lib/sync/api";
 	import { errorText } from "$lib/log";
 	import { Button } from "$lib/components/ui/button";
@@ -85,20 +86,29 @@
 		mergeTargetId = undefined;
 	}
 
-	async function confirmMerge() {
-		if (!mergeSource || !mergeTargetId) return;
+	/** Gemeinsamer Kern für beide Zusammenführen-Dialoge - nur Quelle/Ziel und was danach geschlossen wird, unterscheiden sich. */
+	async function doMerge(fromId: string, toId: string, onDone: () => void) {
 		merging = true;
 		try {
-			const fromName = mergeSource.name;
-			const toName = app.activities.find((x) => x.id === mergeTargetId)?.name ?? "";
-			const moved = await app.mergeActivityInto(mergeSource.id, mergeTargetId);
+			const fromName = app.activityName(fromId);
+			const toName = app.activityName(toId);
+			// Serialisiert gegen die Team-Synchronisation: die liest/schreibt
+			// app.activities ebenfalls komplett neu und würde sonst mit ihrem
+			// eigenen, noch nicht um das Zusammenführen wissenden Stand die
+			// gerade erst verschwundene Quelle wieder auferstehen lassen.
+			const moved = await withActivitiesLock(() => app.mergeActivityInto(fromId, toId));
 			toast.success(
 				`„${fromName}" in „${toName}" zusammengeführt${moved ? ` (${moved} Eintrag/Einträge)` : ""}.`
 			);
-			mergeSource = null;
+			onDone();
 		} finally {
 			merging = false;
 		}
+	}
+
+	async function confirmMerge() {
+		if (!mergeSource || !mergeTargetId) return;
+		await doMerge(mergeSource.id, mergeTargetId, () => (mergeSource = null));
 	}
 
 	// Dieselbe Zusammenführung, nur mit fester Richtung: eine Team-Aktivität darf
@@ -111,7 +121,13 @@
 
 	function askMergeInto(a: Activity) {
 		const target = app.activities.find((x) => x.id === realId(a.id));
-		if (!target) return;
+		if (!target) {
+			// Kann kurz nach dem Anlegen passieren, waehrend syncOwnedTeamActivities
+			// noch lief - normalerweise laengst durch, da saveTeamActivities darauf
+			// wartet, aber ein Klick mitten in einer langsamen Anfrage bleibt möglich.
+			toast.error("Kurz warten, bis die Team-Aktivität übernommen ist, und erneut versuchen.");
+			return;
+		}
 		mergeIntoTarget = target;
 		mergeSourceId = undefined;
 	}
@@ -120,18 +136,7 @@
 
 	async function confirmMergeInto() {
 		if (!mergeIntoTarget || !mergeSourceId) return;
-		merging = true;
-		try {
-			const fromName = app.activityName(mergeSourceId);
-			const toName = mergeIntoTarget.name;
-			const moved = await app.mergeActivityInto(mergeSourceId, mergeIntoTarget.id);
-			toast.success(
-				`„${fromName}" in „${toName}" zusammengeführt${moved ? ` (${moved} Eintrag/Einträge)` : ""}.`
-			);
-			mergeIntoTarget = null;
-		} finally {
-			merging = false;
-		}
+		await doMerge(mergeSourceId, mergeIntoTarget.id, () => (mergeIntoTarget = null));
 	}
 
 	async function pickColor(id: string, color: string | null) {
@@ -175,15 +180,9 @@
 
 	/** Wie app.reorderActivity, nur für den Team-Entwurf - persistiert über die Team-API. */
 	function reorderTeamActivity(draggedRawId: string, targetRawId: string, placeAfter: boolean) {
-		const ordered = [...teamActivities].sort((a, b) => a.sortOrder - b.sortOrder);
-		const from = ordered.findIndex((a) => a.id === draggedRawId);
-		if (from < 0) return;
-		const [moved] = ordered.splice(from, 1);
-		let to = ordered.findIndex((a) => a.id === targetRawId);
-		if (to < 0) return;
-		if (placeAfter) to += 1;
-		ordered.splice(to, 0, moved);
-		void saveTeamActivities(ordered.map((a, i) => toTeamInput({ ...a, sortOrder: i })));
+		const reordered = reorderBySortOrder(teamActivities, draggedRawId, targetRawId, placeAfter);
+		if (!reordered) return;
+		void saveTeamActivities(reordered.map(toTeamInput));
 	}
 
 	function onDragStart(e: DragEvent, id: string) {
@@ -283,9 +282,10 @@
 				teamActivities = saved;
 				teamActivitiesVersion = saved.reduce((max, a) => Math.max(max, a.updatedAt), 0);
 			}
-			// Sonst sieht die eigene Zeiterfassung (Auswahl, Ausblenden) die Änderung
-			// erst beim nächsten App-Start.
-			void syncOwnedTeamActivities();
+			// Abgewartet, nicht nur angestossen: Favorit/Ausblenden/Zusammenführen auf
+			// einer gerade erst angelegten Zeile brauchen die gespiegelte Aktivität in
+			// app.activities sofort, nicht irgendwann - sonst liefe der Klick ins Leere.
+			await syncOwnedTeamActivities();
 		} catch (e) {
 			if (e instanceof ApiError && e.status === 409) {
 				toast.error("Die Team-Liste wurde inzwischen anderswo geändert - neu geladen.");
@@ -417,8 +417,12 @@
 					(showArchived || !a.archived) &&
 					(showHidden || !a.hidden || a.archived) &&
 					// Das aktuell ausgewaehlte Team zeigt teamListed - dieselbe Zeile
-					// spiegelt syncOwnedTeamActivities sonst zusaetzlich aus app.activities.
-					!(a.teamOwned && a.teamId === chefTeams.selectedTeamId) &&
+					// spiegelt syncOwnedTeamActivities sonst zusaetzlich aus
+					// app.activities. teamId nur vergleichen, wenn die Zeile wirklich
+					// eine hat - sonst wuerde ein reines Mitglieds-Geraet (teamId immer
+					// undefined, chefTeams.selectedTeamId ebenfalls) seine eigene
+					// Team-Zeile hier faelschlich verschwinden lassen.
+					!(a.teamOwned && a.teamId !== undefined && a.teamId === chefTeams.selectedTeamId) &&
 					(activityTeamFilter === "alle" || a.teamId === activityTeamFilter)
 			),
 			...(activityTeamFilter === "alle" || activityTeamFilter === chefTeams.selectedTeamId

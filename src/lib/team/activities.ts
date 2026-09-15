@@ -38,10 +38,28 @@ function toLocal(remote: RemoteActivityLike, team: { id?: string; name: string }
 }
 
 /**
+ * Serialisiert jeden schreibenden Zugriff auf app.activities, der von hier
+ * oder von einer Team-Zusammenführung (ActivitiesPanel) ausgeht. Ohne das
+ * überschreibt eine spät auflösende Anfrage mit ihrem eigenen, inzwischen
+ * veralteten Ausgangsstand, was eine andere Operation dazwischen schon
+ * geschrieben hat - genau die Art Race, die diesem Projekt schon einmal
+ * Team-Daten gekostet hat. Gleiches Muster wie SyncEngine#serial.
+ */
+let chain: Promise<unknown> = Promise.resolve();
+export function withActivitiesLock<T>(fn: () => Promise<T>): Promise<T> {
+	const run = chain.then(fn, fn);
+	chain = run.catch(() => {});
+	return run;
+}
+
+/**
  * Die gemeinsame Liste des Teams (falls dieses Gerät eines hat) neu einlesen.
  *
- * Ersetzt nur die Zeilen mit `teamOwned` - alles andere in `app.activities`
- * bleibt unverändert. Ohne Team-Mitgliedschaft ein stiller No-Op.
+ * Ersetzt nur die Zeilen mit `teamOwned` UND ohne eigene teamId - das sind
+ * die über den Beitritts-Link gespiegelten. Eigene, per syncOwnedTeamActivities
+ * gespiegelte Zeilen (Konto ist gleichzeitig Chef eines anderen Teams) tragen
+ * immer eine teamId und bleiben unangetastet. Ohne Team-Mitgliedschaft ein
+ * stiller No-Op.
  */
 export async function syncTeamActivities(): Promise<void> {
 	const device = await loadTeamDevice();
@@ -59,32 +77,35 @@ export async function syncTeamActivities(): Promise<void> {
 		return;
 	}
 
-	// Zwischenzeitlich könnte "Team verlassen" gelaufen sein (löscht team.json) -
-	// eine erst jetzt schreibende Antwort würde die gerade entfernten
-	// Team-Aktivitäten sonst wieder aufleben lassen.
-	const stillMember = await loadTeamDevice();
-	if (!stillMember || stillMember.token !== device.token) return;
+	await withActivitiesLock(async () => {
+		// Zwischenzeitlich könnte "Team verlassen" gelaufen sein (löscht team.json) -
+		// eine erst jetzt schreibende Antwort würde die gerade entfernten
+		// Team-Aktivitäten sonst wieder aufleben lassen.
+		const stillMember = await loadTeamDevice();
+		if (!stillMember || stillMember.token !== device.token) return;
 
-	const remoteIds = new Set(remote.map((r) => `${TEAM_ACTIVITY_PREFIX}${r.id}`));
-	const personal = app.activities.filter((a) => !a.teamOwned);
-	// Eine vom Chef aus der Liste entfernte Zeile nicht einfach verschwinden
-	// lassen: report.ts baut seine Zeilen nur aus der aktuellen activities-Liste,
-	// schon erfasste Stunden gingen sonst lautlos verloren. Dieselbe Statur wie
-	// beim Team verlassen (app.svelte.ts#detachTeamActivities) - nur mit
-	// UNVERÄNDERTER Id, weil der Server-Eintrag endgültig weg ist und nie wieder
-	// mit ihr kollidieren kann.
-	const detached = app.activities
-		.filter((a) => a.teamOwned && !remoteIds.has(a.id))
-		.map(({ teamOwned: _teamOwned, teamName: _teamName, teamId: _teamId, ...rest }) => ({
+		const remoteIds = new Set(remote.map((r) => `${TEAM_ACTIVITY_PREFIX}${r.id}`));
+		const isJoinedTeamRow = (a: Activity) => a.teamOwned === true && a.teamId === undefined;
+		const rest = app.activities.filter((a) => !isJoinedTeamRow(a));
+		// Eine vom Chef aus der Liste entfernte Zeile nicht einfach verschwinden
+		// lassen: report.ts baut seine Zeilen nur aus der aktuellen activities-Liste,
+		// schon erfasste Stunden gingen sonst lautlos verloren. Dieselbe Statur wie
+		// beim Team verlassen (app.svelte.ts#detachTeamActivities) - nur mit
+		// UNVERÄNDERTER Id, weil der Server-Eintrag endgültig weg ist und nie wieder
+		// mit ihr kollidieren kann.
+		const detached = app.activities
+			.filter((a) => isJoinedTeamRow(a) && !remoteIds.has(a.id))
+			.map(({ teamOwned: _teamOwned, teamName: _teamName, teamId: _teamId, ...rest2 }) => ({
+				...rest2,
+				archived: true
+			}));
+		app.activities = [
 			...rest,
-			archived: true
-		}));
-	app.activities = [
-		...personal,
-		...detached,
-		...remote.map((r) => toLocal(r, { name: device.teamName }))
-	];
-	await app.persistActivities();
+			...detached,
+			...remote.map((r) => toLocal(r, { name: device.teamName }))
+		];
+		await app.persistActivities();
+	});
 }
 
 /**
@@ -92,36 +113,43 @@ export async function syncTeamActivities(): Promise<void> {
  *
  * Ohne das taucht eine Team-Aktivität in der eigenen Zeiterfassung (Auswahl,
  * Bericht, Ausblenden) nie auf - der Chef sieht sie nur in der separaten
- * Verwaltung im Aktivitäten-Tab, nie beim eigenen Timer. Ein Team je
- * Durchgang: das Entfernen einer Zeile in Team A darf Team B nicht anfassen,
- * und nur der eigene Anteil (teamId) einer Zeile zählt als "zu diesem Team
- * gehörig" - anders als bei syncTeamActivities gibt es hier ggf. mehrere
- * Teams gleichzeitig.
+ * Verwaltung im Aktivitäten-Tab, nie beim eigenen Timer. Holt alle Teams
+ * parallel und schreibt app.activities genau einmal, nicht einmal je Team -
+ * jeder Zwischenstand wäre ein zusätzlicher reaktiver Durchlauf für nichts.
  */
 export async function syncOwnedTeamActivities(): Promise<void> {
 	if (!account.linked) return;
 	await chefTeams.loadTeams();
+	if (chefTeams.teams.length === 0) return;
 
-	for (const team of chefTeams.teams) {
-		let remote;
-		try {
-			remote = await account.listTeamActivities(team.id);
-		} catch (e) {
-			logWarn(`Aktivitäten von Team „${team.name}" konnten nicht geladen werden`, e);
-			continue;
+	const results = await Promise.all(
+		chefTeams.teams.map(async (team) => {
+			try {
+				return { team, remote: await account.listTeamActivities(team.id) };
+			} catch (e) {
+				logWarn(`Aktivitäten von Team „${team.name}" konnten nicht geladen werden`, e);
+				return null;
+			}
+		})
+	);
+
+	await withActivitiesLock(async () => {
+		let next = app.activities;
+		for (const result of results) {
+			if (!result) continue;
+			const { team, remote } = result;
+			const remoteIds = new Set(remote.map((r) => `${TEAM_ACTIVITY_PREFIX}${r.id}`));
+			const ownedByThisTeam = (a: Activity) => a.teamOwned === true && a.teamId === team.id;
+			const rest = next.filter((a) => !ownedByThisTeam(a));
+			const detached = next
+				.filter((a) => ownedByThisTeam(a) && !remoteIds.has(a.id))
+				.map(({ teamOwned: _teamOwned, teamName: _teamName, teamId: _teamId, ...r }) => ({
+					...r,
+					archived: true
+				}));
+			next = [...rest, ...detached, ...remote.map((r) => toLocal(r, team))];
 		}
-
-		const remoteIds = new Set(remote.map((r) => `${TEAM_ACTIVITY_PREFIX}${r.id}`));
-		const ownedByThisTeam = (a: Activity) => a.teamOwned === true && a.teamId === team.id;
-		const rest = app.activities.filter((a) => !ownedByThisTeam(a));
-		const detached = app.activities
-			.filter((a) => ownedByThisTeam(a) && !remoteIds.has(a.id))
-			.map(({ teamOwned: _teamOwned, teamName: _teamName, teamId: _teamId, ...r }) => ({
-				...r,
-				archived: true
-			}));
-		app.activities = [...rest, ...detached, ...remote.map((r) => toLocal(r, team))];
-	}
-
-	await app.persistActivities();
+		app.activities = next;
+		await app.persistActivities();
+	});
 }
