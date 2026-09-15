@@ -5,7 +5,6 @@
 	import { capabilities, isTauri } from "$lib/platform/env";
 	import {
 		ApiError,
-		type TeamActivityInput,
 		type TeamInfo,
 		type TeamInvite,
 		type TeamMemberInfo,
@@ -36,7 +35,6 @@
 	import PlusIcon from "@lucide/svelte/icons/plus";
 	import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
 	import XIcon from "@lucide/svelte/icons/x";
-	import SettingsIcon from "@lucide/svelte/icons/settings";
 
 	// ---------- Team verwalten (Link, Aktivitäten, Roster) ----------
 
@@ -50,11 +48,6 @@
 	let inviteLoading = $state(false);
 	let rotatingInvite = $state(false);
 	let members = $state<TeamMemberInfo[]>([]);
-
-	let activities = $state<TeamActivityInput[]>([]);
-	/** Höchster `updatedAt`-Stand der zuletzt geladenen Liste - Gleichzeitigkeitsprüfung beim Speichern. */
-	let activitiesVersion = $state(0);
-	let savingActivities = $state(false);
 
 	const selectedTeam = $derived(teams.find((t) => t.id === selectedTeamId) ?? null);
 	const inviteUrl = $derived(invite ? `${account.serverUrl}/team/join/${invite.code}` : null);
@@ -84,16 +77,13 @@
 		const requestId = ++teamDetailsRequest;
 		inviteLoading = true;
 		try {
-			const [inv, mem, act] = await Promise.all([
+			const [inv, mem] = await Promise.all([
 				account.getTeamInvite(teamId),
-				account.listTeamMembers(teamId),
-				account.listTeamActivities(teamId)
+				account.listTeamMembers(teamId)
 			]);
 			if (requestId !== teamDetailsRequest) return;
 			invite = inv;
 			members = mem;
-			activities = act;
-			activitiesVersion = act.reduce((max, a) => Math.max(max, a.updatedAt), 0);
 		} catch (e) {
 			if (requestId !== teamDetailsRequest) return;
 			toast.error(`Team konnte nicht geladen werden: ${errorText(e)}`);
@@ -107,39 +97,8 @@
 		else {
 			invite = null;
 			members = [];
-			activities = [];
 		}
 	});
-
-	async function saveActivities() {
-		if (!selectedTeamId || savingActivities) return;
-		const teamId = selectedTeamId;
-		const cleaned = activities
-			.map((a, i) => ({ ...a, name: a.name.trim(), sortOrder: i }))
-			.filter((a) => a.name);
-		savingActivities = true;
-		try {
-			const saved = await account.setTeamActivities(teamId, cleaned, activitiesVersion);
-			// Gegen dieselbe Verwechslungsgefahr wie teamDetailsRequest oben: bis zur
-			// Antwort könnte längst ein anderes Team ausgewählt sein.
-			if (teamId === selectedTeamId) {
-				activities = saved;
-				activitiesVersion = saved.reduce((max, a) => Math.max(max, a.updatedAt), 0);
-			}
-			toast.success("Gemeinsame Aktivitäten gespeichert.");
-		} catch (e) {
-			if (e instanceof ApiError && e.status === 409) {
-				// Ein anderer Tab/Gerät hat zwischenzeitlich gespeichert - die eigene
-				// Fassung war veraltet. Neu laden statt blind darüberzuschreiben.
-				toast.error("Die Liste wurde inzwischen anderswo geändert - neu geladen.");
-				if (teamId === selectedTeamId) await loadTeamDetails(teamId);
-			} else {
-				toast.error(`Speichern fehlgeschlagen: ${errorText(e)}`);
-			}
-		} finally {
-			savingActivities = false;
-		}
-	}
 
 	async function createTeam() {
 		const name = newTeamName.trim();
@@ -348,16 +307,6 @@
 					Mitglieder treten über einen Link bei - ohne eigenes Konto. Der Link führt zu den
 					gemeinsamen Aktivitäten und meldet, wann von dort ein Bericht gesendet wurde.
 				</Card.Description>
-				<Card.Action>
-					<Button
-						variant="ghost"
-						size="icon-sm"
-						onclick={() => tabFocus.requestSettings("bericht")}
-						title="Chef-Modus abschalten oder Bericht-Einstellungen ändern"
-					>
-						<SettingsIcon class="size-4" />
-					</Button>
-				</Card.Action>
 			</Card.Header>
 			<Card.Content class="space-y-4">
 				<div class="flex flex-wrap items-end gap-2">
@@ -453,37 +402,8 @@
 					<div class="space-y-2 border-t pt-4">
 						<Label>Gemeinsame Aktivitäten</Label>
 						<p class="text-muted-foreground text-xs leading-relaxed">
-							Erscheinen auf den Geräten aller Mitglieder - dort nur änderbar von hier aus.
+							Erscheinen auf den Geräten aller Mitglieder – bearbeitbar im Aktivitäten-Tab.
 						</p>
-						{#each activities as a, i (i)}
-							<div class="flex gap-2">
-								<Input placeholder="Name" bind:value={activities[i].name} />
-								<Button
-									variant="ghost"
-									size="icon"
-									title="Entfernen"
-									onclick={() => (activities = activities.filter((_, j) => j !== i))}
-								>
-									<Trash2Icon class="size-4" />
-								</Button>
-							</div>
-						{/each}
-						<div class="flex flex-wrap gap-2">
-							<Button
-								variant="outline"
-								size="sm"
-								onclick={() =>
-									(activities = [
-										...activities,
-										{ name: "", isAbsence: false, sortOrder: activities.length, archived: false }
-									])}
-							>
-								<PlusIcon class="size-4" /> Aktivität
-							</Button>
-							<Button size="sm" disabled={savingActivities} onclick={saveActivities}>
-								{savingActivities ? "Wird gespeichert…" : "Speichern"}
-							</Button>
-						</div>
 					</div>
 				{/if}
 			</Card.Content>
