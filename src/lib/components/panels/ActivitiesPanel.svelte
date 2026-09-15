@@ -38,6 +38,8 @@
 	let newName = $state("");
 	let showArchived = $state(false);
 	let showHidden = $state(false);
+	/** "alle" oder die Id eines selbst geführten Teams - blendet alles andere aus. */
+	let activityTeamFilter = $state("alle");
 	let fileInput: HTMLInputElement;
 
 	let draggingId = $state<string | null>(null);
@@ -163,8 +165,25 @@
 	}
 
 	function isReorderable(id: string): boolean {
+		// Nur die gerade zur Bearbeitung ausgewählte Team-Liste - Sortieren
+		// zwischen zwei verschiedenen Teams (oder Team und eigenen Zeilen) hat
+		// keine gemeinsame Reihenfolge, gegen die sich das sinnvoll aufloesen liesse.
+		if (isChefTeamRow(id)) return true;
 		const a = app.activities.find((x) => x.id === id);
 		return !!a && !isBuiltinActivity(a) && !a.teamOwned;
+	}
+
+	/** Wie app.reorderActivity, nur für den Team-Entwurf - persistiert über die Team-API. */
+	function reorderTeamActivity(draggedRawId: string, targetRawId: string, placeAfter: boolean) {
+		const ordered = [...teamActivities].sort((a, b) => a.sortOrder - b.sortOrder);
+		const from = ordered.findIndex((a) => a.id === draggedRawId);
+		if (from < 0) return;
+		const [moved] = ordered.splice(from, 1);
+		let to = ordered.findIndex((a) => a.id === targetRawId);
+		if (to < 0) return;
+		if (placeAfter) to += 1;
+		ordered.splice(to, 0, moved);
+		void saveTeamActivities(ordered.map((a, i) => toTeamInput({ ...a, sortOrder: i })));
 	}
 
 	function onDragStart(e: DragEvent, id: string) {
@@ -187,7 +206,11 @@
 	function onDrop(e: DragEvent, targetId: string) {
 		e.preventDefault();
 		if (draggingId && draggingId !== targetId) {
-			void app.reorderActivity(draggingId, targetId, dropAfter);
+			if (isChefTeamRow(draggingId) && isChefTeamRow(targetId)) {
+				reorderTeamActivity(teamRowId(draggingId), teamRowId(targetId), dropAfter);
+			} else if (!isChefTeamRow(draggingId) && !isChefTeamRow(targetId)) {
+				void app.reorderActivity(draggingId, targetId, dropAfter);
+			}
 		}
 		resetDrag();
 	}
@@ -238,6 +261,12 @@
 	$effect(() => {
 		if (chefTeams.selectedTeamId) void loadTeamActivities(chefTeams.selectedTeamId);
 		else teamActivities = [];
+	});
+	// Auf ein Team gefiltert heisst auch: dieses Team ist die bearbeitbare
+	// Auswahl - sonst zeigte der Filter ein Team, dessen Zeilen (teamListed)
+	// aber noch die vorige Auswahl waeren.
+	$effect(() => {
+		if (activityTeamFilter !== "alle") chefTeams.selectedTeamId = activityTeamFilter;
 	});
 
 	function toTeamInput(a: TeamActivity): TeamActivityInput {
@@ -390,9 +419,12 @@
 					(showHidden || !a.hidden || a.archived) &&
 					// Das aktuell ausgewaehlte Team zeigt teamListed - dieselbe Zeile
 					// spiegelt syncOwnedTeamActivities sonst zusaetzlich aus app.activities.
-					!(a.teamOwned && a.teamId === chefTeams.selectedTeamId)
+					!(a.teamOwned && a.teamId === chefTeams.selectedTeamId) &&
+					(activityTeamFilter === "alle" || a.teamId === activityTeamFilter)
 			),
-			...teamListed
+			...(activityTeamFilter === "alle" || activityTeamFilter === chefTeams.selectedTeamId
+				? teamListed
+				: [])
 		].sort(byActivityOrder)
 	);
 	const hiddenCount = $derived(app.activities.filter((a) => a.hidden && !a.archived).length);
@@ -454,7 +486,22 @@
 		<Card.Header>
 			<Card.Title>Liste ({listed.length})</Card.Title>
 			<Card.Action>
-				<div class="flex gap-1">
+				<div class="flex flex-wrap gap-1">
+					{#if chefTeams.teams.length > 0}
+						<Select.Root type="single" bind:value={activityTeamFilter}>
+							<Select.Trigger class="w-44" size="sm">
+								{activityTeamFilter === "alle"
+									? "Alle Aktivitäten"
+									: `Nur ${chefTeams.teams.find((t) => t.id === activityTeamFilter)?.name ?? "Team"}`}
+							</Select.Trigger>
+							<Select.Content>
+								<Select.Item value="alle" label="Alle Aktivitäten">Alle Aktivitäten</Select.Item>
+								{#each chefTeams.teams as t (t.id)}
+									<Select.Item value={t.id} label={t.name}>Nur „{t.name}"</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					{/if}
 					{#if hiddenCount > 0}
 						<Button variant="ghost" size="sm" onclick={() => (showHidden = !showHidden)}>
 							{showHidden ? "Ausgeblendete verstecken" : `Ausgeblendete zeigen (${hiddenCount})`}
@@ -474,7 +521,7 @@
 
 			{#if chefTeams.teams.length > 0}
 				<div class="flex gap-2">
-					{#if chefTeams.teams.length > 1}
+					{#if chefTeams.teams.length > 1 && activityTeamFilter === "alle"}
 						<Select.Root type="single" bind:value={chefTeams.selectedTeamId}>
 							<Select.Trigger class="w-40">
 								{chefTeams.selectedTeam?.name ?? "Team wählen"}
