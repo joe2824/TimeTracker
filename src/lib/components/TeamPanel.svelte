@@ -2,14 +2,9 @@
 	import { invoke } from "@tauri-apps/api/core";
 	import { save } from "@tauri-apps/plugin-dialog";
 	import { account } from "$lib/sync/account.svelte";
+	import { chefTeams } from "$lib/team/chef.svelte";
 	import { capabilities, isTauri } from "$lib/platform/env";
-	import {
-		ApiError,
-		type TeamInfo,
-		type TeamInvite,
-		type TeamMemberInfo,
-		type TeamReportStatus
-	} from "$lib/sync/api";
+	import { ApiError, type TeamMemberInfo, type TeamReportStatus } from "$lib/sync/api";
 	import { createOutlookDraft, reportOutlookError } from "$lib/report/outlook";
 	import { teamReminderHtml, teamReminderSubject, teamReportsToCsv } from "$lib/report/teamReport";
 	import { fmtClock, fmtDateHuman, monthLabel, prevMonthKey } from "$lib/time/time";
@@ -17,7 +12,6 @@
 	import { tabFocus } from "$lib/ui/tabFocus.svelte";
 	import { Button } from "$lib/components/ui/button";
 	import { Badge } from "$lib/components/ui/badge";
-	import { Input } from "$lib/components/ui/input";
 	import MonthSelector from "$lib/components/shared/MonthSelector.svelte";
 	import StatTile from "$lib/components/shared/StatTile.svelte";
 	import * as Card from "$lib/components/ui/card";
@@ -29,105 +23,49 @@
 	import CheckIcon from "@lucide/svelte/icons/check";
 	import LoaderCircleIcon from "@lucide/svelte/icons/loader-circle";
 	import CopyIcon from "@lucide/svelte/icons/copy";
-	import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
 	import Trash2Icon from "@lucide/svelte/icons/trash-2";
-	import PlusIcon from "@lucide/svelte/icons/plus";
 	import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
 	import XIcon from "@lucide/svelte/icons/x";
 
-	// ---------- Team verwalten (Link, Aktivitäten, Roster) ----------
+	// ---------- Team verwalten (Roster) ----------
+	//
+	// Anlegen, Auswahl und Beitritts-Link teilt sich dieser Tab mit den
+	// Einstellungen (dort verwaltet, siehe ReportTab) über chefTeams - nur das
+	// Kopieren des Links bleibt zusätzlich hier, griffbereit für den Alltag.
 
-	let teams = $state<TeamInfo[]>([]);
-	let selectedTeamId = $state<string | undefined>(undefined);
-	let teamsLoading = $state(false);
-	let newTeamName = $state("");
-	let creatingTeam = $state(false);
-
-	let invite = $state<TeamInvite | null>(null);
-	let inviteLoading = $state(false);
-	let rotatingInvite = $state(false);
 	let members = $state<TeamMemberInfo[]>([]);
 
-	const selectedTeam = $derived(teams.find((t) => t.id === selectedTeamId) ?? null);
-	const inviteUrl = $derived(invite ? `${account.serverUrl}/team/join/${invite.code}` : null);
-
-	async function loadTeams() {
-		if (!account.linked) return;
-		teamsLoading = true;
-		try {
-			teams = await account.listTeams();
-			if (!selectedTeamId || !teams.some((t) => t.id === selectedTeamId)) {
-				selectedTeamId = teams[0]?.id;
-			}
-		} catch (e) {
-			toast.error(`Teams konnten nicht geladen werden: ${errorText(e)}`);
-		} finally {
-			teamsLoading = false;
-		}
-	}
+	const inviteUrl = $derived(
+		chefTeams.invite ? `${account.serverUrl}/team/join/${chefTeams.invite.code}` : null
+	);
 
 	// Zählt jeden Abruf durch - läuft eine spätere Auswahl (anderes Team/Monat)
 	// einer langsameren früheren Antwort den Rang ab, verwirft deren `then` sich
 	// selbst. Ohne das könnte eine veraltete Antwort die gerade angezeigten
 	// Daten des inzwischen ausgewählten Teams überschreiben.
-	let teamDetailsRequest = 0;
+	let membersRequest = 0;
 
-	async function loadTeamDetails(teamId: string) {
-		const requestId = ++teamDetailsRequest;
-		inviteLoading = true;
+	async function loadMembers(teamId: string) {
+		const requestId = ++membersRequest;
 		try {
-			const [inv, mem] = await Promise.all([
-				account.getTeamInvite(teamId),
-				account.listTeamMembers(teamId)
-			]);
-			if (requestId !== teamDetailsRequest) return;
-			invite = inv;
+			const mem = await account.listTeamMembers(teamId);
+			if (requestId !== membersRequest) return;
 			members = mem;
 		} catch (e) {
-			if (requestId !== teamDetailsRequest) return;
-			toast.error(`Team konnte nicht geladen werden: ${errorText(e)}`);
-		} finally {
-			if (requestId === teamDetailsRequest) inviteLoading = false;
+			if (requestId !== membersRequest) return;
+			toast.error(`Mitglieder konnten nicht geladen werden: ${errorText(e)}`);
 		}
 	}
 
 	$effect(() => {
-		if (selectedTeamId) void loadTeamDetails(selectedTeamId);
-		else {
-			invite = null;
+		const teamId = chefTeams.selectedTeamId;
+		if (teamId) {
+			void loadMembers(teamId);
+			void chefTeams.loadInvite(teamId);
+		} else {
 			members = [];
 		}
 	});
-
-	async function createTeam() {
-		const name = newTeamName.trim();
-		if (!name || creatingTeam) return;
-		creatingTeam = true;
-		try {
-			const team = await account.createTeam(name);
-			logInfo(`Team angelegt: ${name}`);
-			newTeamName = "";
-			teams = [team, ...teams];
-			selectedTeamId = team.id;
-		} catch (e) {
-			toast.error(`Team konnte nicht angelegt werden: ${errorText(e)}`);
-		} finally {
-			creatingTeam = false;
-		}
-	}
-
-	async function rotateInvite() {
-		if (!selectedTeamId || rotatingInvite) return;
-		rotatingInvite = true;
-		try {
-			invite = await account.rotateTeamInvite(selectedTeamId);
-			logInfo(`Team-Link erneuert: ${selectedTeam?.name}`);
-		} catch (e) {
-			toast.error(`Link konnte nicht erzeugt werden: ${errorText(e)}`);
-		} finally {
-			rotatingInvite = false;
-		}
-	}
 
 	async function copyInviteUrl() {
 		if (!inviteUrl) return;
@@ -140,9 +78,10 @@
 	}
 
 	async function kickMember(member: TeamMemberInfo) {
-		if (!selectedTeamId) return;
+		const teamId = chefTeams.selectedTeamId;
+		if (!teamId) return;
 		try {
-			await account.revokeTeamMember(selectedTeamId, member.id);
+			await account.revokeTeamMember(teamId, member.id);
 			members = members.filter((m) => m.id !== member.id);
 			toast.success(`${member.name} aus dem Team entfernt.`);
 		} catch (e) {
@@ -151,7 +90,7 @@
 	}
 
 	$effect(() => {
-		if (account.linked) void loadTeams();
+		if (account.linked) void chefTeams.loadTeams();
 	});
 
 	// ---------- Wer wann seinen Bericht gesendet hat ----------
@@ -189,7 +128,7 @@
 	}
 
 	$effect(() => {
-		if (selectedTeamId) void loadReports(selectedTeamId, month);
+		if (chefTeams.selectedTeamId) void loadReports(chefTeams.selectedTeamId, month);
 		else reports = [];
 	});
 
@@ -201,11 +140,12 @@
 
 	/** Von Hand als gesendet markieren - für Berichte, die nicht über die App kamen. */
 	async function markSent(memberId: string) {
-		if (!selectedTeamId || statusBusyId) return;
+		const teamId = chefTeams.selectedTeamId;
+		if (!teamId || statusBusyId) return;
 		statusBusyId = memberId;
 		try {
-			await account.markTeamReportSent(selectedTeamId, memberId, month);
-			await loadReports(selectedTeamId, month);
+			await account.markTeamReportSent(teamId, memberId, month);
+			await loadReports(teamId, month);
 			toast.success("Als gesendet markiert.");
 		} catch (e) {
 			toast.error(`Markieren fehlgeschlagen: ${errorText(e)}`);
@@ -216,13 +156,14 @@
 
 	/** Eine Markierung zurücknehmen - auch einen echten Upload, z.B. bei einem Versehen. */
 	async function clearSent(memberId: string) {
-		if (!selectedTeamId || statusBusyId) return;
+		const teamId = chefTeams.selectedTeamId;
+		if (!teamId || statusBusyId) return;
 		const submittedAt = reports.find((r) => r.memberId === memberId)?.submittedAt;
 		if (submittedAt == null) return;
 		statusBusyId = memberId;
 		try {
-			await account.clearTeamReportStatus(selectedTeamId, memberId, month, submittedAt);
-			await loadReports(selectedTeamId, month);
+			await account.clearTeamReportStatus(teamId, memberId, month, submittedAt);
+			await loadReports(teamId, month);
 			toast.success("Markierung zurückgenommen.");
 		} catch (e) {
 			if (e instanceof ApiError && e.status === 409) {
@@ -230,7 +171,7 @@
 				// eingetroffen - der Server hat das Löschen abgelehnt. Die
 				// aktualisierte Ansicht zeigt ihn jetzt statt der veralteten Zeile.
 				toast.error("Inzwischen ein neuer Bericht eingegangen - Ansicht aktualisiert.");
-				await loadReports(selectedTeamId, month);
+				await loadReports(teamId, month);
 			} else {
 				toast.error(`Zurücknehmen fehlgeschlagen: ${errorText(e)}`);
 			}
@@ -299,76 +240,76 @@
 			</Card.Content>
 		</Card.Root>
 	{:else}
-		<Card.Root>
-			<Card.Header>
-				<Card.Title>Team</Card.Title>
-				<Card.Description>
-					Mitglieder treten über einen Link bei - ohne eigenes Konto. Der Link führt zu den
-					gemeinsamen Aktivitäten und meldet, wann von dort ein Bericht gesendet wurde.
-				</Card.Description>
-				{#if selectedTeamId}
-					<Card.Action>
-						<Button variant="outline" size="sm" onclick={() => tabFocus.request("activities")}>
-							Aktivitäten bearbeiten
-						</Button>
-					</Card.Action>
-				{/if}
-			</Card.Header>
-			<Card.Content>
-				<div class="flex flex-wrap items-end gap-2">
-					{#if teams.length > 0}
-						<Select.Root type="single" bind:value={selectedTeamId}>
-							<Select.Trigger class="w-56">
-								{selectedTeam?.name ?? "Team wählen"}
-							</Select.Trigger>
-							<Select.Content>
-								{#each teams as t (t.id)}
-									<Select.Item value={t.id} label={t.name}>{t.name}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-					{:else if teamsLoading}
-						<p class="text-muted-foreground text-sm">Teams werden geladen…</p>
+		{#if chefTeams.teams.length === 0}
+			<Card.Root>
+				<Card.Content class="text-muted-foreground py-4 text-sm">
+					{#if chefTeams.teamsLoading}
+						Teams werden geladen…
 					{:else}
-						<p class="text-muted-foreground text-sm">Noch kein Team angelegt.</p>
+						Noch kein Team angelegt.
+						<Button variant="link" class="h-auto p-0" onclick={() => tabFocus.requestSettings("bericht")}>
+							In den Einstellungen anlegen
+						</Button>
 					{/if}
-					<Input
-						bind:value={newTeamName}
-						placeholder="Neues Team, z.B. „Vertrieb“"
-						class="w-56"
-						onkeydown={(e) => e.key === "Enter" && createTeam()}
-					/>
-					<Button variant="outline" disabled={!newTeamName.trim() || creatingTeam} onclick={createTeam}>
-						<PlusIcon class="size-4" /> Anlegen
-					</Button>
-				</div>
-			</Card.Content>
-		</Card.Root>
+				</Card.Content>
+			</Card.Root>
+		{:else}
+			<Card.Root>
+				<Card.Header>
+					<Card.Title>
+						{#if chefTeams.teams.length > 1}
+							<Select.Root type="single" bind:value={chefTeams.selectedTeamId}>
+								<Select.Trigger class="w-56">
+									{chefTeams.selectedTeam?.name ?? "Team wählen"}
+								</Select.Trigger>
+								<Select.Content>
+									{#each chefTeams.teams as t (t.id)}
+										<Select.Item value={t.id} label={t.name}>{t.name}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						{:else}
+							{chefTeams.selectedTeam?.name ?? "Team"}
+						{/if}
+					</Card.Title>
+					<Card.Action>
+						<div class="flex gap-2">
+							<Button variant="outline" size="sm" onclick={() => tabFocus.request("activities")}>
+								Aktivitäten bearbeiten
+							</Button>
+							<Button
+								variant="ghost"
+								size="sm"
+								onclick={() => tabFocus.requestSettings("bericht")}
+								title="Team anlegen, umbenennen oder den Beitritts-Link erzeugen"
+							>
+								Verwalten
+							</Button>
+						</div>
+					</Card.Action>
+				</Card.Header>
+			</Card.Root>
 
-		{#if selectedTeamId}
 			<Card.Root>
 				<Card.Header>
 					<Card.Title>Beitritts-Link</Card.Title>
 				</Card.Header>
 				<Card.Content class="space-y-2">
-					{#if inviteLoading}
+					{#if chefTeams.inviteLoading}
 						<p class="text-muted-foreground text-sm">Wird geladen…</p>
-					{:else}
+					{:else if inviteUrl}
 						<div class="flex flex-wrap items-center gap-2">
-							{#if inviteUrl}
-								<code class="bg-muted rounded px-2 py-1 text-xs break-all">{inviteUrl}</code>
-								<Button variant="ghost" size="icon-sm" title="Link kopieren" onclick={copyInviteUrl}>
-									<CopyIcon class="size-4" />
-								</Button>
-							{/if}
-							<Button variant="outline" size="sm" disabled={rotatingInvite} onclick={rotateInvite}>
-								<RefreshCwIcon class="size-4" />
-								{invite ? "Neuen Link erzeugen" : "Link erzeugen"}
+							<code class="bg-muted rounded px-2 py-1 text-xs break-all">{inviteUrl}</code>
+							<Button variant="ghost" size="icon-sm" title="Link kopieren" onclick={copyInviteUrl}>
+								<CopyIcon class="size-4" />
 							</Button>
 						</div>
-						<p class="text-muted-foreground text-xs">
-							Ein neuer Link macht den bisherigen ungültig - schon beigetretene Mitglieder bleiben
-							davon unberührt.
+					{:else}
+						<p class="text-muted-foreground text-sm">
+							Noch keinen Link erzeugt.
+							<Button variant="link" class="h-auto p-0" onclick={() => tabFocus.requestSettings("bericht")}>
+								In den Einstellungen erzeugen
+							</Button>
 						</p>
 					{/if}
 				</Card.Content>
@@ -416,7 +357,7 @@
 			</Card.Root>
 		{/if}
 
-		{#if selectedTeamId}
+		{#if chefTeams.selectedTeamId}
 			<div class="flex flex-wrap items-end justify-between gap-3">
 				<MonthSelector bind:month id="tmonth" />
 				<div class="flex flex-wrap gap-2">
