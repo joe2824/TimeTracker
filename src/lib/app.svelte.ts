@@ -9,6 +9,7 @@ import {
 	byActivityOrder,
 	isBuiltinActivity,
 	defaultSettings,
+	reorderBySortOrder,
 	TEAM_ACTIVITY_PREFIX
 } from "./types";
 import {
@@ -789,15 +790,9 @@ class AppState {
 	/** Verschiebt `draggedId` vor/hinter `targetId` (Drag & Drop). */
 	async reorderActivity(draggedId: string, targetId: string, placeAfter = false): Promise<void> {
 		if (draggedId === targetId) return;
-		const ordered = [...this.activities].sort((a, b) => a.sortOrder - b.sortOrder);
-		const from = ordered.findIndex((a) => a.id === draggedId);
-		if (from < 0) return;
-		const [moved] = ordered.splice(from, 1);
-		let to = ordered.findIndex((a) => a.id === targetId);
-		if (to < 0) return;
-		if (placeAfter) to += 1;
-		ordered.splice(to, 0, moved);
-		ordered.forEach((a, i) => (a.sortOrder = i));
+		const reordered = reorderBySortOrder(this.activities, draggedId, targetId, placeAfter);
+		if (!reordered) return;
+		this.activities = reordered;
 		await this.persistActivities();
 	}
 

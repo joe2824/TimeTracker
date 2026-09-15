@@ -41,10 +41,6 @@
 
 	let members = $state<TeamMemberInfo[]>([]);
 
-	const inviteUrl = $derived(
-		chefTeams.invite ? `${account.serverUrl}/team/join/${chefTeams.invite.code}` : null
-	);
-
 	// Zählt jeden Abruf durch - läuft eine spätere Auswahl (anderes Team/Monat)
 	// einer langsameren früheren Antwort den Rang ab, verwirft deren `then` sich
 	// selbst. Ohne das könnte eine veraltete Antwort die gerade angezeigten
@@ -72,16 +68,6 @@
 			members = [];
 		}
 	});
-
-	async function copyInviteUrl() {
-		if (!inviteUrl) return;
-		try {
-			await navigator.clipboard.writeText(inviteUrl);
-			toast.success("Link kopiert.");
-		} catch {
-			toast.error("Kopieren nicht möglich – bitte manuell kopieren.");
-		}
-	}
 
 	async function kickMember(member: TeamMemberInfo) {
 		const teamId = chefTeams.selectedTeamId;
@@ -302,10 +288,10 @@
 									<p class="text-muted-foreground text-xs">Beitritts-Link</p>
 									{#if chefTeams.inviteLoading}
 										<p class="text-muted-foreground text-sm">Wird geladen…</p>
-									{:else if inviteUrl}
+									{:else if chefTeams.inviteUrl}
 										<div class="flex items-center gap-2">
-											<code class="bg-muted min-w-0 flex-1 truncate rounded px-2 py-1 text-xs">{inviteUrl}</code>
-											<Button variant="ghost" size="icon-sm" title="Link kopieren" onclick={copyInviteUrl}>
+											<code class="bg-muted min-w-0 flex-1 truncate rounded px-2 py-1 text-xs">{chefTeams.inviteUrl}</code>
+											<Button variant="ghost" size="icon-sm" title="Link kopieren" onclick={() => chefTeams.copyInviteUrl()}>
 												<CopyIcon class="size-4" />
 											</Button>
 										</div>

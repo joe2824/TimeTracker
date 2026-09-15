@@ -231,3 +231,25 @@ export function byActivityOrder(a: Activity, b: Activity): number {
 		Number(isBuiltinActivity(a)) - Number(isBuiltinActivity(b)) || a.sortOrder - b.sortOrder
 	);
 }
+
+/**
+ * `items` per Ziehen umsortiert: `draggedId` landet vor (oder mit `placeAfter`
+ * hinter) `targetId`, `sortOrder` läuft danach lückenlos von 0 weg durch.
+ * `null`, wenn eine der beiden Ids fehlt - dann bleibt alles beim Alten.
+ */
+export function reorderBySortOrder<T extends { id: string; sortOrder: number }>(
+	items: T[],
+	draggedId: string,
+	targetId: string,
+	placeAfter: boolean
+): T[] | null {
+	const ordered = [...items].sort((a, b) => a.sortOrder - b.sortOrder);
+	const from = ordered.findIndex((x) => x.id === draggedId);
+	if (from < 0) return null;
+	const [moved] = ordered.splice(from, 1);
+	let to = ordered.findIndex((x) => x.id === targetId);
+	if (to < 0) return null;
+	if (placeAfter) to += 1;
+	ordered.splice(to, 0, moved);
+	return ordered.map((x, i) => ({ ...x, sortOrder: i }));
+}
