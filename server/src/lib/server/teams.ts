@@ -34,6 +34,16 @@ export function requireOwnTeam(db: Db, ownerUserId: string, teamId: string): Tea
 	return row;
 }
 
+/**
+ * Ein Team endgültig löschen - Einladungen, Mitglieder, Aktivitäten und
+ * Berichte hängen per onDelete: cascade daran (db/schema.ts) und gehen mit.
+ * Ruft requireOwnTeam selbst nicht auf - der Aufrufer (Route) hat die
+ * Besitzprüfung meist schon für eine andere Antwort gebraucht.
+ */
+export function deleteTeam(db: Db, teamId: string): void {
+	db.delete(teams).where(eq(teams.id, teamId)).run();
+}
+
 export interface TeamInviteRow {
 	code: string;
 	teamId: string;

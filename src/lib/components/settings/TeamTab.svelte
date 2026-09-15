@@ -2,11 +2,13 @@
 	import { app } from "$lib/app.svelte";
 	import { account } from "$lib/sync/account.svelte";
 	import { chefTeams } from "$lib/team/chef.svelte";
+	import type { TeamInfo } from "$lib/sync/api";
 	import { createSettingsForm } from "$lib/ui/settingsForm.svelte";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
 	import * as Select from "$lib/components/ui/select";
+	import * as Dialog from "$lib/components/ui/dialog";
 	import SettingToggle from "$lib/components/shared/SettingToggle.svelte";
 	import SettingsCard from "$lib/components/shared/SettingsCard.svelte";
 	import { clearTeamDevice } from "$lib/store";
@@ -21,6 +23,7 @@
 	import ArrowRightIcon from "@lucide/svelte/icons/arrow-right";
 	import PlusIcon from "@lucide/svelte/icons/plus";
 	import CopyIcon from "@lucide/svelte/icons/copy";
+	import Trash2Icon from "@lucide/svelte/icons/trash-2";
 
 	// ---------- Team-Mitgliedschaft (dieses Gerät ist Mitglied, kein Chef) ----------
 	//
@@ -76,9 +79,6 @@
 	});
 
 	let newTeamName = $state("");
-	const inviteUrl = $derived(
-		chefTeams.invite ? `${account.serverUrl}/team/join/${chefTeams.invite.code}` : null
-	);
 
 	async function createTeam() {
 		const name = newTeamName.trim();
@@ -100,13 +100,24 @@
 		}
 	}
 
-	async function copyInviteUrl() {
-		if (!inviteUrl) return;
+	// Löschen ist endgültig (Mitglieder, Aktivitäten, Berichte - alles gebunden
+	// an dieses Team - gehen mit) - deshalb ein eigener Bestätigungsdialog statt
+	// eines blossen Knopfdrucks.
+	let deleteTarget = $state<TeamInfo | null>(null);
+	let deleting = $state(false);
+
+	async function confirmDeleteTeam() {
+		if (!deleteTarget) return;
+		deleting = true;
 		try {
-			await navigator.clipboard.writeText(inviteUrl);
-			toast.success("Link kopiert.");
-		} catch {
-			toast.error("Kopieren nicht möglich – bitte manuell kopieren.");
+			const name = deleteTarget.name;
+			await chefTeams.deleteTeam(deleteTarget.id);
+			toast.success(`Team „${name}" gelöscht.`);
+			deleteTarget = null;
+		} catch (e) {
+			toast.error(`Team konnte nicht gelöscht werden: ${errorText(e)}`);
+		} finally {
+			deleting = false;
 		}
 	}
 </script>
@@ -176,21 +187,35 @@
 		</div>
 
 		{#if chefTeams.teams.length > 0}
-			{#if chefTeams.teams.length > 1}
-				<div class="space-y-1.5">
-					<Label for="teampick">Team</Label>
-					<Select.Root type="single" bind:value={chefTeams.selectedTeamId}>
-						<Select.Trigger id="teampick" class="w-56">
-							{chefTeams.selectedTeam?.name ?? "Team wählen"}
-						</Select.Trigger>
-						<Select.Content>
-							{#each chefTeams.teams as t (t.id)}
-								<Select.Item value={t.id} label={t.name}>{t.name}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
+			<div class="space-y-1.5">
+				<Label for="teampick">{chefTeams.teams.length > 1 ? "Team" : "Ausgewähltes Team"}</Label>
+				<div class="flex items-center gap-2">
+					{#if chefTeams.teams.length > 1}
+						<Select.Root type="single" bind:value={chefTeams.selectedTeamId}>
+							<Select.Trigger id="teampick" class="w-56">
+								{chefTeams.selectedTeam?.name ?? "Team wählen"}
+							</Select.Trigger>
+							<Select.Content>
+								{#each chefTeams.teams as t (t.id)}
+									<Select.Item value={t.id} label={t.name}>{t.name}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					{:else}
+						<span class="text-sm font-medium">{chefTeams.selectedTeam?.name}</span>
+					{/if}
+					{#if chefTeams.selectedTeam}
+						<Button
+							variant="ghost"
+							size="icon-sm"
+							title="Team endgültig löschen"
+							onclick={() => (deleteTarget = chefTeams.selectedTeam)}
+						>
+							<Trash2Icon class="text-destructive size-4" />
+						</Button>
+					{/if}
 				</div>
-			{/if}
+			</div>
 
 			<div class="space-y-1.5">
 				<Label>Beitritts-Link</Label>
@@ -198,9 +223,9 @@
 					<p class="text-muted-foreground text-sm">Wird geladen…</p>
 				{:else}
 					<div class="flex flex-wrap items-center gap-2">
-						{#if inviteUrl}
-							<code class="bg-muted rounded px-2 py-1 text-xs break-all">{inviteUrl}</code>
-							<Button variant="ghost" size="icon-sm" title="Link kopieren" onclick={copyInviteUrl}>
+						{#if chefTeams.inviteUrl}
+							<code class="bg-muted rounded px-2 py-1 text-xs break-all">{chefTeams.inviteUrl}</code>
+							<Button variant="ghost" size="icon-sm" title="Link kopieren" onclick={() => chefTeams.copyInviteUrl()}>
 								<CopyIcon class="size-4" />
 							</Button>
 						{/if}
@@ -217,4 +242,26 @@
 			</div>
 		{/if}
 	</SettingsCard>
+
+	<Dialog.Root open={!!deleteTarget} onOpenChange={(v) => { if (!v && !deleting) deleteTarget = null; }}>
+		<Dialog.Content class="sm:max-w-md">
+			<Dialog.Header>
+				<Dialog.Title>„{deleteTarget?.name}" endgültig löschen?</Dialog.Title>
+				<Dialog.Description>
+					Mitglieder, gemeinsame Aktivitäten und alle gesendeten Berichte dieses Teams gehen damit
+					unwiderruflich verloren. Der Beitritts-Link wird ungültig. Zeiten, die Mitglieder bereits
+					erfasst hatten, bleiben auf deren eigenen Geräten erhalten.
+				</Dialog.Description>
+			</Dialog.Header>
+			<Dialog.Footer>
+				<Button type="button" variant="outline" onclick={() => (deleteTarget = null)} disabled={deleting}>
+					Abbrechen
+				</Button>
+				<Button type="button" variant="destructive" onclick={confirmDeleteTeam} disabled={deleting}>
+					<Trash2Icon class="size-4" />
+					{deleting ? "Wird gelöscht…" : "Endgültig löschen"}
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
 {/if}
