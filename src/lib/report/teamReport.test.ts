@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { teamReminderHtml, teamReminderSubject, teamReportsToCsv } from "./teamReport";
+import { wallToTs } from "../time/tz";
 import type { TeamReportStatus } from "../sync/api";
 
 function status(over: Partial<TeamReportStatus> = {}): TeamReportStatus {
@@ -15,7 +16,10 @@ function status(over: Partial<TeamReportStatus> = {}): TeamReportStatus {
 
 describe("teamReportsToCsv", () => {
 	it("nennt Abgegebene und Fehlende mit Status und Zeitpunkt", () => {
-		const submittedAt = new Date(2026, 7, 1, 9, 30, 0).getTime();
+		// new Date(...) haengt an der Zone des Testrechners; fmtDate/fmtClock
+		// lesen die gepinnte Konto-Zone (siehe testing/pinZone.ts) - ohne
+		// wallToTs klafft das auf Maschinen ausserhalb dieser Zone auseinander.
+		const submittedAt = wallToTs(2026, 8, 1, 9, 30, 0);
 		const rows = teamReportsToCsv([
 			status({ submittedAt }),
 			status({ memberId: "m2", memberName: "Bert Klein", memberEmail: null })
