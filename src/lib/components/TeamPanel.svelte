@@ -10,13 +10,15 @@
 	import { fmtClock, fmtDateHuman, monthLabel, prevMonthKey } from "$lib/time/time";
 	import { errorText, logError, logInfo } from "$lib/log";
 	import { tabFocus } from "$lib/ui/tabFocus.svelte";
-	import { Button } from "$lib/components/ui/button";
+	import { Button, buttonVariants } from "$lib/components/ui/button";
 	import { Badge } from "$lib/components/ui/badge";
+	import { Label } from "$lib/components/ui/label";
 	import MonthSelector from "$lib/components/shared/MonthSelector.svelte";
 	import StatTile from "$lib/components/shared/StatTile.svelte";
 	import * as Card from "$lib/components/ui/card";
 	import * as Table from "$lib/components/ui/table";
 	import * as Select from "$lib/components/ui/select";
+	import * as Popover from "$lib/components/ui/popover";
 	import { toast } from "svelte-sonner";
 	import DownloadIcon from "@lucide/svelte/icons/download";
 	import BellIcon from "@lucide/svelte/icons/bell";
@@ -26,6 +28,8 @@
 	import Trash2Icon from "@lucide/svelte/icons/trash-2";
 	import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
 	import XIcon from "@lucide/svelte/icons/x";
+	import UserPlusIcon from "@lucide/svelte/icons/user-plus";
+	import SettingsIcon from "@lucide/svelte/icons/settings";
 
 	// ---------- Team verwalten (Roster) ----------
 	//
@@ -247,7 +251,7 @@
 						Teams werden geladen…
 					{:else}
 						Noch kein Team angelegt.
-						<Button variant="link" class="h-auto p-0" onclick={() => tabFocus.requestSettings("bericht")}>
+						<Button variant="link" class="h-auto p-0" onclick={() => tabFocus.requestSettings("team")}>
 							In den Einstellungen anlegen
 						</Button>
 					{/if}
@@ -256,10 +260,58 @@
 		{:else}
 			<Card.Root>
 				<Card.Header>
-					<Card.Title>
-						{#if chefTeams.teams.length > 1}
+					<Card.Title>{chefTeams.selectedTeam?.name ?? "Team"}</Card.Title>
+					<Card.Action>
+						<div class="flex gap-2">
+							<Popover.Root>
+								<Popover.Trigger class={buttonVariants({ variant: "outline", size: "sm" })}>
+									<UserPlusIcon class="size-4" /> Einladen
+								</Popover.Trigger>
+								<Popover.Content align="end" class="w-72 space-y-2">
+									<p class="text-muted-foreground text-xs">Beitritts-Link</p>
+									{#if chefTeams.inviteLoading}
+										<p class="text-muted-foreground text-sm">Wird geladen…</p>
+									{:else if inviteUrl}
+										<div class="flex items-center gap-2">
+											<code class="bg-muted min-w-0 flex-1 truncate rounded px-2 py-1 text-xs">{inviteUrl}</code>
+											<Button variant="ghost" size="icon-sm" title="Link kopieren" onclick={copyInviteUrl}>
+												<CopyIcon class="size-4" />
+											</Button>
+										</div>
+									{:else}
+										<p class="text-muted-foreground text-xs">
+											Noch keinen Link erzeugt.
+											<Button
+												variant="link"
+												class="h-auto p-0 text-xs"
+												onclick={() => tabFocus.requestSettings("team")}
+											>
+												In den Einstellungen erzeugen
+											</Button>
+										</p>
+									{/if}
+								</Popover.Content>
+							</Popover.Root>
+							<Button variant="outline" size="sm" onclick={() => tabFocus.request("activities")}>
+								Aktivitäten bearbeiten
+							</Button>
+							<Button
+								variant="ghost"
+								size="icon-sm"
+								onclick={() => tabFocus.requestSettings("team")}
+								title="Team anlegen, umbenennen oder den Beitritts-Link erzeugen"
+							>
+								<SettingsIcon class="size-4" />
+							</Button>
+						</div>
+					</Card.Action>
+				</Card.Header>
+				{#if chefTeams.teams.length > 1}
+					<Card.Content>
+						<div class="flex items-center gap-2">
+							<Label for="teamswitch" class="text-muted-foreground text-xs">Team</Label>
 							<Select.Root type="single" bind:value={chefTeams.selectedTeamId}>
-								<Select.Trigger class="w-56">
+								<Select.Trigger id="teamswitch" class="w-56">
 									{chefTeams.selectedTeam?.name ?? "Team wählen"}
 								</Select.Trigger>
 								<Select.Content>
@@ -268,51 +320,9 @@
 									{/each}
 								</Select.Content>
 							</Select.Root>
-						{:else}
-							{chefTeams.selectedTeam?.name ?? "Team"}
-						{/if}
-					</Card.Title>
-					<Card.Action>
-						<div class="flex gap-2">
-							<Button variant="outline" size="sm" onclick={() => tabFocus.request("activities")}>
-								Aktivitäten bearbeiten
-							</Button>
-							<Button
-								variant="ghost"
-								size="sm"
-								onclick={() => tabFocus.requestSettings("bericht")}
-								title="Team anlegen, umbenennen oder den Beitritts-Link erzeugen"
-							>
-								Verwalten
-							</Button>
 						</div>
-					</Card.Action>
-				</Card.Header>
-			</Card.Root>
-
-			<Card.Root>
-				<Card.Header>
-					<Card.Title>Beitritts-Link</Card.Title>
-				</Card.Header>
-				<Card.Content class="space-y-2">
-					{#if chefTeams.inviteLoading}
-						<p class="text-muted-foreground text-sm">Wird geladen…</p>
-					{:else if inviteUrl}
-						<div class="flex flex-wrap items-center gap-2">
-							<code class="bg-muted rounded px-2 py-1 text-xs break-all">{inviteUrl}</code>
-							<Button variant="ghost" size="icon-sm" title="Link kopieren" onclick={copyInviteUrl}>
-								<CopyIcon class="size-4" />
-							</Button>
-						</div>
-					{:else}
-						<p class="text-muted-foreground text-sm">
-							Noch keinen Link erzeugt.
-							<Button variant="link" class="h-auto p-0" onclick={() => tabFocus.requestSettings("bericht")}>
-								In den Einstellungen erzeugen
-							</Button>
-						</p>
-					{/if}
-				</Card.Content>
+					</Card.Content>
+				{/if}
 			</Card.Root>
 
 			<Card.Root>
