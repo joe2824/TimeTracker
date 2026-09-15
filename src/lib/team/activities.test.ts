@@ -9,9 +9,17 @@ vi.mock("svelte-sonner", () => import("../testing/toastStub"));
 const remote = vi.fn();
 vi.mock("./api", () => ({ fetchTeamActivities: (...args: unknown[]) => remote(...args) }));
 
+const accountMock = vi.hoisted(() => ({
+	linked: false,
+	listTeams: vi.fn(),
+	listTeamActivities: vi.fn()
+}));
+vi.mock("../sync/account.svelte", () => ({ account: accountMock }));
+
 const { app } = await import("../app.svelte");
 const { saveTeamDevice } = await import("../store");
-const { syncTeamActivities, TEAM_ACTIVITY_PREFIX } = await import("./activities");
+const { chefTeams } = await import("./chef.svelte");
+const { syncTeamActivities, syncOwnedTeamActivities, TEAM_ACTIVITY_PREFIX } = await import("./activities");
 
 const PERSONAL: Activity = { id: "p1", name: "Eigene", sortOrder: 0, archived: false, isAbsence: false };
 
@@ -20,6 +28,11 @@ beforeEach(() => {
 	app.dispose();
 	app.activities = [PERSONAL];
 	remote.mockReset();
+	accountMock.linked = false;
+	accountMock.listTeams.mockReset();
+	accountMock.listTeamActivities.mockReset();
+	chefTeams.teams = [];
+	chefTeams.selectedTeamId = undefined;
 });
 
 describe("syncTeamActivities", () => {
@@ -112,5 +125,66 @@ describe("syncTeamActivities", () => {
 
 		await expect(syncTeamActivities()).resolves.toBeUndefined();
 		expect(app.activities).toEqual([PERSONAL]);
+	});
+});
+
+describe("syncOwnedTeamActivities", () => {
+	it("tut nichts ohne Konto", async () => {
+		await syncOwnedTeamActivities();
+		expect(accountMock.listTeams).not.toHaveBeenCalled();
+		expect(app.activities).toEqual([PERSONAL]);
+	});
+
+	it("spiegelt die eigene Team-Liste mit Teamnamen und -Id, ohne die eigenen anzufassen", async () => {
+		accountMock.linked = true;
+		accountMock.listTeams.mockResolvedValue([
+			{ id: "t1", name: "Vertrieb", ownerUserId: "u1", createdAt: 1 }
+		]);
+		accountMock.listTeamActivities.mockResolvedValue([
+			{ id: "a1", name: "Projekt A", isAbsence: false, sortOrder: 0, color: null, archived: false, updatedAt: 1 }
+		]);
+
+		await syncOwnedTeamActivities();
+
+		expect(app.activities.find((a) => a.id === PERSONAL.id)).toEqual(PERSONAL);
+		const teamActivity = app.activities.find((a) => a.id === `${TEAM_ACTIVITY_PREFIX}a1`);
+		expect(teamActivity).toMatchObject({
+			name: "Projekt A",
+			teamOwned: true,
+			teamId: "t1",
+			teamName: "Vertrieb"
+		});
+	});
+
+	it("haelt mehrere Teams auseinander - Entfernen in einem Team laesst das andere unberuehrt", async () => {
+		// Der haeufigste Fehler hier: ids sind namensraumfrei (nur "team:<id>"),
+		// ein Merge ohne Team-Scoping wuerde beim Aufraeumen von Team A auch
+		// Zeilen von Team B als "nicht mehr in der Antwort" fehldeuten.
+		accountMock.linked = true;
+		accountMock.listTeams.mockResolvedValue([
+			{ id: "t1", name: "A", ownerUserId: "u1", createdAt: 1 },
+			{ id: "t2", name: "B", ownerUserId: "u1", createdAt: 1 }
+		]);
+		const bActivity = { id: "b1", name: "B-Sache", isAbsence: false, sortOrder: 0, color: null, archived: false, updatedAt: 1 };
+		accountMock.listTeamActivities.mockImplementation(async (teamId: string) =>
+			teamId === "t1"
+				? [{ id: "a1", name: "Alt", isAbsence: false, sortOrder: 0, color: null, archived: false, updatedAt: 1 }]
+				: [bActivity]
+		);
+		await syncOwnedTeamActivities();
+
+		// Team A verliert seine einzige Aktivität, Team B bleibt unveraendert.
+		accountMock.listTeamActivities.mockImplementation(async (teamId: string) =>
+			teamId === "t1" ? [] : [bActivity]
+		);
+		await syncOwnedTeamActivities();
+
+		expect(app.activities.find((a) => a.id === `${TEAM_ACTIVITY_PREFIX}b1`)).toMatchObject({
+			teamOwned: true,
+			teamId: "t2"
+		});
+		const detachedA = app.activities.find((a) => a.id === `${TEAM_ACTIVITY_PREFIX}a1`);
+		expect(detachedA).toMatchObject({ name: "Alt", archived: true });
+		expect(detachedA?.teamOwned).toBeUndefined();
 	});
 });

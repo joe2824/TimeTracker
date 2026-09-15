@@ -162,7 +162,10 @@
 						>
 							<span class="flex-1">{a.name}</span>
 							{#if a.teamOwned}
-								<UsersIcon class="size-3.5 shrink-0 opacity-60" title="Team-Aktivität" />
+								<UsersIcon
+									class="size-3.5 shrink-0 opacity-60"
+									title={a.teamName ? `Team-Aktivität: ${a.teamName}` : "Team-Aktivität"}
+								/>
 							{/if}
 						</button>
 					</li>

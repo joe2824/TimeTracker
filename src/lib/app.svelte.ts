@@ -768,7 +768,7 @@ class AppState {
 		this.activities = this.activities.map((a) => {
 			const newId = idMap.get(a.id);
 			if (!newId) return a;
-			const { teamOwned: _teamOwned, ...rest } = a;
+			const { teamOwned: _teamOwned, teamName: _teamName, teamId: _teamId, ...rest } = a;
 			return { ...rest, id: newId, archived: true };
 		});
 		await this.persistActivities();
