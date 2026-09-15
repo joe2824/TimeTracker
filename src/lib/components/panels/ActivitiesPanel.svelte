@@ -9,7 +9,8 @@
 	} from "$lib/types";
 	import { acceleratorFromEvent, applyShortcuts } from "$lib/ui/shortcuts";
 	import { account } from "$lib/sync/account.svelte";
-	import { ApiError, type TeamActivity, type TeamActivityInput, type TeamInfo } from "$lib/sync/api";
+	import { chefTeams } from "$lib/team/chef.svelte";
+	import { ApiError, type TeamActivity, type TeamActivityInput } from "$lib/sync/api";
 	import { errorText } from "$lib/log";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
@@ -179,29 +180,15 @@
 	const isChefTeamRow = (id: string) => id.startsWith(TEAM_EDIT_PREFIX);
 	const teamRowId = (id: string) => id.slice(TEAM_EDIT_PREFIX.length);
 
-	let teams = $state<TeamInfo[]>([]);
-	let selectedTeamId = $state<string | undefined>(undefined);
 	let teamActivities = $state<TeamActivity[]>([]);
 	let teamActivitiesVersion = $state(0);
 	let teamActionBusy = $state(false);
 	let newTeamActivityName = $state("");
 
-	async function loadTeams() {
-		if (!account.linked) return;
-		try {
-			teams = await account.listTeams();
-			if (!selectedTeamId || !teams.some((t) => t.id === selectedTeamId)) {
-				selectedTeamId = teams[0]?.id;
-			}
-		} catch (e) {
-			toast.error(`Teams konnten nicht geladen werden: ${errorText(e)}`);
-		}
-	}
-
 	async function loadTeamActivities(teamId: string) {
 		try {
 			const act = await account.listTeamActivities(teamId);
-			if (teamId !== selectedTeamId) return;
+			if (teamId !== chefTeams.selectedTeamId) return;
 			teamActivities = act;
 			teamActivitiesVersion = act.reduce((max, a) => Math.max(max, a.updatedAt), 0);
 		} catch (e) {
@@ -210,10 +197,10 @@
 	}
 
 	$effect(() => {
-		if (account.linked) void loadTeams();
+		if (account.linked) void chefTeams.loadTeams();
 	});
 	$effect(() => {
-		if (selectedTeamId) void loadTeamActivities(selectedTeamId);
+		if (chefTeams.selectedTeamId) void loadTeamActivities(chefTeams.selectedTeamId);
 		else teamActivities = [];
 	});
 
@@ -223,19 +210,19 @@
 
 	/** Die ganze Liste des ausgewählten Teams neu schreiben - der Server nimmt keine Einzel-Patches. */
 	async function saveTeamActivities(next: TeamActivityInput[]) {
-		if (!selectedTeamId || teamActionBusy) return;
-		const teamId = selectedTeamId;
+		if (!chefTeams.selectedTeamId || teamActionBusy) return;
+		const teamId = chefTeams.selectedTeamId;
 		teamActionBusy = true;
 		try {
 			const saved = await account.setTeamActivities(teamId, next, teamActivitiesVersion);
-			if (teamId === selectedTeamId) {
+			if (teamId === chefTeams.selectedTeamId) {
 				teamActivities = saved;
 				teamActivitiesVersion = saved.reduce((max, a) => Math.max(max, a.updatedAt), 0);
 			}
 		} catch (e) {
 			if (e instanceof ApiError && e.status === 409) {
 				toast.error("Die Team-Liste wurde inzwischen anderswo geändert - neu geladen.");
-				if (teamId === selectedTeamId) await loadTeamActivities(teamId);
+				if (teamId === chefTeams.selectedTeamId) await loadTeamActivities(teamId);
 			} else {
 				toast.error(`Speichern fehlgeschlagen: ${errorText(e)}`);
 			}
@@ -258,7 +245,7 @@
 
 	async function addTeamActivity() {
 		const name = newTeamActivityName.trim();
-		if (!name || !selectedTeamId) return;
+		if (!name || !chefTeams.selectedTeamId) return;
 		await saveTeamActivities([
 			...teamActivities.map(toTeamInput),
 			{ name, isAbsence: false, sortOrder: teamActivities.length, archived: false }
@@ -268,7 +255,7 @@
 
 	/** Namen importieren, die es im Team noch nicht gibt - wie app.importActivities, nur serverseitig. */
 	async function importTeamActivities(teamId: string, lines: string[]): Promise<number> {
-		const isSelected = teamId === selectedTeamId;
+		const isSelected = teamId === chefTeams.selectedTeamId;
 		const current = isSelected ? teamActivities : await account.listTeamActivities(teamId);
 		const version = isSelected
 			? teamActivitiesVersion
@@ -369,18 +356,18 @@
 			<Card.Description>Jede Zeile wird zu einer Aktivität. Vorhandene bleiben erhalten.</Card.Description>
 		</Card.Header>
 		<Card.Content class="space-y-3">
-			{#if teams.length > 0}
+			{#if chefTeams.teams.length > 0}
 				<div class="flex items-center gap-2">
 					<span class="text-muted-foreground text-sm">Ziel</span>
 					<Select.Root type="single" bind:value={importTarget}>
 						<Select.Trigger class="w-56">
 							{importTarget === "eigene"
 								? "Eigene Aktivitäten"
-								: (teams.find((t) => t.id === importTarget)?.name ?? "Eigene Aktivitäten")}
+								: (chefTeams.teams.find((t) => t.id === importTarget)?.name ?? "Eigene Aktivitäten")}
 						</Select.Trigger>
 						<Select.Content>
 							<Select.Item value="eigene" label="Eigene Aktivitäten">Eigene Aktivitäten</Select.Item>
-							{#each teams as t (t.id)}
+							{#each chefTeams.teams as t (t.id)}
 								<Select.Item value={t.id} label={t.name}>Team „{t.name}"</Select.Item>
 							{/each}
 						</Select.Content>
@@ -430,15 +417,15 @@
 				<Button onclick={addOne}>Hinzufügen</Button>
 			</div>
 
-			{#if teams.length > 0}
+			{#if chefTeams.teams.length > 0}
 				<div class="flex gap-2">
-					{#if teams.length > 1}
-						<Select.Root type="single" bind:value={selectedTeamId}>
+					{#if chefTeams.teams.length > 1}
+						<Select.Root type="single" bind:value={chefTeams.selectedTeamId}>
 							<Select.Trigger class="w-40">
-								{teams.find((t) => t.id === selectedTeamId)?.name ?? "Team wählen"}
+								{chefTeams.selectedTeam?.name ?? "Team wählen"}
 							</Select.Trigger>
 							<Select.Content>
-								{#each teams as t (t.id)}
+								{#each chefTeams.teams as t (t.id)}
 									<Select.Item value={t.id} label={t.name}>{t.name}</Select.Item>
 								{/each}
 							</Select.Content>
