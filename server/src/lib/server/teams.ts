@@ -270,7 +270,16 @@ export function upsertTeamReport(
 	month: string,
 	payload: unknown
 ): void {
-	const submittedAt = Date.now();
+	// Date.now() allein reicht nicht: unter Windows liegt die Aufloesung der
+	// Systemuhr bei ~15 ms, zwei schnell aufeinanderfolgende Uploads koennten
+	// also denselben Wert bekommen - und genau ueber diesen Wert erkennt
+	// setTeamReportStatus einen zwischenzeitlich veralteten Stand.
+	const existing = db
+		.select({ submittedAt: teamReports.submittedAt })
+		.from(teamReports)
+		.where(and(eq(teamReports.memberId, memberId), eq(teamReports.month, month)))
+		.get();
+	const submittedAt = Math.max(Date.now(), (existing?.submittedAt ?? 0) + 1);
 	db.insert(teamReports)
 		.values({ teamId, memberId, month, submittedAt, payload: JSON.stringify(payload) })
 		.onConflictDoUpdate({
