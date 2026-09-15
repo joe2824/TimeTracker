@@ -8,6 +8,9 @@
 		type Activity
 	} from "$lib/types";
 	import { acceleratorFromEvent, applyShortcuts } from "$lib/ui/shortcuts";
+	import { account } from "$lib/sync/account.svelte";
+	import { ApiError, type TeamActivity, type TeamActivityInput, type TeamInfo } from "$lib/sync/api";
+	import { errorText } from "$lib/log";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Textarea } from "$lib/components/ui/textarea";
@@ -164,10 +167,149 @@
 		return isAbsence || name === BUILTIN_OTHERS;
 	}
 
+	// ---------- Gemeinsame Team-Aktivitäten (nur als Chef sichtbar/bearbeitbar) ----------
+	//
+	// Eigene Herkunft, getrennt von app.activities: die vom Team synchronisierten
+	// teamOwned-Zeilen (team/activities.ts, Präfix "team:") kommen nur auf
+	// GERÄTEN AN, die dem Team über den Beitritts-Link angehören - nicht auf dem
+	// Konto-Gerät des Chefs selbst. Dessen eigene Sicht auf die von ihm
+	// verwaltete Liste holt sich dieser Block direkt über die Team-API, wie
+	// vorher im Team-Tab.
+	const TEAM_EDIT_PREFIX = "team-edit:";
+	const isChefTeamRow = (id: string) => id.startsWith(TEAM_EDIT_PREFIX);
+	const teamRowId = (id: string) => id.slice(TEAM_EDIT_PREFIX.length);
+
+	let teams = $state<TeamInfo[]>([]);
+	let selectedTeamId = $state<string | undefined>(undefined);
+	let teamActivities = $state<TeamActivity[]>([]);
+	let teamActivitiesVersion = $state(0);
+	let teamActionBusy = $state(false);
+	let newTeamActivityName = $state("");
+
+	async function loadTeams() {
+		if (!account.linked) return;
+		try {
+			teams = await account.listTeams();
+			if (!selectedTeamId || !teams.some((t) => t.id === selectedTeamId)) {
+				selectedTeamId = teams[0]?.id;
+			}
+		} catch (e) {
+			toast.error(`Teams konnten nicht geladen werden: ${errorText(e)}`);
+		}
+	}
+
+	async function loadTeamActivities(teamId: string) {
+		try {
+			const act = await account.listTeamActivities(teamId);
+			if (teamId !== selectedTeamId) return;
+			teamActivities = act;
+			teamActivitiesVersion = act.reduce((max, a) => Math.max(max, a.updatedAt), 0);
+		} catch (e) {
+			toast.error(`Team-Aktivitäten konnten nicht geladen werden: ${errorText(e)}`);
+		}
+	}
+
+	$effect(() => {
+		if (account.linked) void loadTeams();
+	});
+	$effect(() => {
+		if (selectedTeamId) void loadTeamActivities(selectedTeamId);
+		else teamActivities = [];
+	});
+
+	function toTeamInput(a: TeamActivity): TeamActivityInput {
+		return { id: a.id, name: a.name, isAbsence: a.isAbsence, sortOrder: a.sortOrder, color: a.color, archived: a.archived };
+	}
+
+	/** Die ganze Liste des ausgewählten Teams neu schreiben - der Server nimmt keine Einzel-Patches. */
+	async function saveTeamActivities(next: TeamActivityInput[]) {
+		if (!selectedTeamId || teamActionBusy) return;
+		const teamId = selectedTeamId;
+		teamActionBusy = true;
+		try {
+			const saved = await account.setTeamActivities(teamId, next, teamActivitiesVersion);
+			if (teamId === selectedTeamId) {
+				teamActivities = saved;
+				teamActivitiesVersion = saved.reduce((max, a) => Math.max(max, a.updatedAt), 0);
+			}
+		} catch (e) {
+			if (e instanceof ApiError && e.status === 409) {
+				toast.error("Die Team-Liste wurde inzwischen anderswo geändert - neu geladen.");
+				if (teamId === selectedTeamId) await loadTeamActivities(teamId);
+			} else {
+				toast.error(`Speichern fehlgeschlagen: ${errorText(e)}`);
+			}
+		} finally {
+			teamActionBusy = false;
+		}
+	}
+
+	async function renameTeamActivity(id: string, name: string) {
+		const trimmed = name.trim();
+		if (!trimmed) return;
+		await saveTeamActivities(
+			teamActivities.map((a) => toTeamInput(a.id === id ? { ...a, name: trimmed } : a))
+		);
+	}
+
+	async function deleteTeamActivity(id: string) {
+		await saveTeamActivities(teamActivities.filter((a) => a.id !== id).map(toTeamInput));
+	}
+
+	async function addTeamActivity() {
+		const name = newTeamActivityName.trim();
+		if (!name || !selectedTeamId) return;
+		await saveTeamActivities([
+			...teamActivities.map(toTeamInput),
+			{ name, isAbsence: false, sortOrder: teamActivities.length, archived: false }
+		]);
+		newTeamActivityName = "";
+	}
+
+	/** Namen importieren, die es im Team noch nicht gibt - wie app.importActivities, nur serverseitig. */
+	async function importTeamActivities(teamId: string, lines: string[]): Promise<number> {
+		const isSelected = teamId === selectedTeamId;
+		const current = isSelected ? teamActivities : await account.listTeamActivities(teamId);
+		const version = isSelected
+			? teamActivitiesVersion
+			: current.reduce((max, a) => Math.max(max, a.updatedAt), 0);
+
+		const existing = new Set(current.map((a) => a.name.toLowerCase()));
+		const toAdd: TeamActivityInput[] = [];
+		let order = current.length;
+		for (const raw of lines) {
+			const name = raw.trim();
+			if (!name || existing.has(name.toLowerCase())) continue;
+			existing.add(name.toLowerCase());
+			toAdd.push({ name, isAbsence: false, sortOrder: order++, archived: false });
+		}
+		if (toAdd.length === 0) return 0;
+
+		const saved = await account.setTeamActivities(teamId, [...current.map(toTeamInput), ...toAdd], version);
+		if (isSelected) {
+			teamActivities = saved;
+			teamActivitiesVersion = saved.reduce((max, a) => Math.max(max, a.updatedAt), 0);
+		}
+		return toAdd.length;
+	}
+
+	/** Wohin der Text-/Datei-Import geht: "eigene" oder die Id eines Teams, das dieses Konto führt. */
+	let importTarget = $state("eigene");
+
 	async function doImport(text: string) {
 		const lines = text.split(/\r?\n/);
-		const added = await app.importActivities(lines);
-		toast.success(`${added} Aktivität(en) importiert.`);
+		if (importTarget === "eigene") {
+			const added = await app.importActivities(lines);
+			toast.success(`${added} Aktivität(en) importiert.`);
+		} else {
+			try {
+				const added = await importTeamActivities(importTarget, lines);
+				toast.success(`${added} Aktivität(en) ins Team importiert.`);
+			} catch (e) {
+				toast.error(`Import fehlgeschlagen: ${errorText(e)}`);
+				return;
+			}
+		}
 		pasteText = "";
 	}
 
@@ -186,10 +328,30 @@
 		newName = "";
 	}
 
+	/** Die eigene Sicht des Chefs auf die Team-Liste, in Aktivitäts-Form fürs gemeinsame Rendern. */
+	const teamListed = $derived(
+		teamActivities
+			.filter((a) => showArchived || !a.archived)
+			.map(
+				(a): Activity =>
+					({
+						id: `${TEAM_EDIT_PREFIX}${a.id}`,
+						name: a.name,
+						sortOrder: a.sortOrder,
+						archived: a.archived,
+						isAbsence: a.isAbsence,
+						teamOwned: true
+					}) as Activity
+			)
+	);
+
 	const listed = $derived(
-		[...app.activities]
-			.filter((a) => (showArchived || !a.archived) && (showHidden || !a.hidden || a.archived))
-			.sort(byActivityOrder)
+		[
+			...app.activities.filter(
+				(a) => (showArchived || !a.archived) && (showHidden || !a.hidden || a.archived)
+			),
+			...teamListed
+		].sort(byActivityOrder)
 	);
 	const hiddenCount = $derived(app.activities.filter((a) => a.hidden && !a.archived).length);
 	/** Wohin sich eine Aktivität zusammenführen lässt - alles ausser sich selbst und Eingebautem. */
@@ -207,6 +369,24 @@
 			<Card.Description>Jede Zeile wird zu einer Aktivität. Vorhandene bleiben erhalten.</Card.Description>
 		</Card.Header>
 		<Card.Content class="space-y-3">
+			{#if teams.length > 0}
+				<div class="flex items-center gap-2">
+					<span class="text-muted-foreground text-sm">Ziel</span>
+					<Select.Root type="single" bind:value={importTarget}>
+						<Select.Trigger class="w-56">
+							{importTarget === "eigene"
+								? "Eigene Aktivitäten"
+								: (teams.find((t) => t.id === importTarget)?.name ?? "Eigene Aktivitäten")}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="eigene" label="Eigene Aktivitäten">Eigene Aktivitäten</Select.Item>
+							{#each teams as t (t.id)}
+								<Select.Item value={t.id} label={t.name}>Team „{t.name}"</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+			{/if}
 			<Textarea
 				bind:value={pasteText}
 				placeholder={"Project 1\nProject 2\nProject 3\n…"}
@@ -250,6 +430,31 @@
 				<Button onclick={addOne}>Hinzufügen</Button>
 			</div>
 
+			{#if teams.length > 0}
+				<div class="flex gap-2">
+					{#if teams.length > 1}
+						<Select.Root type="single" bind:value={selectedTeamId}>
+							<Select.Trigger class="w-40">
+								{teams.find((t) => t.id === selectedTeamId)?.name ?? "Team wählen"}
+							</Select.Trigger>
+							<Select.Content>
+								{#each teams as t (t.id)}
+									<Select.Item value={t.id} label={t.name}>{t.name}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					{/if}
+					<Input
+						bind:value={newTeamActivityName}
+						placeholder="Neue Team-Aktivität…"
+						onkeydown={(e) => e.key === "Enter" && addTeamActivity()}
+					/>
+					<Button variant="outline" disabled={teamActionBusy} onclick={addTeamActivity}>
+						<UsersIcon class="size-4" /> Hinzufügen
+					</Button>
+				</div>
+			{/if}
+
 			<ul class="divide-border divide-y">
 				{#each listed as a (a.id)}
 					<li
@@ -281,7 +486,7 @@
 						>
 							<GripVerticalIcon class="size-4" />
 						</span>
-						{#if !isBuiltin(a.name, a.isAbsence)}
+						{#if !isBuiltin(a.name, a.isAbsence) && !isChefTeamRow(a.id)}
 							<div class="relative shrink-0">
 								<button
 									type="button"
@@ -323,13 +528,17 @@
 						<input
 							class="hover:bg-muted/60 focus:bg-muted/60 focus-visible:ring-ring/50 min-w-0 grow basis-40 rounded-md bg-transparent px-1.5 py-1 text-sm transition-colors outline-none focus-visible:ring-3 disabled:cursor-default disabled:bg-transparent disabled:opacity-100"
 							value={a.name}
-							disabled={isBuiltinActivity(a) || a.teamOwned}
+							disabled={isBuiltinActivity(a) || (a.teamOwned && !isChefTeamRow(a.id))}
 							title={isBuiltinActivity(a)
 								? "Eingebaute Zeile – nicht umbenennbar"
-								: a.teamOwned
+								: a.teamOwned && !isChefTeamRow(a.id)
 									? "Vom Team vorgegeben – nur der Chef kann sie ändern"
 									: "Umbenennen"}
-							onchange={(e: Event) => app.renameActivity(a.id, (e.target as HTMLInputElement).value)}
+							onchange={(e: Event) => {
+								const value = (e.target as HTMLInputElement).value;
+								if (isChefTeamRow(a.id)) void renameTeamActivity(teamRowId(a.id), value);
+								else app.renameActivity(a.id, value);
+							}}
 						/>
 						{#if a.teamOwned}
 							<Badge variant="outline" class="shrink-0 gap-1" title="Vom Chef vorgegeben, für alle im Team gleich">
@@ -343,7 +552,7 @@
 						{#if a.hidden && !a.archived}
 							<Badge variant="outline" class="mr-1">ausgeblendet</Badge>
 						{/if}
-						{#if !isBuiltin(a.name, a.isAbsence)}
+						{#if !isBuiltin(a.name, a.isAbsence) && !isChefTeamRow(a.id)}
 							{#if recordingId === a.id}
 								<span class="text-muted-foreground shrink-0 text-xs italic">
 									Taste drücken… (Esc=Abbruch)
@@ -394,9 +603,20 @@
 						{/if}
 						{#if isBuiltin(a.name, a.isAbsence)}
 							<Badge variant="secondary">fix</Badge>
+						{:else if a.teamOwned && isChefTeamRow(a.id)}
+							<Button
+								variant="ghost"
+								size="icon-sm"
+								disabled={teamActionBusy}
+								title="Aus der Team-Liste entfernen – verschwindet auf allen Geräten des Teams"
+								onclick={() => deleteTeamActivity(teamRowId(a.id))}
+							>
+								<Trash2Icon class="text-destructive size-4" />
+							</Button>
 						{:else if a.teamOwned}
-							<!-- Ändern/Löschen nur im Team-Tab durch den Chef - eine lokale
-							     Löschung käme beim nächsten Abgleich ohnehin zurück. -->
+							<!-- Auf einem Mitglieds-Gerät: Ändern/Löschen nur im Aktivitäten-Tab
+							     des Chefs - eine lokale Löschung käme beim nächsten Abgleich
+							     ohnehin zurück. -->
 						{:else}
 							<Button
 								variant="ghost"
