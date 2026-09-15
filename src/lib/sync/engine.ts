@@ -781,6 +781,12 @@ export class SyncEngine {
 		if (!result.changed || !result.value) return result.lostLocalEdit ? 1 : 0;
 		const { id: _id, ...rest } = result.value;
 		await this.#store.saveSettings(rest as Settings);
+		// Der Server hat gewonnen: der lokal offene Stand ist jetzt Makulatur, nicht
+		// bloss veraltet. Ohne dieses Abhaken versucht #pushAll ihn beim naechsten
+		// Durchlauf trotzdem erneut hochzuladen - und weil lokal und Server danach
+		// identisch sind, bleibt "1 Aenderung ausstehend" dauerhaft stehen, obwohl es
+		// nichts mehr zu senden gibt.
+		if (result.lostLocalEdit) await clearChanges([{ kind: "settings", id: SETTINGS_ID }]);
 		return result.lostLocalEdit ? 1 : 0;
 	}
 
