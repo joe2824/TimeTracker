@@ -263,15 +263,23 @@ describe("Verwalter (rotateAdminInvite / joinTeamAsAdmin / requireTeamAccess)", 
 		expect(listTeamAdmins(db, team.id)).toHaveLength(1);
 	});
 
-	it("removeTeamAdmin nimmt den Zugang wieder zurueck", () => {
+	it("removeTeamAdmin nimmt den Zugang wieder zurueck und widerruft den bisherigen Link", () => {
 		const team = createTeam(db, ANNA, "Vertrieb");
 		const invite = rotateAdminInvite(db, team.id);
 		joinTeamAsAdmin(db, invite.code, BODO);
 
-		removeTeamAdmin(db, team.id, BODO);
+		expect(removeTeamAdmin(db, team.id, BODO)).toBe(true);
 
 		expect(listTeamAdmins(db, team.id)).toEqual([]);
 		expect(() => requireTeamAccess(db, BODO, team.id)).toThrow();
+		// Sonst koennte BODO ueber denselben Code sofort wieder Verwalter werden.
+		expect(activeAdminInvite(db, team.id)).toBeNull();
+		expect(teamFromAdminInviteCode(db, invite.code)).toBeNull();
+	});
+
+	it("removeTeamAdmin meldet zurueck, wenn es niemanden zum Entfernen gab", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		expect(removeTeamAdmin(db, team.id, BODO)).toBe(false);
 	});
 });
 

@@ -15,7 +15,10 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	if (!locals.userId) error(401, "Nicht angemeldet");
 	const body = await request.json().catch(() => null);
 	const code = String(body?.code ?? "");
+	// Wer den eigenen Link einliest, ist schon Chef - joinTeamAsAdmin legt dann
+	// keine Zeile an. 200 statt 201, das waere sonst "erstellt" ohne Erstellung.
+	const wasAlreadyOwner = teamFromAdminInviteCode(locals.db, code)?.ownerUserId === locals.userId;
 	const team = joinTeamAsAdmin(locals.db, code, locals.userId);
 	if (!team) error(404, "Link unbekannt oder abgelaufen");
-	return json(team, { status: 201 });
+	return json(team, { status: wasAlreadyOwner ? 200 : 201 });
 };

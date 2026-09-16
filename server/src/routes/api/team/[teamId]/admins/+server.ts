@@ -16,6 +16,8 @@ export const DELETE: RequestHandler = async ({ locals, params, request }) => {
 	const body = await request.json().catch(() => null);
 	const userId = String(body?.userId ?? "");
 	if (!userId) error(400, "userId fehlt");
-	removeTeamAdmin(locals.db, params.teamId!, userId);
+	if (!removeTeamAdmin(locals.db, params.teamId!, userId)) {
+		error(404, "Verwalter unbekannt oder schon entfernt");
+	}
 	return json({ ok: true });
 };
