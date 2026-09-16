@@ -32,6 +32,9 @@
 	import UserPlusIcon from "@lucide/svelte/icons/user-plus";
 	import SettingsIcon from "@lucide/svelte/icons/settings";
 	import LayersIcon from "@lucide/svelte/icons/layers";
+	import CloudIcon from "@lucide/svelte/icons/cloud";
+	import UsersIcon from "@lucide/svelte/icons/users";
+	import PlusIcon from "@lucide/svelte/icons/plus";
 
 	// ---------- Team verwalten (Roster) ----------
 	//
@@ -222,15 +225,19 @@
 
 <div class="space-y-4">
 	{#if !account.linked}
-		<Card.Root>
-			<Card.Content class="text-muted-foreground py-4 text-sm">
-				Team-Verwaltung braucht ein Konto - der Link und die gemeinsamen Aktivitäten liegen
-				dort, nicht nur auf diesem Gerät.
-				<Button variant="link" class="h-auto p-0" onclick={() => tabFocus.requestSettings("konto")}>
-					Zu den Konto-Einstellungen
-				</Button>
-			</Card.Content>
-		</Card.Root>
+		<div class="rounded-lg border border-dashed p-10 text-center">
+			<div class="bg-primary/10 text-primary mx-auto mb-3 flex size-12 items-center justify-center rounded-full">
+				<CloudIcon class="size-6" />
+			</div>
+			<p class="text-foreground text-sm font-medium">Kein Konto verbunden</p>
+			<p class="text-muted-foreground mx-auto mt-1 max-w-sm text-xs">
+				Team-Verwaltung braucht ein Konto - der Beitritts-Link und die gemeinsamen Aktivitäten
+				liegen dort, nicht nur auf diesem Gerät.
+			</p>
+			<Button size="sm" class="mt-4" onclick={() => tabFocus.requestSettings("konto")}>
+				Zu den Konto-Einstellungen
+			</Button>
+		</div>
 	{:else}
 		{#if chefTeams.teamsLoading && chefTeams.teams.length === 0}
 			<Card.Root>
@@ -243,14 +250,19 @@
 				</Card.Content>
 			</Card.Root>
 		{:else if chefTeams.teams.length === 0}
-			<Card.Root>
-				<Card.Content class="text-muted-foreground py-4 text-sm">
-					Noch kein Team angelegt.
-					<Button variant="link" class="h-auto p-0" onclick={() => tabFocus.requestSettings("team")}>
-						In den Einstellungen anlegen
-					</Button>
-				</Card.Content>
-			</Card.Root>
+			<div class="rounded-lg border border-dashed p-10 text-center">
+				<div class="bg-primary/10 text-primary mx-auto mb-3 flex size-12 items-center justify-center rounded-full">
+					<UsersIcon class="size-6" />
+				</div>
+				<p class="text-foreground text-sm font-medium">Noch kein Team angelegt</p>
+				<p class="text-muted-foreground mx-auto mt-1 max-w-sm text-xs">
+					Lege ein Team an, um Mitglieder per Link einzuladen und ihre Monatsberichte an einem
+					Ort zu sehen.
+				</p>
+				<Button size="sm" class="mt-4" onclick={() => tabFocus.requestSettings("team")}>
+					<PlusIcon class="size-4" /> Team anlegen
+				</Button>
+			</div>
 		{:else}
 			<Card.Root>
 				<Card.Header>
@@ -325,9 +337,17 @@
 				</Card.Header>
 
 				<Card.Content class="space-y-2 border-t pt-4">
-					<p class="text-muted-foreground text-xs font-medium">Mitglieder ({members.length})</p>
+					<p class="text-muted-foreground text-xs font-semibold uppercase tracking-wider">
+						Mitglieder ({members.length})
+					</p>
 					{#if members.length === 0}
-						<p class="text-muted-foreground text-sm">Noch niemand beigetreten.</p>
+						<div class="rounded-lg border border-dashed p-6 text-center">
+							<UserPlusIcon class="text-muted-foreground/50 mx-auto mb-2 size-8" />
+							<p class="text-foreground text-sm font-medium">Noch niemand beigetreten</p>
+							<p class="text-muted-foreground mt-0.5 text-xs">
+								Lade Mitglieder über „Einladen" oben ein.
+							</p>
+						</div>
 					{:else}
 						<Table.Root>
 							<Table.Header>
@@ -340,7 +360,14 @@
 							<Table.Body>
 								{#each members as m (m.id)}
 									<Table.Row>
-										<Table.Cell class="font-medium">{m.name}</Table.Cell>
+										<Table.Cell class="font-medium">
+											<div class="flex items-center gap-2.5">
+												<div class="bg-primary/10 text-primary flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold uppercase">
+													{m.name.slice(0, 1)}
+												</div>
+												{m.name}
+											</div>
+										</Table.Cell>
 										<Table.Cell class="text-muted-foreground text-sm">
 											{fmtDateHuman(m.createdAt)}
 										</Table.Cell>
@@ -389,7 +416,13 @@
 					{#if reportsLoading}
 						<p class="text-muted-foreground px-4 text-sm">Wird geladen…</p>
 					{:else if reports.length === 0}
-						<p class="text-muted-foreground px-4 text-sm">Noch niemand im Team.</p>
+						<div class="mx-4 rounded-lg border border-dashed p-6 text-center">
+							<UsersIcon class="text-muted-foreground/50 mx-auto mb-2 size-8" />
+							<p class="text-foreground text-sm font-medium">Noch niemand im Team</p>
+							<p class="text-muted-foreground mt-0.5 text-xs">
+								Sobald Mitglieder beigetreten sind, erscheinen ihre Abgaben hier.
+							</p>
+						</div>
 					{:else}
 						<div class="grid grid-cols-2 gap-3 px-4">
 							<StatTile label="Abgegeben">{submitted.length}</StatTile>

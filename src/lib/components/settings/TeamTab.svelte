@@ -26,6 +26,9 @@
 	import CopyIcon from "@lucide/svelte/icons/copy";
 	import Trash2Icon from "@lucide/svelte/icons/trash-2";
 	import ArrowLeftRightIcon from "@lucide/svelte/icons/arrow-left-right";
+	import CloudIcon from "@lucide/svelte/icons/cloud";
+	import Link2Icon from "@lucide/svelte/icons/link-2";
+	import ShieldIcon from "@lucide/svelte/icons/shield";
 
 	// ---------- Team-Mitgliedschaft (dieses Gerät ist Mitglied, kein Chef) ----------
 	//
@@ -227,10 +230,18 @@
 </SettingsCard>
 
 {#if form.bossMode && !account.linked}
-	<SettingsCard title="Team anlegen" description="Braucht ein Konto - Team und Beitritts-Link liegen dort, nicht nur auf diesem Gerät.">
-		<Button variant="link" class="h-auto p-0" onclick={() => tabFocus.requestSettings("konto")}>
-			Zu den Konto-Einstellungen
-		</Button>
+	<SettingsCard title="Team anlegen" divided={false}>
+		<div class="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/20 p-3.5">
+			<div class="bg-primary/10 text-primary flex size-9 shrink-0 items-center justify-center rounded-md">
+				<CloudIcon class="size-4" />
+			</div>
+			<p class="text-muted-foreground min-w-0 flex-1 text-xs">
+				Braucht ein Konto - Team und Beitritts-Link liegen dort, nicht nur auf diesem Gerät.
+			</p>
+			<Button size="sm" class="shrink-0" onclick={() => tabFocus.requestSettings("konto")}>
+				Zu den Konto-Einstellungen
+			</Button>
+		</div>
 	</SettingsCard>
 {:else if form.bossMode}
 	<SettingsCard title="Team anlegen und Beitritts-Link" divided={false}>
@@ -287,23 +298,35 @@
 				<Label>Beitritts-Link</Label>
 				{#if chefTeams.inviteLoading}
 					<p class="text-muted-foreground text-sm">Wird geladen…</p>
-				{:else}
-					<div class="flex flex-wrap items-center gap-2">
-						{#if chefTeams.inviteUrl}
-							<code class="bg-muted rounded px-2 py-1 text-xs break-all">{chefTeams.inviteUrl}</code>
-							<Button variant="ghost" size="icon-sm" title="Link kopieren" onclick={() => chefTeams.copyInviteUrl()}>
-								<CopyIcon class="size-4" />
-							</Button>
-						{/if}
+				{:else if chefTeams.inviteUrl}
+					<div class="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/20 p-2.5">
+						<div class="bg-primary/10 text-primary flex size-7 shrink-0 items-center justify-center rounded-md">
+							<Link2Icon class="size-3.5" />
+						</div>
+						<code class="min-w-0 flex-1 truncate text-xs">{chefTeams.inviteUrl}</code>
+						<Button variant="ghost" size="icon-sm" title="Link kopieren" onclick={() => chefTeams.copyInviteUrl()}>
+							<CopyIcon class="size-4" />
+						</Button>
 						<Button variant="outline" size="sm" disabled={chefTeams.rotating} onclick={rotateInvite}>
-							<RefreshCwIcon class="size-4" />
-							{chefTeams.invite ? "Neuen Link erzeugen" : "Link erzeugen"}
+							<RefreshCwIcon class="size-4" /> Neuen Link erzeugen
 						</Button>
 					</div>
 					<p class="text-muted-foreground text-xs">
 						Ein neuer Link macht den bisherigen ungültig - schon beigetretene Mitglieder bleiben davon
 						unberührt.
 					</p>
+				{:else}
+					<div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed p-3.5">
+						<div class="flex items-center gap-2.5">
+							<div class="bg-muted flex size-7 shrink-0 items-center justify-center rounded-md">
+								<Link2Icon class="text-muted-foreground size-3.5" />
+							</div>
+							<p class="text-muted-foreground text-xs">Noch keinen Link erzeugt.</p>
+						</div>
+						<Button variant="outline" size="sm" disabled={chefTeams.rotating} onclick={rotateInvite}>
+							<RefreshCwIcon class="size-4" /> Link erzeugen
+						</Button>
+					</div>
 				{/if}
 			</div>
 		{/if}
@@ -314,30 +337,43 @@
 			{#if chefTeams.adminsLoading}
 				<p class="text-muted-foreground text-sm">Wird geladen…</p>
 			{:else if chefTeams.admins.length === 0}
-				<p class="text-muted-foreground text-sm">Noch kein Verwalter.</p>
+				<div class="rounded-lg border border-dashed p-6 text-center">
+					<ShieldIcon class="text-muted-foreground/50 mx-auto mb-2 size-8" />
+					<p class="text-foreground text-sm font-medium">Noch kein Verwalter</p>
+					<p class="text-muted-foreground mt-0.5 text-xs">
+						Lade jemanden per Link ein - er bekommt dieselben Rechte wie du, ausser Team
+						löschen, Verwalter ein-/aussetzen oder übergeben.
+					</p>
+				</div>
 			{:else}
-				<ul class="divide-border divide-y">
+				<div class="grid gap-2">
 					{#each chefTeams.admins as a (a.userId)}
-						<li class="flex items-center justify-between gap-2 py-2 text-sm">
-							<div>
-								<div class="font-medium">{a.displayName}</div>
-								<div class="text-muted-foreground text-xs">
-									Verwalter seit {fmtDateHuman(a.createdAt)}
+						<div class="flex items-center justify-between gap-3 rounded-lg border bg-card/60 p-2.5 transition-colors hover:bg-card">
+							<div class="flex min-w-0 items-center gap-2.5">
+								<div class="bg-primary/10 text-primary flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold uppercase">
+									{a.displayName.slice(0, 1)}
+								</div>
+								<div class="min-w-0">
+									<div class="truncate text-sm font-medium">{a.displayName}</div>
+									<div class="text-muted-foreground text-xs">
+										Verwalter seit {fmtDateHuman(a.createdAt)}
+									</div>
 								</div>
 							</div>
 							{#if chefTeams.isOwner}
 								<Button
 									variant="ghost"
 									size="icon-sm"
+									class="text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
 									title="Nicht mehr Verwalter"
 									onclick={() => removeAdmin(a.userId, a.displayName)}
 								>
-									<Trash2Icon class="size-4" />
+									<Trash2Icon class="size-3.5" />
 								</Button>
 							{/if}
-						</li>
+						</div>
 					{/each}
-				</ul>
+				</div>
 			{/if}
 
 			{#if chefTeams.isOwner}
@@ -345,22 +381,38 @@
 					<Label>Verwalter einladen</Label>
 					{#if chefTeams.adminInviteLoading}
 						<p class="text-muted-foreground text-sm">Wird geladen…</p>
-					{:else}
-						<div class="flex flex-wrap items-center gap-2">
-							{#if chefTeams.adminInviteUrl}
-								<code class="bg-muted rounded px-2 py-1 text-xs break-all">{chefTeams.adminInviteUrl}</code>
-								<Button
-									variant="ghost"
-									size="icon-sm"
-									title="Link kopieren"
-									onclick={() => chefTeams.copyAdminInviteUrl()}
-								>
-									<CopyIcon class="size-4" />
-								</Button>
-							{/if}
+					{:else if chefTeams.adminInviteUrl}
+						<div class="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/20 p-2.5">
+							<div class="bg-primary/10 text-primary flex size-7 shrink-0 items-center justify-center rounded-md">
+								<Link2Icon class="size-3.5" />
+							</div>
+							<code class="min-w-0 flex-1 truncate text-xs">{chefTeams.adminInviteUrl}</code>
+							<Button
+								variant="ghost"
+								size="icon-sm"
+								title="Link kopieren"
+								onclick={() => chefTeams.copyAdminInviteUrl()}
+							>
+								<CopyIcon class="size-4" />
+							</Button>
 							<Button variant="outline" size="sm" disabled={chefTeams.rotatingAdminInvite} onclick={rotateAdminInvite}>
-								<RefreshCwIcon class="size-4" />
-								{chefTeams.adminInvite ? "Neuen Link erzeugen" : "Link erzeugen"}
+								<RefreshCwIcon class="size-4" /> Neuen Link erzeugen
+							</Button>
+						</div>
+						<p class="text-muted-foreground text-xs">
+							Wer den Link öffnet, braucht (anders als beim Beitritts-Link) ein eigenes Konto auf
+							diesem Server.
+						</p>
+					{:else}
+						<div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed p-3.5">
+							<div class="flex items-center gap-2.5">
+								<div class="bg-muted flex size-7 shrink-0 items-center justify-center rounded-md">
+									<Link2Icon class="text-muted-foreground size-3.5" />
+								</div>
+								<p class="text-muted-foreground text-xs">Noch keinen Link erzeugt.</p>
+							</div>
+							<Button variant="outline" size="sm" disabled={chefTeams.rotatingAdminInvite} onclick={rotateAdminInvite}>
+								<RefreshCwIcon class="size-4" /> Link erzeugen
 							</Button>
 						</div>
 						<p class="text-muted-foreground text-xs">
@@ -375,20 +427,25 @@
 
 	{#if chefTeams.selectedTeam && chefTeams.isOwner && chefTeams.admins.length > 0}
 		<SettingsCard title="Eigentum übergeben" description="Ein bestehender Verwalter wird zum Chef, du selbst zum Verwalter - der Zugang bleibt erhalten." divided={false}>
-			<div class="flex flex-wrap items-center gap-2">
-				<Select.Root type="single" bind:value={transferPickId}>
-					<Select.Trigger class="w-56">
-						{transferTarget?.displayName ?? "Verwalter wählen"}
-					</Select.Trigger>
-					<Select.Content>
-						{#each chefTeams.admins as a (a.userId)}
-							<Select.Item value={a.userId} label={a.displayName}>{a.displayName}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-				<Button variant="outline" disabled={!transferTarget} onclick={startTransfer}>
-					<ArrowLeftRightIcon class="size-4" /> Übergeben
-				</Button>
+			<div class="flex flex-wrap items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3.5">
+				<div class="flex size-9 shrink-0 items-center justify-center rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400">
+					<ArrowLeftRightIcon class="size-4" />
+				</div>
+				<div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+					<Select.Root type="single" bind:value={transferPickId}>
+						<Select.Trigger class="bg-background w-56">
+							{transferTarget?.displayName ?? "Verwalter wählen"}
+						</Select.Trigger>
+						<Select.Content>
+							{#each chefTeams.admins as a (a.userId)}
+								<Select.Item value={a.userId} label={a.displayName}>{a.displayName}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+					<Button variant="outline" class="bg-background" disabled={!transferTarget} onclick={startTransfer}>
+						<ArrowLeftRightIcon class="size-4" /> Übergeben
+					</Button>
+				</div>
 			</div>
 		</SettingsCard>
 	{/if}
