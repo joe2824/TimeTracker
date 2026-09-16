@@ -1,17 +1,17 @@
-// Die gemeinsame Aktivitätenliste eines Teams - nur der Chef ändert sie.
+// Die gemeinsame Aktivitätenliste eines Teams - Chef und Verwalter ändern sie.
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
-import { listTeamActivities, requireOwnTeam, setTeamActivities, type TeamActivityInput } from "$lib/server/teams";
+import { listTeamActivities, requireTeamAccess, setTeamActivities, type TeamActivityInput } from "$lib/server/teams";
 
 export const GET: RequestHandler = ({ locals, params }) => {
 	if (!locals.userId) error(401, "Nicht angemeldet");
-	requireOwnTeam(locals.db, locals.userId, params.teamId!);
+	requireTeamAccess(locals.db, locals.userId, params.teamId!);
 	return json({ activities: listTeamActivities(locals.db, params.teamId!) });
 };
 
 export const PUT: RequestHandler = async ({ locals, params, request }) => {
 	if (!locals.userId) error(401, "Nicht angemeldet");
-	requireOwnTeam(locals.db, locals.userId, params.teamId!);
+	requireTeamAccess(locals.db, locals.userId, params.teamId!);
 	const body = await request.json().catch(() => null);
 	if (!Array.isArray(body?.activities)) error(400, "activities fehlt");
 	const items: TeamActivityInput[] = body.activities.map((a: Record<string, unknown>, i: number) => ({

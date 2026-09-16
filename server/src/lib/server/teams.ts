@@ -3,7 +3,16 @@
 import { error } from "@sveltejs/kit";
 import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
 import type { Db, DbLike } from "./db/index";
-import { teamActivities, teamInvites, teamMembers, teamReports, teams } from "./db/schema";
+import {
+	teamActivities,
+	teamAdminInvites,
+	teamAdmins,
+	teamInvites,
+	teamMembers,
+	teamReports,
+	teams,
+	users
+} from "./db/schema";
 import { generateInviteCode } from "./invites";
 import { hashSecret, newSecret } from "./auth";
 
@@ -12,6 +21,8 @@ export interface TeamRow {
 	ownerUserId: string;
 	name: string;
 	createdAt: number;
+	/** Nur in listTeams() gefuellt - dort steht sie fuer die anfragende Person. */
+	role?: "owner" | "admin";
 }
 
 /** Ein Team anlegen. */
@@ -21,9 +32,25 @@ export function createTeam(db: DbLike, ownerUserId: string, name: string): TeamR
 	return row;
 }
 
-/** Die Teams eines Chefs, neueste zuerst. */
-export function listTeams(db: Db, ownerUserId: string): TeamRow[] {
-	return db.select().from(teams).where(eq(teams.ownerUserId, ownerUserId)).orderBy(desc(teams.createdAt)).all();
+/**
+ * Die Teams, bei denen dieses Konto mitreden darf - als Chef ODER als
+ * Verwalter, neueste zuerst. `role` sagt, welches von beiden.
+ */
+export function listTeams(db: Db, userId: string): TeamRow[] {
+	const owned = db
+		.select()
+		.from(teams)
+		.where(eq(teams.ownerUserId, userId))
+		.all()
+		.map((t) => ({ ...t, role: "owner" as const }));
+	const administered = db
+		.select({ id: teams.id, ownerUserId: teams.ownerUserId, name: teams.name, createdAt: teams.createdAt })
+		.from(teamAdmins)
+		.innerJoin(teams, eq(teams.id, teamAdmins.teamId))
+		.where(eq(teamAdmins.userId, userId))
+		.all()
+		.map((t) => ({ ...t, role: "admin" as const }));
+	return [...owned, ...administered].sort((a, b) => b.createdAt - a.createdAt);
 }
 
 /** Ein Team samt Besitzprüfung - wirft 404, wenn es nicht existiert oder einem anderen Konto gehört.
@@ -178,6 +205,139 @@ export function revokeTeamMember(db: Db, teamId: string, memberId: string): bool
 export function requireTeamMember(locals: { teamMemberId: string | null; teamId: string | null }): string {
 	if (!locals.teamMemberId || !locals.teamId) error(401, "Kein Team-Zugang");
 	return locals.teamId;
+}
+
+// ---------- Verwalter: ein zweites Konto neben dem Chef ----------
+//
+// Anders als teamMembers ein echtes Konto (users.id) - darf alles Operative
+// (Aktivitaeten, Mitglieder, Berichte, den einfachen Beitritts-Link), aber
+// nicht das Team loeschen, weitere Verwalter ein-/aussetzen oder den Besitz
+// uebergeben. Diese vier Routen bleiben requireOwnTeam vorbehalten, alles
+// andere wechselt auf requireTeamAccess.
+
+export function isTeamAdmin(db: Db, teamId: string, userId: string): boolean {
+	return !!db
+		.select({ userId: teamAdmins.userId })
+		.from(teamAdmins)
+		.where(and(eq(teamAdmins.teamId, teamId), eq(teamAdmins.userId, userId)))
+		.get();
+}
+
+/**
+ * Ein Team, dem dieses Konto als Chef ODER Verwalter angehoert - wirft 404
+ * sonst. Fuer die operativen Routen; wo nur der Chef darf, bleibt es bei
+ * requireOwnTeam.
+ */
+export function requireTeamAccess(db: Db, userId: string, teamId: string): TeamRow {
+	const row = db.select().from(teams).where(eq(teams.id, teamId)).get();
+	if (!row) error(404, "Team unbekannt");
+	if (row.ownerUserId === userId || isTeamAdmin(db, teamId, userId)) return row;
+	error(404, "Team unbekannt");
+}
+
+export interface TeamAdminRow {
+	userId: string;
+	displayName: string;
+	email: string | null;
+	createdAt: number;
+}
+
+/** Die Verwalter eines Teams, neueste zuerst - der Chef steht nicht mit drin. */
+export function listTeamAdmins(db: Db, teamId: string): TeamAdminRow[] {
+	return db
+		.select({
+			userId: teamAdmins.userId,
+			displayName: users.displayName,
+			email: users.email,
+			createdAt: teamAdmins.createdAt
+		})
+		.from(teamAdmins)
+		.innerJoin(users, eq(users.id, teamAdmins.userId))
+		.where(eq(teamAdmins.teamId, teamId))
+		.orderBy(desc(teamAdmins.createdAt))
+		.all();
+}
+
+/** Einen Verwalter wieder aussetzen - Chef-only, sein eigener Zugang bleibt (der laeuft ueber ownerUserId). */
+export function removeTeamAdmin(db: Db, teamId: string, userId: string): void {
+	db.delete(teamAdmins)
+		.where(and(eq(teamAdmins.teamId, teamId), eq(teamAdmins.userId, userId)))
+		.run();
+}
+
+/**
+ * Besitz uebergeben - das Ziel muss bereits Verwalter sein (kein Uebergeben an
+ * ein x-beliebiges Konto per Tippfehler). Der bisherige Chef wird selbst zum
+ * Verwalter, verliert also nicht schlagartig den Zugang.
+ */
+export function transferTeamOwnership(db: Db, team: TeamRow, newOwnerUserId: string): void {
+	if (!isTeamAdmin(db, team.id, newOwnerUserId)) error(400, "Nur ein bestehender Verwalter kann Chef werden");
+	db.transaction((tx) => {
+		tx.update(teams).set({ ownerUserId: newOwnerUserId }).where(eq(teams.id, team.id)).run();
+		tx.delete(teamAdmins)
+			.where(and(eq(teamAdmins.teamId, team.id), eq(teamAdmins.userId, newOwnerUserId)))
+			.run();
+		tx.insert(teamAdmins)
+			.values({ teamId: team.id, userId: team.ownerUserId, createdAt: Date.now() })
+			.onConflictDoNothing()
+			.run();
+	});
+}
+
+export interface TeamAdminInviteRow {
+	code: string;
+	teamId: string;
+	createdAt: number;
+	expiresAt: number | null;
+	revokedAt: number | null;
+}
+
+/** Der aktuell gültige Verwalter-Link dieses Teams - oder null. */
+export function activeAdminInvite(db: Db, teamId: string): TeamAdminInviteRow | null {
+	const now = Date.now();
+	const rows = db
+		.select()
+		.from(teamAdminInvites)
+		.where(and(eq(teamAdminInvites.teamId, teamId), isNull(teamAdminInvites.revokedAt)))
+		.orderBy(desc(teamAdminInvites.createdAt))
+		.all();
+	return rows.find((r) => !r.expiresAt || r.expiresAt > now) ?? null;
+}
+
+/** Wie rotateTeamInvite, nur fuer den Verwalter-Link. */
+export function rotateAdminInvite(db: Db, teamId: string): TeamAdminInviteRow {
+	const now = Date.now();
+	db.update(teamAdminInvites)
+		.set({ revokedAt: now })
+		.where(and(eq(teamAdminInvites.teamId, teamId), isNull(teamAdminInvites.revokedAt)))
+		.run();
+	const row = { code: generateInviteCode(), teamId, createdAt: now, expiresAt: null, revokedAt: null };
+	db.insert(teamAdminInvites).values(row).run();
+	return row;
+}
+
+/** Team hinter einem gültigen Verwalter-Code - oder null. */
+export function teamFromAdminInviteCode(db: DbLike, code: string): TeamRow | null {
+	const invite = db.select().from(teamAdminInvites).where(eq(teamAdminInvites.code, code)).get();
+	if (!invite || invite.revokedAt) return null;
+	if (invite.expiresAt && invite.expiresAt < Date.now()) return null;
+	return db.select().from(teams).where(eq(teams.id, invite.teamId)).get() ?? null;
+}
+
+/**
+ * Einen Verwalter-Link annehmen - braucht (anders als joinTeam) ein
+ * angemeldetes Konto. Wer den Chef selbst einliest, aendert nichts (schon
+ * automatisch Zugang). Mehrfaches Annehmen ist folgenlos (Unique-Index).
+ */
+export function joinTeamAsAdmin(db: Db, code: string, userId: string): TeamRow | null {
+	const team = teamFromAdminInviteCode(db, code);
+	if (!team) return null;
+	if (team.ownerUserId === userId) return team;
+	db.insert(teamAdmins)
+		.values({ teamId: team.id, userId, createdAt: Date.now() })
+		.onConflictDoNothing()
+		.run();
+	return team;
 }
 
 export interface TeamActivityRow {

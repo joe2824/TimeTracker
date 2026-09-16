@@ -3,7 +3,7 @@
 // Link erzeugen), damit beide dieselbe Auswahl und denselben Link-Stand
 // sehen, ohne dass ein Speichern im einen Tab im anderen veraltet aussieht.
 import { account } from "../sync/account.svelte";
-import type { TeamInfo, TeamInvite } from "../sync/api";
+import type { TeamAdminInfo, TeamInfo, TeamInvite } from "../sync/api";
 import { errorText, logWarn } from "../log";
 import { toast } from "svelte-sonner";
 
@@ -16,8 +16,23 @@ class ChefTeamsState {
 	rotating = $state(false);
 	creating = $state(false);
 
+	// Verwalter des ausgewaehlten Teams - nur der Chef darf sie ein-/aussetzen
+	// oder den Verwalter-Link erzeugen (siehe isOwner), sehen darf sie jeder
+	// mit Zugang.
+	admins = $state<TeamAdminInfo[]>([]);
+	adminsLoading = $state(false);
+	adminInvite = $state<TeamInvite | null>(null);
+	adminInviteLoading = $state(false);
+	rotatingAdminInvite = $state(false);
+	transferring = $state(false);
+
 	get selectedTeam(): TeamInfo | null {
 		return this.teams.find((t) => t.id === this.selectedTeamId) ?? null;
+	}
+
+	/** Chef statt nur Verwalter - entscheidet ueber Loeschen, Verwalter-Link, Besitzuebergabe. */
+	get isOwner(): boolean {
+		return this.selectedTeam?.role !== "admin";
 	}
 
 	get inviteUrl(): string | null {
@@ -129,6 +144,100 @@ class ChefTeamsState {
 			if (teamId === this.selectedTeamId) this.invite = inv;
 		} finally {
 			this.rotating = false;
+		}
+	}
+
+	// ---------- Verwalter ----------
+
+	#adminsRequest = new Map<string, number>();
+
+	async loadAdmins(teamId: string): Promise<void> {
+		const requestId = (this.#adminsRequest.get(teamId) ?? 0) + 1;
+		this.#adminsRequest.set(teamId, requestId);
+		if (teamId === this.selectedTeamId) this.adminsLoading = true;
+		try {
+			const admins = await account.listTeamAdmins(teamId);
+			if (this.#adminsRequest.get(teamId) !== requestId) return;
+			if (teamId === this.selectedTeamId) this.admins = admins;
+		} catch (e) {
+			if (this.#adminsRequest.get(teamId) !== requestId) return;
+			logWarn("Verwalter konnten nicht geladen werden", e);
+			toast.error(`Verwalter konnten nicht geladen werden: ${errorText(e)}`);
+		} finally {
+			if (teamId === this.selectedTeamId) this.adminsLoading = false;
+		}
+	}
+
+	async removeAdmin(userId: string): Promise<void> {
+		const teamId = this.selectedTeamId;
+		if (!teamId) return;
+		await account.removeTeamAdmin(teamId, userId);
+		this.admins = this.admins.filter((a) => a.userId !== userId);
+	}
+
+	get adminInviteUrl(): string | null {
+		return this.adminInvite ? `${account.serverUrl}/team/admin/${this.adminInvite.code}` : null;
+	}
+
+	async copyAdminInviteUrl(): Promise<void> {
+		const url = this.adminInviteUrl;
+		if (!url) return;
+		try {
+			await navigator.clipboard.writeText(url);
+			toast.success("Link kopiert.");
+		} catch {
+			toast.error("Kopieren nicht möglich – bitte manuell kopieren.");
+		}
+	}
+
+	#adminInviteRequest = new Map<string, number>();
+
+	async loadAdminInvite(teamId: string): Promise<void> {
+		const requestId = (this.#adminInviteRequest.get(teamId) ?? 0) + 1;
+		this.#adminInviteRequest.set(teamId, requestId);
+		if (teamId === this.selectedTeamId) this.adminInviteLoading = true;
+		try {
+			const inv = await account.getAdminInvite(teamId);
+			if (this.#adminInviteRequest.get(teamId) !== requestId) return;
+			if (teamId === this.selectedTeamId) this.adminInvite = inv;
+		} catch (e) {
+			if (this.#adminInviteRequest.get(teamId) !== requestId) return;
+			logWarn("Verwalter-Link konnte nicht geladen werden", e);
+			toast.error(`Verwalter-Link konnte nicht geladen werden: ${errorText(e)}`);
+		} finally {
+			if (teamId === this.selectedTeamId) this.adminInviteLoading = false;
+		}
+	}
+
+	async rotateAdminInvite(): Promise<void> {
+		const teamId = this.selectedTeamId;
+		if (!teamId || this.rotatingAdminInvite) return;
+		this.rotatingAdminInvite = true;
+		try {
+			const inv = await account.rotateAdminInvite(teamId);
+			this.#adminInviteRequest.set(teamId, (this.#adminInviteRequest.get(teamId) ?? 0) + 1);
+			if (teamId === this.selectedTeamId) this.adminInvite = inv;
+		} finally {
+			this.rotatingAdminInvite = false;
+		}
+	}
+
+	/**
+	 * Besitz übergeben - das Ziel muss bereits Verwalter sein. Lädt die
+	 * Teamliste danach neu: die eigene Rolle für dieses Team kippt von owner
+	 * auf admin, und nur listTeams() liefert das aktuell.
+	 */
+	async transferOwnership(newOwnerUserId: string): Promise<void> {
+		const teamId = this.selectedTeamId;
+		if (!teamId) return;
+		this.transferring = true;
+		try {
+			await account.transferTeamOwnership(teamId, newOwnerUserId);
+			this.admins = [];
+			this.adminInvite = null;
+			await this.loadTeams();
+		} finally {
+			this.transferring = false;
 		}
 	}
 }

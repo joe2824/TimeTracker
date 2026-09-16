@@ -226,7 +226,26 @@ const MIGRATIONS: string[] = [
 		payload TEXT NOT NULL
 	)`,
 	`CREATE UNIQUE INDEX IF NOT EXISTS team_reports_member_month ON team_reports(member_id, month)`,
-	`CREATE INDEX IF NOT EXISTS team_reports_team_month ON team_reports(team_id, month)`
+	`CREATE INDEX IF NOT EXISTS team_reports_team_month ON team_reports(team_id, month)`,
+
+	// Team-Modus, Teil 4: Verwalter neben dem Chef - anders als team_members ein
+	// echtes Konto (users.id), deshalb eigener Einladungsweg statt des
+	// anonymen team_invites.
+	`CREATE TABLE IF NOT EXISTS team_admin_invites (
+		code TEXT PRIMARY KEY,
+		team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+		created_at INTEGER NOT NULL,
+		expires_at INTEGER,
+		revoked_at INTEGER
+	)`,
+	`CREATE INDEX IF NOT EXISTS team_admin_invites_team ON team_admin_invites(team_id)`,
+	`CREATE TABLE IF NOT EXISTS team_admins (
+		team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		created_at INTEGER NOT NULL
+	)`,
+	`CREATE UNIQUE INDEX IF NOT EXISTS team_admins_team_user ON team_admins(team_id, user_id)`,
+	`CREATE INDEX IF NOT EXISTS team_admins_user ON team_admins(user_id)`
 ];
 
 
