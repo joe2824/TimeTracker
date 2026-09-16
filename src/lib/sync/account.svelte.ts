@@ -659,7 +659,26 @@ class AccountState {
 		}, 1500);
 	}
 
-	async syncNow(): Promise<void> {
+	/** Läuft gerade ein Durchgang, hängt sich ein zweiter Aufruf daran an - siehe `SyncEngine.sync()`. */
+	#syncPromise: Promise<void> | null = null;
+
+	/**
+	 * Abgleichen.
+	 *
+	 * Ohne diese Anlehnung riefe jeder Auslöser (Heartbeat, Weckruf-Kanal, Online-
+	 * Event, Debounce, …), der auf denselben laufenden Durchgang trifft, seinen
+	 * eigenen Nachlauf auf: Log, Reload und `notifyDataChanged` je einmal pro
+	 * Aufrufer statt einmal pro echtem Abgleich.
+	 */
+	syncNow(): Promise<void> {
+		if (this.#syncPromise) return this.#syncPromise;
+		this.#syncPromise = this.#syncOnce().finally(() => {
+			this.#syncPromise = null;
+		});
+		return this.#syncPromise;
+	}
+
+	async #syncOnce(): Promise<void> {
 		if (!this.#engine || this.state !== "connected") return;
 		this.phase = "running";
 		try {
