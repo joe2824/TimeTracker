@@ -29,6 +29,7 @@
 	import CloudIcon from "@lucide/svelte/icons/cloud";
 	import Link2Icon from "@lucide/svelte/icons/link-2";
 	import ShieldIcon from "@lucide/svelte/icons/shield";
+	import XIcon from "@lucide/svelte/icons/x";
 
 	// ---------- Team-Mitgliedschaft (dieses Gerät ist Mitglied, kein Chef) ----------
 	//
@@ -82,12 +83,22 @@
 	$effect(() => {
 		const teamId = chefTeams.selectedTeamId;
 		if (!form.bossMode || !teamId) return;
-		void chefTeams.loadInvite(teamId);
+		// Fehlt der Link noch (frisch angelegtes Team), gleich erzeugen statt den
+		// Chef erst auf "Link erzeugen" klicken zu lassen.
+		void chefTeams.loadInvite(teamId).then(() => {
+			if (teamId === chefTeams.selectedTeamId && !chefTeams.invite && chefTeams.isOwner) {
+				void rotateInvite();
+			}
+		});
 		void chefTeams.loadAdmins(teamId);
 		if (chefTeams.isOwner) void chefTeams.loadAdminInvite(teamId);
 	});
 
 	let newTeamName = $state("");
+	// Nur beim ersten Team immer sichtbar - sobald eines existiert, verschwindet
+	// das Formular hinter "Weiteres Team anlegen", damit die Karte nicht
+	// dauerhaft ein Eingabefeld zeigt, das die meisten nie ein zweites Mal brauchen.
+	let addingTeam = $state(false);
 
 	async function createTeam() {
 		const name = newTeamName.trim();
@@ -95,6 +106,7 @@
 		try {
 			await chefTeams.createTeam(name);
 			newTeamName = "";
+			addingTeam = false;
 			toast.success(`Team „${name}" angelegt.`);
 		} catch (e) {
 			toast.error(`Team konnte nicht angelegt werden: ${errorText(e)}`);
@@ -209,13 +221,12 @@
 
 <SettingsCard
 	title="Chef-Modus"
-	description="Ein eigenes Team anlegen, Mitglieder per Link einladen und sehen, wer seinen Bericht schon gesendet hat."
+	description="Team anlegen, Mitglieder per Link einladen, Bericht-Status sehen."
 	savedAt={savedBossAt}
 >
 	<SettingToggle
 		id="bossmode"
-		title="Chef-Modus"
-		description="Blendet den Tab „Team“ ein."
+		title="Team-Tab anzeigen"
 		bind:checked={form.bossMode}
 		onCheckedChange={(v) => {
 			form.bossMode = v;
@@ -243,10 +254,10 @@
 			</Button>
 		</div>
 	</SettingsCard>
-{:else if form.bossMode}
-	<SettingsCard title="Team anlegen und Beitritts-Link" divided={false}>
+{:else if form.bossMode && chefTeams.teams.length === 0}
+	<SettingsCard title="Team anlegen" divided={false}>
 		<div class="space-y-1.5">
-			<Label for="newteam">Neues Team</Label>
+			<Label for="newteam">Name des Teams</Label>
 			<div class="flex gap-2">
 				<Input
 					id="newteam"
@@ -259,76 +270,103 @@
 				</Button>
 			</div>
 		</div>
+	</SettingsCard>
+{:else if form.bossMode}
+	<SettingsCard title="Team" description="Beitritts-Link zum Einladen von Mitgliedern." divided={false}>
+		<div class="flex items-center gap-2">
+			{#if chefTeams.teams.length > 1}
+				<Select.Root type="single" bind:value={chefTeams.selectedTeamId}>
+					<Select.Trigger aria-label="Team wählen" class="w-56">
+						{chefTeams.selectedTeam?.name ?? "Team wählen"}
+					</Select.Trigger>
+					<Select.Content>
+						{#each chefTeams.teams as t (t.id)}
+							<Select.Item value={t.id} label={t.name}>{t.name}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+			{:else}
+				<span class="text-sm font-medium">{chefTeams.selectedTeam?.name}</span>
+			{/if}
+			{#if chefTeams.selectedTeam && !chefTeams.isOwner}
+				<span class="text-muted-foreground text-xs">(du bist Verwalter/in, nicht Chef/in)</span>
+			{/if}
+			{#if chefTeams.selectedTeam && chefTeams.isOwner}
+				<Button
+					variant="ghost"
+					size="icon-sm"
+					class="ml-auto"
+					title="Team endgültig löschen"
+					onclick={() => (deleteTarget = chefTeams.selectedTeam)}
+				>
+					<Trash2Icon class="text-destructive size-4" />
+				</Button>
+			{/if}
+		</div>
 
-		{#if chefTeams.teams.length > 0}
-			<div class="space-y-1.5">
-				<Label for="teampick">{chefTeams.teams.length > 1 ? "Team" : "Ausgewähltes Team"}</Label>
-				<div class="flex items-center gap-2">
-					{#if chefTeams.teams.length > 1}
-						<Select.Root type="single" bind:value={chefTeams.selectedTeamId}>
-							<Select.Trigger id="teampick" class="w-56">
-								{chefTeams.selectedTeam?.name ?? "Team wählen"}
-							</Select.Trigger>
-							<Select.Content>
-								{#each chefTeams.teams as t (t.id)}
-									<Select.Item value={t.id} label={t.name}>{t.name}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-					{:else}
-						<span class="text-sm font-medium">{chefTeams.selectedTeam?.name}</span>
-					{/if}
-					{#if chefTeams.selectedTeam && !chefTeams.isOwner}
-						<span class="text-muted-foreground text-xs">(du bist Verwalter/in, nicht Chef/in)</span>
-					{/if}
-					{#if chefTeams.selectedTeam && chefTeams.isOwner}
-						<Button
-							variant="ghost"
-							size="icon-sm"
-							title="Team endgültig löschen"
-							onclick={() => (deleteTarget = chefTeams.selectedTeam)}
-						>
-							<Trash2Icon class="text-destructive size-4" />
-						</Button>
-					{/if}
+		<div class="space-y-1.5">
+			<Label>Beitritts-Link</Label>
+			{#if chefTeams.inviteLoading}
+				<p class="text-muted-foreground text-sm">Wird geladen…</p>
+			{:else if chefTeams.inviteUrl}
+				<div class="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/20 p-2.5">
+					<div class="bg-primary/10 text-primary flex size-7 shrink-0 items-center justify-center rounded-md">
+						<Link2Icon class="size-3.5" />
+					</div>
+					<code class="min-w-0 flex-1 truncate text-xs">{chefTeams.inviteUrl}</code>
+					<Button variant="ghost" size="icon-sm" title="Link kopieren" onclick={() => chefTeams.copyInviteUrl()}>
+						<CopyIcon class="size-4" />
+					</Button>
+					<Button variant="outline" size="sm" disabled={chefTeams.rotating} onclick={rotateInvite}>
+						<RefreshCwIcon class="size-4" /> Neuen Link erzeugen
+					</Button>
 				</div>
-			</div>
+				<p class="text-muted-foreground text-xs">
+					Ein neuer Link macht den bisherigen ungültig - schon beigetretene Mitglieder bleiben davon
+					unberührt.
+				</p>
+			{:else}
+				<div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed p-3.5">
+					<div class="flex items-center gap-2.5">
+						<div class="bg-muted flex size-7 shrink-0 items-center justify-center rounded-md">
+							<Link2Icon class="text-muted-foreground size-3.5" />
+						</div>
+						<p class="text-muted-foreground text-xs">Noch keinen Link erzeugt.</p>
+					</div>
+					<Button variant="outline" size="sm" disabled={chefTeams.rotating} onclick={rotateInvite}>
+						<RefreshCwIcon class="size-4" /> Link erzeugen
+					</Button>
+				</div>
+			{/if}
+		</div>
 
-			<div class="space-y-1.5">
-				<Label>Beitritts-Link</Label>
-				{#if chefTeams.inviteLoading}
-					<p class="text-muted-foreground text-sm">Wird geladen…</p>
-				{:else if chefTeams.inviteUrl}
-					<div class="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/20 p-2.5">
-						<div class="bg-primary/10 text-primary flex size-7 shrink-0 items-center justify-center rounded-md">
-							<Link2Icon class="size-3.5" />
-						</div>
-						<code class="min-w-0 flex-1 truncate text-xs">{chefTeams.inviteUrl}</code>
-						<Button variant="ghost" size="icon-sm" title="Link kopieren" onclick={() => chefTeams.copyInviteUrl()}>
-							<CopyIcon class="size-4" />
-						</Button>
-						<Button variant="outline" size="sm" disabled={chefTeams.rotating} onclick={rotateInvite}>
-							<RefreshCwIcon class="size-4" /> Neuen Link erzeugen
-						</Button>
-					</div>
-					<p class="text-muted-foreground text-xs">
-						Ein neuer Link macht den bisherigen ungültig - schon beigetretene Mitglieder bleiben davon
-						unberührt.
-					</p>
-				{:else}
-					<div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed p-3.5">
-						<div class="flex items-center gap-2.5">
-							<div class="bg-muted flex size-7 shrink-0 items-center justify-center rounded-md">
-								<Link2Icon class="text-muted-foreground size-3.5" />
-							</div>
-							<p class="text-muted-foreground text-xs">Noch keinen Link erzeugt.</p>
-						</div>
-						<Button variant="outline" size="sm" disabled={chefTeams.rotating} onclick={rotateInvite}>
-							<RefreshCwIcon class="size-4" /> Link erzeugen
-						</Button>
-					</div>
-				{/if}
+		{#if addingTeam}
+			<div class="flex gap-2 rounded-lg border border-dashed p-3.5">
+				<Input
+					bind:value={newTeamName}
+					placeholder="Name des weiteren Teams"
+					aria-label="Name des weiteren Teams"
+					onkeydown={(e) => e.key === "Enter" && createTeam()}
+				/>
+				<Button variant="outline" disabled={!newTeamName.trim() || chefTeams.creating} onclick={createTeam}>
+					<PlusIcon class="size-4" /> Anlegen
+				</Button>
+				<Button
+					variant="ghost"
+					size="icon"
+					title="Abbrechen"
+					onclick={() => {
+						addingTeam = false;
+						newTeamName = "";
+					}}
+				>
+					<XIcon class="size-4" />
+				</Button>
 			</div>
+		{:else}
+			<Button variant="link" class="h-auto p-0" onclick={() => (addingTeam = true)}>
+				<PlusIcon class="size-4" /> Weiteres Team anlegen
+			</Button>
 		{/if}
 	</SettingsCard>
 
@@ -337,13 +375,11 @@
 			{#if chefTeams.adminsLoading}
 				<p class="text-muted-foreground text-sm">Wird geladen…</p>
 			{:else if chefTeams.admins.length === 0}
-				<div class="rounded-lg border border-dashed p-6 text-center">
-					<ShieldIcon class="text-muted-foreground/50 mx-auto mb-2 size-8" />
-					<p class="text-foreground text-sm font-medium">Noch kein Verwalter</p>
-					<p class="text-muted-foreground mt-0.5 text-xs">
-						Lade jemanden per Link ein - er bekommt dieselben Rechte wie du, ausser Team
-						löschen, Verwalter ein-/aussetzen oder übergeben.
-					</p>
+				<div class="flex items-center gap-2.5 rounded-lg border border-dashed p-3.5">
+					<div class="bg-muted flex size-7 shrink-0 items-center justify-center rounded-md">
+						<ShieldIcon class="text-muted-foreground size-3.5" />
+					</div>
+					<p class="text-muted-foreground text-xs">Noch kein Verwalter - lade jemanden per Link ein.</p>
 				</div>
 			{:else}
 				<div class="grid gap-2">
@@ -399,10 +435,6 @@
 								<RefreshCwIcon class="size-4" /> Neuen Link erzeugen
 							</Button>
 						</div>
-						<p class="text-muted-foreground text-xs">
-							Wer den Link öffnet, braucht (anders als beim Beitritts-Link) ein eigenes Konto auf
-							diesem Server.
-						</p>
 					{:else}
 						<div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed p-3.5">
 							<div class="flex items-center gap-2.5">
@@ -415,6 +447,8 @@
 								<RefreshCwIcon class="size-4" /> Link erzeugen
 							</Button>
 						</div>
+					{/if}
+					{#if !chefTeams.adminInviteLoading}
 						<p class="text-muted-foreground text-xs">
 							Wer den Link öffnet, braucht (anders als beim Beitritts-Link) ein eigenes Konto auf
 							diesem Server.
