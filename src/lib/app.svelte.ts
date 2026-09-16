@@ -1,6 +1,7 @@
 // Zentraler, reaktiver App-Zustand (Svelte 5 Runes).
 import { toast } from "svelte-sonner";
 import type { Activity, Entry, EntrySource, Settings } from "./types";
+import type { StaleTimerSplitInfo } from "./sync/engine";
 import {
 	BUILTIN_ABSENCE,
 	BUILTIN_ABSENCE_ID,
@@ -1207,6 +1208,27 @@ class AppState {
 			await this.#saveMonth(month);
 		}
 		if (this.running?.id === entry.id) this.running = null;
+	}
+
+	/**
+	 * Eine stehen gebliebene Mitternachts-Teilung aufloesen - siehe
+	 * StaleTimerSplitDialog. `keep: "ended"` uebernimmt die echte, kuerzere
+	 * Endzeit und loescht die Fortsetzung; `keep: "continuation"` verwirft die
+	 * fremde Endzeit wieder und stellt den Bruecken-Uebergang zur Fortsetzung
+	 * her, so wie die Teilung ihn urspruenglich angelegt hatte.
+	 */
+	async resolveStaleTimerSplit(
+		info: StaleTimerSplitInfo,
+		keep: "ended" | "continuation"
+	): Promise<void> {
+		if (keep === "ended") {
+			await this.deleteEntry(info.continuationEntry);
+		} else {
+			await this.updateEntry(info.endedEntry.startTs, {
+				...info.endedEntry,
+				endTs: info.continuationEntry.startTs
+			});
+		}
 	}
 
 	// ---------- Timer ----------

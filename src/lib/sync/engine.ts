@@ -76,17 +76,24 @@ export interface SyncState {
 	priority?: SyncPriority;
 }
 
+/**
+ * Ein Fall, in dem eine Mitternachts-Teilung durch ein echtes Ende von
+ * anderswo ueberholt wurde: `endedEntry` traegt schon die echte, kuerzere
+ * Endzeit, `continuationEntry` ist die unangetastet gebliebene Fortsetzung
+ * ab der Teilung - siehe #applyEntries.
+ */
+export interface StaleTimerSplitInfo {
+	endedEntry: Entry;
+	continuationEntry: Entry;
+}
+
 export interface SyncOutcome {
 	pushed: number;
 	pulled: number;
 	/** Wie oft eine eigene, noch nicht hochgeladene Änderung unterlegen ist. */
 	lostEdits: number;
-	/**
-	 * Wie oft eine Mitternachts-Teilung durch ein echtes Ende von anderswo
-	 * ueberholt wurde, waehrend die Fortsetzung ab der Teilung schon lokal stand.
-	 * Die Fortsetzung wird NICHT angetastet - siehe #applyEntries.
-	 */
-	staleTimerSplits: number;
+	/** Siehe StaleTimerSplitInfo. */
+	staleTimerSplits: StaleTimerSplitInfo[];
 	seq: number;
 	/** Ob noch ältere Monate fehlen. */
 	backfilling: boolean;
@@ -218,7 +225,7 @@ export class SyncEngine {
 					pushed: outcome.pushed + more.pushed,
 					pulled: outcome.pulled + more.pulled,
 					lostEdits: outcome.lostEdits + more.lostEdits,
-					staleTimerSplits: outcome.staleTimerSplits + more.staleTimerSplits,
+					staleTimerSplits: [...outcome.staleTimerSplits, ...more.staleTimerSplits],
 					seq: more.seq,
 					backfilling: more.backfilling
 				};
@@ -244,7 +251,7 @@ export class SyncEngine {
 			pushed: up.pushed,
 			pulled: up.pulled + down.pulled,
 			lostEdits: up.lostEdits + down.lostEdits,
-			staleTimerSplits: up.staleTimerSplits + down.staleTimerSplits,
+			staleTimerSplits: [...up.staleTimerSplits, ...down.staleTimerSplits],
 			seq: this.#state.seq,
 			backfilling: this.backfilling
 		};
@@ -259,7 +266,7 @@ export class SyncEngine {
 	 */
 	async #pullStaged(
 		pushed: number
-	): Promise<{ pulled: number; lostEdits: number; staleTimerSplits: number }> {
+	): Promise<{ pulled: number; lostEdits: number; staleTimerSplits: StaleTimerSplitInfo[] }> {
 		await this.#followCalendar();
 		const first = await this.#pullPriority(pushed);
 		// Was jemand gleich sehen will, schlägt Historie: läuft gerade ein Monat
@@ -276,7 +283,7 @@ export class SyncEngine {
 		return {
 			pulled: first.pulled + rest.pulled,
 			lostEdits: first.lostEdits + rest.lostEdits,
-			staleTimerSplits: first.staleTimerSplits + rest.staleTimerSplits
+			staleTimerSplits: [...first.staleTimerSplits, ...rest.staleTimerSplits]
 		};
 	}
 
@@ -286,12 +293,12 @@ export class SyncEngine {
 		pushed: number;
 		pulled: number;
 		lostEdits: number;
-		staleTimerSplits: number;
+		staleTimerSplits: StaleTimerSplitInfo[];
 	}> {
 		let total = 0;
 		let pulled = 0;
 		let lostEdits = 0;
-		let staleTimerSplits = 0;
+		let staleTimerSplits: StaleTimerSplitInfo[] = [];
 		for (let round = 0; round < MAX_ROUNDS; round++) {
 			const open = pendingChanges();
 			if (open.length === 0) break;
@@ -338,7 +345,7 @@ export class SyncEngine {
 				pulled += current.length;
 				const applied = await this.#apply(current);
 				lostEdits += applied.lostEdits;
-				staleTimerSplits += applied.staleTimerSplits;
+				staleTimerSplits = [...staleTimerSplits, ...applied.staleTimerSplits];
 				continue;
 			}
 			if (batch.length === open.length) break;
@@ -435,10 +442,15 @@ export class SyncEngine {
 		pushed: number,
 		maxPages: number,
 		background = false
-	): Promise<{ pulled: number; lostEdits: number; staleTimerSplits: number; done: boolean }> {
+	): Promise<{
+		pulled: number;
+		lostEdits: number;
+		staleTimerSplits: StaleTimerSplitInfo[];
+		done: boolean;
+	}> {
 		let pulled = 0;
 		let lostEdits = 0;
-		let staleTimerSplits = 0;
+		let staleTimerSplits: StaleTimerSplitInfo[] = [];
 		let done = false;
 		this.#onProgress?.({ phase: "pulling", pulled, pushed, background });
 		for (let i = 0; i < maxPages; i++) {
@@ -448,7 +460,7 @@ export class SyncEngine {
 				this.#onProgress?.({ phase: "pulling", pulled, pushed, background });
 				const r = await this.#apply(page.records);
 				lostEdits += r.lostEdits;
-				staleTimerSplits += r.staleTimerSplits;
+				staleTimerSplits = [...staleTimerSplits, ...r.staleTimerSplits];
 			}
 			this.#state = { ...this.#state, seq: page.nextSeq };
 			await this.#saveState(this.#state);
@@ -463,10 +475,10 @@ export class SyncEngine {
 	/** Die vorgezogene Menge: die genannten Monate plus Aktivitäten und Einstellungen. */
 	async #pullPriority(
 		pushed: number
-	): Promise<{ pulled: number; lostEdits: number; staleTimerSplits: number }> {
+	): Promise<{ pulled: number; lostEdits: number; staleTimerSplits: StaleTimerSplitInfo[] }> {
 		let pulled = 0;
 		let lostEdits = 0;
-		let staleTimerSplits = 0;
+		let staleTimerSplits: StaleTimerSplitInfo[] = [];
 		if (!this.#state.priority) return { pulled, lostEdits, staleTimerSplits };
 		// Einmal rechnen, nicht je Seite: kommt währenddessen ein Monat dazu, holt
 		// ihn die nächste Runde. Ein zu alter Stand liefert doppelt, nie zu wenig.
@@ -489,7 +501,7 @@ export class SyncEngine {
 				this.#onProgress?.({ phase: "pulling", pulled, pushed });
 				const r = await this.#apply(page.records);
 				lostEdits += r.lostEdits;
-				staleTimerSplits += r.staleTimerSplits;
+				staleTimerSplits = [...staleTimerSplits, ...r.staleTimerSplits];
 			}
 			// Frisch aus dem Zustand: während des Abrufs kann ein Monat dazugekommen sein.
 			const current = this.#state.priority;
@@ -553,14 +565,16 @@ export class SyncEngine {
 	}
 
 	/** Serverdaten einspielen - ohne dass der Haken sie als eigene Änderung nimmt. */
-	async #apply(records: ServerRecord[]): Promise<{ lostEdits: number; staleTimerSplits: number }> {
-		if (this.#stopped) return { lostEdits: 0, staleTimerSplits: 0 };
+	async #apply(
+		records: ServerRecord[]
+	): Promise<{ lostEdits: number; staleTimerSplits: StaleTimerSplitInfo[] }> {
+		if (this.#stopped) return { lostEdits: 0, staleTimerSplits: [] };
 		return this.#serial(() => applyingRemote(() => this.#applyInner(records)));
 	}
 
 	async #applyInner(
 		records: ServerRecord[]
-	): Promise<{ lostEdits: number; staleTimerSplits: number }> {
+	): Promise<{ lostEdits: number; staleTimerSplits: StaleTimerSplitInfo[] }> {
 		const open = new Set(pendingChanges().map((c) => `${c.kind}:${c.id}`));
 		let lostEdits = 0;
 
@@ -581,10 +595,10 @@ export class SyncEngine {
 	async #applyEntries(
 		records: ServerRecord[],
 		open: Set<string>
-	): Promise<{ lost: number; staleTimerSplits: number }> {
-		if (records.length === 0) return { lost: 0, staleTimerSplits: 0 };
+	): Promise<{ lost: number; staleTimerSplits: StaleTimerSplitInfo[] }> {
+		if (records.length === 0) return { lost: 0, staleTimerSplits: [] };
 		let lost = 0;
-		let staleTimerSplits = 0;
+		const staleTimerSplits: StaleTimerSplitInfo[] = [];
 
 		// Die angefassten Monate, je Monat eine Karte nach Id. Einmal von der Platte,
 		// danach nur noch im Speicher - denn ein Eintrag kann beim Zusammenführen
@@ -645,16 +659,17 @@ export class SyncEngine {
 			// Konflikt ausfechten duerfte - sonst gewinnt die Teilung rein zufaellig
 			// dadurch, dass der Rechner erst NACH der echten fremden Aenderung wieder
 			// online kam (spaeterer Stempel, aber ohne jede Kenntnis vom echten Ende).
-			let hasUnresolvedContinuation = false;
+			let continuationEntry: Entry | undefined;
 			if (localEntry && localEntry.endTs !== null) {
 				const contMonth = await monthOf(monthKey(localEntry.endTs));
-				hasUnresolvedContinuation = [...contMonth.values()].some(
+				continuationEntry = [...contMonth.values()].find(
 					(e) =>
 						e.activityId === localEntry.activityId &&
 						e.startTs === localEntry.endTs &&
 						e.rev === undefined
 				);
 			}
+			const hasUnresolvedContinuation = continuationEntry !== undefined;
 			if (localPending && hasUnresolvedContinuation) localPending = false;
 			const result = mergeRecord(
 				{
@@ -669,7 +684,9 @@ export class SyncEngine {
 			// haben (der Nutzer hat vielleicht doch weitergearbeitet und den Timer nur
 			// nicht neu gestartet). Statt zu raten, meldet #applyInner das nach oben,
 			// damit ein Mensch den Tag prueft.
-			if (hasUnresolvedContinuation && result.changed) staleTimerSplits++;
+			if (hasUnresolvedContinuation && result.changed && result.value) {
+				staleTimerSplits.push({ endedEntry: result.value, continuationEntry: continuationEntry! });
+			}
 			if (!result.changed) continue;
 
 			if (oldMonth && oldMonth !== writeMonth) {

@@ -45,7 +45,7 @@ import {
 
 import { detachLocalData } from "./detach";
 import { monthKey, prevMonthKey, shiftMonthKey } from "../time/time";
-import { SyncEngine, type SyncState } from "./engine";
+import { SyncEngine, type StaleTimerSplitInfo, type SyncState } from "./engine";
 import {
 	createPairingKeyPair,
 	createVaultKey,
@@ -151,10 +151,10 @@ class AccountState {
 	/** Wie viele eigene Änderungen beim Zusammenführen unterlegen sind. */
 	lostEdits = $state<number>(0);
 	/**
-	 * Wie oft eine Mitternachts-Teilung stehen geblieben ist, weil ein anderes
-	 * Gerät denselben Lauf inzwischen frueher beendet hat. Siehe StaleTimerSplitDialog.
+	 * Mitternachts-Teilungen, die stehen geblieben sind, weil ein anderes Gerät
+	 * denselben Lauf inzwischen frueher beendet hat. Siehe StaleTimerSplitDialog.
 	 */
-	staleTimerSplits = $state<number>(0);
+	staleTimerSplits = $state<StaleTimerSplitInfo[]>([]);
 	/** Darf dieses Konto Einladungen vergeben? */
 	isAdmin = $state<boolean>(false);
 	/** Weist sich dieses Gerät mit einem eigenen Token aus - oder mit einem Cookie? */
@@ -678,7 +678,9 @@ class AccountState {
 			this.#retryStep = 0;
 			if (result) {
 				this.lostEdits += result.lostEdits;
-				this.staleTimerSplits += result.staleTimerSplits;
+				if (result.staleTimerSplits.length > 0) {
+					this.staleTimerSplits = [...this.staleTimerSplits, ...result.staleTimerSplits];
+				}
 				if (result.pushed || result.pulled) {
 					logInfo("Abgeglichen", result);
 				}
