@@ -49,6 +49,20 @@ export function previewTeamInvite(
 	return call(fetchFn, serverUrl, `/api/team/join?code=${encodeURIComponent(code)}`);
 }
 
+/**
+ * Der Teamname hinter einem Verwalter-Link - wie previewTeamInvite, aber vom
+ * eigenen Endpunkt, weil das Annehmen selbst (anders als bei Mitgliedern) ein
+ * Konto braucht und deshalb ueber die authentifizierte Api-Klasse laeuft
+ * (sync/api.ts#joinTeamAsAdmin), nicht über diesen kontolosen Client.
+ */
+export function previewAdminInvite(
+	serverUrl: string,
+	code: string,
+	fetchFn: FetchFn = platformFetch
+): Promise<{ teamName: string }> {
+	return call(fetchFn, serverUrl, `/api/team/admin/join?code=${encodeURIComponent(code)}`);
+}
+
 /** Beitreten - legt ein neues Mitglied an und liefert dessen Token. */
 export function joinTeam(
 	serverUrl: string,

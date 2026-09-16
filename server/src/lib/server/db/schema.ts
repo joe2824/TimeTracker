@@ -311,6 +311,50 @@ export const teamReports = sqliteTable(
 	]
 );
 
+/**
+ * Ein Einladungslink zum Verwalten eines Teams - anders als `teamInvites`
+ * fuehrt das Annehmen zu einer Zeile in `teamAdmins`, nicht zu einem
+ * anonymen Mitglied. Wer ihn oeffnet, braucht dafuer ein Konto (siehe
+ * `teamAdmins`).
+ */
+export const teamAdminInvites = sqliteTable(
+	"team_admin_invites",
+	{
+		code: text("code").primaryKey(),
+		teamId: text("team_id")
+			.notNull()
+			.references(() => teams.id, { onDelete: "cascade" }),
+		createdAt: integer("created_at").notNull(),
+		expiresAt: integer("expires_at"),
+		revokedAt: integer("revoked_at")
+	},
+	(t) => [index("team_admin_invites_team").on(t.teamId)]
+);
+
+/**
+ * Ein Verwalter neben dem Chef (`teams.ownerUserId`) - ein Konto, kein
+ * anonymes Mitglied wie `teamMembers`. Darf alles Operative, was der Chef
+ * auch darf (Aktivitaeten, Mitglieder, Berichte, den einfachen Beitritts-
+ * Link), nicht aber das Team loeschen, weitere Verwalter ein-/aussetzen oder
+ * den Besitz uebergeben - siehe requireTeamAccess vs. requireOwnTeam.
+ */
+export const teamAdmins = sqliteTable(
+	"team_admins",
+	{
+		teamId: text("team_id")
+			.notNull()
+			.references(() => teams.id, { onDelete: "cascade" }),
+		userId: text("user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		createdAt: integer("created_at").notNull()
+	},
+	(t) => [
+		uniqueIndex("team_admins_team_user").on(t.teamId, t.userId),
+		index("team_admins_user").on(t.userId)
+	]
+);
+
 /** Der Zeitpunkt "jetzt" in der Einheit, die alle Tabellen benutzen. */
 export const now = () => Date.now();
 

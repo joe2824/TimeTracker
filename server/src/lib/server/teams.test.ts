@@ -3,22 +3,30 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { type Db } from "./db/index";
 import { ANNA, BODO, freshDb } from "./testing/fixtures";
 import {
+	activeAdminInvite,
 	activeTeamInvite,
 	createTeam,
 	deleteTeam,
 	joinTeam,
+	joinTeamAsAdmin,
 	listTeamActivities,
+	listTeamAdmins,
 	listTeamMembers,
 	listTeamReports,
 	listTeams,
+	removeTeamAdmin,
 	requireOwnTeam,
+	requireTeamAccess,
 	requireTeamMember,
 	revokeTeamMember,
+	rotateAdminInvite,
 	rotateTeamInvite,
 	setTeamActivities,
 	setTeamReportStatus,
+	teamFromAdminInviteCode,
 	teamFromInviteCode,
 	teamMemberFromToken,
+	transferTeamOwnership,
 	upsertTeamReport
 } from "./teams";
 
@@ -39,6 +47,17 @@ describe("createTeam / listTeams", () => {
 		createTeam(db, ANNA, "Vertrieb");
 		createTeam(db, ANNA, "Support");
 		expect(listTeams(db, ANNA)).toHaveLength(2);
+	});
+
+	it("zeigt eigene Teams als 'owner', als Verwalter beigetretene als 'admin'", () => {
+		const own = createTeam(db, ANNA, "Vertrieb");
+		const other = createTeam(db, BODO, "Support");
+		const invite = rotateAdminInvite(db, other.id);
+		joinTeamAsAdmin(db, invite.code, ANNA);
+
+		const list = listTeams(db, ANNA);
+		expect(list.find((t) => t.id === own.id)?.role).toBe("owner");
+		expect(list.find((t) => t.id === other.id)?.role).toBe("admin");
 	});
 });
 
@@ -195,6 +214,85 @@ describe("requireTeamMember", () => {
 		expect(() => requireTeamMember({ teamMemberId: null, teamId: null })).toThrow();
 		expect(() => requireTeamMember({ teamMemberId: "m1", teamId: null })).toThrow();
 		expect(requireTeamMember({ teamMemberId: "m1", teamId: "t1" })).toBe("t1");
+	});
+});
+
+describe("Verwalter (rotateAdminInvite / joinTeamAsAdmin / requireTeamAccess)", () => {
+	it("requireTeamAccess laesst Chef und Verwalter durch, wirft sonst 404", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		expect(requireTeamAccess(db, ANNA, team.id).id).toBe(team.id);
+		expect(() => requireTeamAccess(db, BODO, team.id)).toThrow();
+
+		const invite = rotateAdminInvite(db, team.id);
+		joinTeamAsAdmin(db, invite.code, BODO);
+		expect(requireTeamAccess(db, BODO, team.id).id).toBe(team.id);
+	});
+
+	it("macht aus einem Konto einen Verwalter, sichtbar in listTeamAdmins", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		const invite = rotateAdminInvite(db, team.id);
+		expect(activeAdminInvite(db, team.id)?.code).toBe(invite.code);
+
+		expect(joinTeamAsAdmin(db, invite.code, BODO)?.id).toBe(team.id);
+		expect(listTeamAdmins(db, team.id).map((a) => a.userId)).toEqual([BODO]);
+	});
+
+	it("wie rotateTeamInvite: der alte Code fuehrt nach einer Erneuerung nicht mehr zum Team", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		const first = rotateAdminInvite(db, team.id);
+		rotateAdminInvite(db, team.id);
+		expect(teamFromAdminInviteCode(db, first.code)).toBeNull();
+	});
+
+	it("ein unbekannter Code liefert null, statt einen Verwalter anzulegen", () => {
+		expect(joinTeamAsAdmin(db, "UNBEKANNT-CODE", BODO)).toBeNull();
+	});
+
+	it("der Chef selbst einzulesen aendert nichts - er steht schon per ownerUserId drin", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		const invite = rotateAdminInvite(db, team.id);
+		expect(joinTeamAsAdmin(db, invite.code, ANNA)?.id).toBe(team.id);
+		expect(listTeamAdmins(db, team.id)).toEqual([]);
+	});
+
+	it("zweimal annehmen bleibt folgenlos (Unique-Index statt Fehler)", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		const invite = rotateAdminInvite(db, team.id);
+		joinTeamAsAdmin(db, invite.code, BODO);
+		expect(() => joinTeamAsAdmin(db, invite.code, BODO)).not.toThrow();
+		expect(listTeamAdmins(db, team.id)).toHaveLength(1);
+	});
+
+	it("removeTeamAdmin nimmt den Zugang wieder zurueck", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		const invite = rotateAdminInvite(db, team.id);
+		joinTeamAsAdmin(db, invite.code, BODO);
+
+		removeTeamAdmin(db, team.id, BODO);
+
+		expect(listTeamAdmins(db, team.id)).toEqual([]);
+		expect(() => requireTeamAccess(db, BODO, team.id)).toThrow();
+	});
+});
+
+describe("transferTeamOwnership", () => {
+	it("wirft, wenn das Ziel noch kein Verwalter dieses Teams ist", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		expect(() => transferTeamOwnership(db, team, BODO)).toThrow();
+	});
+
+	it("macht das Ziel zum Chef und den bisherigen Chef zum Verwalter", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		const invite = rotateAdminInvite(db, team.id);
+		joinTeamAsAdmin(db, invite.code, BODO);
+
+		transferTeamOwnership(db, team, BODO);
+
+		expect(requireOwnTeam(db, BODO, team.id).ownerUserId).toBe(BODO);
+		expect(() => requireOwnTeam(db, ANNA, team.id)).toThrow();
+		// weiterhin Zugriff, aber jetzt als Verwalter statt als Chef
+		expect(requireTeamAccess(db, ANNA, team.id).id).toBe(team.id);
+		expect(listTeamAdmins(db, team.id).map((a) => a.userId)).toEqual([ANNA]);
 	});
 });
 

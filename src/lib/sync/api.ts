@@ -101,6 +101,8 @@ export interface TeamInfo {
 	ownerUserId: string;
 	name: string;
 	createdAt: number;
+	/** Nur bei listTeams() gefuellt - die eigene Rolle in diesem Team. */
+	role?: "owner" | "admin";
 }
 
 export interface TeamInvite {
@@ -109,6 +111,13 @@ export interface TeamInvite {
 	createdAt: number;
 	expiresAt: number | null;
 	revokedAt: number | null;
+}
+
+export interface TeamAdminInfo {
+	userId: string;
+	displayName: string;
+	email: string | null;
+	createdAt: number;
 }
 
 export interface TeamMemberInfo {
@@ -538,6 +547,42 @@ export class Api {
 		return this.#call(`/api/team/${encodeURIComponent(teamId)}/members`, {
 			method: "DELETE",
 			body: JSON.stringify({ memberId })
+		});
+	}
+
+	// ---------- Verwalter: ein zweites Konto neben dem Chef ----------
+
+	listTeamAdmins(teamId: string): Promise<{ admins: TeamAdminInfo[] }> {
+		return this.#call(`/api/team/${encodeURIComponent(teamId)}/admins`);
+	}
+
+	/** Nimmt den Zugang wieder zurück - der Chef selbst bleibt unberührt (läuft über ownerUserId). */
+	removeTeamAdmin(teamId: string, userId: string): Promise<{ ok: boolean }> {
+		return this.#call(`/api/team/${encodeURIComponent(teamId)}/admins`, {
+			method: "DELETE",
+			body: JSON.stringify({ userId })
+		});
+	}
+
+	getAdminInvite(teamId: string): Promise<{ invite: TeamInvite | null }> {
+		return this.#call(`/api/team/${encodeURIComponent(teamId)}/admin-invite`);
+	}
+
+	/** Erzeugt einen neuen Verwalter-Link und widerruft dabei den bisherigen. */
+	rotateAdminInvite(teamId: string): Promise<TeamInvite> {
+		return this.#call(`/api/team/${encodeURIComponent(teamId)}/admin-invite`, { method: "POST" });
+	}
+
+	/** Annehmen - braucht ein angemeldetes Konto, anders als der einfache Mitglieds-Beitritt. */
+	joinTeamAsAdmin(code: string): Promise<TeamInfo> {
+		return this.#call("/api/team/admin/join", { method: "POST", body: JSON.stringify({ code }) });
+	}
+
+	/** Besitz übergeben - das Ziel muss bereits Verwalter dieses Teams sein. */
+	transferTeamOwnership(teamId: string, newOwnerUserId: string): Promise<{ ok: boolean }> {
+		return this.#call(`/api/team/${encodeURIComponent(teamId)}/owner`, {
+			method: "POST",
+			body: JSON.stringify({ newOwnerUserId })
 		});
 	}
 

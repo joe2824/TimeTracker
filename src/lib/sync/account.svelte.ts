@@ -36,6 +36,7 @@ import {
 	type ServerStats,
 	type TeamActivity,
 	type TeamActivityInput,
+	type TeamAdminInfo,
 	type TeamInfo,
 	type TeamInvite,
 	type TeamMemberInfo,
@@ -1477,6 +1478,36 @@ class AccountState {
 	async revokeTeamMember(teamId: string, memberId: string): Promise<void> {
 		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
 		await this.#api.revokeTeamMember(teamId, memberId);
+	}
+
+	async listTeamAdmins(teamId: string): Promise<TeamAdminInfo[]> {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		return (await this.#api.listTeamAdmins(teamId)).admins;
+	}
+
+	async removeTeamAdmin(teamId: string, userId: string): Promise<void> {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		await this.#api.removeTeamAdmin(teamId, userId);
+	}
+
+	async getAdminInvite(teamId: string): Promise<TeamInvite | null> {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		return (await this.#api.getAdminInvite(teamId)).invite;
+	}
+
+	async rotateAdminInvite(teamId: string): Promise<TeamInvite> {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		return this.#api.rotateAdminInvite(teamId);
+	}
+
+	async joinTeamAsAdmin(code: string): Promise<TeamInfo> {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		return this.#api.joinTeamAsAdmin(code);
+	}
+
+	async transferTeamOwnership(teamId: string, newOwnerUserId: string): Promise<void> {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		await this.#api.transferTeamOwnership(teamId, newOwnerUserId);
 	}
 
 	async listTeamActivities(teamId: string): Promise<TeamActivity[]> {
