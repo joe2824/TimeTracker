@@ -134,14 +134,26 @@
 	);
 	let confirmingTransfer = $state(false);
 	let transferring = $state(false);
+	// Eigener Stand statt live aus chefTeams.admins gelesen: transferOwnership()
+	// leert admins/adminInvite noch waehrend die Bestaetigung laeuft (die Rolle
+	// wechselt serverseitig sofort) - ein Dialog, der auf diesen Stand angewiesen
+	// waere, verlöre seinen Titel oder wuerde durch ein umschliessendes
+	// {#if admins.length > 0} mittendrin unmontiert.
+	let transferTargetName = $state<string | null>(null);
+
+	function startTransfer() {
+		if (!transferTarget) return;
+		transferTargetName = transferTarget.displayName;
+		confirmingTransfer = true;
+	}
 
 	async function confirmTransfer() {
 		if (!transferTarget) return;
 		transferring = true;
 		try {
-			const name = transferTarget.displayName;
-			await chefTeams.transferOwnership(transferTarget.userId);
-			toast.success(`„${name}" ist jetzt Chef/in dieses Teams.`);
+			const userId = transferTarget.userId;
+			await chefTeams.transferOwnership(userId);
+			toast.success(`„${transferTargetName}" ist jetzt Chef/in dieses Teams.`);
 			confirmingTransfer = false;
 			transferPickId = undefined;
 		} catch (e) {
@@ -374,44 +386,44 @@
 						{/each}
 					</Select.Content>
 				</Select.Root>
-				<Button variant="outline" disabled={!transferTarget} onclick={() => (confirmingTransfer = true)}>
+				<Button variant="outline" disabled={!transferTarget} onclick={startTransfer}>
 					<ArrowLeftRightIcon class="size-4" /> Übergeben
 				</Button>
 			</div>
 		</SettingsCard>
-
-		<Dialog.Root
-			open={confirmingTransfer}
-			onOpenChange={(v) => {
-				if (!v && !transferring) confirmingTransfer = false;
-			}}
-		>
-			<Dialog.Content class="sm:max-w-md">
-				<Dialog.Header>
-					<Dialog.Title>Chef-Rolle an „{transferTarget?.displayName}" übergeben?</Dialog.Title>
-					<Dialog.Description>
-						„{transferTarget?.displayName}" kann das Team danach löschen, Verwalter ein-/aussetzen
-						und erneut übergeben - alles, was bisher nur du konntest. Du selbst bleibst als
-						Verwalter mit dabei.
-					</Dialog.Description>
-				</Dialog.Header>
-				<Dialog.Footer>
-					<Button
-						type="button"
-						variant="outline"
-						onclick={() => (confirmingTransfer = false)}
-						disabled={transferring}
-					>
-						Abbrechen
-					</Button>
-					<Button type="button" variant="destructive" onclick={confirmTransfer} disabled={transferring}>
-						<ArrowLeftRightIcon class="size-4" />
-						{transferring ? "Wird übergeben…" : "Übergeben"}
-					</Button>
-				</Dialog.Footer>
-			</Dialog.Content>
-		</Dialog.Root>
 	{/if}
+
+	<Dialog.Root
+		open={confirmingTransfer}
+		onOpenChange={(v) => {
+			if (!v && !transferring) confirmingTransfer = false;
+		}}
+	>
+		<Dialog.Content class="sm:max-w-md">
+			<Dialog.Header>
+				<Dialog.Title>Chef-Rolle an „{transferTargetName}" übergeben?</Dialog.Title>
+				<Dialog.Description>
+					„{transferTargetName}" kann das Team danach löschen, Verwalter ein-/aussetzen und
+					erneut übergeben - alles, was bisher nur du konntest. Du selbst bleibst als Verwalter
+					mit dabei.
+				</Dialog.Description>
+			</Dialog.Header>
+			<Dialog.Footer>
+				<Button
+					type="button"
+					variant="outline"
+					onclick={() => (confirmingTransfer = false)}
+					disabled={transferring}
+				>
+					Abbrechen
+				</Button>
+				<Button type="button" variant="destructive" onclick={confirmTransfer} disabled={transferring}>
+					<ArrowLeftRightIcon class="size-4" />
+					{transferring ? "Wird übergeben…" : "Übergeben"}
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
 
 	<Dialog.Root open={!!deleteTarget} onOpenChange={(v) => { if (!v && !deleting) deleteTarget = null; }}>
 		<Dialog.Content class="sm:max-w-md">

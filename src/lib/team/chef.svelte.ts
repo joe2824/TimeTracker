@@ -24,7 +24,6 @@ class ChefTeamsState {
 	adminInvite = $state<TeamInvite | null>(null);
 	adminInviteLoading = $state(false);
 	rotatingAdminInvite = $state(false);
-	transferring = $state(false);
 
 	get selectedTeam(): TeamInfo | null {
 		return this.teams.find((t) => t.id === this.selectedTeamId) ?? null;
@@ -105,9 +104,13 @@ class ChefTeamsState {
 		await account.deleteTeam(teamId);
 		this.#teamsRequest++;
 		this.teams = this.teams.filter((t) => t.id !== teamId);
-		// Der bisherige Link gehoerte womoeglich dem geloeschten Team - lieber neu
-		// laden lassen (siehe loadInvite-Aufrufer) als versehentlich stehenlassen.
+		// Der bisherige Link, die Verwalter und der Verwalter-Link gehoerten
+		// womoeglich dem geloeschten Team - lieber neu laden lassen (siehe
+		// loadInvite/loadAdmins/loadAdminInvite-Aufrufer) als versehentlich unter
+		// dem naechsten ausgewaehlten Team stehenlassen.
 		this.invite = null;
+		this.admins = [];
+		this.adminInvite = null;
 		if (this.selectedTeamId === teamId) this.selectedTeamId = this.teams[0]?.id;
 	}
 
@@ -172,7 +175,12 @@ class ChefTeamsState {
 		const teamId = this.selectedTeamId;
 		if (!teamId) return;
 		await account.removeTeamAdmin(teamId, userId);
+		if (teamId !== this.selectedTeamId) return; // Auswahl wechselte waehrend des Requests
 		this.admins = this.admins.filter((a) => a.userId !== userId);
+		// Der Server widerruft beim Aussetzen eines Verwalters auch den bisherigen
+		// Verwalter-Link (siehe removeTeamAdmin) - der hier gehaltene Stand waere
+		// sonst ein toter Link, der weiter angezeigt wuerde.
+		this.adminInvite = null;
 	}
 
 	get adminInviteUrl(): string | null {
@@ -230,15 +238,10 @@ class ChefTeamsState {
 	async transferOwnership(newOwnerUserId: string): Promise<void> {
 		const teamId = this.selectedTeamId;
 		if (!teamId) return;
-		this.transferring = true;
-		try {
-			await account.transferTeamOwnership(teamId, newOwnerUserId);
-			this.admins = [];
-			this.adminInvite = null;
-			await this.loadTeams();
-		} finally {
-			this.transferring = false;
-		}
+		await account.transferTeamOwnership(teamId, newOwnerUserId);
+		this.admins = [];
+		this.adminInvite = null;
+		await this.loadTeams();
 	}
 }
 

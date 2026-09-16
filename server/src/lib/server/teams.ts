@@ -258,11 +258,23 @@ export function listTeamAdmins(db: Db, teamId: string): TeamAdminRow[] {
 		.all();
 }
 
-/** Einen Verwalter wieder aussetzen - Chef-only, sein eigener Zugang bleibt (der laeuft ueber ownerUserId). */
-export function removeTeamAdmin(db: Db, teamId: string, userId: string): void {
-	db.delete(teamAdmins)
+/**
+ * Einen Verwalter wieder aussetzen - Chef-only, sein eigener Zugang bleibt (der laeuft ueber ownerUserId).
+ * Widerruft dabei auch den aktuell gueltigen Verwalter-Link: sonst kaeme die ausgesetzte Person ueber
+ * denselben Code sofort wieder hinein. Fuer eine neue Einladung muss der Chef bewusst "Neuen Link
+ * erzeugen" klicken.
+ */
+export function removeTeamAdmin(db: Db, teamId: string, userId: string): boolean {
+	const r = db
+		.delete(teamAdmins)
 		.where(and(eq(teamAdmins.teamId, teamId), eq(teamAdmins.userId, userId)))
 		.run();
+	if (r.changes === 0) return false;
+	db.update(teamAdminInvites)
+		.set({ revokedAt: Date.now() })
+		.where(and(eq(teamAdminInvites.teamId, teamId), isNull(teamAdminInvites.revokedAt)))
+		.run();
+	return true;
 }
 
 /**
