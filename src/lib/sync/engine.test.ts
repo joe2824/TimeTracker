@@ -277,8 +277,12 @@ describe("Zwei Geraete", () => {
 		// der Nutzer ab Mitternacht tatsaechlich weitergearbeitet, ohne den Timer
 		// neu zu starten. Das kann nur ein Mensch entscheiden.
 		expect(list.find((e) => e.id === "d2")!.endTs).toBeNull();
-		// Stattdessen wird es gemeldet, damit die Oberflaeche einen Hinweis zeigt.
-		expect(outcome?.staleTimerSplits).toBe(1);
+		// Stattdessen wird es gemeldet, damit die Oberflaeche einen Hinweis zeigt -
+		// mitsamt beiden Einträgen, damit sie sich dort auswählen lassen.
+		expect(outcome?.staleTimerSplits).toHaveLength(1);
+		expect(outcome?.staleTimerSplits[0].endedEntry.id).toBe("d1");
+		expect(outcome?.staleTimerSplits[0].endedEntry.endTs).toBe(ts(15, 17));
+		expect(outcome?.staleTimerSplits[0].continuationEntry.id).toBe("d2");
 	});
 
 	it("gleicht Aktivitaeten ab", async () => {
