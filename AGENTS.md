@@ -12,11 +12,18 @@ npm run check                                 # svelte-check über den Client
 npm test                                      # Client-Tests (vitest)
 npm run server:build && npm run server:test   # Server — immer zusammen, siehe unten
 cd src-tauri && cargo test                    # Rust
+npm run test:tz                               # Client-Tests unter drei fernen Zeitzonen, siehe unten
 npm run dev  /  npm run dev:web               # Vite für Desktop bzw. Browser
 ```
 
 **Fertig heißt fertig:** erst wenn die ersten vier ohne Befund durchlaufen, nicht
 drei davon. Schlägt etwas fehl: Ergebnis melden, Aussage nicht abschwächen.
+
+**`npm run test:tz`** fährt dieselbe Suite dreimal mit `TZ=Pacific/Kiritimati`,
+`TZ=Pacific/Midway` und `TZ=Australia/Eucla` — dieselben drei, die der
+`timezones`-Job in `.github/workflows/verify.yml` prüft. Gehört nicht zu den
+vier oben (dauert dafür zu lange), aber vor einem Push, der Sync- oder
+Zeitzonen-Code berührt, spart ein lokaler Lauf die Runde über CI.
 
 **Zwei Fallstricke:** `npm run server:test` startet den **gebauten** Server —
 ohne vorherigen Build testet man den alten Stand. Und der Server liefert die PWA

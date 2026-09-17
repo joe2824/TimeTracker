@@ -12,6 +12,7 @@
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:tz": "node scripts/test-timezones.mjs",
     "tauri": "tauri",
     "server:dev": "npm --workspace server run dev",
     "server:build": "npm run pwa:bundle && npm --workspace server run build",
