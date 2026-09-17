@@ -135,10 +135,10 @@ describe("loadInvite", () => {
 		expect(chefTeams.invite?.code).toBe("neu");
 	});
 
-	it("meldet einen Fehlschlag per Toast", async () => {
+	it("meldet einen Fehlschlag per Toast und gibt false zurueck, statt einen fehlenden Link vorzutaeuschen", async () => {
 		chefTeams.selectedTeamId = TEAM_A.id;
 		accountMock.getTeamInvite.mockRejectedValue(new Error("Netzwerk weg"));
-		await expect(chefTeams.loadInvite(TEAM_A.id)).resolves.toBeUndefined();
+		await expect(chefTeams.loadInvite(TEAM_A.id)).resolves.toBe(false);
 		expect(toastError).toHaveBeenCalledTimes(1);
 	});
 });

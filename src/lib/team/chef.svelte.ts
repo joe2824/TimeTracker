@@ -120,18 +120,26 @@ class ChefTeamsState {
 	 *  fuer das gleiche Team nicht erkennt). */
 	#inviteRequest = new Map<string, number>();
 
-	async loadInvite(teamId: string): Promise<void> {
+	/**
+	 * Gibt zurück, ob der Abruf wirklich durchkam - ein Fehlschlag ist kein
+	 * "es gibt keinen Link": wer daraus automatisch einen neuen erzeugt (siehe
+	 * TeamTab), würde sonst bei einem blossen Netzwerk-Hänger einen echten,
+	 * schon verteilten Link ungültig machen.
+	 */
+	async loadInvite(teamId: string): Promise<boolean> {
 		const requestId = (this.#inviteRequest.get(teamId) ?? 0) + 1;
 		this.#inviteRequest.set(teamId, requestId);
 		if (teamId === this.selectedTeamId) this.inviteLoading = true;
 		try {
 			const inv = await account.getTeamInvite(teamId);
-			if (this.#inviteRequest.get(teamId) !== requestId) return;
+			if (this.#inviteRequest.get(teamId) !== requestId) return false;
 			if (teamId === this.selectedTeamId) this.invite = inv;
+			return true;
 		} catch (e) {
-			if (this.#inviteRequest.get(teamId) !== requestId) return;
+			if (this.#inviteRequest.get(teamId) !== requestId) return false;
 			logWarn("Team konnte nicht geladen werden", e);
 			toast.error(`Team konnte nicht geladen werden: ${errorText(e)}`);
+			return false;
 		} finally {
 			if (teamId === this.selectedTeamId) this.inviteLoading = false;
 		}
