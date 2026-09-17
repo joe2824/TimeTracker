@@ -45,7 +45,7 @@ import {
 
 import { detachLocalData } from "./detach";
 import { monthKey, prevMonthKey, shiftMonthKey } from "../time/time";
-import { SyncEngine, type StaleTimerSplitInfo, type SyncState } from "./engine";
+import { SyncEngine, type StaleTimerSplitInfo, type SyncOutcome, type SyncState } from "./engine";
 import {
 	createPairingKeyPair,
 	createVaultKey,
@@ -659,30 +659,48 @@ class AccountState {
 		}, 1500);
 	}
 
-	/** Läuft gerade ein Durchgang, hängt sich ein zweiter Aufruf daran an - siehe `SyncEngine.sync()`. */
-	#syncPromise: Promise<void> | null = null;
+	/** Welcher Durchgang gerade seinen Nachlauf bekommt, und wer darauf wartet - siehe `syncNow`. */
+	#handling: Promise<SyncOutcome | null> | null = null;
+	#processing: Promise<void> | null = null;
 
 	/**
 	 * Abgleichen.
 	 *
-	 * Ohne diese Anlehnung riefe jeder Auslöser (Heartbeat, Weckruf-Kanal, Online-
-	 * Event, Debounce, …), der auf denselben laufenden Durchgang trifft, seinen
-	 * eigenen Nachlauf auf: Log, Reload und `notifyDataChanged` je einmal pro
-	 * Aufrufer statt einmal pro echtem Abgleich.
+	 * `SyncEngine.sync()` dedupliziert bereits selbst und hängt per `#again`
+	 * noch eine frische Runde an einen laufenden Durchgang, bevor er sich
+	 * erfüllt - jeder Aufruf muss deshalb selbst dort ankommen, sonst bliebe ein
+	 * gerade erst vorgemerkter Wunsch unberücksichtigt (siehe
+	 * `syncWithFollowUp`, deren zweites `syncNow()` genau darauf baut). Nur der
+	 * Nachlauf hier - Log, Reload, `notifyDataChanged` - darf nicht mehrfach
+	 * laufen, wenn mehrere Aufrufer auf denselben Durchgang treffen: wer ihn
+	 * schon in Arbeit hat, dessen Promise übernehmen die anderen unverändert -
+	 * sonst gälte ihr eigenes `syncNow()` schon vor dem Reload als erledigt.
 	 */
-	syncNow(): Promise<void> {
-		if (this.#syncPromise) return this.#syncPromise;
-		this.#syncPromise = this.#syncOnce().finally(() => {
-			this.#syncPromise = null;
-		});
-		return this.#syncPromise;
+	async syncNow(): Promise<void> {
+		const engine = this.#engine;
+		if (!engine || this.state !== "connected") return;
+		const round = engine.sync();
+		if (round === this.#handling && this.#processing) {
+			await this.#processing;
+			return;
+		}
+		this.#handling = round;
+		const processing = this.#afterSync(engine, round);
+		this.#processing = processing;
+		try {
+			await processing;
+		} finally {
+			if (this.#handling === round) {
+				this.#handling = null;
+				this.#processing = null;
+			}
+		}
 	}
 
-	async #syncOnce(): Promise<void> {
-		if (!this.#engine || this.state !== "connected") return;
+	async #afterSync(engine: SyncEngine, round: Promise<SyncOutcome | null>): Promise<void> {
 		this.phase = "running";
 		try {
-			const result = await this.#engine.sync();
+			const result = await round;
 			// Kam etwas an, war dieses Gerät nie leer - es wusste es nur noch
 			// nicht. Der Willkommensbildschirm hat sich damit erledigt, und zwar
 			// bevor jemand ihn ausfüllt und dabei die echten Einstellungen
@@ -690,8 +708,8 @@ class AccountState {
 			if (result && result.pulled > 0 && app.showOnboarding) {
 				app.dismissOnboarding();
 			}
-			this.backfilling = this.#engine.backfilling;
-			this.historyIncomplete = this.#engine.historyIncomplete;
+			this.backfilling = engine.backfilling;
+			this.historyIncomplete = engine.historyIncomplete;
 			this.phase = "idle";
 			this.lastSync = Date.now();
 			this.#retryStep = 0;
