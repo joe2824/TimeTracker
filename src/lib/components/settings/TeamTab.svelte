@@ -13,7 +13,7 @@
 	import SettingToggle from "$lib/components/shared/SettingToggle.svelte";
 	import SettingsCard from "$lib/components/shared/SettingsCard.svelte";
 	import { clearTeamDevice } from "$lib/store";
-	import { syncTeamActivities } from "$lib/team/activities";
+	import { syncOwnedTeamActivities, syncTeamActivities } from "$lib/team/activities";
 	import { teamJoin } from "$lib/team/state.svelte";
 	import { errorText } from "$lib/log";
 	import { tabFocus } from "$lib/ui/tabFocus.svelte";
@@ -190,6 +190,10 @@
 		try {
 			const name = deleteTarget.name;
 			await chefTeams.deleteTeam(deleteTarget.id);
+			// deleteTeam() raeumt nur chefTeams.teams auf - die Spiegelung in
+			// app.activities (Auswahl, Bericht, Timer) haengt sonst bis zum
+			// naechsten App-Start oder Aktivitaeten-Tab-Besuch als "teamOwned" fest.
+			void syncOwnedTeamActivities();
 			toast.success(`Team „${name}" gelöscht.`);
 			deleteTarget = null;
 		} catch (e) {
