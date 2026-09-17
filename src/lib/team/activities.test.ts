@@ -152,13 +152,41 @@ describe("syncTeamActivities", () => {
 
 		expect(teamJoin.device).toBeNull();
 		expect(await loadTeamDevice()).toBeNull();
-		// detachTeamActivities() vergibt bewusst eine neue Id (siehe app.svelte.ts)
-		// - ein spaeterer erneuter Beitritt zum selben Team traefe sonst auf die
-		// alte, hier geloeste Kopie.
-		expect(app.activities.find((a) => a.id === oldId)).toBeUndefined();
-		const detached = app.activities.find((a) => a.name === "Alt" && a.id !== oldId);
+		// Unveraenderte Id wie beim Entfernen einer einzelnen Aktivität aus einem
+		// noch existierenden Team - der Server-Eintrag ist endgültig weg und kann
+		// nie wieder mit ihr kollidieren.
+		const detached = app.activities.find((a) => a.id === oldId);
 		expect(detached).toMatchObject({ name: "Alt", archived: true });
 		expect(detached?.teamOwned).toBeUndefined();
+	});
+
+	it("laesst beim 401 eigene, per syncOwnedTeamActivities gespiegelte Zeilen unangetastet", async () => {
+		// Regression: die Aufräumung galt nur den ÜBER DEN LINK BEIGETRETENEN
+		// Zeilen (teamId === undefined). Ein Konto, das gleichzeitig Chef eines
+		// anderen Teams ist, darf dessen Zeilen (mit teamId) nicht verlieren, nur
+		// weil die eigene, unabhängige Mitgliedschaft anderswo endet.
+		accountMock.linked = true;
+		accountMock.listTeams.mockResolvedValue([
+			{ id: "own1", name: "Eigenes Team", ownerUserId: "u1", createdAt: 1 }
+		]);
+		accountMock.listTeamActivities.mockResolvedValue([
+			{ id: "oa1", name: "Eigene Team-Aktivität", isAbsence: false, sortOrder: 0, color: null, archived: false, updatedAt: 1 }
+		]);
+		await syncOwnedTeamActivities();
+		const ownRow = app.activities.find((a) => a.id === `${TEAM_ACTIVITY_PREFIX}oa1`);
+		expect(ownRow).toMatchObject({ teamOwned: true, teamId: "own1" });
+
+		await saveTeamDevice({
+			teamMemberId: "m1",
+			token: "tok",
+			teamName: "Beigetretenes Team",
+			serverUrl: "https://tt.example.de"
+		});
+		remote.mockRejectedValue(new ApiError("Kein Team-Zugang", 401));
+		await syncTeamActivities();
+
+		expect(teamJoin.device).toBeNull();
+		expect(app.activities.find((a) => a.id === `${TEAM_ACTIVITY_PREFIX}oa1`)).toEqual(ownRow);
 	});
 });
 

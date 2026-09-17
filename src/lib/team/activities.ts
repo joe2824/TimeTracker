@@ -71,21 +71,23 @@ export async function syncTeamActivities(): Promise<void> {
 	if (!device) return;
 
 	let remote: RemoteTeamActivity[];
+	// Gesetzt bei 401: der Token gilt nicht mehr, weil das Team geloescht oder
+	// dieses Mitglied entfernt wurde. Wie eine leere Antwort behandelt - die
+	// Zeilen loesen sich unten ab wie eine einzelne, vom Chef entfernte
+	// Aktivität, nur dass hier ALLE gehen. Erst NACH dem Ablösen unten wird die
+	// Mitgliedschaft selbst vergessen (jeder andere Fehler bleibt ein blosser
+	// Netz-Aussetzer und lässt beides unangetastet).
+	let membershipGone = false;
 	try {
 		remote = (await fetchTeamActivities(device.serverUrl, device.token)).activities;
 	} catch (e) {
-		// 401 heisst: der Token gilt nicht mehr - das Team wurde geloescht oder
-		// dieses Mitglied entfernt. Ohne diesen Zweig bliebe teamJoin.device stehen
-		// und die gespiegelten Zeilen zeigten fuer immer auf ein Team, das es nicht
-		// mehr gibt (jeder andere Fehler bleibt ein blosser Netz-Aussetzer).
 		if (e instanceof ApiError && e.status === 401) {
-			await clearTeamDevice();
-			teamJoin.device = null;
-			await app.detachTeamActivities();
+			remote = [];
+			membershipGone = true;
+		} else {
+			logWarn("Team-Aktivitäten konnten nicht geladen werden", e);
 			return;
 		}
-		logWarn("Team-Aktivitäten konnten nicht geladen werden", e);
-		return;
 	}
 
 	await withActivitiesLock(async () => {
@@ -117,6 +119,11 @@ export async function syncTeamActivities(): Promise<void> {
 		];
 		await app.persistActivities();
 	});
+
+	if (membershipGone) {
+		await clearTeamDevice();
+		teamJoin.device = null;
+	}
 }
 
 /**
