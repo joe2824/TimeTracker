@@ -17,8 +17,10 @@ const accountMock = vi.hoisted(() => ({
 vi.mock("../sync/account.svelte", () => ({ account: accountMock }));
 
 const { app } = await import("../app.svelte");
-const { saveTeamDevice } = await import("../store");
+const { loadTeamDevice, saveTeamDevice } = await import("../store");
+const { ApiError } = await import("../sync/api");
 const { chefTeams } = await import("./chef.svelte");
+const { teamJoin } = await import("./state.svelte");
 const { syncTeamActivities, syncOwnedTeamActivities, TEAM_ACTIVITY_PREFIX } = await import("./activities");
 
 const PERSONAL: Activity = { id: "p1", name: "Eigene", sortOrder: 0, archived: false, isAbsence: false };
@@ -126,6 +128,38 @@ describe("syncTeamActivities", () => {
 		await expect(syncTeamActivities()).resolves.toBeUndefined();
 		expect(app.activities).toEqual([PERSONAL]);
 	});
+
+	it("räumt bei ungültigem Token (401) auf, statt die tote Mitgliedschaft stehen zu lassen", async () => {
+		// Ein blosser Netz-Aussetzer (voriger Test) darf nichts anfassen - ein 401
+		// heisst dagegen: das Team wurde gelöscht oder dieses Mitglied entfernt.
+		await saveTeamDevice({
+			teamMemberId: "m1",
+			token: "tok",
+			teamName: "Vertrieb",
+			serverUrl: "https://tt.example.de"
+		});
+		remote.mockResolvedValue({
+			activities: [
+				{ id: "a1", name: "Alt", isAbsence: false, sortOrder: 0, color: null, archived: false, updatedAt: 1 }
+			]
+		});
+		await syncTeamActivities();
+		const oldId = `${TEAM_ACTIVITY_PREFIX}a1`;
+		expect(app.activities.find((a) => a.id === oldId)?.teamOwned).toBe(true);
+
+		remote.mockRejectedValue(new ApiError("Kein Team-Zugang", 401));
+		await syncTeamActivities();
+
+		expect(teamJoin.device).toBeNull();
+		expect(await loadTeamDevice()).toBeNull();
+		// detachTeamActivities() vergibt bewusst eine neue Id (siehe app.svelte.ts)
+		// - ein spaeterer erneuter Beitritt zum selben Team traefe sonst auf die
+		// alte, hier geloeste Kopie.
+		expect(app.activities.find((a) => a.id === oldId)).toBeUndefined();
+		const detached = app.activities.find((a) => a.name === "Alt" && a.id !== oldId);
+		expect(detached).toMatchObject({ name: "Alt", archived: true });
+		expect(detached?.teamOwned).toBeUndefined();
+	});
 });
 
 describe("syncOwnedTeamActivities", () => {
@@ -186,6 +220,56 @@ describe("syncOwnedTeamActivities", () => {
 		const detachedA = app.activities.find((a) => a.id === `${TEAM_ACTIVITY_PREFIX}a1`);
 		expect(detachedA).toMatchObject({ name: "Alt", archived: true });
 		expect(detachedA?.teamOwned).toBeUndefined();
+	});
+
+	it("loest Zeilen eines komplett gelöschten Teams ab, obwohl es in listTeams() gar nicht mehr auftaucht", async () => {
+		// Regression: ein gelöschtes (nicht nur verlassenes) Team fehlt in
+		// listTeams() komplett - die Schleife sah bisher nur noch existierende
+		// Teams und liess dessen Zeilen für immer als "teamOwned" stehen.
+		accountMock.linked = true;
+		accountMock.listTeams.mockResolvedValue([
+			{ id: "t1", name: "A", ownerUserId: "u1", createdAt: 1 },
+			{ id: "t2", name: "B", ownerUserId: "u1", createdAt: 1 }
+		]);
+		const bActivity = { id: "b1", name: "B-Sache", isAbsence: false, sortOrder: 0, color: null, archived: false, updatedAt: 1 };
+		accountMock.listTeamActivities.mockImplementation(async (teamId: string) =>
+			teamId === "t1"
+				? [{ id: "a1", name: "Alt", isAbsence: false, sortOrder: 0, color: null, archived: false, updatedAt: 1 }]
+				: [bActivity]
+		);
+		await syncOwnedTeamActivities();
+
+		// Team A wird endgültig gelöscht - listTeams() nennt es gar nicht mehr.
+		chefTeams.teams = [];
+		accountMock.listTeams.mockResolvedValue([{ id: "t2", name: "B", ownerUserId: "u1", createdAt: 1 }]);
+		await syncOwnedTeamActivities();
+
+		const detachedA = app.activities.find((a) => a.id === `${TEAM_ACTIVITY_PREFIX}a1`);
+		expect(detachedA).toMatchObject({ name: "Alt", archived: true });
+		expect(detachedA?.teamOwned).toBeUndefined();
+		expect(app.activities.find((a) => a.id === `${TEAM_ACTIVITY_PREFIX}b1`)).toMatchObject({
+			teamOwned: true,
+			teamId: "t2"
+		});
+	});
+
+	it("loest Zeilen auch dann ab, wenn das letzte Team gelöscht wird und listTeams() leer zurückkommt", async () => {
+		// Der scharfste Fall des vorigen Tests: chefTeams.teams.length === 0 liess
+		// die Funktion bisher sofort zurückkehren, bevor sie je aufräumen konnte.
+		accountMock.linked = true;
+		accountMock.listTeams.mockResolvedValue([{ id: "t1", name: "A", ownerUserId: "u1", createdAt: 1 }]);
+		accountMock.listTeamActivities.mockResolvedValue([
+			{ id: "a1", name: "Alt", isAbsence: false, sortOrder: 0, color: null, archived: false, updatedAt: 1 }
+		]);
+		await syncOwnedTeamActivities();
+
+		chefTeams.teams = [];
+		accountMock.listTeams.mockResolvedValue([]);
+		await syncOwnedTeamActivities();
+
+		const detached = app.activities.find((a) => a.id === `${TEAM_ACTIVITY_PREFIX}a1`);
+		expect(detached).toMatchObject({ name: "Alt", archived: true });
+		expect(detached?.teamOwned).toBeUndefined();
 	});
 });
 

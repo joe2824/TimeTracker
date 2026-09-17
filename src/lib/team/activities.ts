@@ -3,10 +3,11 @@
 // vom Team vorgegebenen Zeilen (Präfix "team:"); persönliche Aktivitäten
 // bleiben unangetastet.
 import { app } from "../app.svelte";
-import { loadTeamDevice } from "../store";
+import { clearTeamDevice, loadTeamDevice } from "../store";
 import { fetchTeamActivities, type RemoteTeamActivity } from "./api";
 import { chefTeams } from "./chef.svelte";
 import { account } from "../sync/account.svelte";
+import { ApiError } from "../sync/api";
 import { teamJoin } from "./state.svelte";
 import { logWarn } from "../log";
 import { TEAM_ACTIVITY_PREFIX, type Activity } from "../types";
@@ -73,6 +74,16 @@ export async function syncTeamActivities(): Promise<void> {
 	try {
 		remote = (await fetchTeamActivities(device.serverUrl, device.token)).activities;
 	} catch (e) {
+		// 401 heisst: der Token gilt nicht mehr - das Team wurde geloescht oder
+		// dieses Mitglied entfernt. Ohne diesen Zweig bliebe teamJoin.device stehen
+		// und die gespiegelten Zeilen zeigten fuer immer auf ein Team, das es nicht
+		// mehr gibt (jeder andere Fehler bleibt ein blosser Netz-Aussetzer).
+		if (e instanceof ApiError && e.status === 401) {
+			await clearTeamDevice();
+			teamJoin.device = null;
+			await app.detachTeamActivities();
+			return;
+		}
 		logWarn("Team-Aktivitäten konnten nicht geladen werden", e);
 		return;
 	}
@@ -116,22 +127,37 @@ export async function syncTeamActivities(): Promise<void> {
  * Verwaltung im Aktivitäten-Tab, nie beim eigenen Timer. Holt alle Teams
  * parallel und schreibt app.activities genau einmal, nicht einmal je Team -
  * jeder Zwischenstand wäre ein zusätzlicher reaktiver Durchlauf für nichts.
+ *
+ * Ein Team, das es gar nicht mehr gibt (endgültig gelöscht statt nur eine
+ * Zeile draus entfernt), taucht in chefTeams.teams überhaupt nicht mehr auf -
+ * ohne den Zusatz unten sähe die Schleife danach nur noch existierende Teams
+ * und liesse dessen Zeilen für immer als "teamOwned" stehen.
  */
 export async function syncOwnedTeamActivities(): Promise<void> {
 	if (!account.linked) return;
 	await chefTeams.loadTeams();
-	if (chefTeams.teams.length === 0) return;
 
-	const results = await Promise.all(
-		chefTeams.teams.map(async (team) => {
+	const currentTeams = new Map(chefTeams.teams.map((t) => [t.id, t]));
+	const deletedTeamIds = new Set(
+		app.activities
+			.filter((a) => a.teamOwned && a.teamId !== undefined && !currentTeams.has(a.teamId))
+			.map((a) => a.teamId!)
+	);
+	if (currentTeams.size === 0 && deletedTeamIds.size === 0) return;
+
+	const results = await Promise.all([
+		...chefTeams.teams.map(async (team) => {
 			try {
 				return { team, remote: await account.listTeamActivities(team.id) };
 			} catch (e) {
 				logWarn(`Aktivitäten von Team „${team.name}" konnten nicht geladen werden`, e);
 				return null;
 			}
-		})
-	);
+		}),
+		...[...deletedTeamIds].map((teamId) =>
+			Promise.resolve({ team: { id: teamId, name: "" }, remote: [] })
+		)
+	]);
 
 	await withActivitiesLock(async () => {
 		let next = app.activities;
