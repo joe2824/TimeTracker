@@ -85,8 +85,8 @@
 		if (!form.bossMode || !teamId) return;
 		// Fehlt der Link noch (frisch angelegtes Team), gleich erzeugen statt den
 		// Chef erst auf "Link erzeugen" klicken zu lassen.
-		void chefTeams.loadInvite(teamId).then(() => {
-			if (teamId === chefTeams.selectedTeamId && !chefTeams.invite && chefTeams.isOwner) {
+		void chefTeams.loadInvite(teamId).then((ok) => {
+			if (ok && teamId === chefTeams.selectedTeamId && !chefTeams.invite && chefTeams.isOwner) {
 				void rotateInvite();
 			}
 		});
@@ -253,6 +253,10 @@
 				Zu den Konto-Einstellungen
 			</Button>
 		</div>
+	</SettingsCard>
+{:else if form.bossMode && chefTeams.teamsLoading && chefTeams.teams.length === 0}
+	<SettingsCard title="Team anlegen" divided={false}>
+		<p class="text-muted-foreground text-sm">Wird geladen…</p>
 	</SettingsCard>
 {:else if form.bossMode && chefTeams.teams.length === 0}
 	<SettingsCard title="Team anlegen" divided={false}>
