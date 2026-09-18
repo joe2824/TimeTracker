@@ -51,14 +51,7 @@
 		void account.init().then(() => void account.syncSoon(50));
 		void refresh();
 		// Eigener Tick (dieses Fenster ruft app.init() nicht auf) für die Live-Anzeige.
-		// Den Mitternachts-Wechsel nimmt er hier mit: sonst bliebe der Timer über
-		// Mitternacht hinaus offen, wenn nur das Tray läuft und das Hauptfenster in
-		// dieser Sitzung nie geöffnet wurde (dessen eigener Tick würde ihn sonst
-		// erledigen).
-		const tick = setInterval(() => {
-			app.now = Date.now();
-			void app.rolloverAtMidnight();
-		}, 1000);
+		const tick = setInterval(() => (app.now = Date.now()), 1000);
 		// Bei jedem Einblenden (Fokus oder Tray-Klick) frische Daten laden.
 		const unFocus = win.onFocusChanged(({ payload }) => {
 			if (payload) {
