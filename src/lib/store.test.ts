@@ -53,23 +53,24 @@ describe("saveEntries", () => {
 		await saveEntries("2026-06", [entry("e1")]);
 		const hidden = written.filter((p) => (p.split("/").pop() ?? "").startsWith("."));
 		expect(hidden).toEqual([]);
-		expect(written).toContain("data/entries-2026-06.json.tmp");
+		expect(written.some((p) => /^data\/entries-2026-06\.json\.tmp-/.test(p))).toBe(true);
 	});
 
 	it("zwei gleichzeitige Speicherungen kommen sich nicht in die Quere", async () => {
 		// Gleichzeitig ist der Normalfall: die Schalter in den Einstellungen rufen
-		// ihr save() ohne await. Ohne Warteschlange teilen sich beide dieselbe
-		// Zwischendatei: die eine benennt sie um, der anderen fehlt sie dann, und
-		// die fällt in den direkten Weg – wo sie ihren Stand über den der ersten
-		// schreibt. Je nachdem, wer zuerst drankommt, bleibt der AELTERE stehen.
+		// ihr save() ohne await. Die Warteschlange serialisiert sie trotzdem; die
+		// Zwischendatei trägt zusätzlich je eine eigene Zufalls-Id, damit sich auch
+		// zwei Fenster (main/Tray, je eigener Modulzustand) nicht dieselbe teilen.
 		await Promise.all([
 			saveEntries("2026-06", [entry("alt")]),
 			saveEntries("2026-06", [entry("neu")])
 		]);
-		expect(written).toEqual(["data/entries-2026-06.json.tmp", "data/entries-2026-06.json.tmp"]);
+		expect(written).toHaveLength(2);
+		expect(written.every((p) => /^data\/entries-2026-06\.json\.tmp-/.test(p))).toBe(true);
+		expect(new Set(written).size).toBe(2);
 		expect((await loadEntries("2026-06")).map((e) => e.id)).toEqual(["neu"]);
-		// Und die Zwischendatei bleibt nicht liegen.
-		expect(files.has("data/entries-2026-06.json.tmp")).toBe(false);
+		// Und keine Zwischendatei bleibt liegen.
+		expect([...files.keys()].some((p) => p.includes(".tmp-"))).toBe(false);
 	});
 
 	it("das Leeren gewinnt gegen ein noch laufendes Speichern", async () => {
@@ -268,7 +269,7 @@ describe("Speichern, wenn rename fehlschlägt", () => {
 
 	it("lässt keine .tmp-Datei zurück", async () => {
 		await saveEntries("2026-06", [entry("e1")]);
-		expect([...files.keys()].filter((p) => p.endsWith(".tmp"))).toEqual([]);
+		expect([...files.keys()].filter((p) => p.includes(".tmp-"))).toEqual([]);
 	});
 });
 
