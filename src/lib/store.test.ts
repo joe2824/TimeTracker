@@ -25,6 +25,7 @@ function entry(id: string): Entry {
 }
 
 const file = (month: string) => `data/entries-${month}.json`;
+const tmpFile = (month: string) => new RegExp(`^${file(month).replace(".", "\\.")}\\.tmp-`);
 
 beforeEach(resetFakeFs);
 
@@ -53,7 +54,7 @@ describe("saveEntries", () => {
 		await saveEntries("2026-06", [entry("e1")]);
 		const hidden = written.filter((p) => (p.split("/").pop() ?? "").startsWith("."));
 		expect(hidden).toEqual([]);
-		expect(written.some((p) => /^data\/entries-2026-06\.json\.tmp-/.test(p))).toBe(true);
+		expect(written.some((p) => tmpFile("2026-06").test(p))).toBe(true);
 	});
 
 	it("zwei gleichzeitige Speicherungen kommen sich nicht in die Quere", async () => {
@@ -66,7 +67,7 @@ describe("saveEntries", () => {
 			saveEntries("2026-06", [entry("neu")])
 		]);
 		expect(written).toHaveLength(2);
-		expect(written.every((p) => /^data\/entries-2026-06\.json\.tmp-/.test(p))).toBe(true);
+		expect(written.every((p) => tmpFile("2026-06").test(p))).toBe(true);
 		expect(new Set(written).size).toBe(2);
 		expect((await loadEntries("2026-06")).map((e) => e.id)).toEqual(["neu"]);
 		// Und keine Zwischendatei bleibt liegen.
