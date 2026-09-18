@@ -224,8 +224,9 @@ async function readJson<T>(file: string, fallback: T, opts: JsonOpts = {}): Prom
  * Je Datei ein Schreibvorgang zur Zeit; das jeweils letzte Versprechen hält die
  * Schlange.
  *
- * Ohne das teilen sich zwei gleichzeitige Speicherungen ihre .tmp-Datei, und eine
- * Reihenfolge davon endet mit dem AELTEREN Stand auf der Platte.
+ * Ohne das laufen zwei gleichzeitige Speicherungen als zwei unabhängige
+ * Schreib-plus-rename-Vorgänge - welcher zuletzt fertig wird, ist Zufall, und
+ * eine ungünstige Reihenfolge endet mit dem AELTEREN Stand auf der Platte.
  */
 const writeQueue = new Map<string, Promise<void>>();
 
@@ -281,7 +282,13 @@ async function writeJsonNow(file: string, data: unknown, opts: JsonOpts = {}): P
 	// Bevorzugt atomar: temp-Datei + rename (überschreibt das Ziel atomar).
 	// Falls rename nicht erlaubt/möglich ist, direkt schreiben – Speichern darf
 	// nie fehlschlagen, sonst bliebe z.B. ein gestarteter Timer ungespeichert.
-	const tmp = `${DIR}/${file}.tmp`;
+	//
+	// Der Name trägt eine eigene Zufalls-Id: main- und Tray-Fenster haben je
+	// einen eigenen Modulzustand und damit je eine eigene writeQueue (siehe
+	// unten) - ohne die Id teilen sich zwei Fenster denselben Tmp-Pfad, und
+	// wessen rename() zuerst drankommt, zieht dem anderen die Datei unterm
+	// rename() weg (os error 2, "Datei nicht gefunden").
+	const tmp = `${DIR}/${file}.tmp-${crypto.randomUUID()}`;
 	try {
 		await storage.writeTextFile(tmp, json);
 		await storage.rename(tmp, target);
