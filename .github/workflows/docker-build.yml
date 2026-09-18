@@ -65,10 +65,17 @@ jobs:
           # Angabe liest `type=semver` die Version aus github.ref - und auf einem
           # Branch steht dort keine. Der geplante Lauf haette dann GAR keine
           # Marke, und `build-push-action` bricht ohne Marke ab.
+          #
+          # `beta` bekommt nur eine Vorabversion, nie der woechentliche Neubau
+          # in docker.yml: der waehlt dort immer den neuesten STABILEN Tag
+          # (siehe dessen `target`-Job) und liefe sonst Gefahr, die Marke auf
+          # eine aeltere Version zurueckzudrehen, sobald laenger keine neue
+          # Beta erschienen ist.
           tags: |
             type=semver,pattern={{version}},value=${{ inputs.tag }}
             type=semver,pattern={{major}}.{{minor}},value=${{ inputs.tag }}
             type=raw,value=latest,enable=${{ inputs.stable }}
+            type=raw,value=beta,enable=${{ !inputs.stable }}
 
       - uses: docker/build-push-action@v6
         id: push
