@@ -297,7 +297,7 @@ class AppState {
 		this.dispose();
 		this.#tick = setInterval(() => {
 			this.now = Date.now();
-			void this.rolloverAtMidnight();
+			void this.#rolloverAtMidnight();
 		}, 1000);
 	}
 
@@ -1354,13 +1354,8 @@ class AppState {
 	/**
 	 * Läuft der Timer über Mitternacht, wird er dort beendet und am neuen Tag
 	 * fortgesetzt. Läuft jede Sekunde mit – der Datumsvergleich hält das billig.
-	 *
-	 * Öffentlich, weil auch das Tray-Flyout ihn aufruft: es hat einen eigenen
-	 * Modulzustand und ruft `init()` nie auf (siehe dort), der Sekundentakt des
-	 * Hauptfensters erreicht es also nicht. Ohne den eigenen Aufruf bliebe der
-	 * Timer über Mitternacht hinaus offen, solange nur das Tray lief.
 	 */
-	async rolloverAtMidnight(): Promise<void> {
+	async #rolloverAtMidnight(): Promise<void> {
 		if (!this.running || fmtDate(this.running.startTs) === fmtDate(Date.now())) return;
 		await this.#exclusive(async () => {
 			// Nach dem Anstehen erneut prüfen: der Tick feuert im Sekundentakt.

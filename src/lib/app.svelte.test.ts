@@ -190,7 +190,7 @@ describe("stop() – Lauf über mehrere Tage nachträglich beenden", () => {
 
 	it("schließt beide Fortsetzungen, wenn zwei an derselben Mitternacht offen stehen", async () => {
 		// Zwei Fenster haben denselben Mitternachts-Wechsel angelegt (die
-		// Idempotenz-Wache in rolloverAtMidnight greift nur, wenn das andere
+		// Idempotenz-Wache in #rolloverAtMidnight greift nur, wenn das andere
 		// Fenster schon geschrieben hat). Beide Ketten haben denselben Anfang und
 		// dieselbe Länge – es darf trotzdem keine offen zurückbleiben.
 		const prevDay = entry("t1", P1, at(16, 9), at(17, 0));
