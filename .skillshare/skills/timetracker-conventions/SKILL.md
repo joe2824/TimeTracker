@@ -1,8 +1,9 @@
 ---
 name: timetracker-conventions
 description: >-
-  Commit-Nachrichten, Namenskonvention und die "fertig heißt fertig"-Prüfung
-  für dieses Repo. Vor jedem Commit und vor jeder Aussage, eine Änderung sei
+  Commit-Nachrichten, Namenskonvention, Datei-Platzierung, Duplicate-Check,
+  Testdaten und die "fertig heißt fertig"-Prüfung für dieses Repo. Vor jedem
+  Commit, vor neuen Dateien/Helfern und vor jeder Aussage, eine Änderung sei
   fertig, anwenden.
 metadata:
   author: TimeTracker-Team
@@ -20,6 +21,8 @@ Use this skill when the user:
 - einen Commit oder eine PR-Beschreibung für dieses Repo formuliert
 - behauptet, eine Änderung sei fertig/getestet/funktioniert
 - neue Bezeichner (Funktionen, Variablen, Dateien) einführt
+- eine neue Datei unter `src/lib/` oder einen neuen Helfer anlegt
+- Test-Fixtures oder Beispieldaten schreibt
 
 Do NOT use this skill for:
 - reine Recherche-/Erklär-Aufgaben ohne Code- oder Commit-Änderung
@@ -69,6 +72,39 @@ cd src-tauri && cargo test
 
 Bei Sync- oder Zeitzonen-Code zusätzlich `npm run test:tz` vor einem Push.
 Schlägt etwas fehl: Ergebnis melden, Aussage nicht abschwächen.
+
+### Step 4: Datei-Platzierung prüfen
+
+- `src/lib/` hat oben nur Primitive, die fast jedes Modul braucht (`types`,
+  `app.svelte`, `store`, `log`, `defaults`, `utils`, `analytics`) —
+  alles andere gehört in ein Unterverzeichnis (`time/`, `report/`,
+  `account/`, `ui/`, `release/`, `components/`, `sync/`, `platform/`,
+  `crypto/`, `testing/`).
+- Der Test liegt **neben** seinem Modul (`store.ts` → `store.test.ts`),
+  nicht in einem eigenen Test-Baum — so wandert er beim Verschieben mit.
+- `testing/` enthält keine Tests, sondern Fakes/Fixtures, die Tests
+  importieren.
+
+### Step 5: Vor einem neuen Helfer auf Duplikate prüfen
+
+Gemeinsames zwischen Client und Server gehört nach `shared/`. Vor einem
+neuen Helfer:
+
+```sh
+grep -rhoE "^export (async )?function [a-zA-Z0-9_]+" src/lib server/src shared \
+  --include="*.ts" | grep -v test | awk '{print $NF}' | sort | uniq -d
+```
+
+Findet nur gleiche **Namen** — gleiche Logik unter anderem Namen bleibt
+manuelle Prüfung. Gleiche Namen sind umgekehrt oft harmlos (z. B.
+`sha256Hex` als WebCrypto- vs. Node-crypto-Variante) — ein Hinweis, kein
+Urteil.
+
+### Step 6: Testdaten prüfen
+
+Keine echten Personendaten in Tests/Fixtures — keine realen Namen,
+Firmendomains, Personalnummern, Mailadressen. Vorlage im Bestand:
+`Anna Meier`, `firma.de`, `00123456`.
 
 ## Examples
 
