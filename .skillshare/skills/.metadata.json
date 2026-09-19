@@ -71,6 +71,18 @@
         "references/typescript.md": "sha256:e23dba4504ea90e48eb089821bf80e0ee415bd22110d4ff521d09d0a6cc9a863",
         "references/wrapper-components-preserve-html.md": "sha256:112c288bf4b298ce75c98c8b42b92b243750c60df1e65318630dba919ecebf4b"
       }
+    },
+    "tailwind-v4": {
+      "source": "github.com/boraoztunc/skills/tailwind-v4",
+      "type": "github-subdir",
+      "installed_at": "2026-09-19T14:50:31.089024+02:00",
+      "repo_url": "https://github.com/boraoztunc/skills.git",
+      "subdir": "tailwind-v4",
+      "version": "645553c",
+      "tree_hash": "8ba58ee195cbf7bd33d0cddbe70b2e2136ca25c5",
+      "file_hashes": {
+        "SKILL.md": "sha256:634e87d6cd770afa8e740e31d8898e81760dccca91162467eb08dc8f25543d11"
+      }
     }
   }
 }

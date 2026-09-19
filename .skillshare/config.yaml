@@ -6,6 +6,8 @@ skills:
     source: github.com/huntabyte/shadcn-svelte/skills/shadcn-svelte
   - name: svelte5
     source: github.com/joshuadavidthomas/agent-skills/svelte5
+  - name: tailwind-v4
+    source: github.com/boraoztunc/skills/tailwind-v4
 ignore:
   - .DS_Store
   - .git/
