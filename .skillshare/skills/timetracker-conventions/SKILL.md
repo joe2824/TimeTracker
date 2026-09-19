@@ -45,7 +45,13 @@ Do NOT use this skill for:
 - Funktionsnamen, Variablen, Felder, Typen, Dateinamen: immer Englisch.
 - Ausnahme sind bestehende Ablagenamen (`kontoKennung`, `bestandGehoertZu`,
   `LEGACY_FLAG_KEYS`, `gueltigTage`, IndexedDB `timetracker`/`dateien`/
-  `tresor`) — die bleiben, ein Rename würde Bestandsdaten verwaisen lassen.
+  `tresor`) — nur als Feldnamen in bereits gespeicherten Daten bzw. als
+  Lese-Fallback für alte Clients (z. B. `store.ts`, `gueltigTage` in der
+  Invite-Route). Die aktiven internen Namen sind längst Englisch
+  (`accountFingerprint`, `dataOwner`, `validDays`); nur die alten
+  Feldnamen selbst dürfen nicht umbenannt werden, sonst lassen sich
+  bestehende `device.json`-Dateien bzw. Anfragen alter Desktop-Clients
+  nicht mehr lesen.
 - Taucht neues Deutsch im Code auf: nicht nebenbei umbenennen, sondern
   eigener Commit.
 
