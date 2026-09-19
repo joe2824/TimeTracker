@@ -83,6 +83,19 @@
       "file_hashes": {
         "SKILL.md": "sha256:634e87d6cd770afa8e740e31d8898e81760dccca91162467eb08dc8f25543d11"
       }
+    },
+    "tauri-v2": {
+      "source": "github.com/majiayu000/claude-skill-registry/skills/data/tauri-v2",
+      "type": "github-subdir",
+      "installed_at": "2026-09-19T14:59:58.435938+02:00",
+      "repo_url": "https://github.com/majiayu000/claude-skill-registry.git",
+      "subdir": "skills/data/tauri-v2",
+      "version": "0e85a8dfb",
+      "tree_hash": "48be884f3999b15a10f88c2297f0d7f7b7205e7c",
+      "file_hashes": {
+        "SKILL.md": "sha256:b569125f961de6a8987f149ea062bc63801fe77f0bede5e317a652671da5e6a5",
+        "metadata.json": "sha256:df4b687768a86594a09bae860db9e3153a4318bced7173e85bb1d05015c06066"
+      }
     }
   }
 }
