@@ -392,8 +392,12 @@ class AccountState {
 	}
 
 	async #startEngine(url: string, token: string | null, state: SyncState): Promise<void> {
-		state = await this.#rewindForNewKinds(state);
+		// Vor dem ersten await: #persistLink setzt state="connected" direkt vor
+		// diesem Aufruf, und ein $effect, der auf account.linked reagiert (z.B.
+		// loadTeams()), darf #api nie null vorfinden. Ohne await dazwischen kommt
+		// kein Effekt zum Zug, bevor #api steht.
 		this.#api = new Api({ baseUrl: url, token, fetchFn: platformFetch });
+		state = await this.#rewindForNewKinds(state);
 		const engine = new SyncEngine({
 			api: this.#api,
 			key: this.#key!,
