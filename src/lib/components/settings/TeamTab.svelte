@@ -10,13 +10,14 @@
 	import { Label } from "$lib/components/ui/label";
 	import * as Select from "$lib/components/ui/select";
 	import * as Dialog from "$lib/components/ui/dialog";
-	import SettingToggle from "$lib/components/shared/SettingToggle.svelte";
+	import { Switch } from "$lib/components/ui/switch";
 	import SettingsCard from "$lib/components/shared/SettingsCard.svelte";
 	import { clearTeamDevice } from "$lib/store";
 	import { syncOwnedTeamActivities, syncTeamActivities } from "$lib/team/activities";
 	import { teamJoin } from "$lib/team/state.svelte";
 	import { errorText } from "$lib/log";
 	import { tabFocus } from "$lib/ui/tabFocus.svelte";
+	import { cn } from "$lib/utils";
 	import { toast } from "svelte-sonner";
 	import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
 	import LogOutIcon from "@lucide/svelte/icons/log-out";
@@ -30,6 +31,7 @@
 	import Link2Icon from "@lucide/svelte/icons/link-2";
 	import ShieldIcon from "@lucide/svelte/icons/shield";
 	import XIcon from "@lucide/svelte/icons/x";
+	import CheckIcon from "@lucide/svelte/icons/check";
 
 	// ---------- Team-Mitgliedschaft (dieses Gerät ist Mitglied, kein Chef) ----------
 	//
@@ -223,20 +225,18 @@
 	</SettingsCard>
 {/if}
 
-<SettingsCard
-	title="Chef-Modus"
-	description="Team anlegen, Mitglieder per Link einladen, Bericht-Status sehen."
-	savedAt={savedBossAt}
->
-	<SettingToggle
-		id="bossmode"
-		title="Team-Tab anzeigen"
-		bind:checked={form.bossMode}
-		onCheckedChange={(v) => {
-			form.bossMode = v;
-			void saveBossMode();
-		}}
-	/>
+<SettingsCard title="Chef-Modus" savedAt={savedBossAt} divided={false}>
+	{#snippet action()}
+		<Label for="bossmode" class="text-muted-foreground text-sm font-normal">Team-Tab anzeigen</Label>
+		<Switch
+			id="bossmode"
+			checked={form.bossMode}
+			onCheckedChange={(v) => {
+				form.bossMode = v;
+				void saveBossMode();
+			}}
+		/>
+	{/snippet}
 	{#if form.bossMode}
 		<Button variant="link" class="h-auto p-0" onclick={() => tabFocus.request("team")}>
 			Zum Team-Tab <ArrowRightIcon class="size-4" />
@@ -281,19 +281,31 @@
 	</SettingsCard>
 {:else if form.bossMode}
 	<SettingsCard title="Team" description="Beitritts-Link zum Einladen von Mitgliedern." divided={false}>
+		{#if chefTeams.teams.length > 1}
+			<div class="grid gap-1.5">
+				{#each chefTeams.teams as t (t.id)}
+					{@const active = t.id === chefTeams.selectedTeamId}
+					<button
+						type="button"
+						aria-pressed={active}
+						onclick={() => (chefTeams.selectedTeamId = t.id)}
+						class={cn(
+							"flex items-center gap-2.5 rounded-lg border p-2.5 text-left text-sm transition-colors",
+							active ? "border-primary/40 bg-primary/5 font-medium" : "bg-card/60 hover:bg-card"
+						)}
+					>
+						<UsersIcon class="text-muted-foreground size-4 shrink-0" />
+						<span class="min-w-0 flex-1 truncate">{t.name}</span>
+						{#if active}
+							<CheckIcon class="text-primary size-4 shrink-0" />
+						{/if}
+					</button>
+				{/each}
+			</div>
+		{/if}
+
 		<div class="flex items-center gap-2">
-			{#if chefTeams.teams.length > 1}
-				<Select.Root type="single" bind:value={chefTeams.selectedTeamId}>
-					<Select.Trigger aria-label="Team wählen" class="w-56">
-						{chefTeams.selectedTeam?.name ?? "Team wählen"}
-					</Select.Trigger>
-					<Select.Content>
-						{#each chefTeams.teams as t (t.id)}
-							<Select.Item value={t.id} label={t.name}>{t.name}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-			{:else}
+			{#if chefTeams.teams.length <= 1}
 				<span class="text-sm font-medium">{chefTeams.selectedTeam?.name}</span>
 			{/if}
 			{#if chefTeams.selectedTeam && !chefTeams.isOwner}

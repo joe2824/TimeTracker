@@ -228,10 +228,7 @@
 	<!-- Eigene Grenze trotz max-w-6xl aussen: Einstellungen sind Fliesstext mit
 	     Feldern, und ueber die volle Breite reisst jede Zeile ab. -->
 	<div class="min-w-0 flex-1 space-y-4 lg:max-w-3xl">
-		<div class="space-y-0.5">
-			<h2 class="text-lg leading-tight font-semibold tracking-tight">{activeTab.title}</h2>
-			<p class="text-muted-foreground text-sm">{activeTab.description}</p>
-		</div>
+		<h2 class="text-lg leading-tight font-semibold tracking-tight">{activeTab.title}</h2>
 
 		{#if activeTabId === "erfassung"}
 			<TrackingTab />

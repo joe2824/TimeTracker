@@ -15,6 +15,8 @@
 		/** false = schlichter Abstand statt Trennlinien (für Fliesstext-Karten) */
 		divided?: boolean;
 		class?: string;
+		/** Element im Kopf rechts neben dem Titel, z.B. ein Schalter für die ganze Karte */
+		action?: Snippet;
 		children: Snippet;
 	}
 	let {
@@ -23,6 +25,7 @@
 		savedAt,
 		divided = true,
 		class: className,
+		action,
 		children
 	}: Props = $props();
 </script>
@@ -33,8 +36,11 @@
 		{#if description}
 			<Card.Description>{description}</Card.Description>
 		{/if}
-		{#if savedAt !== undefined}
-			<Card.Action><SavedHint at={savedAt} /></Card.Action>
+		{#if savedAt !== undefined || action}
+			<Card.Action class="flex items-center gap-2">
+				{#if savedAt !== undefined}<SavedHint at={savedAt} />{/if}
+				{#if action}{@render action()}{/if}
+			</Card.Action>
 		{/if}
 	</Card.Header>
 	<!-- divide-y trifft die direkten Kinder: jede Zeile bringt ihren Abstand selbst
