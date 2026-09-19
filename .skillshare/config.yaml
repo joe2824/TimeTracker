@@ -1,16 +1,23 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/runkids/skillshare/main/schemas/project-config.schema.json
 targets:
-  - claude
+    - claude
 skills:
-  - name: shadcn-svelte
-    source: github.com/huntabyte/shadcn-svelte/skills/shadcn-svelte
-  - name: svelte5
-    source: github.com/joshuadavidthomas/agent-skills/svelte5
-  - name: tailwind-v4
-    source: github.com/boraoztunc/skills/tailwind-v4
+    - name: shadcn-svelte
+      source: github.com/huntabyte/shadcn-svelte/skills/shadcn-svelte
+    - name: svelte5
+      source: github.com/joshuadavidthomas/agent-skills/svelte5
+    - name: tailwind-v4
+      source: github.com/boraoztunc/skills/tailwind-v4
 ignore:
-  - .DS_Store
-  - .git/
-  - __pycache__/
+    - .DS_Store
+    - .git/
+    - __pycache__/
 audit:
-  block_threshold: CRITICAL
+    block_threshold: CRITICAL
+plugins:
+    packages:
+        gangsta:
+            bindings:
+                claude:
+                    id: gangsta@gangsta-marketplace
+                    version: 1.11.6
