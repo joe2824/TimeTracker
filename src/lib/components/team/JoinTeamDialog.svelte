@@ -9,11 +9,24 @@
 	import { Label } from "$lib/components/ui/label";
 	import { teamJoin } from "$lib/team/state.svelte";
 	import { TeamJoinFlow } from "$lib/team/joinFlow.svelte";
+	import { normalizeServerUrl } from "$lib/sync/api";
 	import { toast } from "svelte-sonner";
 
 	const flow = new TeamJoinFlow();
 
 	const open = $derived(teamJoin.pendingLink !== null);
+	// Der Link bestimmt den Server frei - ohne diese Anzeige sähe der Nutzer nie,
+	// wohin Name/E-Mail beim Beitreten tatsächlich gehen (auch ein untergeschobener
+	// Link zeigt ja einen Teamnamen an, den holt er sich vom selben fremden Server).
+	const serverHost = $derived.by(() => {
+		const link = teamJoin.pendingLink;
+		if (!link) return "";
+		try {
+			return new URL(normalizeServerUrl(link.serverUrl)).host;
+		} catch {
+			return link.serverUrl;
+		}
+	});
 
 	$effect(() => {
 		const link = teamJoin.pendingLink;
@@ -67,6 +80,10 @@
 		</Dialog.Header>
 
 		{#if flow.preview !== "loading" && flow.preview !== "error"}
+			<p class="bg-muted rounded-md px-3 py-2 text-sm">
+				Server: <span class="font-medium">{serverHost}</span> - stimmt das nicht mit der Adresse
+				überein, die der Chef genannt hat, lieber abbrechen.
+			</p>
 			<div class="space-y-2">
 				<Label for="team-join-name">Dein Name</Label>
 				<Input
