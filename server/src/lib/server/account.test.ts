@@ -119,7 +119,11 @@ describe("deleteInactiveAccounts", () => {
 		expect(db.select().from(teams).where(eq(teams.id, "team-1")).get()).toBeUndefined();
 	});
 
-	function teamWithMember(ownerId: string, lastSeenAgoMs: number | null): void {
+	function teamWithMember(
+		ownerId: string,
+		lastSeenAgoMs: number | null,
+		joinedAgoMs = YEAR_MS * 2
+	): void {
 		db.insert(teams)
 			.values({ id: `team-${ownerId}`, ownerUserId: ownerId, name: "Vertrieb", createdAt: NOW - YEAR_MS * 2 })
 			.run();
@@ -129,7 +133,7 @@ describe("deleteInactiveAccounts", () => {
 				teamId: `team-${ownerId}`,
 				name: "Anna Meier",
 				tokenHash: `team-hash-${ownerId}`,
-				createdAt: NOW - YEAR_MS * 2,
+				createdAt: NOW - joinedAgoMs,
 				lastSeenAt: lastSeenAgoMs === null ? null : NOW - lastSeenAgoMs
 			})
 			.run();
@@ -157,6 +161,13 @@ describe("deleteInactiveAccounts", () => {
 				payload: "{}"
 			})
 			.run();
+
+		expect(deleteInactiveAccounts(db, YEAR_MS, NOW)).toBe(0);
+	});
+
+	it("lässt einen Chef in Ruhe, dessen Team-Mitglied kürzlich beigetreten ist, aber noch nie abgerufen hat", () => {
+		user("kira", YEAR_MS * 2);
+		teamWithMember("kira", null, YEAR_MS / 2);
 
 		expect(deleteInactiveAccounts(db, YEAR_MS, NOW)).toBe(0);
 	});

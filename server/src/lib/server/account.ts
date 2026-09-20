@@ -3,7 +3,7 @@
 //   - Ein GERAET lösen. Der Zugang dieses einen Geräts erlischt, das Konto und
 //     alle anderen Geräte bleiben. Das macht `revokeDevice` in auth.ts.
 //   - Das KONTO auflösen. Dann verschwindet alles, was der Server hat.
-import { and, eq, gte, lt, sql } from "drizzle-orm";
+import { and, eq, gte, lt, or, sql } from "drizzle-orm";
 import type { DbLike } from "./db/index";
 import {
 	challenges,
@@ -119,7 +119,14 @@ export function deleteInactiveAccounts(db: DbLike, maxAgeMs: number, now = Date.
 			.select({ id: teamMembers.id })
 			.from(teamMembers)
 			.innerJoin(teams, eq(teams.id, teamMembers.teamId))
-			.where(and(eq(teams.ownerUserId, userId), gte(teamMembers.lastSeenAt, cutoff)))
+			.where(
+				and(
+					eq(teams.ownerUserId, userId),
+					// Ein Mitglied, das erst kürzlich beigetreten ist, hat vielleicht noch nie
+					// abgerufen - der Beitritt selbst ist auch Aktivität.
+					or(gte(teamMembers.lastSeenAt, cutoff), gte(teamMembers.createdAt, cutoff))
+				)
+			)
 			.get();
 		if (recentMember) return true;
 
