@@ -6,7 +6,7 @@
 // Modul ist.
 import { spawnSync } from "node:child_process";
 
-const ZONES =["Pacific/Kiritimati", "Pacific/Midway", "Australia/Eucla"];
+const ZONES = ["Pacific/Kiritimati", "Pacific/Midway", "Australia/Eucla"];
 
 let failed = false;
 for (const tz of ZONES) {
