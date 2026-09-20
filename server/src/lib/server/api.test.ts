@@ -1869,6 +1869,20 @@ describe("Team", () => {
 		expect(throttled).toBe(true);
 	});
 
+	it("bremst das Durchprobieren von Verwalter-Codes", async () => {
+		// Ein Treffer gibt volle operative Rechte - deshalb dieselbe Bremse wie beim
+		// einfachen Beitritt, auch für die Vorschau ohne Anmeldung.
+		let throttled = false;
+		for (let i = 0; i < 15 && !throttled; i++) {
+			const res = await api(null, `/api/team/admin/join?code=FALSCH-${i}`, {
+				headers: { "x-echte-adresse": "10.8.8.9" }
+			});
+			throttled = res.status === 429;
+			if (throttled) expect(res.headers.get("retry-after")).toBeTruthy();
+		}
+		expect(throttled).toBe(true);
+	});
+
 	it("der Chef setzt die gemeinsame Liste, ein Mitglied liest sie ohne Konto", async () => {
 		const team = await createTeamFor(annaToken);
 		const invite = await inviteFor(annaToken, team.id);

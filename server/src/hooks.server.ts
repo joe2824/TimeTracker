@@ -52,7 +52,8 @@ const RATE_LIMITS: [string, LimitOptions][] = [
 	["/api/auth/device", LIMIT_AUTH],
 	["/api/auth/recover", LIMIT_RECOVER],
 	["/api/telemetry", LIMIT_TELEMETRY],
-	["/api/team/join", LIMIT_TEAM_JOIN]
+	["/api/team/join", LIMIT_TEAM_JOIN],
+	["/api/team/admin/join", LIMIT_TEAM_JOIN]
 ];
 
 
