@@ -23,7 +23,7 @@ import { mergeRecord, resolveOpenEntries } from "./merge";
 import { contentOf } from "./stamp";
 import { bucketFor, openRecord, sealRecord, type VaultKey } from "../crypto/vault";
 import { logError, logInfo, logWarn } from "../log";
-import { monthKey, prevMonthKey } from "../time/time";
+import { monthKey, prevMonthKey, startOfNextDay } from "../time/time";
 
 /** Wie oft nach einem Konflikt neu versucht wird, bevor aufgegeben wird. */
 const MAX_ROUNDS = 5;
@@ -660,7 +660,14 @@ export class SyncEngine {
 			// dadurch, dass der Rechner erst NACH der echten fremden Aenderung wieder
 			// online kam (spaeterer Stempel, aber ohne jede Kenntnis vom echten Ende).
 			let continuationEntry: Entry | undefined;
-			if (localEntry && localEntry.endTs !== null) {
+			// Nur eine Teilung genau an der Tagesgrenze: zwei aufeinanderfolgende
+			// Einträge mitten am Tag sind keine, und ein eigener Endzeit-Edit daran
+			// darf nicht verworfen werden.
+			if (
+				localEntry &&
+				localEntry.endTs !== null &&
+				localEntry.endTs === startOfNextDay(localEntry.startTs)
+			) {
 				const contMonth = await monthOf(monthKey(localEntry.endTs));
 				continuationEntry = [...contMonth.values()].find(
 					(e) =>
@@ -684,7 +691,14 @@ export class SyncEngine {
 			// haben (der Nutzer hat vielleicht doch weitergearbeitet und den Timer nur
 			// nicht neu gestartet). Statt zu raten, meldet #applyInner das nach oben,
 			// damit ein Mensch den Tag prueft.
-			if (hasUnresolvedContinuation && result.changed && result.value) {
+			// Nur wenn sich die Endzeit tatsächlich geändert hat: ein Echo oder eine
+			// bloße Notiz-Änderung mit gleichem Ende gibt dem Menschen nichts zu prüfen.
+			if (
+				hasUnresolvedContinuation &&
+				result.changed &&
+				result.value &&
+				result.value.endTs !== localEntry?.endTs
+			) {
 				staleTimerSplits.push({ endedEntry: result.value, continuationEntry: continuationEntry! });
 			}
 			if (!result.changed) continue;

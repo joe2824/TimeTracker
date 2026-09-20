@@ -7,7 +7,7 @@ import type { VaultKey } from "../crypto/vault";
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("../testing/fakeFs")).fakeFs);
 
 const { createVaultKey, bucketFor } = await import("../crypto/vault");
-const { monthKey, prevMonthKey } = await import("../time/time");
+const { monthKey, prevMonthKey, startOfNextDay } = await import("../time/time");
 const { resetOutboxForTests, pendingChanges } = await import("./outbox");
 const { resetFakeFs } = await import("../testing/fakeFs");
 const store = await import("../store");
@@ -236,6 +236,8 @@ describe("Zwei Geraete", () => {
 	});
 
 	it("beendet eine offline entstandene Mitternachts-Fortsetzung nicht einfach selbst, wenn der Server den Lauf laengst frueher geschlossen hat", async () => {
+		// Die Tagesgrenze in der Zeitzone der App, nicht der der Testdaten.
+		const midnight = startOfNextDay(ts(15, 9));
 		// Der Rechner startet einen Timer und synct - Server und Rechner kennen
 		// d1 offen.
 		const desktop = await deviceWith("rechner", entry("d1", { startTs: ts(15, 9), endTs: null }));
@@ -258,8 +260,8 @@ describe("Zwei Geraete", () => {
 		await afterwards();
 		await on(desktop, async () => {
 			const list = await store.loadEntries(MONTH);
-			const split = list.map((e) => (e.id === "d1" ? { ...e, endTs: ts(16, 0) } : e));
-			split.push(entry("d2", { startTs: ts(16, 0), endTs: null }));
+			const split = list.map((e) => (e.id === "d1" ? { ...e, endTs: midnight } : e));
+			split.push(entry("d2", { startTs: midnight, endTs: null }));
 			await store.saveEntries(MONTH, split);
 		});
 
@@ -283,6 +285,66 @@ describe("Zwei Geraete", () => {
 		expect(outcome?.staleTimerSplits[0].endedEntry.id).toBe("d1");
 		expect(outcome?.staleTimerSplits[0].endedEntry.endTs).toBe(ts(15, 17));
 		expect(outcome?.staleTimerSplits[0].continuationEntry.id).toBe("d2");
+	});
+
+	it("meldet keine stehen gebliebene Teilung, wenn der Server dieselbe Endzeit hat", async () => {
+		const midnight = startOfNextDay(ts(15, 9));
+		const desktop = await deviceWith("rechner", entry("d1", { startTs: ts(15, 9), endTs: null }));
+
+		// Das Handy beendet den Lauf exakt um Mitternacht - dieselbe Endzeit wie die
+		// Teilung des Rechners - und ergaenzt eine Notiz.
+		const phone = new FakeDevice("handy");
+		await on(phone, (engine) => engine.sync());
+		await afterwards();
+		await changeAndSync(phone, async () => {
+			const list = await store.loadEntries(MONTH);
+			await store.saveEntries(
+				MONTH,
+				list.map((e) => (e.id === "d1" ? { ...e, endTs: midnight, note: "vom Handy" } : e))
+			);
+		});
+
+		await afterwards();
+		await on(desktop, async () => {
+			const list = await store.loadEntries(MONTH);
+			const split = list.map((e) => (e.id === "d1" ? { ...e, endTs: midnight } : e));
+			split.push(entry("d2", { startTs: midnight, endTs: null }));
+			await store.saveEntries(MONTH, split);
+		});
+
+		const outcome = await on(desktop, (engine) => engine.sync());
+
+		expect((await entries(desktop)).find((e) => e.id === "d1")!.note).toBe("vom Handy");
+		expect(outcome?.staleTimerSplits).toEqual([]);
+	});
+
+	it("haelt eine eigene Endzeit-Aenderung, auch wenn direkt danach ein unversendeter Eintrag beginnt", async () => {
+		// Keine Mitternachts-Teilung: zwei aufeinanderfolgende Eintraege mitten am Tag.
+		const desktop = await deviceWith("rechner", entry("d1", { startTs: ts(15, 9), endTs: ts(15, 12) }));
+
+		const phone = new FakeDevice("handy");
+		await on(phone, (engine) => engine.sync());
+		await afterwards();
+		await changeAndSync(phone, async () => {
+			const list = await store.loadEntries(MONTH);
+			await store.saveEntries(
+				MONTH,
+				list.map((e) => (e.id === "d1" ? { ...e, note: "vom Handy" } : e))
+			);
+		});
+
+		await afterwards();
+		await on(desktop, async () => {
+			const list = await store.loadEntries(MONTH);
+			const edited = list.map((e) => (e.id === "d1" ? { ...e, endTs: ts(15, 11) } : e));
+			edited.push(entry("d2", { startTs: ts(15, 11), endTs: ts(15, 13) }));
+			await store.saveEntries(MONTH, edited);
+		});
+
+		const outcome = await on(desktop, (engine) => engine.sync());
+
+		expect((await entries(desktop)).find((e) => e.id === "d1")!.endTs).toBe(ts(15, 11));
+		expect(outcome?.staleTimerSplits).toEqual([]);
 	});
 
 	it("gleicht Aktivitaeten ab", async () => {
