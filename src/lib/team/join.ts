@@ -35,7 +35,10 @@ export async function completeTeamJoin(
 	// Die Web-Route läuft ohne App-Start: ohne geladene Aktivitäten würde der
 	// Abgleich die persönlichen mit der Team-Liste überschreiben.
 	try {
-		if (!app.loaded && !(await app.init())) return info;
+		if (!app.loaded && !(await app.init())) {
+			logWarn("Team-Aktivitäten nach Beitritt nicht geladen: App-Start fehlgeschlagen");
+			return info;
+		}
 		await syncTeamActivities();
 	} catch (e) {
 		logWarn("Team-Aktivitäten nach Beitritt nicht geladen", e);

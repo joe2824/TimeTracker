@@ -70,4 +70,17 @@ describe("completeTeamJoin", () => {
 		expect(app.activities.map((a) => a.id)).toContain(`${TEAM_ACTIVITY_PREFIX}a1`);
 		app.dispose();
 	});
+
+	it("überspringt den Abgleich und lässt den Beitritt gelingen, wenn der App-Start scheitert", async () => {
+		app.loaded = false;
+		const init = vi.spyOn(app, "init").mockResolvedValue(false);
+		joinTeam.mockResolvedValue({ teamMemberId: "m1", token: "tok", teamName: "Vertrieb" });
+
+		await expect(completeTeamJoin("https://tt.example.de", "code123", "Anna Meier")).resolves.toMatchObject({
+			teamName: "Vertrieb"
+		});
+
+		expect(fetchTeamActivities).not.toHaveBeenCalled();
+		init.mockRestore();
+	});
 });
