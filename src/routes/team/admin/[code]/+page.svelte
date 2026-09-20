@@ -2,7 +2,9 @@
 	// Verwalter-Link annehmen - anders als der einfache Mitglieds-Beitritt
 	// (routes/team/join/[code]) braucht das ein angemeldetes Konto auf diesem
 	// Server, siehe server/src/lib/server/teams.ts#joinTeamAsAdmin.
+	import { onMount } from "svelte";
 	import { page } from "$app/state";
+	import { app } from "$lib/app.svelte";
 	import { account } from "$lib/sync/account.svelte";
 	import { previewAdminInvite } from "$lib/team/api";
 	import { Button } from "$lib/components/ui/button";
@@ -15,6 +17,17 @@
 	let joinedTeamName = $state<string | null>(null);
 	let joinError = $state<string | null>(null);
 	let busy = $state(false);
+	// Diese Route läuft ohne den Start der Hauptseite: ohne app.init() und
+	// account.init() wäre account.linked immer false, auch bei angemeldetem Konto.
+	let accountReady = $state(false);
+
+	onMount(async () => {
+		try {
+			if (await app.init()) await account.init();
+		} finally {
+			accountReady = true;
+		}
+	});
 
 	$effect(() => {
 		if (!code) return;
@@ -47,7 +60,7 @@
 				Aktivitäten und Berichte.
 			</p>
 		</div>
-	{:else if preview === "loading"}
+	{:else if preview === "loading" || !accountReady}
 		<p class="text-muted-foreground text-sm">Link wird geprüft…</p>
 	{:else if preview === "error"}
 		<div class="space-y-2 text-center">
