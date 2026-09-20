@@ -14,6 +14,9 @@ import {
 	pairings,
 	records,
 	sessions,
+	teamMembers,
+	teamReports,
+	teams,
 	users
 } from "./db/schema";
 
@@ -71,7 +74,8 @@ export function deleteAccount(db: DbLike, userId: string): DeleteSummary {
  * Bestehen: sie verlängert sich bei jeder Nutzung (touchSession in auth.ts),
  * ein Chef, der nur im Browser arbeitet und nie ein Gerät koppelt oder erneut
  * einen Passkey anlegt, würde sonst trotz laufender Nutzung als inaktiv
- * gelten. Ein Konto ohne jedes Gerät/Passkey/Sitzung (sollte nicht vorkommen,
+ * gelten. Ebenso ein Team, dessen Mitglieder sich melden oder Berichte
+ * senden. Ein Konto ohne jedes Gerät/Passkey/Sitzung (sollte nicht vorkommen,
  * ausser bei einem abgebrochenen Anlegen) zählt über sein `createdAt`.
  * Liefert die Zahl gelöschter Konten.
  *
@@ -106,7 +110,26 @@ export function deleteInactiveAccounts(db: DbLike, maxAgeMs: number, now = Date.
 			.from(sessions)
 			.where(and(eq(sessions.userId, userId), gte(sessions.expiresAt, now)))
 			.get();
-		return !!validSession;
+		if (validSession) return true;
+
+		// Mitglieder und Berichte laufen über den Team-Token, nicht über ein Gerät
+		// des Chefs: ein Team, das noch benutzt wird, hält sein Konto am Leben.
+		// Sonst nähme die Kaskade Team, Mitglieder und Berichte mit.
+		const recentMember = db
+			.select({ id: teamMembers.id })
+			.from(teamMembers)
+			.innerJoin(teams, eq(teams.id, teamMembers.teamId))
+			.where(and(eq(teams.ownerUserId, userId), gte(teamMembers.lastSeenAt, cutoff)))
+			.get();
+		if (recentMember) return true;
+
+		const recentReport = db
+			.select({ memberId: teamReports.memberId })
+			.from(teamReports)
+			.innerJoin(teams, eq(teams.id, teamReports.teamId))
+			.where(and(eq(teams.ownerUserId, userId), gte(teamReports.submittedAt, cutoff)))
+			.get();
+		return !!recentReport;
 	};
 
 	const inactive = candidates.filter((u) => !isActive(u.id));

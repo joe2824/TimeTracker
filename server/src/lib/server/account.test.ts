@@ -2,7 +2,7 @@
 // (deleteInactiveAccounts).
 import { beforeEach, describe, expect, it } from "vitest";
 import { openDb, type Db } from "./db/index";
-import { credentials, devices, sessions, teams, users } from "./db/schema";
+import { credentials, devices, sessions, teamMembers, teamReports, teams, users } from "./db/schema";
 import { deleteInactiveAccounts } from "./account";
 import { eq } from "drizzle-orm";
 
@@ -117,6 +117,55 @@ describe("deleteInactiveAccounts", () => {
 		deleteInactiveAccounts(db, YEAR_MS, NOW);
 
 		expect(db.select().from(teams).where(eq(teams.id, "team-1")).get()).toBeUndefined();
+	});
+
+	function teamWithMember(ownerId: string, lastSeenAgoMs: number | null): void {
+		db.insert(teams)
+			.values({ id: `team-${ownerId}`, ownerUserId: ownerId, name: "Vertrieb", createdAt: NOW - YEAR_MS * 2 })
+			.run();
+		db.insert(teamMembers)
+			.values({
+				id: `member-${ownerId}`,
+				teamId: `team-${ownerId}`,
+				name: "Anna Meier",
+				tokenHash: `team-hash-${ownerId}`,
+				createdAt: NOW - YEAR_MS * 2,
+				lastSeenAt: lastSeenAgoMs === null ? null : NOW - lastSeenAgoMs
+			})
+			.run();
+	}
+
+	it("lässt einen Chef in Ruhe, dessen Team-Mitglied sich kürzlich gemeldet hat", () => {
+		// Mitglieder melden sich über ihren Team-Token, nicht über ein Gerät des
+		// Chefs - das Team lebt, auch wenn der Chef selbst nie vorbeischaut.
+		user("hanna", YEAR_MS * 2);
+		teamWithMember("hanna", YEAR_MS / 2);
+
+		expect(deleteInactiveAccounts(db, YEAR_MS, NOW)).toBe(0);
+		expect(db.select().from(teams).where(eq(teams.id, "team-hanna")).get()).toBeDefined();
+	});
+
+	it("lässt einen Chef in Ruhe, dessen Team kürzlich einen Bericht bekommen hat", () => {
+		user("ida", YEAR_MS * 2);
+		teamWithMember("ida", YEAR_MS * 2);
+		db.insert(teamReports)
+			.values({
+				teamId: "team-ida",
+				memberId: "member-ida",
+				month: "2026-08",
+				submittedAt: NOW - YEAR_MS / 2,
+				payload: "{}"
+			})
+			.run();
+
+		expect(deleteInactiveAccounts(db, YEAR_MS, NOW)).toBe(0);
+	});
+
+	it("löscht einen Chef, dessen Team ebenfalls seit der Frist ruht", () => {
+		user("jonas", YEAR_MS * 2);
+		teamWithMember("jonas", YEAR_MS * 2);
+
+		expect(deleteInactiveAccounts(db, YEAR_MS, NOW)).toBe(1);
 	});
 
 	it("tut nichts, wenn niemand die Frist überschreitet", () => {
