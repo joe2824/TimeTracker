@@ -17,13 +17,18 @@ export class TeamJoinFlow {
 	/** Text der letzten fehlgeschlagenen Beitritts-Anfrage - null, solange keine lief oder sie gelang. */
 	joinError = $state<string | null>(null);
 
+	/** Nummer der jüngsten Vorschau-Anfrage: eine ältere, spät antwortende darf nicht überschreiben. */
+	#previewRun = 0;
+
 	/** Vorschau für einen (neuen) Link laden. */
 	async loadPreview(serverUrl: string, code: string): Promise<void> {
+		const run = ++this.#previewRun;
 		this.preview = "loading";
 		try {
-			this.preview = await previewTeam(serverUrl, code);
+			const result = await previewTeam(serverUrl, code);
+			if (run === this.#previewRun) this.preview = result;
 		} catch {
-			this.preview = "error";
+			if (run === this.#previewRun) this.preview = "error";
 		}
 	}
 

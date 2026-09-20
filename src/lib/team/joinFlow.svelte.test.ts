@@ -27,6 +27,36 @@ describe("TeamJoinFlow", () => {
 		expect(flow.preview).toBe("error");
 	});
 
+	it("ignoriert die späte Antwort eines älteren Links", async () => {
+		const flow = new TeamJoinFlow();
+		let resolveFirst!: (v: { teamName: string }) => void;
+		previewTeam
+			.mockImplementationOnce(() => new Promise((resolve) => (resolveFirst = resolve)))
+			.mockResolvedValueOnce({ teamName: "Einkauf" });
+
+		const first = flow.loadPreview("https://tt.example.de", "codeA");
+		await flow.loadPreview("https://tt.example.de", "codeB");
+		resolveFirst({ teamName: "Vertrieb" });
+		await first;
+
+		expect(flow.preview).toEqual({ teamName: "Einkauf" });
+	});
+
+	it("ignoriert den Fehlschlag eines älteren Links", async () => {
+		const flow = new TeamJoinFlow();
+		let rejectFirst!: (e: Error) => void;
+		previewTeam
+			.mockImplementationOnce(() => new Promise((_, reject) => (rejectFirst = reject)))
+			.mockResolvedValueOnce({ teamName: "Einkauf" });
+
+		const first = flow.loadPreview("https://tt.example.de", "codeA");
+		await flow.loadPreview("https://tt.example.de", "codeB");
+		rejectFirst(new Error("abgelaufen"));
+		await first;
+
+		expect(flow.preview).toEqual({ teamName: "Einkauf" });
+	});
+
 	it("tritt bei und liefert die Team-Infos", async () => {
 		const flow = new TeamJoinFlow();
 		flow.name = " Anna Meier ";
