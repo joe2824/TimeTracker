@@ -9,6 +9,15 @@ export function pairLink(code: string): string {
 	return `${SCHEMA}://pair/${encodeURIComponent(code)}`;
 }
 
+/** Ein Link kommt von außen: ein kaputtes Escape darf den Listener nicht zum Werfen bringen. */
+function decodeSegment(segment: string): string | null {
+	try {
+		return decodeURIComponent(segment);
+	} catch {
+		return null;
+	}
+}
+
 /**
  * Den Kopplungscode aus einem Link ziehen - oder null.
  *
@@ -17,7 +26,7 @@ export function pairLink(code: string): string {
  */
 export function pairCodeFrom(url: string): string | null {
 	const hit = /^timetracker:\/\/pair\/([^/?#]+)/i.exec(url.trim());
-	return hit ? decodeURIComponent(hit[1]) : null;
+	return hit ? decodeSegment(hit[1]) : null;
 }
 
 /**
@@ -78,7 +87,8 @@ export function teamJoinFrom(url: string): { code: string; serverUrl: string } |
 	if (!hit) return null;
 	const server = new URLSearchParams(hit[2] ?? "").get("server")?.trim();
 	if (!server) return null;
-	return { code: decodeURIComponent(hit[1]), serverUrl: server };
+	const code = decodeSegment(hit[1]);
+	return code === null ? null : { code, serverUrl: server };
 }
 
 /**

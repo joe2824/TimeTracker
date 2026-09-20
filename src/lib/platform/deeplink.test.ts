@@ -90,6 +90,11 @@ describe("teamJoinFrom", () => {
 		expect(pairCodeFrom(`timetracker://team/join/ABCD${suffix}`)).toBeNull();
 	});
 
+	it("gibt null bei einem kaputten Prozent-Escape, statt zu werfen", () => {
+		expect(teamJoinFrom(`timetracker://team/join/%E0%A4%A${suffix}`)).toBeNull();
+		expect(pairCodeFrom("timetracker://pair/%E0%A4%A")).toBeNull();
+	});
+
 	it("gibt null ohne Serveradresse", () => {
 		expect(teamJoinFrom("timetracker://team/join/ABCD")).toBeNull();
 	});
