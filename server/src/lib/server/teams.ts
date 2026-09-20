@@ -15,6 +15,7 @@ import {
 } from "./db/schema";
 import { generateInviteCode } from "./invites";
 import { hashSecret, newSecret } from "./auth";
+import { cleanEmail } from "$shared/email";
 
 export interface TeamRow {
 	id: string;
@@ -138,7 +139,7 @@ export function joinTeam(
 			id,
 			teamId: team.id,
 			name: name.slice(0, 100) || "Ohne Namen",
-			email: email?.trim().slice(0, 200) || null,
+			email: cleanEmail(email),
 			tokenHash: hashSecret(token),
 			createdAt: Date.now()
 		})

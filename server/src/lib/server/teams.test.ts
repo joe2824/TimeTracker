@@ -146,6 +146,15 @@ describe("joinTeam", () => {
 		expect(roster[1]).toMatchObject({ name: "Bodo Schmidt", email: null });
 	});
 
+	it("verwirft eine E-Mail, die mehrere Empfänger einschleusen würde", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		const invite = rotateTeamInvite(db, team.id);
+		joinTeam(db, invite.code, "Anna Meier", "anna@firma.de; fremd@firma.de");
+		joinTeam(db, invite.code, "Bodo Schmidt", "bodo@firma.de, fremd@firma.de");
+		joinTeam(db, invite.code, "Clara Weber", "keine-adresse");
+		expect(listTeamMembers(db, team.id).map((m) => m.email)).toEqual([null, null, null]);
+	});
+
 	it("liefert null für einen widerrufenen Code", () => {
 		const team = createTeam(db, ANNA, "Vertrieb");
 		const invite = rotateTeamInvite(db, team.id);

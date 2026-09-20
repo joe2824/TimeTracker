@@ -9,6 +9,7 @@
 	import { teamReminderHtml, teamReminderSubject, teamReportsToCsv } from "$lib/report/teamReport";
 	import { fmtClock, fmtDateHuman, monthLabel, prevMonthKey } from "$lib/time/time";
 	import { errorText, logError, logInfo } from "$lib/log";
+	import { cleanEmail } from "$shared/email";
 	import { tabFocus } from "$lib/ui/tabFocus.svelte";
 	import { Button, buttonVariants } from "$lib/components/ui/button";
 	import { Badge } from "$lib/components/ui/badge";
@@ -102,7 +103,7 @@
 	const submitted = $derived(reports.filter((r) => r.submittedAt !== null));
 	const missing = $derived(reports.filter((r) => r.submittedAt === null));
 	/** Fehlende mit Adresse – nur die lassen sich per Mail erinnern. */
-	const reachableMissing = $derived(missing.filter((r) => r.memberEmail));
+	const reachableMissing = $derived(missing.filter((r) => cleanEmail(r.memberEmail)));
 
 	/** Gegen dieselbe Verwechslungsgefahr wie teamDetailsRequest oben. */
 	let reportsRequest = 0;
@@ -194,7 +195,7 @@
 			// Alle Fehlenden in EINEN Entwurf; im Text steht kein Name, damit
 			// niemand darin liest, wer sonst noch säumig ist.
 			await createOutlookDraft(
-				reachableMissing.map((r) => r.memberEmail).join("; "),
+				reachableMissing.map((r) => cleanEmail(r.memberEmail)).join("; "),
 				teamReminderSubject(label),
 				teamReminderHtml(label)
 			);
