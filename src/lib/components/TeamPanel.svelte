@@ -102,8 +102,13 @@
 	const label = $derived(monthLabel(month));
 	const submitted = $derived(reports.filter((r) => r.submittedAt !== null));
 	const missing = $derived(reports.filter((r) => r.submittedAt === null));
-	/** Fehlende mit Adresse – nur die lassen sich per Mail erinnern. */
-	const reachableMissing = $derived(missing.filter((r) => cleanEmail(r.memberEmail)));
+	/** Fehlende mit einer einzelnen, gültigen Adresse (bereinigt in `email`) – nur die lassen sich per Mail erinnern. */
+	const reachableMissing = $derived(
+		missing.flatMap((r) => {
+			const email = cleanEmail(r.memberEmail);
+			return email ? [{ ...r, email }] : [];
+		})
+	);
 
 	/** Gegen dieselbe Verwechslungsgefahr wie teamDetailsRequest oben. */
 	let reportsRequest = 0;
@@ -195,7 +200,7 @@
 			// Alle Fehlenden in EINEN Entwurf; im Text steht kein Name, damit
 			// niemand darin liest, wer sonst noch säumig ist.
 			await createOutlookDraft(
-				reachableMissing.map((r) => cleanEmail(r.memberEmail)).join("; "),
+				reachableMissing.map((r) => r.email).join("; "),
 				teamReminderSubject(label),
 				teamReminderHtml(label)
 			);
