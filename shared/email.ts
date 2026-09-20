@@ -2,7 +2,7 @@
 // als Empfänger in einen Outlook-Entwurf darf (Trenner wie ";" und "," würden
 // zusätzliche Empfänger einschleusen).
 
-const ADDRESS = /^[^\s@;,<>()"'\\]+@[^\s@;,<>()"'\\]+\.[^\s@;,<>()"'\\]+$/;
+const ADDRESS = /^[^\s@;,<>()"\\]+@[^\s@;,<>()"\\]+\.[^\s@;,<>()"\\]+$/;
 
 /** Die getrimmte Adresse, oder null, wenn es keine einzelne gültige ist. */
 export function cleanEmail(input: unknown): string | null {

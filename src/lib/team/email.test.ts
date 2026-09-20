@@ -6,6 +6,10 @@ describe("cleanEmail", () => {
 		expect(cleanEmail("  anna@firma.de ")).toBe("anna@firma.de");
 	});
 
+	it("nimmt einen Apostroph im Namen an", () => {
+		expect(cleanEmail("o'brien@firma.de")).toBe("o'brien@firma.de");
+	});
+
 	it.each(["anna@firma.de; fremd@firma.de", "anna@firma.de, fremd@firma.de", "anna@firma.de fremd@firma.de", "<anna@firma.de>", "keine-adresse", "", "a@b"])(
 		"weist %j ab",
 		(input) => {
