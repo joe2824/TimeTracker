@@ -3,7 +3,9 @@
 	// der Desktop-Anwendung: ein Team-Mitglied braucht kein Konto und keine
 	// Installation. Wer die Anwendung schon hat, bekommt zusätzlich den Weg
 	// dorthin (siehe PairingCode.svelte für dasselbe Muster bei der Kopplung).
+	import { onDestroy } from "svelte";
 	import { page } from "$app/state";
+	import { app } from "$lib/app.svelte";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
@@ -16,6 +18,9 @@
 	const serverUrl = $derived(page.url.origin);
 
 	const flow = new TeamJoinFlow();
+	// Der Beitritt startet die App (siehe completeTeamJoin) - deren Uhr soll nicht
+	// über die Route hinaus laufen.
+	onDestroy(() => app.dispose());
 	let joinedTeamName = $state<string | null>(null);
 
 	$effect(() => {
