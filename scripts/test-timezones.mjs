@@ -6,10 +6,10 @@
 // Modul ist.
 import { spawnSync } from "node:child_process";
 
-const ZONEN = ["Pacific/Kiritimati", "Pacific/Midway", "Australia/Eucla"];
+const ZONES =["Pacific/Kiritimati", "Pacific/Midway", "Australia/Eucla"];
 
 let failed = false;
-for (const tz of ZONEN) {
+for (const tz of ZONES) {
 	console.log(`\n=== TZ=${tz} ===`);
 	// shell: true, weil npm unter Windows ein .cmd ist - spawnSync findet es ohne
 	// Shell nicht (EINVAL). Der Befehl ist fest verdrahtet, keine Nutzereingabe.
