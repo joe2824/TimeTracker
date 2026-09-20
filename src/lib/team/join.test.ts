@@ -14,6 +14,7 @@ vi.mock("./api", () => ({
 }));
 
 const { app } = await import("../app.svelte");
+const { saveActivities } = await import("../store");
 const { completeTeamJoin } = await import("./join");
 const { TEAM_ACTIVITY_PREFIX } = await import("./activities");
 
@@ -50,5 +51,23 @@ describe("completeTeamJoin", () => {
 		await expect(completeTeamJoin("https://tt.example.de", "code123", "Anna Meier")).resolves.toMatchObject({
 			teamName: "Vertrieb"
 		});
+	});
+
+	it("behält die persönlichen Aktivitäten, wenn die App noch nicht geladen ist (Web-Route)", async () => {
+		await saveActivities([{ id: "mine", name: "Eigenes Projekt", isAbsence: false, archived: false, sortOrder: 0 }]);
+		app.activities = [];
+		app.loaded = false;
+		joinTeam.mockResolvedValue({ teamMemberId: "m1", token: "tok", teamName: "Vertrieb" });
+		fetchTeamActivities.mockResolvedValue({
+			activities: [
+				{ id: "a1", name: "Projekt A", isAbsence: false, sortOrder: 0, color: null, archived: false, updatedAt: 1 }
+			]
+		});
+
+		await completeTeamJoin("https://tt.example.de", "code123", "Anna Meier");
+
+		expect(app.activities.map((a) => a.id)).toContain("mine");
+		expect(app.activities.map((a) => a.id)).toContain(`${TEAM_ACTIVITY_PREFIX}a1`);
+		app.dispose();
 	});
 });

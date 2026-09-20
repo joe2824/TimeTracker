@@ -1,6 +1,7 @@
 // Team beitreten: Vorschau und Beitritt, samt Ablegen des Team-Tokens. Von der
 // Web-Route UND dem Desktop-Dialog benutzt, damit beide dasselbe tun.
 import { joinTeam as apiJoinTeam, previewTeamInvite } from "./api";
+import { app } from "../app.svelte";
 import { saveTeamDevice, type TeamDeviceInfo } from "../store";
 import { teamJoin } from "./state.svelte";
 import { syncTeamActivities } from "./activities";
@@ -31,7 +32,10 @@ export async function completeTeamJoin(
 	// Sonst sieht ein bereits laufendes Gerät die gemeinsamen Aktivitäten erst
 	// nach dem nächsten Start oder einem manuellen Aktualisieren im Bericht-Tab.
 	// Ein Fehlschlag hier darf den erfolgreichen Beitritt nicht zurücknehmen.
+	// Die Web-Route läuft ohne App-Start: ohne geladene Aktivitäten würde der
+	// Abgleich die persönlichen mit der Team-Liste überschreiben.
 	try {
+		if (!app.loaded && !(await app.init())) return info;
 		await syncTeamActivities();
 	} catch (e) {
 		logWarn("Team-Aktivitäten nach Beitritt nicht geladen", e);
