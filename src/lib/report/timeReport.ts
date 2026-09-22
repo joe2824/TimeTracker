@@ -1,6 +1,7 @@
 // Zeitwirtschaftsreport aus LOGA (Scout -> "gesetzliche Arbeitszeitverstöße").
 import type { XlsxSheet } from "./xlsx";
 import { minToClock } from "../time/time";
+import { deductBreakFromHours } from "../time/breaks";
 
 /** Ein gesetzter Verstoss-Hinweis aus dem Report. */
 export interface TimeReportFlag {
@@ -20,6 +21,10 @@ export interface TimeReportDay {
 	lastOut: string | null;
 	/** "Arbeitszeit täglich" in Dezimalstunden (netto, Pause bereits abgezogen) */
 	hours: number;
+	/** Die Stundenzelle war leer oder unlesbar statt „0" – hier lässt sich nichts abschätzen. */
+	hoursUnknown?: boolean;
+	/** `hours` stammt nicht aus dem Report, sondern aus den Stempeln (Report meldet 0). */
+	estimated?: boolean;
 	flags: TimeReportFlag[];
 }
 
@@ -166,6 +171,18 @@ export function parseReportHours(raw: string): number {
 	return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
+/**
+ * Leer oder nicht lesbar? Beides liest `parseReportHours` als „0", ist aber
+ * keine gemeldete Null – eine leere Zelle ebenso wenig wie eine kaputte
+ * (z. B. eine Formel, die als Fehlertext exportiert wurde).
+ */
+function isUnreadableHours(raw: string): boolean {
+	const t = raw.trim();
+	if (!t) return true;
+	if (/^(\d{1,3}):(\d{2})$/.test(t)) return false;
+	return !Number.isFinite(Number(t.replace(",", ".")));
+}
+
 // ---------- Pause ----------
 
 /**
@@ -199,6 +216,27 @@ export function breakHours(day: TimeReportDay): number {
 /** Wurde an diesem Tag gestempelt? */
 export function hasStamps(day: TimeReportDay): boolean {
 	return !!day.firstIn && !!day.lastOut;
+}
+
+/**
+ * Stunden eines Tages, wie sie fuer den Abgleich gelten: der Report-Wert, oder,
+ * wenn LOGA einen gestempelten Tag noch mit 0 h fuehrt (noch nicht verrechnet),
+ * aus den Stempeln geschaetzt (Anwesenheit minus Pausenregel).
+ *
+ * Wird bei jedem Abgleich neu berechnet statt beim Einlesen gespeichert – so
+ * greift die Schaetzung auch fuer laengst gespeicherte Reports, ohne dass die
+ * Datei neu eingelesen werden muss.
+ */
+export function withEstimatedHours(day: TimeReportDay): TimeReportDay {
+	if (day.hours > 0 || day.hoursUnknown || !hasStamps(day)) return day;
+	// An Sonn- und Feiertagen sind 0 h ohne Verrechnung ein üblicher Wert.
+	if (day.flags.some((f) => f.key === "sunday" || f.key === "holiday")) return day;
+	const gross = grossHours(day);
+	if (gross <= 0) return day;
+	// Dieselbe Hausregel wie beim App-eigenen Pausenabzug (breaks.ts) – ruleBreakHours
+	// bildet sie separat noch einmal nach, um LOGAs tatsächlichen Abzug zu erkennen
+	// (siehe breakHours/ruleMismatch); hier reicht die fertige Umkehrfunktion.
+	return { ...day, hours: Math.round(deductBreakFromHours(gross) * 100) / 100, estimated: true };
 }
 
 /** In LOGA ist nur „Kommen" gestempelt – das Gehen fehlt noch. */
@@ -274,6 +312,7 @@ export function parseTimeReport(sheet: XlsxSheet): ParsedTimeReport {
 			firstIn: parseReportClock(cell(row, "firstIn")),
 			lastOut: parseReportClock(cell(row, "lastOut")),
 			hours: parseReportHours(cell(row, "hours")),
+			hoursUnknown: isUnreadableHours(cell(row, "hours")),
 			flags
 		};
 
@@ -282,6 +321,7 @@ export function parseTimeReport(sheet: XlsxSheet): ParsedTimeReport {
 		if (prev) {
 			// Zwei Zeilen für denselben Tag: Stunden addieren, Stempel aussen fassen.
 			prev.hours += day.hours;
+			prev.hoursUnknown = (prev.hoursUnknown ?? false) && (day.hoursUnknown ?? false);
 			if (!prev.firstIn || (day.firstIn && day.firstIn < prev.firstIn)) prev.firstIn = day.firstIn;
 			if (!prev.lastOut || (day.lastOut && day.lastOut > prev.lastOut)) prev.lastOut = day.lastOut;
 			for (const f of day.flags) if (!prev.flags.some((x) => x.key === f.key)) prev.flags.push(f);

@@ -1,7 +1,7 @@
 // Abgleich: LOGA-Tagesstunden gegen die hier erfassten Projektzeiten.
 import type { Entry } from "../types";
 import type { TimeReportDay } from "../report/timeReport";
-import { breakHours, grossHours, hasStamps, isOpenDay } from "../report/timeReport";
+import { breakHours, grossHours, hasStamps, isOpenDay, withEstimatedHours } from "../report/timeReport";
 import { deductBreakFromHours, grossForNet } from "./breaks";
 import { entryHours, fmtDate, openEntryUntil, startOfNextDay } from "./time";
 import { zonedParts } from "./tz";
@@ -124,7 +124,11 @@ export function reconcile(
 	const out: ReconcileDay[] = [];
 	const summary = { ok: 0, missing: 0, partial: 0, over: 0, missingHours: 0 };
 
-	for (const report of days) {
+	for (const rawReport of days) {
+		// Einziger Ort, an dem ein gestempelter, aber noch nicht verrechneter Tag
+		// (LOGA meldet 0 h) auf die geschätzten Stunden aufgelöst wird – wirkt
+		// dadurch bei jedem Aufruf, nicht erst nach einem erneuten Einlesen.
+		const report = withEstimatedHours(rawReport);
 		const trackedHours = toMinutes(tracked.get(report.date) ?? 0);
 		const reportHours = toMinutes(report.hours);
 		const diff = toMinutes(reportHours - trackedHours);
@@ -194,6 +198,19 @@ function minutesOfDay(ts: number): number {
 	return p.hour * 60 + p.minute;
 }
 
+/**
+ * Wie `minutesOfDay`, aber auf die naechste Minute aufgerundet. Fuer das ENDE
+ * einer belegten Spanne: ein per Timer gestoppter Eintrag endet selten exakt
+ * auf der Minute, und auf die Minute abgeschnitten gaelten seine letzten
+ * Sekunden faelschlich als frei. Ein Nachtrag, der dort ansetzt, wuerde sich
+ * beim Speichern (sekundengenaue Ueberschneidungspruefung) dann doch stossen.
+ */
+function ceilMinutesOfDay(ts: number): number {
+	const p = zonedParts(ts);
+	const min = p.hour * 60 + p.minute;
+	return p.second > 0 ? min + 1 : min;
+}
+
 /** Die von vorhandenen Einträgen belegten Spannen eines Tages, zusammengefasst. */
 export function occupiedIntervals(entries: Entry[], date: string, now: number): Interval[] {
 	const raw: Interval[] = [];
@@ -208,7 +225,7 @@ export function occupiedIntervals(entries: Entry[], date: string, now: number): 
 		const stop = Math.min(end, dayEnd);
 		raw.push({
 			start: minutesOfDay(e.startTs),
-			end: stop >= dayEnd ? 1440 : minutesOfDay(stop)
+			end: stop >= dayEnd ? 1440 : ceilMinutesOfDay(stop)
 		});
 	}
 	raw.sort((a, b) => a.start - b.start);

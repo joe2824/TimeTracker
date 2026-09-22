@@ -11,6 +11,7 @@ import {
 	ruleBreakHours,
 	serialToDate,
 	TimeReportError,
+	withEstimatedHours,
 	type TimeReportDay
 } from "./timeReport";
 import { readXlsx, type XlsxSheet } from "./xlsx";
@@ -199,6 +200,21 @@ describe("parseTimeReport", () => {
 		});
 	});
 
+	it("laesst eine leere Stundenzelle als unbekannt erkennbar, nicht als gemeldete Null", () => {
+		const day = parseTimeReport(sheet([row("46285.0", "08:00", "18:45", "")])).people[0].days[0];
+		expect(day).toMatchObject({ hours: 0, hoursUnknown: true });
+	});
+
+	it("laesst eine unlesbare Stundenzelle ebenfalls als unbekannt erkennbar", () => {
+		const day = parseTimeReport(sheet([row("46285.0", "08:00", "18:45", "#WERT!")])).people[0].days[0];
+		expect(day).toMatchObject({ hours: 0, hoursUnknown: true });
+	});
+
+	it("haelt eine tatsaechlich gemeldete Null von einer unbekannten Zelle auseinander", () => {
+		const day = parseTimeReport(sheet([row("46285.0", "08:00", "18:45", "0.0")])).people[0].days[0];
+		expect(day).toMatchObject({ hours: 0, hoursUnknown: false });
+	});
+
 	it('verwechselt "Arbeitszeit täglich" nicht mit "Arbeitszeit täglich > 10h"', () => {
 		// Die Überschriften beginnen gleich – ein Präfix-Vergleich läge hier falsch.
 		const r = row("46062.0", "06:30", "18:00", "10.0");
@@ -331,5 +347,59 @@ describe("echter Report (anonymisiertes Fixture)", () => {
 		expect(max.days.find((d) => d.date === "2026-01-04")!.flags.map((f) => f.key)).toEqual([
 			"sunday"
 		]);
+	});
+});
+
+describe("withEstimatedHours", () => {
+	function stampedDay(over: Partial<TimeReportDay> = {}): TimeReportDay {
+		return {
+			date: "2026-09-16",
+			firstIn: "08:00",
+			lastOut: "18:45",
+			hours: 0,
+			flags: [],
+			...over
+		};
+	}
+
+	it("schaetzt einen gestempelten, noch nicht verrechneten Tag aus den Stempeln", () => {
+		// 08:00–18:45 = 10,75 h Anwesenheit, minus 45 Minuten Pause.
+		const day = withEstimatedHours(stampedDay());
+		expect(day).toMatchObject({ hours: 10, estimated: true });
+	});
+
+	it("laesst eine tatsaechlich gemeldete Stunde unangetastet", () => {
+		const day = withEstimatedHours(stampedDay({ hours: 7.67 }));
+		expect(day).toMatchObject({ hours: 7.67 });
+		expect(day.estimated).toBeUndefined();
+	});
+
+	it("schaetzt nicht ohne Stempel", () => {
+		const day = withEstimatedHours(stampedDay({ firstIn: null, lastOut: null }));
+		expect(day).toMatchObject({ hours: 0 });
+		expect(day.estimated).toBeUndefined();
+	});
+
+	it("schaetzt nicht, wenn die Stundenzelle unbekannt statt gemeldet war", () => {
+		const day = withEstimatedHours(stampedDay({ hoursUnknown: true }));
+		expect(day).toMatchObject({ hours: 0 });
+		expect(day.estimated).toBeUndefined();
+	});
+
+	it("schaetzt nicht an einem Sonn- oder Feiertag – 0 h ist dort ueblich", () => {
+		const sunday = withEstimatedHours(
+			stampedDay({ flags: [{ key: "sunday", label: "Sonntag", value: "X" }] })
+		);
+		expect(sunday.estimated).toBeUndefined();
+		const holiday = withEstimatedHours(
+			stampedDay({ flags: [{ key: "holiday", label: "Feiertag", value: "X" }] })
+		);
+		expect(holiday.estimated).toBeUndefined();
+	});
+
+	it("schaetzt nicht, wenn Kommen und Gehen gleich sind – keine Dauer zu holen", () => {
+		const day = withEstimatedHours(stampedDay({ firstIn: "08:00", lastOut: "08:00" }));
+		expect(day).toMatchObject({ hours: 0 });
+		expect(day.estimated).toBeUndefined();
 	});
 });

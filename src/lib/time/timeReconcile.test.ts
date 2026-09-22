@@ -133,6 +133,18 @@ describe("reconcile", () => {
 		expect(r.over).toBe(0);
 	});
 
+	it("schaetzt einen gestempelten, noch nicht verrechneten Tag aus den Stempeln statt mit 0 zu rechnen", () => {
+		// 08:00–17:51 gestempelt (9,85 h), minus 45 Minuten Pause = 9,1 h. LOGA
+		// meldet noch 0 h, erfasst sind erst 8 h – die Differenz bleibt sichtbar,
+		// statt die erfassten 8 h faelschlich als "zu viel" zu melden.
+		const d = day({ firstIn: "08:00", lastOut: "17:51", hours: 0 });
+		const r = reconcile([d], [entry("2026-01-12", "08:00", "16:00")], OPTS);
+		expect(r.days[0].report.estimated).toBe(true);
+		expect(r.days[0].report.hours).toBeCloseTo(9.1, 2);
+		expect(r.days[0].status).toBe("partial");
+		expect(r.days[0].diff).toBeGreaterThan(0);
+	});
+
 	it("meldet fehlende Zeit auch an einem angefangenen Tag", () => {
 		// Andere Richtung: was LOGA schon gutgeschrieben hat, wird durch ein
 		// späteres Gehen nicht weniger – der Fehlbetrag steht.
@@ -243,6 +255,24 @@ describe("occupiedIntervals / freeIntervals", () => {
 			Date.now()
 		);
 		expect(occ).toEqual([{ start: 780, end: 840 }]);
+	});
+
+	it("rundet ein Ende mit Sekunden auf die naechste Minute auf", () => {
+		// Ein per Timer gestoppter Eintrag endet selten exakt auf der Minute. Auf
+		// die Minute abgeschnitten liesse das die letzten Sekunden faelschlich als
+		// frei gelten - ein dort ansetzender Nachtrag wuerde sich beim Speichern
+		// dann als Ueberschneidung entpuppen.
+		const e = entry("2026-01-12", "08:00", "17:51");
+		e.endTs = (e.endTs ?? 0) + 37_000;
+		expect(occupiedIntervals([e], "2026-01-12", Date.now())).toEqual([{ start: 480, end: 1072 }]);
+	});
+
+	it("rundet einen Start mit Sekunden nicht ab, sondern behandelt ihn als belegt", () => {
+		// Umgekehrt: ein Start um 08:56:30 darf nicht auf 08:56 abgerundet werden -
+		// sonst gilt 08:56:00-08:56:30 faelschlich als frei.
+		const e = entry("2026-01-12", "08:56", "09:00");
+		e.startTs += 30_000;
+		expect(occupiedIntervals([e], "2026-01-12", Date.now())).toEqual([{ start: 536, end: 540 }]);
 	});
 
 	it("schneidet die Luecken aus dem Fenster", () => {

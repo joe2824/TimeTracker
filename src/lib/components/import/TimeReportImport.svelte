@@ -956,8 +956,13 @@
 									<Table.Cell class="text-muted-foreground font-mono text-xs whitespace-nowrap">
 										{stampLabel(day)}
 									</Table.Cell>
-									<Table.Cell class="text-right font-mono tabular-nums">
-										{fmtHoursClock(day.report.hours)}
+									<Table.Cell
+										class="text-right font-mono tabular-nums"
+										title={day.report.estimated
+											? "LOGA meldet für diesen Tag noch 0 h – berechnet aus den Stempelzeiten"
+											: undefined}
+									>
+										{day.report.estimated ? "≈ " : ""}{fmtHoursClock(day.report.hours)}
 									</Table.Cell>
 									<Table.Cell class="text-right font-mono tabular-nums">
 										{fmtHoursClock(day.tracked)}

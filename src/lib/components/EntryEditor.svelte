@@ -206,12 +206,22 @@
 
 		return {
 			reportHours: rd.report.hours,
+			reportEstimated: rd.report.estimated ?? false,
 			delta,
 			// Null Minuten sind kein Eintrag, und was nicht in den Tag passt, geht
 			// hier nicht. Wer den Tag so leeren will, löscht den Eintrag.
 			block: delta !== 0 ? block : null
 		};
 	});
+
+	/** Formulierung fuer den LOGA-Stand im Hinweis unten – geschaetzt oder gemeldet. */
+	const dayAdjustKnown = $derived(
+		dayAdjust
+			? dayAdjust.reportEstimated
+				? `noch nicht verrechnet – geschätzt ${fmtHoursClock(dayAdjust.reportHours)} h`
+				: `LOGA kennt ${fmtHoursClock(dayAdjust.reportHours)} h`
+			: ""
+	);
 
 	/** Den Entwurf auf `dayAdjust.block` setzen – die Dauer trifft dann die LOGA-Stunden. */
 	function applyDayAdjust() {
@@ -413,6 +423,7 @@
 				hours,
 				pause,
 				reportHours: rd?.report.hours ?? 0,
+				reportEstimated: rd?.report.estimated ?? false,
 				missing,
 				over
 			});
@@ -707,7 +718,12 @@
 									<Popover.Content align="end" class="space-y-1">
 										<div class="text-xs font-medium">Abweichung zum Zeitwächter</div>
 										<p class="text-muted-foreground text-xs leading-relaxed">
-											LOGA kennt für diesen Tag {fmtHoursClock(day.reportHours)} h.
+											{#if day.reportEstimated}
+												LOGA hat diesen Tag noch nicht verrechnet – aus den Stempeln geschätzt:
+												{fmtHoursClock(day.reportHours)} h.
+											{:else}
+												LOGA kennt für diesen Tag {fmtHoursClock(day.reportHours)} h.
+											{/if}
 											{#if isMissing}
 												Hier fehlen {fmtHoursClock(day.missing)} h.
 											{:else}
@@ -890,11 +906,13 @@
 					>
 						<span class="min-w-0 flex-1">
 							{#if dayAdjust.delta > 0}
-								Zeitwächter: an diesem Tag fehlen {fmtHoursClock(dayAdjust.delta)} h – LOGA kennt
-								{fmtHoursClock(dayAdjust.reportHours)} h.
+								Zeitwächter: an diesem Tag fehlen {fmtHoursClock(dayAdjust.delta)} h – {dayAdjustKnown}.
 							{:else if dayAdjust.delta < 0}
 								Zeitwächter: an diesem Tag sind {fmtHoursClock(-dayAdjust.delta)} h zu viel erfasst –
-								LOGA kennt {fmtHoursClock(dayAdjust.reportHours)} h.
+								{dayAdjustKnown}.
+							{:else if dayAdjust.reportEstimated}
+								Passt zur geschätzten Zeitwächter-Stunde (noch nicht verrechnet): der Tag kommt
+								damit auf {fmtHoursClock(dayAdjust.reportHours)} h.
 							{:else}
 								Passt zum Zeitwächter: der Tag kommt damit auf {fmtHoursClock(
 									dayAdjust.reportHours
