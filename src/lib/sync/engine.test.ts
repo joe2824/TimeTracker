@@ -269,6 +269,73 @@ describe("Zwei Geraete", () => {
 		expect(list.find((e) => e.id === "h1")!.endTs).toBe(ts(15, 14));
 	});
 
+	it("schliesst keinen laufenden Timer, nur weil beim Start eine Mitternachts-Teilung dazukam", async () => {
+		// Der Fall aus dem Betrieb: der Rechner startet morgens mit einem Lauf von
+		// gestern, den ein anderes Geraet laengst beendet hat, und teilt ihn an der
+		// Tagesgrenze. Die Fortsetzung ist Sekunden alt - nach dem Stempel gewaenne
+		// sie, und der Timer, der gerade wirklich laeuft, fiele auf Dauer null
+		// zusammen.
+		const midnight = startOfNextDay(ts(15, 9));
+		const desktop = await deviceWith("rechner", entry("d1", { startTs: ts(15, 9), endTs: null }));
+
+		// Das Handy beendet den Lauf gestern Abend und startet heute frueh einen
+		// eigenen. Beides steht auf dem Server, der Rechner weiss von nichts.
+		const phone = new FakeDevice("handy");
+		await on(phone, (engine) => engine.sync());
+		await afterwards();
+		await changeAndSync(phone, async () => {
+			const list = await store.loadEntries(MONTH);
+			await store.saveEntries(MONTH, [
+				...list.map((e) => (e.id === "d1" ? { ...e, endTs: ts(15, 18) } : e)),
+				entry("h1", { startTs: ts(16, 8), endTs: null })
+			]);
+		});
+
+		// Der Rechner erlebt derweil offline Mitternacht und teilt seinen Lauf.
+		await afterwards();
+		await on(desktop, async () => {
+			const list = await store.loadEntries(MONTH);
+			await store.saveEntries(MONTH, [
+				...list.map((e) => (e.id === "d1" ? { ...e, endTs: midnight } : e)),
+				entry("d2", { startTs: midnight, endTs: null })
+			]);
+		});
+
+		await on(desktop, (engine) => engine.sync());
+
+		const list = await entries(desktop);
+		// Der Lauf vom Handy laeuft weiter - er ist gestartet worden, die
+		// Fortsetzung ist bloss gebucht.
+		expect(list.find((e) => e.id === "h1")!.endTs).toBeNull();
+		// Die Fortsetzung endet an ihrem eigenen Start: keine erfundenen acht
+		// Stunden bis zum Start des echten Laufs.
+		expect(list.find((e) => e.id === "d2")!.endTs).toBe(midnight);
+
+		// Und das Handy behaelt seinen laufenden Timer - hier faellt sonst auf,
+		// dass der Rechner ihn dem ganzen Konto weggeschlossen hat.
+		await on(phone, (engine) => engine.sync());
+		expect((await entries(phone)).find((e) => e.id === "h1")!.endTs).toBeNull();
+	});
+
+	it("sagt dem Server, welchen Timer es geschlossen hat", async () => {
+		// Zwei echte Laeufe, einer muss weichen. Das ist eine Entscheidung dieses
+		// Geraets, kein Serverstand - bliebe sie hier liegen, liefe der Timer auf
+		// dem anderen Geraet weiter und beide Staende gingen still auseinander.
+		const phone = await phoneWith(entry("h1", { endTs: null, startTs: ts(15, 9) }));
+
+		const desktop = new FakeDevice("rechner");
+		await on(desktop, async (engine) => {
+			await store.saveEntries(MONTH, [entry("r1", { endTs: null, startTs: ts(15, 14) })]);
+			return engine.sync();
+		});
+
+		expect(await on(desktop, async () => pendingChanges().map((c) => c.id))).toContain("h1");
+
+		await on(desktop, (engine) => engine.sync());
+		await on(phone, (engine) => engine.sync());
+		expect((await entries(phone)).find((e) => e.id === "h1")!.endTs).toBe(ts(15, 14));
+	});
+
 	it("beendet eine offline entstandene Mitternachts-Fortsetzung nicht einfach selbst, wenn der Server den Lauf laengst frueher geschlossen hat", async () => {
 		// Die Tagesgrenze in der Zeitzone der App, nicht der der Testdaten.
 		const midnight = startOfNextDay(ts(15, 9));

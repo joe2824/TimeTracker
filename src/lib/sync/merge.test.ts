@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { mergeRecord, pickWinner, resolveOpenEntries } from "./merge";
 import type { Entry } from "../types";
-import { anEntry } from "../testing/fixtures";
+import { anEntry, ts } from "../testing/fixtures";
+import { startOfNextDay } from "../time/time";
 
 interface TestRecord {
 	id: string;
@@ -216,6 +217,40 @@ describe("resolveOpenEntries", () => {
 			e("c", { updatedAt: 3000 })
 		]);
 		expect(fix.map((x) => x.id).sort()).toEqual(["a", "b"]);
+	});
+
+	it("laesst eine geratene Mitternachts-Fortsetzung den laufenden Timer nicht schliessen", () => {
+		// Der Fall aus dem Betrieb: die App startet mit einem Lauf von gestern, der
+		// anderswo laengst beendet wurde, und teilt ihn an der Tagesgrenze. Die
+		// Fortsetzung ist Sekunden alt und haette nach dem Stempel gewonnen - der
+		// Timer, den ein anderes Geraet gerade haelt, waere auf Dauer null
+		// zusammengefallen.
+		const midnight = startOfNextDay(ts(15, 9));
+		// Der geteilte Lauf endete in Wahrheit um 18 Uhr - das hat ein anderes
+		// Geraet entschieden, die Fortsetzung ab Mitternacht haengt in der Luft.
+		const gestern = e("gestern", { startTs: ts(15, 9), endTs: ts(15, 18), rev: 2 });
+		const fortsetzung = e("fortsetzung", { startTs: midnight, updatedAt: 9_000_000 });
+		const echt = e("echt", { startTs: ts(16, 8), updatedAt: 1000, rev: 1, deviceId: "handy" });
+
+		const fix = resolveOpenEntries([gestern, fortsetzung, echt]);
+
+		expect(fix.map((x) => x.id)).toEqual(["fortsetzung"]);
+		// Und zwar an ihrem eigenen Start: bis zum Start des echten Laufs zu
+		// verlaengern hiesse, acht Stunden zu erfinden, die niemand gestempelt hat.
+		expect(fix[0].endTs).toBe(midnight);
+	});
+
+	it("laesst eine lueckenlos anschliessende Fortsetzung normal mitspielen", () => {
+		// Hier endet der geteilte Lauf genau an der Tagesgrenze: die Fortsetzung
+		// ist bestaetigt, kein Verdacht - es gilt wieder die juengste Handlung.
+		const midnight = startOfNextDay(ts(15, 9));
+		const gestern = e("gestern", { startTs: ts(15, 9), endTs: midnight, rev: 2 });
+		const fortsetzung = e("fortsetzung", { startTs: midnight, updatedAt: 9_000_000, rev: 3 });
+		const echt = e("echt", { startTs: ts(16, 8), updatedAt: 1000, rev: 1, deviceId: "handy" });
+
+		const fix = resolveOpenEntries([gestern, fortsetzung, echt]);
+
+		expect(fix.map((x) => x.id)).toEqual(["echt"]);
 	});
 
 	it("waehlt auf beiden Geraeten denselben Gewinner", () => {

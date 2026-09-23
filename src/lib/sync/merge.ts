@@ -1,6 +1,7 @@
 // Zusammenführen, was von zwei Seiten kommt.
 import type { Entry } from "../types";
 import type { SyncMeta } from "../types";
+import { startOfNextDay } from "../time/time";
 
 export interface MergeInput<T extends { id: string } & SyncMeta> {
 	local: T | undefined;
@@ -104,11 +105,46 @@ export function resolveOpenEntries(entries: Entry[]): Entry[] {
 	const open = entries.filter((e) => e.endTs === null);
 	if (open.length <= 1) return [];
 
-	const winner = open.reduce((a, b) => (pickWinner(a, b) === "local" ? a : b));
+	// Ein wirklich gestarteter Lauf schlägt eine geratene Fortsetzung. Nach
+	// `pickWinner` gewänne die Fortsetzung immer: ihr Stempel entsteht beim Start
+	// der App, ist damit der jüngste - und schlösse den Timer, den jemand gerade
+	// auf einem anderen Gerät hält.
+	const guessed = new Set(open.filter((e) => isGuessedContinuation(e, entries)).map((e) => e.id));
+	const real = open.filter((e) => !guessed.has(e.id));
+	const field = real.length > 0 ? real : open;
+	const winner = field.reduce((a, b) => (pickWinner(a, b) === "local" ? a : b));
+
 	const out: Entry[] = [];
 	for (const e of open) {
 		if (e.id === winner.id) continue;
-		out.push({ ...e, endTs: Math.max(e.startTs, winner.startTs) });
+		// Eine Fortsetzung endet an ihrem eigenen Start. Bis zum Start des Siegers
+		// zu verlängern hiesse, Stunden zu erfinden, die niemand gestempelt hat -
+		// was nach Mitternacht wirklich lief, kann nur ein Mensch sagen, und der
+		// Abgleich meldet ihm den Fall.
+		const end = guessed.has(e.id) ? e.startTs : Math.max(e.startTs, winner.startTs);
+		out.push({ ...e, endTs: end });
 	}
 	return out;
+}
+
+/**
+ * Eine Mitternachts-Fortsetzung, deren Grundlage weggefallen ist.
+ *
+ * Findet die App einen Lauf über die Tagesgrenze hinweg offen, teilt sie ihn -
+ * notfalls aus einem veralteten Stand, etwa beim Start nach einer Nacht ohne
+ * Verbindung. Endet der geteilte Lauf in Wahrheit früher, weil ihn ein anderes
+ * Gerät beendet hat, schliesst die Fortsetzung an nichts mehr an: ihr Stempel
+ * ist jung, ihr Inhalt geraten.
+ *
+ * Eine Fortsetzung ohne diese Lücke ist dagegen bestätigt und zählt normal.
+ */
+function isGuessedContinuation(entry: Entry, all: Entry[]): boolean {
+	return all.some(
+		(e) =>
+			e.id !== entry.id &&
+			e.activityId === entry.activityId &&
+			e.endTs !== null &&
+			e.endTs < entry.startTs &&
+			entry.startTs === startOfNextDay(e.startTs)
+	);
 }

@@ -91,6 +91,17 @@ export async function clearChanges(done: Pick<PendingChange, "kind" | "id">[]): 
 }
 
 /**
+ * Etwas vormerken, das nicht über den Schreib-Haken kam.
+ *
+ * Für Entscheidungen, die der Abgleich selbst trifft, während er Fremdes
+ * einspielt: dort ist der Haken abgeschaltet (`applyingRemote`), und ohne diesen
+ * Weg bliebe die Entscheidung auf diesem Gerät liegen.
+ */
+export async function noteChanges(changes: PendingChange[]): Promise<void> {
+	await note(changes);
+}
+
+/**
  * Eine offene Löschung auf die Fassung setzen, die der Server kennt.
  *
  * Ein Datensatz, der lokal noch liegt, nimmt die Fassung des Servers beim

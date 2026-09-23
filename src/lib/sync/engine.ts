@@ -15,6 +15,7 @@ import {
 	applyingRemote,
 	clearChanges,
 	monthOfTimeReportId,
+	noteChanges,
 	pendingChanges,
 	rebaseChanges,
 	SETTINGS_ID,
@@ -771,13 +772,24 @@ export class SyncEngine {
 		const toClose = resolveOpenEntries(all);
 		if (toClose.length === 0) return;
 
+		const now = Date.now();
+		const noted: PendingChange[] = [];
 		for (const e of toClose) {
+			// Gestempelt wie eine eigene Änderung, weil es eine ist: die Regel gilt
+			// über alle Geräte, entschieden hat sie dieses.
+			const closed: Entry = { ...e, updatedAt: now, deviceId: this.#deviceId };
 			for (const [month, monthMap] of loaded) {
 				if (!monthMap.has(e.id)) continue;
-				monthMap.set(e.id, e);
+				monthMap.set(e.id, closed);
 				touched.add(month);
+				noted.push({ kind: "entry", id: e.id, month, deleted: false, at: now });
 			}
 		}
+		// Ohne Vormerkung bliebe der Schluss hier liegen: das Einspielen läuft in
+		// `applyingRemote`, der Schreib-Haken ist abgeschaltet. Das andere Gerät
+		// liesse seinen Timer weiterlaufen, und beide Stände gingen still
+		// auseinander - der Server sähe nie, was hier entschieden wurde.
+		await noteChanges(noted);
 		logInfo("Mehrere laufende Timer zusammengeführt", { closed: toClose.length });
 	}
 
