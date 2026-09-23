@@ -214,6 +214,40 @@ describe("Zwei Geraete", () => {
 		expect(server.calls.slice(first, second)).not.toContain("GET /api/sync");
 	});
 
+	it("haengt nicht endlos an einer Loeschung, die der Server schon kennt", async () => {
+		// Beide löschen denselben Eintrag, der Rechner offline. Seine Löschung
+		// trägt danach eine Fassung, die der Server nicht mehr hat - und anders
+		// als bei einem Eintrag, der noch liegt, gibt es lokal nichts mehr, worin
+		// die Fassung des Servers ankommen könnte.
+		const phone = await phoneWith(entry("e1"));
+		const desktop = new FakeDevice("rechner");
+		await on(desktop, (engine) => engine.sync());
+
+		await withoutAccount(desktop, () => store.saveOutbox([
+			{ kind: "entry", id: "e1", month: MONTH, deleted: true, rev: 1, at: Date.now() }
+		]));
+		await withoutAccount(desktop, async () => {
+			await store.saveEntries(MONTH, []);
+		});
+
+		await afterwards();
+		await on(phone, async (engine) => {
+			await store.saveEntries(MONTH, []);
+			return engine.sync();
+		});
+
+		const result = await on(desktop, (engine) => engine.sync());
+		// Erledigt ist erledigt: die Löschung verlässt die Merkliste, statt in
+		// jedem Durchgang aufs Neue abgelehnt zu werden.
+		expect(await on(desktop, async () => pendingChanges())).toEqual([]);
+
+		server.calls.length = 0;
+		const again = await on(desktop, (engine) => engine.sync());
+		expect(again!.pulled).toBe(0);
+		expect(server.calls).not.toContain("POST /api/sync");
+		expect(result!.pushed).toBe(0);
+	});
+
 	it("laesst hoechstens einen Timer laufen, wenn beide Geraete einen halten", async () => {
 		// Der Fall, um den es dem Nutzer geht: am Handy gestartet, der Rechner
 		// wacht auf und weiss nichts davon.

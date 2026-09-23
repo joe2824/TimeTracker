@@ -16,6 +16,7 @@ import {
 	clearChanges,
 	monthOfTimeReportId,
 	pendingChanges,
+	rebaseChanges,
 	SETTINGS_ID,
 	type PendingChange
 } from "./outbox";
@@ -328,13 +329,36 @@ export class SyncEngine {
 			for (const id of acked) this.#unknownToServer.delete(id);
 
 			if (answer.conflicts.length > 0) {
+				const byId = new Map(batch.map((c) => [c.id, c]));
+				const obsolete: PendingChange[] = [];
+				const rebased: (Pick<PendingChange, "kind" | "id"> & { rev: number })[] = [];
 				for (const k of answer.conflicts) {
 					// Fassung 0 heisst: der Server hat diesen Datensatz gar nicht. Dann
 					// hilft kein Zusammenführen - es gibt nichts, womit. Die nächste
 					// Runde schreibt ihn als neu an.
-					if (k.current.rev === 0) this.#unknownToServer.add(k.id);
-					else this.#unknownToServer.delete(k.id);
+					if (k.current.rev === 0) {
+						this.#unknownToServer.add(k.id);
+						continue;
+					}
+					this.#unknownToServer.delete(k.id);
+					// Ein Datensatz, der lokal noch liegt, nimmt die Fassung des Servers
+					// beim Zusammenführen mit und kommt damit in der nächsten Runde
+					// durch. Eine Löschung hat dafür nichts mehr: ohne die beiden Zweige
+					// hier schickt dieses Gerät dieselbe abgelehnte Löschung endlos
+					// weiter, Runde für Runde.
+					const change = byId.get(k.id);
+					if (!change?.deleted) continue;
+					// Weg ist weg: hat der Server selbst einen Löschmarker, ist die
+					// Löschung von hier erledigt. Und wurde dort nach ihr noch etwas
+					// geändert, gilt dieser jüngere Stand.
+					if (k.current.deletedAt !== null || k.current.updatedAt > change.at) {
+						obsolete.push(change);
+					} else {
+						rebased.push({ kind: change.kind, id: change.id, rev: k.current.rev });
+					}
 				}
+				if (obsolete.length > 0) await clearChanges(obsolete);
+				await rebaseChanges(rebased);
 				// Nur die Datensätze aus der Konfliktantwort anwenden, KEIN
 				// Backlog-Abruf: der holte auf einem Konto mit Jahren an Daten die
 				// ganze Historie in einem Zug und riss das Budget von #pullStaged ein.

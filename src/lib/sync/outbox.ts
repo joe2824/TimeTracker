@@ -90,6 +90,29 @@ export async function clearChanges(done: Pick<PendingChange, "kind" | "id">[]): 
 	await persist();
 }
 
+/**
+ * Eine offene Löschung auf die Fassung setzen, die der Server kennt.
+ *
+ * Ein Datensatz, der lokal noch liegt, nimmt die Fassung des Servers beim
+ * Zusammenführen mit (`adoptRev` in merge.ts) - eine Löschung hat dafür nichts
+ * mehr. Ohne das hier schickt dieses Gerät dieselbe abgelehnte Löschung endlos
+ * weiter.
+ */
+export async function rebaseChanges(
+	updates: (Pick<PendingChange, "kind" | "id"> & { rev: number })[]
+): Promise<void> {
+	if (updates.length === 0) return;
+	const revs = new Map(updates.map((u) => [keyOf(u), u.rev]));
+	let touched = false;
+	pending = pending.map((c) => {
+		const rev = revs.get(keyOf(c));
+		if (rev === undefined || c.rev === rev) return c;
+		touched = true;
+		return { ...c, rev };
+	});
+	if (touched) await persist();
+}
+
 async function persist(): Promise<void> {
 	try {
 		await saveOutbox(pending);
