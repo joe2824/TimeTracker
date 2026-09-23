@@ -916,9 +916,15 @@ class AccountState {
 
 		let errorCount = 0;
 		while (this.#wait === abort && this.state === "connected") {
+			// Je Runde ein eigener Abbruch, der nur solange am Schleifen-Abbruch
+			// hängt, wie die Anfrage läuft: tauri-plugin-http meldet ein Abbrechen
+			// nach der Antwort als unbehandelte Ablehnung ("resource id invalid").
+			const request = new AbortController();
+			const forward = () => request.abort();
+			abort.signal.addEventListener("abort", forward, { once: true });
 			try {
 				const knownSeq = (await loadDevice())?.seq ?? 0;
-				const answer = await this.#api!.waitForChange(knownSeq, abort.signal);
+				const answer = await this.#api!.waitForChange(knownSeq, request.signal);
 				if (this.#wait !== abort) return;
 				errorCount = 0;
 				if (answer.changed) this.syncSoon(50);
@@ -930,6 +936,8 @@ class AccountState {
 				const pause = RETRY_MS[Math.min(errorCount - 1, RETRY_MS.length - 1)];
 				logWarn("Weckruf-Schleife unterbrochen", e);
 				await new Promise((r) => setTimeout(r, pause));
+			} finally {
+				abort.signal.removeEventListener("abort", forward);
 			}
 		}
 	}
