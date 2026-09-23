@@ -4834,6 +4834,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
  "user-idle",
+ "windows",
  "windows-sys 0.60.2",
  "zeroize",
 ]

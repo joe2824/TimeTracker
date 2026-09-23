@@ -21,41 +21,13 @@ export interface NotifyOptions {
 	tag?: string;
 }
 
-let actionListenerInstalled = false;
-
-/**
- * Richtet den Klick-Listener ein, damit ein Klick auf eine System-Benachrichtigung
- * (unter Windows, macOS oder Linux) die App in den Vordergrund holt.
- */
-export async function installNotificationClickListener(): Promise<() => void> {
-	if (!isTauri() || actionListenerInstalled) return () => {};
-	actionListenerInstalled = true;
-	try {
-		const { onAction } = await import("@tauri-apps/plugin-notification");
-		const { invoke } = await import("@tauri-apps/api/core");
-		const unlisten = await onAction(() => {
-			void invoke("show_main_window").catch(() => {});
-		});
-		return () => {
-			actionListenerInstalled = false;
-			void unlisten.unregister();
-		};
-	} catch {
-		actionListenerInstalled = false;
-		return () => {};
-	}
-}
-
 export async function notify(opts: NotifyOptions): Promise<void> {
 	try {
 		if (isTauri()) {
-			void installNotificationClickListener();
-			const { sendNotification } = await import("@tauri-apps/plugin-notification");
-			sendNotification({
-				title: opts.title,
-				body: opts.body,
-				autoCancel: true
-			});
+			// Über Rust statt sendNotification: nur so bekommt die Meldung unter
+			// Windows ein Klick-Ziel, das die App öffnet (siehe toast.rs).
+			const { invoke } = await import("@tauri-apps/api/core");
+			await invoke("show_notification", { title: opts.title, body: opts.body, tag: opts.tag });
 			return;
 		}
 		if (typeof Notification === "undefined" || Notification.permission !== "granted") return;

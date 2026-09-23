@@ -24,7 +24,6 @@
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { Badge } from "$lib/components/ui/badge";
 	import { scheduleReminders, scheduleReportReminder } from "$lib/ui/reminders";
-	import { installNotificationClickListener } from "$lib/platform/notify";
 	import { applyShortcuts } from "$lib/ui/shortcuts";
 	import {
 		startUsagePing,
@@ -354,8 +353,7 @@
 					// Tray-Flyout wurde geöffnet und fragt den aktuellen Hinweis-Status ab.
 					await listen("tray-request-attention", () => {
 						void emit("main-attention", { active: attention }).catch(() => {});
-					}),
-					await installNotificationClickListener()
+					})
 				);
 			}
 			void applyShortcuts();

@@ -1,5 +1,6 @@
 mod outlook;
 mod secret;
+mod toast;
 
 use tauri::{Emitter, Manager};
 
@@ -7,6 +8,9 @@ use tauri::{Emitter, Manager};
 /// Muss zu `identifier` in tauri.conf.json passen: der Panic-Hook laeuft, bevor
 /// es eine App-Instanz gibt, die den Pfad nennen könnte.
 const IDENTIFIER: &str = "com.jklein.timetracker";
+
+/// Muss zu den `schemes` des deep-link-Plugins in tauri.conf.json passen.
+const DEEP_LINK_PREFIX: &str = "timetracker://";
 
 /// Datenordner der App – derselbe, den das Frontend ueber BaseDirectory::AppData
 /// bekommt. Je Plattform ein anderer Ort, sonst schriebe der Rust-Teil sein
@@ -593,7 +597,7 @@ pub fn run() {
                 // Ein Deeplink startet unter Windows eine ZWEITE Instanz und
                 // uebergibt die Adresse als Argument. Ohne diese Zeile kaeme das
                 // Fenster nach vorn, aber der Code bliebe liegen.
-                if let Some(url) = args.iter().find(|a| a.starts_with("timetracker://")) {
+                if let Some(url) = args.iter().find(|a| a.starts_with(DEEP_LINK_PREFIX)) {
                     let _ = app.emit("deep-link", url.clone());
                 }
                 show_main(app);
@@ -657,7 +661,8 @@ pub fn run() {
             outlook::read_outlook_mails,
             outlook::detect_outlook,
             secret::protect_secret,
-            secret::unprotect_secret
+            secret::unprotect_secret,
+            toast::show_notification
         ])
         .build(context)
         .expect("error while running tauri application")
