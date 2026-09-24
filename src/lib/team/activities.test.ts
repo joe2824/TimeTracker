@@ -299,6 +299,28 @@ describe("syncOwnedTeamActivities", () => {
 		expect(detached).toMatchObject({ name: "Alt", archived: true });
 		expect(detached?.teamOwned).toBeUndefined();
 	});
+
+	it("behält die zuletzt geladenen Team-Aktivitäten, wenn der Server nicht erreichbar ist", async () => {
+		accountMock.linked = true;
+		accountMock.listTeams.mockResolvedValue([{ id: "t1", name: "A", ownerUserId: "u1", createdAt: 1 }]);
+		accountMock.listTeamActivities.mockResolvedValue([
+			{ id: "a1", name: "Projekt", isAbsence: false, sortOrder: 0, color: null, archived: false, updatedAt: 1 }
+		]);
+		await syncOwnedTeamActivities();
+
+		// Neustart ohne Netz: chefTeams beginnt leer, listTeams() schlägt fehl.
+		chefTeams.teams = [];
+		accountMock.listTeams.mockRejectedValue(new TypeError("Failed to fetch"));
+		accountMock.listTeamActivities.mockRejectedValue(new TypeError("Failed to fetch"));
+		await syncOwnedTeamActivities();
+
+		expect(app.activities.find((a) => a.id === `${TEAM_ACTIVITY_PREFIX}a1`)).toMatchObject({
+			name: "Projekt",
+			archived: false,
+			teamOwned: true,
+			teamId: "t1"
+		});
+	});
 });
 
 describe("Chef ist gleichzeitig Mitglied eines anderen Teams", () => {

@@ -53,35 +53,38 @@ class ChefTeamsState {
 	// voneinander beim Mounten auf (bits-ui haengt alle Tabs gleichzeitig ein) -
 	// ohne Zwischenspeicher waeren das bei jedem Start mehrere identische
 	// Anfragen. Ein laufender Aufruf wird deshalb geteilt statt verdoppelt.
-	#teamsInFlight: Promise<void> | null = null;
+	#teamsInFlight: Promise<boolean> | null = null;
 	/** Zaehlt jeden Aufruf durch, damit eine veraltete Antwort (z.B. vor einem
 	 *  createTeam) das inzwischen aktuellere teams nicht ueberschreibt. */
 	#teamsRequest = 0;
 
-	async loadTeams(): Promise<void> {
-		if (!account.linked) return;
+	/** false, wenn der Server nicht geantwortet hat - teams ist dann kein Beleg dafür, welche Teams es gibt. */
+	async loadTeams(): Promise<boolean> {
+		if (!account.linked) return false;
 		if (this.#teamsInFlight) return this.#teamsInFlight;
 		const requestId = ++this.#teamsRequest;
 		this.teamsLoading = true;
 		const run = (async () => {
 			try {
 				const teams = await account.listTeams();
-				if (requestId !== this.#teamsRequest) return;
+				if (requestId !== this.#teamsRequest) return true;
 				this.teams = teams;
 				if (!this.selectedTeamId || !this.teams.some((t) => t.id === this.selectedTeamId)) {
 					this.selectedTeamId = this.teams[0]?.id;
 				}
+				return true;
 			} catch (e) {
-				if (requestId !== this.#teamsRequest) return;
+				if (requestId !== this.#teamsRequest) return false;
 				logWarn("Teams konnten nicht geladen werden", e);
 				toast.error(`Teams konnten nicht geladen werden: ${errorText(e)}`);
+				return false;
 			} finally {
 				if (requestId === this.#teamsRequest) this.teamsLoading = false;
 			}
 		})();
 		this.#teamsInFlight = run;
 		try {
-			await run;
+			return await run;
 		} finally {
 			if (this.#teamsInFlight === run) this.#teamsInFlight = null;
 		}

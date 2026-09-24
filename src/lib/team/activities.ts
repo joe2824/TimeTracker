@@ -139,10 +139,14 @@ export async function syncTeamActivities(): Promise<void> {
  * Zeile draus entfernt), taucht in chefTeams.teams überhaupt nicht mehr auf -
  * ohne den Zusatz unten sähe die Schleife danach nur noch existierende Teams
  * und liesse dessen Zeilen für immer als "teamOwned" stehen.
+ *
+ * Offline bleibt der zuletzt gespiegelte Stand unverändert stehen.
  */
 export async function syncOwnedTeamActivities(): Promise<void> {
 	if (!account.linked) return;
-	await chefTeams.loadTeams();
+	// Ohne Serverantwort ist chefTeams.teams leer oder veraltet - jede Team-Zeile
+	// sähe dann wie ein gelöschtes Team aus und würde abgelöst.
+	if (!(await chefTeams.loadTeams())) return;
 
 	const currentTeams = new Map(chefTeams.teams.map((t) => [t.id, t]));
 	const deletedTeamIds = new Set(

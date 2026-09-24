@@ -66,7 +66,7 @@ describe("loadTeams", () => {
 
 	it("meldet einen Fehlschlag per Toast, statt die Ablehnung durchzureichen", async () => {
 		accountMock.listTeams.mockRejectedValue(new Error("Netzwerk weg"));
-		await expect(chefTeams.loadTeams()).resolves.toBeUndefined();
+		await expect(chefTeams.loadTeams()).resolves.toBe(false);
 		expect(toastError).toHaveBeenCalledTimes(1);
 	});
 
