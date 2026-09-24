@@ -4,7 +4,7 @@ import { isTauri } from "../platform/env";
 const STORAGE_KEY = "timetracker:last_seen_release";
 
 export interface ReleaseHighlight {
-	icon: "cloud" | "shield" | "key" | "database" | "sparkles";
+	icon: "cloud" | "shield" | "key" | "database" | "sparkles" | "users";
 	title: string;
 	description: string;
 }
@@ -26,29 +26,34 @@ export interface ReleaseInfo {
  * geändert - dann, und nur dann, geht der Dialog wieder auf.
  */
 export const CURRENT_RELEASE: ReleaseInfo = {
-	version: "0.9.0",
-	title: "Multi-Geräte-Synchronisation",
-	summary: "TimeTracker synchronisiert deine Arbeitszeiten ab sofort nahtlos und sicher zwischen all deinen Geräten.",
+	version: "1.1.0",
+	title: "Teams",
+	summary:
+		"Als Chef legst du jetzt Teams an und siehst direkt in TimeTracker, wer seinen Monatsbericht schon abgegeben hat.",
 	highlights: [
 		{
-			icon: "cloud",
-			title: "Geräte-Synchronisation",
-			description: "Erfasse deine Zeiten auf mehreren Computern oder unterwegs im Web – alles wird automatisch abgeglichen."
+			icon: "users",
+			title: "Teams per Link",
+			description:
+				"Lege ein Team an und schicke den Beitritts-Link herum. Deine Mitarbeiter brauchen dafür kein eigenes Konto."
 		},
 		{
-			icon: "shield",
-			title: "Ende-zu-Ende-Verschlüsselung",
-			description: "Zero-Knowledge Schutz: Alle Daten werden lokal auf deinem Gerät verschlüsselt. Niemand außer dir kann deine Zeiten einsehen."
-		},
-		{
-			icon: "key",
-			title: "Passkeys & einfache Kopplung",
-			description: "Passwortlose Anmeldung über dein Gerät oder Passwort-Manager und sekundenschnelle Kopplung per 12-stelligem Code."
+			icon: "database",
+			title: "Berichte direkt in der App",
+			description:
+				"Wer im Team seinen Monatsbericht sendet, erscheint sofort bei dir – samt Stunden je Aktivität. Fehlende erinnerst du gesammelt. Die Prüfung des Outlook-Posteingangs entfällt dafür."
 		},
 		{
 			icon: "sparkles",
-			title: "Offline-First & Echtzeit",
-			description: "Erfasse Zeiten jederzeit auch ohne Internetverbindung – TimeTracker synchronisiert automatisch, sobald du wieder online bist."
+			title: "Gemeinsame Aktivitäten",
+			description:
+				"Lege eine Aktivitätenliste für das ganze Team fest. Sie erscheint bei allen, und eigene doppelte Aktivitäten lassen sich damit zusammenführen, ohne dass Stunden verloren gehen."
+		},
+		{
+			icon: "shield",
+			title: "Verwalter und Vertretung",
+			description:
+				"Lade Verwalter mit denselben Rechten ein oder übergib die Chef-Rolle, wenn jemand anderes das Team übernimmt."
 		}
 	]
 };

@@ -8,13 +8,15 @@
 	import KeyRoundIcon from "@lucide/svelte/icons/key-round";
 	import DatabaseIcon from "@lucide/svelte/icons/database";
 	import SparklesIcon from "@lucide/svelte/icons/sparkles";
+	import UsersIcon from "@lucide/svelte/icons/users";
 
 	const iconMap = {
 		cloud: CloudIcon,
 		shield: ShieldCheckIcon,
 		key: KeyRoundIcon,
 		database: DatabaseIcon,
-		sparkles: SparklesIcon
+		sparkles: SparklesIcon,
+		users: UsersIcon
 	};
 </script>
 

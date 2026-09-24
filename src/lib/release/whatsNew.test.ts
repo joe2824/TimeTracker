@@ -30,6 +30,11 @@ describe("checkOnStartup", () => {
 		expect(startup()).toBe(true);
 	});
 
+	it("zeigt ihn Nutzern, die zuletzt den Inhalt von 0.9.0 gesehen haben", () => {
+		localStorage.setItem(KEY, "0.9.0");
+		expect(startup()).toBe(true);
+	});
+
 	it("zeigt ihn nicht noch einmal, wenn dieselbe Fassung schon gesehen wurde", () => {
 		localStorage.setItem(KEY, CURRENT_RELEASE.version);
 		expect(startup()).toBe(false);
@@ -39,20 +44,20 @@ describe("checkOnStartup", () => {
 		// Der Kern der Sache: CURRENT_RELEASE.version gehört zum INHALT, nicht zur
 		// App-Version. Wird sie bei einem Release ohne neuen Text mitgezogen,
 		// bekommt jeder denselben Dialog ein zweites Mal.
-		localStorage.setItem(KEY, "0.9.0");
-		expect(CURRENT_RELEASE.version).toBe("0.9.0");
+		localStorage.setItem(KEY, "1.1.0");
+		expect(CURRENT_RELEASE.version).toBe("1.1.0");
 		expect(startup()).toBe(false);
 	});
 
 	it("zeigt ihn nicht, wenn schon eine SPAETERE Fassung gesehen wurde", () => {
-		// Der Fall nach dem Zurückstellen der Nummer: wer 0.9.1 bereits weggeklickt
-		// hat, kennt diesen Inhalt. Ein Vergleich auf Ungleichheit zeigte ihn erneut.
-		localStorage.setItem(KEY, "0.9.1");
+		// Wer 1.1.1 bereits weggeklickt hat, kennt diesen Inhalt. Ein Vergleich
+		// auf Ungleichheit zeigte ihn erneut.
+		localStorage.setItem(KEY, "1.1.1");
 		expect(startup()).toBe(false);
 	});
 
 	it("zeigt ihn auch nach einer Vorabfassung derselben Nummer nicht", () => {
-		localStorage.setItem(KEY, "0.9.0-beta.3");
+		localStorage.setItem(KEY, "1.1.0-beta.3");
 		expect(startup()).toBe(false);
 	});
 
