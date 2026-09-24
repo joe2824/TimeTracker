@@ -161,4 +161,4 @@ export function prefetchMonth(month: string): Promise<unknown> {
 // Beim Abmelden den Puffer leeren: er gehört dem vorigen Konto. Dieser Aufruf
 // steht hier statt in account.svelte.ts, weil dort kein Import von prefetch
 // erlaubt ist (prefetch importiert seinerseits account - Kreis).
-account.setLogoutHook(invalidateAll);
+account.addLogoutHook(invalidateAll);

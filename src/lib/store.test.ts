@@ -14,6 +14,7 @@ const {
 	loadSettings,
 	loadTimeReport,
 	pruneEmptyMonthFiles,
+	removeOrphanedTempFiles,
 	saveActivities,
 	saveEntries,
 	saveSettings,
@@ -271,6 +272,18 @@ describe("Speichern, wenn rename fehlschlägt", () => {
 	it("lässt keine .tmp-Datei zurück", async () => {
 		await saveEntries("2026-06", [entry("e1")]);
 		expect([...files.keys()].filter((p) => p.includes(".tmp-"))).toEqual([]);
+	});
+});
+
+describe("removeOrphanedTempFiles", () => {
+	it("entfernt nach einem Absturz liegengebliebene Zwischendateien und sonst nichts", async () => {
+		await saveEntries("2026-06", [entry("e1")]);
+		const orphan = `${file("2026-06")}.tmp-0f8fad5b-d9cb-469f-a165-70867728950e`;
+		files.set(orphan, "{}");
+
+		expect(await removeOrphanedTempFiles()).toBe(1);
+		expect(files.has(orphan)).toBe(false);
+		expect((await loadEntries("2026-06")).map((e) => e.id)).toEqual(["e1"]);
 	});
 });
 

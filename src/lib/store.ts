@@ -307,6 +307,26 @@ async function writeJsonNow(file: string, data: unknown, opts: JsonOpts = {}): P
 	}
 }
 
+const TEMP_FILE_RE = /\.tmp-[0-9a-f-]{36}$/;
+
+/**
+ * Zwischendateien, die ein Absturz zwischen Schreiben und rename()
+ * zurückgelassen hat - mit Zufalls-Id überschreibt sie kein späteres
+ * Speichern mehr. Trifft das Aufräumen eine gerade entstehende Datei eines
+ * anderen Fensters, scheitert dort nur rename() und writeJsonNow schreibt
+ * direkt: kein Datenverlust.
+ */
+export async function removeOrphanedTempFiles(): Promise<number> {
+	await ensureDir();
+	let removed = 0;
+	for (const { name } of await storage.readDir(DIR)) {
+		if (!TEMP_FILE_RE.test(name)) continue;
+		await storage.remove(`${DIR}/${name}`);
+		removed++;
+	}
+	return removed;
+}
+
 function entriesFile(month: string): string {
 	return `entries-${month}.json`;
 }

@@ -247,11 +247,11 @@ class AccountState {
 	 * Wird beim Abmelden aufgerufen - von aussen registriert, um einen Kreis-Import
 	 * zu vermeiden (prefetch importiert account, account darf prefetch nicht importieren).
 	 */
-	#logoutHook: (() => void) | null = null;
+	#logoutHooks: (() => void)[] = [];
 
-	/** Einen Haken für das Abmelden setzen. Derzeit: prefetch-Puffer leeren. */
-	setLogoutHook(fn: () => void): void {
-		this.#logoutHook = fn;
+	/** Einen Haken für das Abmelden anhängen - Prefetch-Puffer, Team-Zustand. */
+	addLogoutHook(fn: () => void): void {
+		this.#logoutHooks.push(fn);
 	}
 
 	get linked(): boolean {
@@ -705,6 +705,10 @@ class AccountState {
 		this.phase = "running";
 		try {
 			const result = await round;
+			// Abgemeldet oder Konto gewechselt, während die Runde lief: ihr Ergebnis
+			// gehört nicht mehr hierher, und ein Reload schriebe Dateien in den
+			// gerade geleerten Speicher zurück.
+			if (this.#engine !== engine) return;
 			// Kam etwas an, war dieses Gerät nie leer - es wusste es nur noch
 			// nicht. Der Willkommensbildschirm hat sich damit erledigt, und zwar
 			// bevor jemand ihn ausfüllt und dabei die echten Einstellungen
@@ -1774,7 +1778,11 @@ class AccountState {
 		// Den Prefetch-Puffer leeren: er gehört dem abgemeldeten Konto. Sonst
 		// könnte ein schneller Re-Login in denselben 30-Sekunden-Fenstern Name,
 		// E-Mail und Geräte-Labels des vorigen Nutzers sehen.
-		this.#logoutHook?.();
+		for (const hook of this.#logoutHooks) hook();
+		// Mitternachts-Rückfragen gehören dem alten Konto: im nächsten würde
+		// "weiter" sonst dessen Eintrag in die Monatsdatei des neuen schreiben.
+		this.staleTimerSplits = [];
+		this.lostEdits = 0;
 		this.state = "off";
 		this.phase = "idle";
 		this.serverUrl = "";

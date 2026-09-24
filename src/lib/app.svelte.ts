@@ -42,6 +42,7 @@ import {
 	getLocalEncryptionKey,
 	preloadLocalEncryptionKey,
 	pruneEmptyMonthFiles,
+	removeOrphanedTempFiles,
 	saveActivities,
 	saveEntries,
 	saveSettings,
@@ -160,6 +161,12 @@ class AppState {
 						await pruneEmptyMonthFiles();
 					} catch (e) {
 						logWarn("Aufräumen leerer Monatsdateien fehlgeschlagen", e);
+					}
+					try {
+						const n = await removeOrphanedTempFiles();
+						if (n > 0) logInfo(`${n} liegengebliebene Zwischendatei(en) entfernt`);
+					} catch (e) {
+						logWarn("Aufräumen von Zwischendateien fehlgeschlagen", e);
 					}
 				});
 				await this.#step("Aktivitäten prüfen", async () => {

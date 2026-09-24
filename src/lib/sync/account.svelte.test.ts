@@ -85,3 +85,47 @@ describe("Zwischenspeicher nach gescheitertem Abgleich", () => {
 		}
 	});
 });
+
+describe("Abmelden", () => {
+	it("vergisst offene Mitternachts-Rückfragen und verlorene Änderungen des alten Kontos", async () => {
+		await account.linkWithSession("http://test", await createVaultKey(), "Ich");
+		await settled();
+		account.staleTimerSplits = [
+			{ endedEntry: { id: "x" }, continuation: { id: "y" } } as unknown as (typeof account.staleTimerSplits)[number]
+		];
+		account.lostEdits = 2;
+
+		await account.unlink();
+
+		expect(account.staleTimerSplits).toEqual([]);
+		expect(account.lostEdits).toBe(0);
+	});
+
+	it("eine Runde, die erst nach dem Abmelden fertig wird, lädt nicht mehr neu", async () => {
+		try {
+			await account.linkWithSession("http://test", await createVaultKey(), "Ich");
+			await settled();
+
+			let release!: () => void;
+			const gate = new Promise<void>((r) => (release = r));
+			const realFetch = globalThis.fetch;
+			globalThis.fetch = (async (...args: Parameters<typeof fetch>) => {
+				await gate;
+				return realFetch(...args);
+			}) as typeof fetch;
+			const reload = vi.spyOn(app, "reload");
+
+			// Etwas zum Hochladen - nur eine Runde mit pushed/pulled > 0 lädt neu.
+			await app.addActivity("Neu vor dem Abmelden");
+			const running = account.syncNow();
+			await account.unlink();
+			release();
+			await running.catch(() => {});
+
+			expect(reload).not.toHaveBeenCalled();
+			reload.mockRestore();
+		} finally {
+			restoreFetch();
+		}
+	});
+});

@@ -35,6 +35,7 @@ vi.mock("./reminders", () => ({ ensureNotificationPermission: async () => true }
 // mit: an ihr hängt, welchem Server eine Absage gilt.
 const telemetry = vi.hoisted(() => ({ ping: vi.fn() }));
 const accountMock = vi.hoisted(() => ({
+	addLogoutHook: () => {},
 	serverUrl: "https://tracker.example.de",
 	// Im Wächter zählt das Ziel der Meldung, nicht die Verknüpfung: ohne Konto
 	// steht dort der Server aus dem Build. Welcher es ist, entscheidet das Konto -

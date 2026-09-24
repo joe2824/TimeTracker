@@ -11,27 +11,41 @@
 	import { app } from "$lib/app.svelte";
 	import { fmtClock, fmtDateHuman } from "$lib/time/time";
 	import type { StaleTimerSplitInfo } from "$lib/sync/engine";
+	import { errorText } from "$lib/log";
+	import { toast } from "svelte-sonner";
 
-	// Wie viele beim letzten "Später" schon da waren - kommt danach ein neuer
-	// Fall dazu, soll der Hinweis trotzdem wieder erscheinen.
-	let dismissedCount = $state(0);
+	const keyOf = (s: StaleTimerSplitInfo) => `${s.endedEntry.id}/${s.continuationEntry.id}`;
+
+	// Die Fälle beim letzten "Später" - kommt danach ein neuer dazu, erscheint
+	// der Hinweis wieder. Nach Fällen statt nach Anzahl: sonst schlösse das
+	// Lösen eines Falls den Dialog, obwohl ein neuer noch offen ist.
+	let dismissed = $state<ReadonlySet<string>>(new Set());
+	let busyKey = $state<string | null>(null);
 
 	const splits = $derived(account.staleTimerSplits);
-	const open = $derived(splits.length > dismissedCount);
+	const open = $derived(splits.some((s) => !dismissed.has(keyOf(s))));
 
 	function dismiss() {
-		dismissedCount = splits.length;
+		dismissed = new Set(splits.map(keyOf));
 	}
 
 	function continuationLabel(s: StaleTimerSplitInfo): string {
 		return s.continuationEntry.endTs === null
-			? "weiter, läuft noch"
-			: `weiter bis ${fmtClock(s.continuationEntry.endTs)} Uhr (${fmtDateHuman(s.continuationEntry.startTs)})`;
+			? "Lief weiter und läuft noch"
+			: `Lief weiter bis ${fmtClock(s.continuationEntry.endTs)} Uhr (${fmtDateHuman(s.continuationEntry.startTs)})`;
 	}
 
 	async function resolve(s: StaleTimerSplitInfo, keep: "ended" | "continuation") {
-		await app.resolveStaleTimerSplit(s, keep);
-		account.staleTimerSplits = account.staleTimerSplits.filter((x) => x !== s);
+		if (busyKey) return;
+		busyKey = keyOf(s);
+		try {
+			await app.resolveStaleTimerSplit(s, keep);
+			account.staleTimerSplits = account.staleTimerSplits.filter((x) => x !== s);
+		} catch (e) {
+			toast.error(`Speichern fehlgeschlagen: ${errorText(e)}`);
+		} finally {
+			busyKey = null;
+		}
 	}
 </script>
 
@@ -47,14 +61,13 @@
 		<Dialog.Header>
 			<Dialog.Title>Bitte einen Tag prüfen</Dialog.Title>
 			<Dialog.Description>
-				Ein Timer lief über Mitternacht, während dieses Gerät keine Verbindung zum Server hatte.
-				Auf einem anderen Gerät wurde er in der Zwischenzeit schon früher beendet. Welche Zeit
-				stimmt?
+				Ein Timer lief über Mitternacht, während dieses Gerät offline war. Auf einem anderen Gerät
+				wurde er in der Zwischenzeit schon früher beendet. Welche Zeit stimmt?
 			</Dialog.Description>
 		</Dialog.Header>
 
 		<div class="min-h-0 space-y-3 overflow-y-auto pr-1">
-			{#each splits as s (s.endedEntry.id + "/" + s.continuationEntry.id)}
+			{#each splits as s (keyOf(s))}
 				<div class="space-y-1.5 border-b pb-3 last:border-0">
 					<div class="text-sm font-medium">{app.activityName(s.endedEntry.activityId)}</div>
 					<div class="text-muted-foreground text-xs">{fmtDateHuman(s.endedEntry.startTs)}</div>
@@ -62,13 +75,15 @@
 						<Button
 							variant="outline"
 							class="h-auto flex-1 justify-start py-2 text-left whitespace-normal"
+							disabled={busyKey !== null}
 							onclick={() => resolve(s, "ended")}
 						>
-							{s.endedEntry.endTs === null ? "endet hier" : `bis ${fmtClock(s.endedEntry.endTs)} Uhr`}
+							{s.endedEntry.endTs === null ? "Endete hier" : `Endete um ${fmtClock(s.endedEntry.endTs)} Uhr`}
 						</Button>
 						<Button
 							variant="outline"
 							class="h-auto flex-1 justify-start py-2 text-left whitespace-normal"
+							disabled={busyKey !== null}
 							onclick={() => resolve(s, "continuation")}
 						>
 							{continuationLabel(s)}
