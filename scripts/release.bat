@@ -136,9 +136,9 @@ echo -^> Running pre-flight checks (svelte-check, vitest ^& cargo test)...
 call npm run check || exit /b 1
 call npm --workspace server run check || exit /b 1
 call npm test -- --run || exit /b 1
-pushd server
-call npx vitest run || (popd & exit /b 1)
-popd
+REM server:test startet den GEBAUTEN Server - ohne Build testet es den alten Stand.
+call npm run server:build || exit /b 1
+call npm run server:test || exit /b 1
 pushd src-tauri
 cargo test || (popd & exit /b 1)
 popd

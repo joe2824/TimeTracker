@@ -125,7 +125,9 @@ echo "→ Running pre-flight checks (svelte-check, vitest & cargo test)..."
 npm run check
 npm --workspace server run check
 npm test -- --run
-( cd server && npx vitest run )
+# server:test startet den GEBAUTEN Server - ohne Build testet es den alten Stand.
+npm run server:build
+npm run server:test
 ( cd src-tauri && cargo test )
 
 if [[ "$BETA" == true ]]; then
@@ -139,13 +141,15 @@ fi
 # ersetzte ein Muster ohne Suffix nur den Zahlenteil und zurueck bliebe
 # "0.8.0-beta.2-beta.1".
 SEMVER='[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?'
-sed -i '' -E "s/\"version\": \"${SEMVER}\"/\"version\": \"${VERSION}\"/" package.json
+# -i.bak statt -i '': das verstehen BSD-sed (macOS) und GNU-sed (Linux, Git Bash) gleich.
+sedi() { sed -E -i.bak "$1" "$2" && rm -f "$2.bak"; }
+sedi "s/\"version\": \"${SEMVER}\"/\"version\": \"${VERSION}\"/" package.json
 echo "  ✓ package.json"
-sed -i '' -E "s/\"version\": \"${SEMVER}\"/\"version\": \"${VERSION}\"/" server/package.json
+sedi "s/\"version\": \"${SEMVER}\"/\"version\": \"${VERSION}\"/" server/package.json
 echo "  ✓ server/package.json"
-sed -i '' -E "s/\"version\": \"${SEMVER}\"/\"version\": \"${VERSION}\"/" src-tauri/tauri.conf.json
+sedi "s/\"version\": \"${SEMVER}\"/\"version\": \"${VERSION}\"/" src-tauri/tauri.conf.json
 echo "  ✓ src-tauri/tauri.conf.json"
-sed -i '' -E "s/^version = \"${SEMVER}\"/version = \"${VERSION}\"/" src-tauri/Cargo.toml
+sedi "s/^version = \"${SEMVER}\"/version = \"${VERSION}\"/" src-tauri/Cargo.toml
 echo "  ✓ src-tauri/Cargo.toml"
 
 # Keep Cargo.lock in sync with the new crate version.
