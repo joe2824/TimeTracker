@@ -27,8 +27,15 @@ import {
 	teamFromInviteCode,
 	teamMemberFromToken,
 	transferTeamOwnership,
-	upsertTeamReport
+	upsertTeamReport,
+	ADMIN_INVITE_TTL_MS,
+	isPlausibleReportMonth,
+	sanitizeTeamReport,
+	MAX_TEAM_REPORT_ROWS
 } from "./teams";
+import { teamAdminInvites } from "./db/schema";
+
+const rep = (total: number) => ({ rows: [], total, workHours: total, absenceHours: 0 });
 
 let db: Db;
 
@@ -253,6 +260,17 @@ describe("Verwalter (rotateAdminInvite / joinTeamAsAdmin / requireTeamAccess)", 
 		expect(teamFromAdminInviteCode(db, first.code)).toBeNull();
 	});
 
+	it("ein Verwalter-Link gilt 30 Tage und danach nicht mehr", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		const invite = rotateAdminInvite(db, team.id);
+		expect(invite.expiresAt).toBe(invite.createdAt + ADMIN_INVITE_TTL_MS);
+
+		db.update(teamAdminInvites).set({ expiresAt: Date.now() - 1 }).run();
+		expect(teamFromAdminInviteCode(db, invite.code)).toBeNull();
+		expect(joinTeamAsAdmin(db, invite.code, BODO)).toBeNull();
+		expect(activeAdminInvite(db, team.id)).toBeNull();
+	});
+
 	it("ein unbekannter Code liefert null, statt einen Verwalter anzulegen", () => {
 		expect(joinTeamAsAdmin(db, "UNBEKANNT-CODE", BODO)).toBeNull();
 	});
@@ -314,6 +332,23 @@ describe("transferTeamOwnership", () => {
 });
 
 describe("setTeamActivities / listTeamActivities", () => {
+	it("lehnt eine doppelte Id mit 400 ab statt mit rohem 500", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		const dup = { id: "a1", name: "X", isAbsence: false, sortOrder: 0, archived: false };
+		expect(() => setTeamActivities(db, team.id, [dup, { ...dup, name: "Y" }])).toThrow(
+			expect.objectContaining({ status: 400 })
+		);
+	});
+
+	it("nimmt nur Farben der Form #rrggbb", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		setTeamActivities(db, team.id, [
+			{ name: "A", isAbsence: false, sortOrder: 0, archived: false, color: "#12abEF" },
+			{ name: "B", isAbsence: false, sortOrder: 1, archived: false, color: "red;background:url(x)" }
+		]);
+		expect(listTeamActivities(db, team.id).map((a) => a.color)).toEqual(["#12abEF", null]);
+	});
+
 	it("ersetzt die Liste vollständig, sortiert wie übergeben", () => {
 		const team = createTeam(db, ANNA, "Vertrieb");
 		setTeamActivities(db, team.id, [
@@ -421,30 +456,30 @@ describe("upsertTeamReport / listTeamReports", () => {
 			}
 		]);
 
-		upsertTeamReport(db, team.id, member.teamMemberId, "2026-07", { total: 40 });
+		upsertTeamReport(db, team.id, member.teamMemberId, "2026-07", rep(40));
 		const after = listTeamReports(db, team.id, "2026-07");
 		expect(after[0].submittedAt).not.toBeNull();
-		expect(after[0].payload).toEqual({ total: 40 });
+		expect(after[0].payload).toEqual(rep(40));
 	});
 
 	it("ein erneuter Versand desselben Monats ERSETZT, statt eine zweite Zeile anzulegen", () => {
 		const team = createTeam(db, ANNA, "Vertrieb");
 		const member = memberOf(team.id);
 
-		upsertTeamReport(db, team.id, member.teamMemberId, "2026-07", { total: 40 });
+		upsertTeamReport(db, team.id, member.teamMemberId, "2026-07", rep(40));
 		const firstSubmittedAt = listTeamReports(db, team.id, "2026-07")[0].submittedAt;
 
-		upsertTeamReport(db, team.id, member.teamMemberId, "2026-07", { total: 42 });
+		upsertTeamReport(db, team.id, member.teamMemberId, "2026-07", rep(42));
 		const rows = listTeamReports(db, team.id, "2026-07");
 		expect(rows).toHaveLength(1);
-		expect(rows[0].payload).toEqual({ total: 42 });
+		expect(rows[0].payload).toEqual(rep(42));
 		expect(rows[0].submittedAt).toBeGreaterThanOrEqual(firstSubmittedAt!);
 	});
 
 	it("betrifft nur den abgefragten Monat", () => {
 		const team = createTeam(db, ANNA, "Vertrieb");
 		const member = memberOf(team.id);
-		upsertTeamReport(db, team.id, member.teamMemberId, "2026-06", { total: 10 });
+		upsertTeamReport(db, team.id, member.teamMemberId, "2026-06", rep(10));
 
 		expect(listTeamReports(db, team.id, "2026-07")[0].submittedAt).toBeNull();
 		expect(listTeamReports(db, team.id, "2026-06")[0].submittedAt).not.toBeNull();
@@ -483,7 +518,7 @@ describe("setTeamReportStatus", () => {
 	it("nimmt eine Markierung zurueck - auch einen echten Upload", () => {
 		const team = createTeam(db, ANNA, "Vertrieb");
 		const member = memberOf(team.id);
-		upsertTeamReport(db, team.id, member.teamMemberId, "2026-07", { total: 40 });
+		upsertTeamReport(db, team.id, member.teamMemberId, "2026-07", rep(40));
 
 		expect(setTeamReportStatus(db, team.id, member.teamMemberId, "2026-07", false)).toBe(true);
 
@@ -504,26 +539,67 @@ describe("setTeamReportStatus", () => {
 		// wegloeschen - siehe upsertTeamReport oben fuer den umgekehrten Fall.
 		const team = createTeam(db, ANNA, "Vertrieb");
 		const member = memberOf(team.id);
-		upsertTeamReport(db, team.id, member.teamMemberId, "2026-07", { total: 40 });
+		upsertTeamReport(db, team.id, member.teamMemberId, "2026-07", rep(40));
 		const staleSubmittedAt = listTeamReports(db, team.id, "2026-07")[0].submittedAt!;
 
-		upsertTeamReport(db, team.id, member.teamMemberId, "2026-07", { total: 42 });
+		upsertTeamReport(db, team.id, member.teamMemberId, "2026-07", rep(42));
 
 		expect(() =>
 			setTeamReportStatus(db, team.id, member.teamMemberId, "2026-07", false, staleSubmittedAt)
 		).toThrow();
-		expect(listTeamReports(db, team.id, "2026-07")[0].payload).toEqual({ total: 42 });
+		expect(listTeamReports(db, team.id, "2026-07")[0].payload).toEqual(rep(42));
 	});
 
 	it("nimmt zurueck, wenn der mitgegebene Stand noch aktuell ist", () => {
 		const team = createTeam(db, ANNA, "Vertrieb");
 		const member = memberOf(team.id);
-		upsertTeamReport(db, team.id, member.teamMemberId, "2026-07", { total: 40 });
+		upsertTeamReport(db, team.id, member.teamMemberId, "2026-07", rep(40));
 		const submittedAt = listTeamReports(db, team.id, "2026-07")[0].submittedAt!;
 
 		expect(
 			setTeamReportStatus(db, team.id, member.teamMemberId, "2026-07", false, submittedAt)
 		).toBe(true);
 		expect(listTeamReports(db, team.id, "2026-07")[0].submittedAt).toBeNull();
+	});
+});
+
+describe("isPlausibleReportMonth", () => {
+	const now = new Date(Date.UTC(2026, 8, 24));
+	it("nimmt zwei Jahre zurück bis ein Jahr voraus", () => {
+		expect(isPlausibleReportMonth("2024-01", now)).toBe(true);
+		expect(isPlausibleReportMonth("2027-12", now)).toBe(true);
+	});
+	it("lehnt Unsinn und ferne Jahre ab", () => {
+		for (const m of ["2023-12", "2028-01", "2026-00", "2026-13", "9999-99", "2026-7", ""]) {
+			expect(isPlausibleReportMonth(m, now), m).toBe(false);
+		}
+	});
+});
+
+describe("sanitizeTeamReport", () => {
+	it("behält nur Name, Stunden und Abwesenheit je Zeile plus die Summen", () => {
+		expect(
+			sanitizeTeamReport({
+				rows: [{ name: "Projekt A", hours: 3, isAbsence: false, activityId: "geheim" }],
+				total: 3,
+				workHours: 3,
+				absenceHours: 0,
+				label: "Juli",
+				breakHours: 1
+			})
+		).toEqual({ rows: [{ name: "Projekt A", hours: 3, isAbsence: false }], total: 3, workHours: 3, absenceHours: 0 });
+	});
+
+	it("verwirft kaputte Zeilen, kürzt Namen und begrenzt die Zeilenzahl", () => {
+		const rows = Array.from({ length: MAX_TEAM_REPORT_ROWS + 50 }, (_, i) => ({ name: `A${i}`, hours: 1 }));
+		const out = sanitizeTeamReport({ rows: [null, { hours: 1 }, { name: "x".repeat(500), hours: "7" }, ...rows] })!;
+		expect(out.rows).toHaveLength(MAX_TEAM_REPORT_ROWS);
+		expect(out.rows[0]).toEqual({ name: "x".repeat(100), hours: 0, isAbsence: false });
+	});
+
+	it("liefert null ohne Zeilenliste", () => {
+		expect(sanitizeTeamReport(null)).toBeNull();
+		expect(sanitizeTeamReport({ total: 3 })).toBeNull();
+		expect(sanitizeTeamReport("text")).toBeNull();
 	});
 });

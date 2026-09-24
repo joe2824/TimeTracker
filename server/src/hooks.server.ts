@@ -19,6 +19,7 @@ import {
 	LIMIT_RECOVER,
 	LIMIT_TELEMETRY,
 	LIMIT_TEAM_JOIN,
+	LIMIT_TEAM_REPORT,
 	isLocked,
 	takeAttempt,
 	cleanupLimits,
@@ -53,8 +54,13 @@ const RATE_LIMITS: [string, LimitOptions][] = [
 	["/api/auth/recover", LIMIT_RECOVER],
 	["/api/telemetry", LIMIT_TELEMETRY],
 	["/api/team/join", LIMIT_TEAM_JOIN],
-	["/api/team/admin/join", LIMIT_TEAM_JOIN]
+	["/api/team/admin/join", LIMIT_TEAM_JOIN],
+	["/api/team/reports", LIMIT_TEAM_REPORT]
 ];
+
+// Hier zählen nur Fehlgriffe (404 = unbekannter Code): Durchprobieren bleibt
+// gebremst, ein Büro, das hinter einer Adresse gemeinsam beitritt, aber nicht.
+const FAILURES_ONLY = ["/api/pair/claim", "/api/team/join", "/api/team/admin/join"];
 
 
 const { db, raw } = openDb(DB_FILE);
@@ -181,14 +187,15 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// Erst bremsen, dann arbeiten: eine Prüfung, die nach der teuren Abfrage
 	// kommt, bremst den Angreifer nicht, sondern nur den Server.
 	const rateLimit = RATE_LIMITS.find(([p]) => urlPath.startsWith(p));
-	// Methode mit im Schlüssel: /api/team/join hat ein GET (Vorschau, feuert
-	// automatisch beim Öffnen des Beitritts-Dialogs) UND ein POST (der echte
-	// Beitritt) - ohne die Trennung verbrauchten ein paar Dialog-Öffnungen das
-	// Kontingent, das der eigentliche Beitritt braucht.
-	const limitKey = rateLimit ? `${rateLimit[0]}|${event.request.method}|${originAddress(event)}` : "";
-	// Beim Abfragen eines Kopplungsvorgangs zählen nur Fehlgriffe, und das
-	// entscheidet erst die Antwort - hier nur nachsehen, gezählt wird unten.
-	const onlyFailures = urlPath.startsWith("/api/pair/claim");
+	// Methode mit im Schlüssel, nur bei den Team-Routen: /api/team/join hat ein
+	// GET (Vorschau, feuert automatisch beim Öffnen des Beitritts-Dialogs) UND
+	// ein POST (der echte Beitritt) - ohne die Trennung verbrauchten ein paar
+	// Dialog-Öffnungen das Kontingent, das der eigentliche Beitritt braucht.
+	const method = urlPath.startsWith("/api/team/") ? `|${event.request.method}` : "";
+	const limitKey = rateLimit ? `${rateLimit[0]}${method}|${originAddress(event)}` : "";
+	// Ob es ein Fehlgriff war, entscheidet erst die Antwort - hier nur
+	// nachsehen, gezählt wird unten.
+	const onlyFailures = FAILURES_ONLY.some((p) => urlPath.startsWith(p));
 
 	if (rateLimit) {
 		const locked = onlyFailures

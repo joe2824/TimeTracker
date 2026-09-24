@@ -1869,6 +1869,19 @@ describe("Team", () => {
 		expect(throttled).toBe(true);
 	});
 
+	it("bremst ein Büro nicht, das hinter einer Adresse gemeinsam beitritt", async () => {
+		const team = await createTeamFor(annaToken);
+		const invite = await inviteFor(annaToken, team.id);
+		for (let i = 0; i < 25; i++) {
+			const res = await api(null, "/api/team/join", {
+				method: "POST",
+				headers: { "x-echte-adresse": "10.8.8.7" },
+				body: JSON.stringify({ code: invite.code, name: `Person ${i}` })
+			});
+			expect(res.status).toBe(201);
+		}
+	});
+
 	it("bremst das Durchprobieren von Verwalter-Codes", async () => {
 		// Ein Treffer gibt volle operative Rechte - deshalb dieselbe Bremse wie beim
 		// einfachen Beitritt, auch für die Vorschau ohne Anmeldung.
@@ -1950,11 +1963,69 @@ describe("Team", () => {
 		const [status] = (await after.json()).reports;
 		expect(status.memberId).toBe(teamMemberId);
 		expect(status.submittedAt).toBeTruthy();
-		expect(status.payload).toEqual({ total: 40, rows: [] });
+		expect(status.payload).toEqual({ rows: [], total: 40, workHours: 0, absenceHours: 0 });
 
 		// Ein anderer Monat bleibt unberuehrt.
 		const otherMonth = await apiFrom(annaToken, `/api/team/${team.id}/reports?month=2026-08`);
 		expect((await otherMonth.json()).reports[0].submittedAt).toBeNull();
+	});
+
+	it("nimmt nur plausible Monate an und speichert nur, was die Team-Ansicht braucht", async () => {
+		const team = await createTeamFor(annaToken);
+		const invite = await inviteFor(annaToken, team.id);
+		const join = await apiFrom(null, "/api/team/join", {
+			method: "POST",
+			body: JSON.stringify({ code: invite.code, name: "Anna Meier" })
+		});
+		const { token } = (await join.json()) as { token: string };
+		const year = new Date().getUTCFullYear();
+
+		for (const month of ["9999-99", `${year}-13`, `${year - 5}-01`, `${year}-00`]) {
+			const res = await apiAsMember(token, "/api/team/reports", {
+				method: "POST",
+				body: JSON.stringify({ month, report: { rows: [] } })
+			});
+			expect(res.status, month).toBe(400);
+		}
+
+		const month = `${year}-01`;
+		const send = await apiAsMember(token, "/api/team/reports", {
+			method: "POST",
+			body: JSON.stringify({
+				month,
+				report: {
+					rows: [{ name: "Projekt A", hours: 7.5, isAbsence: false, activityId: "x", extra: "weg" }],
+					total: 7.5,
+					breakHours: 1
+				}
+			})
+		});
+		expect(send.status).toBe(201);
+		const list = await apiFrom(annaToken, `/api/team/${team.id}/reports?month=${month}`);
+		expect((await list.json()).reports[0].payload).toEqual({
+			rows: [{ name: "Projekt A", hours: 7.5, isAbsence: false }],
+			total: 7.5,
+			workHours: 0,
+			absenceHours: 0
+		});
+	});
+
+	it("ein Mitglied tritt selbst aus: danach gilt sein Token nicht mehr und der Chef sieht es nicht mehr", async () => {
+		const team = await createTeamFor(annaToken);
+		const invite = await inviteFor(annaToken, team.id);
+		const join = await apiFrom(null, "/api/team/join", {
+			method: "POST",
+			body: JSON.stringify({ code: invite.code, name: "Anna Meier" })
+		});
+		const { token } = (await join.json()) as { token: string };
+
+		const leave = await apiAsMember(token, "/api/team/membership", { method: "DELETE" });
+		expect(leave.status).toBe(200);
+
+		const again = await apiAsMember(token, "/api/team/activities");
+		expect(again.status).toBe(401);
+		const members = await apiFrom(annaToken, `/api/team/${team.id}/members`);
+		expect((await members.json()).members).toEqual([]);
 	});
 
 	it("weist einen Bericht ohne (gueltiges) Team-Token ab", async () => {

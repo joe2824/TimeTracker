@@ -87,6 +87,8 @@ export const LIMIT_AUTH_START: LimitOptions = { burst: 60, perMinute: 30 };
 export const LIMIT_RECOVER: LimitOptions = { burst: 12, perMinute: 6 };
 /** Telemetrie-Ping (täglicher Heartbeat von Clients). */
 export const LIMIT_TELEMETRY: LimitOptions = { burst: 30, perMinute: 15 };
-/** Team beitreten: legt eine Zeile an, ein einmaliger Vorgang - kein Abfragen wie bei LIMIT_PAIR_CLAIM. */
+/** Team beitreten: gezählt werden nur unbekannte Codes (hooks.server.ts, FAILURES_ONLY). */
 export const LIMIT_TEAM_JOIN: LimitOptions = { burst: 10, perMinute: 5 };
+/** Monatsbericht ans Team: einmal im Monat je Mitglied, am Monatsende aber viele hinter einer Büro-Adresse. */
+export const LIMIT_TEAM_REPORT: LimitOptions = { burst: 60, perMinute: 30 };
 

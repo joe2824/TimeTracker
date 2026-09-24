@@ -212,7 +212,7 @@ export function requireTeamMember(locals: { teamMemberId: string | null; teamId:
 //
 // Anders als teamMembers ein echtes Konto (users.id) - darf alles Operative
 // (Aktivitaeten, Mitglieder, Berichte, den einfachen Beitritts-Link), aber
-// nicht das Team loeschen, weitere Verwalter ein-/aussetzen oder den Besitz
+// nicht das Team loeschen, weitere Verwalter einladen/entfernen oder den Besitz
 // uebergeben. Diese vier Routen bleiben requireOwnTeam vorbehalten, alles
 // andere wechselt auf requireTeamAccess.
 
@@ -260,8 +260,8 @@ export function listTeamAdmins(db: Db, teamId: string): TeamAdminRow[] {
 }
 
 /**
- * Einen Verwalter wieder aussetzen - Chef-only, sein eigener Zugang bleibt (der laeuft ueber ownerUserId).
- * Widerruft dabei auch den aktuell gueltigen Verwalter-Link: sonst kaeme die ausgesetzte Person ueber
+ * Einen Verwalter wieder entfernen - Chef-only, sein eigener Zugang bleibt (der laeuft ueber ownerUserId).
+ * Widerruft dabei auch den aktuell gueltigen Verwalter-Link: sonst kaeme die entfernte Person ueber
  * denselben Code sofort wieder hinein. Fuer eine neue Einladung muss der Chef bewusst "Neuen Link
  * erzeugen" klicken.
  */
@@ -317,14 +317,23 @@ export function activeAdminInvite(db: Db, teamId: string): TeamAdminInviteRow | 
 	return rows.find((r) => !r.expiresAt || r.expiresAt > now) ?? null;
 }
 
-/** Wie rotateTeamInvite, nur fuer den Verwalter-Link. */
+/** Ein Verwalter-Link oeffnet alle Berichte - weitergeleitet soll er nicht ewig gelten. */
+export const ADMIN_INVITE_TTL_MS = 30 * 24 * 60 * 60_000;
+
+/** Wie rotateTeamInvite, nur fuer den Verwalter-Link - und mit Ablauf. */
 export function rotateAdminInvite(db: Db, teamId: string): TeamAdminInviteRow {
 	const now = Date.now();
 	db.update(teamAdminInvites)
 		.set({ revokedAt: now })
 		.where(and(eq(teamAdminInvites.teamId, teamId), isNull(teamAdminInvites.revokedAt)))
 		.run();
-	const row = { code: generateInviteCode(), teamId, createdAt: now, expiresAt: null, revokedAt: null };
+	const row = {
+		code: generateInviteCode(),
+		teamId,
+		createdAt: now,
+		expiresAt: now + ADMIN_INVITE_TTL_MS,
+		revokedAt: null
+	};
 	db.insert(teamAdminInvites).values(row).run();
 	return row;
 }
@@ -373,6 +382,9 @@ export interface TeamActivityInput {
 	archived: boolean;
 }
 
+export const MAX_TEAM_ACTIVITIES = 500;
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+
 /** Der Stand der Liste, mit dem ein Client sie zuletzt gesehen hat - fuer die Gleichzeitigkeitsprüfung unten. */
 function teamActivitiesVersion(db: DbLike, teamId: string): number {
 	const rows = db
@@ -400,7 +412,10 @@ export function setTeamActivities(
 	// Eine mitgegebene Id, die schon einem ANDEREN Team gehört, dürfte den
 	// Einfüge-Schritt unten nicht einfach knallen lassen (roher 500) - und erst
 	// recht nicht stillschweigend fremde Zeilen überschreiben. Sauber ablehnen.
+	if (items.length > MAX_TEAM_ACTIVITIES) error(400, "Zu viele Aktivitäten");
 	const suppliedIds = items.map((it) => it.id).filter((id): id is string => !!id);
+	if (suppliedIds.some((id) => id.length > 64)) error(400, "Ungültige Aktivitäts-Id");
+	if (new Set(suppliedIds).size !== suppliedIds.length) error(400, "Eine Aktivität steht doppelt in der Liste");
 	if (suppliedIds.length > 0) {
 		const foreign = db
 			.select({ id: teamActivities.id })
@@ -417,7 +432,7 @@ export function setTeamActivities(
 		name: it.name.slice(0, 100),
 		isAbsence: it.isAbsence,
 		sortOrder: it.sortOrder ?? i,
-		color: it.color ?? null,
+		color: it.color && HEX_COLOR.test(it.color) ? it.color : null,
 		archived: it.archived,
 		updatedAt: now
 	}));
@@ -441,6 +456,59 @@ export function listTeamActivities(db: Db, teamId: string): TeamActivityRow[] {
 		.all();
 }
 
+/** Obergrenze je Bericht - ein echter Monat hat eine Handvoll Aktivitäten, nicht Tausende. */
+export const MAX_TEAM_REPORT_ROWS = 200;
+
+/**
+ * Monatsangabe `YYYY-MM`, und zwar eine plausible: zwei Jahre zurück bis ein
+ * Jahr voraus. Sonst wären je Mitglied eine Million Schlüssel (0000-00 …
+ * 9999-99) frei, jeder eine eigene Zeile.
+ */
+export function isPlausibleReportMonth(month: string, now = new Date()): boolean {
+	const m = /^(\d{4})-(\d{2})$/.exec(month);
+	if (!m) return false;
+	const year = Number(m[1]);
+	const mon = Number(m[2]);
+	const thisYear = now.getUTCFullYear();
+	return mon >= 1 && mon <= 12 && year >= thisYear - 2 && year <= thisYear + 1;
+}
+
+export interface TeamReportPayload {
+	rows: { name: string; hours: number; isAbsence: boolean }[];
+	total: number;
+	workHours: number;
+	absenceHours: number;
+}
+
+const finiteHours = (v: unknown): number =>
+	typeof v === "number" && Number.isFinite(v) ? Math.min(Math.max(v, 0), 10_000) : 0;
+
+/**
+ * Auf genau das zuschneiden, was die Team-Ansicht zeigt. Alles andere, was
+ * ein Client mitschickt, landet nicht im Klartext auf dem Server - und die
+ * Grösse je Bericht ist damit begrenzt. null, wenn es gar kein Bericht ist.
+ */
+export function sanitizeTeamReport(payload: unknown): TeamReportPayload | null {
+	if (!payload || typeof payload !== "object") return null;
+	const p = payload as Record<string, unknown>;
+	if (!Array.isArray(p.rows)) return null;
+	const rows = p.rows
+		.filter((r): r is Record<string, unknown> => !!r && typeof r === "object")
+		.filter((r) => typeof r.name === "string")
+		.slice(0, MAX_TEAM_REPORT_ROWS)
+		.map((r) => ({
+			name: (r.name as string).slice(0, 100),
+			hours: finiteHours(r.hours),
+			isAbsence: r.isAbsence === true
+		}));
+	return {
+		rows,
+		total: finiteHours(p.total),
+		workHours: finiteHours(p.workHours),
+		absenceHours: finiteHours(p.absenceHours)
+	};
+}
+
 /**
  * Einen gesendeten Bericht ablegen - Upsert je (Mitglied, Monat): ein
  * erneuter Versand desselben Monats ERSETZT den vorigen, statt eine zweite
@@ -451,7 +519,7 @@ export function upsertTeamReport(
 	teamId: string,
 	memberId: string,
 	month: string,
-	payload: unknown
+	payload: TeamReportPayload | null
 ): void {
 	// Date.now() allein reicht nicht: unter Windows liegt die Aufloesung der
 	// Systemuhr bei ~15 ms, zwei schnell aufeinanderfolgende Uploads koennten
