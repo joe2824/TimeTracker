@@ -2,8 +2,8 @@
 // (deleteInactiveAccounts).
 import { beforeEach, describe, expect, it } from "vitest";
 import { openDb, type Db } from "./db/index";
-import { credentials, devices, sessions, teamMembers, teamReports, teams, users } from "./db/schema";
-import { deleteInactiveAccounts } from "./account";
+import { credentials, devices, sessions, teamAdmins, teamMembers, teamReports, teams, users } from "./db/schema";
+import { deleteAccount, deleteInactiveAccounts } from "./account";
 import { eq } from "drizzle-orm";
 
 let db: Db;
@@ -179,8 +179,50 @@ describe("deleteInactiveAccounts", () => {
 		expect(deleteInactiveAccounts(db, YEAR_MS, NOW)).toBe(1);
 	});
 
+	it("löscht nie einen Server-Admin, auch wenn er lange nicht da war", () => {
+		user("anna", YEAR_MS * 2);
+		db.update(users).set({ isAdmin: true }).where(eq(users.id, "anna")).run();
+
+		expect(deleteInactiveAccounts(db, YEAR_MS, NOW)).toBe(0);
+		expect(db.select().from(users).where(eq(users.id, "anna")).get()).toBeDefined();
+	});
+
 	it("tut nichts, wenn niemand die Frist überschreitet", () => {
 		user("anna", 1000);
 		expect(deleteInactiveAccounts(db, YEAR_MS, NOW)).toBe(0);
+	});
+});
+
+describe("deleteAccount mit eigenen Teams", () => {
+	function team(id: string, owner: string): void {
+		db.insert(teams).values({ id, ownerUserId: owner, name: id, createdAt: NOW }).run();
+	}
+	function admin(teamId: string, userId: string, agoMs: number): void {
+		db.insert(teamAdmins).values({ teamId, userId, createdAt: NOW - agoMs }).run();
+	}
+
+	it("übergibt ein Team an den dienstältesten Verwalter, statt es mitzulöschen", () => {
+		user("anna", 0);
+		user("bodo", 0);
+		user("clara", 0);
+		team("t1", "anna");
+		admin("t1", "clara", 1000);
+		admin("t1", "bodo", 5000);
+
+		const summary = db.transaction((tx) => deleteAccount(tx, "anna"));
+
+		expect(summary).toMatchObject({ teamsTransferred: 1, teamsDeleted: 0 });
+		expect(db.select().from(teams).where(eq(teams.id, "t1")).get()?.ownerUserId).toBe("bodo");
+		expect(db.select().from(teamAdmins).all().map((a) => a.userId)).toEqual(["clara"]);
+	});
+
+	it("ein Team ohne Verwalter geht mit und wird gezählt", () => {
+		user("anna", 0);
+		team("t1", "anna");
+
+		const summary = db.transaction((tx) => deleteAccount(tx, "anna"));
+
+		expect(summary).toMatchObject({ teamsTransferred: 0, teamsDeleted: 1 });
+		expect(db.select().from(teams).all()).toEqual([]);
 	});
 });

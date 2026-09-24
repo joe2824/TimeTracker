@@ -5,6 +5,7 @@
 	import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
 	import { toast } from "svelte-sonner";
 	import { account } from "$lib/sync/account.svelte";
+	import { chefTeams } from "$lib/team/chef.svelte";
 	import { errorText } from "$lib/log";
 
 	const formatError = (e: unknown, fallback: string) =>
@@ -15,10 +16,15 @@
 	let isRevokeModalOpen = $state(false);
 	let isDeleteAccountModalOpen = $state(false);
 	let linkedDeviceCount = $state<number | null>(null);
+	let ownedTeamCount = $state(0);
 
 	async function handleOpenDeleteAccountDialog() {
 		isDeleteAccountModalOpen = true;
 		linkedDeviceCount = null;
+		ownedTeamCount = 0;
+		void chefTeams.loadTeams().then(() => {
+			ownedTeamCount = chefTeams.teams.filter((t) => t.role !== "admin").length;
+		});
 		try {
 			const info = await account.accountInfo();
 			linkedDeviceCount = info ? info.devices.filter((d) => !d.revokedAt).length : null;
@@ -58,9 +64,12 @@
 		try {
 			const summary = await account.unlink({ deleteRemote: true });
 			isDeleteAccountModalOpen = false;
+			const handedOver = summary?.teamsTransferred
+				? ` ${summary.teamsTransferred === 1 ? "Ein Team hat" : `${summary.teamsTransferred} Teams haben`} jetzt einen Verwalter als Chef.`
+				: "";
 			toast.success(
 				summary
-					? `Konto aufgelöst. ${summary.records} Datensätze beim Server gelöscht. Die Zeiten bleiben hier.`
+					? `Konto aufgelöst. ${summary.records} Datensätze beim Server gelöscht. Die Zeiten bleiben hier.${handedOver}`
 					: "Konto aufgelöst. Die Zeiten bleiben hier."
 			);
 		} catch (e) {
@@ -244,6 +253,13 @@
 							<strong class="text-foreground block mt-1">Dies betrifft alle {linkedDeviceCount} verknüpften Geräte.</strong>
 						{/if}
 					</p>
+					{#if ownedTeamCount > 0}
+						<p class="text-foreground">
+							Du bist Chef von {ownedTeamCount === 1 ? "einem Team" : `${ownedTeamCount} Teams`}. Ein Team mit
+							Verwalter geht an den Verwalter über, der am längsten dabei ist. Ein Team ohne Verwalter wird
+							samt Mitgliedern und Berichten gelöscht.
+						</p>
+					{/if}
 					<p class="text-foreground text-xs font-medium border-t pt-2">
 						✓ Deine bisher auf diesem Rechner erfassten Zeiten bleiben als lokale Kopie vollständig erhalten.
 					</p>

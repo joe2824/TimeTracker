@@ -179,6 +179,26 @@ export interface DeleteSummary {
 	devices: number;
 	passkeys: number;
 	wraps: number;
+	/** Fehlt bei einem Server vor 1.1. */
+	teamsTransferred?: number;
+	teamsDeleted?: number;
+}
+
+/**
+ * Die Fehlerantwort des Servers als ApiError. SvelteKit schickt seine Fehler
+ * als JSON mit `message`; ist da etwas anderes, bleibt der Statustext -
+ * besser als eine leere Meldung.
+ */
+export async function apiErrorFrom(res: Response): Promise<ApiError> {
+	const text = await res.text().catch(() => "");
+	let message = res.statusText || `Fehler ${res.status}`;
+	try {
+		const parsed = JSON.parse(text);
+		if (parsed?.message) message = String(parsed.message);
+	} catch {
+		if (text) message = text.slice(0, 200);
+	}
+	return new ApiError(message, res.status);
 }
 
 /** Ein Fehler vom Server, mit seinem Statuscode. */

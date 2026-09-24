@@ -30,6 +30,9 @@ services:
       # Automatische Sicherungen (alle X Stunden, 0 = deaktiviert, behalte N Sicherungen)
       BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
       BACKUP_KEEP: ${BACKUP_KEEP:-7}
+      # Konten ohne jede Nutzung nach so vielen Tagen loeschen (0 = nie).
+      # Server-Admins sind ausgenommen; eigene Teams gehen an einen Verwalter.
+      INACTIVE_ACCOUNT_DAYS: ${INACTIVE_ACCOUNT_DAYS:-365}
       # Schlüssel für HMAC-Signaturen von Session-Tokens.
       #
       # Einmalig generieren und hier eintragen:
@@ -65,7 +68,7 @@ services:
     ports:
       # Nur auf der Rueckschleife: erreichbar ist der Dienst ausschliesslich
       # ueber den Reverse-Proxy davor.
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
 
     deploy:
       resources:

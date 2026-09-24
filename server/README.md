@@ -74,6 +74,7 @@ unbrauchbar. Caddy und Traefik machen das von selbst richtig.
 | `REGISTRATION_OPEN` | `true` öffnet den Dienst für jeden, der die Adresse kennt. Voreinstellung `false`. |
 | `ALLOWED_ORIGINS` | Weitere Adressen, unter denen der Dienst erreichbar ist. Komma-getrennt. Siehe unten. |
 | `DATA_DIR` | Wohin die Datenbank kommt. Im Container `/data`. |
+| `INACTIVE_ACCOUNT_DAYS` | Konten, die so viele Tage weder ein Gerät noch einen Passkey noch eine Sitzung benutzt haben, werden gelöscht. Voreinstellung `365`, `0` schaltet es ab. Server-Admins sind ausgenommen, ein Chef mit aktivem Team gilt als aktiv, und eigene Teams gehen beim Löschen an den dienstältesten Verwalter. |
 
 **Eine leere `INVITE_CODES`-Zeile öffnet den Dienst NICHT.** Das war einmal so
 und war ein Konstruktionsfehler: ausgerechnet der sorgfältigere Schritt — die
@@ -302,7 +303,7 @@ einzige Kopie.
 |---|---|---|
 | Nur hier vergessen | Das Gerät gleicht nicht mehr ab. Der Zugang bleibt gültig. | Niemand muss gefragt werden — es passiert nur lokal. |
 | Gerät trennen | Der Zugang dieses Geräts erlischt auch beim Server. Konto und andere Geräte bleiben. | Das Gerät selbst, über sein Token. |
-| Konto auflösen | Alles beim Server wird gelöscht: Chiffrate, Passkeys, verpackte Schlüssel, alle Geräte. | Über eine Browser-Sitzung nur mit frischer Passkey-Bestätigung samt Nutzerprüfung. Über ein Geräte-Token unmittelbar. |
+| Konto auflösen | Alles beim Server wird gelöscht: Chiffrate, Passkeys, verpackte Schlüssel, alle Geräte. Eigene Teams gehen an den dienstältesten Verwalter; ein Team ohne Verwalter wird samt Mitgliedern und Berichten gelöscht. | Über eine Browser-Sitzung nur mit frischer Passkey-Bestätigung samt Nutzerprüfung. Über ein Geräte-Token unmittelbar. |
 
 **Warum die Sitzung nicht genügt:** ein Cookie fährt bei jeder Anfrage
 automatisch mit. Es beweist, dass irgendwann jemand angemeldet war, nicht dass
@@ -336,6 +337,13 @@ eine hinterlegte E-Mail-Adresse (freiwillig).
 Einträge, Arbeitszeiten, Einstellungen. Auch nicht, in welchen Monaten
 gearbeitet wurde — die Zeitraum-Kennung ist ein HMAC mit dem Schlüssel des
 Kontos.
+
+**Ausnahme Team-Modus — lesbar im Klartext:** Teamnamen, Namen und freiwillige
+E-Mail-Adressen der Mitglieder, die gemeinsame Aktivitätenliste und die an das
+Team gesendeten Monatsberichte (je Aktivität mit Stunden, nur Zeilen mit
+Stunden, dazu die Summen). Der Chef und seine Verwalter sollen sie ohne den
+Schlüssel des Mitglieds lesen können — deshalb liegen sie nicht im
+verschlüsselten Bereich. Die App sagt das beim Beitritt so.
 
 **Der Betreiber kann sich keinen Zugang verschaffen.** Es gibt keine
 Schlüsselhinterlegung. Wer alle Geräte und seine Wiederherstellungs-Phrase

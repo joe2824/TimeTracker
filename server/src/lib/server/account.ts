@@ -3,8 +3,8 @@
 //   - Ein GERAET lösen. Der Zugang dieses einen Geräts erlischt, das Konto und
 //     alle anderen Geräte bleiben. Das macht `revokeDevice` in auth.ts.
 //   - Das KONTO auflösen. Dann verschwindet alles, was der Server hat.
-import { and, eq, gte, lt, or, sql } from "drizzle-orm";
-import type { DbLike } from "./db/index";
+import { and, asc, eq, gte, lt, or, sql } from "drizzle-orm";
+import type { Db, DbLike } from "./db/index";
 import {
 	challenges,
 	credentials,
@@ -14,6 +14,7 @@ import {
 	pairings,
 	records,
 	sessions,
+	teamAdmins,
 	teamMembers,
 	teamReports,
 	teams,
@@ -32,6 +33,33 @@ export interface DeleteSummary {
 	devices: number;
 	passkeys: number;
 	wraps: number;
+	/** Eigene Teams, die an den dienstältesten Verwalter übergingen. */
+	teamsTransferred: number;
+	/** Eigene Teams ohne Verwalter - die gehen samt Mitgliedern und Berichten mit. */
+	teamsDeleted: number;
+}
+
+/**
+ * Eigene Teams vor dem Löschen an den dienstältesten Verwalter übergeben -
+ * sonst nähme die Kaskade über teams.owner_user_id das Team samt Mitgliedern,
+ * Berichten und allen übrigen Verwaltern still mit.
+ */
+function handOverOwnedTeams(db: DbLike, userId: string): { transferred: number; deleted: number } {
+	const owned = db.select({ id: teams.id }).from(teams).where(eq(teams.ownerUserId, userId)).all();
+	let transferred = 0;
+	for (const { id } of owned) {
+		const heir = db
+			.select({ userId: teamAdmins.userId })
+			.from(teamAdmins)
+			.where(eq(teamAdmins.teamId, id))
+			.orderBy(asc(teamAdmins.createdAt))
+			.get();
+		if (!heir) continue;
+		db.update(teams).set({ ownerUserId: heir.userId }).where(eq(teams.id, id)).run();
+		db.delete(teamAdmins).where(and(eq(teamAdmins.teamId, id), eq(teamAdmins.userId, heir.userId))).run();
+		transferred++;
+	}
+	return { transferred, deleted: owned.length - transferred };
 }
 
 /** Alles zu diesem Konto entfernen. */
@@ -43,8 +71,14 @@ export function deleteAccount(db: DbLike, userId: string): DeleteSummary {
 		records: countRows(records),
 		devices: countRows(devices),
 		passkeys: countRows(credentials),
-		wraps: countRows(keyWraps)
+		wraps: countRows(keyWraps),
+		teamsTransferred: 0,
+		teamsDeleted: 0
 	};
+
+	const handedOver = handOverOwnedTeams(db, userId);
+	summary.teamsTransferred = handedOver.transferred;
+	summary.teamsDeleted = handedOver.deleted;
 
 	db.delete(records).where(eq(records.userId, userId)).run();
 	db.delete(keyWraps).where(eq(keyWraps.userId, userId)).run();
@@ -85,10 +119,16 @@ export function deleteAccount(db: DbLike, userId: string): DeleteSummary {
  * `userId` (anders als `lastSeenAt`/`lastUsedAt`/`expiresAt` selbst, die
  * unindiziert sind).
  */
-export function deleteInactiveAccounts(db: DbLike, maxAgeMs: number, now = Date.now()): number {
+export function deleteInactiveAccounts(db: Db, maxAgeMs: number, now = Date.now()): number {
 	const cutoff = now - maxAgeMs;
 
-	const candidates = db.select({ id: users.id }).from(users).where(lt(users.createdAt, cutoff)).all();
+	// Server-Admins nie: ohne sie liesse sich der Server nicht mehr verwalten,
+	// und wer ihn nur selten betreut, ist deshalb nicht weg.
+	const candidates = db
+		.select({ id: users.id })
+		.from(users)
+		.where(and(lt(users.createdAt, cutoff), eq(users.isAdmin, false)))
+		.all();
 
 	const isActive = (userId: string): boolean => {
 		const recentDevice = db
@@ -141,7 +181,9 @@ export function deleteInactiveAccounts(db: DbLike, maxAgeMs: number, now = Date.
 
 	const inactive = candidates.filter((u) => !isActive(u.id));
 
-	for (const { id } of inactive) deleteAccount(db, id);
+	// Je Konto alles oder nichts, wie beim Löschen über /api/me.
+	for (const { id } of inactive) db.transaction((tx) => deleteAccount(tx, id));
+	if (inactive.length > 0) cleanupTraces(db.$client);
 	return inactive.length;
 }
 
