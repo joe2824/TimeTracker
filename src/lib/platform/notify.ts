@@ -1,4 +1,5 @@
 import { isTauri } from "./env";
+import { logWarn } from "../log";
 
 /** Um Erlaubnis fragen - aber nur, wenn es etwas zu fragen gibt. */
 export async function ensureNotificationPermission(): Promise<boolean> {
@@ -36,8 +37,9 @@ export async function notify(opts: NotifyOptions): Promise<void> {
 			window.focus();
 			n.close();
 		};
-	} catch {
+	} catch (e) {
 		// Eine nicht zustellbare Erinnerung ist ärgerlich, aber kein Grund, den
 		// Aufrufer scheitern zu lassen - der zählt sonst seine Zeit nicht weiter.
+		logWarn("Benachrichtigung nicht zugestellt", e);
 	}
 }

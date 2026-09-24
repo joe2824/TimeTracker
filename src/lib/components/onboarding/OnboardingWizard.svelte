@@ -31,6 +31,7 @@
 	import PairingCode from "$lib/components/onboarding/PairingCode.svelte";
 	import { PairingFlow } from "$lib/account/pairingFlow.svelte";
 	import { rememberServerUrl, rememberedServerUrl } from "$lib/account/serverUrl";
+	import { cleanEmail } from "$shared/email";
 
 	const STEPS = 5;
 	let step = $state(0);
@@ -97,9 +98,7 @@
 	}
 
 	// Weicher Hinweis (nicht blockierend).
-	const emailInvalid = $derived(
-		bossEmail.trim() !== "" && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(bossEmail.trim())
-	);
+	const emailInvalid = $derived(bossEmail.trim() !== "" && cleanEmail(bossEmail) === null);
 
 	const stepTitles = [
 		{

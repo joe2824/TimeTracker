@@ -911,7 +911,7 @@
 								Zeitwächter: an diesem Tag sind {fmtHoursClock(-dayAdjust.delta)} h zu viel erfasst –
 								{dayAdjustKnown}.
 							{:else if dayAdjust.reportEstimated}
-								Passt zur geschätzten Zeitwächter-Stunde (noch nicht verrechnet): der Tag kommt
+								Passt zur geschätzten Zeit im Zeitwächter (noch nicht verrechnet): der Tag kommt
 								damit auf {fmtHoursClock(dayAdjust.reportHours)} h.
 							{:else}
 								Passt zum Zeitwächter: der Tag kommt damit auf {fmtHoursClock(
