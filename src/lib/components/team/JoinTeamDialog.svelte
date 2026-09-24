@@ -1,8 +1,5 @@
 <script lang="ts">
-	// Der Dialog, der aufgeht, wenn ein Team-Beitritts-Link ankommt. Anders als
-	// bei der Konto-Kopplung ist hier kein Vergleich mit einem vorhandenen
-	// Zustand nötig - ein Team-Mitglied hat kein Konto und keinen laufenden
-	// Vorgang, gegen den sich der Link fälschen liesse.
+	// Der Dialog, der aufgeht, wenn ein Team-Beitritts-Link ankommt.
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
@@ -71,18 +68,19 @@
 			</Dialog.Title>
 			<Dialog.Description>
 				{#if flow.preview === "error"}
-					Dieser Link ist abgelaufen oder wurde zurückgezogen - beim Chef nach einem neuen fragen.
+					Dieser Link ist abgelaufen oder wurde zurückgezogen – frag deinen Chef nach einem neuen.
 				{:else}
-					Die gemeinsamen Aktivitäten dieses Teams werden auf diesem Gerät verfügbar, und der Chef
-					sieht, wann von hier ein Bericht gesendet wurde.
+					Die gemeinsamen Aktivitäten dieses Teams werden auf diesem Gerät verfügbar. Wenn du deinen
+					Monatsbericht sendest, bekommen Chef und Verwalter des Teams eine Kopie mit deinen Stunden je
+					Aktivität.
 				{/if}
 			</Dialog.Description>
 		</Dialog.Header>
 
 		{#if flow.preview !== "loading" && flow.preview !== "error"}
 			<p class="bg-muted rounded-md px-3 py-2 text-sm">
-				Server: <span class="font-medium">{serverHost}</span> - stimmt das nicht mit der Adresse
-				überein, die der Chef genannt hat, lieber abbrechen.
+				Adresse: <span class="font-medium">{serverHost}</span> – stimmt sie nicht mit der überein, die
+				dein Chef genannt hat, lieber abbrechen.
 			</p>
 			<div class="space-y-2">
 				<Label for="team-join-name">Dein Name</Label>
@@ -91,7 +89,7 @@
 					bind:value={flow.name}
 					placeholder="Anna Meier"
 					disabled={flow.busy}
-					onkeydown={(e) => e.key === "Enter" && flow.name.trim() && join()}
+					onkeydown={(e) => e.key === "Enter" && flow.canJoin && join()}
 				/>
 			</div>
 			<div class="space-y-2">
@@ -102,18 +100,28 @@
 					bind:value={flow.email}
 					placeholder="anna@firma.de"
 					disabled={flow.busy}
-					onkeydown={(e) => e.key === "Enter" && flow.name.trim() && join()}
+					onkeydown={(e) => e.key === "Enter" && flow.canJoin && join()}
 				/>
-				<p class="text-muted-foreground text-xs">
-					Nur damit der Chef dich erinnern kann, falls ein Bericht fehlt.
-				</p>
+				{#if flow.emailInvalid}
+					<p class="text-destructive text-xs">Das ist keine gültige E-Mail-Adresse.</p>
+				{:else}
+					<p class="text-muted-foreground text-xs">
+						Nur damit der Chef dich erinnern kann, falls ein Bericht fehlt.
+					</p>
+				{/if}
 			</div>
+			{#if flow.existing}
+				<p class="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm">
+					Du bist bereits im Team „{flow.existing.teamName}“. Mit dem Beitritt verlässt du es – deine
+					erfassten Zeiten bleiben erhalten.
+				</p>
+			{/if}
 		{/if}
 
 		<Dialog.Footer>
 			<Button variant="outline" disabled={flow.busy} onclick={dismiss}>Abbrechen</Button>
 			{#if flow.preview !== "loading" && flow.preview !== "error"}
-				<Button disabled={flow.busy || !flow.name.trim()} onclick={join}>
+				<Button disabled={!flow.canJoin} onclick={join}>
 					{flow.busy ? "Wird verbunden…" : "Beitreten"}
 				</Button>
 			{/if}

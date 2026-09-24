@@ -278,19 +278,7 @@ export class Api {
 			throw new ApiError(e instanceof Error ? e.message : "Server nicht erreichbar", 0);
 		}
 
-		if (!res.ok) {
-			// SvelteKit schickt seine Fehler als JSON mit `message`. Ist da etwas
-			// anderes, bleibt der Statustext - besser als eine leere Meldung.
-			const text = await res.text().catch(() => "");
-			let message = res.statusText || `Fehler ${res.status}`;
-			try {
-				const parsed = JSON.parse(text);
-				if (parsed?.message) message = String(parsed.message);
-			} catch {
-				if (text) message = text.slice(0, 200);
-			}
-			throw new ApiError(message, res.status);
-		}
+		if (!res.ok) throw await apiErrorFrom(res);
 
 		try {
 			return (await res.json()) as T;

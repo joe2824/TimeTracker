@@ -48,7 +48,7 @@
 		<div class="space-y-2 text-center">
 			<h1 class="text-xl font-semibold">Link nicht gültig</h1>
 			<p class="text-muted-foreground text-sm">
-				Dieser Link ist abgelaufen oder wurde zurückgezogen - beim Chef nach einem neuen fragen.
+				Dieser Link ist abgelaufen oder wurde zurückgezogen – frag deinen Chef nach einem neuen.
 			</p>
 		</div>
 	{:else}
@@ -56,8 +56,9 @@
 			<div class="space-y-2 text-center">
 				<h1 class="text-xl font-semibold">Mit „{flow.preview.teamName}“ verbinden?</h1>
 				<p class="text-muted-foreground text-sm">
-					Die gemeinsamen Aktivitäten dieses Teams werden auf diesem Gerät verfügbar, und der Chef
-					sieht, wann von hier ein Bericht gesendet wurde.
+					Die gemeinsamen Aktivitäten dieses Teams werden auf diesem Gerät verfügbar. Wenn du deinen
+					Monatsbericht sendest, bekommen Chef und Verwalter des Teams eine Kopie mit deinen Stunden je
+					Aktivität.
 				</p>
 			</div>
 
@@ -68,7 +69,7 @@
 					bind:value={flow.name}
 					placeholder="Anna Meier"
 					disabled={flow.busy}
-					onkeydown={(e) => e.key === "Enter" && flow.name.trim() && join()}
+					onkeydown={(e) => e.key === "Enter" && flow.canJoin && join()}
 				/>
 			</div>
 			<div class="space-y-2">
@@ -79,18 +80,28 @@
 					bind:value={flow.email}
 					placeholder="anna@firma.de"
 					disabled={flow.busy}
-					onkeydown={(e) => e.key === "Enter" && flow.name.trim() && join()}
+					onkeydown={(e) => e.key === "Enter" && flow.canJoin && join()}
 				/>
-				<p class="text-muted-foreground text-xs">
-					Nur damit der Chef dich erinnern kann, falls ein Bericht fehlt.
-				</p>
+				{#if flow.emailInvalid}
+					<p class="text-destructive text-xs">Das ist keine gültige E-Mail-Adresse.</p>
+				{:else}
+					<p class="text-muted-foreground text-xs">
+						Nur damit der Chef dich erinnern kann, falls ein Bericht fehlt.
+					</p>
+				{/if}
 			</div>
+			{#if flow.existing}
+				<p class="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm">
+					Du bist bereits im Team „{flow.existing.teamName}“. Mit dem Beitritt verlässt du es – deine
+					erfassten Zeiten bleiben erhalten.
+				</p>
+			{/if}
 
 			{#if flow.joinError}
 				<p class="text-destructive text-sm">Beitritt nicht möglich: {flow.joinError}</p>
 			{/if}
 
-			<Button class="w-full" disabled={flow.busy || !flow.name.trim()} onclick={join}>
+			<Button class="w-full" disabled={!flow.canJoin} onclick={join}>
 				{flow.busy ? "Wird verbunden…" : "Beitreten"}
 			</Button>
 

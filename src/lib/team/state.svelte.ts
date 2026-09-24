@@ -9,9 +9,15 @@ class TeamJoinState {
 	 * Komponente einzeln aus team.json gelesen, damit ein Beitritt über den
 	 * Dialog (oder ein Verlassen) sofort überall sichtbar wird. bits-ui baut
 	 * alle Einstellungs-Tabs beim Start mit auf; ein lokales onMount-Laden in
-	 * ReportTab sähe einen späteren Beitritt sonst nie.
+	 * TeamTab sähe einen späteren Beitritt sonst nie.
 	 */
 	device = $state<TeamDeviceInfo | null>(null);
+	/**
+	 * Name des Teams, aus dem dieses Gerät zuletzt entfernt wurde - bleibt als
+	 * Hinweis in den Einstellungen stehen, bis ihn jemand wegklickt. Ein Toast
+	 * verfiele beim versteckten Autostart ungesehen.
+	 */
+	removedFrom = $state<string | null>(null);
 }
 
 export const teamJoin = new TeamJoinState();

@@ -12,8 +12,7 @@
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { Switch } from "$lib/components/ui/switch";
 	import SettingsCard from "$lib/components/shared/SettingsCard.svelte";
-	import { clearTeamDevice } from "$lib/store";
-	import { syncOwnedTeamActivities, syncTeamActivities } from "$lib/team/activities";
+	import { leaveTeam as leaveJoinedTeam, syncOwnedTeamActivities, syncTeamActivities } from "$lib/team/activities";
 	import { teamJoin } from "$lib/team/state.svelte";
 	import { errorText } from "$lib/log";
 	import { tabFocus } from "$lib/ui/tabFocus.svelte";
@@ -44,8 +43,9 @@
 	async function refreshTeamActivities() {
 		refreshingTeam = true;
 		try {
-			await syncTeamActivities();
-			toast.success("Team-Aktivitäten aktualisiert.");
+			const result = await syncTeamActivities();
+			if (result === "ok") toast.success("Team-Aktivitäten aktualisiert.");
+			else if (result === "offline") toast.error("Keine Verbindung – bitte später erneut versuchen.");
 		} catch (e) {
 			toast.error(`Aktualisieren fehlgeschlagen: ${errorText(e)}`);
 		} finally {
@@ -53,14 +53,20 @@
 		}
 	}
 
+	let confirmLeave = $state(false);
+	let leaving = $state(false);
+
 	async function leaveTeam() {
-		await clearTeamDevice();
-		teamJoin.device = null;
-		// Löst teamOwned-Zeilen aus der gemeinsamen Verwaltung, behält sie aber
-		// (archiviert, mit neuer Id) - ein blosses Entfernen liesse schon
-		// erfasste Stunden lautlos aus dem Bericht verschwinden.
-		await app.detachTeamActivities();
-		toast.success("Team verlassen.");
+		leaving = true;
+		try {
+			await leaveJoinedTeam();
+			confirmLeave = false;
+			toast.success("Team verlassen. Deine erfassten Zeiten bleiben erhalten.");
+		} catch (e) {
+			toast.error(`Team verlassen fehlgeschlagen: ${errorText(e)}`);
+		} finally {
+			leaving = false;
+		}
 	}
 
 	// ---------- Chef-Modus ----------
@@ -170,7 +176,7 @@
 		try {
 			const userId = transferTarget.userId;
 			await chefTeams.transferOwnership(userId);
-			toast.success(`„${transferTargetName}" ist jetzt Chef/in dieses Teams.`);
+			toast.success(`„${transferTargetName}“ ist jetzt Chef dieses Teams.`);
 			confirmingTransfer = false;
 			transferPickId = undefined;
 		} catch (e) {
@@ -206,8 +212,23 @@
 	}
 </script>
 
+{#if teamJoin.removedFrom && !teamJoin.device}
+	<SettingsCard title="Team-Mitgliedschaft" divided={false}>
+		<div class="flex flex-wrap items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3.5">
+			<p class="min-w-0 flex-1 text-sm">
+				Du bist nicht mehr im Team „{teamJoin.removedFrom}“. Deine erfassten Zeiten bleiben erhalten; die
+				Team-Aktivitäten stehen jetzt archiviert bei deinen eigenen.
+			</p>
+			<Button variant="ghost" size="sm" onclick={() => (teamJoin.removedFrom = null)}>Verstanden</Button>
+		</div>
+	</SettingsCard>
+{/if}
+
 {#if teamJoin.device}
-	<SettingsCard title="Team-Mitgliedschaft" description="Die gemeinsamen Aktivitäten kommen von dort.">
+	<SettingsCard
+		title="Team-Mitgliedschaft"
+		description="Die gemeinsamen Aktivitäten kommen von dort. Wenn du deinen Monatsbericht sendest, sehen Chef und Verwalter des Teams deine Stunden je Aktivität."
+	>
 		<div class="flex flex-wrap items-center justify-between gap-3">
 			<div class="flex items-center gap-2">
 				<UsersIcon class="text-muted-foreground size-4" />
@@ -217,13 +238,37 @@
 				<Button variant="outline" size="sm" disabled={refreshingTeam} onclick={refreshTeamActivities}>
 					<RefreshCwIcon class="size-4" /> Aktualisieren
 				</Button>
-				<Button variant="ghost" size="sm" onclick={leaveTeam}>
+				<Button variant="ghost" size="sm" onclick={() => (confirmLeave = true)}>
 					<LogOutIcon class="size-4" /> Team verlassen
 				</Button>
 			</div>
 		</div>
 	</SettingsCard>
 {/if}
+
+<Dialog.Root
+	open={confirmLeave}
+	onOpenChange={(o) => {
+		if (!o && !leaving) confirmLeave = false;
+	}}
+>
+	<Dialog.Content class="sm:max-w-md">
+		<Dialog.Header>
+			<Dialog.Title>Team „{teamJoin.device?.teamName}“ verlassen?</Dialog.Title>
+			<Dialog.Description>
+				Deine erfassten Zeiten bleiben erhalten, die Team-Aktivitäten werden zu archivierten eigenen
+				Aktivitäten. Deine Berichte gehen danach nicht mehr an das Team. Um wieder beizutreten, brauchst
+				du erneut den Beitritts-Link.
+			</Dialog.Description>
+		</Dialog.Header>
+		<Dialog.Footer>
+			<Button variant="outline" disabled={leaving} onclick={() => (confirmLeave = false)}>Abbrechen</Button>
+			<Button variant="destructive" disabled={leaving} onclick={leaveTeam}>
+				{leaving ? "Verlässt…" : "Team verlassen"}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
 
 <SettingsCard title="Chef-Modus" savedAt={savedBossAt} divided={false}>
 	{#snippet action()}
@@ -251,7 +296,7 @@
 				<CloudIcon class="size-4" />
 			</div>
 			<p class="text-muted-foreground min-w-0 flex-1 text-xs">
-				Braucht ein Konto - Team und Beitritts-Link liegen dort, nicht nur auf diesem Gerät.
+				Für ein Team brauchst du ein Konto – dort werden Team und Beitritts-Link gespeichert.
 			</p>
 			<Button size="sm" class="shrink-0" onclick={() => tabFocus.requestSettings("konto")}>
 				Zu den Konto-Einstellungen
@@ -309,7 +354,7 @@
 				<span class="text-sm font-medium">{chefTeams.selectedTeam?.name}</span>
 			{/if}
 			{#if chefTeams.selectedTeam && !chefTeams.isOwner}
-				<span class="text-muted-foreground text-xs">(du bist Verwalter/in, nicht Chef/in)</span>
+				<span class="text-muted-foreground text-xs">(du bist Verwalter, nicht Chef)</span>
 			{/if}
 			{#if chefTeams.selectedTeam && chefTeams.isOwner}
 				<Button
@@ -391,7 +436,7 @@
 	</SettingsCard>
 
 	{#if chefTeams.selectedTeam}
-		<SettingsCard title="Verwalter" description="Ein zweites Konto mit denselben Rechten wie der Chef - ausser Team löschen, Verwalter ein-/aussetzen oder übergeben." divided={false}>
+		<SettingsCard title="Verwalter" description="Ein weiteres Konto mit denselben Rechten wie der Chef – außer Team löschen, Verwalter einladen oder entfernen und die Chef-Rolle übergeben." divided={false}>
 			{#if chefTeams.adminsLoading}
 				<p class="text-muted-foreground text-sm">Wird geladen…</p>
 			{:else if chefTeams.admins.length === 0}
@@ -461,7 +506,7 @@
 								<div class="bg-muted flex size-7 shrink-0 items-center justify-center rounded-md">
 									<Link2Icon class="text-muted-foreground size-3.5" />
 								</div>
-								<p class="text-muted-foreground text-xs">Noch keinen Link erzeugt.</p>
+								<p class="text-muted-foreground text-xs">Kein gültiger Link.</p>
 							</div>
 							<Button variant="outline" size="sm" disabled={chefTeams.rotatingAdminInvite} onclick={rotateAdminInvite}>
 								<RefreshCwIcon class="size-4" /> Link erzeugen
@@ -470,8 +515,12 @@
 					{/if}
 					{#if !chefTeams.adminInviteLoading}
 						<p class="text-muted-foreground text-xs">
-							Wer den Link öffnet, braucht (anders als beim Beitritts-Link) ein eigenes Konto auf
-							diesem Server.
+							Wer den Link annimmt, sieht alle Berichte des Teams und braucht dafür ein eigenes Konto.
+							{#if chefTeams.adminInvite?.expiresAt}
+								Der Link gilt bis {new Date(chefTeams.adminInvite.expiresAt).toLocaleDateString("de-DE")}.
+							{:else}
+								Ein neuer Link gilt 30 Tage.
+							{/if}
 						</p>
 					{/if}
 				</div>
@@ -480,7 +529,7 @@
 	{/if}
 
 	{#if chefTeams.selectedTeam && chefTeams.isOwner && chefTeams.admins.length > 0}
-		<SettingsCard title="Eigentum übergeben" description="Ein bestehender Verwalter wird zum Chef, du selbst zum Verwalter - der Zugang bleibt erhalten." divided={false}>
+		<SettingsCard title="Chef-Rolle übergeben" description="Ein Verwalter wird zum Chef, du selbst zum Verwalter – dein Zugang bleibt erhalten." divided={false}>
 			<div class="flex flex-wrap items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3.5">
 				<div class="flex size-9 shrink-0 items-center justify-center rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400">
 					<ArrowLeftRightIcon class="size-4" />
@@ -514,7 +563,7 @@
 			<Dialog.Header>
 				<Dialog.Title>Chef-Rolle an „{transferTargetName}“ übergeben?</Dialog.Title>
 				<Dialog.Description>
-					„{transferTargetName}" kann das Team danach löschen, Verwalter ein-/aussetzen und
+					„{transferTargetName}“ kann das Team danach löschen, Verwalter einladen oder entfernen und
 					erneut übergeben - alles, was bisher nur du konntest. Du selbst bleibst als Verwalter
 					mit dabei.
 				</Dialog.Description>

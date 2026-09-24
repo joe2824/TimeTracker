@@ -52,6 +52,10 @@ export class AdminJoinFlow {
 		try {
 			const team = await account.joinTeamAsAdmin(code);
 			this.joinedTeamName = team.name;
+			// Ohne Chef-Modus gäbe es den Team-Tab gar nicht, in dem ein Verwalter arbeitet.
+			if (!app.settings.bossMode) {
+				await app.updateSettings({ bossMode: true }).catch((e) => logError("Chef-Modus nicht eingeschaltet", e));
+			}
 		} catch (e) {
 			this.joinError = errorText(e);
 		} finally {

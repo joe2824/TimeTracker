@@ -6,9 +6,16 @@ const accountInit = vi.fn();
 const accountDispose = vi.fn();
 const joinTeamAsAdmin = vi.fn();
 const previewAdminInvite = vi.fn();
+const updateSettings = vi.fn();
+const appSettings = { bossMode: false };
 
 vi.mock("../app.svelte", () => ({
-	app: { init: () => appInit(), dispose: () => appDispose() }
+	app: {
+		init: () => appInit(),
+		dispose: () => appDispose(),
+		settings: appSettings,
+		updateSettings: (...args: unknown[]) => updateSettings(...args)
+	}
 }));
 vi.mock("../sync/account.svelte", () => ({
 	account: {
@@ -24,9 +31,11 @@ vi.mock("./api", () => ({
 const { AdminJoinFlow } = await import("./adminJoinFlow.svelte");
 
 beforeEach(() => {
-	for (const fn of [appInit, appDispose, accountInit, accountDispose, joinTeamAsAdmin, previewAdminInvite]) {
+	for (const fn of [appInit, appDispose, accountInit, accountDispose, joinTeamAsAdmin, previewAdminInvite, updateSettings]) {
 		fn.mockReset();
 	}
+	updateSettings.mockResolvedValue(undefined);
+	appSettings.bossMode = false;
 });
 
 describe("AdminJoinFlow.start", () => {
@@ -119,6 +128,8 @@ describe("AdminJoinFlow.accept", () => {
 		expect(flow.joinedTeamName).toBe("Vertrieb");
 		expect(flow.busy).toBe(false);
 		expect(flow.joinError).toBeNull();
+		// Ohne Chef-Modus gäbe es den Team-Tab nicht, in dem ein Verwalter arbeitet.
+		expect(updateSettings).toHaveBeenCalledWith({ bossMode: true });
 	});
 
 	it("hält den Fehlertext fest, wenn das Annehmen scheitert", async () => {

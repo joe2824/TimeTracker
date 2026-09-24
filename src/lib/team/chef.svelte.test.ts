@@ -9,6 +9,7 @@ vi.mock("svelte-sonner", () => ({
 }));
 
 const accountMock = vi.hoisted(() => ({
+	addLogoutHook: () => {},
 	linked: true,
 	listTeams: vi.fn(),
 	createTeam: vi.fn(),
@@ -64,10 +65,16 @@ describe("loadTeams", () => {
 		expect(chefTeams.teams).toEqual([TEAM_A]);
 	});
 
-	it("meldet einen Fehlschlag per Toast, statt die Ablehnung durchzureichen", async () => {
+	it("meldet einen Fehlschlag über teamsLoadFailed statt per Toast und reicht die Ablehnung nicht durch", async () => {
+		// Jeder Aufruf kommt aus dem Hintergrund - offline träfe ein Toast auch jeden ohne Team.
 		accountMock.listTeams.mockRejectedValue(new Error("Netzwerk weg"));
 		await expect(chefTeams.loadTeams()).resolves.toBe(false);
-		expect(toastError).toHaveBeenCalledTimes(1);
+		expect(toastError).not.toHaveBeenCalled();
+		expect(chefTeams.teamsLoadFailed).toBe(true);
+
+		accountMock.listTeams.mockResolvedValue([]);
+		await chefTeams.loadTeams();
+		expect(chefTeams.teamsLoadFailed).toBe(false);
 	});
 
 	it("eine veraltete Antwort ueberschreibt nicht, was createTeam() inzwischen angelegt hat", async () => {

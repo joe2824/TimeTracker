@@ -78,6 +78,7 @@ describe("TeamJoinFlow", () => {
 
 	it("haelt den Fehlertext fest und liefert null bei einem Fehlschlag", async () => {
 		const flow = new TeamJoinFlow();
+		flow.name = "Anna Meier";
 		completeTeamJoin.mockRejectedValue(new Error("Link nicht gültig"));
 
 		const info = await flow.join("https://tt.example.de", "code1");
@@ -89,6 +90,7 @@ describe("TeamJoinFlow", () => {
 
 	it("ignoriert einen zweiten Beitritts-Versuch, waehrend der erste noch laeuft", async () => {
 		const flow = new TeamJoinFlow();
+		flow.name = "Anna Meier";
 		let resolveJoin: (v: unknown) => void = () => {};
 		completeTeamJoin.mockReturnValue(new Promise((resolve) => (resolveJoin = resolve)));
 
@@ -101,6 +103,19 @@ describe("TeamJoinFlow", () => {
 
 		resolveJoin({ teamMemberId: "m1", token: "tok", teamName: "Vertrieb", serverUrl: "https://tt.example.de" });
 		await first;
+	});
+
+	it("tritt nicht bei, solange eine eingetragene E-Mail ungültig ist", async () => {
+		const flow = new TeamJoinFlow();
+		flow.name = "Anna Meier";
+		flow.email = "anna@firma.de; chef@firma.de";
+
+		expect(flow.emailInvalid).toBe(true);
+		expect(await flow.join("https://tt.example.de", "code1")).toBeNull();
+		expect(completeTeamJoin).not.toHaveBeenCalled();
+
+		flow.email = "";
+		expect(flow.canJoin).toBe(true);
 	});
 
 	it("setzt Eingaben und Fehlertext bei reset() zurueck", () => {

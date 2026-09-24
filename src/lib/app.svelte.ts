@@ -743,15 +743,16 @@ class AppState {
 	}
 
 	/**
-	 * Team verlassen: löst alle teamOwned-Zeilen aus der gemeinsamen Verwaltung,
-	 * behält sie aber als eigene, archivierte Aktivität. Reines Entfernen liesse
-	 * ihre schon erfassten Stunden lautlos aus dem Bericht verschwinden - der
-	 * baut seine Zeilen nur aus der aktuellen activities-Liste auf (report.ts).
-	 * Neue Id je Zeile, damit ein späterer erneuter Beitritt zum selben Team
-	 * nicht auf dieselbe Id trifft wie diese losgelöste Kopie.
+	 * Team-Zeilen aus der gemeinsamen Verwaltung lösen, aber als eigene,
+	 * archivierte Aktivität behalten. Reines Entfernen liesse ihre schon
+	 * erfassten Stunden lautlos aus dem Bericht verschwinden - der baut seine
+	 * Zeilen nur aus der aktuellen activities-Liste auf (report.ts).
+	 * Neue Id je Zeile, Einträge und Stichwortregeln ziehen mit: dieselbe
+	 * Server-Id kann nach einem erneuten Beitritt wiederkommen, und zwei Zeilen
+	 * mit derselben Id zählten ihre Stunden doppelt.
 	 */
-	async detachTeamActivities(): Promise<void> {
-		const teamOwned = this.activities.filter((a) => a.teamOwned);
+	async detachTeamActivities(which: (a: Activity) => boolean): Promise<void> {
+		const teamOwned = this.activities.filter((a) => a.teamOwned && which(a));
 		if (teamOwned.length === 0) return;
 		const idMap = new Map(teamOwned.map((a) => [a.id, uid()]));
 

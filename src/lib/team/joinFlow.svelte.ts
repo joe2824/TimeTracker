@@ -6,8 +6,9 @@
 // anstösst, hält jeder Aufrufer selbst: beide beobachten eine andere Quelle
 // (teamJoin.pendingLink bzw. die Route).
 import { completeTeamJoin, previewTeam } from "./join";
-import type { TeamDeviceInfo } from "../store";
+import { loadTeamDevice, type TeamDeviceInfo } from "../store";
 import { errorText } from "../log";
+import { cleanEmail } from "$shared/email";
 
 export class TeamJoinFlow {
 	name = $state("");
@@ -16,6 +17,17 @@ export class TeamJoinFlow {
 	preview = $state<{ teamName: string } | "loading" | "error">("loading");
 	/** Text der letzten fehlgeschlagenen Beitritts-Anfrage - null, solange keine lief oder sie gelang. */
 	joinError = $state<string | null>(null);
+	/** Die Mitgliedschaft, die ein Beitritt ersetzen würde - der Dialog warnt davor. */
+	existing = $state<TeamDeviceInfo | null>(null);
+
+	/** Eine eingetragene, aber unbrauchbare Adresse würfe der Server still weg - dann fehlte die Erinnerung. */
+	get emailInvalid(): boolean {
+		return this.email.trim() !== "" && cleanEmail(this.email) === null;
+	}
+
+	get canJoin(): boolean {
+		return !this.busy && this.name.trim() !== "" && !this.emailInvalid;
+	}
 
 	/** Nummer der jüngsten Vorschau-Anfrage: eine ältere, spät antwortende darf nicht überschreiben. */
 	#previewRun = 0;
@@ -24,6 +36,11 @@ export class TeamJoinFlow {
 	async loadPreview(serverUrl: string, code: string): Promise<void> {
 		const run = ++this.#previewRun;
 		this.preview = "loading";
+		void loadTeamDevice()
+			.then((d) => {
+				if (run === this.#previewRun) this.existing = d;
+			})
+			.catch(() => {});
 		try {
 			const result = await previewTeam(serverUrl, code);
 			if (run === this.#previewRun) this.preview = result;
@@ -41,7 +58,7 @@ export class TeamJoinFlow {
 
 	/** Beitreten. Liefert die Team-Infos bei Erfolg, sonst null (Grund in `joinError`). */
 	async join(serverUrl: string, code: string): Promise<TeamDeviceInfo | null> {
-		if (this.busy) return null;
+		if (!this.canJoin) return null;
 		this.busy = true;
 		this.joinError = null;
 		try {

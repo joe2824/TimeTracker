@@ -22,16 +22,21 @@ describe("teamReportsToCsv", () => {
 		const submittedAt = wallToTs(2026, 8, 1, 9, 30, 0);
 		const rows = teamReportsToCsv([
 			status({ submittedAt }),
-			status({ memberId: "m2", memberName: "Bert Klein", memberEmail: null })
+			status({ memberId: "m2", memberName: "Bert Schulz", memberEmail: null })
 		]).split("\r\n");
 		expect(rows[0]).toBe("Mitarbeiter;E-Mail;Status;Eingegangen am");
 		expect(rows[1]).toBe("Anna Meier;anna.meier@firma.de;abgegeben;2026-08-01 09:30");
-		expect(rows[2]).toBe("Bert Klein;;kein Bericht;");
+		expect(rows[2]).toBe("Bert Schulz;;kein Bericht;");
 	});
 
 	it("entschaerft Namen, die Excel als Formel lesen wuerde", () => {
 		const rows = teamReportsToCsv([status({ memberName: "=1+1" })]).split("\r\n");
 		expect(rows[1]).toMatch(/^'=1\+1;/);
+	});
+
+	it("entschaerft auch ein führendes Minus", () => {
+		const rows = teamReportsToCsv([status({ memberName: "-1+SUMME(A1)" })]).split("\r\n");
+		expect(rows[1]).toMatch(/^'-1\+SUMME\(A1\);/);
 	});
 
 	it("schuetzt Semikolon im Namen vor dem Zerfallen in zwei Spalten", () => {

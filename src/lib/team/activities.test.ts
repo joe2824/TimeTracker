@@ -7,9 +7,14 @@ vi.mock("@tauri-apps/plugin-fs", async () => (await import("../testing/fakeFs"))
 vi.mock("svelte-sonner", () => import("../testing/toastStub"));
 
 const remote = vi.fn();
-vi.mock("./api", () => ({ fetchTeamActivities: (...args: unknown[]) => remote(...args) }));
+const leaveOnServer = vi.fn();
+vi.mock("./api", () => ({
+	fetchTeamActivities: (...args: unknown[]) => remote(...args),
+	leaveTeamOnServer: (...args: unknown[]) => leaveOnServer(...args)
+}));
 
 const accountMock = vi.hoisted(() => ({
+	addLogoutHook: () => {},
 	linked: false,
 	listTeams: vi.fn(),
 	listTeamActivities: vi.fn()
@@ -21,7 +26,7 @@ const { loadTeamDevice, saveTeamDevice } = await import("../store");
 const { ApiError } = await import("../sync/api");
 const { chefTeams } = await import("./chef.svelte");
 const { teamJoin } = await import("./state.svelte");
-const { syncTeamActivities, syncOwnedTeamActivities, TEAM_ACTIVITY_PREFIX } = await import("./activities");
+const { leaveTeam, syncTeamActivities, syncOwnedTeamActivities, TEAM_ACTIVITY_PREFIX } = await import("./activities");
 
 const PERSONAL: Activity = { id: "p1", name: "Eigene", sortOrder: 0, archived: false, isAbsence: false };
 
@@ -30,6 +35,8 @@ beforeEach(() => {
 	app.dispose();
 	app.activities = [PERSONAL];
 	remote.mockReset();
+	leaveOnServer.mockReset();
+	teamJoin.removedFrom = null;
 	accountMock.linked = false;
 	accountMock.listTeams.mockReset();
 	accountMock.listTeamActivities.mockReset();
@@ -111,8 +118,10 @@ describe("syncTeamActivities", () => {
 		remote.mockResolvedValue({ activities: [] });
 		await syncTeamActivities();
 
-		const detached = app.activities.find((a) => a.id === oldId);
-		expect(detached).toMatchObject({ name: "Alt", archived: true });
+		// Neue Id: dieselbe Server-Id kann nach einem erneuten Beitritt wiederkommen.
+		const detached = app.activities.find((a) => a.name === "Alt");
+		expect(detached).toMatchObject({ archived: true });
+		expect(detached?.id).not.toBe(oldId);
 		expect(detached?.teamOwned).toBeUndefined();
 	});
 
@@ -125,7 +134,7 @@ describe("syncTeamActivities", () => {
 		});
 		remote.mockRejectedValue(new Error("Netzwerk weg"));
 
-		await expect(syncTeamActivities()).resolves.toBeUndefined();
+		await expect(syncTeamActivities()).resolves.toBe("offline");
 		expect(app.activities).toEqual([PERSONAL]);
 	});
 
@@ -148,16 +157,65 @@ describe("syncTeamActivities", () => {
 		expect(app.activities.find((a) => a.id === oldId)?.teamOwned).toBe(true);
 
 		remote.mockRejectedValue(new ApiError("Kein Team-Zugang", 401));
-		await syncTeamActivities();
+		await expect(syncTeamActivities()).resolves.toBe("removed");
 
 		expect(teamJoin.device).toBeNull();
+		expect(teamJoin.removedFrom).toBe("Vertrieb");
 		expect(await loadTeamDevice()).toBeNull();
-		// Unveraenderte Id wie beim Entfernen einer einzelnen Aktivität aus einem
-		// noch existierenden Team - der Server-Eintrag ist endgültig weg und kann
-		// nie wieder mit ihr kollidieren.
-		const detached = app.activities.find((a) => a.id === oldId);
-		expect(detached).toMatchObject({ name: "Alt", archived: true });
+		const detached = app.activities.find((a) => a.name === "Alt");
+		expect(detached).toMatchObject({ archived: true });
+		expect(detached?.id).not.toBe(oldId);
 		expect(detached?.teamOwned).toBeUndefined();
+	});
+
+	it("entfernt, neu beigetreten: keine doppelte Aktivität, Stunden hängen an genau einer Zeile", async () => {
+		const device = { teamMemberId: "m1", token: "tok", teamName: "Vertrieb", serverUrl: "https://tt.example.de" };
+		const a1 = { id: "a1", name: "Projekt A", isAbsence: false, sortOrder: 0, color: null, archived: false, updatedAt: 1 };
+		await saveTeamDevice(device);
+		remote.mockResolvedValue({ activities: [a1] });
+		await syncTeamActivities();
+
+		remote.mockRejectedValue(new ApiError("Kein Team-Zugang", 401));
+		await syncTeamActivities();
+
+		await saveTeamDevice({ ...device, teamMemberId: "m2", token: "tok2" });
+		remote.mockResolvedValue({ activities: [a1] });
+		await syncTeamActivities();
+
+		const ids = app.activities.map((a) => a.id);
+		expect(new Set(ids).size).toBe(ids.length);
+		expect(app.activities.filter((a) => a.name === "Projekt A")).toHaveLength(2);
+		expect(app.activities.filter((a) => a.id === `${TEAM_ACTIVITY_PREFIX}a1`)).toHaveLength(1);
+	});
+
+	it("eine 401 zum alten Token löscht keine inzwischen neu geschlossene Mitgliedschaft", async () => {
+		const device = { teamMemberId: "m1", token: "alt", teamName: "Vertrieb", serverUrl: "https://tt.example.de" };
+		await saveTeamDevice(device);
+		let reject!: (e: unknown) => void;
+		remote.mockReturnValueOnce(new Promise((_, r) => (reject = r)));
+		const pending = syncTeamActivities();
+
+		const fresh = { ...device, teamMemberId: "m2", token: "neu" };
+		await saveTeamDevice(fresh);
+		reject(new ApiError("Kein Team-Zugang", 401));
+		await pending;
+
+		expect(await loadTeamDevice()).toEqual(fresh);
+	});
+
+	it("eine ältere Antwort, die nach einer neueren ankommt, schreibt nicht mehr", async () => {
+		await saveTeamDevice({ teamMemberId: "m1", token: "tok", teamName: "Vertrieb", serverUrl: "https://tt.example.de" });
+		let resolveOld!: (v: unknown) => void;
+		remote.mockReturnValueOnce(new Promise((r) => (resolveOld = r)));
+		const older = syncTeamActivities();
+		remote.mockResolvedValueOnce({
+			activities: [{ id: "neu", name: "Neu", isAbsence: false, sortOrder: 0, color: null, archived: false, updatedAt: 2 }]
+		});
+		await syncTeamActivities();
+		resolveOld({ activities: [] });
+		await older;
+
+		expect(app.activities.find((a) => a.id === `${TEAM_ACTIVITY_PREFIX}neu`)?.teamOwned).toBe(true);
 	});
 
 	it("laesst beim 401 eigene, per syncOwnedTeamActivities gespiegelte Zeilen unangetastet", async () => {
@@ -245,8 +303,9 @@ describe("syncOwnedTeamActivities", () => {
 			teamOwned: true,
 			teamId: "t2"
 		});
-		const detachedA = app.activities.find((a) => a.id === `${TEAM_ACTIVITY_PREFIX}a1`);
-		expect(detachedA).toMatchObject({ name: "Alt", archived: true });
+		const detachedA = app.activities.find((a) => a.name === "Alt");
+		expect(detachedA).toMatchObject({ archived: true });
+		expect(detachedA?.id).not.toBe(`${TEAM_ACTIVITY_PREFIX}a1`);
 		expect(detachedA?.teamOwned).toBeUndefined();
 	});
 
@@ -272,8 +331,9 @@ describe("syncOwnedTeamActivities", () => {
 		accountMock.listTeams.mockResolvedValue([{ id: "t2", name: "B", ownerUserId: "u1", createdAt: 1 }]);
 		await syncOwnedTeamActivities();
 
-		const detachedA = app.activities.find((a) => a.id === `${TEAM_ACTIVITY_PREFIX}a1`);
-		expect(detachedA).toMatchObject({ name: "Alt", archived: true });
+		const detachedA = app.activities.find((a) => a.name === "Alt");
+		expect(detachedA).toMatchObject({ archived: true });
+		expect(detachedA?.id).not.toBe(`${TEAM_ACTIVITY_PREFIX}a1`);
 		expect(detachedA?.teamOwned).toBeUndefined();
 		expect(app.activities.find((a) => a.id === `${TEAM_ACTIVITY_PREFIX}b1`)).toMatchObject({
 			teamOwned: true,
@@ -295,9 +355,26 @@ describe("syncOwnedTeamActivities", () => {
 		accountMock.listTeams.mockResolvedValue([]);
 		await syncOwnedTeamActivities();
 
-		const detached = app.activities.find((a) => a.id === `${TEAM_ACTIVITY_PREFIX}a1`);
-		expect(detached).toMatchObject({ name: "Alt", archived: true });
+		const detached = app.activities.find((a) => a.name === "Alt");
+		expect(detached).toMatchObject({ archived: true });
+		expect(detached?.id).not.toBe(`${TEAM_ACTIVITY_PREFIX}a1`);
 		expect(detached?.teamOwned).toBeUndefined();
+	});
+
+	it("Chef tritt dem eigenen Team per Link bei: keine doppelte Id", async () => {
+		const a1 = { id: "a1", name: "Projekt A", isAbsence: false, sortOrder: 0, color: null, archived: false, updatedAt: 1 };
+		accountMock.linked = true;
+		accountMock.listTeams.mockResolvedValue([{ id: "t1", name: "A", ownerUserId: "u1", createdAt: 1 }]);
+		accountMock.listTeamActivities.mockResolvedValue([a1]);
+		await syncOwnedTeamActivities();
+
+		await saveTeamDevice({ teamMemberId: "m1", token: "tok", teamName: "A", serverUrl: "https://tt.example.de" });
+		remote.mockResolvedValue({ activities: [a1] });
+		await syncTeamActivities();
+		await syncOwnedTeamActivities();
+
+		const ids = app.activities.map((a) => a.id);
+		expect(new Set(ids).size).toBe(ids.length);
 	});
 
 	it("behält die zuletzt geladenen Team-Aktivitäten, wenn der Server nicht erreichbar ist", async () => {
@@ -349,5 +426,34 @@ describe("Chef ist gleichzeitig Mitglied eines anderen Teams", () => {
 		await syncTeamActivities();
 
 		expect(app.activities.find((a) => a.id === `${TEAM_ACTIVITY_PREFIX}oa1`)).toEqual(ownRow);
+	});
+});
+
+describe("leaveTeam", () => {
+	it("löst nur die beigetretenen Zeilen, meldet den Austritt und vergisst das Team", async () => {
+		const device = { teamMemberId: "m1", token: "tok", teamName: "Süd", serverUrl: "https://tt.example.de" };
+		await saveTeamDevice(device);
+		app.activities = [
+			PERSONAL,
+			{ id: "team:j", name: "Beigetreten", sortOrder: 1, archived: false, isAbsence: false, teamOwned: true },
+			{ id: "team:o", name: "Eigenes", sortOrder: 2, archived: false, isAbsence: false, teamOwned: true, teamId: "nord" }
+		];
+
+		await leaveTeam();
+
+		expect(await loadTeamDevice()).toBeNull();
+		expect(teamJoin.device).toBeNull();
+		expect(leaveOnServer).toHaveBeenCalledWith(device.serverUrl, device.token);
+		expect(app.activities.find((a) => a.name === "Beigetreten")?.teamOwned).toBeUndefined();
+		expect(app.activities.find((a) => a.id === "team:o")?.teamOwned).toBe(true);
+	});
+
+	it("ist auch offline lokal ausgetreten", async () => {
+		await saveTeamDevice({ teamMemberId: "m1", token: "tok", teamName: "Süd", serverUrl: "https://tt.example.de" });
+		leaveOnServer.mockRejectedValue(new Error("offline"));
+
+		await leaveTeam();
+
+		expect(await loadTeamDevice()).toBeNull();
 	});
 });

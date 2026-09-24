@@ -7,7 +7,7 @@
 	import { ApiError, type TeamMemberInfo, type TeamReportStatus } from "$lib/sync/api";
 	import { createOutlookDraft, reportOutlookError } from "$lib/report/outlook";
 	import { teamReminderHtml, teamReminderSubject, teamReportsToCsv } from "$lib/report/teamReport";
-	import { fmtClock, fmtDateHuman, monthLabel, prevMonthKey } from "$lib/time/time";
+	import { fmtClock, fmtDateHuman, fmtHours, monthLabel, prevMonthKey } from "$lib/time/time";
 	import { errorText, logError, logInfo } from "$lib/log";
 	import { cleanEmail } from "$shared/email";
 	import { tabFocus } from "$lib/ui/tabFocus.svelte";
@@ -19,6 +19,7 @@
 	import * as Table from "$lib/components/ui/table";
 	import * as Popover from "$lib/components/ui/popover";
 	import * as DropdownMenu from "$lib/components/ui/dropdown-menu";
+	import * as Dialog from "$lib/components/ui/dialog";
 	import { Skeleton } from "$lib/components/ui/skeleton";
 	import { cn } from "$lib/utils";
 	import { toast } from "svelte-sonner";
@@ -36,11 +37,12 @@
 	import CloudIcon from "@lucide/svelte/icons/cloud";
 	import UsersIcon from "@lucide/svelte/icons/users";
 	import PlusIcon from "@lucide/svelte/icons/plus";
+	import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
 
 	// ---------- Team verwalten (Roster) ----------
 	//
 	// Anlegen, Auswahl und Beitritts-Link teilt sich dieser Tab mit den
-	// Einstellungen (dort verwaltet, siehe ReportTab) über chefTeams - nur das
+	// Einstellungen (dort verwaltet, siehe TeamTab) über chefTeams - nur das
 	// Kopieren des Links bleibt zusätzlich hier, griffbereit für den Alltag.
 
 	let members = $state<TeamMemberInfo[]>([]);
@@ -72,6 +74,42 @@
 			members = [];
 		}
 	});
+
+	/** Rückfrage vor Schritten, die sich nicht mit einem Klick zurückholen lassen. */
+	let pendingConfirm = $state<{ title: string; text: string; action: string; run: () => Promise<void> } | null>(null);
+	let confirmBusy = $state(false);
+
+	async function runConfirmed() {
+		if (!pendingConfirm) return;
+		confirmBusy = true;
+		try {
+			await pendingConfirm.run();
+		} finally {
+			confirmBusy = false;
+			pendingConfirm = null;
+		}
+	}
+
+	function askKick(member: TeamMemberInfo) {
+		pendingConfirm = {
+			title: `${member.name} aus dem Team entfernen?`,
+			text: "Die Person kann danach keine Berichte mehr senden. Um wieder beizutreten, braucht sie den Beitritts-Link.",
+			action: "Entfernen",
+			run: () => kickMember(member)
+		};
+	}
+
+	function askClearSent(r: TeamReportStatus) {
+		pendingConfirm = {
+			title: "Markierung zurücknehmen?",
+			text:
+				r.payload === null
+					? `${r.memberName} steht danach wieder als „kein Bericht“ in der Liste.`
+					: `Der von ${r.memberName} gesendete Bericht wird hier gelöscht, die Person steht danach wieder als „kein Bericht“ in der Liste.`,
+			action: "Zurücknehmen",
+			run: () => clearSent(r.memberId)
+		};
+	}
 
 	async function kickMember(member: TeamMemberInfo) {
 		const teamId = chefTeams.selectedTeamId;
@@ -110,7 +148,7 @@
 		})
 	);
 
-	/** Gegen dieselbe Verwechslungsgefahr wie teamDetailsRequest oben. */
+	/** Gegen dieselbe Verwechslungsgefahr wie membersRequest oben. */
 	let reportsRequest = 0;
 
 	async function loadReports(teamId: string, forMonth: string) {
@@ -237,8 +275,8 @@
 			</div>
 			<p class="text-foreground text-sm font-medium">Kein Konto verbunden</p>
 			<p class="text-muted-foreground mx-auto mt-1 max-w-sm text-xs">
-				Team-Verwaltung braucht ein Konto - der Beitritts-Link und die gemeinsamen Aktivitäten
-				liegen dort, nicht nur auf diesem Gerät.
+				Für ein Team brauchst du ein Konto – dort werden Beitritts-Link und gemeinsame Aktivitäten
+				gespeichert.
 			</p>
 			<Button size="sm" class="mt-4" onclick={() => tabFocus.requestSettings("konto")}>
 				Zu den Konto-Einstellungen
@@ -255,6 +293,19 @@
 					<Skeleton class="h-4 w-2/3" />
 				</Card.Content>
 			</Card.Root>
+		{:else if chefTeams.teamsLoadFailed && chefTeams.teams.length === 0}
+			<div class="rounded-lg border border-dashed p-10 text-center">
+				<div class="bg-muted text-muted-foreground mx-auto mb-3 flex size-12 items-center justify-center rounded-full">
+					<CloudIcon class="size-6" />
+				</div>
+				<p class="text-foreground text-sm font-medium">Teams konnten gerade nicht geladen werden</p>
+				<p class="text-muted-foreground mx-auto mt-1 max-w-sm text-xs">
+					Vermutlich besteht keine Internetverbindung. Deine Teams sind nicht verloren.
+				</p>
+				<Button size="sm" variant="outline" class="mt-4" onclick={() => void chefTeams.loadTeams()}>
+					<RefreshCwIcon class="size-4" /> Erneut versuchen
+				</Button>
+			</div>
 		{:else if chefTeams.teams.length === 0}
 			<div class="rounded-lg border border-dashed p-10 text-center">
 				<div class="bg-primary/10 text-primary mx-auto mb-3 flex size-12 items-center justify-center rounded-full">
@@ -297,7 +348,7 @@
 						{/if}
 					</Card.Title>
 					<Card.Action>
-						<div class="flex gap-2">
+						<div class="flex flex-wrap gap-2">
 							<Popover.Root>
 								<Popover.Trigger class={buttonVariants({ variant: "outline", size: "sm" })}>
 									<UserPlusIcon class="size-4" /> Einladen
@@ -334,7 +385,7 @@
 								variant="ghost"
 								size="icon-sm"
 								onclick={() => tabFocus.requestSettings("team")}
-								title="Team anlegen, umbenennen oder den Beitritts-Link erzeugen"
+								title="Team anlegen, Beitritts-Link und Verwalter"
 							>
 								<SettingsIcon class="size-4" />
 							</Button>
@@ -382,7 +433,8 @@
 												variant="ghost"
 												size="icon-sm"
 												title="Aus dem Team entfernen"
-												onclick={() => kickMember(m)}
+												aria-label="{m.name} aus dem Team entfernen"
+												onclick={() => askKick(m)}
 											>
 												<Trash2Icon class="size-4" />
 											</Button>
@@ -452,12 +504,20 @@
 								{#each submitted as r (r.memberId)}
 									<Table.Row class="cursor-pointer" onclick={() => toggleExpanded(r.memberId)}>
 										<Table.Cell class="font-medium">
-											<div class="flex items-center gap-1.5">
+											<button
+												type="button"
+												class="flex items-center gap-1.5 text-left"
+												aria-expanded={expanded.has(r.memberId)}
+												onclick={(e) => {
+													e.stopPropagation();
+													toggleExpanded(r.memberId);
+												}}
+											>
 												<ChevronDownIcon
 													class="size-3.5 shrink-0 transition-transform {expanded.has(r.memberId) ? '' : '-rotate-90'}"
 												/>
 												{r.memberName}
-											</div>
+											</button>
 										</Table.Cell>
 										<Table.Cell>
 											<div class="flex flex-wrap items-center gap-1.5">
@@ -468,7 +528,7 @@
 													<CheckIcon /> abgegeben
 												</Badge>
 												{#if r.payload === null}
-													<Badge variant="secondary" title="Vom Chef von Hand markiert, kein Inhalt">
+													<Badge variant="secondary" title="Von Hand als gesendet markiert, kein Inhalt">
 														von Hand
 													</Badge>
 												{/if}
@@ -482,10 +542,11 @@
 												variant="ghost"
 												size="icon-sm"
 												title="Markierung zurücknehmen"
+												aria-label="Markierung für {r.memberName} zurücknehmen"
 												disabled={statusBusyId !== null}
 												onclick={(e) => {
 													e.stopPropagation();
-													clearSent(r.memberId);
+													askClearSent(r);
 												}}
 											>
 												<XIcon class="size-4" />
@@ -493,16 +554,17 @@
 										</Table.Cell>
 									</Table.Row>
 									{#if expanded.has(r.memberId)}
+										{@const rows = reportRows(r.payload)}
 										<Table.Row>
 											<Table.Cell colspan={4} class="bg-muted/30">
-												{#if reportRows(r.payload).length === 0}
+												{#if rows.length === 0}
 													<p class="text-muted-foreground text-xs">Kein Inhalt verfügbar.</p>
 												{:else}
 													<ul class="text-sm">
-														{#each reportRows(r.payload) as row}
+														{#each rows as row, i (i)}
 															<li class="flex justify-between gap-4">
 																<span>{row.name}</span>
-																<span class="text-muted-foreground">{row.hours.toFixed(2)} h</span>
+																<span class="text-muted-foreground">{fmtHours(row.hours)} h</span>
 															</li>
 														{/each}
 													</ul>
@@ -528,6 +590,7 @@
 												variant="ghost"
 												size="icon-sm"
 												title="Von Hand als gesendet markieren"
+												aria-label="{r.memberName} von Hand als gesendet markieren"
 												disabled={statusBusyId !== null}
 												onclick={() => markSent(r.memberId)}
 											>
@@ -544,3 +607,23 @@
 		{/if}
 	{/if}
 </div>
+
+<Dialog.Root
+	open={pendingConfirm !== null}
+	onOpenChange={(o) => {
+		if (!o && !confirmBusy) pendingConfirm = null;
+	}}
+>
+	<Dialog.Content class="sm:max-w-md">
+		<Dialog.Header>
+			<Dialog.Title>{pendingConfirm?.title}</Dialog.Title>
+			<Dialog.Description>{pendingConfirm?.text}</Dialog.Description>
+		</Dialog.Header>
+		<Dialog.Footer>
+			<Button variant="outline" disabled={confirmBusy} onclick={() => (pendingConfirm = null)}>Abbrechen</Button>
+			<Button variant="destructive" disabled={confirmBusy} onclick={runConfirmed}>
+				{pendingConfirm?.action}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

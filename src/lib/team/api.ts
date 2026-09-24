@@ -2,7 +2,7 @@
 // grossen `Api`-Klasse aus sync/api.ts: die läuft mit Geräte-Token/Sitzung für
 // ein Personenkonto, hier gibt es keins - nur den Team-Token im eigenen Kopf
 // `x-team-token`, oder noch gar keinen (Vorschau, Beitritt).
-import { ApiError, normalizeServerUrl, type FetchFn } from "../sync/api";
+import { ApiError, apiErrorFrom, normalizeServerUrl, type FetchFn } from "../sync/api";
 import { platformFetch } from "../platform/http";
 
 async function call<T>(
@@ -20,17 +20,7 @@ async function call<T>(
 	} catch (e) {
 		throw new ApiError(e instanceof Error ? e.message : "Server nicht erreichbar", 0);
 	}
-	if (!res.ok) {
-		const text = await res.text().catch(() => "");
-		let message = res.statusText || `Fehler ${res.status}`;
-		try {
-			const parsed = JSON.parse(text);
-			if (parsed?.message) message = String(parsed.message);
-		} catch {
-			if (text) message = text.slice(0, 200);
-		}
-		throw new ApiError(message, res.status);
-	}
+	if (!res.ok) throw await apiErrorFrom(res);
 	return (await res.json()) as T;
 }
 
@@ -94,6 +84,18 @@ export function fetchTeamActivities(
 	fetchFn: FetchFn = platformFetch
 ): Promise<{ activities: RemoteTeamActivity[] }> {
 	return call(fetchFn, serverUrl, "/api/team/activities", { headers: { "x-team-token": token } });
+}
+
+/** Selbst austreten - der Token gilt danach nicht mehr. */
+export function leaveTeamOnServer(
+	serverUrl: string,
+	token: string,
+	fetchFn: FetchFn = platformFetch
+): Promise<{ ok: boolean }> {
+	return call(fetchFn, serverUrl, "/api/team/membership", {
+		method: "DELETE",
+		headers: { "x-team-token": token }
+	});
 }
 
 /** Den eigenen Monatsbericht ablegen - der Chef bekommt genau das zu sehen. */

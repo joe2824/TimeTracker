@@ -1,17 +1,16 @@
 // Chef-Modus: Ausgabe-Helfer für die Abgabe-Übersicht (CSV, Erinnerungstext).
 //
-// Die Erkennung selbst (wer hat wann gesendet) kommt vom Server
-// (account.listTeamReports) - hier steht nur noch, wie daraus eine CSV-Datei
-// und ein Erinnerungstext werden.
+// Wer wann gesendet hat, kommt vom Server (account.listTeamReports) - hier
+// wird daraus eine CSV-Datei und ein Erinnerungstext.
 import type { TeamReportStatus } from "../sync/api";
 import { fmtClock, fmtDate } from "../time/time";
 
 function csvCell(s: string): string {
-	// Excel wertet eine Zelle, die mit = + @ beginnt, als FORMEL aus. Namen
+	// Excel wertet eine Zelle, die mit = + - @ beginnt, als FORMEL aus. Namen
 	// stammen von Team-Mitgliedern - ein Name wie "=1+1" würde in der Tabelle
 	// des Chefs ausgeführt.
-	const safe = /^[=+@\t\r]/.test(s) ? `'${s}` : s;
-	return /[";\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+	const safe = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+	return /[";\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
 /**

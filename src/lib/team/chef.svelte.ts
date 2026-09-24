@@ -11,12 +11,14 @@ class ChefTeamsState {
 	teams = $state<TeamInfo[]>([]);
 	selectedTeamId = $state<string | undefined>(undefined);
 	teamsLoading = $state(false);
+	/** Letzter Ladeversuch ohne Antwort - die Team-Ansicht zeigt dann einen Hinweis statt "kein Team". */
+	teamsLoadFailed = $state(false);
 	invite = $state<TeamInvite | null>(null);
 	inviteLoading = $state(false);
 	rotating = $state(false);
 	creating = $state(false);
 
-	// Verwalter des ausgewaehlten Teams - nur der Chef darf sie ein-/aussetzen
+	// Verwalter des ausgewaehlten Teams - nur der Chef darf sie einladen oder entfernen
 	// oder den Verwalter-Link erzeugen (siehe isOwner), sehen darf sie jeder
 	// mit Zugang.
 	admins = $state<TeamAdminInfo[]>([]);
@@ -24,6 +26,18 @@ class ChefTeamsState {
 	adminInvite = $state<TeamInvite | null>(null);
 	adminInviteLoading = $state(false);
 	rotatingAdminInvite = $state(false);
+
+	/** Beim Abmelden: Teams, Links und Verwalter gehören dem alten Konto. */
+	reset(): void {
+		this.#teamsRequest++;
+		this.#teamsInFlight = null;
+		this.teams = [];
+		this.selectedTeamId = undefined;
+		this.teamsLoadFailed = false;
+		this.invite = null;
+		this.admins = [];
+		this.adminInvite = null;
+	}
 
 	get selectedTeam(): TeamInfo | null {
 		return this.teams.find((t) => t.id === this.selectedTeamId) ?? null;
@@ -75,14 +89,17 @@ class ChefTeamsState {
 				const teams = await account.listTeams();
 				if (requestId !== this.#teamsRequest) return false;
 				this.teams = teams;
+				this.teamsLoadFailed = false;
 				if (!this.selectedTeamId || !this.teams.some((t) => t.id === this.selectedTeamId)) {
 					this.selectedTeamId = this.teams[0]?.id;
 				}
 				return true;
 			} catch (e) {
 				if (requestId !== this.#teamsRequest) return false;
+				// Kein Toast: jeder Aufruf kommt aus dem Hintergrund (Öffnen einer
+				// Ansicht, Abgleich beim Start) - offline träfe er auch jeden ohne Team.
 				logWarn("Teams konnten nicht geladen werden", e);
-				toast.error(`Teams konnten nicht geladen werden: ${errorText(e)}`);
+				this.teamsLoadFailed = true;
 				return false;
 			} finally {
 				if (requestId === this.#teamsRequest) this.teamsLoading = false;
@@ -263,3 +280,4 @@ class ChefTeamsState {
 }
 
 export const chefTeams = new ChefTeamsState();
+account.addLogoutHook(() => chefTeams.reset());

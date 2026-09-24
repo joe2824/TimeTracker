@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from "svelte";
 	import { app } from "$lib/app.svelte";
 	import {
 		BUILTIN_OTHERS,
@@ -51,6 +52,8 @@
 	let colorOpenId = $state<string | null>(null);
 
 	// Echtes Löschen (mit allen Einträgen) – Bestätigungsdialog.
+	const entriesText = (n: number) => (n === 1 ? "1 Eintrag" : `${n} Einträge`);
+
 	let deleteTarget = $state<Activity | null>(null);
 	let deleteCount = $state(-1); // -1 = wird geladen
 	let deleting = $state(false);
@@ -67,8 +70,10 @@
 		try {
 			const name = deleteTarget.name;
 			const n = await app.deleteActivity(deleteTarget.id);
-			toast.success(`„${name}" gelöscht${n ? ` (${n} Eintrag/Einträge entfernt)` : ""}.`);
+			toast.success(`„${name}“ gelöscht${n ? ` (${entriesText(n)} entfernt)` : ""}.`);
 			deleteTarget = null;
+		} catch (e) {
+			toast.error(`Löschen fehlgeschlagen: ${errorText(e)}`);
 		} finally {
 			deleting = false;
 		}
@@ -97,10 +102,10 @@
 			// eigenen, noch nicht um das Zusammenführen wissenden Stand die
 			// gerade erst verschwundene Quelle wieder auferstehen lassen.
 			const moved = await withActivitiesLock(() => app.mergeActivityInto(fromId, toId));
-			toast.success(
-				`„${fromName}" in „${toName}" zusammengeführt${moved ? ` (${moved} Eintrag/Einträge)` : ""}.`
-			);
+			toast.success(`„${fromName}“ in „${toName}“ zusammengeführt${moved ? ` (${entriesText(moved)})` : ""}.`);
 			onDone();
+		} catch (e) {
+			toast.error(`Zusammenführen fehlgeschlagen: ${errorText(e)}`);
 		} finally {
 			merging = false;
 		}
@@ -226,12 +231,9 @@
 
 	// ---------- Gemeinsame Team-Aktivitäten (nur als Chef sichtbar/bearbeitbar) ----------
 	//
-	// Eigene Herkunft, getrennt von app.activities: die vom Team synchronisierten
-	// teamOwned-Zeilen (team/activities.ts, Präfix "team:") kommen nur auf
-	// GERÄTEN AN, die dem Team über den Beitritts-Link angehören - nicht auf dem
-	// Konto-Gerät des Chefs selbst. Dessen eigene Sicht auf die von ihm
-	// verwaltete Liste holt sich dieser Block direkt über die Team-API, wie
-	// vorher im Team-Tab.
+	// Bearbeitet wird direkt über die Team-API, nicht über app.activities: dort
+	// steht nur die Spiegelung (team/activities.ts, Präfix "team:"), die der
+	// nächste Abgleich ohnehin mit dem Serverstand ersetzt.
 	const TEAM_EDIT_PREFIX = "team-edit:";
 	const isChefTeamRow = (id: string) => id.startsWith(TEAM_EDIT_PREFIX);
 	const teamRowId = (id: string) => id.slice(TEAM_EDIT_PREFIX.length);
@@ -241,11 +243,14 @@
 	let teamActivities = $state<TeamActivity[]>([]);
 	let teamActivitiesVersion = $state(0);
 	let teamActionBusy = $state(false);
+	/** Bei A → B → A darf eine späte Antwort für das erste A die neuere nicht überschreiben. */
+	let teamActivitiesRequest = 0;
 
 	async function loadTeamActivities(teamId: string) {
+		const request = ++teamActivitiesRequest;
 		try {
 			const act = await account.listTeamActivities(teamId);
-			if (teamId !== chefTeams.selectedTeamId) return;
+			if (request !== teamActivitiesRequest || teamId !== chefTeams.selectedTeamId) return;
 			teamActivities = act;
 			teamActivitiesVersion = act.reduce((max, a) => Math.max(max, a.updatedAt), 0);
 		} catch (e) {
@@ -260,11 +265,18 @@
 		if (chefTeams.selectedTeamId) void loadTeamActivities(chefTeams.selectedTeamId);
 		else teamActivities = [];
 	});
-	// Auf ein Team gefiltert heisst auch: dieses Team ist die bearbeitbare
-	// Auswahl - sonst zeigte der Filter ein Team, dessen Zeilen (teamListed)
-	// aber noch die vorige Auswahl waeren.
+	// Filter und Team-Auswahl laufen gemeinsam: der Filter setzt die Auswahl
+	// (onValueChange unten), und wählt der Team-Tab ein anderes Team, zieht der
+	// Filter mit. Sonst zeigte er Team A, während "Hinzufügen" in Team B schriebe.
+	// Ein inzwischen gelöschtes Team fällt auf "alle" zurück.
 	$effect(() => {
-		if (activityTeamFilter !== "alle") chefTeams.selectedTeamId = activityTeamFilter;
+		const selected = chefTeams.selectedTeamId;
+		const teams = chefTeams.teams;
+		untrack(() => {
+			if (activityTeamFilter === "alle") return;
+			if (!teams.some((t) => t.id === activityTeamFilter)) activityTeamFilter = "alle";
+			else if (selected && selected !== activityTeamFilter) activityTeamFilter = selected;
+		});
 	});
 
 	function toTeamInput(a: TeamActivity): TeamActivityInput {
@@ -273,7 +285,11 @@
 
 	/** Die ganze Liste des ausgewählten Teams neu schreiben - der Server nimmt keine Einzel-Patches. */
 	async function saveTeamActivities(next: TeamActivityInput[]) {
-		if (!chefTeams.selectedTeamId || teamActionBusy) return;
+		if (!chefTeams.selectedTeamId) return;
+		if (teamActionBusy) {
+			toast.info("Die Team-Liste wird gerade gespeichert – bitte gleich noch einmal.");
+			return;
+		}
 		const teamId = chefTeams.selectedTeamId;
 		teamActionBusy = true;
 		try {
@@ -306,8 +322,13 @@
 		);
 	}
 
-	async function deleteTeamActivity(id: string) {
+	let teamDeleteTarget = $state<{ id: string; name: string } | null>(null);
+
+	async function confirmDeleteTeamActivity() {
+		if (!teamDeleteTarget) return;
+		const { id } = teamDeleteTarget;
 		await saveTeamActivities(teamActivities.filter((a) => a.id !== id).map(toTeamInput));
+		teamDeleteTarget = null;
 	}
 
 	/** Namen importieren, die es im Team noch nicht gibt - wie app.importActivities, nur serverseitig. */
@@ -329,10 +350,18 @@
 		}
 		if (toAdd.length === 0) return 0;
 
-		const saved = await account.setTeamActivities(teamId, [...current.map(toTeamInput), ...toAdd], version);
-		if (isSelected) {
-			teamActivities = saved;
-			teamActivitiesVersion = saved.reduce((max, a) => Math.max(max, a.updatedAt), 0);
+		teamActionBusy = true;
+		try {
+			const saved = await account.setTeamActivities(teamId, [...current.map(toTeamInput), ...toAdd], version);
+			if (isSelected) {
+				teamActivities = saved;
+				teamActivitiesVersion = saved.reduce((max, a) => Math.max(max, a.updatedAt), 0);
+			}
+			// Wie nach saveTeamActivities: die neuen Zeilen brauchen ihre Spiegelung
+			// in app.activities, sonst laufen Favorit/Ausblenden ins Leere.
+			await syncOwnedTeamActivities();
+		} finally {
+			teamActionBusy = false;
 		}
 		return toAdd.length;
 	}
@@ -366,12 +395,12 @@
 		input.value = "";
 	}
 
-	/** Ein Feld für beides: personlich oder ins gefilterte Team, je nach Filter. */
+	/** Ein Feld für beides: persönlich oder ins gefilterte Team, je nach Filter. */
 	async function addOne() {
 		const name = newName.trim();
 		if (!name) return;
 		if (activityTeamFilter !== "alle") {
-			if (!chefTeams.selectedTeamId) return;
+			if (activityTeamFilter !== chefTeams.selectedTeamId) return;
 			await saveTeamActivities([
 				...teamActivities.map(toTeamInput),
 				{ name, isAbsence: false, sortOrder: teamActivities.length, archived: false }
@@ -491,7 +520,13 @@
 			<Card.Action>
 				<div class="flex flex-wrap gap-1">
 					{#if chefTeams.teams.length > 0}
-						<Select.Root type="single" bind:value={activityTeamFilter}>
+						<Select.Root
+							type="single"
+							bind:value={activityTeamFilter}
+							onValueChange={(v) => {
+								if (v !== "alle") chefTeams.selectedTeamId = v;
+							}}
+						>
 							<Select.Trigger class="w-44" size="sm">
 								{activityTeamFilter === "alle"
 									? "Alle Aktivitäten"
@@ -690,7 +725,7 @@
 								size="icon-sm"
 								disabled={teamActionBusy}
 								title="Aus der Team-Liste entfernen – verschwindet auf allen Geräten des Teams"
-								onclick={() => deleteTeamActivity(teamRowId(a.id))}
+								onclick={() => (teamDeleteTarget = { id: teamRowId(a.id), name: a.name })}
 							>
 								<Trash2Icon class="text-destructive size-4" />
 							</Button>
@@ -757,7 +792,7 @@
 				{:else if deleteCount === 0}
 					(keine Einträge vorhanden)
 				{:else}
-					<strong>samt {deleteCount} Eintrag/Einträgen</strong>
+					<strong>samt {deleteCount === 1 ? "1 Eintrag" : `${deleteCount} Einträgen`}</strong>
 				{/if}
 				unwiderruflich gelöscht. Diese Daten sind danach weg – auch aus dem Bericht.
 				Zum reinen Ausblenden lieber <em>Archivieren</em> nutzen.
@@ -770,6 +805,27 @@
 			<Button type="button" variant="destructive" onclick={confirmDelete} disabled={deleting}>
 				<Trash2Icon class="size-4" />
 				{deleting ? "Lösche…" : "Endgültig löschen"}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root open={!!teamDeleteTarget} onOpenChange={(v) => { if (!v && !teamActionBusy) teamDeleteTarget = null; }}>
+	<Dialog.Content class="sm:max-w-md">
+		<Dialog.Header>
+			<Dialog.Title>Aus der Team-Liste entfernen?</Dialog.Title>
+			<Dialog.Description>
+				„{teamDeleteTarget?.name}“ verschwindet bei allen im Team aus der Auswahl. Schon erfasste Zeiten
+				bleiben erhalten und stehen danach bei jedem als archivierte eigene Aktivität.
+			</Dialog.Description>
+		</Dialog.Header>
+		<Dialog.Footer>
+			<Button type="button" variant="outline" onclick={() => (teamDeleteTarget = null)} disabled={teamActionBusy}>
+				Abbrechen
+			</Button>
+			<Button type="button" variant="destructive" onclick={confirmDeleteTeamActivity} disabled={teamActionBusy}>
+				<Trash2Icon class="size-4" />
+				{teamActionBusy ? "Entfernt…" : "Entfernen"}
 			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>

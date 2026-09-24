@@ -983,7 +983,7 @@ describe("detachTeamActivities", () => {
 			{ id: "team:x", name: "Vertrieb", sortOrder: 3, archived: false, isAbsence: false, teamOwned: true }
 		];
 
-		await app.detachTeamActivities();
+		await app.detachTeamActivities(() => true);
 
 		const detached = app.activities.find((a) => a.name === "Vertrieb");
 		expect(detached).toBeDefined();
@@ -1001,11 +1001,25 @@ describe("detachTeamActivities", () => {
 		];
 		await app.updateSettings({ calendarKeywordMap: { vertrieb: "team:x", projekt: P1 } });
 
-		await app.detachTeamActivities();
+		await app.detachTeamActivities(() => true);
 
 		const detached = app.activities.find((a) => a.name === "Vertrieb");
 		expect(app.settings.calendarKeywordMap.vertrieb).toBe(detached?.id);
 		// Regeln ohne Bezug zu einer Team-Zeile bleiben unangetastet.
 		expect(app.settings.calendarKeywordMap.projekt).toBe(P1);
+	});
+
+	it("löst nur die ausgewählten Team-Zeilen, die übrigen bleiben gespiegelt", async () => {
+		reset();
+		app.activities = [
+			...ACTIVITIES,
+			{ id: "team:x", name: "Beigetreten", sortOrder: 3, archived: false, isAbsence: false, teamOwned: true },
+			{ id: "team:y", name: "Eigenes Team", sortOrder: 4, archived: false, isAbsence: false, teamOwned: true, teamId: "t1" }
+		];
+
+		await app.detachTeamActivities((a) => a.teamId === undefined);
+
+		expect(app.activities.find((a) => a.name === "Beigetreten")?.teamOwned).toBeUndefined();
+		expect(app.activities.find((a) => a.id === "team:y")?.teamOwned).toBe(true);
 	});
 });
