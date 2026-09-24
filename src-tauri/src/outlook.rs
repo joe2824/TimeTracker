@@ -89,39 +89,6 @@ mod imp {
         }
     }
 
-    pub fn read_outlook_mails(
-        app: tauri::AppHandle,
-        start: String,
-        end: String,
-        subject_filter: String,
-        subfolders: bool,
-        max: u32,
-    ) -> Result<serde_json::Value, String> {
-        let script = ensure_script(&app)?;
-        let max = max.clamp(1, 2000).to_string();
-        let mut cmd = powershell(&script);
-        cmd.args(["-Action", "mails", "-Start", &start, "-End", &end])
-            .args(["-SubjectFilter", &subject_filter])
-            .args(["-Max", &max]);
-        if subfolders {
-            cmd.arg("-Subfolders");
-        }
-
-        let output = cmd
-            .output()
-            .map_err(|e| format!("PowerShell konnte nicht gestartet werden: {e}"))?;
-
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            serde_json::from_str(stdout.trim()).map_err(|e| {
-                let head: String = stdout.chars().take(400).collect();
-                format!("JSON konnte nicht gelesen werden: {e}; Ausgabe: {head}")
-            })
-        } else {
-            Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
-        }
-    }
-
     pub fn read_outlook_calendar(
         app: tauri::AppHandle,
         start: String,
@@ -166,17 +133,6 @@ mod imp {
         }))
     }
 
-    pub fn read_outlook_mails(
-        _app: AppHandle,
-        _start: String,
-        _end: String,
-        _subject_filter: String,
-        _subfolders: bool,
-        _max: u32,
-    ) -> Result<serde_json::Value, String> {
-        Ok(serde_json::json!([]))
-    }
-
     pub fn read_outlook_calendar(
         _app: AppHandle,
         _start: String,
@@ -201,19 +157,6 @@ pub fn create_outlook_draft(
 #[tauri::command(async)]
 pub fn detect_outlook(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     imp::detect_outlook(app)
-}
-
-/// Liest Mails des Posteingangs.
-#[tauri::command(async)]
-pub fn read_outlook_mails(
-    app: tauri::AppHandle,
-    start: String,
-    end: String,
-    subject_filter: String,
-    subfolders: bool,
-    max: u32,
-) -> Result<serde_json::Value, String> {
-    imp::read_outlook_mails(app, start, end, subject_filter, subfolders, max)
 }
 
 /// Liest Kalendereinträge im Zeitraum [start, end] (ISO-Datum).

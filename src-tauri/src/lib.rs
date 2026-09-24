@@ -658,7 +658,6 @@ pub fn run() {
             write_export_file,
             outlook::create_outlook_draft,
             outlook::read_outlook_calendar,
-            outlook::read_outlook_mails,
             outlook::detect_outlook,
             secret::protect_secret,
             secret::unprotect_secret,

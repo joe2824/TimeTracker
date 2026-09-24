@@ -29,38 +29,6 @@ export async function readOutlookCalendar(start: string, end: string): Promise<C
 	return Array.isArray(res) ? res : [];
 }
 
-/** Der Briefumschlag einer Mail aus dem Posteingang (Chef-Modus). */
-export interface OutlookMail {
-	subject: string;
-	senderName: string;
-	/** SMTP-Adresse; bei Exchange-Absendern aufgelöst (siehe outlook.ps1) */
-	senderEmail: string;
-	/** ISO-Zeitstempel des Empfangs */
-	received: string;
-	folder: string;
-}
-
-/**
- * Liest die Briefumschläge des Posteingangs im Zeitraum (ISO-Datum, inkl.
- * Grenzen), gefiltert auf einen Betreff-Teilstring. Reiner Lesezugriff.
- */
-export async function readOutlookMails(
-	start: string,
-	end: string,
-	subjectFilter: string,
-	subfolders: boolean,
-	max = 300
-): Promise<OutlookMail[]> {
-	const res = await invoke<OutlookMail[]>("read_outlook_mails", {
-		start,
-		end,
-		subjectFilter,
-		subfolders,
-		max
-	});
-	return Array.isArray(res) ? res : [];
-}
-
 /** Fallback: öffnet den Standard-Mailclient via mailto (ohne HTML-Tabelle). */
 export function mailtoFallback(to: string, subject: string, bodyText: string): string {
 	const q = `subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText)}`;
