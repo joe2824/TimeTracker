@@ -7,3 +7,6 @@ skills/svelte5/
 skills/tailwind-v4/
 skills/tauri-v2/
 # END SKILLSHARE MANAGED
+
+# Maschinenspezifisch (Installationszeitpunkte), gehoert nicht ins Repo.
+skills/.metadata.json
