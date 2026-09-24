@@ -79,9 +79,29 @@ describe("loadTeams", () => {
 		await chefTeams.createTeam("B");
 
 		resolve([TEAM_A]); // kommt jetzt erst an, kennt TEAM_B noch nicht
-		await stale;
 
+		// false: teams ist jetzt nur lokal fortgeschrieben, kein Serverstand - sonst
+		// hielte syncOwnedTeamActivities TEAM_A für gelöscht.
+		await expect(stale).resolves.toBe(false);
 		expect(chefTeams.teams.some((t) => t.id === TEAM_B.id)).toBe(true);
+	});
+
+	it("haengt sich nach deleteTeam() nicht an eine veraltete laufende Anfrage", async () => {
+		let resolveStale!: (v: typeof TEAM_A[]) => void;
+		accountMock.listTeams.mockReturnValueOnce(new Promise((r) => (resolveStale = r)));
+		const stale = chefTeams.loadTeams();
+
+		accountMock.deleteTeam.mockResolvedValue(undefined);
+		await chefTeams.deleteTeam(TEAM_B.id);
+
+		accountMock.listTeams.mockResolvedValueOnce([TEAM_A]);
+		const fresh = chefTeams.loadTeams();
+		resolveStale([TEAM_A, TEAM_B]);
+
+		await expect(fresh).resolves.toBe(true);
+		await expect(stale).resolves.toBe(false);
+		expect(accountMock.listTeams).toHaveBeenCalledTimes(2);
+		expect(chefTeams.teams).toEqual([TEAM_A]);
 	});
 });
 

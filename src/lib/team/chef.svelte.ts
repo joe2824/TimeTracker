@@ -57,17 +57,23 @@ class ChefTeamsState {
 	/** Zaehlt jeden Aufruf durch, damit eine veraltete Antwort (z.B. vor einem
 	 *  createTeam) das inzwischen aktuellere teams nicht ueberschreibt. */
 	#teamsRequest = 0;
+	#teamsInFlightId = 0;
 
-	/** false, wenn der Server nicht geantwortet hat - teams ist dann kein Beleg dafür, welche Teams es gibt. */
+	/** false, wenn teams nicht der Serverstand ist (keine Antwort, oder create/deleteTeam kam dazwischen) - dann kein Beleg dafür, welche Teams es gibt. */
 	async loadTeams(): Promise<boolean> {
 		if (!account.linked) return false;
-		if (this.#teamsInFlight) return this.#teamsInFlight;
+		// Nur eine noch aktuelle Anfrage teilen: eine von create/deleteTeam
+		// überholte liefert false, und wer danach fragt, braucht den Serverstand.
+		if (this.#teamsInFlight && this.#teamsInFlightId === this.#teamsRequest) {
+			return this.#teamsInFlight;
+		}
 		const requestId = ++this.#teamsRequest;
+		this.#teamsInFlightId = requestId;
 		this.teamsLoading = true;
 		const run = (async () => {
 			try {
 				const teams = await account.listTeams();
-				if (requestId !== this.#teamsRequest) return true;
+				if (requestId !== this.#teamsRequest) return false;
 				this.teams = teams;
 				if (!this.selectedTeamId || !this.teams.some((t) => t.id === this.selectedTeamId)) {
 					this.selectedTeamId = this.teams[0]?.id;
