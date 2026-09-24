@@ -45,7 +45,7 @@
 		const info = await flow.join(link.serverUrl, link.code);
 		if (info) {
 			dismiss();
-			toast.success(`Mit „${info.teamName}" verbunden.`);
+			toast.success(`Mit „${info.teamName}“ verbunden.`);
 		} else {
 			toast.error(`Beitritt nicht möglich: ${flow.joinError}`);
 		}
@@ -66,7 +66,7 @@
 				{:else if flow.preview === "error"}
 					Link nicht gültig
 				{:else}
-					Mit „{flow.preview.teamName}" verbinden?
+					Mit „{flow.preview.teamName}“ verbinden?
 				{/if}
 			</Dialog.Title>
 			<Dialog.Description>

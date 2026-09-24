@@ -185,7 +185,7 @@ export const serverSettings = sqliteTable("server_settings", {
 });
 
 /**
- * Anonyme Telemetrie-Meldungen („aktiv"-Pings).
+ * Anonyme Telemetrie-Meldungen („aktiv“-Pings).
  * Höchstens ein Eintrag je (date, deviceId). Enthält nur Datum, anonyme Geräte-ID,
  * Version, Plattform und letzten Zeitstempel.
  */

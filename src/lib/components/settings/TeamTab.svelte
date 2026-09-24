@@ -109,7 +109,7 @@
 			await chefTeams.createTeam(name);
 			newTeamName = "";
 			addingTeam = false;
-			toast.success(`Team „${name}" angelegt.`);
+			toast.success(`Team „${name}“ angelegt.`);
 		} catch (e) {
 			toast.error(`Team konnte nicht angelegt werden: ${errorText(e)}`);
 		}
@@ -136,7 +136,7 @@
 	async function removeAdmin(userId: string, name: string) {
 		try {
 			await chefTeams.removeAdmin(userId);
-			toast.success(`„${name}" ist nicht mehr Verwalter.`);
+			toast.success(`„${name}“ ist nicht mehr Verwalter.`);
 		} catch (e) {
 			toast.error(`Entfernen fehlgeschlagen: ${errorText(e)}`);
 		}
@@ -196,7 +196,7 @@
 			// app.activities (Auswahl, Bericht, Timer) haengt sonst bis zum
 			// naechsten App-Start oder Aktivitaeten-Tab-Besuch als "teamOwned" fest.
 			void syncOwnedTeamActivities();
-			toast.success(`Team „${name}" gelöscht.`);
+			toast.success(`Team „${name}“ gelöscht.`);
 			deleteTarget = null;
 		} catch (e) {
 			toast.error(`Team konnte nicht gelöscht werden: ${errorText(e)}`);
@@ -512,7 +512,7 @@
 	>
 		<Dialog.Content class="sm:max-w-md">
 			<Dialog.Header>
-				<Dialog.Title>Chef-Rolle an „{transferTargetName}" übergeben?</Dialog.Title>
+				<Dialog.Title>Chef-Rolle an „{transferTargetName}“ übergeben?</Dialog.Title>
 				<Dialog.Description>
 					„{transferTargetName}" kann das Team danach löschen, Verwalter ein-/aussetzen und
 					erneut übergeben - alles, was bisher nur du konntest. Du selbst bleibst als Verwalter
@@ -539,7 +539,7 @@
 	<Dialog.Root open={!!deleteTarget} onOpenChange={(v) => { if (!v && !deleting) deleteTarget = null; }}>
 		<Dialog.Content class="sm:max-w-md">
 			<Dialog.Header>
-				<Dialog.Title>„{deleteTarget?.name}" endgültig löschen?</Dialog.Title>
+				<Dialog.Title>„{deleteTarget?.name}“ endgültig löschen?</Dialog.Title>
 				<Dialog.Description>
 					Mitglieder, gemeinsame Aktivitäten und alle gesendeten Berichte dieses Teams gehen damit
 					unwiderruflich verloren. Der Beitritts-Link wird ungültig. Zeiten, die Mitglieder bereits

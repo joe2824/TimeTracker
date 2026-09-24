@@ -86,7 +86,7 @@
 
 	// Nach dem Schliessen des Abgleichs neu lesen: dort kann gerade ein Report
 	// eingelesen oder gewechselt worden sein. `entriesVersion` hängt mit dran,
-	// weil „Einstellungen → Daten → Jahr löschen" die Reports des Jahres
+	// weil „Einstellungen → Daten → Jahr löschen“ die Reports des Jahres
 	// mitnimmt – ohne das blieben die Fehlbetrags-Markierungen stehen.
 	$effect(() => {
 		const m = month;
@@ -161,7 +161,7 @@
 	const dayAdjust = $derived.by(() => {
 		if (draftIsAbsence) return null;
 		const rd = reportByDate.get(draft.date);
-		// „ok"/„free" heißt: nichts zu holen. Bei „open" kennt LOGA den Feierabend
+		// „ok“/„free“ heißt: nichts zu holen. Bei „open“ kennt LOGA den Feierabend
 		// noch nicht – jede Korrektur wäre dort geraten.
 		if (!rd || rd.status === "ok" || rd.status === "free" || rd.status === "open") return null;
 
@@ -191,7 +191,7 @@
 		const targetMin = Math.round(target * 60);
 		const delta = Math.round(targetMin - durationHours(draftStart, draftEnd) * 60) / 60;
 
-		// Wohin der Eintrag käme. Bevorzugt bleibt „Von" stehen und „Bis" wandert;
+		// Wohin der Eintrag käme. Bevorzugt bleibt „Von“ stehen und „Bis“ wandert;
 		// reicht der Tag dahinter nicht mehr, andersherum. Über Mitternacht zu
 		// laufen wäre hier das Gegenteil von hilfreich: `save()` macht daraus zwei
 		// Einträge, und der Tag bekäme nur den ersten Teil – ein neuer Eintrag am
@@ -409,8 +409,8 @@
 			const pause = totals.pause;
 			const hours = totals.total;
 			// Abweichung laut Zeitwächter, in beide Richtungen. Tage, an denen in LOGA
-			// nur „Kommen" steht, bleiben stumm – dort fehlt der Feierabend, nicht die
-			// Zeit (Status „open", siehe reconcile).
+			// nur „Kommen“ steht, bleiben stumm – dort fehlt der Feierabend, nicht die
+			// Zeit (Status „open“, siehe reconcile).
 			const rd = reportByDate.get(date);
 			const missing = rd && (rd.status === "missing" || rd.status === "partial") ? rd.diff : 0;
 			const over = rd?.status === "over" ? -rd.diff : 0;
@@ -701,7 +701,7 @@
 								{@const isMissing = day.missing > 0}
 								<!--
 									Aus dem Zeitwirtschaftsreport: der Tag weicht von LOGA ab.
-									„−0:45" allein sagt nichts – was es heisst, stand bisher nur im
+									„−0:45“ allein sagt nichts – was es heisst, stand bisher nur im
 									title und war damit auf dem Handy gar nicht zu bekommen.
 									Amber = hier fehlt Zeit, Sky = hier steht zu viel; dieselben
 									Farben wie im Abgleich, damit dieselbe Farbe dasselbe heisst.
@@ -893,8 +893,8 @@
 
 				{#if dayAdjust}
 					<!-- Aus dem Zeitwirtschaftsreport: der Tag weicht von LOGA ab. Der Knopf
-					     setzt die Dauer DIESES Eintrags so, dass der Tag hinkommt – „Von"
-					     bleibt stehen, „Bis" wandert. Gespeichert wird dabei nichts: die
+					     setzt die Dauer DIESES Eintrags so, dass der Tag hinkommt – „Von“
+					     bleibt stehen, „Bis“ wandert. Gespeichert wird dabei nichts: die
 					     Zeiten stehen danach im Formular und lassen sich noch anfassen. -->
 					<div
 						class="flex flex-wrap items-center justify-between gap-2 rounded-md px-2.5 py-2 text-xs {dayAdjust.delta >

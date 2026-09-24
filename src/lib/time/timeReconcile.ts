@@ -23,7 +23,7 @@ export type ReconcileStatus =
 	| "over"
 	/** LOGA kennt keine Stunden (Wochenende/frei) und hier ist auch nichts erfasst */
 	| "free"
-	/** in LOGA ist nur „Kommen" gestempelt – der Tag ist dort noch nicht fertig */
+	/** in LOGA ist nur „Kommen“ gestempelt – der Tag ist dort noch nicht fertig */
 	| "open";
 
 export interface ReconcileDay {
@@ -40,7 +40,7 @@ export interface ReconcileDay {
 	/**
 	 * Keine Stempel, aber Stunden in Höhe eines halben oder ganzen Arbeitstags –
 	 * in LOGA sieht Urlaub, Feiertag und Gleittag genau so aus. Solche Tage
-	 * gehören in „Abwesenheiten", nicht auf ein Projekt.
+	 * gehören in „Abwesenheiten“, nicht auf ein Projekt.
 	 */
 	looksLikeAbsence: boolean;
 	/** Tagesanteil für die Abwesenheit (1 oder 0,5), nur wenn looksLikeAbsence */
@@ -70,7 +70,7 @@ export interface ReconcileSummary {
 	missing: number;
 	partial: number;
 	over: number;
-	/** Summe der fehlenden Stunden über alle Tage mit „missing"/„partial" */
+	/** Summe der fehlenden Stunden über alle Tage mit „missing“/„partial“ */
 	missingHours: number;
 }
 
@@ -145,13 +145,13 @@ export function reconcile(
 			status = "ok";
 		}
 
-		// Nur „Kommen" gestempelt: LOGA ist mit dem Tag noch nicht durch. Was hier
-		// steht, kann dort noch gar nicht ankommen – „zu viel" wäre eine
+		// Nur „Kommen“ gestempelt: LOGA ist mit dem Tag noch nicht durch. Was hier
+		// steht, kann dort noch gar nicht ankommen – „zu viel“ wäre eine
 		// Falschmeldung.
 		if (status === "over" && isOpenDay(report)) status = "open";
 
 		// Kein Stempel, aber Stunden: Urlaub, Feiertag oder Gleittag. LOGA
-		// unterscheidet das nicht – hier ist alles drei „Abwesenheit".
+		// unterscheidet das nicht – hier ist alles drei „Abwesenheit“.
 		const fullDay = hoursPerDay > 0 && Math.abs(reportHours - hoursPerDay) <= tolerance;
 		const halfDay = hoursPerDay > 0 && Math.abs(reportHours - hoursPerDay / 2) <= tolerance;
 		const looksLikeAbsence = !hasStamps(report) && reportHours > 0 && (fullDay || halfDay);
@@ -326,7 +326,7 @@ export function planFill(
 	opts: FillOptions = DEFAULT_FILL_OPTIONS
 ): FillPlan | null {
 	// An `status` hängen, nicht am blossen Vorzeichen von `diff`: das fängt auch
-	// Differenzen im Rundungsbereich ab, die als „stimmt" durchgehen.
+	// Differenzen im Rundungsbereich ab, die als „stimmt“ durchgehen.
 	if (day.status !== "missing" && day.status !== "partial") return null;
 	if (day.diff <= 0) return null;
 
@@ -372,7 +372,7 @@ export function planFill(
 	let window: Interval;
 	// true = das Stempelfenster reicht nicht, es wurde verlängert.
 	let stretched = false;
-	// Ende der Stempelzeiten – die Grenze, ab der Nachtrag als „nicht gestempelt"
+	// Ende der Stempelzeiten – die Grenze, ab der Nachtrag als „nicht gestempelt“
 	// gilt. Ohne Verlängerung gibt es diese Grenze nicht.
 	let stampEnd = Infinity;
 	if (hasStamps(day.report)) {
@@ -452,7 +452,7 @@ export function planFill(
  * @param reportHours "Arbeitszeit täglich" des Tages (netto)
  * @param othersWorked Projektzeit der UEBRIGEN Einträge des Tages, vor Abzug
  * @param othersAbsent Abwesenheitsstunden des Tages
- * @returns Stunden; 0 oder negativ heisst „über diesen Eintrag nicht zu regeln"
+ * @returns Stunden; 0 oder negativ heisst „über diesen Eintrag nicht zu regeln“
  */
 export function targetEntryHours(
 	reportHours: number,

@@ -458,7 +458,7 @@
 						<Select.Content>
 							<Select.Item value="eigene" label="Eigene Aktivitäten">Eigene Aktivitäten</Select.Item>
 							{#each chefTeams.teams as t (t.id)}
-								<Select.Item value={t.id} label={t.name}>Team „{t.name}"</Select.Item>
+								<Select.Item value={t.id} label={t.name}>Team „{t.name}“</Select.Item>
 							{/each}
 						</Select.Content>
 					</Select.Root>
@@ -500,7 +500,7 @@
 							<Select.Content>
 								<Select.Item value="alle" label="Alle Aktivitäten">Alle Aktivitäten</Select.Item>
 								{#each chefTeams.teams as t (t.id)}
-									<Select.Item value={t.id} label={t.name}>Nur „{t.name}"</Select.Item>
+									<Select.Item value={t.id} label={t.name}>Nur „{t.name}“</Select.Item>
 								{/each}
 							</Select.Content>
 						</Select.Root>
@@ -751,7 +751,7 @@
 		<Dialog.Header>
 			<Dialog.Title>Aktivität löschen?</Dialog.Title>
 			<Dialog.Description>
-				„{deleteTarget?.name}" wird
+				„{deleteTarget?.name}“ wird
 				{#if deleteCount < 0}
 					mit allen zugehörigen Einträgen
 				{:else if deleteCount === 0}
@@ -778,9 +778,9 @@
 <Dialog.Root open={!!mergeSource} onOpenChange={(v) => { if (!v && !merging) mergeSource = null; }}>
 	<Dialog.Content class="sm:max-w-md">
 		<Dialog.Header>
-			<Dialog.Title>„{mergeSource?.name}" zusammenführen</Dialog.Title>
+			<Dialog.Title>„{mergeSource?.name}“ zusammenführen</Dialog.Title>
 			<Dialog.Description>
-				Alle Einträge wandern zur ausgewählten Aktivität, „{mergeSource?.name}" verschwindet danach
+				Alle Einträge wandern zur ausgewählten Aktivität, „{mergeSource?.name}“ verschwindet danach
 				aus der Liste. Nützlich, wenn eine eigene Aktivität dasselbe ist wie eine vom Team
 				vorgegebene – nichts geht dabei verloren.
 			</Dialog.Description>
@@ -816,9 +816,9 @@
 <Dialog.Root open={!!mergeIntoTarget} onOpenChange={(v) => { if (!v && !merging) mergeIntoTarget = null; }}>
 	<Dialog.Content class="sm:max-w-md">
 		<Dialog.Header>
-			<Dialog.Title>In „{mergeIntoTarget?.name}" zusammenführen</Dialog.Title>
+			<Dialog.Title>In „{mergeIntoTarget?.name}“ zusammenführen</Dialog.Title>
 			<Dialog.Description>
-				Alle Einträge der ausgewählten eigenen Aktivität wandern zu „{mergeIntoTarget?.name}", sie
+				Alle Einträge der ausgewählten eigenen Aktivität wandern zu „{mergeIntoTarget?.name}“, sie
 				verschwindet danach aus der Liste. Nützlich, wenn sie dasselbe war, bevor das Team sie
 				vorgab – nichts geht dabei verloren.
 			</Dialog.Description>

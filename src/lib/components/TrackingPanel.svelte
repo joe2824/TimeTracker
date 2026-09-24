@@ -155,7 +155,7 @@
 
 <div class="space-y-4">
 	{#if arbzgVerdict}
-		<!-- Eine Zeile, kein zweiter Bericht: die Zahlen stehen im Tab „Bericht".
+		<!-- Eine Zeile, kein zweiter Bericht: die Zahlen stehen im Tab „Bericht“.
 		     Verlinkt wird aber nur, wenn es die Karte dort auch gibt – beide
 		     Schalter sind unabhängig, und ein Klick ins Leere ist schlimmer als
 		     kein Klick. -->
@@ -241,7 +241,7 @@
 		<div class="bg-muted/40 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg px-3 py-2.5 text-sm">
 			<span class="text-muted-foreground text-xs font-medium">Startzeit</span>
 			<!-- Eine Auswahl aus vier Möglichkeiten: die gewählte ist hervorgehoben,
-			     „ab Uhrzeit" eingeschlossen. -->
+			     „ab Uhrzeit“ eingeschlossen. -->
 			<ButtonGroup.Root>
 				<Button
 					variant={usingClock || presetMin !== 0 ? "outline" : "default"}
@@ -411,7 +411,7 @@
 							<span class="text-muted-foreground shrink-0 font-mono tabular-nums">
 								{#if isAbs}
 									<!-- Abwesenheiten sind tagesgenau: start == end. Als Uhrzeitspanne
-									     stand hier „12:00–12:00 (0:00:00)" – während die Tagesbilanz
+									     stand hier „12:00–12:00 (0:00:00)“ – während die Tagesbilanz
 									     oben den Tagessatz mitzählt. -->
 									{(e.dayFraction ?? 1) === 0.5 ? "½ Tag" : "ganzer Tag"}
 									&nbsp;({fmtHoursClock((e.dayFraction ?? 1) * app.settings.hoursPerDay)} h)

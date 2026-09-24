@@ -351,7 +351,7 @@
 							<UserPlusIcon class="text-muted-foreground/50 mx-auto mb-2 size-8" />
 							<p class="text-foreground text-sm font-medium">Noch niemand beigetreten</p>
 							<p class="text-muted-foreground mt-0.5 text-xs">
-								Lade Mitglieder über „Einladen" oben ein.
+								Lade Mitglieder über „Einladen“ oben ein.
 							</p>
 						</div>
 					{:else}

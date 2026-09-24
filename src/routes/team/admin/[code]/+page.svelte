@@ -25,7 +25,7 @@
 <div class="mx-auto flex min-h-dvh max-w-md flex-col items-center justify-center gap-6 p-6">
 	{#if flow.joinedTeamName}
 		<div class="space-y-2 text-center">
-			<h1 class="text-xl font-semibold">Verwalter von „{flow.joinedTeamName}"</h1>
+			<h1 class="text-xl font-semibold">Verwalter von „{flow.joinedTeamName}“</h1>
 			<p class="text-muted-foreground text-sm">
 				Das Team erscheint jetzt in deinen Einstellungen unter „Team" - dort auch Mitglieder,
 				Aktivitäten und Berichte.
@@ -51,7 +51,7 @@
 	{:else if !account.linked}
 		<div class="w-full space-y-4 text-center">
 			<div class="space-y-2">
-				<h1 class="text-xl font-semibold">Als Verwalter von „{flow.preview.teamName}" helfen?</h1>
+				<h1 class="text-xl font-semibold">Als Verwalter von „{flow.preview.teamName}“ helfen?</h1>
 				<p class="text-muted-foreground text-sm">
 					Dafür brauchst du ein Konto auf diesem Server - anders als ein einfaches Teammitglied.
 					Melde dich an oder lege eins an, und öffne diesen Link danach erneut.
@@ -62,7 +62,7 @@
 	{:else}
 		<div class="w-full space-y-4">
 			<div class="space-y-2 text-center">
-				<h1 class="text-xl font-semibold">Als Verwalter von „{flow.preview.teamName}" helfen?</h1>
+				<h1 class="text-xl font-semibold">Als Verwalter von „{flow.preview.teamName}“ helfen?</h1>
 				<p class="text-muted-foreground text-sm">
 					Du bist angemeldet als <span class="text-foreground font-medium">{account.name}</span>.
 					Als Verwalter kannst du Aktivitäten pflegen, Mitglieder sehen und Berichte prüfen - so wie

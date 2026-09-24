@@ -113,7 +113,7 @@
 	let splitFor = $state<Record<string, Share[]>>({});
 	/** Der Verteilen-Bereich ist zugeklappt, bis jemand ihn braucht. */
 	let splitOpen = $state(false);
-	/** „Alle Tage auf …" – wirkt beim Wechsel auf alle Zeilen mit Uhrzeiten. */
+	/** „Alle Tage auf …“ – wirkt beim Wechsel auf alle Zeilen mit Uhrzeiten. */
 	let bulkActivity = $state("");
 	let lastBulk = "";
 
@@ -157,7 +157,7 @@
 
 	const summary = $derived(active ? summarize(active) : null);
 
-	// Ohne die geladenen Einträge wäre jeder Tag „fehlt".
+	// Ohne die geladenen Einträge wäre jeder Tag „fehlt“.
 	$effect(() => {
 		if (stored) void app.ensureMonth(stored.month).catch(() => {});
 	});
@@ -215,7 +215,7 @@
 	);
 	/** Angehakt, aber noch ohne Projekt – die Zahl gehört sichtbar neben den Knopf. */
 	const unassigned = $derived(picked.length - chosen.length);
-	/** Wie viel der Monat schon abgedeckt ist – 100 % heisst „nichts offen". */
+	/** Wie viel der Monat schon abgedeckt ist – 100 % heisst „nichts offen“. */
 	const coverage = $derived.by(() => {
 		if (!summary) return 100;
 		const relevant = summary.days.filter((d) => d.report.hours > 0).length;
@@ -223,7 +223,7 @@
 		return Math.round(((relevant - summary.missing - summary.partial) / relevant) * 100);
 	});
 
-	/** Vorschlag für die ungestempelten Stunden: die eingebaute Zeile „Others". */
+	/** Vorschlag für die ungestempelten Stunden: die eingebaute Zeile „Others“. */
 	function othersActivity(): string {
 		return app.trackableActivities.find((a) => a.name === BUILTIN_OTHERS)?.id ?? "";
 	}
@@ -238,7 +238,7 @@
 			// Schon Nachgetragenes nicht erneut anhaken – sonst entstünden Dubletten.
 			sel[day.date] = plan !== null && !day.alreadyFilled;
 			// Bewusst leer: ein vorbelegter Vorschlag träfe oft das falsche Projekt,
-			// unbemerkt beim Durchklicken. „Alle Tage auf …" deckt den Sammelfall ab.
+			// unbemerkt beim Durchklicken. „Alle Tage auf …“ deckt den Sammelfall ab.
 			acts[day.date] = "";
 			extra[day.date] = others;
 		}
@@ -254,7 +254,7 @@
 		for (const { day, plan } of rows) {
 			if (plan?.kind !== "time") continue;
 			activityFor[day.date] = id;
-			// „Alle Tage auf X" heisst genau ein Projekt – eine frühere Verteilung
+			// „Alle Tage auf X“ heisst genau ein Projekt – eine frühere Verteilung
 			// stünde sonst still daneben und gäbe beim Übernehmen den Ton an.
 			delete splitFor[day.date];
 		}
@@ -286,7 +286,7 @@
 				activityFor[r.day.date] = "";
 			}
 		}
-		// „Alle Tage auf …" muss danach wieder greifen, auch mit derselben Auswahl:
+		// „Alle Tage auf …“ muss danach wieder greifen, auch mit derselben Auswahl:
 		// der Wechsel-Effekt vergleicht mit dem zuletzt gesetzten Wert.
 		bulkActivity = "";
 		lastBulk = "";
@@ -472,7 +472,7 @@
 
 	// ---------- Übernehmen ----------
 
-	/** Zeitstempel für „Minute X dieses Tages"; 1440 ist Mitternacht des Folgetags. */
+	/** Zeitstempel für „Minute X dieses Tages“; 1440 ist Mitternacht des Folgetags. */
 	function tsAt(date: string, minutes: number): number {
 		if (minutes >= 1440) return startOfNextDay(noonTs(date));
 		return toTs(date, minToClock(minutes));
@@ -514,7 +514,7 @@
 						{
 							blocks: plan.extraBlocks,
 							// Ohne eigene Wahl auf das erste Projekt des Tages – bei einer
-							// Verteilung gibt es keine „eine" Aktivität mehr.
+							// Verteilung gibt es keine „eine“ Aktivität mehr.
 							id: extraActivityFor[day.date] || activityId || inside[0]?.id || ""
 						}
 					];
@@ -706,7 +706,7 @@
 			{#if stored}
 				{@const openState = storedSummary ? storedSummary.missing + storedSummary.partial : 0}
 				<!-- Der gespeicherte Report sagt hier gleich, ob noch etwas offen ist –
-				     sonst müsste man den Abgleich öffnen, nur um „alles gut" zu sehen. -->
+				     sonst müsste man den Abgleich öffnen, nur um „alles gut“ zu sehen. -->
 				<div class="flex items-center justify-between gap-3 rounded-lg border p-3">
 					<div class="flex min-w-0 items-start gap-2.5">
 						<span
@@ -839,7 +839,7 @@
 							{fmtHoursClock(summary.missingHours)} h sind in {monthLabel(active.month)} nicht erfasst
 						</Alert.Title>
 						<Alert.Description>
-							Verglichen wird die Spalte „Arbeitszeit täglich" – die ist netto, LOGA hat die Pause
+							Verglichen wird die Spalte „Arbeitszeit täglich“ – die ist netto, LOGA hat die Pause
 							dort bereits abgezogen.
 							{#if app.settings.breakDeduction}
 								Da die App die Pause ebenfalls abzieht, tragen die Vorschläge die
@@ -1022,7 +1022,7 @@
 												{#if plan.extraBlocks.length > 0}
 													<!-- LOGA kennt mehr Stunden, als gestempelt wurde. Die gehören
 													     meist nicht auf dasselbe Projekt wie der gestempelte Tag –
-													     deshalb eine eigene Auswahl, vorbelegt mit „Others". -->
+													     deshalb eine eigene Auswahl, vorbelegt mit „Others“. -->
 													<div class="flex flex-wrap items-center gap-2">
 														<div class="w-52">
 															<ActivityCombobox
@@ -1055,7 +1055,7 @@
 										{:else if day.status === "open"}
 											<!-- Tag in LOGA noch nicht fertig – ein Vergleich sagt hier noch nichts. -->
 											<span class="text-muted-foreground text-xs">
-												in LOGA nur „Kommen" gestempelt ({day.report.firstIn})
+												in LOGA nur „Kommen“ gestempelt ({day.report.firstIn})
 											</span>
 										{:else if day.status === "ok"}
 											<span class="text-muted-foreground text-xs">—</span>

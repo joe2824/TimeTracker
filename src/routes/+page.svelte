@@ -82,7 +82,7 @@
 	/** Vorabversion? Alles mit Semver-Vorabteil zählt dazu ("0.8.1-beta.2"). */
 	const isBeta = $derived(appVersion.includes("-"));
 
-	// „Benachrichtigung" = einer der Aufmerksamkeits-Dialoge ist offen/fällig.
+	// „Benachrichtigung“ = einer der Aufmerksamkeits-Dialoge ist offen/fällig.
 	// Wird an das Tray-Flyout gemeldet, das dann ein Hinweis-Badge zeigt.
 	const attention = $derived(
 		!!watchers.idlePrompt ||
@@ -374,7 +374,7 @@
 			toast.error(`Einrichtung unvollständig: ${errorText(e)}`, { duration: 60000 });
 		}
 
-		// Beim Start und danach stündlich still nach Updates suchen. „Installieren"
+		// Beim Start und danach stündlich still nach Updates suchen. „Installieren“
 		// im Hinweis öffnet direkt den Update-Dialog.
 		updateTimer ??= setInterval(() => void checkAndAnnounceUpdate(), UPDATE_CHECK_MS);
 		// Versteckt gestartet? Dann hat die Suche keine Eile (HIDDEN_UPDATE_DELAY_MS).
@@ -465,7 +465,7 @@
 	// Tray-Menü: laufender Timer + Schnellstart (Favoriten, zuletzt benutzt).
 	// Lauscht auf trayVersion (wird nur nach vollständig stabilem Zustand erhöht),
 	// nicht direkt auf running/activities – sonst würde das Icon während reload()
-	// kurz auf „idle" springen (running ist dort kurzzeitig null).
+	// kurz auf „idle“ springen (running ist dort kurzzeitig null).
 	$effect(() => {
 		if (!app.loaded) return;
 		const _v = app.trayVersion;
@@ -567,7 +567,7 @@
 				{#if waiting >= (isTauri() ? 8 : 3)}
 					<div class="space-y-2">
 						<p class="text-muted-foreground text-xs">
-							Das dauert ungewöhnlich lange ({waiting}&nbsp;s bei „{app.initStep ?? "Start"}").
+							Das dauert ungewöhnlich lange ({waiting}&nbsp;s bei „{app.initStep ?? "Start"}“).
 						</p>
 						<Button variant="outline" size="sm" onclick={() => location.reload()}>Neu laden</Button>
 					</div>

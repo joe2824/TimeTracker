@@ -1,4 +1,4 @@
-// Verwaltung des „Was ist neu"-Dialogs für Haupt-Releases.
+// Verwaltung des „Was ist neu“-Dialogs für Haupt-Releases.
 import { isTauri } from "../platform/env";
 
 const STORAGE_KEY = "timetracker:last_seen_release";

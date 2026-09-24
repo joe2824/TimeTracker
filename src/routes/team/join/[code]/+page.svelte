@@ -37,7 +37,7 @@
 <div class="mx-auto flex min-h-dvh max-w-md flex-col items-center justify-center gap-6 p-6">
 	{#if joinedTeamName}
 		<div class="space-y-2 text-center">
-			<h1 class="text-xl font-semibold">Mit „{joinedTeamName}" verbunden</h1>
+			<h1 class="text-xl font-semibold">Mit „{joinedTeamName}“ verbunden</h1>
 			<p class="text-muted-foreground text-sm">
 				Die gemeinsamen Aktivitäten dieses Teams sind jetzt hier verfügbar.
 			</p>
@@ -54,7 +54,7 @@
 	{:else}
 		<div class="w-full space-y-4">
 			<div class="space-y-2 text-center">
-				<h1 class="text-xl font-semibold">Mit „{flow.preview.teamName}" verbinden?</h1>
+				<h1 class="text-xl font-semibold">Mit „{flow.preview.teamName}“ verbinden?</h1>
 				<p class="text-muted-foreground text-sm">
 					Die gemeinsamen Aktivitäten dieses Teams werden auf diesem Gerät verfügbar, und der Chef
 					sieht, wann von hier ein Bericht gesendet wurde.

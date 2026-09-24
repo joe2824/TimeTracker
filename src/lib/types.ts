@@ -143,13 +143,13 @@ export interface Settings {
 	arbzgEnabled: boolean;
 	/** Kurzer Hinweis auf der Tracking-Seite, wenn der Arbeitszeit-Check anschlägt. */
 	arbzgTrackingHint: boolean;
-	/** Chef-Modus: Tab „Team" zum Anlegen von Teams und Verwalten der Mitglieder */
+	/** Chef-Modus: Tab „Team“ zum Anlegen von Teams und Verwalten der Mitglieder */
 	bossMode: boolean;
 	/** Vorabversionen beziehen. Liest auch der Rust-Teil aus der settings.json - wirkt erst nach Neustart. */
 	betaUpdates: boolean;
 	/** Zeitzone des Kontos als IANA-Kennung, z.B. "Europe/Berlin". */
 	timeZone: string;
-	/** Tag (YYYY-MM-DD), an dem zuletzt „aktiv" gemeldet wurde. */
+	/** Tag (YYYY-MM-DD), an dem zuletzt „aktiv“ gemeldet wurde. */
 	usageLastDay: string;
 }
 

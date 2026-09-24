@@ -121,7 +121,7 @@ describe("reconcile", () => {
 	});
 
 	it("meldet keinen Ueberhang, solange LOGA nur das Kommen kennt", () => {
-		// Der laufende Tag: gestempelt wurde nur das Kommen, „Arbeitszeit täglich"
+		// Der laufende Tag: gestempelt wurde nur das Kommen, „Arbeitszeit täglich“
 		// steht deshalb noch auf 0. Das Erfasste ist dort nicht zu viel, sondern
 		// schlicht noch nicht angekommen.
 		const r = reconcile(
@@ -366,7 +366,7 @@ describe("planFill", () => {
 
 	it("traegt keine Minutenkrümel an einem Tag nach, der stimmt", () => {
 		// 8,55 h laut LOGA gegen 8,50 h erfasst: innerhalb der Toleranz, also
-		// „stimmt". Am reinen Vorzeichen der Differenz hängend entstünd hier ein
+		// „stimmt“. Am reinen Vorzeichen der Differenz hängend entstünd hier ein
 		// Nachtrag über drei Minuten – angehakt und mitgezählt.
 		const present = [entry("2026-01-12", "09:02", "17:32")];
 		const tag = day({ firstIn: "09:02", lastOut: "18:20", hours: 8.55 });
@@ -393,10 +393,10 @@ describe("planFill", () => {
 	it("verlaengert das Fenster, wenn LOGA mehr meldet als gestempelt wurde", () => {
 		// Echter Tag aus dem Report: 11:05–16:52 gestempelt (5,78 h), aber 7,37 h
 		// gutgeschrieben – es wurde ausserhalb der Stempelung gearbeitet. Ohne
-		// Verlängerung bliebe der Tag für immer als „teilweise" stehen.
+		// Verlängerung bliebe der Tag für immer als „teilweise“ stehen.
 		const tag = day({ firstIn: "11:05", lastOut: "16:52", hours: 7.37 });
 		const plan = planFill(reconcileOne(tag, []), [])!;
-		// Der gestempelte Teil endet punktgenau an „Letztes gehen" …
+		// Der gestempelte Teil endet punktgenau an „Letztes gehen“ …
 		expect(asClock(plan.blocks)).toEqual(["11:05–16:52"]);
 		// … der Rest wird getrennt ausgewiesen, damit er auf etwas anderes gebucht
 		// werden kann.
@@ -437,7 +437,7 @@ describe("Zusammenspiel mit dem automatischen Pausenabzug", () => {
 
 	it("rechnet die erfasste Zeit auf derselben Grundlage wie LOGA", () => {
 		// Timer lief 08:36–16:49 durch, also 8,22 h brutto. LOGA meldet 7,47 h
-		// netto. Ohne Abzug stände der Tag als „zu viel" da, mit Abzug stimmt er.
+		// netto. Ohne Abzug stände der Tag als „zu viel“ da, mit Abzug stimmt er.
 		const present = [entry("2026-01-12", "08:36", "16:49")];
 		const tag = day({ firstIn: "08:36", lastOut: "16:49", hours: 7.47 });
 
@@ -613,7 +613,7 @@ describe("distributeDays", () => {
 	});
 
 	it("wiegt lange Tage staerker als kurze", () => {
-		// 12 h + 2 h + 2 h: hälftig heisst NICHT „drei Tage durch zwei".
+		// 12 h + 2 h + 2 h: hälftig heisst NICHT „drei Tage durch zwei“.
 		const days = [
 			{ date: "2026-01-01", hours: 12 },
 			{ date: "2026-01-02", hours: 2 },

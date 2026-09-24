@@ -993,7 +993,7 @@ describe("Eingelesene Reports", () => {
 	});
 
 	it("nimmt den Report drueben weg, wenn hier das Jahr geloescht wird", async () => {
-		// „Einstellungen -> Daten -> Jahr löschen" nimmt die Reports des Jahres
+		// „Einstellungen -> Daten -> Jahr löschen“ nimmt die Reports des Jahres
 		// mit. Ginge das am Haken vorbei, holte der nächste Abgleich sie zurück.
 		const { desktop, laptop } = await reportOnBoth();
 

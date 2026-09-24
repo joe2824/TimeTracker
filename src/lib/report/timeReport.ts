@@ -21,7 +21,7 @@ export interface TimeReportDay {
 	lastOut: string | null;
 	/** "Arbeitszeit täglich" in Dezimalstunden (netto, Pause bereits abgezogen) */
 	hours: number;
-	/** Die Stundenzelle war leer oder unlesbar statt „0" – hier lässt sich nichts abschätzen. */
+	/** Die Stundenzelle war leer oder unlesbar statt „0“ – hier lässt sich nichts abschätzen. */
 	hoursUnknown?: boolean;
 	/** `hours` stammt nicht aus dem Report, sondern aus den Stempeln (Report meldet 0). */
 	estimated?: boolean;
@@ -151,7 +151,7 @@ export function parseReportClock(raw: string): string | null {
 		return minToClock(h * 60 + m);
 	}
 	const n = Number(t.replace(",", "."));
-	// Die 0 gilt als „nicht gestempelt", nicht als Mitternacht: als Uhrzeit gelesen
+	// Die 0 gilt als „nicht gestempelt“, nicht als Mitternacht: als Uhrzeit gelesen
 	// entstünde aus einem Urlaubstag ein Anwesenheitsfenster ab 00:00, und der
 	// Nachtrag legte Projektzeit mitten in die Nacht.
 	if (!Number.isFinite(n) || n <= 0 || n >= 1) return null;
@@ -172,7 +172,7 @@ export function parseReportHours(raw: string): number {
 }
 
 /**
- * Leer oder nicht lesbar? Beides liest `parseReportHours` als „0", ist aber
+ * Leer oder nicht lesbar? Beides liest `parseReportHours` als „0“, ist aber
  * keine gemeldete Null – eine leere Zelle ebenso wenig wie eine kaputte
  * (z. B. eine Formel, die als Fehlertext exportiert wurde).
  */
@@ -239,7 +239,7 @@ export function withEstimatedHours(day: TimeReportDay): TimeReportDay {
 	return { ...day, hours: Math.round(deductBreakFromHours(gross) * 100) / 100, estimated: true };
 }
 
-/** In LOGA ist nur „Kommen" gestempelt – das Gehen fehlt noch. */
+/** In LOGA ist nur „Kommen“ gestempelt – das Gehen fehlt noch. */
 export function isOpenDay(day: TimeReportDay): boolean {
 	return !!day.firstIn && !day.lastOut;
 }
@@ -266,7 +266,7 @@ export function parseTimeReport(sheet: XlsxSheet): ParsedTimeReport {
 	}
 	if (!header) {
 		throw new TimeReportError(
-			'Keine passende Kopfzeile gefunden – erwartet werden die Spalten „Tag" und „Arbeitszeit täglich".'
+			'Keine passende Kopfzeile gefunden – erwartet werden die Spalten „Tag“ und „Arbeitszeit täglich“.'
 		);
 	}
 

@@ -212,7 +212,7 @@
 		     muss vor jeder Zahl beantwortet sein. -->
 		<div class="space-y-3">
 			<div class="flex flex-wrap items-start justify-between gap-3">
-				<!-- Farbe bedeutet Handlungsbedarf, sonst nichts. „Dicht an der Grenze"
+				<!-- Farbe bedeutet Handlungsbedarf, sonst nichts. „Dicht an der Grenze“
 				     ist eine Beobachtung, keine Aufforderung. Die Stufen sind bewusst
 				     zurückhaltend getönt: der Rahmen soll die Aussage stützen,
 				     nicht die Card übertönen. -->

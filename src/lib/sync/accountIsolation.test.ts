@@ -39,7 +39,7 @@ class MockServer {
 
 	/**
 	 * Ein Tor vor dem Abruf - damit eine Runde beim Abmelden nachweislich noch
-	 * offen steht. Ohne das wäre „während noch abgeglichen wird" nur eine
+	 * offen steht. Ohne das wäre „während noch abgeglichen wird“ nur eine
 	 * Vermutung über Microtask-Reihenfolgen.
 	 */
 	gate: Promise<void> | null = null;

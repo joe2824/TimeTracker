@@ -200,7 +200,7 @@ class AppState {
 			} catch (e) {
 				// Merken statt werfen: eine abgewiesene Promise landet nur in der
 				// Konsole, und davor sitzt niemand – sonst bliebe der Ladebildschirm bei "Lädt…" hängen.
-				logError(`Start fehlgeschlagen beim Schritt „${this.initStep}"`, e);
+				logError(`Start fehlgeschlagen beim Schritt „${this.initStep}“`, e);
 				this.initError = { step: this.initStep ?? "Start", message: errorText(e) };
 				return false;
 			}
@@ -231,9 +231,9 @@ class AppState {
 		// soll normal durchlaufen, sonst hänge man in der Schleife fest.
 		this.devFail = null;
 		if (fault.mode === "error") {
-			throw new Error(`Test aus dem Dev-Menü: Schritt „${label}" abgebrochen`);
+			throw new Error(`Test aus dem Dev-Menü: Schritt „${label}“ abgebrochen`);
 		}
-		logWarn(`Dev-Test: Start bleibt absichtlich bei „${label}" stehen (${DEV_HANG_MS / 1000} s)`);
+		logWarn(`Dev-Test: Start bleibt absichtlich bei „${label}“ stehen (${DEV_HANG_MS / 1000} s)`);
 		// Von selbst weiter, statt für immer zu stehen – wer nur schauen wollte,
 		// muss die App sonst neu laden.
 		await new Promise((resolve) => setTimeout(resolve, DEV_HANG_MS));
@@ -360,7 +360,7 @@ class AppState {
 		this.entriesVersion++;
 		// Tray-Icon und -Menü erst jetzt aktualisieren, wenn running endgültig
 		// gesetzt ist. Ein Erhöhen mitten in reload (wenn running kurz null war)
-		// würde das Icon kurz auf „idle" wechseln – das sichtbare Flackern.
+		// würde das Icon kurz auf „idle“ wechseln – das sichtbare Flackern.
 		this.trayVersion = (this.trayVersion + 1) % 1000;
 		logDebug("Daten neu geladen", { running: this.#runningName() });
 	}
@@ -1129,7 +1129,7 @@ class AppState {
 			const von = fmtClock(overlap.startTs);
 			const bis = overlap.endTs ? fmtClock(overlap.endTs) : "läuft";
 			toast.error(
-				`Überschneidet sich mit „${this.activityName(overlap.activityId)}" (${von}–${bis}).`
+				`Überschneidet sich mit „${this.activityName(overlap.activityId)}“ (${von}–${bis}).`
 			);
 			return true;
 		}
@@ -1707,7 +1707,7 @@ class AppState {
 		return this.settings.reportSentMonths.includes(month);
 	}
 
-	/** Markiert einen Monat als erledigt (gesendet oder „nicht mehr erinnern"). */
+	/** Markiert einen Monat als erledigt (gesendet oder „nicht mehr erinnern“). */
 	async markReportSent(month: string): Promise<void> {
 		if (this.isReportSent(month)) return;
 		await this.updateSettings({
@@ -1734,7 +1734,7 @@ class AppState {
 		if (stored && setAppTimeZone(stored)) return;
 		const fallback = systemTimeZone();
 		setAppTimeZone(fallback);
-		if (stored) logWarn(`Unbekannte Zeitzone „${stored}", nutze ${fallback}`);
+		if (stored) logWarn(`Unbekannte Zeitzone „${stored}“, nutze ${fallback}`);
 		this.settings = { ...this.settings, timeZone: fallback };
 		await saveSettings($state.snapshot(this.settings) as Settings);
 		logInfo("Zeitzone festgeschrieben", { zone: fallback });
@@ -1746,7 +1746,7 @@ class AppState {
 		// noch gegen die alte Zone.
 		if (patch.timeZone !== undefined) setAppTimeZone(patch.timeZone);
 		await saveSettings($state.snapshot(this.settings) as Settings);
-		// Mit Werten: „E-Mail war leer" ist die Art Frage, die hinterher niemand
+		// Mit Werten: „E-Mail war leer“ ist die Art Frage, die hinterher niemand
 		// mehr beantworten kann. Die Einstellungen sind harmlos – kein Passwort,
 		// keine Zeiten, nur die Konfiguration, die der Benutzer selbst sieht.
 		logDebug("Einstellungen gespeichert", patch);
@@ -1779,7 +1779,7 @@ class AppState {
 	 * `step` scheitern ("error") oder hängen bleiben ("hang").
 	 */
 	async devSimulateStartFault(mode: "error" | "hang", step = "Einträge"): Promise<void> {
-		logInfo(`Dev-Test: Ladebildschirm (${mode}) bei Schritt „${step}"`);
+		logInfo(`Dev-Test: Ladebildschirm (${mode}) bei Schritt „${step}“`);
 		this.devFail = { step, mode };
 		this.initError = null;
 		this.initStep = null;

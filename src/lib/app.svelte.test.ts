@@ -659,7 +659,7 @@ describe("devSimulateStartFault() – Ladebildschirm vorführen", () => {
 		// Nichts angefasst: der gestörte Schritt läuft gar nicht erst an.
 		expect(files.get(monthFile("2026-07"))).toBe(previous);
 
-		// „Erneut versuchen": die Störung gilt nur einmal.
+		// „Erneut versuchen“: die Störung gilt nur einmal.
 		expect(await app.init()).toBe(true);
 		expect(app.initError).toBeNull();
 		expect(app.initStep).toBeNull();

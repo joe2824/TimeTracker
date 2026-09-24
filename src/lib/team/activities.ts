@@ -161,7 +161,7 @@ export async function syncOwnedTeamActivities(): Promise<void> {
 			try {
 				return { team, remote: await account.listTeamActivities(team.id) };
 			} catch (e) {
-				logWarn(`Aktivitäten von Team „${team.name}" konnten nicht geladen werden`, e);
+				logWarn(`Aktivitäten von Team „${team.name}“ konnten nicht geladen werden`, e);
 				return null;
 			}
 		}),
