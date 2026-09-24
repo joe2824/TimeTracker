@@ -2,7 +2,8 @@
 
 Zeiterfassung für Projektzeiten mit Monatsbericht per E-Mail an die Vorgesetzten. Läuft als
 Desktop-Anwendung im Tray oder im Browser. Die Zeiten gleichen sich über alle Geräte ab; was
-dabei auf dem Server liegt, ist Ende-zu-Ende verschlüsselt.
+dabei auf dem Server liegt, ist Ende-zu-Ende verschlüsselt. Ausnahme ist der optionale
+Team-Modus: an das Team gesendete Berichte liegen lesbar beim Server, damit der Chef sie sieht.
 
 | | |
 |---|---|
@@ -51,9 +52,10 @@ Ohne Installation geht es im Browser gegen einen eigenen Server, siehe [Server](
   und um wie viel man je Arbeitstag herunter müsste. Lokal, abschaltbar.
 - **Zeitwächter-Abgleich** — Zeitwirtschaftsreport (.xlsx) aus LOGA/Scout einlesen, fehlende
   Tage finden, Nachträge in einem Rutsch zuordnen.
-- **Chef-Modus** (optional) — Tab „Team" prüft im Outlook-Posteingang, wer den Monatsbericht
-  geschickt hat. CSV-Export und Sammel-Erinnerung an die Fehlenden. Reiner Lesezugriff: es wird
-  keine Mail verschoben, markiert oder gelöscht. Stunden wertet er bewusst nicht aus.
+- **Team-Modus** (optional) — Der Chef legt Teams an und lädt per Link ein; Mitglieder brauchen
+  kein Konto. Eine gemeinsame Aktivitätenliste gilt für alle. Wer seinen Monatsbericht sendet,
+  erscheint im Tab „Team“ samt Stunden je Aktivität; diese Kopie liegt unverschlüsselt beim
+  Server. CSV-Export, Sammel-Erinnerung an Fehlende, Verwalter als Vertretung.
 - **Sync** — Ende-zu-Ende verschlüsselt über einen eigenen Server. Passkey zum Anmelden,
   24 Wörter zum Wiederherstellen, Kopplungscode für weitere Geräte.
 
@@ -127,7 +129,7 @@ src/
     time.ts / report.ts        reine Logik (getestet)
     breaks.ts                  automatischer Pausenabzug (getestet)
     arbzg.ts                   Arbeitszeit-Check, 24-Wochen-Prognose (getestet)
-    teamReport.ts              Chef-Modus: Abgabe-Kontrolle (getestet)
+    teamReport.ts              Team-Modus: CSV und Erinnerung (getestet)
     xlsx.ts                    XLSX-Leser (ZIP + XML, ohne Paket; getestet)
     timeReport.ts              LOGA-Zeitwirtschaftsreport auswerten (getestet)
     timeReconcile.ts           Abgleich LOGA ↔ Einträge, Nachtrag planen (getestet)
