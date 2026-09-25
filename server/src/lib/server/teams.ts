@@ -314,11 +314,16 @@ export function activeAdminInvite(db: Db, teamId: string): TeamAdminInviteRow | 
 		.where(and(eq(teamAdminInvites.teamId, teamId), isNull(teamAdminInvites.revokedAt)))
 		.orderBy(desc(teamAdminInvites.createdAt))
 		.all();
-	return rows.find((r) => !r.expiresAt || r.expiresAt > now) ?? null;
+	return rows.find((r) => adminInviteExpiresAt(r) > now) ?? null;
 }
 
 /** Ein Verwalter-Link oeffnet alle Berichte - weitergeleitet soll er nicht ewig gelten. */
 export const ADMIN_INVITE_TTL_MS = 30 * 24 * 60 * 60_000;
+
+/** Links aus den Betas stehen ohne Ablauf in der DB - sie laufen ab ihrer Erzeugung genauso ab. */
+function adminInviteExpiresAt(r: { createdAt: number; expiresAt: number | null }): number {
+	return r.expiresAt ?? r.createdAt + ADMIN_INVITE_TTL_MS;
+}
 
 /** Wie rotateTeamInvite, nur fuer den Verwalter-Link - und mit Ablauf. */
 export function rotateAdminInvite(db: Db, teamId: string): TeamAdminInviteRow {
@@ -342,7 +347,7 @@ export function rotateAdminInvite(db: Db, teamId: string): TeamAdminInviteRow {
 export function teamFromAdminInviteCode(db: DbLike, code: string): TeamRow | null {
 	const invite = db.select().from(teamAdminInvites).where(eq(teamAdminInvites.code, code)).get();
 	if (!invite || invite.revokedAt) return null;
-	if (invite.expiresAt && invite.expiresAt < Date.now()) return null;
+	if (adminInviteExpiresAt(invite) < Date.now()) return null;
 	return db.select().from(teams).where(eq(teams.id, invite.teamId)).get() ?? null;
 }
 

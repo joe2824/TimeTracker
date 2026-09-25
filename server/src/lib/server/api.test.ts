@@ -8,6 +8,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
+// Mit dem laufenden Jahr: der Server nimmt nur Berichtsmonate der letzten zwei Jahre an.
+const REPORT_MONTH = `${new Date().getUTCFullYear()}-07`;
+const OTHER_MONTH = `${new Date().getUTCFullYear()}-08`;
+
 let base: string;
 let db: Db;
 let dir: string;
@@ -1941,7 +1945,7 @@ describe("Team", () => {
 		const { teamMemberId, token } = (await join.json()) as { teamMemberId: string; token: string };
 
 		// Vor dem Versand: als fehlend gelistet.
-		const before = await apiFrom(annaToken, `/api/team/${team.id}/reports?month=2026-07`);
+		const before = await apiFrom(annaToken, `/api/team/${team.id}/reports?month=${REPORT_MONTH}`);
 		expect(before.status).toBe(200);
 		expect((await before.json()).reports).toEqual([
 			{
@@ -1955,18 +1959,18 @@ describe("Team", () => {
 
 		const send = await apiAsMember(token, "/api/team/reports", {
 			method: "POST",
-			body: JSON.stringify({ month: "2026-07", report: { total: 40, rows: [] } })
+			body: JSON.stringify({ month: REPORT_MONTH, report: { total: 40, rows: [] } })
 		});
 		expect(send.status).toBe(201);
 
-		const after = await apiFrom(annaToken, `/api/team/${team.id}/reports?month=2026-07`);
+		const after = await apiFrom(annaToken, `/api/team/${team.id}/reports?month=${REPORT_MONTH}`);
 		const [status] = (await after.json()).reports;
 		expect(status.memberId).toBe(teamMemberId);
 		expect(status.submittedAt).toBeTruthy();
 		expect(status.payload).toEqual({ rows: [], total: 40, workHours: 0, absenceHours: 0 });
 
 		// Ein anderer Monat bleibt unberuehrt.
-		const otherMonth = await apiFrom(annaToken, `/api/team/${team.id}/reports?month=2026-08`);
+		const otherMonth = await apiFrom(annaToken, `/api/team/${team.id}/reports?month=${OTHER_MONTH}`);
 		expect((await otherMonth.json()).reports[0].submittedAt).toBeNull();
 	});
 
@@ -2031,7 +2035,7 @@ describe("Team", () => {
 	it("weist einen Bericht ohne (gueltiges) Team-Token ab", async () => {
 		const res = await apiFrom(null, "/api/team/reports", {
 			method: "POST",
-			body: JSON.stringify({ month: "2026-07", report: { total: 1 } })
+			body: JSON.stringify({ month: REPORT_MONTH, report: { total: 1 } })
 		});
 		expect(res.status).toBe(401);
 	});
@@ -2047,22 +2051,22 @@ describe("Team", () => {
 
 		const mark = await apiFrom(annaToken, `/api/team/${team.id}/reports`, {
 			method: "POST",
-			body: JSON.stringify({ memberId: teamMemberId, month: "2026-07" })
+			body: JSON.stringify({ memberId: teamMemberId, month: REPORT_MONTH })
 		});
 		expect(mark.status).toBe(201);
 
-		const afterMark = await apiFrom(annaToken, `/api/team/${team.id}/reports?month=2026-07`);
+		const afterMark = await apiFrom(annaToken, `/api/team/${team.id}/reports?month=${REPORT_MONTH}`);
 		const [status] = (await afterMark.json()).reports;
 		expect(status.submittedAt).toBeTruthy();
 		expect(status.payload).toBeNull();
 
 		const unmark = await apiFrom(annaToken, `/api/team/${team.id}/reports`, {
 			method: "DELETE",
-			body: JSON.stringify({ memberId: teamMemberId, month: "2026-07" })
+			body: JSON.stringify({ memberId: teamMemberId, month: REPORT_MONTH })
 		});
 		expect(unmark.status).toBe(200);
 
-		const afterUnmark = await apiFrom(annaToken, `/api/team/${team.id}/reports?month=2026-07`);
+		const afterUnmark = await apiFrom(annaToken, `/api/team/${team.id}/reports?month=${REPORT_MONTH}`);
 		expect((await afterUnmark.json()).reports[0].submittedAt).toBeNull();
 	});
 
@@ -2079,14 +2083,14 @@ describe("Team", () => {
 		// Eigenes Mitglied, aber falsches Team in der URL.
 		const wrongTeam = await apiFrom(annaToken, `/api/team/${teamB.id}/reports`, {
 			method: "POST",
-			body: JSON.stringify({ memberId: teamMemberId, month: "2026-07" })
+			body: JSON.stringify({ memberId: teamMemberId, month: REPORT_MONTH })
 		});
 		expect(wrongTeam.status).toBe(404);
 
 		// Fremdes Konto darf gar nicht erst markieren.
 		const foreign = await apiFrom(bodoToken, `/api/team/${teamA.id}/reports`, {
 			method: "POST",
-			body: JSON.stringify({ memberId: teamMemberId, month: "2026-07" })
+			body: JSON.stringify({ memberId: teamMemberId, month: REPORT_MONTH })
 		});
 		expect(foreign.status).toBe(404);
 	});

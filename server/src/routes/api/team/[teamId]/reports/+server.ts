@@ -1,7 +1,7 @@
 // Wer wann seinen Bericht gesendet hat - Chef und Verwalter sehen das, samt Inhalt.
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
-import { listTeamReports, requireTeamAccess, setTeamReportStatus } from "$lib/server/teams";
+import { isPlausibleReportMonth, listTeamReports, requireTeamAccess, setTeamReportStatus } from "$lib/server/teams";
 
 export const GET: RequestHandler = ({ locals, params, url }) => {
 	if (!locals.userId) error(401, "Nicht angemeldet");
@@ -18,7 +18,8 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 	const body = await request.json().catch(() => null);
 	const memberId = String(body?.memberId ?? "");
 	const month = String(body?.month ?? "");
-	if (!/^\d{4}-\d{2}$/.test(month)) error(400, "month fehlt oder hat nicht die Form YYYY-MM");
+	// Legt eine Zeile an - wie beim Upload nur für plausible Monate.
+	if (!isPlausibleReportMonth(month)) error(400, "month fehlt, hat nicht die Form YYYY-MM oder liegt zu weit weg");
 	if (!setTeamReportStatus(locals.db, params.teamId!, memberId, month, true)) {
 		error(404, "Mitglied unbekannt");
 	}

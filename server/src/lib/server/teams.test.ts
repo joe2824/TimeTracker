@@ -271,6 +271,18 @@ describe("Verwalter (rotateAdminInvite / joinTeamAsAdmin / requireTeamAccess)", 
 		expect(activeAdminInvite(db, team.id)).toBeNull();
 	});
 
+	it("ein Verwalter-Link aus einer Beta (ohne Ablauf gespeichert) läuft 30 Tage nach Erzeugung ab", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		const invite = rotateAdminInvite(db, team.id);
+		db.update(teamAdminInvites).set({ expiresAt: null, createdAt: Date.now() - ADMIN_INVITE_TTL_MS - 1 }).run();
+
+		expect(teamFromAdminInviteCode(db, invite.code)).toBeNull();
+		expect(activeAdminInvite(db, team.id)).toBeNull();
+
+		db.update(teamAdminInvites).set({ createdAt: Date.now() }).run();
+		expect(teamFromAdminInviteCode(db, invite.code)?.id).toBe(team.id);
+	});
+
 	it("ein unbekannter Code liefert null, statt einen Verwalter anzulegen", () => {
 		expect(joinTeamAsAdmin(db, "UNBEKANNT-CODE", BODO)).toBeNull();
 	});
