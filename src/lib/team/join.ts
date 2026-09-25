@@ -2,7 +2,7 @@
 // Web-Route UND dem Desktop-Dialog benutzt, damit beide dasselbe tun.
 import { joinTeam as apiJoinTeam, leaveTeamOnServer, previewTeamInvite } from "./api";
 import { app } from "../app.svelte";
-import { loadTeamDevice, saveTeamDevice, type TeamDeviceInfo } from "../store";
+import { loadTeamDevice, saveTeamDevice, saveTeamRemovedFrom, type TeamDeviceInfo } from "../store";
 import { teamJoin } from "./state.svelte";
 import { syncTeamActivities } from "./activities";
 import { logInfo, logWarn } from "../log";
@@ -28,6 +28,8 @@ export async function completeTeamJoin(
 	};
 	await saveTeamDevice(info);
 	teamJoin.device = info;
+	teamJoin.removedFrom = null;
+	void saveTeamRemovedFrom(null).catch(() => {});
 	logInfo(`Team beigetreten: ${joined.teamName}`);
 	// Ein Gerät ist in höchstens einem Team: das alte erfährt vom Wechsel, sonst
 	// stünde man dort jeden Monat als "kein Bericht" in der Liste.

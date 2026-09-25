@@ -33,6 +33,7 @@ class ChefTeamsState {
 		this.#teamsInFlight = null;
 		this.teams = [];
 		this.selectedTeamId = undefined;
+		this.teamsLoading = false;
 		this.teamsLoadFailed = false;
 		this.invite = null;
 		this.admins = [];

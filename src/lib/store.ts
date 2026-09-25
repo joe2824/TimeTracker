@@ -739,6 +739,22 @@ export async function saveTeamDevice(info: TeamDeviceInfo): Promise<void> {
 	return writeJson("team.json", info);
 }
 
+/**
+ * Aus welchem Team dieses Gerät entfernt wurde - als Datei, weil der Hinweis
+ * sonst mit dem nächsten Neustart verschwände, bevor ihn jemand gesehen hat
+ * (versteckter Autostart).
+ */
+export async function loadTeamRemovedFrom(): Promise<string | null> {
+	const stored = await readJson<{ teamName?: unknown } | null>("team-removed.json", null);
+	return typeof stored?.teamName === "string" ? stored.teamName : null;
+}
+
+export async function saveTeamRemovedFrom(teamName: string | null): Promise<void> {
+	if (teamName !== null) return writeJson("team-removed.json", { teamName });
+	const path = `${DIR}/team-removed.json`;
+	if (await storage.exists(path)) await storage.remove(path);
+}
+
 /** Die Team-Mitgliedschaft aufgeben - z.B. nach dem Hinauswerfen durch den Chef. */
 export async function clearTeamDevice(): Promise<void> {
 	const path = `${DIR}/team.json`;

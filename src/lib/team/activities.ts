@@ -3,7 +3,7 @@
 // vom Team vorgegebenen Zeilen (Präfix "team:"); persönliche Aktivitäten
 // bleiben unangetastet.
 import { app } from "../app.svelte";
-import { clearTeamDevice, loadTeamDevice } from "../store";
+import { clearTeamDevice, loadTeamDevice, loadTeamRemovedFrom, saveTeamRemovedFrom } from "../store";
 import { fetchTeamActivities, leaveTeamOnServer, type RemoteTeamActivity } from "./api";
 import { chefTeams } from "./chef.svelte";
 import { account } from "../sync/account.svelte";
@@ -76,9 +76,18 @@ function withoutDuplicateIds(list: Activity[]): Activity[] {
 /** Ergebnis eines Abgleichs - "offline" und "removed" braucht die Oberfläche, um nicht fälschlich "aktualisiert" zu melden. */
 export type TeamSyncResult = "none" | "ok" | "offline" | "removed";
 
-/** Zählt jeden Abgleich durch: eine ältere Antwort, die erst nach einer neueren ankommt, schreibt nicht mehr. */
+/**
+ * Zählt jeden Abgleich durch. Verworfen wird eine Antwort nur, wenn schon ein
+ * NEUERER Abgleich geschrieben hat - nicht schon, wenn nur ein neuerer
+ * begonnen hat: scheitert der offline, bliebe sonst gar nichts stehen.
+ */
 let memberSyncSeq = 0;
+let memberSyncApplied = 0;
 let ownedSyncSeq = 0;
+let ownedSyncApplied = 0;
+
+/** Eigene Team-Liste des Chefs - hat bei einer Kollision mit einer beigetretenen Zeile Vorrang. */
+const isOwnTeamRow = (a: Activity): boolean => a.teamOwned === true && a.teamId !== undefined;
 
 /**
  * Die gemeinsame Liste des Teams (falls dieses Gerät eines hat) neu einlesen.
@@ -94,7 +103,10 @@ export async function syncTeamActivities(): Promise<TeamSyncResult> {
 	// den reaktiven Zustand also auch dann aktuell, wenn niemand die
 	// Einstellungen öffnet.
 	teamJoin.device = device;
-	if (!device) return "none";
+	if (!device) {
+		teamJoin.removedFrom = await loadTeamRemovedFrom().catch(() => null);
+		return "none";
+	}
 
 	let remote: RemoteTeamActivity[];
 	// 401: das Team wurde gelöscht oder dieses Mitglied entfernt. Wie eine leere
@@ -115,13 +127,14 @@ export async function syncTeamActivities(): Promise<TeamSyncResult> {
 
 	let applied = false;
 	await withActivitiesLock(async () => {
-		if (seq !== memberSyncSeq) return;
+		if (seq < memberSyncApplied) return;
 		// Zwischenzeitlich könnte "Team verlassen" oder ein neuer Beitritt gelaufen
 		// sein - eine Antwort zum alten Token darf dann nichts mehr schreiben und
 		// erst recht nicht die neue Mitgliedschaft löschen.
 		const stillMember = await loadTeamDevice();
 		if (!stillMember || stillMember.token !== device.token) return;
 		applied = true;
+		memberSyncApplied = seq;
 
 		// Eine vom Chef entfernte Zeile nicht verschwinden lassen (report.ts baut
 		// nur aus der aktuellen Liste, erfasste Stunden gingen verloren), sondern
@@ -133,9 +146,13 @@ export async function syncTeamActivities(): Promise<TeamSyncResult> {
 		);
 		if (gone.size > 0) await app.detachTeamActivities((a) => isJoinedTeamRow(a) && gone.has(a.id));
 
+		// Tritt ein Chef dem eigenen Team per Link bei, kommt dieselbe Id schon
+		// über die eigene Liste - die behält ihre teamId und damit Vorrang, sonst
+		// nähme "Team verlassen" dem Chef seine eigenen Team-Stunden mit.
+		const ownIds = new Set(app.activities.filter(isOwnTeamRow).map((a) => a.id));
 		app.activities = withoutDuplicateIds([
 			...app.activities.filter((a) => !isJoinedTeamRow(a)),
-			...remote.map((r) => toLocal(r, { name: device.teamName }))
+			...remote.map((r) => toLocal(r, { name: device.teamName })).filter((a) => !ownIds.has(a.id))
 		]);
 		await app.persistActivities();
 
@@ -143,6 +160,7 @@ export async function syncTeamActivities(): Promise<TeamSyncResult> {
 			await clearTeamDevice();
 			teamJoin.device = null;
 			teamJoin.removedFrom = device.teamName;
+			await saveTeamRemovedFrom(device.teamName).catch((e) => logWarn("Hinweis auf Rauswurf nicht gespeichert", e));
 		}
 	});
 
@@ -156,20 +174,27 @@ export async function syncTeamActivities(): Promise<TeamSyncResult> {
  * stehen, die kein späterer Abgleich mehr aufräumt.
  */
 export async function leaveTeam(): Promise<void> {
-	await withActivitiesLock(async () => {
-		const device = await loadTeamDevice();
+	const device = await withActivitiesLock(async () => {
+		const current = await loadTeamDevice();
 		await app.detachTeamActivities(isJoinedTeamRow);
 		await clearTeamDevice();
 		teamJoin.device = null;
-		if (!device) return;
-		// Offline oder schon entfernt: lokal ist man trotzdem draussen, der Chef
-		// sieht das Mitglied dann weiter, bis er es entfernt.
-		try {
-			await leaveTeamOnServer(device.serverUrl, device.token);
-		} catch (e) {
-			logWarn("Austritt beim Team nicht gemeldet", e);
-		}
+		return current;
 	});
+	if (!device) return;
+	// Ausserhalb des Locks und ohne darauf zu warten: eine hängende Anfrage soll
+	// weder Abgleiche noch den Knopf aufhalten. Offline oder schon entfernt:
+	// lokal ist man trotzdem draussen, der Chef sieht das Mitglied dann weiter,
+	// bis er es entfernt.
+	void leaveTeamOnServer(device.serverUrl, device.token).catch((e) =>
+		logWarn("Austritt beim Team nicht gemeldet", e)
+	);
+}
+
+/** Den Hinweis "nicht mehr im Team" wegklicken. */
+export async function dismissTeamRemoved(): Promise<void> {
+	teamJoin.removedFrom = null;
+	await saveTeamRemovedFrom(null).catch((e) => logWarn("Hinweis auf Rauswurf nicht gelöscht", e));
 }
 
 /**
@@ -216,7 +241,8 @@ export async function syncOwnedTeamActivities(): Promise<void> {
 	]);
 
 	await withActivitiesLock(async () => {
-		if (seq !== ownedSyncSeq) return;
+		if (seq < ownedSyncApplied) return;
+		ownedSyncApplied = seq;
 		const loaded = results.filter((r): r is NonNullable<typeof r> => r !== null);
 		const isOwnedRowOf = (teamIds: Set<string>) => (a: Activity) =>
 			a.teamOwned === true && a.teamId !== undefined && teamIds.has(a.teamId);
@@ -233,9 +259,15 @@ export async function syncOwnedTeamActivities(): Promise<void> {
 			await app.detachTeamActivities((a) => isOwnedRowOf(refreshed)(a) && gone.has(a.id));
 		}
 
+		// Eigene zuerst: kollidiert eine beigetretene Zeile (Chef im eigenen Team)
+		// mit derselben Id, gewinnt die eigene samt teamId.
+		const fresh = loaded.flatMap(({ team, remote }) => remote.map((r) => toLocal(r, team)));
+		const freshIds = new Set(fresh.map((a) => a.id));
 		app.activities = withoutDuplicateIds([
-			...app.activities.filter((a) => !isOwnedRowOf(refreshed)(a)),
-			...loaded.flatMap(({ team, remote }) => remote.map((r) => toLocal(r, team)))
+			...fresh,
+			...app.activities.filter(
+				(a) => !isOwnedRowOf(refreshed)(a) && !(isJoinedTeamRow(a) && freshIds.has(a.id))
+			)
 		]);
 		await app.persistActivities();
 	});

@@ -9,6 +9,7 @@ import { completeTeamJoin, previewTeam } from "./join";
 import { loadTeamDevice, type TeamDeviceInfo } from "../store";
 import { errorText } from "../log";
 import { cleanEmail } from "$shared/email";
+import { normalizeServerUrl } from "../sync/api";
 
 export class TeamJoinFlow {
 	name = $state("");
@@ -23,6 +24,18 @@ export class TeamJoinFlow {
 	/** Eine eingetragene, aber unbrauchbare Adresse würfe der Server still weg - dann fehlte die Erinnerung. */
 	get emailInvalid(): boolean {
 		return this.email.trim() !== "" && cleanEmail(this.email) === null;
+	}
+
+	/**
+	 * Der Link gehört zu dem Team, in dem dieses Gerät schon ist. Ein erneuter
+	 * Beitritt legte beim Server ein neues Mitglied an und gäbe das alte auf -
+	 * der Chef sähe den laufenden Monat dann wieder als "kein Bericht".
+	 * Erkannt an Server und Teamname: die Vorschau nennt keine Team-Id.
+	 */
+	sameTeam(serverUrl: string): boolean {
+		const e = this.existing;
+		if (!e || typeof this.preview !== "object") return false;
+		return normalizeServerUrl(e.serverUrl) === normalizeServerUrl(serverUrl) && e.teamName === this.preview.teamName;
 	}
 
 	get canJoin(): boolean {
@@ -58,7 +71,7 @@ export class TeamJoinFlow {
 
 	/** Beitreten. Liefert die Team-Infos bei Erfolg, sonst null (Grund in `joinError`). */
 	async join(serverUrl: string, code: string): Promise<TeamDeviceInfo | null> {
-		if (!this.canJoin) return null;
+		if (!this.canJoin || this.sameTeam(serverUrl)) return null;
 		this.busy = true;
 		this.joinError = null;
 		try {

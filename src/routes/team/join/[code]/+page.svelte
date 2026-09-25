@@ -18,6 +18,7 @@
 	const serverUrl = $derived(page.url.origin);
 
 	const flow = new TeamJoinFlow();
+	const sameTeam = $derived(flow.sameTeam(serverUrl));
 	// Der Beitritt startet die App (siehe completeTeamJoin) - deren Uhr soll nicht
 	// über die Route hinaus laufen.
 	onDestroy(() => app.dispose());
@@ -58,7 +59,7 @@
 				<p class="text-muted-foreground text-sm">
 					Die gemeinsamen Aktivitäten dieses Teams werden auf diesem Gerät verfügbar. Wenn du deinen
 					Monatsbericht sendest, bekommen Chef und Verwalter des Teams eine Kopie mit deinen Stunden je
-					Aktivität.
+					Aktivität – auch der Aktivitäten, die nur du angelegt hast.
 				</p>
 			</div>
 
@@ -90,7 +91,11 @@
 					</p>
 				{/if}
 			</div>
-			{#if flow.existing}
+			{#if flow.existing && sameTeam}
+				<p class="rounded-md border px-3 py-2 text-sm">
+					Du bist schon in diesem Team – hier ist nichts weiter zu tun.
+				</p>
+			{:else if flow.existing}
 				<p class="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm">
 					Du bist bereits im Team „{flow.existing.teamName}“. Mit dem Beitritt verlässt du es – deine
 					erfassten Zeiten bleiben erhalten.
@@ -101,7 +106,7 @@
 				<p class="text-destructive text-sm">Beitritt nicht möglich: {flow.joinError}</p>
 			{/if}
 
-			<Button class="w-full" disabled={!flow.canJoin} onclick={join}>
+			<Button class="w-full" disabled={!flow.canJoin || sameTeam} onclick={join}>
 				{flow.busy ? "Wird verbunden…" : "Beitreten"}
 			</Button>
 

@@ -22,11 +22,11 @@ const accountMock = vi.hoisted(() => ({
 vi.mock("../sync/account.svelte", () => ({ account: accountMock }));
 
 const { app } = await import("../app.svelte");
-const { loadTeamDevice, saveTeamDevice } = await import("../store");
+const { loadTeamDevice, loadTeamRemovedFrom, saveTeamDevice } = await import("../store");
 const { ApiError } = await import("../sync/api");
 const { chefTeams } = await import("./chef.svelte");
 const { teamJoin } = await import("./state.svelte");
-const { leaveTeam, syncTeamActivities, syncOwnedTeamActivities, TEAM_ACTIVITY_PREFIX } = await import("./activities");
+const { dismissTeamRemoved, leaveTeam, syncTeamActivities, syncOwnedTeamActivities, TEAM_ACTIVITY_PREFIX } = await import("./activities");
 
 const PERSONAL: Activity = { id: "p1", name: "Eigene", sortOrder: 0, archived: false, isAbsence: false };
 
@@ -36,6 +36,7 @@ beforeEach(() => {
 	app.activities = [PERSONAL];
 	remote.mockReset();
 	leaveOnServer.mockReset();
+	leaveOnServer.mockResolvedValue({ ok: true });
 	teamJoin.removedFrom = null;
 	accountMock.linked = false;
 	accountMock.listTeams.mockReset();
@@ -161,6 +162,10 @@ describe("syncTeamActivities", () => {
 
 		expect(teamJoin.device).toBeNull();
 		expect(teamJoin.removedFrom).toBe("Vertrieb");
+		// Auch nach einem Neustart noch da - bis jemand ihn wegklickt.
+		expect(await loadTeamRemovedFrom()).toBe("Vertrieb");
+		await dismissTeamRemoved();
+		expect(await loadTeamRemovedFrom()).toBeNull();
 		expect(await loadTeamDevice()).toBeNull();
 		const detached = app.activities.find((a) => a.name === "Alt");
 		expect(detached).toMatchObject({ archived: true });
@@ -201,6 +206,21 @@ describe("syncTeamActivities", () => {
 		await pending;
 
 		expect(await loadTeamDevice()).toEqual(fresh);
+	});
+
+	it("eine ältere Antwort schreibt, wenn der neuere Abgleich offline gescheitert ist", async () => {
+		await saveTeamDevice({ teamMemberId: "m1", token: "tok", teamName: "Vertrieb", serverUrl: "https://tt.example.de" });
+		let resolveOld!: (v: unknown) => void;
+		remote.mockReturnValueOnce(new Promise((r) => (resolveOld = r)));
+		const older = syncTeamActivities();
+		remote.mockRejectedValueOnce(new Error("Netzwerk weg"));
+		await expect(syncTeamActivities()).resolves.toBe("offline");
+		resolveOld({
+			activities: [{ id: "alt", name: "Alt", isAbsence: false, sortOrder: 0, color: null, archived: false, updatedAt: 1 }]
+		});
+		await expect(older).resolves.toBe("ok");
+
+		expect(app.activities.find((a) => a.id === `${TEAM_ACTIVITY_PREFIX}alt`)?.teamOwned).toBe(true);
 	});
 
 	it("eine ältere Antwort, die nach einer neueren ankommt, schreibt nicht mehr", async () => {
@@ -375,6 +395,19 @@ describe("syncOwnedTeamActivities", () => {
 
 		const ids = app.activities.map((a) => a.id);
 		expect(new Set(ids).size).toBe(ids.length);
+		// Die eigene Zeile gewinnt - samt teamId, egal in welcher Reihenfolge abgeglichen wurde.
+		expect(app.activities.find((a) => a.id === `${TEAM_ACTIVITY_PREFIX}a1`)?.teamId).toBe("t1");
+
+		await syncTeamActivities();
+		expect(app.activities.find((a) => a.id === `${TEAM_ACTIVITY_PREFIX}a1`)?.teamId).toBe("t1");
+
+		// Team als Mitglied verlassen nimmt dem Chef seine eigene Team-Zeile nicht weg.
+		await leaveTeam();
+		expect(app.activities.find((a) => a.id === `${TEAM_ACTIVITY_PREFIX}a1`)).toMatchObject({
+			teamOwned: true,
+			teamId: "t1"
+		});
+		expect(app.activities.filter((a) => a.name === "Projekt A")).toHaveLength(1);
 	});
 
 	it("behält die zuletzt geladenen Team-Aktivitäten, wenn der Server nicht erreichbar ist", async () => {

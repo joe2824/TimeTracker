@@ -825,7 +825,7 @@
 			</Button>
 			<Button type="button" variant="destructive" onclick={confirmDeleteTeamActivity} disabled={teamActionBusy}>
 				<Trash2Icon class="size-4" />
-				{teamActionBusy ? "Entfernt…" : "Entfernen"}
+				{teamActionBusy ? "Wird entfernt…" : "Entfernen"}
 			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>

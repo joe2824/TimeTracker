@@ -17,13 +17,17 @@
 	let isDeleteAccountModalOpen = $state(false);
 	let linkedDeviceCount = $state<number | null>(null);
 	let ownedTeamCount = $state(0);
+	/** Ob du Chef eines Teams bist, liess sich nicht prüfen - dann ein allgemeiner Hinweis. */
+	let teamsUnknown = $state(false);
 
 	async function handleOpenDeleteAccountDialog() {
 		isDeleteAccountModalOpen = true;
 		linkedDeviceCount = null;
 		ownedTeamCount = 0;
-		void chefTeams.loadTeams().then(() => {
-			ownedTeamCount = chefTeams.teams.filter((t) => t.role !== "admin").length;
+		teamsUnknown = false;
+		void chefTeams.loadTeams().then((ok) => {
+			teamsUnknown = !ok;
+			ownedTeamCount = ok ? chefTeams.teams.filter((t) => t.role !== "admin").length : 0;
 		});
 		try {
 			const info = await account.accountInfo();
@@ -257,7 +261,13 @@
 						<p class="text-foreground">
 							Du bist Chef von {ownedTeamCount === 1 ? "einem Team" : `${ownedTeamCount} Teams`}. Ein Team mit
 							Verwalter geht an den Verwalter über, der am längsten dabei ist. Ein Team ohne Verwalter wird
-							samt Mitgliedern und Berichten gelöscht.
+							samt Mitgliedern und Berichten gelöscht. Soll ein Team weiterlaufen, lade vorher einen
+							Verwalter ein.
+						</p>
+					{:else if teamsUnknown}
+						<p class="text-foreground">
+							Ob du Chef eines Teams bist, ließ sich gerade nicht prüfen. Eigene Teams gehen an einen
+							Verwalter über; ein Team ohne Verwalter wird mit gelöscht.
 						</p>
 					{/if}
 					<p class="text-foreground text-xs font-medium border-t pt-2">

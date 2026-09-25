@@ -118,6 +118,21 @@ describe("TeamJoinFlow", () => {
 		expect(flow.canJoin).toBe(true);
 	});
 
+	it("erkennt den Link des Teams, in dem das Gerät schon ist, und tritt nicht erneut bei", async () => {
+		const flow = new TeamJoinFlow();
+		flow.name = "Anna Meier";
+		previewTeam.mockResolvedValue({ teamName: "Vertrieb" });
+		await flow.loadPreview("https://tt.example.de", "code1");
+		flow.existing = { teamMemberId: "m1", token: "tok", teamName: "Vertrieb", serverUrl: "https://tt.example.de/" };
+
+		expect(flow.sameTeam("https://tt.example.de")).toBe(true);
+		expect(await flow.join("https://tt.example.de", "code1")).toBeNull();
+		expect(completeTeamJoin).not.toHaveBeenCalled();
+
+		flow.existing = { ...flow.existing, teamName: "Einkauf" };
+		expect(flow.sameTeam("https://tt.example.de")).toBe(false);
+	});
+
 	it("setzt Eingaben und Fehlertext bei reset() zurueck", () => {
 		const flow = new TeamJoinFlow();
 		flow.name = "Anna";

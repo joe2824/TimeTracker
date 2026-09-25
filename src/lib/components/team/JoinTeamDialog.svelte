@@ -31,6 +31,8 @@
 		void flow.loadPreview(link.serverUrl, link.code);
 	});
 
+	const sameTeam = $derived(teamJoin.pendingLink ? flow.sameTeam(teamJoin.pendingLink.serverUrl) : false);
+
 	function dismiss() {
 		teamJoin.pendingLink = null;
 		flow.reset();
@@ -72,7 +74,7 @@
 				{:else}
 					Die gemeinsamen Aktivitäten dieses Teams werden auf diesem Gerät verfügbar. Wenn du deinen
 					Monatsbericht sendest, bekommen Chef und Verwalter des Teams eine Kopie mit deinen Stunden je
-					Aktivität.
+					Aktivität – auch der Aktivitäten, die nur du angelegt hast.
 				{/if}
 			</Dialog.Description>
 		</Dialog.Header>
@@ -110,7 +112,11 @@
 					</p>
 				{/if}
 			</div>
-			{#if flow.existing}
+			{#if flow.existing && sameTeam}
+				<p class="rounded-md border px-3 py-2 text-sm">
+					Du bist schon in diesem Team – hier ist nichts weiter zu tun.
+				</p>
+			{:else if flow.existing}
 				<p class="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm">
 					Du bist bereits im Team „{flow.existing.teamName}“. Mit dem Beitritt verlässt du es – deine
 					erfassten Zeiten bleiben erhalten.
@@ -121,7 +127,7 @@
 		<Dialog.Footer>
 			<Button variant="outline" disabled={flow.busy} onclick={dismiss}>Abbrechen</Button>
 			{#if flow.preview !== "loading" && flow.preview !== "error"}
-				<Button disabled={!flow.canJoin} onclick={join}>
+				<Button disabled={!flow.canJoin || sameTeam} onclick={join}>
 					{flow.busy ? "Wird verbunden…" : "Beitreten"}
 				</Button>
 			{/if}

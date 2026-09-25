@@ -12,7 +12,7 @@
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { Switch } from "$lib/components/ui/switch";
 	import SettingsCard from "$lib/components/shared/SettingsCard.svelte";
-	import { leaveTeam as leaveJoinedTeam, syncOwnedTeamActivities, syncTeamActivities } from "$lib/team/activities";
+	import { dismissTeamRemoved, leaveTeam as leaveJoinedTeam, syncOwnedTeamActivities, syncTeamActivities } from "$lib/team/activities";
 	import { teamJoin } from "$lib/team/state.svelte";
 	import { errorText } from "$lib/log";
 	import { tabFocus } from "$lib/ui/tabFocus.svelte";
@@ -219,7 +219,7 @@
 				Du bist nicht mehr im Team „{teamJoin.removedFrom}“. Deine erfassten Zeiten bleiben erhalten; die
 				Team-Aktivitäten stehen jetzt archiviert bei deinen eigenen.
 			</p>
-			<Button variant="ghost" size="sm" onclick={() => (teamJoin.removedFrom = null)}>Verstanden</Button>
+			<Button variant="ghost" size="sm" onclick={() => void dismissTeamRemoved()}>Verstanden</Button>
 		</div>
 	</SettingsCard>
 {/if}
@@ -264,7 +264,7 @@
 		<Dialog.Footer>
 			<Button variant="outline" disabled={leaving} onclick={() => (confirmLeave = false)}>Abbrechen</Button>
 			<Button variant="destructive" disabled={leaving} onclick={leaveTeam}>
-				{leaving ? "Verlässt…" : "Team verlassen"}
+				{leaving ? "Wird verlassen…" : "Team verlassen"}
 			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
@@ -306,6 +306,19 @@
 {:else if form.bossMode && chefTeams.teamsLoading && chefTeams.teams.length === 0}
 	<SettingsCard title="Team anlegen" divided={false}>
 		<p class="text-muted-foreground text-sm">Wird geladen…</p>
+	</SettingsCard>
+{:else if form.bossMode && chefTeams.teamsLoadFailed && chefTeams.teams.length === 0}
+	<!-- Nicht "Team anlegen" anbieten: sonst entstünde neben dem nur nicht
+	     geladenen Team ein zweites. -->
+	<SettingsCard title="Team" divided={false}>
+		<div class="flex flex-wrap items-center gap-3 rounded-lg border border-dashed p-3.5">
+			<p class="text-muted-foreground min-w-0 flex-1 text-xs">
+				Teams konnten gerade nicht geladen werden. Vermutlich besteht keine Internetverbindung.
+			</p>
+			<Button variant="outline" size="sm" onclick={() => void chefTeams.loadTeams()}>
+				<RefreshCwIcon class="size-4" /> Erneut versuchen
+			</Button>
+		</div>
 	</SettingsCard>
 {:else if form.bossMode && chefTeams.teams.length === 0}
 	<SettingsCard title="Team anlegen" divided={false}>
