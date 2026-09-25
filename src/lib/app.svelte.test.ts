@@ -1023,3 +1023,31 @@ describe("detachTeamActivities", () => {
 		expect(app.activities.find((a) => a.id === "team:y")?.teamOwned).toBe(true);
 	});
 });
+
+describe("resolveStaleTimerSplit", () => {
+	it("arbeitet mit dem heutigen Stand, nicht mit der Momentaufnahme der Meldung", async () => {
+		const ended = { ...entry("x", P1, at(15, 9), at(15, 18)), note: "alt" };
+		const continuation = entry("c", P1, at(16, 0), null);
+		reset({ "2026-07": [ended, continuation] });
+		const info = { endedEntry: { ...ended }, continuationEntry: { ...continuation } };
+
+		// Nach "Später" wird der Eintrag bearbeitet.
+		await app.updateEntry(ended.startTs, { ...ended, note: "neu" });
+
+		await app.resolveStaleTimerSplit(info, "continuation");
+
+		const x = onDisk("2026-07").find((e) => e.id === "x")!;
+		expect(x.note).toBe("neu");
+		expect(x.endTs).toBe(at(16, 0));
+	});
+
+	it("tut nichts, wenn der Eintrag inzwischen verschwunden ist", async () => {
+		const ended = entry("x", P1, at(15, 9), at(15, 18));
+		const continuation = entry("c", P1, at(16, 0), null);
+		reset({ "2026-07": [ended] });
+
+		await app.resolveStaleTimerSplit({ endedEntry: ended, continuationEntry: continuation }, "ended");
+
+		expect(onDisk("2026-07").map((e) => e.id)).toEqual(["x"]);
+	});
+});

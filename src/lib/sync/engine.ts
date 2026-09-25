@@ -701,7 +701,12 @@ export class SyncEngine {
 						e.rev === undefined
 				);
 			}
-			const hasUnresolvedContinuation = continuationEntry !== undefined;
+			// Nur wenn der Lauf dort wirklich beendet (oder gelöscht) wurde. Ist er
+			// noch offen (z.B. nur die Notiz geändert), wusste das andere Gerät nichts
+			// von Mitternacht - dann bleibt es beim normalen Stempelvergleich, und es
+			// gibt nichts zu prüfen.
+			const remoteClosed = deleted || entry.endTs !== null;
+			const hasUnresolvedContinuation = continuationEntry !== undefined && remoteClosed;
 			if (localPending && hasUnresolvedContinuation) localPending = false;
 			const result = mergeRecord(
 				{

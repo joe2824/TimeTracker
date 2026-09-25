@@ -388,6 +388,33 @@ describe("Zwei Geraete", () => {
 		expect(outcome?.staleTimerSplits[0].continuationEntry.id).toBe("d2");
 	});
 
+	it("meldet keine Teilung, wenn der Lauf woanders noch offen ist und nur die Notiz geändert wurde", async () => {
+		const midnight = startOfNextDay(ts(15, 9));
+		const desktop = await deviceWith("rechner", entry("d1", { startTs: ts(15, 9), endTs: null }));
+
+		// Das Handy ergänzt nur eine Notiz - der Lauf ist dort weiter offen.
+		const phone = new FakeDevice("handy");
+		await on(phone, (engine) => engine.sync());
+		await afterwards();
+		await changeAndSync(phone, async () => {
+			const list = await store.loadEntries(MONTH);
+			await store.saveEntries(MONTH, list.map((e) => (e.id === "d1" ? { ...e, note: "vom Handy" } : e)));
+		});
+
+		await afterwards();
+		await on(desktop, async () => {
+			const list = await store.loadEntries(MONTH);
+			const split = list.map((e) => (e.id === "d1" ? { ...e, endTs: midnight } : e));
+			split.push(entry("d2", { startTs: midnight, endTs: null }));
+			await store.saveEntries(MONTH, split);
+		});
+
+		const outcome = await on(desktop, (engine) => engine.sync());
+
+		// Nichts zu prüfen: niemand hat den Lauf früher beendet.
+		expect(outcome?.staleTimerSplits).toEqual([]);
+	});
+
 	it("meldet keine stehen gebliebene Teilung, wenn der Server dieselbe Endzeit hat", async () => {
 		const midnight = startOfNextDay(ts(15, 9));
 		const desktop = await deviceWith("rechner", entry("d1", { startTs: ts(15, 9), endTs: null }));

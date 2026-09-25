@@ -1230,12 +1230,20 @@ class AppState {
 		keep: "ended" | "continuation"
 	): Promise<void> {
 		if (keep === "ended") {
-			await this.deleteEntry(info.continuationEntry);
+			const continuation = await current(info.continuationEntry);
+			if (continuation) await this.deleteEntry(continuation);
 		} else {
-			await this.updateEntry(info.endedEntry.startTs, {
-				...info.endedEntry,
-				endTs: info.continuationEntry.startTs
-			});
+			const ended = await current(info.endedEntry);
+			if (ended) await this.updateEntry(ended.startTs, { ...ended, endTs: info.continuationEntry.startTs });
+		// Den heutigen Stand holen, nicht die Momentaufnahme von der Meldung: nach
+		// "Später" kann der Eintrag inzwischen bearbeitet oder abgeglichen worden
+		// sein - die alte Kopie überschriebe das, und als jüngste eigene Änderung
+		// gewönne sie auch noch beim nächsten Abgleich.
+		const current = async (e: Entry): Promise<Entry | undefined> => {
+			const month = monthKey(e.startTs);
+			await this.ensureMonth(month);
+			return this.entriesByMonth[month]?.find((x) => x.id === e.id);
+		};
 		}
 	}
 
