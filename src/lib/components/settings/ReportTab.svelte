@@ -6,6 +6,7 @@
 	import { Label } from "$lib/components/ui/label";
 	import SettingToggle from "$lib/components/shared/SettingToggle.svelte";
 	import SettingsCard from "$lib/components/shared/SettingsCard.svelte";
+	import { cleanEmail } from "$shared/email";
 
 	const REPORT_KEYS = [
 		"bossEmail",
@@ -19,8 +20,12 @@
 	const { form, save } = createSettingsForm();
 	let savedReportAt = $state(0);
 
+	// Wie im Einrichtungsassistenten: die Adresse geht in einen Outlook-Entwurf,
+	// ";" oder "," schleusten dort weitere Empfänger ein. Leer bleibt erlaubt.
+	const bossInvalid = $derived(form.bossEmail.trim() !== "" && cleanEmail(form.bossEmail) === null);
+
 	async function saveReport() {
-		await save(REPORT_KEYS);
+		await save(bossInvalid ? REPORT_KEYS.filter((k) => k !== "bossEmail") : REPORT_KEYS);
 		savedReportAt = Date.now();
 		if (form.senderName.trim()) {
 			void account.updateDisplayName(form.senderName.trim());
@@ -41,8 +46,14 @@
 				type="email"
 				bind:value={form.bossEmail}
 				placeholder="name@firma.de"
+				aria-invalid={bossInvalid}
 				onchange={saveReport}
 			/>
+			{#if bossInvalid}
+				<p class="text-destructive text-xs">
+					Bitte genau eine gültige E-Mail-Adresse eintragen – so wird sie nicht gespeichert.
+				</p>
+			{/if}
 		</div>
 		<div class="space-y-1.5">
 			<Label for="sender">Dein Name (optional)</Label>

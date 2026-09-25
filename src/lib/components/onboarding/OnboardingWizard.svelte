@@ -97,7 +97,8 @@
 		input.value = "";
 	}
 
-	// Weicher Hinweis (nicht blockierend).
+	// Die Adresse geht in einen Outlook-Entwurf - ";" oder "," schleusten dort
+	// weitere Empfänger ein. Leer bleibt erlaubt.
 	const emailInvalid = $derived(bossEmail.trim() !== "" && cleanEmail(bossEmail) === null);
 
 	const stepTitles = [
@@ -131,6 +132,7 @@
 	];
 
 	function next() {
+		if (step === 1 && emailInvalid) return;
 		if (step < STEPS - 1) step++;
 		else void finish();
 	}
@@ -236,7 +238,7 @@
 							class="h-9 text-xs"
 						/>
 						{#if emailInvalid}
-							<p class="text-destructive text-[11px]">Sieht das nach einer gültigen E-Mail aus?</p>
+							<p class="text-destructive text-[11px]">Bitte genau eine gültige E-Mail-Adresse eintragen.</p>
 						{/if}
 					</div>
 					<div class="space-y-1">
@@ -421,7 +423,7 @@
 							Zurück
 						</Button>
 					{/if}
-					<Button size="sm" onclick={next} disabled={saving} class="text-xs h-8 min-w-[85px]">
+					<Button size="sm" onclick={next} disabled={saving || (step === 1 && emailInvalid)} class="text-xs h-8 min-w-[85px]">
 						{step < STEPS - 1 ? "Weiter" : saving ? "Speichere…" : "Los geht's"}
 					</Button>
 				</div>
