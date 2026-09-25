@@ -91,7 +91,7 @@ describe("Abmelden", () => {
 		await account.linkWithSession("http://test", await createVaultKey(), "Ich");
 		await settled();
 		account.staleTimerSplits = [
-			{ endedEntry: { id: "x" }, continuation: { id: "y" } } as unknown as (typeof account.staleTimerSplits)[number]
+			{ endedEntry: { id: "x" }, continuationEntry: { id: "y" } } as unknown as (typeof account.staleTimerSplits)[number]
 		];
 		account.lostEdits = 2;
 
@@ -118,12 +118,40 @@ describe("Abmelden", () => {
 			// Etwas zum Hochladen - nur eine Runde mit pushed/pulled > 0 lädt neu.
 			await app.addActivity("Neu vor dem Abmelden");
 			const running = account.syncNow();
+			try {
+				await account.unlink();
+				release();
+				await running.catch(() => {});
+
+				expect(reload).not.toHaveBeenCalled();
+			} finally {
+				reload.mockRestore();
+			}
+		} finally {
+			restoreFetch();
+		}
+	});
+
+	it("eine Runde, die nach dem Abmelden scheitert, setzt das Konto nicht auf Fehler", async () => {
+		try {
+			await account.linkWithSession("http://test", await createVaultKey(), "Ich");
+			await settled();
+
+			let release!: () => void;
+			const gate = new Promise<void>((r) => (release = r));
+			globalThis.fetch = (async () => {
+				await gate;
+				throw new Error("Netzwerk weg");
+			}) as typeof fetch;
+
+			await app.addActivity("Neu vor dem Abmelden");
+			const running = account.syncNow();
 			await account.unlink();
 			release();
 			await running.catch(() => {});
 
-			expect(reload).not.toHaveBeenCalled();
-			reload.mockRestore();
+			expect(account.state).toBe("off");
+			expect(account.phase).toBe("idle");
 		} finally {
 			restoreFetch();
 		}

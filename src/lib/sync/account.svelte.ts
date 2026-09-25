@@ -425,6 +425,9 @@ class AccountState {
 				deleteTimeReport
 			},
 			onProgress: (p) => {
+				// Eine abgelöste Engine lädt nach stop() womöglich noch Seiten - deren
+				// Fortschritt gehört nicht zum jetzigen Konto.
+				if (this.#engine !== engine) return;
 				this.syncProgress = p.phase === "idle" ? null : p;
 				if (p.phase !== "pulling") return;
 				// Die Historie läuft im Hintergrund - dafür steht das Hinweisband
@@ -757,6 +760,14 @@ class AccountState {
 				this.firstSyncDone = true;
 			}
 		} catch (e) {
+			// Dieselbe Prüfung wie oben: nach dem Abmelden antwortet die Runde oft
+			// mit 401 (die Sitzung ist beim Server schon beendet) - das darf weder
+			// das abgemeldete noch ein inzwischen angemeldetes Konto auf "Fehler"
+			// setzen.
+			if (this.#engine !== engine) {
+				toast.dismiss("sync-bulk");
+				return;
+			}
 			// Auch ein Durchgang, der am Ende scheitert, kann vorher schon Seiten
 			// gepullt und auf die Platte geschrieben haben (Push vor Pull, mehrseitiger
 			// Abruf) - am `app`-Zwischenspeicher geht das vorbei, der schreibt erst bei
@@ -764,11 +775,7 @@ class AccountState {
 			// (z.B. Timer-Start) den frischen Diskstand mit dem alten - diffAndStamp
 			// sieht dann einen frisch angekommenen Eintrag als "gelöscht" an und wirft
 			// ihn samt Löschung in die Outbox.
-			// `this.#engine` erneut prüfen, nicht nur beim Eintritt: eine Runde, die
-			// noch lief, als unlink()/#forgetLocally() dazwischenkam, landet auch
-			// hier - und ein Reload würde dann Dateien zurückschreiben (u.a.
-			// #seedBuiltins), die das Abmelden gerade erst gelöscht hat.
-			if (this.#engine && this.#reloadIsDue()) {
+			if (this.#reloadIsDue()) {
 				try {
 					await app.reload();
 				} catch (reloadError) {
@@ -1778,11 +1785,20 @@ class AccountState {
 		// Den Prefetch-Puffer leeren: er gehört dem abgemeldeten Konto. Sonst
 		// könnte ein schneller Re-Login in denselben 30-Sekunden-Fenstern Name,
 		// E-Mail und Geräte-Labels des vorigen Nutzers sehen.
-		for (const hook of this.#logoutHooks) hook();
 		// Mitternachts-Rückfragen gehören dem alten Konto: im nächsten würde
 		// "weiter" sonst dessen Eintrag in die Monatsdatei des neuen schreiben.
 		this.staleTimerSplits = [];
 		this.lostEdits = 0;
+		this.bulkSync = null;
+		this.syncProgress = null;
+		toast.dismiss("sync-bulk");
+		for (const hook of this.#logoutHooks) {
+			try {
+				hook();
+			} catch (e) {
+				logWarn("Abmelde-Haken fehlgeschlagen", e);
+			}
+		}
 		this.state = "off";
 		this.phase = "idle";
 		this.serverUrl = "";

@@ -321,8 +321,14 @@ export async function removeOrphanedTempFiles(): Promise<number> {
 	let removed = 0;
 	for (const { name } of await storage.readDir(DIR)) {
 		if (!TEMP_FILE_RE.test(name)) continue;
-		await storage.remove(`${DIR}/${name}`);
-		removed++;
+		// Einzeln: hat das andere Fenster seine Datei inzwischen umbenannt, fehlt
+		// sie hier - die übrigen sollen trotzdem weg.
+		try {
+			await storage.remove(`${DIR}/${name}`);
+			removed++;
+		} catch (e) {
+			logWarn(`Zwischendatei ${name} nicht entfernt`, e);
+		}
 	}
 	return removed;
 }
