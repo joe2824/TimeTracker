@@ -931,6 +931,15 @@ describe("mergeActivityInto", () => {
 		expect(es.every((e) => e.activityId === P2)).toBe(true);
 	});
 
+	it("traegt Kalender-Stichwortregeln der Quelle auf das Ziel nach", async () => {
+		reset();
+		await app.updateSettings({ calendarKeywordMap: { vertrieb: P1, sonst: P2 } });
+
+		await app.mergeActivityInto(P1, P2);
+
+		expect(app.settings.calendarKeywordMap).toEqual({ vertrieb: P2, sonst: P2 });
+	});
+
 	it("haengt einen laufenden Timer mit um", async () => {
 		reset();
 		const running = entry("r", P1, at(16, 9), null);

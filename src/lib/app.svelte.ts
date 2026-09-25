@@ -738,6 +738,7 @@ class AppState {
 		const moved = await this.#repointEntries(new Set([fromId]), toId);
 		this.activities = this.activities.filter((x) => x.id !== fromId);
 		await this.persistActivities();
+		await this.#remapKeywords(new Map([[fromId, toId]]));
 		logWarn(`Aktivität zusammengeführt: "${from.name}" → "${to.name}"`, { moved });
 		return moved;
 	}
@@ -783,17 +784,23 @@ class AppState {
 		});
 		await this.persistActivities();
 
-		// Kalender-Stichwortregeln zeigen sonst weiter auf die alte Team-Id - die
-		// Zuordnung würde beim nächsten Import lautlos verstummen, ohne dass
-		// jemand sähe, warum.
-		let keywordsChanged = false;
-		const remappedKeywords: Record<string, string> = {};
+		await this.#remapKeywords(idMap);
+	}
+
+	/**
+	 * Kalender-Stichwortregeln auf neue Aktivitäts-Ids umhängen. Zeigten sie
+	 * weiter auf eine verschwundene Id, verstummte die Zuordnung beim nächsten
+	 * Import lautlos, ohne dass jemand sähe, warum.
+	 */
+	async #remapKeywords(idMap: ReadonlyMap<string, string>): Promise<void> {
+		let changed = false;
+		const remapped: Record<string, string> = {};
 		for (const [kw, id] of Object.entries(this.settings.calendarKeywordMap)) {
 			const newId = idMap.get(id);
-			remappedKeywords[kw] = newId ?? id;
-			if (newId) keywordsChanged = true;
+			remapped[kw] = newId ?? id;
+			if (newId) changed = true;
 		}
-		if (keywordsChanged) await this.updateSettings({ calendarKeywordMap: remappedKeywords });
+		if (changed) await this.updateSettings({ calendarKeywordMap: remapped });
 	}
 
 	/** Verschiebt `draggedId` vor/hinter `targetId` (Drag & Drop). */
@@ -1229,12 +1236,6 @@ class AppState {
 		info: StaleTimerSplitInfo,
 		keep: "ended" | "continuation"
 	): Promise<void> {
-		if (keep === "ended") {
-			const continuation = await current(info.continuationEntry);
-			if (continuation) await this.deleteEntry(continuation);
-		} else {
-			const ended = await current(info.endedEntry);
-			if (ended) await this.updateEntry(ended.startTs, { ...ended, endTs: info.continuationEntry.startTs });
 		// Den heutigen Stand holen, nicht die Momentaufnahme von der Meldung: nach
 		// "Später" kann der Eintrag inzwischen bearbeitet oder abgeglichen worden
 		// sein - die alte Kopie überschriebe das, und als jüngste eigene Änderung
@@ -1244,6 +1245,12 @@ class AppState {
 			await this.ensureMonth(month);
 			return this.entriesByMonth[month]?.find((x) => x.id === e.id);
 		};
+		if (keep === "ended") {
+			const continuation = await current(info.continuationEntry);
+			if (continuation) await this.deleteEntry(continuation);
+		} else {
+			const ended = await current(info.endedEntry);
+			if (ended) await this.updateEntry(ended.startTs, { ...ended, endTs: info.continuationEntry.startTs });
 		}
 	}
 
