@@ -43,7 +43,7 @@ docker compose up -d
 docker compose exec timetracker node admin.mjs ernenne "<Name oder Kennung>"
 ```
 
-Das Abbild ist signiert und trägt Stückliste (SBOM) und Herkunft bei sich:
+Das Image ist signiert und trägt Stückliste (SBOM) und Herkunft bei sich:
 
 ```bash
 cosign verify {{IMAGE}}:{{VERSION}} \

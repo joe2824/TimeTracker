@@ -53,7 +53,7 @@ export const CURRENT_RELEASE: ReleaseInfo = {
 			icon: "shield",
 			title: "Verwalter und Vertretung",
 			description:
-				"Lade Verwalter mit denselben Rechten ein oder übergib die Chef-Rolle, wenn jemand anderes das Team übernimmt."
+				"Lade Verwalter ein, die das Team mit dir betreuen, oder übergib die Chef-Rolle, wenn jemand anderes das Team übernimmt."
 		}
 	]
 };

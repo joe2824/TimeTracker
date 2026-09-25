@@ -1,4 +1,4 @@
-# Vor dem ersten Start eine .env anlegen (siehe .env.example) und dort ORIGIN,
+# Vor dem ersten Start eine .env anlegen (siehe server/.env.example) und dort ORIGIN,
 # RP_ID und INVITE_CODES setzen.
 
 services:

@@ -138,7 +138,7 @@ function purgeInactiveAccounts(): void {
 }
 
 if (INACTIVE_ACCOUNT_DAYS > 0) {
-	console.log(`[Server] Inaktive Konten werden nach ${INACTIVE_ACCOUNT_DAYS} Tagen ohne Gerät/Passkey gelöscht.`);
+	console.log(`[Server] Inaktive Konten werden nach ${INACTIVE_ACCOUNT_DAYS} Tagen ohne Gerät, Passkey, Sitzung oder aktives Team gelöscht.`);
 } else {
 	console.log("[Server] Löschen inaktiver Konten ist deaktiviert (INACTIVE_ACCOUNT_DAYS=0).");
 }
