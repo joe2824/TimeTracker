@@ -251,15 +251,29 @@ const writeQueue = new Map<string, Promise<void>>();
  */
 function queued(file: string, op: () => Promise<void>): Promise<void> {
 	const prev = writeQueue.get(file) ?? Promise.resolve();
+	const run = () => acrossWindows(`file:${file}`, op);
 	// Ein gescheiterter Vorgänger darf den nächsten nicht mitreissen: dessen
 	// Aufrufer hat seinen Fehler schon bekommen.
-	const next = prev.then(op, op);
+	const next = prev.then(run, run);
 	writeQueue.set(file, next);
 	void next.catch(() => {}).then(() => {
 		// Nur wegräumen, wenn seitdem nichts Neues angehängt wurde.
 		if (writeQueue.get(file) === next) writeQueue.delete(file);
 	});
 	return next;
+}
+
+/**
+ * `fn` unter einer Sperre, die auch andere Fenster derselben Anwendung achten.
+ *
+ * Haupt- und Tray-Fenster haben je eigenen Modulzustand und damit je eigene
+ * Warteschlangen; lesen beide, bevor eines schreibt, verliert das zweite
+ * Schreiben die Änderung des ersten. Web Locks gelten für alle Seiten
+ * derselben Herkunft. Ohne sie (Tests unter Node) läuft `fn` direkt.
+ */
+export function acrossWindows<T>(name: string, fn: () => Promise<T>): Promise<T> {
+	const locks = globalThis.navigator?.locks;
+	return locks ? locks.request(`timetracker:${name}`, fn) : fn();
 }
 
 function writeJson(file: string, data: unknown, opts: JsonOpts = {}): Promise<void> {

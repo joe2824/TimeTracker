@@ -1,6 +1,6 @@
 // Die Spuren des Abgleichs aus dem lokalen Bestand nehmen.
 import { listEntryMonths, listTimeReportMonths, remoteStore as store } from "../store";
-import { clearChanges, pendingChanges } from "./outbox";
+import { clearChanges, pendingChanges, refreshPending } from "./outbox";
 import type { Settings, SyncMeta } from "../types";
 
 /** Die drei Stempelfelder abstreifen - und sonst nichts anfassen. */
@@ -61,7 +61,8 @@ export async function detachLocalData(): Promise<DetachResult> {
 	// Was noch offen war, bezog sich auf ein Konto, das dieses Gerät nicht mehr
 	// hat. Stehen zu lassen hiesse: beim nächsten Koppeln wird als Erstes eine
 	// Handvoll uralter Änderungen hochgeladen, die niemand mehr erwartet.
-	await clearChanges(pendingChanges());
+	await refreshPending();
+	await clearChanges(pendingChanges().map(({ kind, id }) => ({ kind, id })));
 
 	return result;
 }

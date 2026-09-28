@@ -11,6 +11,7 @@ const {
 	clearChanges,
 	resetOutboxForTests,
 	mergePending,
+	refreshPending,
 	rememberUnstamped,
 	SETTINGS_ID
 } = await import("./outbox");
@@ -190,5 +191,48 @@ describe("Schreiben des Abgleichs neben eigenen Änderungen", () => {
 
 		expect(pendingChanges().map((c) => c.id)).toEqual(["eigen"]);
 		expect(onDisk("2026-06")[0].deviceId).toBe("x");
+	});
+});
+
+describe("Zwei Fenster, eine outbox.json", () => {
+	// Haupt- und Tray-Fenster haben je eigenen Modulzustand, schreiben aber
+	// dieselbe Datei. Was das andere vorgemerkt hat, darf nicht verschwinden.
+	const OUTBOX = "data/outbox.json";
+	const fromOtherWindow = { kind: "entry" as const, id: "tray", month: "2026-07", deleted: false, at: 1 };
+	const onDiskOutbox = () => (JSON.parse(files.get(OUTBOX) ?? "[]") as { id: string }[]).map((c) => c.id);
+
+	it("überschreibt beim Vormerken nicht, was das andere Fenster vorgemerkt hat", async () => {
+		files.set(OUTBOX, JSON.stringify([fromOtherWindow]));
+		await store.saveEntries("2026-07", [e("main")]);
+		expect(onDiskOutbox().sort()).toEqual(["main", "tray"]);
+	});
+
+	it("überschreibt beim Abhaken nicht, was das andere Fenster vorgemerkt hat", async () => {
+		await store.saveEntries("2026-07", [e("main")]);
+		const pushed = pendingChanges();
+		files.set(OUTBOX, JSON.stringify([...JSON.parse(files.get(OUTBOX)!), fromOtherWindow]));
+		await clearChanges(pushed);
+		expect(onDiskOutbox()).toEqual(["tray"]);
+	});
+
+	it("lädt vor dem Hochladen nach, was das andere Fenster vorgemerkt hat", async () => {
+		files.set(OUTBOX, JSON.stringify([fromOtherWindow]));
+		await refreshPending();
+		expect(pendingChanges().map((c) => c.id)).toEqual(["tray"]);
+	});
+
+	it("hakt eine neuere Änderung am selben Datensatz nicht mit ab", async () => {
+		// Kam sie während des Hochladens dazu, ist sie womöglich nicht mit oben.
+		vi.useFakeTimers({ now: 1_000 });
+		try {
+			await store.saveEntries("2026-07", [e("1")]);
+			const pushed = pendingChanges();
+			vi.setSystemTime(2_000);
+			await store.saveEntries("2026-07", [e("1", { note: "neu" })]);
+			await clearChanges(pushed);
+			expect(pendingChanges().map((c) => [c.id, c.at])).toEqual([["1", 2_000]]);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });

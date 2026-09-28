@@ -3,6 +3,7 @@
 import type { Activity, Entry, Settings, SyncMeta } from "../types";
 import type { StoredTimeReport, WriteHook } from "../store";
 import {
+	acrossWindows,
 	listEntryMonths,
 	listTimeReportMonths,
 	loadActivities,
@@ -54,27 +55,45 @@ function keyOf(c: Pick<PendingChange, "kind" | "id">): string {
 	return `${c.kind}:${c.id}`;
 }
 
-/** Mehrere Änderungen am selben Datensatz zu einer zusammenfassen. */
+/** Mehrere Änderungen am selben Datensatz zu einer zusammenfassen – die jüngste gilt. */
 export function mergePending(existing: PendingChange[], incoming: PendingChange[]): PendingChange[] {
 	const byKey = new Map(existing.map((c) => [keyOf(c), c]));
-	for (const c of incoming) byKey.set(keyOf(c), c);
+	for (const c of incoming) {
+		const had = byKey.get(keyOf(c));
+		if (!had || had.at <= c.at) byKey.set(keyOf(c), c);
+	}
 	return [...byKey.values()];
 }
 
+/**
+ * Zwischenstand der Datei. Maßgeblich ist outbox.json: Haupt- und Tray-Fenster
+ * haben je eigenen Modulzustand, merken aber in dieselbe Datei vor. Jede
+ * Änderung liest sie deshalb frisch, statt eine eigene Liste darüberzuschreiben.
+ */
 let pending: PendingChange[] = [];
 let loaded = false;
 let deviceId = "";
 
-/** Ausstehende Änderungen, älteste zuerst. */
+/** Ausstehende Änderungen, älteste zuerst – Stand des letzten Lesens. */
 export function pendingChanges(): PendingChange[] {
 	return [...pending].sort((a, b) => a.at - b.at);
 }
 
-/** Änderungen als erledigt abhaken - über Schlüssel, damit inzwischen Dazugekommenes bleibt. */
-export async function clearChanges(done: Pick<PendingChange, "kind" | "id">[]): Promise<void> {
-	const keys = new Set(done.map(keyOf));
-	pending = pending.filter((c) => !keys.has(keyOf(c)));
-	await persist();
+/** Frisch lesen, was inzwischen auch andere Fenster vorgemerkt haben. */
+export async function refreshPending(): Promise<void> {
+	await update(() => null);
+}
+
+/**
+ * Änderungen als erledigt abhaken – über Schlüssel, damit inzwischen
+ * Dazugekommenes bleibt, und nur bis zu ihrem Zeitpunkt: eine jüngere Änderung
+ * am selben Datensatz ist womöglich nicht mit hochgegangen.
+ */
+export async function clearChanges(
+	done: (Pick<PendingChange, "kind" | "id"> & { at?: number })[]
+): Promise<void> {
+	const upTo = new Map(done.map((d) => [keyOf(d), d.at ?? Infinity]));
+	await update((list) => list.filter((c) => !(c.at <= (upTo.get(keyOf(c)) ?? -Infinity))));
 }
 
 /**
@@ -101,14 +120,47 @@ export async function rebaseChanges(
 ): Promise<void> {
 	if (updates.length === 0) return;
 	const revs = new Map(updates.map((u) => [keyOf(u), u.rev]));
-	let touched = false;
-	pending = pending.map((c) => {
-		const rev = revs.get(keyOf(c));
-		if (rev === undefined || c.rev === rev) return c;
-		touched = true;
-		return { ...c, rev };
+	await update((list) => {
+		let touched = false;
+		const next = list.map((c) => {
+			const rev = revs.get(keyOf(c));
+			if (rev === undefined || c.rev === rev) return c;
+			touched = true;
+			return { ...c, rev };
+		});
+		return touched ? next : null;
 	});
-	if (touched) await persist();
+}
+
+/** Innerhalb dieses Fensters eine Änderung nach der anderen. */
+let chain: Promise<unknown> = Promise.resolve();
+
+/**
+ * outbox.json lesen, `change` anwenden und zurückschreiben – `null` heisst:
+ * nichts zu schreiben. Über Fenster hinweg gesperrt (acrossWindows).
+ */
+function update(change: (list: PendingChange[]) => PendingChange[] | null): Promise<void> {
+	const run = () =>
+		acrossWindows("outbox", async () => {
+			const onDisk = await readOutbox();
+			const next = change(onDisk);
+			pending = next ?? onDisk;
+			if (next) await persist();
+		});
+	const next = chain.then(run, run);
+	chain = next.catch(() => {});
+	return next;
+}
+
+async function readOutbox(): Promise<PendingChange[]> {
+	try {
+		return await loadOutbox<PendingChange>();
+	} catch (e) {
+		// Lieber mit dem letzten Stand weiter als mit einer leeren Liste, die das
+		// Vorgemerkte beim nächsten Schreiben überschriebe.
+		logWarn("Outbox nicht lesbar, nehme den letzten Stand", e);
+		return pending;
+	}
 }
 
 async function persist(): Promise<void> {
@@ -130,8 +182,7 @@ export function setChangeListener(fn: (() => void) | null): void {
 
 async function note(changes: PendingChange[]): Promise<void> {
 	if (changes.length === 0) return;
-	pending = mergePending(pending, changes);
-	await persist();
+	await update((list) => mergePending(list, changes));
 	onChange?.();
 }
 
@@ -139,12 +190,7 @@ async function note(changes: PendingChange[]): Promise<void> {
 export async function startTracking(device: string): Promise<void> {
 	deviceId = device;
 	if (!loaded) {
-		try {
-			pending = await loadOutbox();
-		} catch (e) {
-			logWarn("Outbox nicht lesbar, beginne leer", e);
-			pending = [];
-		}
+		await refreshPending();
 		loaded = true;
 	}
 	setWriteHook(hook);

@@ -17,6 +17,7 @@ import {
 	noteChanges,
 	pendingChanges,
 	rebaseChanges,
+	refreshPending,
 	SETTINGS_ID,
 	type PendingChange
 } from "./outbox";
@@ -301,6 +302,8 @@ export class SyncEngine {
 		let pulled = 0;
 		let lostEdits = 0;
 		let staleTimerSplits: StaleTimerSplitInfo[] = [];
+		// Auch das Tray-Fenster merkt in outbox.json vor.
+		await refreshPending();
 		for (let round = 0; round < MAX_ROUNDS; round++) {
 			const open = pendingChanges();
 			if (open.length === 0) break;
