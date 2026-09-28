@@ -346,10 +346,12 @@
 						// Zulauf, und die Nachlese unten stiesse den naechsten an.
 						if (e.payload?.from === "main") return;
 						void app.reload();
-						// Das Tray schreibt ohne Haken - erst hier wird daraus etwas,
-						// das den Server erreicht.
+						// Das Tray merkt nur vor, abgeglichen wird hier. followUp
+						// sammelt zudem ein, was ohne verknüpftes Konto entstand.
 						void account.followUp();
 					}),
+					// Nur dieses Fenster gleicht ab: die Rückfragen dazu hängen hier.
+					await listen("tray-sync-request", () => account.syncSoon(50)),
 					// Tray-Flyout wurde geöffnet und fragt den aktuellen Hinweis-Status ab.
 					await listen("tray-request-attention", () => {
 						void emit("main-attention", { active: attention }).catch(() => {});

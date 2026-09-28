@@ -568,11 +568,25 @@ class AccountState {
 	}
 
 	/**
+	 * Für das Tray-Fenster: nur den Schreib-Haken, keine Engine.
+	 *
+	 * Gleichen beide Fenster ab, gehen die Rückfragen dazu (Mitternachts-Teilung,
+	 * verlorene Änderungen) im Tray verloren – die Dialoge hängen im
+	 * Hauptfenster. Vorgemerkt wird in dieselbe outbox.json, hochladen tut das
+	 * Hauptfenster (Ereignis "tray-sync-request").
+	 */
+	async initWriter(): Promise<void> {
+		const info = await loadDevice();
+		if (!info?.serverUrl) return;
+		await startTracking(await deviceId());
+	}
+
+	/**
 	 * Ein anderes Fenster hat geschrieben - nachsehen und hochladen.
 	 *
-	 * Das Tray-Fenster hat einen eigenen Webview und damit einen eigenen
-	 * Modulzustand; der Schreib-Haken läuft dort nicht. Was es schreibt, trägt
-	 * deshalb keinen Stempel und stünde ohne diesen Schritt nur lokal da.
+	 * Das Tray-Fenster merkt seine Änderungen selbst vor (initWriter). Was ohne
+	 * verknüpftes Konto oder vor dem Einschalten des Hakens entstand, trägt
+	 * keinen Stempel und stünde ohne diesen Schritt nur lokal da.
 	 */
 	async followUp(): Promise<void> {
 		if (!this.linked) return;

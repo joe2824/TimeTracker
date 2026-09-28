@@ -46,22 +46,32 @@
 		void emit("tray-request-attention").catch(() => {});
 	}
 
+	/** Abgleichen lässt das Hauptfenster – siehe account.initWriter. */
+	function requestSync() {
+		void emit("tray-sync-request").catch(() => {});
+	}
+
 	onMount(() => {
 		logInfo("Tray-Flyout geöffnet");
-		void account.init().then(() => void account.syncSoon(50));
-		void refresh();
+		// Erst den Haken, dann laden: reload() repariert eingebaute Zeilen, und
+		// das soll vorgemerkt werden.
+		void account
+			.initWriter()
+			.catch((e) => logError("Flyout: Vormerken nicht eingeschaltet", e))
+			.then(refresh)
+			.then(requestSync);
 		// Eigener Tick (dieses Fenster ruft app.init() nicht auf) für die Live-Anzeige.
 		const tick = setInterval(() => (app.now = Date.now()), 1000);
 		// Bei jedem Einblenden (Fokus oder Tray-Klick) frische Daten laden.
 		const unFocus = win.onFocusChanged(({ payload }) => {
 			if (payload) {
 				void refresh();
-				void account.syncSoon(50);
+				requestSync();
 			}
 		});
 		const unShown = listen("tray-shown", () => {
 			void refresh();
-			void account.syncSoon(50);
+			requestSync();
 		});
 		const unAttention = listen<{ active: boolean }>(
 			"main-attention",

@@ -16,6 +16,8 @@ const { app } = await import("../app.svelte");
 const store = await import("../store");
 const { monthKey } = await import("../time/time");
 const { BUILTIN_OTHERS_ID } = await import("../types");
+const { resetOutboxForTests } = await import("./outbox");
+const { files } = await import("../testing/fakeFs");
 
 let server: FakeSyncServer;
 
@@ -152,5 +154,44 @@ describe("Abmelden", () => {
 		} finally {
 			restoreFetch();
 		}
+	});
+});
+
+describe("Tray-Fenster: nur vormerken, nicht abgleichen", () => {
+	const outboxIds = () =>
+		(JSON.parse(files.get("data/outbox.json") ?? "[]") as { id: string }[]).map((c) => c.id);
+
+	it("merkt Änderungen vor, ohne selbst den Server zu fragen", async () => {
+		await account.linkWithSession("http://test", await createVaultKey(), "Ich");
+		await settled();
+		// Ein frisches Fenster: kein Haken, kein Vorgemerktes im Speicher.
+		resetOutboxForTests();
+
+		const realFetch = globalThis.fetch;
+		let calls = 0;
+		globalThis.fetch = (async (...args: Parameters<typeof fetch>) => {
+			calls++;
+			return realFetch(...args);
+		}) as typeof fetch;
+		try {
+			await account.initWriter();
+			await store.saveEntries("2026-07", [
+				{ id: "im-tray", activityId: BUILTIN_OTHERS_ID, startTs: 1, endTs: 2, note: "", source: "timer" }
+			]);
+		} finally {
+			globalThis.fetch = realFetch;
+		}
+
+		expect(calls).toBe(0);
+		expect(outboxIds()).toContain("im-tray");
+	});
+
+	it("schaltet ohne verknüpftes Konto nichts ein", async () => {
+		resetOutboxForTests();
+		await account.initWriter();
+		await store.saveEntries("2026-07", [
+			{ id: "lokal", activityId: BUILTIN_OTHERS_ID, startTs: 1, endTs: 2, note: "", source: "timer" }
+		]);
+		expect(files.has("data/outbox.json")).toBe(false);
 	});
 });

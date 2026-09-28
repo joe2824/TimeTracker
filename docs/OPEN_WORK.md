@@ -21,21 +21,10 @@ Vorhaben stehen in der Commit-History, nicht als Datei daneben.
 Keine Regressionen, aber echte Lücken. Bewusst nicht kurz vor einem stabilen
 Release umgebaut, weil jede davon den Kern des Abgleichs anfasst.
 
-- **Tray-Flyout hat einen eigenen Abgleich.** Haupt- und Flyout-Fenster führen je
-  eine SyncEngine und eine Outbox im Speicher, schreiben aber dieselbe
-  `outbox.json` und dieselben Monatsdateien. Holt sich das Flyout ein echtes
-  Timer-Ende zuerst, meldet es die Mitternachts-Rückfrage an seine eigene
-  `account`-Instanz - der Dialog hängt nur im Hauptfenster, die Rückfrage fällt
-  aus. Richtung: nur das Hauptfenster betreibt die Engine, das Flyout fordert per
-  Event an.
 - **Mitternachts-Teilung, Gegenrichtung.** Stoppt Gerät A offline um 17:00 und
   teilt Gerät B den Lauf morgens mit altem Stand, verliert A sein echtes Ende
   gegen B's jüngeren Stempel. `#applyEntries` erkennt nur den Fall, in dem das
   lokale Ende genau auf Mitternacht liegt.
-- **Globale Vormerk-Sperre.** `suppressed` in `outbox.ts` gilt modulweit: eine
-  Speicherung aus der Oberfläche, während `#applyInner` läuft, wird ohne Stempel
-  geschrieben und erreicht den Server nie. Richtung: der Abgleich schreibt über
-  einen eigenen Weg ohne Haken statt über eine globale Sperre.
 - **Rückfragen überleben keinen Neustart.** `staleTimerSplits` liegt nur im
   Speicher; nach einem Neustart vor der Entscheidung ist der Fall weg.
 - **Bearbeitung über Mitternacht sieht aus wie eine Teilung.** Ein bewusst im
