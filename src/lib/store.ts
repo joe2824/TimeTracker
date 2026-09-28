@@ -654,7 +654,8 @@ async function deleteTimeReportWith(hook: WriteHook | null, month: string): Prom
  */
 export const remoteStore = {
 	entriesOfMonth: loadEntries,
-	saveEntries: (month: string, entries: Entry[]) => saveEntriesWith(null, month, entries),
+	saveEntries: (month: string, entries: Entry[], base?: Entry[]) =>
+		saveEntriesWith(null, month, entries, base),
 	activities: loadActivities,
 	saveActivities: (list: Activity[]) => saveActivitiesWith(null, list),
 	settings: loadSettings,
@@ -784,9 +785,15 @@ export async function clearAccountData(): Promise<void> {
  * Getrennt von `clearAccountData`, weil sie auch dort weg muss, wo die Zeiten
  * bleiben sollen: der Abgleich liest die Outbox und fragt dabei keinen Stempel.
  */
-export async function clearOutbox(): Promise<void> {
-	const path = `${DIR}/outbox.json`;
-	if (await storage.exists(path)) await storage.remove(path);
+export function clearOutbox(): Promise<void> {
+	// Dieselbe Sperre wie sync/outbox.ts: sonst schriebe ein Fenster, das gerade
+	// gelesen hat, die Liste des vorigen Kontos wieder zurück.
+	return acrossWindows("outbox", () =>
+		queued("outbox.json", async () => {
+			const path = `${DIR}/outbox.json`;
+			if (await storage.exists(path)) await storage.remove(path);
+		})
+	);
 }
 
 /** Die Feldnamen vor 0.9.2. Zum Lesen alter Dateien, nicht zum Schreiben. */
@@ -884,10 +891,16 @@ export async function clearTeamDevice(): Promise<void> {
 	if (await storage.exists(path)) await storage.remove(path);
 }
 
-/** Ausstehende Änderungen. Der Inhalt steht in sync/outbox.ts. */
+/**
+ * Ausstehende Änderungen. Der Inhalt steht in sync/outbox.ts.
+ *
+ * Wirft, wenn die Datei da, aber nicht lesbar ist: eine leere Liste daraus
+ * würde beim nächsten Vormerken über alles Vorgemerkte geschrieben.
+ */
 export async function loadOutbox<T>(): Promise<T[]> {
-	const stored = await readJson<T[]>("outbox.json", []);
-	return Array.isArray(stored) ? stored : [];
+	const r = await readJsonResult<T[]>("outbox.json");
+	if (r.status === "unreadable") throw new Error("outbox.json nicht lesbar");
+	return r.status === "ok" && Array.isArray(r.value) ? r.value : [];
 }
 
 export async function saveOutbox<T>(changes: T[]): Promise<void> {

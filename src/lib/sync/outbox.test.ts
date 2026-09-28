@@ -12,6 +12,7 @@ const {
 	resetOutboxForTests,
 	mergePending,
 	refreshPending,
+	noteChanges,
 	rememberUnstamped,
 	SETTINGS_ID
 } = await import("./outbox");
@@ -234,5 +235,22 @@ describe("Zwei Fenster, eine outbox.json", () => {
 		} finally {
 			vi.useRealTimers();
 		}
+	});
+});
+
+describe("outbox.json vorübergehend nicht lesbar", () => {
+	it("verliert beim Vormerken nicht, was schon vorgemerkt war", async () => {
+		// Etwa ein Freigabekonflikt unter Windows. Eine leere Liste daraus zu
+		// machen und zurückzuschreiben, hiesse: alles andere Vorgemerkte ist weg.
+		const { fsFaults } = await import("../testing/fakeFs");
+		await store.saveEntries("2026-07", [e("a")]);
+		fsFaults.readThrows = true;
+		try {
+			await noteChanges([{ kind: "entry", id: "b", month: "2026-07", deleted: false, at: Date.now() }]);
+		} finally {
+			fsFaults.readThrows = false;
+		}
+		await refreshPending();
+		expect(pendingChanges().map((c) => c.id).sort()).toEqual(["a", "b"]);
 	});
 });

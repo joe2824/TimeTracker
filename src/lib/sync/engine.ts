@@ -43,7 +43,8 @@ const BACKLOG_PAGES = 5;
 /** Die Ablage, wie der Abgleich sie braucht: Schreiben am Haken vorbei (remoteStore). */
 export interface LocalStore {
 	entriesOfMonth(month: string): Promise<Entry[]>;
-	saveEntries(month: string, entries: Entry[]): Promise<void>;
+	/** `base`: der gelesene Stand – siehe saveEntries/mergeOntoDisk in store.ts. */
+	saveEntries(month: string, entries: Entry[], base?: Entry[]): Promise<void>;
 	activities(): Promise<Activity[]>;
 	saveActivities(list: Activity[]): Promise<void>;
 	settings(): Promise<Settings>;
@@ -606,6 +607,9 @@ export class SyncEngine {
 	async #applyInner(
 		records: ServerRecord[]
 	): Promise<{ lostEdits: number; staleTimerSplits: StaleTimerSplitInfo[] }> {
+		// Frisch: auch das Tray merkt vor, und was offen ist, entscheidet unten,
+		// ob der Server gewinnt.
+		await refreshPending();
 		const open = new Set(pendingChanges().map((c) => `${c.kind}:${c.id}`));
 		let lostEdits = 0;
 
@@ -635,11 +639,16 @@ export class SyncEngine {
 		// danach nur noch im Speicher - denn ein Eintrag kann beim Zusammenführen
 		// den Monat WECHSELN, und dann sind zwei Monatsdateien gleichzeitig in Arbeit.
 		const loaded = new Map<string, Map<string, Entry>>();
+		// Wie gelesen: zwischen Lesen und Schreiben kann die Oberfläche denselben
+		// Monat speichern (Timer-Stopp), und das darf das Schreiben nicht überrollen.
+		const asRead = new Map<string, Entry[]>();
 		const touched = new Set<string>();
 		const monthOf = async (m: string) => {
 			let monthMap = loaded.get(m);
 			if (!monthMap) {
-				monthMap = new Map((await this.#store.entriesOfMonth(m)).map((e) => [e.id, e]));
+				const list = await this.#store.entriesOfMonth(m);
+				asRead.set(m, list);
+				monthMap = new Map(list.map((e) => [e.id, e]));
 				loaded.set(m, monthMap);
 			}
 			return monthMap;
@@ -754,7 +763,7 @@ export class SyncEngine {
 
 		for (const month of touched) {
 			const list = [...loaded.get(month)!.values()].sort((a, b) => a.startTs - b.startTs);
-			await this.#store.saveEntries(month, list);
+			await this.#store.saveEntries(month, list, asRead.get(month));
 			// Ein Monat, den wir gerade selbst angelegt haben, steht in keiner
 			// Verzeichnisliste, die vor diesem Durchgang gezogen wurde.
 			this.#rememberMonth(month);

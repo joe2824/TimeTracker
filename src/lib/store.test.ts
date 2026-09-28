@@ -15,6 +15,7 @@ const {
 	loadTimeReport,
 	pruneEmptyMonthFiles,
 	removeOrphanedTempFiles,
+	remoteStore,
 	saveActivities,
 	saveEntries,
 	saveSettings,
@@ -182,6 +183,20 @@ describe("saveEntries mit Ausgangsstand", () => {
 		await saveEntries(M, []);
 		await saveEntries(M, [withNote("a", "lokal")], [entry("a")]);
 		expect((await loadEntries(M)).map((e) => e.note)).toEqual(["lokal"]);
+	});
+
+	it("remoteStore: das Einspielen überschreibt keinen Timer-Stopp von nebenan", async () => {
+		// Der Abgleich liest den Monat, entschlüsselt eine Weile und schreibt dann.
+		// Stoppt die Oberfläche dazwischen den Timer, darf das Ende nicht weg sein.
+		const running = entry("t");
+		await saveEntries(M, [running]);
+		const read = await loadEntries(M);
+		await saveEntries(M, [{ ...running, endTs: 99 }]); // Stopp aus der Oberfläche
+
+		await remoteStore.saveEntries(M, [...read, entry("vom-server")], read);
+
+		const byId = Object.fromEntries((await loadEntries(M)).map((e) => [e.id, e.endTs]));
+		expect(byId).toEqual({ t: 99, "vom-server": null });
 	});
 
 	it("schreibt ohne Ausgangsstand wie bisher genau die übergebene Liste", async () => {

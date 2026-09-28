@@ -7,7 +7,7 @@
 export const files = new Map<string, string>();
 
 /** Erzwingbare Fehler. */
-export const fsFaults = { renameThrows: false, existsThrows: false };
+export const fsFaults = { renameThrows: false, existsThrows: false, readThrows: false };
 
 /** Angelegte Ordner. "data" gibt es immer, den legt niemand extra an. */
 const dirs = new Set<string>(["data"]);
@@ -56,6 +56,7 @@ export function resetFakeFs(): void {
 	written.length = 0;
 	fsFaults.renameThrows = false;
 	fsFaults.existsThrows = false;
+	fsFaults.readThrows = false;
 }
 
 export const fakeFs = {
@@ -85,6 +86,7 @@ export const fakeFs = {
 		return { size: txt.length };
 	},
 	readTextFile: async (p: string) => {
+		if (fsFaults.readThrows) throw new Error("Datei gerade gesperrt");
 		const txt = files.get(p);
 		if (txt === undefined) throw new Error(`ENOENT: ${p}`);
 		return txt;
