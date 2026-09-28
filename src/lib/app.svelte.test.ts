@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Activity, Entry } from "./types";
 import { BUILTIN_ABSENCE_ID, BUILTIN_OTHERS_ID, defaultSettings } from "./types";
-import { fakeFs, files, fsFaults, resetFakeFs } from "./testing/fakeFs";
+import { blockWrites, fakeFs, files, fsFaults, resetFakeFs } from "./testing/fakeFs";
 import { appTimeZone, wallToTs } from "./time/tz";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("./testing/fakeFs")).fakeFs);
@@ -775,6 +775,7 @@ describe("Mitternachts-Wechsel", () => {
 			const run = entry("t1", P1, at(16, 9), null);
 			const synced = entry("t2r", P1, at(17, 0), at(18, 0)); // vom Server
 			reset({ "2026-07": [run, synced] });
+			app.loaded = false; // sonst überspringt init() das Laden
 			expect(await app.init()).toBe(true);
 
 			await vi.advanceTimersByTimeAsync(1000);
@@ -783,6 +784,41 @@ describe("Mitternachts-Wechsel", () => {
 			expect(saturday.map((e) => e.id)).toEqual(["t2r"]);
 			expect(onDisk("2026-07").filter((e) => e.startTs === at(18, 0))).toHaveLength(1);
 			expect(app.running?.startTs).toBe(at(19, 0));
+		} finally {
+			app.dispose();
+			vi.useRealTimers();
+		}
+	});
+});
+
+describe("Mitternachts-Wechsel neben reload()", () => {
+	it("verliert nichts, wenn reload() in einen hängenden Wechsel fällt", async () => {
+		// Der Wechsel wartet beim Speichern hinter den Schreibvorgängen des Abgleichs,
+		// und der Abgleich ruft danach reload(). Tauscht das die Monatslisten
+		// unter dem Wechsel aus, speichert er den Rest aus den frisch gelesenen,
+		// alten Listen – und der nächste Tick teilt den Lauf ein zweites Mal.
+		vi.useFakeTimers({ now: wallToTs(2026, 8, 2, 8, 0, 0) });
+		try {
+			const run = entry("t1", P1, wallToTs(2026, 7, 31, 9, 0, 0), null);
+			reset({ "2026-07": [run] });
+			app.loaded = false; // sonst überspringt init() das Laden
+			expect(await app.init()).toBe(true);
+
+			const release = blockWrites();
+			await vi.advanceTimersByTimeAsync(1000);
+			const reload = app.reload();
+			await vi.advanceTimersByTimeAsync(0);
+			release();
+			await reload;
+			// reload() liest den Stand NACH dem Wechsel, nicht den davor.
+			expect(app.running?.startTs).toBe(wallToTs(2026, 8, 2, 0, 0, 0));
+			await vi.advanceTimersByTimeAsync(2000);
+
+			const july = onDisk("2026-07");
+			expect(july).toHaveLength(1);
+			expect(july[0].endTs).toBe(wallToTs(2026, 8, 1, 0, 0, 0));
+			const open = [...onDisk("2026-07"), ...onDisk("2026-08")].filter((e) => e.endTs === null);
+			expect(open.map((e) => e.startTs)).toEqual([wallToTs(2026, 8, 2, 0, 0, 0)]);
 		} finally {
 			app.dispose();
 			vi.useRealTimers();

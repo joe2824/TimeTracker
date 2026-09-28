@@ -346,8 +346,16 @@ class AppState {
 	 * Liest Aktivitäten/Einstellungen/aktuelle Monate neu von Platte.
 	 * Für das zweite Fenster (Tray-Flyout) und fensterübergreifende Updates,
 	 * da jede Webview ihren eigenen Zustand hat.
+	 *
+	 * Hinter den Timer-Operationen eingereiht: tauschte reload() die Monatslisten,
+	 * während etwa der Mitternachts-Wechsel aufs Speichern wartet, schriebe der
+	 * den Rest aus den frisch gelesenen, alten Listen und teilte den Lauf erneut.
 	 */
-	async reload(extraMonths: string[] = []): Promise<void> {
+	reload(extraMonths: string[] = []): Promise<void> {
+		return this.#exclusive(() => this.#reloadNow(extraMonths));
+	}
+
+	async #reloadNow(extraMonths: string[]): Promise<void> {
 		this.activities = await loadActivities();
 		this.settings = await loadSettings();
 		await this.#applyTimeZone();
