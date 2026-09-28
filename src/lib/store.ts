@@ -370,11 +370,14 @@ async function dataFiles(re: RegExp): Promise<[string, string][]> {
 export async function loadActivities(): Promise<Activity[]> {
 	return readJson<Activity[]>("activities.json", [], { encrypted: true });
 }
-export async function saveActivities(activities: Activity[]): Promise<void> {
-	if (!writeHook) return writeJson("activities.json", activities, { encrypted: true });
+export function saveActivities(activities: Activity[]): Promise<void> {
+	return saveActivitiesWith(writeHook, activities);
+}
+async function saveActivitiesWith(hook: WriteHook | null, activities: Activity[]): Promise<void> {
+	if (!hook) return writeJson("activities.json", activities, { encrypted: true });
 	return queued("activities.json", async () => {
 		const before = await readJson<Activity[]>("activities.json", [], { encrypted: true });
-		await writeJsonNow("activities.json", await writeHook!.activities(before, activities), {
+		await writeJsonNow("activities.json", await hook.activities(before, activities), {
 			encrypted: true
 		});
 	});
@@ -389,11 +392,14 @@ export async function loadSettings(): Promise<Settings> {
 	const stored = await readJson<Partial<Settings>>("settings.json", {}, { encrypted: true });
 	return { ...defaultSettings, ...stored };
 }
-export async function saveSettings(settings: Settings): Promise<void> {
-	if (!writeHook) return writeJson("settings.json", settings, { encrypted: true });
+export function saveSettings(settings: Settings): Promise<void> {
+	return saveSettingsWith(writeHook, settings);
+}
+async function saveSettingsWith(hook: WriteHook | null, settings: Settings): Promise<void> {
+	if (!hook) return writeJson("settings.json", settings, { encrypted: true });
 	return queued("settings.json", async () => {
 		const before = await readJson<Settings | null>("settings.json", null, { encrypted: true });
-		await writeJsonNow("settings.json", await writeHook!.settings(before, settings), {
+		await writeJsonNow("settings.json", await hook.settings(before, settings), {
 			encrypted: true
 		});
 	});
@@ -417,9 +423,17 @@ export async function loadEntries(month: string): Promise<Entry[]> {
  * abgeglichen statt sie zu überschreiben (siehe mergeOntoDisk). Ohne `base`
  * gilt die Liste wörtlich.
  */
-export async function saveEntries(month: string, entries: Entry[], base?: Entry[]): Promise<void> {
+export function saveEntries(month: string, entries: Entry[], base?: Entry[]): Promise<void> {
+	return saveEntriesWith(writeHook, month, entries, base);
+}
+async function saveEntriesWith(
+	hook: WriteHook | null,
+	month: string,
+	entries: Entry[],
+	base?: Entry[]
+): Promise<void> {
 	const file = entriesFile(month);
-	if (!base && entries.length > 0 && !writeHook) return writeJson(file, entries, { encrypted: true });
+	if (!base && entries.length > 0 && !hook) return writeJson(file, entries, { encrypted: true });
 	return queued(file, async () => {
 		const read = await readJsonResult<Entry[]>(file, { encrypted: true });
 		const before = read.status === "ok" ? read.value : [];
@@ -434,11 +448,11 @@ export async function saveEntries(month: string, entries: Entry[], base?: Entry[
 			const path = `${DIR}/${file}`;
 			// Auch das Leeren geht durch den Haken: sonst verschwände ein
 			// geleerter Monat, ohne dass der Abgleich die Löschungen je erfährt.
-			if (writeHook) await writeHook.entries(month, before, []);
+			if (hook) await hook.entries(month, before, []);
 			if (await storage.exists(path)) await storage.remove(path);
 			return;
 		}
-		const stamped = writeHook ? await writeHook.entries(month, before, next) : next;
+		const stamped = hook ? await hook.entries(month, before, next) : next;
 		await writeJsonNow(file, stamped, { encrypted: true });
 	});
 }
@@ -586,12 +600,15 @@ export async function loadTimeReport(month: string): Promise<StoredTimeReport | 
 	};
 }
 
-export async function saveTimeReport(report: StoredTimeReport): Promise<void> {
+export function saveTimeReport(report: StoredTimeReport): Promise<void> {
+	return saveTimeReportWith(writeHook, report);
+}
+async function saveTimeReportWith(hook: WriteHook | null, report: StoredTimeReport): Promise<void> {
 	const file = reportFile(report.month);
-	if (!writeHook) return writeJson(file, report, { encrypted: true });
+	if (!hook) return writeJson(file, report, { encrypted: true });
 	return queued(file, async () => {
 		const before = await loadTimeReportRaw(report.month);
-		const stamped = await writeHook!.timeReport(report.month, before, report);
+		const stamped = await hook.timeReport(report.month, before, report);
 		await writeJsonNow(file, stamped ?? report, { encrypted: true });
 	});
 }
@@ -602,14 +619,36 @@ export async function saveTimeReport(report: StoredTimeReport): Promise<void> {
  * Geht durch den Haken, damit die Löschung auch auf den anderen Geräten
  * ankommt - eine bloss gelöschte Datei bliebe dort stehen.
  */
-export async function deleteTimeReport(month: string): Promise<void> {
+export function deleteTimeReport(month: string): Promise<void> {
+	return deleteTimeReportWith(writeHook, month);
+}
+async function deleteTimeReportWith(hook: WriteHook | null, month: string): Promise<void> {
 	const file = reportFile(month);
 	return queued(file, async () => {
-		if (writeHook) await writeHook.timeReport(month, await loadTimeReportRaw(month), null);
+		if (hook) await hook.timeReport(month, await loadTimeReportRaw(month), null);
 		const path = `${DIR}/${file}`;
 		if (await storage.exists(path)) await storage.remove(path);
 	});
 }
+
+/**
+ * Lesen und Schreiben für den Abgleich: dieselben Dateien, aber am Schreib-Haken
+ * vorbei – was vom Server kommt, ist keine eigene Änderung.
+ *
+ * Je Aufruf statt als Sperre für alle: eine Speicherung aus der Oberfläche, die
+ * gleichzeitig läuft, wird weiter vorgemerkt.
+ */
+export const remoteStore = {
+	entriesOfMonth: loadEntries,
+	saveEntries: (month: string, entries: Entry[]) => saveEntriesWith(null, month, entries),
+	activities: loadActivities,
+	saveActivities: (list: Activity[]) => saveActivitiesWith(null, list),
+	settings: loadSettings,
+	saveSettings: (s: Settings) => saveSettingsWith(null, s),
+	timeReport: loadTimeReport,
+	saveTimeReport: (report: StoredTimeReport) => saveTimeReportWith(null, report),
+	deleteTimeReport: (month: string) => deleteTimeReportWith(null, month)
+};
 
 /** Der Stand einer Reportdatei, wie er auf der Platte liegt. */
 async function loadTimeReportRaw(month: string): Promise<StoredTimeReport | null> {

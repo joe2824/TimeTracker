@@ -28,17 +28,7 @@ export interface DeviceContext {
 }
 
 /** Der lokale Speicher, so verdrahtet wie im Betrieb (`account.svelte.ts`). */
-const localStore: LocalStore = {
-	entriesOfMonth: (m) => store.loadEntries(m),
-	saveEntries: (m, list) => store.saveEntries(m, list),
-	activities: () => store.loadActivities(),
-	saveActivities: (l) => store.saveActivities(l),
-	settings: () => store.loadSettings(),
-	saveSettings: (s) => store.saveSettings(s),
-	timeReport: (m) => store.loadTimeReport(m),
-	saveTimeReport: (r) => store.saveTimeReport(r),
-	deleteTimeReport: (m) => store.deleteTimeReport(m)
-};
+const localStore: LocalStore = store.remoteStore;
 
 function mount(device: FakeDevice): void {
 	resetFakeFs();

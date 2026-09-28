@@ -4,19 +4,15 @@ import { logError, logInfo, logWarn, clearLogs } from "../log";
 import {
 	clearAccountData,
 	clearOutbox,
-	deleteTimeReport,
 	loadDevice,
-	loadEntries,
-	loadTimeReport,
-	saveEntries,
-	saveTimeReport,
 	getLocalEncryptionKey,
+	listEntryMonths,
 	readProtectedVaultKey,
+	remoteStore,
 	setLocalEncryptionKey,
 	updateDevice,
 	type DeviceInfo
 } from "../store";
-import { loadActivities, saveActivities, loadSettings, saveSettings, listEntryMonths } from "../store";
 import { deviceId } from "./device";
 import {
 	startTracking,
@@ -413,17 +409,7 @@ class AccountState {
 					return { ...info, seq: s.seq, priority: s.priority };
 				});
 			},
-			store: {
-				entriesOfMonth: loadEntries,
-				saveEntries,
-				activities: loadActivities,
-				saveActivities,
-				settings: loadSettings,
-				saveSettings,
-				timeReport: loadTimeReport,
-				saveTimeReport,
-				deleteTimeReport
-			},
+			store: remoteStore,
 			onProgress: (p) => {
 				// Eine abgelöste Engine lädt nach stop() womöglich noch Seiten - deren
 				// Fortschritt gehört nicht zum jetzigen Konto.

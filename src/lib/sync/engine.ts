@@ -12,7 +12,6 @@ import type { Entry, Activity, Settings } from "../types";
 import type { StoredTimeReport } from "../store";
 import { Api, ApiError, type OutgoingRecord, type ServerRecord } from "./api";
 import {
-	applyingRemote,
 	clearChanges,
 	monthOfTimeReportId,
 	noteChanges,
@@ -40,6 +39,7 @@ const BATCH = 200;
  */
 const BACKLOG_PAGES = 5;
 
+/** Die Ablage, wie der Abgleich sie braucht: Schreiben am Haken vorbei (remoteStore). */
 export interface LocalStore {
 	entriesOfMonth(month: string): Promise<Entry[]>;
 	saveEntries(month: string, entries: Entry[]): Promise<void>;
@@ -589,12 +589,15 @@ export class SyncEngine {
 		logInfo(`Monat ${month} nachgeladen`);
 	}
 
-	/** Serverdaten einspielen - ohne dass der Haken sie als eigene Änderung nimmt. */
+	/**
+	 * Serverdaten einspielen. Am Haken vorbei schreibt `LocalStore` (remoteStore):
+	 * sonst nähme er sie als eigene Änderung.
+	 */
 	async #apply(
 		records: ServerRecord[]
 	): Promise<{ lostEdits: number; staleTimerSplits: StaleTimerSplitInfo[] }> {
 		if (this.#stopped) return { lostEdits: 0, staleTimerSplits: [] };
-		return this.#serial(() => applyingRemote(() => this.#applyInner(records)));
+		return this.#serial(() => this.#applyInner(records));
 	}
 
 	async #applyInner(
@@ -790,8 +793,8 @@ export class SyncEngine {
 				noted.push({ kind: "entry", id: e.id, month, deleted: false, at: now });
 			}
 		}
-		// Ohne Vormerkung bliebe der Schluss hier liegen: das Einspielen läuft in
-		// `applyingRemote`, der Schreib-Haken ist abgeschaltet. Das andere Gerät
+		// Ohne Vormerkung bliebe der Schluss hier liegen: das Einspielen schreibt
+		// am Schreib-Haken vorbei (LocalStore). Das andere Gerät
 		// liesse seinen Timer weiterlaufen, und beide Stände gingen still
 		// auseinander - der Server sähe nie, was hier entschieden wurde.
 		await noteChanges(noted);

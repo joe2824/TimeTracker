@@ -14,7 +14,6 @@ const { createVaultKey } = await import("../crypto/vault");
 const { account } = await import("./account.svelte");
 const { app } = await import("../app.svelte");
 const store = await import("../store");
-const { applyingRemote } = await import("./outbox");
 const { monthKey } = await import("../time/time");
 const { BUILTIN_OTHERS_ID } = await import("../types");
 
@@ -42,23 +41,21 @@ describe("Zwischenspeicher nach gescheitertem Abgleich", () => {
 			]);
 			// So sieht es aus, wenn eine Runde einen von woanders gestarteten Timer
 			// schon auf die Platte geschrieben hat, bevor sie später scheitert:
-			// `applyingRemote` unterdrückt den Schreib-Haken genau wie beim echten
+			// `remoteStore` schreibt am Schreib-Haken vorbei, genau wie beim echten
 			// Einspielen von Server-Daten.
-			await applyingRemote(() =>
-				store.saveEntries(month, [
-					{
-						id: "von-anderswo",
-						activityId: BUILTIN_OTHERS_ID,
-						startTs: Date.now() - 3600_000,
-						endTs: null,
-						note: "",
-						source: "timer",
-						updatedAt: Date.now() - 3600_000,
-						rev: 1,
-						deviceId: "anderes-geraet"
-					}
-				])
-			);
+			await store.remoteStore.saveEntries(month, [
+				{
+					id: "von-anderswo",
+					activityId: BUILTIN_OTHERS_ID,
+					startTs: Date.now() - 3600_000,
+					endTs: null,
+					note: "",
+					source: "timer",
+					updatedAt: Date.now() - 3600_000,
+					rev: 1,
+					deviceId: "anderes-geraet"
+				}
+			]);
 
 			const realFetch = globalThis.fetch;
 			globalThis.fetch = async () => {

@@ -174,3 +174,21 @@ describe("Outbox-Verwaltung", () => {
 		expect(mergePending(old, fresh)).toEqual(fresh);
 	});
 });
+
+describe("Schreiben des Abgleichs neben eigenen Änderungen", () => {
+	it("merkt eine eigene Speicherung vor, während der Abgleich Fremdes schreibt", async () => {
+		// Früher schaltete der Abgleich den Haken für ALLE Schreibvorgänge ab,
+		// solange er einspielte: ein Timer-Stopp in dieser Zeit erreichte den
+		// Server nie, und die anderen Geräte sahen den Timer weiterlaufen.
+		const { blockWrites } = await import("../testing/fakeFs");
+		const release = blockWrites();
+		const remote = store.remoteStore.saveEntries("2026-06", [e("fremd", { rev: 3, updatedAt: 1, deviceId: "x" })]);
+		const local = store.saveEntries("2026-07", [e("eigen")]);
+		await vi.waitFor(() => expect(pendingChanges().map((c) => c.id)).toContain("eigen"));
+		release();
+		await Promise.all([remote, local]);
+
+		expect(pendingChanges().map((c) => c.id)).toEqual(["eigen"]);
+		expect(onDisk("2026-06")[0].deviceId).toBe("x");
+	});
+});

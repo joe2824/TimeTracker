@@ -65,19 +65,6 @@ let pending: PendingChange[] = [];
 let loaded = false;
 let deviceId = "";
 
-/** Während der Abgleich Fremdes einspielt, wird nichts vorgemerkt. */
-let suppressed = 0;
-
-/** Etwas schreiben, ohne es vorzumerken. */
-export async function applyingRemote<T>(fn: () => Promise<T>): Promise<T> {
-	suppressed++;
-	try {
-		return await fn();
-	} finally {
-		suppressed--;
-	}
-}
-
 /** Ausstehende Änderungen, älteste zuerst. */
 export function pendingChanges(): PendingChange[] {
 	return [...pending].sort((a, b) => a.at - b.at);
@@ -94,7 +81,7 @@ export async function clearChanges(done: Pick<PendingChange, "kind" | "id">[]): 
  * Etwas vormerken, das nicht über den Schreib-Haken kam.
  *
  * Für Entscheidungen, die der Abgleich selbst trifft, während er Fremdes
- * einspielt: dort ist der Haken abgeschaltet (`applyingRemote`), und ohne diesen
+ * einspielt: dort schreibt er am Haken vorbei (`remoteStore`), und ohne diesen
  * Weg bliebe die Entscheidung auf diesem Gerät liegen.
  */
 export async function noteChanges(changes: PendingChange[]): Promise<void> {
@@ -213,7 +200,6 @@ export function stopTracking(): void {
 
 const hook: WriteHook = {
 	async entries(month, before, after) {
-		if (suppressed > 0) return after;
 		const now = Date.now();
 		const { changes, stamped } = diffAndStamp(before, after, deviceId, now);
 		await note([
@@ -231,7 +217,6 @@ const hook: WriteHook = {
 	},
 
 	async activities(before, after) {
-		if (suppressed > 0) return after;
 		const now = Date.now();
 		// Vom Team vorgegebene Zeilen gehören nicht in dieses Konto - sie kommen
 		// über den eigenen Team-Kanal (team/activities.ts), nicht über den
@@ -260,7 +245,6 @@ const hook: WriteHook = {
 	},
 
 	async settings(before, after) {
-		if (suppressed > 0) return after;
 		const now = Date.now();
 		// Die Einstellungen sind EIN Datensatz, kein Bestand – deshalb über eine
 		// einelementige Liste mit fester Id statt über echte Identitäten.
@@ -273,7 +257,6 @@ const hook: WriteHook = {
 	},
 
 	async timeReport(month, before, after) {
-		if (suppressed > 0) return after;
 		const now = Date.now();
 		const id = timeReportId(month);
 		// Ein Report je Monat, also derselbe Kniff wie bei den Einstellungen: eine
@@ -302,6 +285,5 @@ export function resetOutboxForTests(): void {
 	pending = [];
 	loaded = false;
 	deviceId = "";
-	suppressed = 0;
 	setWriteHook(null);
 }
