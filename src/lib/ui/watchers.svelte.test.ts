@@ -636,8 +636,14 @@ describe("Timer übers Wochenende, am Montag im Dialog auf Freitag beendet", () 
 	});
 
 	/** Die App startet am Montag frisch – mit diesem Stand auf der Platte. */
-	async function startMonday(time: string, byMonth: Record<string, Entry[]>) {
-		vi.setSystemTime(new Date(wall(MONDAY, time)));
+	function startMonday(time: string, byMonth: Record<string, Entry[]>) {
+		return startOn(MONDAY, time, byMonth);
+	}
+
+	async function startOn(date: string, time: string, byMonth: Record<string, Entry[]>) {
+		vi.setSystemTime(new Date(wall(date, time)));
+		// currentMonth hängt an app.now: sonst lüde init() die Monate des Vortests.
+		app.now = Date.now();
 		files.set(
 			"data/settings.json",
 			JSON.stringify({ ...defaultSettings, timeZone: appTimeZone(), maxTimerHours: 10 })
@@ -759,19 +765,8 @@ describe("Timer übers Wochenende, am Montag im Dialog auf Freitag beendet", () 
 	});
 
 	it("Wochenende über die Monatsgrenze: auch der neue Monat bleibt leer", async () => {
-		vi.setSystemTime(new Date(wall("2026-08-03", "08:30")));
 		const friday = "2026-07-31";
-		files.set(
-			"data/settings.json",
-			JSON.stringify({ ...defaultSettings, timeZone: appTimeZone(), maxTimerHours: 10 })
-		);
-		files.set("data/activities.json", JSON.stringify(ACTIVITIES_DE));
-		files.set(monthFile("2026-07"), JSON.stringify([timerEntry("fr", wall(friday, "08:00"), null)]));
-		app.entriesByMonth = {};
-		app.running = null;
-		app.loaded = false;
-		expect(await app.init()).toBe(true);
-		await tick(3);
+		await startOn("2026-08-03", "08:30", { "2026-07": [timerEntry("fr", wall(friday, "08:00"), null)] });
 
 		expect(watchers.longTimerPrompt?.startTs).toBe(wall(friday, "08:00"));
 		const end = dialogSuggestion();

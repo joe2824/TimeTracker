@@ -768,15 +768,37 @@ describe("devSimulateStartFault() – Ladebildschirm vorführen", () => {
 	});
 });
 
-describe("Mitternachts-Wechsel", () => {
-	it("legt einen Tag nicht doppelt an, den ein anderes Gerät schon geteilt hat", async () => {
-		vi.useFakeTimers({ now: at(19, 8) });
-		try {
+/**
+ * Wie beim echten Start: init() liest die Monate selbst von der Platte. Mit
+ * `ticking` läuft der Sekunden-Tick (Mitternachts-Wechsel) danach weiter.
+ */
+async function startFromDisk(
+	now: number,
+	byMonth: Record<string, Entry[]>,
+	{ ticking = false } = {}
+): Promise<void> {
+	vi.useFakeTimers({ now });
+	reset(byMonth);
+	// currentMonth hängt an app.now – ohne das lüde init() den Monat des Vortests.
+	app.now = now;
+	app.entriesByMonth = {};
+	app.loaded = false;
+	expect(await app.init()).toBe(true);
+	if (!ticking) app.dispose();
+	app.activities = [...ACTIVITIES];
+}
+
+describe("Start von der Platte", () => {
+	afterEach(() => {
+		app.dispose();
+		vi.useRealTimers();
+	});
+
+	describe("Mitternachts-Wechsel", () => {
+		it("legt einen Tag nicht doppelt an, den ein anderes Gerät schon geteilt hat", async () => {
 			const run = entry("t1", P1, at(16, 9), null);
 			const synced = entry("t2r", P1, at(17, 0), at(18, 0)); // vom Server
-			reset({ "2026-07": [run, synced] });
-			app.loaded = false; // sonst überspringt init() das Laden
-			expect(await app.init()).toBe(true);
+			await startFromDisk(at(19, 8), { "2026-07": [run, synced] }, { ticking: true });
 
 			await vi.advanceTimersByTimeAsync(1000);
 
@@ -784,111 +806,15 @@ describe("Mitternachts-Wechsel", () => {
 			expect(saturday.map((e) => e.id)).toEqual(["t2r"]);
 			expect(onDisk("2026-07").filter((e) => e.startTs === at(18, 0))).toHaveLength(1);
 			expect(app.running?.startTs).toBe(at(19, 0));
-		} finally {
-			app.dispose();
-			vi.useRealTimers();
-		}
-	});
-});
+		});
 
-describe("Speichern mit veralteter Liste", () => {
-	// Der Abgleich schreibt direkt auf die Platte, die App lädt erst danach neu.
-	// Speichert sie dazwischen, darf ihre veraltete Liste nichts kaputtmachen.
-
-	/** Wie beim echten Start: init() liest die Monate selbst von der Platte. */
-	async function startFromDisk(now: number, byMonth: Record<string, Entry[]>) {
-		vi.useFakeTimers({ now });
-		reset(byMonth);
-		// currentMonth hängt an app.now – ohne das lüde init() den Monat des Vortests.
-		app.now = now;
-		app.entriesByMonth = {};
-		app.loaded = false;
-		expect(await app.init()).toBe(true);
-		app.dispose();
-		app.activities = [...ACTIVITIES];
-	}
-
-	/** Was der Abgleich an der App vorbei in die Monatsdatei schreibt. */
-	async function syncWrites(month: string, list: Entry[]) {
-		const { saveEntries } = await import("./store");
-		await saveEntries(month, list);
-	}
-
-	afterEach(() => {
-		app.dispose();
-		vi.useRealTimers();
-	});
-
-	it("löscht keinen Eintrag, den der Abgleich vor dem Neuladen geschrieben hat", async () => {
-		const run = entry("r", P1, at(17, 8), null);
-		await startFromDisk(at(17, 10), { "2026-07": [run] });
-		await syncWrites("2026-07", [run, entry("remote", P2, at(17, 6), at(17, 7))]);
-
-		await app.stop(at(17, 9));
-
-		const es = onDisk("2026-07").sort((a, b) => a.startTs - b.startTs);
-		expect(es.map((e) => [e.id, e.endTs])).toEqual([
-			["remote", at(17, 7)],
-			["r", at(17, 9)]
-		]);
-	});
-
-	it("holt keinen Eintrag zurück, den ein anderes Gerät vor dem Neuladen gelöscht hat", async () => {
-		const run = entry("r", P1, at(17, 8), null);
-		const gone = entry("gone", P2, at(17, 6), at(17, 7));
-		await startFromDisk(at(17, 10), { "2026-07": [gone, run] });
-		await syncWrites("2026-07", [run]);
-
-		await app.stop(at(17, 9));
-
-		expect(onDisk("2026-07").map((e) => [e.id, e.endTs])).toEqual([["r", at(17, 9)]]);
-	});
-
-	it("Aktivität löschen nimmt keinen frisch abgeglichenen Eintrag mit", async () => {
-		const a = entry("a", P1, at(17, 8), at(17, 9));
-		const b = entry("b", P2, at(17, 10), at(17, 11));
-		await startFromDisk(at(17, 12), { "2026-07": [a, b] });
-		expect(app.monthLoaded("2026-07")).toBe(true);
-		await syncWrites("2026-07", [a, b, entry("remote", P2, at(17, 6), at(17, 7))]);
-
-		expect(await app.deleteActivity(P1)).toBe(1);
-
-		expect(onDisk("2026-07").map((e) => e.id).sort()).toEqual(["b", "remote"]);
-	});
-
-	it("verliert einen in den Nachbarmonat verschobenen Eintrag nicht, wenn reload() dazwischenkommt", async () => {
-		const aug = (d: number, h: number) => wallToTs(2026, 8, d, h, 0, 0);
-		const x = entry("x", P1, at(31, 10), at(31, 11));
-		const y = entry("y", P1, at(30, 10), at(30, 11));
-		const z = entry("z", P1, aug(1, 12), aug(1, 13));
-		await startFromDisk(aug(2, 8), { "2026-07": [x, y], "2026-08": [z] });
-
-		const release = blockWrites();
-		const moved = app.updateEntry(x.startTs, { ...x, startTs: aug(1, 10), endTs: aug(1, 11) });
-		await vi.advanceTimersByTimeAsync(0);
-		const reload = app.reload();
-		await vi.advanceTimersByTimeAsync(0);
-		release();
-		await moved;
-		await reload;
-
-		expect(onDisk("2026-07").map((e) => e.id)).toEqual(["y"]);
-		expect(onDisk("2026-08").map((e) => e.id).sort()).toEqual(["x", "z"]);
-	});
-});
-
-describe("Mitternachts-Wechsel neben reload()", () => {
-	it("verliert nichts, wenn reload() in einen hängenden Wechsel fällt", async () => {
-		// Der Wechsel wartet beim Speichern hinter den Schreibvorgängen des Abgleichs,
-		// und der Abgleich ruft danach reload(). Tauscht das die Monatslisten
-		// unter dem Wechsel aus, speichert er den Rest aus den frisch gelesenen,
-		// alten Listen – und der nächste Tick teilt den Lauf ein zweites Mal.
-		vi.useFakeTimers({ now: wallToTs(2026, 8, 2, 8, 0, 0) });
-		try {
+		it("verliert nichts, wenn reload() in einen hängenden Wechsel fällt", async () => {
+			// Der Wechsel wartet beim Speichern hinter den Schreibvorgängen des Abgleichs,
+			// und der Abgleich ruft danach reload(). Tauscht das die Monatslisten
+			// unter dem Wechsel aus, speichert er den Rest aus den frisch gelesenen,
+			// alten Listen – und der nächste Tick teilt den Lauf ein zweites Mal.
 			const run = entry("t1", P1, wallToTs(2026, 7, 31, 9, 0, 0), null);
-			reset({ "2026-07": [run] });
-			app.loaded = false; // sonst überspringt init() das Laden
-			expect(await app.init()).toBe(true);
+			await startFromDisk(wallToTs(2026, 8, 2, 8, 0, 0), { "2026-07": [run] }, { ticking: true });
 
 			const release = blockWrites();
 			await vi.advanceTimersByTimeAsync(1000);
@@ -905,10 +831,75 @@ describe("Mitternachts-Wechsel neben reload()", () => {
 			expect(july[0].endTs).toBe(wallToTs(2026, 8, 1, 0, 0, 0));
 			const open = [...onDisk("2026-07"), ...onDisk("2026-08")].filter((e) => e.endTs === null);
 			expect(open.map((e) => e.startTs)).toEqual([wallToTs(2026, 8, 2, 0, 0, 0)]);
-		} finally {
-			app.dispose();
-			vi.useRealTimers();
+		});
+	});
+
+	describe("Speichern mit veralteter Liste", () => {
+		// Der Abgleich schreibt direkt auf die Platte, die App lädt erst danach neu.
+		// Speichert sie dazwischen, darf ihre veraltete Liste nichts kaputtmachen.
+
+		/** Was der Abgleich an der App vorbei in die Monatsdatei schreibt. */
+		async function syncWrites(month: string, list: Entry[]) {
+			const { saveEntries } = await import("./store");
+			await saveEntries(month, list);
 		}
+
+		it("löscht keinen Eintrag, den der Abgleich vor dem Neuladen geschrieben hat", async () => {
+			const run = entry("r", P1, at(17, 8), null);
+			await startFromDisk(at(17, 10), { "2026-07": [run] });
+			await syncWrites("2026-07", [run, entry("remote", P2, at(17, 6), at(17, 7))]);
+
+			await app.stop(at(17, 9));
+
+			const es = onDisk("2026-07").sort((a, b) => a.startTs - b.startTs);
+			expect(es.map((e) => [e.id, e.endTs])).toEqual([
+				["remote", at(17, 7)],
+				["r", at(17, 9)]
+			]);
+		});
+
+		it("holt keinen Eintrag zurück, den ein anderes Gerät vor dem Neuladen gelöscht hat", async () => {
+			const run = entry("r", P1, at(17, 8), null);
+			const gone = entry("gone", P2, at(17, 6), at(17, 7));
+			await startFromDisk(at(17, 10), { "2026-07": [gone, run] });
+			await syncWrites("2026-07", [run]);
+
+			await app.stop(at(17, 9));
+
+			expect(onDisk("2026-07").map((e) => [e.id, e.endTs])).toEqual([["r", at(17, 9)]]);
+		});
+
+		it("Aktivität löschen nimmt keinen frisch abgeglichenen Eintrag mit", async () => {
+			const a = entry("a", P1, at(17, 8), at(17, 9));
+			const b = entry("b", P2, at(17, 10), at(17, 11));
+			await startFromDisk(at(17, 12), { "2026-07": [a, b] });
+			expect(app.monthLoaded("2026-07")).toBe(true);
+			await syncWrites("2026-07", [a, b, entry("remote", P2, at(17, 6), at(17, 7))]);
+
+			expect(await app.deleteActivity(P1)).toBe(1);
+
+			expect(onDisk("2026-07").map((e) => e.id).sort()).toEqual(["b", "remote"]);
+		});
+
+		it("verliert einen in den Nachbarmonat verschobenen Eintrag nicht, wenn reload() dazwischenkommt", async () => {
+			const aug = (d: number, h: number) => wallToTs(2026, 8, d, h, 0, 0);
+			const x = entry("x", P1, at(31, 10), at(31, 11));
+			const y = entry("y", P1, at(30, 10), at(30, 11));
+			const z = entry("z", P1, aug(1, 12), aug(1, 13));
+			await startFromDisk(aug(2, 8), { "2026-07": [x, y], "2026-08": [z] });
+
+			const release = blockWrites();
+			const moved = app.updateEntry(x.startTs, { ...x, startTs: aug(1, 10), endTs: aug(1, 11) });
+			await vi.advanceTimersByTimeAsync(0);
+			const reload = app.reload();
+			await vi.advanceTimersByTimeAsync(0);
+			release();
+			await moved;
+			await reload;
+
+			expect(onDisk("2026-07").map((e) => e.id)).toEqual(["y"]);
+			expect(onDisk("2026-08").map((e) => e.id).sort()).toEqual(["x", "z"]);
+		});
 	});
 });
 
