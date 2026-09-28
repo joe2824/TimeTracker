@@ -186,6 +186,23 @@ describe("Tray-Fenster: nur vormerken, nicht abgleichen", () => {
 		expect(outboxIds()).toContain("im-tray");
 	});
 
+	it("schaltet den Haken wieder ab, wenn das Hauptfenster das Konto getrennt hat", async () => {
+		await account.linkWithSession("http://test", await createVaultKey(), "Ich");
+		await settled();
+		resetOutboxForTests();
+		await account.initWriter();
+		// Das Hauptfenster trennt; übrig bleibt eine Verknüpfung ohne Adresse.
+		files.delete("data/device.json");
+		files.delete("data/outbox.json");
+
+		await account.initWriter();
+		await store.saveEntries("2026-07", [
+			{ id: "danach", activityId: BUILTIN_OTHERS_ID, startTs: 1, endTs: 2, note: "", source: "timer" }
+		]);
+
+		expect(files.has("data/outbox.json")).toBe(false);
+	});
+
 	it("schaltet ohne verknüpftes Konto nichts ein", async () => {
 		resetOutboxForTests();
 		await account.initWriter();

@@ -35,6 +35,9 @@
 	let loadError = $state<string | null>(null);
 
 	async function refresh() {
+		// Erst den Haken, dann laden: reload() repariert eingebaute Zeilen, und
+		// das soll vorgemerkt werden. Jedes Mal, siehe account.initWriter.
+		await account.initWriter().catch((e) => logError("Flyout: Vormerken nicht eingeschaltet", e));
 		try {
 			await app.reload();
 			loadError = null;
@@ -53,13 +56,7 @@
 
 	onMount(() => {
 		logInfo("Tray-Flyout geöffnet");
-		// Erst den Haken, dann laden: reload() repariert eingebaute Zeilen, und
-		// das soll vorgemerkt werden.
-		void account
-			.initWriter()
-			.catch((e) => logError("Flyout: Vormerken nicht eingeschaltet", e))
-			.then(refresh)
-			.then(requestSync);
+		void refresh().then(requestSync);
 		// Eigener Tick (dieses Fenster ruft app.init() nicht auf) für die Live-Anzeige.
 		const tick = setInterval(() => (app.now = Date.now()), 1000);
 		// Bei jedem Einblenden (Fokus oder Tray-Klick) frische Daten laden.

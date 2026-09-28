@@ -574,11 +574,14 @@ class AccountState {
 	 * verlorene Änderungen) im Tray verloren – die Dialoge hängen im
 	 * Hauptfenster. Vorgemerkt wird in dieselbe outbox.json, hochladen tut das
 	 * Hauptfenster (Ereignis "tray-sync-request").
+	 *
+	 * Bei jedem Einblenden aufzurufen: das Fenster lebt so lange wie die App,
+	 * und im Hauptfenster kann das Konto inzwischen verknüpft oder getrennt sein.
 	 */
 	async initWriter(): Promise<void> {
 		const info = await loadDevice();
-		if (!info?.serverUrl) return;
-		await startTracking(await deviceId());
+		if (info?.serverUrl) await startTracking(await deviceId());
+		else stopTracking();
 	}
 
 	/**
