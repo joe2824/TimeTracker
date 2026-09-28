@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Activity, Entry } from "../types";
 import { defaultSettings } from "../types";
-import { resetFakeFs } from "../testing/fakeFs";
-import { monthKey } from "../time/time";
+import { files, resetFakeFs } from "../testing/fakeFs";
+import { fmtDate, monthKey } from "../time/time";
+import { suggestLongTimerEnd } from "../time/longTimer";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("../testing/fakeFs")).fakeFs);
 vi.mock("svelte-sonner", () => import("../testing/toastStub"));
@@ -65,7 +66,7 @@ const ACTIVITIES_DE: Activity[] = [
 	{ id: P2, name: "Projekt 2", sortOrder: 1, archived: false, isAbsence: false }
 ];
 
-import { wallStringToTs } from "../time/tz";
+import { appTimeZone, wallStringToTs } from "../time/tz";
 
 /** Ausgangszeit aller Tests - ein gewöhnlicher Vormittag. */
 const START_TIME = new Date(wallStringToTs("2026-08-24", "10:00"));
@@ -616,5 +617,179 @@ describe("resolveLongTimer", () => {
 		expect(stop).not.toHaveBeenCalled();
 		expect(watchers.longTimerPrompt).toBeNull();
 		stop.mockRestore();
+	});
+});
+
+describe("Timer übers Wochenende, am Montag im Dialog auf Freitag beendet", () => {
+	const MONDAY = "2026-08-24";
+	const FRIDAY = "2026-08-21";
+	const wall = (date: string, time: string) => wallStringToTs(date, time);
+	const monthFile = (m: string) => `data/entries-${m}.json`;
+	const onDisk = (m: string): Entry[] => JSON.parse(files.get(monthFile(m)) ?? "[]");
+	const timerEntry = (id: string, startTs: number, endTs: number | null): Entry => ({
+		id,
+		activityId: P1,
+		startTs,
+		endTs,
+		note: "",
+		source: "timer"
+	});
+
+	/** Die App startet am Montag frisch – mit diesem Stand auf der Platte. */
+	async function startMonday(time: string, byMonth: Record<string, Entry[]>) {
+		vi.setSystemTime(new Date(wall(MONDAY, time)));
+		files.set(
+			"data/settings.json",
+			JSON.stringify({ ...defaultSettings, timeZone: appTimeZone(), maxTimerHours: 10 })
+		);
+		files.set("data/activities.json", JSON.stringify(ACTIVITIES_DE));
+		for (const [m, list] of Object.entries(byMonth)) files.set(monthFile(m), JSON.stringify(list));
+		app.entriesByMonth = {};
+		app.running = null;
+		app.loaded = false;
+		expect(await app.init()).toBe(true);
+		// Ein paar Takte: Mitternachts-Wechsel und Wächter laufen an.
+		await tick(3);
+	}
+
+	/** Was der Dialog vorbelegt – dieselbe Rechnung wie in LongTimerDialog. */
+	function dialogSuggestion(): number {
+		const p = watchers.longTimerPrompt!;
+		const dayStart = app
+			.monthEntries(monthKey(p.startTs))
+			.filter((e) => fmtDate(e.startTs) === fmtDate(p.startTs))
+			.reduce((min, e) => Math.min(min, e.startTs), Infinity);
+		return suggestLongTimerEnd({
+			runStartTs: p.startTs,
+			now: Date.now(),
+			dayStartTs: Number.isFinite(dayStart) ? dayStart : null,
+			hoursPerDay: app.settings.hoursPerDay,
+			deductBreaks: app.settings.breakDeduction
+		});
+	}
+
+	/** Alle Einträge ab Freitag, über alle Monatsdateien. */
+	function fromFriday(friday: string): Entry[] {
+		const from = wall(friday, "00:00");
+		return [...files.keys()]
+			.filter((k) => k.startsWith("data/entries-"))
+			.flatMap((k) => JSON.parse(files.get(k)!) as Entry[])
+			.filter((e) => e.startTs >= from)
+			.sort((a, b) => a.startTs - b.startTs);
+	}
+
+	afterEach(() => app.dispose());
+
+	it("Rechner schlief übers Wochenende: nur der Freitag bleibt", async () => {
+		await startMonday("08:30", { "2026-08": [timerEntry("fr", wall(FRIDAY, "08:00"), null)] });
+
+		// Der Wechsel hat Sa, So und den laufenden Montag angelegt …
+		expect(app.running?.startTs).toBe(wall(MONDAY, "00:00"));
+		// … und der Dialog fragt nach dem ganzen Lauf, ab Freitag.
+		expect(watchers.longTimerPrompt?.startTs).toBe(wall(FRIDAY, "08:00"));
+		const end = dialogSuggestion();
+		expect(fmtDate(end)).toBe(FRIDAY);
+
+		await resolveLongTimer("stop", end);
+
+		expect(fromFriday(FRIDAY).map((e) => [e.startTs, e.endTs])).toEqual([[wall(FRIDAY, "08:00"), end]]);
+		expect(app.running).toBeNull();
+	});
+
+	it("App lief übers Wochenende durch: nur der Freitag bleibt", async () => {
+		await startMonday("08:30", {
+			"2026-08": [
+				timerEntry("fr", wall(FRIDAY, "08:00"), wall("2026-08-22", "00:00")),
+				timerEntry("sa", wall("2026-08-22", "00:00"), wall("2026-08-23", "00:00")),
+				timerEntry("so", wall("2026-08-23", "00:00"), wall(MONDAY, "00:00")),
+				timerEntry("mo", wall(MONDAY, "00:00"), null)
+			]
+		});
+
+		expect(watchers.longTimerPrompt?.startTs).toBe(wall(FRIDAY, "08:00"));
+		await resolveLongTimer("stop", wall(FRIDAY, "17:00"));
+
+		expect(fromFriday(FRIDAY).map((e) => e.id)).toEqual(["fr"]);
+		expect(onDisk("2026-08").find((e) => e.id === "fr")?.endTs).toBe(wall(FRIDAY, "17:00"));
+	});
+
+	it("anderes Gerät hatte schon geteilt: auch dessen Sa und So verschwinden", async () => {
+		// Der Stand vom Montagmorgen: der Rechner kennt nur den offenen Freitag,
+		// der Abgleich hat Sa und den offenen So eines anderen Geräts dazugelegt.
+		await startMonday("08:30", {
+			"2026-08": [
+				timerEntry("fr", wall(FRIDAY, "08:00"), null),
+				timerEntry("sa-r", wall("2026-08-22", "00:00"), wall("2026-08-23", "00:00")),
+				timerEntry("so-r", wall("2026-08-23", "00:00"), null)
+			]
+		});
+
+		expect(watchers.longTimerPrompt?.startTs).toBe(wall(FRIDAY, "08:00"));
+		await resolveLongTimer("stop", wall(FRIDAY, "17:00"));
+
+		expect(fromFriday(FRIDAY).map((e) => [e.startTs, e.endTs])).toEqual([
+			[wall(FRIDAY, "08:00"), wall(FRIDAY, "17:00")]
+		]);
+	});
+
+	it("wie am 28.09.: Sa und So doppelt, weil zwei Geräte geteilt haben", async () => {
+		// Der Stand aus dem Protokoll kurz vor dem Beenden: dieser Rechner und ein
+		// anderes Gerät haben den Lauf je selbst geteilt, dessen offener Sonntag
+		// wurde beim Laden geschätzt geschlossen.
+		const sa = wall("2026-08-22", "00:00");
+		const so = wall("2026-08-23", "00:00");
+		const mo = wall(MONDAY, "00:00");
+		await startMonday("08:39", {
+			"2026-08": [
+				timerEntry("fr", wall(FRIDAY, "08:00"), sa),
+				timerEntry("sa-l", sa, so),
+				timerEntry("so-l", so, mo),
+				timerEntry("sa-r", sa, so),
+				timerEntry("so-r", so, mo),
+				timerEntry("mo-l", mo, null)
+			]
+		});
+
+		expect(watchers.longTimerPrompt?.startTs).toBe(wall(FRIDAY, "08:00"));
+		await resolveLongTimer("stop", wall(FRIDAY, "21:00"));
+
+		expect(fromFriday(FRIDAY).map((e) => [e.startTs, e.endTs])).toEqual([
+			[wall(FRIDAY, "08:00"), wall(FRIDAY, "21:00")]
+		]);
+	});
+
+	it("Wochenende über die Monatsgrenze: auch der neue Monat bleibt leer", async () => {
+		vi.setSystemTime(new Date(wall("2026-08-03", "08:30")));
+		const friday = "2026-07-31";
+		files.set(
+			"data/settings.json",
+			JSON.stringify({ ...defaultSettings, timeZone: appTimeZone(), maxTimerHours: 10 })
+		);
+		files.set("data/activities.json", JSON.stringify(ACTIVITIES_DE));
+		files.set(monthFile("2026-07"), JSON.stringify([timerEntry("fr", wall(friday, "08:00"), null)]));
+		app.entriesByMonth = {};
+		app.running = null;
+		app.loaded = false;
+		expect(await app.init()).toBe(true);
+		await tick(3);
+
+		expect(watchers.longTimerPrompt?.startTs).toBe(wall(friday, "08:00"));
+		const end = dialogSuggestion();
+		expect(fmtDate(end)).toBe(friday);
+		await resolveLongTimer("stop", end);
+
+		expect(fromFriday(friday).map((e) => [e.startTs, e.endTs])).toEqual([[wall(friday, "08:00"), end]]);
+		expect(onDisk("2026-08")).toEqual([]);
+	});
+
+	it("Ende am Samstag: Freitag bis Mitternacht, Samstag bis zur Endzeit, Sonntag weg", async () => {
+		await startMonday("08:30", { "2026-08": [timerEntry("fr", wall(FRIDAY, "08:00"), null)] });
+
+		await resolveLongTimer("stop", wall("2026-08-22", "02:00"));
+
+		expect(fromFriday(FRIDAY).map((e) => [e.startTs, e.endTs])).toEqual([
+			[wall(FRIDAY, "08:00"), wall("2026-08-22", "00:00")],
+			[wall("2026-08-22", "00:00"), wall("2026-08-22", "02:00")]
+		]);
 	});
 });
