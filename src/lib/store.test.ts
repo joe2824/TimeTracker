@@ -147,10 +147,33 @@ describe("saveEntries mit Ausgangsstand", () => {
 		expect(byId).toEqual({ a: "remote", b: "lokal" });
 	});
 
-	it("verwirft nichts, wenn die Datei sich leer liest", async () => {
-		// Eine beschädigte Datei geht in Quarantäne und liest sich wie ein leerer
-		// Monat. Die Liste der App ist dann die einzige Kopie.
-		expect(await loadEntries(M)).toEqual([]);
+	it("holt keinen Eintrag zurück, den ein anderes Gerät gelöscht hat", async () => {
+		await saveEntries(M, [entry("b")]); // "a" kam per Abgleich als Löschung an
+		await saveEntries(M, [entry("a"), withNote("b", "lokal")], [entry("a"), entry("b")]);
+		expect((await loadEntries(M)).map((e) => e.id)).toEqual(["b"]);
+	});
+
+	it("holt keinen Eintrag zurück, wenn der Abgleich den Monat ganz geleert hat", async () => {
+		await saveEntries(M, [entry("a")]);
+		await saveEntries(M, []); // Datei fehlt: der Monat ist wirklich leer
+		await saveEntries(M, [entry("a"), entry("neu")], [entry("a")]);
+		expect((await loadEntries(M)).map((e) => e.id)).toEqual(["neu"]);
+	});
+
+	it("verwirft nichts, wenn die Datei beschädigt ist", async () => {
+		// Sie geht in Quarantäne und liest sich leer – die Liste der App ist dann
+		// die einzige Kopie.
+		files.set(file(M), '[{"id":"a","activityId":"a1"');
+		await saveEntries(M, [entry("a"), entry("b")], [entry("a"), entry("b")]);
+		expect((await loadEntries(M)).map((e) => e.id).sort()).toEqual(["a", "b"]);
+	});
+
+	it("verwirft nichts, wenn die beschädigte Datei schon zur Seite gelegt wurde", async () => {
+		// Jemand anderes hat sie zuerst gelesen: jetzt fehlt die Datei nur, der
+		// Monat ist deswegen aber nicht leer.
+		files.set(file(M), '[{"id":"a","activityId":"a1"');
+		await loadEntries(M);
+		expect(files.has(file(M))).toBe(false);
 		await saveEntries(M, [entry("a"), entry("b")], [entry("a"), entry("b")]);
 		expect((await loadEntries(M)).map((e) => e.id).sort()).toEqual(["a", "b"]);
 	});

@@ -823,6 +823,32 @@ describe("Speichern mit veralteter Liste", () => {
 	});
 });
 
+describe("Speichern mit veralteter Liste – Löschung von außen", () => {
+	it("holt keinen Eintrag zurück, den ein anderes Gerät vor dem Neuladen gelöscht hat", async () => {
+		vi.useFakeTimers({ now: at(17, 10) });
+		try {
+			const run = entry("r", P1, at(17, 8), null);
+			const gone = entry("gone", P2, at(17, 6), at(17, 7));
+			reset({ "2026-07": [gone, run] });
+			app.entriesByMonth = {};
+			app.loaded = false;
+			expect(await app.init()).toBe(true);
+			app.dispose();
+
+			// Der Abgleich übernimmt die Löschung vom anderen Gerät.
+			const { saveEntries } = await import("./store");
+			await saveEntries("2026-07", [run]);
+
+			await app.stop(at(17, 9));
+
+			expect(onDisk("2026-07").map((e) => [e.id, e.endTs])).toEqual([["r", at(17, 9)]]);
+		} finally {
+			app.dispose();
+			vi.useRealTimers();
+		}
+	});
+});
+
 describe("Mitternachts-Wechsel neben reload()", () => {
 	it("verliert nichts, wenn reload() in einen hängenden Wechsel fällt", async () => {
 		// Der Wechsel wartet beim Speichern hinter den Schreibvorgängen des Abgleichs,

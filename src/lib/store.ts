@@ -198,26 +198,41 @@ async function quarantine(file: string, e: unknown): Promise<void> {
  * - sonst: der Inhalt.
  */
 async function readJson<T>(file: string, fallback: T, opts: JsonOpts = {}): Promise<T> {
+	const r = await readJsonResult<T>(file, opts);
+	return r.status === "ok" ? r.value : fallback;
+}
+
+/** Wie readJson, sagt aber, ob "nichts" wirklich leer oder nur unlesbar heisst. */
+type ReadResult<T> = { status: "ok"; value: T } | { status: "missing" } | { status: "unreadable" };
+
+async function readJsonResult<T>(file: string, opts: JsonOpts = {}): Promise<ReadResult<T>> {
 	const path = `${DIR}/${file}`;
-	if (!(await storage.exists(path))) return fallback;
+	if (!(await storage.exists(path))) return { status: "missing" };
 	let txt: string;
 	try {
 		txt = await storage.readTextFile(path);
 	} catch (e) {
 		logWarn(`${file} konnte nicht gelesen werden`, e);
-		return fallback;
+		return { status: "unreadable" };
 	}
-	if (!txt.trim()) return fallback;
+	if (!txt.trim()) return { status: "unreadable" };
 	try {
-		return opts.encrypted ? await decryptFromStorage<T>(file, txt) : (JSON.parse(txt) as T);
+		const value = opts.encrypted ? await decryptFromStorage<T>(file, txt) : (JSON.parse(txt) as T);
+		return { status: "ok", value };
 	} catch (e) {
 		if (e instanceof LocalKeyUnavailableError) {
 			logWarn(`${file} konnte nicht gelesen werden`, e);
-			return fallback;
+			return { status: "unreadable" };
 		}
 		await quarantine(file, e);
-		return fallback;
+		return { status: "unreadable" };
 	}
+}
+
+/** Liegt von dieser Datei eine zur Seite gelegte, beschädigte Fassung? */
+async function hasQuarantined(file: string): Promise<boolean> {
+	await ensureDir();
+	return (await storage.readDir(DIR)).some((e) => e.name?.startsWith(`${file}.beschaedigt-`));
 }
 
 /**
@@ -406,8 +421,13 @@ export async function saveEntries(month: string, entries: Entry[], base?: Entry[
 	const file = entriesFile(month);
 	if (!base && entries.length > 0 && !writeHook) return writeJson(file, entries, { encrypted: true });
 	return queued(file, async () => {
-		const before = await loadEntries(month);
-		const next = base ? mergeOntoDisk(base, entries, before) : entries;
+		const read = await readJsonResult<Entry[]>(file, { encrypted: true });
+		const before = read.status === "ok" ? read.value : [];
+		// Leer heisst nur dann leer, wenn die Datei wirklich fehlt – nicht, wenn sie
+		// unlesbar ist oder gerade als beschädigt zur Seite gelegt wurde.
+		const reliable =
+			read.status === "ok" || (read.status === "missing" && !(base && (await hasQuarantined(file))));
+		const next = base ? mergeOntoDisk(base, entries, before, reliable) : entries;
 		// Ein leerer Monat hinterlässt keine Datei: sonst bliebe eine "[]"-Datei
 		// liegen und der Monat geisterte ohne Einträge weiter durch die Monatsauswahl.
 		if (next.length === 0) {
@@ -438,10 +458,16 @@ function sameEntry(a: Entry, b: Entry): boolean {
  * Liste veraltet. Ohne diesen Abgleich galt ein dazwischen angekommener Eintrag
  * beim nächsten Speichern als gelöscht – und die Löschung ging an alle Geräte.
  * Regel: Was die App angefasst hat, gilt; alles andere bleibt, wie es auf der
- * Platte steht. Fehlt ein unveränderter Eintrag auf der Platte, bleibt er
- * trotzdem: eine beschädigte Datei liest sich ebenfalls leer.
+ * Platte steht – auch ein Fehlen dort, also eine Löschung auf einem anderen
+ * Gerät. Nur ohne `diskReliable` (Datei unlesbar oder beschädigt) bleibt ein
+ * unveränderter Eintrag, denn dann ist die Liste der App die einzige Kopie.
  */
-export function mergeOntoDisk(base: Entry[], ours: Entry[], disk: Entry[]): Entry[] {
+export function mergeOntoDisk(
+	base: Entry[],
+	ours: Entry[],
+	disk: Entry[],
+	diskReliable = true
+): Entry[] {
 	const baseById = new Map(base.map((e) => [e.id, e]));
 	const oursById = new Map(ours.map((e) => [e.id, e]));
 	const diskById = new Map(disk.map((e) => [e.id, e]));
@@ -450,7 +476,9 @@ export function mergeOntoDisk(base: Entry[], ours: Entry[], disk: Entry[]): Entr
 		const known = baseById.get(e.id);
 		const onDisk = diskById.get(e.id);
 		const untouched = known !== undefined && sameEntry(known, e);
-		out.push(untouched && onDisk ? onDisk : e);
+		if (!untouched) out.push(e);
+		else if (onDisk) out.push(onDisk);
+		else if (!diskReliable) out.push(e);
 	}
 	for (const e of disk) {
 		// Nie gekannt = inzwischen angekommen. Gekannt und nicht mehr da = gelöscht.
