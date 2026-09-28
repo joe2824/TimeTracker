@@ -395,26 +395,68 @@ export async function saveSettings(settings: Settings): Promise<void> {
 export async function loadEntries(month: string): Promise<Entry[]> {
 	return readJson<Entry[]>(entriesFile(month), [], { encrypted: true });
 }
-export async function saveEntries(month: string, entries: Entry[]): Promise<void> {
-	// Ein leerer Monat hinterlässt keine Datei: sonst bliebe eine "[]"-Datei liegen
-	// und der Monat geisterte ohne Einträge weiter durch die Monatsauswahl.
+/**
+ * Einträge eines Monats schreiben.
+ *
+ * Mit `base` – dem Stand, aus dem `entries` hervorging – wird gegen die Platte
+ * abgeglichen statt sie zu überschreiben (siehe mergeOntoDisk). Ohne `base`
+ * gilt die Liste wörtlich.
+ */
+export async function saveEntries(month: string, entries: Entry[], base?: Entry[]): Promise<void> {
 	const file = entriesFile(month);
-	if (entries.length === 0) {
-		return queued(file, async () => {
+	if (!base && entries.length > 0 && !writeHook) return writeJson(file, entries, { encrypted: true });
+	return queued(file, async () => {
+		const before = await loadEntries(month);
+		const next = base ? mergeOntoDisk(base, entries, before) : entries;
+		// Ein leerer Monat hinterlässt keine Datei: sonst bliebe eine "[]"-Datei
+		// liegen und der Monat geisterte ohne Einträge weiter durch die Monatsauswahl.
+		if (next.length === 0) {
 			const path = `${DIR}/${file}`;
 			// Auch das Leeren geht durch den Haken: sonst verschwände ein
 			// geleerter Monat, ohne dass der Abgleich die Löschungen je erfährt.
-			if (writeHook) await writeHook.entries(month, await loadEntries(month), []);
+			if (writeHook) await writeHook.entries(month, before, []);
 			if (await storage.exists(path)) await storage.remove(path);
-		});
-	}
-	if (!writeHook) return writeJson(file, entries, { encrypted: true });
-	return queued(file, async () => {
-		const before = await loadEntries(month);
-		await writeJsonNow(file, await writeHook!.entries(month, before, entries), {
-			encrypted: true
-		});
+			return;
+		}
+		const stamped = writeHook ? await writeHook.entries(month, before, next) : next;
+		await writeJsonNow(file, stamped, { encrypted: true });
 	});
+}
+
+/** Inhaltsgleich, unabhängig von der Reihenfolge der Felder. */
+function sameEntry(a: Entry, b: Entry): boolean {
+	const canon = (e: Entry) =>
+		JSON.stringify(Object.fromEntries(Object.entries(e).sort(([x], [y]) => x.localeCompare(y))));
+	return canon(a) === canon(b);
+}
+
+/**
+ * Dreiwege-Abgleich je Eintrag: `base` ist, was die App zuletzt gelesen oder
+ * geschrieben hat, `ours` ihr jetziger Stand, `disk` die Platte.
+ *
+ * Der Abgleich schreibt direkt auf die Platte; bis die App neu lädt, ist ihre
+ * Liste veraltet. Ohne diesen Abgleich galt ein dazwischen angekommener Eintrag
+ * beim nächsten Speichern als gelöscht – und die Löschung ging an alle Geräte.
+ * Regel: Was die App angefasst hat, gilt; alles andere bleibt, wie es auf der
+ * Platte steht. Fehlt ein unveränderter Eintrag auf der Platte, bleibt er
+ * trotzdem: eine beschädigte Datei liest sich ebenfalls leer.
+ */
+export function mergeOntoDisk(base: Entry[], ours: Entry[], disk: Entry[]): Entry[] {
+	const baseById = new Map(base.map((e) => [e.id, e]));
+	const oursById = new Map(ours.map((e) => [e.id, e]));
+	const diskById = new Map(disk.map((e) => [e.id, e]));
+	const out: Entry[] = [];
+	for (const e of ours) {
+		const known = baseById.get(e.id);
+		const onDisk = diskById.get(e.id);
+		const untouched = known !== undefined && sameEntry(known, e);
+		out.push(untouched && onDisk ? onDisk : e);
+	}
+	for (const e of disk) {
+		// Nie gekannt = inzwischen angekommen. Gekannt und nicht mehr da = gelöscht.
+		if (!oursById.has(e.id) && !baseById.has(e.id)) out.push(e);
+	}
+	return out;
 }
 
 /** Alle Monats-Keys mit Einträgen, neueste zuerst. */

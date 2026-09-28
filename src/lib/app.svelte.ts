@@ -337,6 +337,7 @@ class AppState {
 		this.settings = { ...defaultSettings };
 		this.running = null;
 		this.entriesByMonth = {};
+		this.#base.clear();
 		this.entriesVersion++;
 		this.backdatePrompt = null;
 		this.absenceOverridePrompt = null;
@@ -371,7 +372,7 @@ class AppState {
 		]);
 		await Promise.all(
 			[...months].map(async (m) => {
-				this.entriesByMonth[m] = await loadEntries(m);
+				this.#setLoaded(m, await loadEntries(m));
 			})
 		);
 		this.running = null;
@@ -883,7 +884,31 @@ class AppState {
 			// Kein Netz heisst nicht "kein Monat": was auf der Platte liegt, gilt.
 			logWarn(`Monat ${month} konnte nicht vom Server geholt werden`, e);
 		}
-		this.entriesByMonth[month] = await loadEntries(month);
+		this.#setLoaded(month, await loadEntries(month));
+	}
+
+	/**
+	 * Je Monat der Stand, den die App zuletzt gelesen oder geschrieben hat –
+	 * Ausgangspunkt für den Abgleich mit der Platte in #saveMonth.
+	 */
+	#base = new Map<string, { list: Entry[]; known: Entry[] }>();
+
+	#setLoaded(month: string, list: Entry[]): void {
+		this.entriesByMonth[month] = list;
+		this.#remember(month, structuredClone(list));
+	}
+
+	/**
+	 * Gilt nur für genau die Liste, die jetzt im Speicher steht: wer sie ersetzt,
+	 * statt sie zu ändern, speichert wieder wörtlich.
+	 */
+	#remember(month: string, known: Entry[]): void {
+		this.#base.set(month, { list: this.entriesByMonth[month], known });
+	}
+
+	#knownFor(month: string): Entry[] | undefined {
+		const b = this.#base.get(month);
+		return b && b.list === this.entriesByMonth[month] ? b.known : undefined;
 	}
 
 	monthEntries(month: string): Entry[] {
@@ -903,7 +928,10 @@ class AppState {
 	async deleteYearEntries(year: number): Promise<number> {
 		const deleted = await deleteYear(year);
 		logWarn(`Jahr ${year} gelöscht`, { months: deleted });
-		for (const m of deleted) delete this.entriesByMonth[m];
+		for (const m of deleted) {
+			delete this.entriesByMonth[m];
+			this.#base.delete(m);
+		}
 		if (this.running && monthKey(this.running.startTs).startsWith(`${year}-`)) {
 			this.running = null;
 		}
@@ -917,7 +945,13 @@ class AppState {
 		// LOESCHT die Datei bei `[]`. Ohne diese Wache würde ein ungeladener
 		// Monat still geleert.
 		if (!list) return;
-		await saveEntries(month, $state.snapshot(list) as Entry[]);
+		const ours = $state.snapshot(list) as Entry[];
+		// Der Abgleich schreibt direkt auf die Platte, die Liste hier zieht erst mit
+		// reload() nach: gegen den gekannten Stand abgleichen, nicht überschreiben.
+		const known = structuredClone(ours);
+		await saveEntries(month, ours, this.#knownFor(month));
+		// Hat reload() die Liste inzwischen ersetzt, gilt deren eigener Stand.
+		if (this.entriesByMonth[month] === list) this.#remember(month, known);
 		// Einziger Weg, auf dem Einträge auf die Platte kommen – deshalb sitzt das
 		// Signal hier und nicht bei den Aufrufern.
 		this.entriesVersion++;

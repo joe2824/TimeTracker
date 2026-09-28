@@ -32,12 +32,11 @@ Release umgebaut, weil jede davon den Kern des Abgleichs anfasst.
   teilt Gerät B den Lauf morgens mit altem Stand, verliert A sein echtes Ende
   gegen B's jüngeren Stempel. `#applyEntries` erkennt nur den Fall, in dem das
   lokale Ende genau auf Mitternacht liegt.
-- **Veraltete App-Kopie löscht frisch angekommene Einträge.** Spielt eine Runde
-  einen Eintrag ein, bevor das Hauptfenster neu geladen hat, und speichert der
-  Nutzer genau dann (Timer starten/stoppen), schreibt `#saveMonth` die alte Liste
-  zurück - `diffAndStamp` merkt den neuen Eintrag als Löschung vor. Fenster: bis
-  zu 5 s während des Nachladens der Historie. Richtung: Löschungen nur für
-  Einträge vormerken, die die App tatsächlich kannte.
+- **Von außen gelöschte Einträge kommen kurz zurück.** Löscht ein anderes Gerät
+  einen Eintrag und speichert die App den Monat, bevor sie neu geladen hat,
+  schreibt sie ihre unveränderte Kopie zurück (`mergeOntoDisk` in `store.ts`
+  behält sie absichtlich: eine beschädigte Datei liest sich ebenfalls leer).
+  Richtung: Quarantäne von „Datei fehlt" unterscheidbar machen.
 - **Globale Vormerk-Sperre.** `suppressed` in `outbox.ts` gilt modulweit: eine
   Speicherung aus der Oberfläche, während `#applyInner` läuft, wird ohne Stempel
   geschrieben und erreicht den Server nie. Richtung: der Abgleich schreibt über

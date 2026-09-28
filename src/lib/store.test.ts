@@ -86,6 +86,88 @@ describe("saveEntries", () => {
 	});
 });
 
+describe("saveEntries mit Ausgangsstand", () => {
+	// `base` ist, was die App zuletzt gelesen oder geschrieben hat. Liegt auf der
+	// Platte inzwischen mehr (der Abgleich schreibt direkt dorthin), darf die
+	// veraltete Liste der App das nicht überschreiben.
+	const M = "2026-06";
+	const withNote = (id: string, note: string): Entry => ({ ...entry(id), note });
+
+	it("behält einen Eintrag, den der Abgleich dazwischen geschrieben hat", async () => {
+		await saveEntries(M, [entry("a")]);
+		const base = [entry("a")];
+		await saveEntries(M, [entry("a"), entry("neu")]); // der Abgleich
+
+		await saveEntries(M, [withNote("a", "bearbeitet")], base); // die App
+
+		const ids = (await loadEntries(M)).map((e) => e.id).sort();
+		expect(ids).toEqual(["a", "neu"]);
+	});
+
+	it("meldet dem Abgleich keine Löschung für einen Eintrag, den die App nie kannte", async () => {
+		const { setWriteHook } = await import("./store");
+		await saveEntries(M, [entry("a")]);
+		await saveEntries(M, [entry("a"), entry("neu")]);
+		const seen: { before: string[]; after: string[] }[] = [];
+		setWriteHook({
+			entries: async (_m, before, after) => {
+				seen.push({ before: before.map((e) => e.id), after: after.map((e) => e.id) });
+				return after;
+			},
+			activities: async (_b, a) => a,
+			settings: async (_b, a) => a,
+			timeReport: async (_m, _b, a) => a
+		});
+		try {
+			await saveEntries(M, [withNote("a", "x")], [entry("a")]);
+		} finally {
+			setWriteHook(null);
+		}
+		expect(seen[0].after.sort()).toEqual(["a", "neu"]);
+	});
+
+	it("löscht, was die App kannte und selbst entfernt hat", async () => {
+		await saveEntries(M, [entry("a"), entry("b")]);
+		await saveEntries(M, [entry("a")], [entry("a"), entry("b")]);
+		expect((await loadEntries(M)).map((e) => e.id)).toEqual(["a"]);
+	});
+
+	it("leert den Monat nicht, wenn nur die App nichts mehr kennt", async () => {
+		// Die App hat ihren letzten Eintrag gelöscht, der Abgleich derweil einen
+		// neuen gebracht: die Datei muss bleiben.
+		await saveEntries(M, [entry("a"), entry("neu")]);
+		await saveEntries(M, [], [entry("a")]);
+		expect((await loadEntries(M)).map((e) => e.id)).toEqual(["neu"]);
+	});
+
+	it("übernimmt eine Änderung von außen, wenn die App den Eintrag nicht angefasst hat", async () => {
+		await saveEntries(M, [withNote("a", "remote"), entry("b")]);
+		await saveEntries(M, [entry("a"), withNote("b", "lokal")], [entry("a"), entry("b")]);
+		const byId = Object.fromEntries((await loadEntries(M)).map((e) => [e.id, e.note]));
+		expect(byId).toEqual({ a: "remote", b: "lokal" });
+	});
+
+	it("verwirft nichts, wenn die Datei sich leer liest", async () => {
+		// Eine beschädigte Datei geht in Quarantäne und liest sich wie ein leerer
+		// Monat. Die Liste der App ist dann die einzige Kopie.
+		expect(await loadEntries(M)).toEqual([]);
+		await saveEntries(M, [entry("a"), entry("b")], [entry("a"), entry("b")]);
+		expect((await loadEntries(M)).map((e) => e.id).sort()).toEqual(["a", "b"]);
+	});
+
+	it("behält eine eigene Änderung an einem von außen gelöschten Eintrag", async () => {
+		await saveEntries(M, []);
+		await saveEntries(M, [withNote("a", "lokal")], [entry("a")]);
+		expect((await loadEntries(M)).map((e) => e.note)).toEqual(["lokal"]);
+	});
+
+	it("schreibt ohne Ausgangsstand wie bisher genau die übergebene Liste", async () => {
+		await saveEntries(M, [entry("a"), entry("neu")]);
+		await saveEntries(M, [entry("a")]);
+		expect((await loadEntries(M)).map((e) => e.id)).toEqual(["a"]);
+	});
+});
+
 describe("listEntryMonths", () => {
 	it("listet nur Monate mit Eintraegen, neueste zuerst", async () => {
 		await saveEntries("2026-05", [entry("e1")]);

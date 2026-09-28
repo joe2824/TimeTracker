@@ -791,6 +791,38 @@ describe("Mitternachts-Wechsel", () => {
 	});
 });
 
+describe("Speichern mit veralteter Liste", () => {
+	it("löscht keinen Eintrag, den der Abgleich vor dem Neuladen geschrieben hat", async () => {
+		// Der Abgleich schreibt direkt auf die Platte, die App lädt erst danach neu.
+		// Stoppt der Nutzer genau dazwischen, galt der neue Eintrag als gelöscht –
+		// und die Löschung ging an alle Geräte.
+		vi.useFakeTimers({ now: at(17, 10) });
+		try {
+			const run = entry("r", P1, at(17, 8), null);
+			reset({ "2026-07": [run] });
+			// Wie beim echten Start: init() liest den Monat selbst von der Platte.
+			app.entriesByMonth = {};
+			app.loaded = false;
+			expect(await app.init()).toBe(true);
+			app.dispose();
+
+			const { saveEntries } = await import("./store");
+			await saveEntries("2026-07", [run, entry("remote", P2, at(17, 6), at(17, 7))]);
+
+			await app.stop(at(17, 9));
+
+			const es = onDisk("2026-07").sort((a, b) => a.startTs - b.startTs);
+			expect(es.map((e) => [e.id, e.endTs])).toEqual([
+				["remote", at(17, 7)],
+				["r", at(17, 9)]
+			]);
+		} finally {
+			app.dispose();
+			vi.useRealTimers();
+		}
+	});
+});
+
 describe("Mitternachts-Wechsel neben reload()", () => {
 	it("verliert nichts, wenn reload() in einen hängenden Wechsel fällt", async () => {
 		// Der Wechsel wartet beim Speichern hinter den Schreibvorgängen des Abgleichs,
