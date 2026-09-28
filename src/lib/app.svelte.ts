@@ -72,6 +72,16 @@ function isDayTwin(x: Entry, piece: Entry): boolean {
 /** Wie lange ein vorgeführter Hänger stehen bleibt, bevor es weitergeht. */
 const DEV_HANG_MS = 20_000;
 
+type AddEntryArgs = [
+	activityId: string,
+	startTs: number,
+	endTs: number | null,
+	note?: string,
+	source?: EntrySource,
+	dayFraction?: number,
+	opts?: { confirmAbsenceOverride?: boolean; timeOff?: boolean }
+];
+
 /** Ein Folgetag aus einer Mitternachts-Teilung, der auf eine Ganztags-Abwesenheit trifft. */
 interface BlockedDay {
 	/** Der Abwesenheits-Eintrag, der dem Tag im Weg steht. */
@@ -565,25 +575,40 @@ class AppState {
 	 */
 	async #repointEntries(oldIds: Set<string>, toId: string): Promise<number> {
 		if (oldIds.size === 0) return 0;
-		let moved = 0;
+		const moved = await this.#editAllMonths((list) => {
+			let n = 0;
+			for (const e of list) {
+				if (oldIds.has(e.activityId)) {
+					e.activityId = toId;
+					n++;
+				}
+			}
+			return n;
+		});
+		if (this.running && oldIds.has(this.running.activityId)) this.running.activityId = toId;
+		return moved;
+	}
 
+	/**
+	 * `edit` über jede Monatsliste laufen lassen und speichern, wo sie etwas
+	 * geändert hat. Die Liste wird an Ort und Stelle geändert, nie ersetzt: nur
+	 * dann gleicht #saveMonth gegen den gekannten Stand ab.
+	 *
+	 * @returns Summe der Änderungen, die `edit` meldet
+	 */
+	async #editAllMonths(edit: (list: Entry[]) => number): Promise<number> {
+		let total = 0;
 		for (const month of await listEntryMonths()) {
 			await this.ensureMonth(month);
 			const list = this.entriesByMonth[month];
 			if (!list) continue;
-			let touched = false;
-			for (const e of list) {
-				if (oldIds.has(e.activityId)) {
-					e.activityId = toId;
-					touched = true;
-					moved++;
-				}
+			const n = edit(list);
+			if (n > 0) {
+				total += n;
+				await this.#saveMonth(month);
 			}
-			if (touched) await this.#saveMonth(month);
 		}
-
-		if (this.running && oldIds.has(this.running.activityId)) this.running.activityId = toId;
-		return moved;
+		return total;
 	}
 
 	async persistActivities(): Promise<void> {
@@ -722,18 +747,11 @@ class AppState {
 		const a = this.activities.find((x) => x.id === id);
 		if (!a || isBuiltinActivity(a)) return 0;
 
-		let removed = 0;
-		for (const m of await listEntryMonths()) {
-			await this.ensureMonth(m);
-			const list = this.entriesByMonth[m];
-			if (!list) continue;
-			const kept = list.filter((e) => e.activityId !== id);
-			if (kept.length !== list.length) {
-				removed += list.length - kept.length;
-				this.entriesByMonth[m] = kept;
-				await this.#saveMonth(m);
-			}
-		}
+		const removed = await this.#editAllMonths((list) => {
+			const before = list.length;
+			for (let k = list.length - 1; k >= 0; k--) if (list[k].activityId === id) list.splice(k, 1);
+			return before - list.length;
+		});
 		if (this.running?.activityId === id) this.running = null;
 		const name = a.name;
 		this.activities = this.activities.filter((x) => x.id !== id);
@@ -1006,14 +1024,15 @@ class AppState {
 	 *
 	 * @returns das erste Tagesstück, oder null wenn nichts angelegt wurde
 	 */
-	async addEntry(
-		activityId: string,
-		startTs: number,
-		endTs: number | null,
-		note = "",
-		source: EntrySource = "manual",
-		dayFraction?: number,
-		opts: { confirmAbsenceOverride?: boolean; timeOff?: boolean } = {}
+	addEntry(...args: AddEntryArgs): Promise<Entry | null> {
+		// Hinter reload() und den Timer-Operationen eingereiht: ersetzte ein
+		// reload() die Monatslisten zwischen zwei Speicherungen, ginge die zweite
+		// aus dem alten Plattenstand hervor.
+		return this.#exclusive(() => this.#addEntryNow(...args));
+	}
+
+	async #addEntryNow(
+		...[activityId, startTs, endTs, note = "", source = "manual", dayFraction, opts = {}]: AddEntryArgs
 	): Promise<Entry | null> {
 		await this.ensureMonth(monthKey(startTs));
 		if (endTs !== null) await this.ensureMonth(monthKey(endTs));
@@ -1207,7 +1226,11 @@ class AppState {
 	}
 
 	/** false = wegen Tageskonflikt nicht gespeichert. */
-	async updateEntry(originalStartTs: number, updated: Entry): Promise<boolean> {
+	updateEntry(originalStartTs: number, updated: Entry): Promise<boolean> {
+		return this.#exclusive(() => this.#updateEntryNow(originalStartTs, updated));
+	}
+
+	async #updateEntryNow(originalStartTs: number, updated: Entry): Promise<boolean> {
 		const oldMonth = monthKey(originalStartTs);
 		const newMonth = monthKey(updated.startTs);
 		await this.ensureMonth(oldMonth);
@@ -1268,7 +1291,11 @@ class AppState {
 		return true;
 	}
 
-	async deleteEntry(entry: Entry): Promise<void> {
+	deleteEntry(entry: Entry): Promise<void> {
+		return this.#exclusive(() => this.#deleteEntryNow(entry));
+	}
+
+	async #deleteEntryNow(entry: Entry): Promise<void> {
 		const month = monthKey(entry.startTs);
 		await this.ensureMonth(month);
 		const list = this.entriesByMonth[month];
