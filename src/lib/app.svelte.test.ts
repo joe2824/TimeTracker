@@ -188,11 +188,11 @@ describe("stop() – Lauf über mehrere Tage nachträglich beenden", () => {
 		expect(es[1].endTs).toBe(at(17, 8));
 	});
 
-	it("schließt beide Fortsetzungen, wenn zwei an derselben Mitternacht offen stehen", async () => {
+	it("behält genau eine Fortsetzung, wenn zwei an derselben Mitternacht offen stehen", async () => {
 		// Zwei Fenster haben denselben Mitternachts-Wechsel angelegt (die
 		// Idempotenz-Wache in #rolloverAtMidnight greift nur, wenn das andere
-		// Fenster schon geschrieben hat). Beide Ketten haben denselben Anfang und
-		// dieselbe Länge – es darf trotzdem keine offen zurückbleiben.
+		// Fenster schon geschrieben hat). Keine darf offen bleiben – und beide
+		// geschlossen stehen zu lassen, zählte den Morgen doppelt.
 		const prevDay = entry("t1", P1, at(16, 9), at(17, 0));
 		const a = entry("t2a", P1, at(17, 0), null);
 		const b = entry("t2b", P1, at(17, 0), null);
@@ -201,10 +201,92 @@ describe("stop() – Lauf über mehrere Tage nachträglich beenden", () => {
 
 		await app.stop(at(17, 8));
 
+		const es = onDisk("2026-07").sort((x, y) => x.startTs - y.startTs);
+		expect(es.map((e) => [e.startTs, e.endTs])).toEqual([
+			[at(16, 9), at(17, 0)],
+			[at(17, 0), at(17, 8)]
+		]);
+	});
+
+	it("räumt auch doppelt angelegte Tagesstücke nach der Endzeit weg", async () => {
+		// Ein zweites Gerät hat den Lauf übers Wochenende schon geteilt, der
+		// Rechner teilt ihn beim Hochfahren noch einmal: Sa und So stehen doppelt.
+		// Die Kette folgt je Tag nur einem Stück – der Zwilling darf nicht bleiben.
+		const pieces = [
+			entry("t1", P1, at(16, 9), at(17, 0)),
+			entry("t2", P1, at(17, 0), at(18, 0)),
+			entry("t2x", P1, at(17, 0), at(18, 0)),
+			entry("t3", P1, at(18, 0), at(19, 0)),
+			entry("t3x", P1, at(18, 0), at(19, 0)),
+			entry("t4", P1, at(19, 0), null)
+		];
+		reset({ "2026-07": pieces });
+		app.running = pieces[5];
+
+		await app.stop(at(16, 17));
+
 		const es = onDisk("2026-07");
-		expect(es.filter((e) => e.endTs === null)).toEqual([]);
-		expect(es.find((e) => e.id === "t2a")?.endTs).toBe(at(17, 8));
-		expect(es.find((e) => e.id === "t2b")?.endTs).toBe(at(17, 8));
+		expect(es.map((e) => e.id)).toEqual(["t1"]);
+		expect(es[0].endTs).toBe(at(16, 17));
+	});
+
+	it("räumt doppelte Tagesstücke auch vor und in dem Tag der Endzeit weg", async () => {
+		// Liegt das Ende im doppelten Sonntag, zählte sonst der Samstag zweimal und
+		// der Zwilling vom Sonntag behielte seine vollen 24 Stunden.
+		const pieces = [
+			entry("t1", P1, at(16, 9), at(17, 0)),
+			entry("t2", P1, at(17, 0), at(18, 0)),
+			entry("t2x", P1, at(17, 0), at(18, 0)),
+			entry("t3", P1, at(18, 0), at(19, 0)),
+			entry("t3x", P1, at(18, 0), null),
+			entry("t4", P1, at(19, 0), null)
+		];
+		reset({ "2026-07": pieces });
+		app.running = pieces[5];
+
+		await app.stop(at(18, 17));
+
+		const es = onDisk("2026-07").sort((a, b) => a.startTs - b.startTs);
+		expect(es.map((e) => [e.startTs, e.endTs])).toEqual([
+			[at(16, 9), at(17, 0)],
+			[at(17, 0), at(18, 0)],
+			[at(18, 0), at(18, 17)]
+		]);
+	});
+
+	it("lässt einen fremden Eintrag ab Mitternacht stehen", async () => {
+		// Andere Aktivität, kein ganzer Tag oder von Hand erfasst: kein Zwilling,
+		// sondern echte Zeit.
+		const pieces = [
+			entry("t1", P1, at(16, 9), at(17, 0)),
+			entry("t2", P1, at(17, 0), at(18, 0)),
+			entry("t3", P1, at(18, 0), null),
+			entry("other", P2, at(17, 0), at(18, 0)),
+			entry("night", P1, at(17, 0), at(17, 1)),
+			{ ...entry("manual", P1, at(18, 0), at(19, 0)), source: "manual" as const }
+		];
+		reset({ "2026-07": pieces });
+		app.running = pieces[2];
+
+		await app.stop(at(16, 17));
+		expect(onDisk("2026-07").map((e) => e.id).sort()).toEqual(["manual", "night", "other", "t1"]);
+	});
+
+	it("legt beim Beenden keinen Tag an, den es schon gibt", async () => {
+		// Der Lauf wurde hier nie geteilt, auf einem anderen Gerät schon.
+		const run = entry("t1", P1, at(16, 9), null);
+		const synced = entry("t2r", P1, at(17, 0), at(18, 0));
+		reset({ "2026-07": [run, synced] });
+		app.running = run;
+
+		await app.stop(at(18, 10));
+
+		const es = onDisk("2026-07").sort((a, b) => a.startTs - b.startTs);
+		expect(es.map((e) => [e.startTs, e.endTs])).toEqual([
+			[at(16, 9), at(17, 0)],
+			[at(17, 0), at(18, 0)],
+			[at(18, 0), at(18, 10)]
+		]);
 	});
 
 	it("nimmt den exakt anschließenden Vorgänger, nicht eine offen gebliebene Zeile", () => {
@@ -681,6 +763,28 @@ describe("devSimulateStartFault() – Ladebildschirm vorführen", () => {
 			await start;
 			expect(app.loaded).toBe(true);
 		} finally {
+			vi.useRealTimers();
+		}
+	});
+});
+
+describe("Mitternachts-Wechsel", () => {
+	it("legt einen Tag nicht doppelt an, den ein anderes Gerät schon geteilt hat", async () => {
+		vi.useFakeTimers({ now: at(19, 8) });
+		try {
+			const run = entry("t1", P1, at(16, 9), null);
+			const synced = entry("t2r", P1, at(17, 0), at(18, 0)); // vom Server
+			reset({ "2026-07": [run, synced] });
+			expect(await app.init()).toBe(true);
+
+			await vi.advanceTimersByTimeAsync(1000);
+
+			const saturday = onDisk("2026-07").filter((e) => e.startTs === at(17, 0));
+			expect(saturday.map((e) => e.id)).toEqual(["t2r"]);
+			expect(onDisk("2026-07").filter((e) => e.startTs === at(18, 0))).toHaveLength(1);
+			expect(app.running?.startTs).toBe(at(19, 0));
+		} finally {
+			app.dispose();
 			vi.useRealTimers();
 		}
 	});

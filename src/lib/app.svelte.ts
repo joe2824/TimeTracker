@@ -56,6 +56,19 @@ function uid(): string {
 	return crypto.randomUUID();
 }
 
+/**
+ * Zweites Tagesstück desselben Laufs zu `piece` (ab Mitternacht, ganzer Tag oder
+ * offen). Von Hand erfasste oder kürzere Einträge sind echte Zeit, kein Zwilling.
+ */
+function isDayTwin(x: Entry, piece: Entry): boolean {
+	return (
+		x.activityId === piece.activityId &&
+		x.source === piece.source &&
+		x.startTs === piece.startTs &&
+		(x.endTs === null || x.endTs === startOfNextDay(x.startTs))
+	);
+}
+
 /** Wie lange ein vorgeführter Hänger stehen bleibt, bevor es weitergeht. */
 const DEV_HANG_MS = 20_000;
 
@@ -1329,11 +1342,22 @@ class AppState {
 				const bis = Math.min(end, chain[i + 1]?.startTs ?? end);
 				const m = monthKey(piece.startTs);
 				months.add(m);
+				const list = this.entriesByMonth[m] ?? [];
+				// Haben zwei Geräte den Lauf geteilt, folgt die Kette je Tag nur einem
+				// der Stücke – der Zwilling zählte den Tag sonst doppelt.
+				if (i > 0) {
+					for (let k = list.length - 1; k >= 0; k--) {
+						const x = list[k];
+						if (x.id !== piece.id && isDayTwin(x, piece)) {
+							done.add(x.id);
+							list.splice(k, 1);
+						}
+					}
+				}
 				// Stücke komplett nach dem Ende gab es nie. Das erste bleibt, damit
 				// ein Lauf nicht spurlos verschwindet (dann eben mit Dauer 0).
-				if (piece.id !== chain[0].id && piece.startTs >= end) {
-					const list = this.entriesByMonth[m];
-					const k = list?.findIndex((x) => x.id === piece.id) ?? -1;
+				if (i > 0 && piece.startTs >= end) {
+					const k = list.findIndex((x) => x.id === piece.id);
 					if (k >= 0) list.splice(k, 1);
 					continue;
 				}
@@ -1357,12 +1381,21 @@ class AppState {
 
 	/**
 	 * Folgetag-Stück eines geteilten Eintrags anlegen; liefert dessen Monat –
-	 * oder null, wenn der Tag eine Ganztags-Abwesenheit trägt.
+	 * oder null, wenn der Tag eine Ganztags-Abwesenheit trägt oder ein anderes
+	 * Gerät ihn schon geteilt und abgeglichen hat.
 	 */
 	async #addSegment(from: Entry, startTs: number, endTs: number | null): Promise<string | null> {
 		const m = monthKey(startTs);
 		await this.ensureMonth(m);
 		if (this.hasFullDayAbsence(startTs)) return null;
+		const exists = this.entriesByMonth[m].some(
+			(e) =>
+				e.id !== from.id &&
+				e.activityId === from.activityId &&
+				e.startTs === startTs &&
+				(e.endTs === null || e.endTs === endTs)
+		);
+		if (exists) return null;
 		this.entriesByMonth[m].push({
 			id: uid(),
 			activityId: from.activityId,
