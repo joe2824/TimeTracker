@@ -903,6 +903,30 @@ describe("Start von der Platte", () => {
 	});
 });
 
+describe("ensureMonth mit hängendem Server", () => {
+	it("wartet nicht ewig auf den Abruf, sondern nimmt, was auf der Platte liegt", async () => {
+		// ensureMonth läuft auch in der Warteschlange von Timer, Einträgen und
+		// reload(): ein Abruf ohne Antwort hielte sonst alles davon an.
+		vi.useFakeTimers();
+		try {
+			reset({ "2026-03": [entry("alt", P1, wallToTs(2026, 3, 2, 8, 0, 0), wallToTs(2026, 3, 2, 9, 0, 0))] });
+			delete app.entriesByMonth["2026-03"]; // nur auf der Platte, noch nicht geladen
+			app.setMonthFetcher(() => new Promise<void>(() => {}));
+			let done = false;
+			const loading = app.ensureMonth("2026-03").then(() => (done = true));
+
+			await vi.advanceTimersByTimeAsync(60_000);
+
+			expect(done).toBe(true);
+			await loading;
+			expect(app.monthEntries("2026-03").map((e) => e.id)).toEqual(["alt"]);
+		} finally {
+			app.setMonthFetcher(null);
+			vi.useRealTimers();
+		}
+	});
+});
+
 describe("ensureMonth", () => {
 	it("liest eine Datei auch bei gleichzeitigen Anfragen nur einmal", async () => {
 		// Beim Start fragen drei Ansichten gleichzeitig nach überlappenden

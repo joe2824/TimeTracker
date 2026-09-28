@@ -69,6 +69,9 @@ function isDayTwin(x: Entry, piece: Entry): boolean {
 	);
 }
 
+/** Wie lange ensureMonth auf den Server wartet, bevor es die Platte nimmt. */
+const MONTH_FETCH_TIMEOUT_MS = 15_000;
+
 /** Wie lange ein vorgeführter Hänger stehen bleibt, bevor es weitergeht. */
 const DEV_HANG_MS = 20_000;
 
@@ -575,17 +578,24 @@ class AppState {
 	 */
 	async #repointEntries(oldIds: Set<string>, toId: string): Promise<number> {
 		if (oldIds.size === 0) return 0;
+		return this.#remapActivities(new Map([...oldIds].map((id) => [id, toId])));
+	}
+
+	/** Einträge aller Monate (und den laufenden) nach `idMap` umhängen. Liefert die Anzahl. */
+	async #remapActivities(idMap: Map<string, string>): Promise<number> {
 		const moved = await this.#editAllMonths((list) => {
 			let n = 0;
 			for (const e of list) {
-				if (oldIds.has(e.activityId)) {
-					e.activityId = toId;
+				const to = idMap.get(e.activityId);
+				if (to) {
+					e.activityId = to;
 					n++;
 				}
 			}
 			return n;
 		});
-		if (this.running && oldIds.has(this.running.activityId)) this.running.activityId = toId;
+		const to = this.running && idMap.get(this.running.activityId);
+		if (this.running && to) this.running.activityId = to;
 		return moved;
 	}
 
@@ -796,25 +806,7 @@ class AppState {
 		const teamOwned = this.activities.filter((a) => a.teamOwned && which(a));
 		if (teamOwned.length === 0) return;
 		const idMap = new Map(teamOwned.map((a) => [a.id, uid()]));
-
-		for (const m of await listEntryMonths()) {
-			await this.ensureMonth(m);
-			const list = this.entriesByMonth[m];
-			if (!list) continue;
-			let touched = false;
-			for (const e of list) {
-				const newId = idMap.get(e.activityId);
-				if (newId) {
-					e.activityId = newId;
-					touched = true;
-				}
-			}
-			if (touched) await this.#saveMonth(m);
-		}
-		if (this.running) {
-			const newId = idMap.get(this.running.activityId);
-			if (newId) this.running.activityId = newId;
-		}
+		await this.#remapActivities(idMap);
 
 		this.activities = this.activities.map((a) => {
 			const newId = idMap.get(a.id);
@@ -897,7 +889,20 @@ class AppState {
 
 	async #fetchThenLoad(month: string): Promise<void> {
 		try {
-			await this.#monthFetcher?.(month);
+			// Mit Frist: ensureMonth läuft auch in der Warteschlange von Timer,
+			// Einträgen und reload() – ein Server ohne Antwort hielte alles an.
+			const fetching = this.#monthFetcher?.(month);
+			if (fetching) {
+				let timer: ReturnType<typeof setTimeout> | undefined;
+				const deadline = new Promise<never>((_, reject) => {
+					timer = setTimeout(() => reject(new Error("keine Antwort")), MONTH_FETCH_TIMEOUT_MS);
+				});
+				try {
+					await Promise.race([fetching, deadline]);
+				} finally {
+					clearTimeout(timer);
+				}
+			}
 		} catch (e) {
 			// Kein Netz heisst nicht "kein Monat": was auf der Platte liegt, gilt.
 			logWarn(`Monat ${month} konnte nicht vom Server geholt werden`, e);
