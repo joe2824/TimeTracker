@@ -927,6 +927,31 @@ describe("ensureMonth mit hängendem Server", () => {
 	});
 });
 
+describe("ensureMonth mit langsamem Server", () => {
+	it("lädt den Monat nach, wenn der Abruf nach der Frist doch noch ankommt", async () => {
+		vi.useFakeTimers();
+		try {
+			reset();
+			const late = entry("spaet", P1, wallToTs(2026, 3, 2, 8, 0, 0), wallToTs(2026, 3, 2, 9, 0, 0));
+			app.setMonthFetcher(async () => {
+				await new Promise((r) => setTimeout(r, 20_000));
+				files.set(monthFile("2026-03"), JSON.stringify([late]));
+			});
+
+			const loading = app.ensureMonth("2026-03");
+			await vi.advanceTimersByTimeAsync(16_000);
+			await loading;
+			expect(app.monthEntries("2026-03")).toEqual([]);
+
+			await vi.advanceTimersByTimeAsync(10_000);
+			expect(app.monthEntries("2026-03").map((e) => e.id)).toEqual(["spaet"]);
+		} finally {
+			app.setMonthFetcher(null);
+			vi.useRealTimers();
+		}
+	});
+});
+
 describe("ensureMonth", () => {
 	it("liest eine Datei auch bei gleichzeitigen Anfragen nur einmal", async () => {
 		// Beim Start fragen drei Ansichten gleichzeitig nach überlappenden

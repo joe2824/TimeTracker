@@ -203,6 +203,26 @@ describe("Tray-Fenster: nur vormerken, nicht abgleichen", () => {
 		expect(files.has("data/outbox.json")).toBe(false);
 	});
 
+	it("lässt den Haken an, wenn die Verknüpfung nur gerade nicht lesbar ist", async () => {
+		const { fsFaults } = await import("../testing/fakeFs");
+		await account.linkWithSession("http://test", await createVaultKey(), "Ich");
+		await settled();
+		resetOutboxForTests();
+		await account.initWriter();
+
+		fsFaults.readThrows = true;
+		try {
+			await account.initWriter();
+		} finally {
+			fsFaults.readThrows = false;
+		}
+		await store.saveEntries("2026-07", [
+			{ id: "trotzdem", activityId: BUILTIN_OTHERS_ID, startTs: 1, endTs: 2, note: "", source: "timer" }
+		]);
+
+		expect(outboxIds()).toContain("trotzdem");
+	});
+
 	it("schaltet ohne verknüpftes Konto nichts ein", async () => {
 		resetOutboxForTests();
 		await account.initWriter();

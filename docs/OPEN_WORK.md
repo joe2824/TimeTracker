@@ -25,6 +25,11 @@ Release umgebaut, weil jede davon den Kern des Abgleichs anfasst.
   teilt Gerät B den Lauf morgens mit altem Stand, verliert A sein echtes Ende
   gegen B's jüngeren Stempel. `#applyEntries` erkennt nur den Fall, in dem das
   lokale Ende genau auf Mitternacht liegt.
+- **Zwei offene Timer beim Einspielen, einer gerade gestoppt.** Bringt ein
+  anderes Gerät einen offenen Eintrag, während hier der Timer gestoppt wird,
+  schliesst `#closeSurplusOpen` den hiesigen noch nach dem vor dem Stopp
+  gelesenen Stand – das Ende des Nutzers geht verloren. Braucht zwei Geräte im
+  selben Augenblick.
 - **Rückfragen überleben keinen Neustart.** `staleTimerSplits` liegt nur im
   Speicher; nach einem Neustart vor der Entscheidung ist der Fall weg.
 - **Bearbeitung über Mitternacht sieht aus wie eine Teilung.** Ein bewusst im

@@ -895,7 +895,11 @@ class AppState {
 			if (fetching) {
 				let timer: ReturnType<typeof setTimeout> | undefined;
 				const deadline = new Promise<never>((_, reject) => {
-					timer = setTimeout(() => reject(new Error("keine Antwort")), MONTH_FETCH_TIMEOUT_MS);
+					timer = setTimeout(() => {
+						// Kommt die Antwort später doch, soll die Ansicht sie zeigen.
+						void fetching.then(() => this.reload([month])).catch(() => {});
+						reject(new Error("keine Antwort"));
+					}, MONTH_FETCH_TIMEOUT_MS);
 				});
 				try {
 					await Promise.race([fetching, deadline]);

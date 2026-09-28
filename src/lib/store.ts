@@ -504,7 +504,11 @@ export function mergeOntoDisk(
 		const known = baseById.get(e.id);
 		const onDisk = diskById.get(e.id);
 		const untouched = known !== undefined && sameEntry(known, e);
-		if (!untouched) out.push(e);
+		// Nur die Fassung gehoben (Echo des eigenen Uploads): der Inhalt der
+		// Platte gilt, die Fassung des Servers kommt dazu.
+		const onlyRev = known !== undefined && !untouched && sameEntry({ ...known, rev: e.rev }, e);
+		if (onlyRev && onDisk) out.push({ ...onDisk, rev: e.rev });
+		else if (!untouched) out.push(e);
 		else if (onDisk) out.push(onDisk);
 		else if (!diskReliable) out.push(e);
 	}
@@ -800,6 +804,11 @@ export function clearOutbox(): Promise<void> {
 interface LegacyDeviceInfo {
 	kontoKennung?: string;
 	bestandGehoertZu?: string;
+}
+
+/** Ob eine Verknüpfung auf der Platte liegt – lesbar oder nicht. */
+export async function deviceFileExists(): Promise<boolean> {
+	return storage.exists(`${DIR}/device.json`);
 }
 
 export async function loadDevice(): Promise<DeviceInfo | null> {

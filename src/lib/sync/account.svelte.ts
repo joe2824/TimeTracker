@@ -4,6 +4,7 @@ import { logError, logInfo, logWarn, clearLogs } from "../log";
 import {
 	clearAccountData,
 	clearOutbox,
+	deviceFileExists,
 	loadDevice,
 	getLocalEncryptionKey,
 	listEntryMonths,
@@ -581,7 +582,8 @@ class AccountState {
 	async initWriter(): Promise<void> {
 		const info = await loadDevice();
 		if (info?.serverUrl) await startTracking(await deviceId());
-		else stopTracking();
+		// Ein Lesefehler ist keine Trennung: dann bleibt es, wie es ist.
+		else if (info || !(await deviceFileExists())) stopTracking();
 	}
 
 	/**

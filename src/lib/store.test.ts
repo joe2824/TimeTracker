@@ -199,6 +199,19 @@ describe("saveEntries mit Ausgangsstand", () => {
 		expect(byId).toEqual({ t: 99, "vom-server": null });
 	});
 
+	it("remoteStore: ein Echo, das nur die Fassung hebt, überrollt den Stopp nicht", async () => {
+		// Der eigene Upload kommt zurück: gleicher Inhalt, neues rev. Die Platte hat
+		// inzwischen das Ende – es bleibt, und das rev kommt dazu.
+		const running = { ...entry("t"), rev: 1 };
+		await saveEntries(M, [running]);
+		const read = await loadEntries(M);
+		await saveEntries(M, [{ ...running, endTs: 99 }]);
+
+		await remoteStore.saveEntries(M, [{ ...running, rev: 2 }], read);
+
+		expect(await loadEntries(M)).toEqual([expect.objectContaining({ id: "t", endTs: 99, rev: 2 })]);
+	});
+
 	it("schreibt ohne Ausgangsstand wie bisher genau die übergebene Liste", async () => {
 		await saveEntries(M, [entry("a"), entry("neu")]);
 		await saveEntries(M, [entry("a")]);
