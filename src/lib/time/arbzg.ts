@@ -273,6 +273,11 @@ export function dataFromEntries(entries: Entry[], fallback: string): string {
 
 // ---------- Tagesdaten ----------
 
+/** Stunden auf ganze Minuten – dieselbe Rundung wie fmtHoursClock. */
+function toMinute(hours: number): number {
+	return Math.round(hours * 60) / 60;
+}
+
 /** Die Einträge zu Tagesdaten verdichten. */
 export function dayFacts(
 	entries: Entry[],
@@ -291,7 +296,9 @@ export function dayFacts(
 		if (!f) {
 			f = {
 				date,
-				hours: hours.get(date) ?? 0,
+				// Auf die Minute, wie angezeigt: der Timer speichert Sekunden, und
+				// 10:00:27 h hiessen sonst "> 10 h" neben einer Anzeige von 10:00 h.
+				hours: toMinute(hours.get(date) ?? 0),
 				firstStart: null,
 				lastEnd: null,
 				absenceFraction: 0,
@@ -337,7 +344,7 @@ export function dayFacts(
 				if (i > 0) pause += (merged[i].start - merged[i - 1].end) / 60000;
 			}
 			f.pauseMinutes = Math.round(pause);
-			f.longestStretch = longest;
+			f.longestStretch = toMinute(longest);
 		}
 	}
 

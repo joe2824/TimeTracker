@@ -346,6 +346,16 @@ describe("dayFindings", () => {
 		expect(over.find((f) => f.rule === "over10")?.level).toBe("violation");
 	});
 
+	it("prüft auf die Minute, die auch angezeigt wird – nicht auf Sekunden", () => {
+		// Der Timer speichert Sekunden: 08:00–13:58:27 und 13:59–18:46 sind brutto
+		// 10:45:27, netto 10:00:27. Angezeigt werden 10:00 h – dann ist es auch
+		// kein Verstoss.
+		const first = { ...entry("2026-06-12", "08:00", "13:58"), endTs: toTs("2026-06-12", "13:58") + 27_000 };
+		const f = find([first, entry("2026-06-12", "13:59", "18:46")]);
+		expect(f.some((x) => x.rule === "over10")).toBe(false);
+		expect(f.some((x) => x.rule === "over9_5")).toBe(true);
+	});
+
 	it("rechnet die Tagesgrenze auf der Nettozeit, wenn der Abzug aktiv ist", () => {
 		// 10:40 h erfasst sind nach Abzug 9:55 h – kein Verstoss. Genau hier zeigt
 		// sich, ob die Netto-Basis wirklich durchgezogen ist.
