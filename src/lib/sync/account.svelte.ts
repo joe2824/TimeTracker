@@ -373,6 +373,10 @@ class AccountState {
 					this.state = "connected";
 					void this.accountInfo().catch(() => {});
 				}
+				// Die Weckruf-Schleife der Desktop-App läuft nur im Zustand
+				// "connected" – in #startEngine stand er noch auf "connecting", und
+				// ohne Fensterfokus (versteckter Autostart) käme sie nie in Gang.
+				if (isTauri()) this.#openStream();
 
 				logInfo("Konto verknüpft", { server: info.serverUrl });
 				void this.syncWithFollowUp();
@@ -956,6 +960,8 @@ class AccountState {
 				abort.signal.removeEventListener("abort", forward);
 			}
 		}
+		// Beendet, ohne abgebrochen zu sein: onVisible soll sie neu starten dürfen.
+		if (this.#wait === abort) this.#wait = null;
 	}
 
 	/** Der langsame Takt für alles, was keinen Kanal hat. */
@@ -972,7 +978,8 @@ class AccountState {
 	/** Das Fenster kommt in den Vordergrund oder wird wieder aktiv. */
 	onVisible(): void {
 		if (this.state === "connected") {
-			if (this.phase === "offline" || !this.#stream) {
+			// Desktop hat keinen #stream, sondern die Schleife (#wait).
+			if (this.phase === "offline" || (!this.#stream && !this.#wait)) {
 				this.#retryStep = 0;
 				this.#openStream();
 			}

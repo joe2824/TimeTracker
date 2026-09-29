@@ -73,3 +73,19 @@ describe("Weckruf-Schleife", () => {
 		expect(finished.every((s) => s && !s.aborted)).toBe(true);
 	});
 });
+
+describe("Weckruf-Schleife beim Programmstart", () => {
+	it("läuft nach init() an, nicht erst, wenn ein Fenster den Fokus bekommt", async () => {
+		// Beim versteckten Autostart bekommt kein Fenster den Fokus: ohne Schleife
+		// erführe die App von einem woanders gestarteten Timer erst nach Minuten.
+		await account.linkWithSession("http://test", await createVaultKey(), "Ich");
+		await waitFor(() => waitSignals.length >= 1);
+		account.dispose();
+		waitSignals = [];
+
+		await account.init();
+
+		await waitFor(() => waitSignals.length >= 1);
+		expect(waitSignals.length).toBeGreaterThan(0);
+	});
+});
