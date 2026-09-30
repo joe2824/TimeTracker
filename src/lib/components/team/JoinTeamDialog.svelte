@@ -2,8 +2,7 @@
 	// Der Dialog, der aufgeht, wenn ein Team-Beitritts-Link ankommt.
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { Button } from "$lib/components/ui/button";
-	import { Input } from "$lib/components/ui/input";
-	import { Label } from "$lib/components/ui/label";
+	import TeamJoinForm from "./TeamJoinForm.svelte";
 	import { teamJoin } from "$lib/team/state.svelte";
 	import { TeamJoinFlow } from "$lib/team/joinFlow.svelte";
 	import { normalizeServerUrl } from "$lib/sync/api";
@@ -31,8 +30,6 @@
 		void flow.loadPreview(link.serverUrl, link.code);
 	});
 
-	const sameTeam = $derived(teamJoin.pendingLink ? flow.sameTeam(teamJoin.pendingLink.serverUrl) : false);
-
 	function dismiss() {
 		teamJoin.pendingLink = null;
 		flow.reset();
@@ -45,7 +42,7 @@
 		if (info) {
 			dismiss();
 			toast.success(`Mit „${info.teamName}“ verbunden.`);
-		} else {
+		} else if (flow.joinError) {
 			toast.error(`Beitritt nicht möglich: ${flow.joinError}`);
 		}
 	}
@@ -79,55 +76,17 @@
 			</Dialog.Description>
 		</Dialog.Header>
 
-		{#if flow.preview !== "loading" && flow.preview !== "error"}
-			<p class="bg-muted rounded-md px-3 py-2 text-sm">
-				Adresse: <span class="font-medium">{serverHost}</span> – stimmt sie nicht mit der überein, die
-				dein Chef genannt hat, lieber abbrechen.
-			</p>
-			<div class="space-y-2">
-				<Label for="team-join-name">Dein Name</Label>
-				<Input
-					id="team-join-name"
-					bind:value={flow.name}
-					placeholder="Anna Meier"
-					disabled={flow.busy}
-					onkeydown={(e) => e.key === "Enter" && flow.canJoin && join()}
-				/>
-			</div>
-			<div class="space-y-2">
-				<Label for="team-join-email">E-Mail (optional)</Label>
-				<Input
-					id="team-join-email"
-					type="email"
-					bind:value={flow.email}
-					placeholder="anna@firma.de"
-					disabled={flow.busy}
-					onkeydown={(e) => e.key === "Enter" && flow.canJoin && join()}
-				/>
-				{#if flow.emailInvalid}
-					<p class="text-destructive text-xs">Das ist keine gültige E-Mail-Adresse.</p>
-				{:else}
-					<p class="text-muted-foreground text-xs">
-						Nur damit der Chef dich erinnern kann, falls ein Bericht fehlt.
-					</p>
-				{/if}
-			</div>
-			{#if flow.existing && sameTeam}
-				<p class="rounded-md border px-3 py-2 text-sm">
-					Du bist schon in diesem Team – hier ist nichts weiter zu tun.
-				</p>
-			{:else if flow.existing}
-				<p class="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm">
-					Du bist bereits im Team „{flow.existing.teamName}“. Mit dem Beitritt verlässt du es – deine
-					erfassten Zeiten bleiben erhalten.
-				</p>
-			{/if}
+		{#if teamJoin.pendingLink && flow.preview !== "loading" && flow.preview !== "error"}
+			<TeamJoinForm {flow} serverUrl={teamJoin.pendingLink.serverUrl} {serverHost} onjoin={join} />
 		{/if}
 
 		<Dialog.Footer>
 			<Button variant="outline" disabled={flow.busy} onclick={dismiss}>Abbrechen</Button>
 			{#if flow.preview !== "loading" && flow.preview !== "error"}
-				<Button disabled={!flow.canJoin || sameTeam} onclick={join}>
+				<Button
+					disabled={!teamJoin.pendingLink || !flow.canJoinAt(teamJoin.pendingLink.serverUrl)}
+					onclick={join}
+				>
 					{flow.busy ? "Wird verbunden…" : "Beitreten"}
 				</Button>
 			{/if}

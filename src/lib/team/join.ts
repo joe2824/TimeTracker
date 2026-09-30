@@ -1,15 +1,11 @@
 // Team beitreten: Vorschau und Beitritt, samt Ablegen des Team-Tokens. Von der
 // Web-Route UND dem Desktop-Dialog benutzt, damit beide dasselbe tun.
-import { joinTeam as apiJoinTeam, leaveTeamOnServer, previewTeamInvite } from "./api";
+import { joinTeam as apiJoinTeam, leaveTeamOnServer } from "./api";
 import { app } from "../app.svelte";
 import { loadTeamDevice, saveTeamDevice, saveTeamRemovedFrom, type TeamDeviceInfo } from "../store";
 import { teamJoin } from "./state.svelte";
 import { syncTeamActivities } from "./activities";
 import { logInfo, logWarn } from "../log";
-
-export function previewTeam(serverUrl: string, code: string): Promise<{ teamName: string }> {
-	return previewTeamInvite(serverUrl, code);
-}
 
 /** Beitreten und das Team-Token ablegen - danach kennt dieses Gerät sein Team. */
 export async function completeTeamJoin(

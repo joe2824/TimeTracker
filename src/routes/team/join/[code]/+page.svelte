@@ -7,9 +7,8 @@
 	import { page } from "$app/state";
 	import { app } from "$lib/app.svelte";
 	import { Button } from "$lib/components/ui/button";
-	import { Input } from "$lib/components/ui/input";
-	import { Label } from "$lib/components/ui/label";
 	import { TeamJoinFlow } from "$lib/team/joinFlow.svelte";
+	import TeamJoinForm from "$lib/components/team/TeamJoinForm.svelte";
 	import { teamJoinLink } from "$lib/platform/deeplink";
 	import { isTauri } from "$lib/platform/env";
 	import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
@@ -18,7 +17,6 @@
 	const serverUrl = $derived(page.url.origin);
 
 	const flow = new TeamJoinFlow();
-	const sameTeam = $derived(flow.sameTeam(serverUrl));
 	// Der Beitritt startet die App (siehe completeTeamJoin) - deren Uhr soll nicht
 	// über die Route hinaus laufen.
 	onDestroy(() => app.dispose());
@@ -63,50 +61,13 @@
 				</p>
 			</div>
 
-			<div class="space-y-2">
-				<Label for="team-join-name">Dein Name</Label>
-				<Input
-					id="team-join-name"
-					bind:value={flow.name}
-					placeholder="Anna Meier"
-					disabled={flow.busy}
-					onkeydown={(e) => e.key === "Enter" && flow.canJoin && join()}
-				/>
-			</div>
-			<div class="space-y-2">
-				<Label for="team-join-email">E-Mail (optional)</Label>
-				<Input
-					id="team-join-email"
-					type="email"
-					bind:value={flow.email}
-					placeholder="anna@firma.de"
-					disabled={flow.busy}
-					onkeydown={(e) => e.key === "Enter" && flow.canJoin && join()}
-				/>
-				{#if flow.emailInvalid}
-					<p class="text-destructive text-xs">Das ist keine gültige E-Mail-Adresse.</p>
-				{:else}
-					<p class="text-muted-foreground text-xs">
-						Nur damit der Chef dich erinnern kann, falls ein Bericht fehlt.
-					</p>
-				{/if}
-			</div>
-			{#if flow.existing && sameTeam}
-				<p class="rounded-md border px-3 py-2 text-sm">
-					Du bist schon in diesem Team – hier ist nichts weiter zu tun.
-				</p>
-			{:else if flow.existing}
-				<p class="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm">
-					Du bist bereits im Team „{flow.existing.teamName}“. Mit dem Beitritt verlässt du es – deine
-					erfassten Zeiten bleiben erhalten.
-				</p>
-			{/if}
+			<TeamJoinForm {flow} {serverUrl} onjoin={join} />
 
 			{#if flow.joinError}
 				<p class="text-destructive text-sm">Beitritt nicht möglich: {flow.joinError}</p>
 			{/if}
 
-			<Button class="w-full" disabled={!flow.canJoin || sameTeam} onclick={join}>
+			<Button class="w-full" disabled={!flow.canJoinAt(serverUrl)} onclick={join}>
 				{flow.busy ? "Wird verbunden…" : "Beitreten"}
 			</Button>
 

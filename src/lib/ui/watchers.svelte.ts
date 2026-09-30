@@ -6,8 +6,7 @@ import { account } from "../sync/account.svelte";
 import type { Settings } from "../types";
 import { fmtDate, fmtHMS } from "../time/time";
 import { zonedParts } from "../time/tz";
-import { ensureNotificationPermission } from "./reminders";
-import { notify } from "../platform/notify";
+import { notifyIfAllowed } from "./notifyIfAllowed";
 
 /** Reaktiver Zustand für den Leerlauf-Dialog. */
 class WatcherState {
@@ -37,11 +36,6 @@ let idlePromptShown = false;
 let lastRunStart: number | null = null;
 /** Zuletzt gesetzter Tray-Tooltip (vermeidet IPC bei unveränderter Anzeige). */
 let lastTooltip = "";
-
-/** Eine Meldung zeigen, sofern erlaubt. Der lokale Name bleibt der bisherige. */
-async function reportIt(title: string, body: string) {
-	if (await ensureNotificationPermission()) await notify({ title, body });
-}
 
 /**
  * Wie oft nachgesehen wird, ob die Tagesmeldung noch aussteht. Der erste
@@ -173,10 +167,10 @@ async function tick() {
 			elapsedSec
 		};
 		// … und OS-Benachrichtigung (falls App nur im Tray läuft).
-		void reportIt(
-			"TimeTracker – Timer läuft sehr lange",
-			`„${app.activityName(running.activityId)}" läuft seit über ${s.maxTimerHours} h. Noch aktiv?`
-		);
+		void notifyIfAllowed({
+			title: "TimeTracker – Timer läuft sehr lange",
+			body: `„${app.activityName(running.activityId)}" läuft seit über ${s.maxTimerHours} h. Noch aktiv?`
+		});
 	}
 
 	// --- Pomodoro: Fokus->Pause->Fokus-Zyklus (optionales Feature) ---
@@ -194,17 +188,20 @@ async function tick() {
 			// Erste Beobachtung nur merken (kein Hinweis beim Start des Timers).
 			if (lastPomoKey !== null) {
 				if (pomo.phase === "break") {
-					void reportIt(
-						"TimeTracker – Zeit für eine Pause",
-						`${s.pomodoroMin} min fokussiert. ${s.pomodoroBreakMin} min Pause.`
-					);
+					void notifyIfAllowed({
+						title: "TimeTracker – Zeit für eine Pause",
+						body: `${s.pomodoroMin} min fokussiert. ${s.pomodoroBreakMin} min Pause.`
+					});
 				} else if (s.pomodoroBreakMin > 0) {
-					void reportIt("TimeTracker – Weiter geht's", "Pause vorbei – zurück zum Fokus.");
+					void notifyIfAllowed({
+						title: "TimeTracker – Weiter geht's",
+						body: "Pause vorbei – zurück zum Fokus."
+					});
 				} else {
-					void reportIt(
-						"TimeTracker – Zeit für eine Pause",
-						`${s.pomodoroMin} min fokussiert gearbeitet.`
-					);
+					void notifyIfAllowed({
+						title: "TimeTracker – Zeit für eine Pause",
+						body: `${s.pomodoroMin} min fokussiert gearbeitet.`
+					});
 				}
 			}
 			lastPomoKey = key;

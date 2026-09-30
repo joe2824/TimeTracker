@@ -74,6 +74,7 @@ describe("AdminJoinFlow.start", () => {
 	});
 });
 
+// Das Rennen zweier Links prüft linkPreview.svelte.test.ts.
 describe("AdminJoinFlow.loadPreview", () => {
 	it("lädt die Vorschau und fängt einen Fehlschlag als 'error' ab", async () => {
 		const flow = new AdminJoinFlow();
@@ -84,36 +85,6 @@ describe("AdminJoinFlow.loadPreview", () => {
 		previewAdminInvite.mockRejectedValueOnce(new Error("abgelaufen"));
 		await flow.loadPreview("https://tt.example.de", "code2");
 		expect(flow.preview).toBe("error");
-	});
-
-	it("ignoriert die späte Antwort eines älteren Links", async () => {
-		const flow = new AdminJoinFlow();
-		let resolveFirst!: (v: { teamName: string }) => void;
-		previewAdminInvite
-			.mockImplementationOnce(() => new Promise((resolve) => (resolveFirst = resolve)))
-			.mockResolvedValueOnce({ teamName: "Einkauf" });
-
-		const first = flow.loadPreview("https://tt.example.de", "codeA");
-		await flow.loadPreview("https://tt.example.de", "codeB");
-		resolveFirst({ teamName: "Vertrieb" });
-		await first;
-
-		expect(flow.preview).toEqual({ teamName: "Einkauf" });
-	});
-
-	it("ignoriert den Fehlschlag eines älteren Links", async () => {
-		const flow = new AdminJoinFlow();
-		let rejectFirst!: (e: Error) => void;
-		previewAdminInvite
-			.mockImplementationOnce(() => new Promise((_, reject) => (rejectFirst = reject)))
-			.mockResolvedValueOnce({ teamName: "Einkauf" });
-
-		const first = flow.loadPreview("https://tt.example.de", "codeA");
-		await flow.loadPreview("https://tt.example.de", "codeB");
-		rejectFirst(new Error("abgelaufen"));
-		await first;
-
-		expect(flow.preview).toEqual({ teamName: "Einkauf" });
 	});
 });
 

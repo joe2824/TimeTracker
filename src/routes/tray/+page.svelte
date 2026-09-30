@@ -1,9 +1,11 @@
 <script lang="ts">
-	import { onMount, untrack } from "svelte";
+	import { onMount } from "svelte";
 	import { app } from "$lib/app.svelte";
 	import { errorText, logError, logInfo } from "$lib/log";
-	import { fmtClock, fmtHMS, midnightSplitHint } from "$lib/time/time";
-	import { START_PRESETS, resolveStartTs, toStartArg } from "$lib/time/startTime";
+	import { fmtHMS } from "$lib/time/time";
+	import { START_PRESETS } from "$lib/time/startTime";
+	import { startPicker as picker } from "$lib/ui/startPicker.svelte";
+	import { keepTrayInSync } from "$lib/ui/trayState.svelte";
 	import { Button } from "$lib/components/ui/button";
 	import * as ButtonGroup from "$lib/components/ui/button-group";
 	import { Input } from "$lib/components/ui/input";
@@ -12,7 +14,6 @@
 	import { invoke } from "@tauri-apps/api/core";
 	import { emit, listen } from "@tauri-apps/api/event";
 	import { notifyDataChanged, type DataChanged } from "$lib/platform/windows";
-	import { toast } from "svelte-sonner";
 	import SquareIcon from "@lucide/svelte/icons/square";
 	import PlayIcon from "@lucide/svelte/icons/play";
 	import StarIcon from "@lucide/svelte/icons/star";
@@ -88,48 +89,15 @@
 		};
 	});
 
-	// Tray-Icon und Menü immer aktuell halten, auch wenn das Hauptfenster geschlossen ist.
-	$effect(() => {
-		if (!app.loaded) return;
-		const _v = app.trayVersion;
-		untrack(() => {
-			void app.updateTrayState();
-		});
-	});
+	keepTrayInSync();
 
-	// Startzeit-Auswahl (analog zum Hauptfenster): Preset "vor X min" (0 = jetzt)
-	// oder freie Uhrzeit. Nützlich, wenn man den Timer verspätet startet.
-	let presetMin = $state(0);
-	let customStart = $state("");
 	let clockInput = $state<HTMLInputElement | null>(null);
-	/** Gilt gerade die freie Uhrzeit? Steuert Anzeige UND Auswertung. */
-	const usingClock = $derived(customStart !== "");
-
-	const startHint = $derived.by(() => {
-		const now = app.now;
-		if (!customStart && presetMin === 0) return null;
-		const ts = resolveStartTs(presetMin, customStart);
-		if (ts == null) return "ungültige Uhrzeit";
-		// Auch im Tray sagen, dass zwei Einträge entstehen - hier wird genauso rückdatiert.
-		const shared = midnightSplitHint(ts, now);
-		return shared ? `ab ${fmtClock(ts)} – ${shared}` : `ab ${fmtClock(ts)}`;
-	});
 
 	async function start(id: string) {
-		const now = Date.now();
-		const ts = resolveStartTs(presetMin, customStart, now);
-		if (ts == null) {
-			toast.error("Unlesbare Startzeit.");
-			return;
-		}
-		await app.startActivity(id, toStartArg(ts, now));
 		// Rückfrage offen? Dann ist nichts gestartet – erst der Dialog meldet
 		// (onapplied unten). Sonst hätte das Hauptfenster einen Zustand geladen,
 		// in dem gar nichts passiert ist, und den späteren Start nie erfahren.
-		if (app.backdatePrompt) return;
-		// Nach dem Start zurück auf "jetzt", damit der Offset nicht am nächsten Start klebt.
-		presetMin = 0;
-		customStart = "";
+		if (!(await picker.start(id))) return;
 		await notifyDataChanged({ from: "tray" }); // Hauptfenster aktualisieren + Tray-Menü/Icon
 		// Flyout bleibt offen; schließt erst bei Fokusverlust.
 	}
@@ -181,38 +149,38 @@
 			     der Hinweis ohnehin mehr als "Timer starten". -->
 			<div
 				class="text-muted-foreground line-clamp-2 text-center text-[11px] leading-tight"
-				title={startHint ?? undefined}
+				title={picker.hint ?? undefined}
 			>
-				{startHint ?? "Timer starten"}
+				{picker.hint ?? "Timer starten"}
 			</div>
 			<!-- 300px Flyout: xs-Grösse, und das Uhrzeitfeld erscheint erst, wenn es
 			     gebraucht wird. Die gewählte Option ist hervorgehoben. -->
 			<div class="flex flex-1 items-center justify-center gap-1">
-				{#if usingClock}
+				{#if picker.usingClock}
 					<Input
 						bind:ref={clockInput}
 						type="time"
-						bind:value={customStart}
+						bind:value={picker.customStart}
 						class="h-6 w-20 shrink-0 px-1 text-xs"
-						oninput={() => (presetMin = 0)}
+						oninput={() => (picker.presetMin = 0)}
 					/>
-					<Button variant="ghost" size="icon-xs" title="Uhrzeit verwerfen" onclick={() => (customStart = "")}>
+					<Button variant="ghost" size="icon-xs" title="Uhrzeit verwerfen" onclick={() => (picker.customStart = "")}>
 						<XIcon />
 					</Button>
 				{:else}
 					<ButtonGroup.Root>
 						<Button
-							variant={presetMin === 0 ? "default" : "outline"}
+							variant={picker.presetMin === 0 ? "default" : "outline"}
 							size="xs"
-							onclick={() => (presetMin = 0)}
+							onclick={() => picker.choosePreset(0)}
 						>
 							Jetzt
 						</Button>
 						{#each START_PRESETS as m (m)}
 							<Button
-								variant={presetMin === m ? "default" : "outline"}
+								variant={picker.presetMin === m ? "default" : "outline"}
 								size="xs"
-								onclick={() => (presetMin = m)}
+								onclick={() => picker.choosePreset(m)}
 							>
 								−{m}
 							</Button>
@@ -222,8 +190,7 @@
 							size="icon-xs"
 							title="Ab einer bestimmten Uhrzeit"
 							onclick={() => {
-								customStart = fmtClock(Date.now());
-								presetMin = 0;
+								picker.chooseClock();
 								clockInput?.focus();
 							}}
 						>
@@ -294,8 +261,7 @@
 
 <BackdateDialog
 	onapplied={() => {
-		presetMin = 0;
-		customStart = "";
+		picker.reset();
 		void notifyDataChanged();
 	}}
 />

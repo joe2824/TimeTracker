@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ConfirmDialog from "$lib/components/shared/ConfirmDialog.svelte";
 	import { app } from "$lib/app.svelte";
 	import { account } from "$lib/sync/account.svelte";
 	import { chefTeams } from "$lib/team/chef.svelte";
@@ -12,6 +13,7 @@
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { Switch } from "$lib/components/ui/switch";
 	import SettingsCard from "$lib/components/shared/SettingsCard.svelte";
+	import InviteLinkField from "$lib/components/team/InviteLinkField.svelte";
 	import { dismissTeamRemoved, leaveTeam as leaveJoinedTeam, syncOwnedTeamActivities, syncTeamActivities } from "$lib/team/activities";
 	import { teamJoin } from "$lib/team/state.svelte";
 	import { errorText } from "$lib/log";
@@ -23,11 +25,9 @@
 	import UsersIcon from "@lucide/svelte/icons/users";
 	import ArrowRightIcon from "@lucide/svelte/icons/arrow-right";
 	import PlusIcon from "@lucide/svelte/icons/plus";
-	import CopyIcon from "@lucide/svelte/icons/copy";
 	import Trash2Icon from "@lucide/svelte/icons/trash-2";
 	import ArrowLeftRightIcon from "@lucide/svelte/icons/arrow-left-right";
 	import CloudIcon from "@lucide/svelte/icons/cloud";
-	import Link2Icon from "@lucide/svelte/icons/link-2";
 	import ShieldIcon from "@lucide/svelte/icons/shield";
 	import XIcon from "@lucide/svelte/icons/x";
 	import CheckIcon from "@lucide/svelte/icons/check";
@@ -54,18 +54,14 @@
 	}
 
 	let confirmLeave = $state(false);
-	let leaving = $state(false);
 
 	async function leaveTeam() {
-		leaving = true;
 		try {
 			await leaveJoinedTeam();
 			confirmLeave = false;
 			toast.success("Team verlassen. Deine erfassten Zeiten bleiben erhalten.");
 		} catch (e) {
 			toast.error(`Team verlassen fehlgeschlagen: ${errorText(e)}`);
-		} finally {
-			leaving = false;
 		}
 	}
 
@@ -156,7 +152,6 @@
 		chefTeams.admins.find((a) => a.userId === transferPickId) ?? null
 	);
 	let confirmingTransfer = $state(false);
-	let transferring = $state(false);
 	// Eigener Stand statt live aus chefTeams.admins gelesen: transferOwnership()
 	// leert admins/adminInvite noch waehrend die Bestaetigung laeuft (die Rolle
 	// wechselt serverseitig sofort) - ein Dialog, der auf diesen Stand angewiesen
@@ -172,7 +167,6 @@
 
 	async function confirmTransfer() {
 		if (!transferTarget) return;
-		transferring = true;
 		try {
 			const userId = transferTarget.userId;
 			await chefTeams.transferOwnership(userId);
@@ -181,8 +175,6 @@
 			transferPickId = undefined;
 		} catch (e) {
 			toast.error(`Übergabe fehlgeschlagen: ${errorText(e)}`);
-		} finally {
-			transferring = false;
 		}
 	}
 
@@ -190,11 +182,9 @@
 	// an dieses Team - gehen mit) - deshalb ein eigener Bestätigungsdialog statt
 	// eines blossen Knopfdrucks.
 	let deleteTarget = $state<TeamInfo | null>(null);
-	let deleting = $state(false);
 
 	async function confirmDeleteTeam() {
 		if (!deleteTarget) return;
-		deleting = true;
 		try {
 			const name = deleteTarget.name;
 			await chefTeams.deleteTeam(deleteTarget.id);
@@ -206,8 +196,6 @@
 			deleteTarget = null;
 		} catch (e) {
 			toast.error(`Team konnte nicht gelöscht werden: ${errorText(e)}`);
-		} finally {
-			deleting = false;
 		}
 	}
 </script>
@@ -246,29 +234,16 @@
 	</SettingsCard>
 {/if}
 
-<Dialog.Root
+<ConfirmDialog
 	open={confirmLeave}
-	onOpenChange={(o) => {
-		if (!o && !leaving) confirmLeave = false;
-	}}
->
-	<Dialog.Content class="sm:max-w-md">
-		<Dialog.Header>
-			<Dialog.Title>Team „{teamJoin.device?.teamName}“ verlassen?</Dialog.Title>
-			<Dialog.Description>
-				Deine erfassten Zeiten bleiben erhalten, die Team-Aktivitäten werden zu archivierten eigenen
-				Aktivitäten. Deine Berichte gehen danach nicht mehr an das Team. Um wieder beizutreten, brauchst
-				du erneut den Beitritts-Link.
-			</Dialog.Description>
-		</Dialog.Header>
-		<Dialog.Footer>
-			<Button variant="outline" disabled={leaving} onclick={() => (confirmLeave = false)}>Abbrechen</Button>
-			<Button variant="destructive" disabled={leaving} onclick={leaveTeam}>
-				{leaving ? "Wird verlassen…" : "Team verlassen"}
-			</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+	class="sm:max-w-md"
+	title={`Team „${teamJoin.device?.teamName}“ verlassen?`}
+	description="Deine erfassten Zeiten bleiben erhalten, die Team-Aktivitäten werden zu archivierten eigenen Aktivitäten. Deine Berichte gehen danach nicht mehr an das Team. Um wieder beizutreten, brauchst du erneut den Beitritts-Link."
+	confirmLabel="Team verlassen"
+	busyLabel="Wird verlassen…"
+	onConfirm={leaveTeam}
+	onClose={() => (confirmLeave = false)}
+/>
 
 <SettingsCard title="Chef-Modus" savedAt={savedBossAt} divided={false}>
 	{#snippet action()}
@@ -384,37 +359,19 @@
 
 		<div class="space-y-1.5">
 			<Label>Beitritts-Link</Label>
-			{#if chefTeams.inviteLoading}
-				<p class="text-muted-foreground text-sm">Wird geladen…</p>
-			{:else if chefTeams.inviteUrl}
-				<div class="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/20 p-2.5">
-					<div class="bg-primary/10 text-primary flex size-7 shrink-0 items-center justify-center rounded-md">
-						<Link2Icon class="size-3.5" />
-					</div>
-					<code class="min-w-0 flex-1 truncate text-xs">{chefTeams.inviteUrl}</code>
-					<Button variant="ghost" size="icon-sm" title="Link kopieren" onclick={() => chefTeams.copyInviteUrl()}>
-						<CopyIcon class="size-4" />
-					</Button>
-					<Button variant="outline" size="sm" disabled={chefTeams.rotating} onclick={rotateInvite}>
-						<RefreshCwIcon class="size-4" /> Neuen Link erzeugen
-					</Button>
-				</div>
+			<InviteLinkField
+				url={chefTeams.inviteUrl}
+				loading={chefTeams.inviteLoading}
+				rotating={chefTeams.rotating}
+				emptyText="Noch keinen Link erzeugt."
+				oncopy={() => chefTeams.copyInviteUrl()}
+				onrotate={rotateInvite}
+			/>
+			{#if !chefTeams.inviteLoading && chefTeams.inviteUrl}
 				<p class="text-muted-foreground text-xs">
 					Ein neuer Link macht den bisherigen ungültig - schon beigetretene Mitglieder bleiben davon
 					unberührt.
 				</p>
-			{:else}
-				<div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed p-3.5">
-					<div class="flex items-center gap-2.5">
-						<div class="bg-muted flex size-7 shrink-0 items-center justify-center rounded-md">
-							<Link2Icon class="text-muted-foreground size-3.5" />
-						</div>
-						<p class="text-muted-foreground text-xs">Noch keinen Link erzeugt.</p>
-					</div>
-					<Button variant="outline" size="sm" disabled={chefTeams.rotating} onclick={rotateInvite}>
-						<RefreshCwIcon class="size-4" /> Link erzeugen
-					</Button>
-				</div>
 			{/if}
 		</div>
 
@@ -493,44 +450,19 @@
 			{#if chefTeams.isOwner}
 				<div class="space-y-1.5">
 					<Label>Verwalter einladen</Label>
-					{#if chefTeams.adminInviteLoading}
-						<p class="text-muted-foreground text-sm">Wird geladen…</p>
-					{:else if chefTeams.adminInviteUrl}
-						<div class="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/20 p-2.5">
-							<div class="bg-primary/10 text-primary flex size-7 shrink-0 items-center justify-center rounded-md">
-								<Link2Icon class="size-3.5" />
-							</div>
-							<code class="min-w-0 flex-1 truncate text-xs">{chefTeams.adminInviteUrl}</code>
-							<Button
-								variant="ghost"
-								size="icon-sm"
-								title="Link kopieren"
-								onclick={() => chefTeams.copyAdminInviteUrl()}
-							>
-								<CopyIcon class="size-4" />
-							</Button>
-							<Button variant="outline" size="sm" disabled={chefTeams.rotatingAdminInvite} onclick={rotateAdminInvite}>
-								<RefreshCwIcon class="size-4" /> Neuen Link erzeugen
-							</Button>
-						</div>
-					{:else}
-						<div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed p-3.5">
-							<div class="flex items-center gap-2.5">
-								<div class="bg-muted flex size-7 shrink-0 items-center justify-center rounded-md">
-									<Link2Icon class="text-muted-foreground size-3.5" />
-								</div>
-								<p class="text-muted-foreground text-xs">Kein gültiger Link.</p>
-							</div>
-							<Button variant="outline" size="sm" disabled={chefTeams.rotatingAdminInvite} onclick={rotateAdminInvite}>
-								<RefreshCwIcon class="size-4" /> Link erzeugen
-							</Button>
-						</div>
-					{/if}
+					<InviteLinkField
+						url={chefTeams.adminInviteUrl}
+						loading={chefTeams.adminInviteLoading}
+						rotating={chefTeams.rotatingAdminInvite}
+						emptyText="Kein gültiger Link."
+						oncopy={() => chefTeams.copyAdminInviteUrl()}
+						onrotate={rotateAdminInvite}
+					/>
 					{#if !chefTeams.adminInviteLoading}
 						<p class="text-muted-foreground text-xs">
 							Wer den Link annimmt, sieht alle Berichte des Teams und braucht dafür ein eigenes Konto.
 							{#if chefTeams.adminInvite?.expiresAt}
-								Der Link gilt bis {new Date(chefTeams.adminInvite.expiresAt).toLocaleDateString("de-DE")}.
+								Der Link gilt bis {fmtDateHuman(chefTeams.adminInvite.expiresAt)}.
 							{:else}
 								Ein neuer Link gilt 30 Tage.
 							{/if}
@@ -566,57 +498,25 @@
 		</SettingsCard>
 	{/if}
 
-	<Dialog.Root
+	<ConfirmDialog
 		open={confirmingTransfer}
-		onOpenChange={(v) => {
-			if (!v && !transferring) confirmingTransfer = false;
-		}}
-	>
-		<Dialog.Content class="sm:max-w-md">
-			<Dialog.Header>
-				<Dialog.Title>Chef-Rolle an „{transferTargetName}“ übergeben?</Dialog.Title>
-				<Dialog.Description>
-					„{transferTargetName}“ kann das Team danach löschen, Verwalter einladen oder entfernen und
-					erneut übergeben - alles, was bisher nur du konntest. Du selbst bleibst als Verwalter
-					mit dabei.
-				</Dialog.Description>
-			</Dialog.Header>
-			<Dialog.Footer>
-				<Button
-					type="button"
-					variant="outline"
-					onclick={() => (confirmingTransfer = false)}
-					disabled={transferring}
-				>
-					Abbrechen
-				</Button>
-				<Button type="button" variant="destructive" onclick={confirmTransfer} disabled={transferring}>
-					<ArrowLeftRightIcon class="size-4" />
-					{transferring ? "Wird übergeben…" : "Übergeben"}
-				</Button>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
+		class="sm:max-w-md"
+		title={`Chef-Rolle an „${transferTargetName}“ übergeben?`}
+		description={`„${transferTargetName}“ kann das Team danach löschen, Verwalter einladen oder entfernen und erneut übergeben - alles, was bisher nur du konntest. Du selbst bleibst als Verwalter mit dabei.`}
+		confirmLabel="Übergeben"
+		busyLabel="Wird übergeben…"
+		onConfirm={confirmTransfer}
+		onClose={() => (confirmingTransfer = false)}
+	/>
 
-	<Dialog.Root open={!!deleteTarget} onOpenChange={(v) => { if (!v && !deleting) deleteTarget = null; }}>
-		<Dialog.Content class="sm:max-w-md">
-			<Dialog.Header>
-				<Dialog.Title>„{deleteTarget?.name}“ endgültig löschen?</Dialog.Title>
-				<Dialog.Description>
-					Mitglieder, gemeinsame Aktivitäten und alle gesendeten Berichte dieses Teams gehen damit
-					unwiderruflich verloren. Der Beitritts-Link wird ungültig. Zeiten, die Mitglieder bereits
-					erfasst hatten, bleiben auf deren eigenen Geräten erhalten.
-				</Dialog.Description>
-			</Dialog.Header>
-			<Dialog.Footer>
-				<Button type="button" variant="outline" onclick={() => (deleteTarget = null)} disabled={deleting}>
-					Abbrechen
-				</Button>
-				<Button type="button" variant="destructive" onclick={confirmDeleteTeam} disabled={deleting}>
-					<Trash2Icon class="size-4" />
-					{deleting ? "Wird gelöscht…" : "Endgültig löschen"}
-				</Button>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
+	<ConfirmDialog
+		open={!!deleteTarget}
+		class="sm:max-w-md"
+		title={`„${deleteTarget?.name}“ endgültig löschen?`}
+		description="Mitglieder, gemeinsame Aktivitäten und alle gesendeten Berichte dieses Teams gehen damit unwiderruflich verloren. Der Beitritts-Link wird ungültig. Zeiten, die Mitglieder bereits erfasst hatten, bleiben auf deren eigenen Geräten erhalten."
+		confirmLabel="Endgültig löschen"
+		busyLabel="Wird gelöscht…"
+		onConfirm={confirmDeleteTeam}
+		onClose={() => (deleteTarget = null)}
+	/>
 {/if}

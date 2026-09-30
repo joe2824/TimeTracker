@@ -49,7 +49,12 @@ beforeEach(() => {
 	chefTeams.invite = null;
 	chefTeams.admins = [];
 	chefTeams.adminInvite = null;
+	chefTeams.inviteLoading = false;
+	chefTeams.adminsLoading = false;
+	chefTeams.adminInviteLoading = false;
 });
+
+const invite = (teamId: string, code: string) => ({ code, teamId, createdAt: 1, expiresAt: null, revokedAt: null });
 
 describe("loadTeams", () => {
 	it("teilt einen laufenden Aufruf statt ihn zu verdoppeln", async () => {
@@ -140,26 +145,57 @@ describe("createTeam / deleteTeam", () => {
 });
 
 describe("loadInvite", () => {
-	it("eine spaeter aufgeloeste, aeltere Anfrage ueberschreibt nicht die neuere fuer dasselbe Team", async () => {
+	it("teilt einen laufenden Abruf fuer dasselbe Team - TeamPanel und TeamTab fragen beide", async () => {
 		chefTeams.selectedTeamId = TEAM_A.id;
-		let resolveFirst!: (v: unknown) => void;
-		accountMock.getTeamInvite
-			.mockImplementationOnce(() => new Promise((r) => (resolveFirst = r)))
-			.mockImplementationOnce(async () => ({
-				code: "neu",
-				teamId: TEAM_A.id,
-				createdAt: 2,
-				expiresAt: null,
-				revokedAt: null
-			}));
+		let resolve!: (v: unknown) => void;
+		accountMock.getTeamInvite.mockReturnValue(new Promise((r) => (resolve = r)));
 
 		const first = chefTeams.loadInvite(TEAM_A.id);
 		const second = chefTeams.loadInvite(TEAM_A.id);
-		await second;
-		resolveFirst({ code: "alt", teamId: TEAM_A.id, createdAt: 1, expiresAt: null, revokedAt: null });
-		await first;
+		resolve(invite(TEAM_A.id, "abc"));
 
+		await expect(first).resolves.toBe(true);
+		await expect(second).resolves.toBe(true);
+		expect(accountMock.getTeamInvite).toHaveBeenCalledTimes(1);
+		expect(chefTeams.invite?.code).toBe("abc");
+		expect(chefTeams.inviteLoading).toBe(false);
+	});
+
+	it("eine veraltete Anfrage beendet die Ladeanzeige der laufenden nicht", async () => {
+		chefTeams.selectedTeamId = TEAM_A.id;
+		let resolveA!: (v: unknown) => void;
+		let resolveB!: (v: unknown) => void;
+		accountMock.getTeamInvite
+			.mockImplementationOnce(() => new Promise((r) => (resolveA = r)))
+			.mockImplementationOnce(() => new Promise((r) => (resolveB = r)));
+
+		const a = chefTeams.loadInvite(TEAM_A.id);
+		chefTeams.selectedTeamId = TEAM_B.id;
+		const b = chefTeams.loadInvite(TEAM_B.id);
+		chefTeams.selectedTeamId = TEAM_A.id; // zurueck, waehrend B noch laedt
+		resolveA(invite(TEAM_A.id, "alt"));
+		await a;
+
+		// Sonst stuende ein Link da, als waere er fertig geladen, obwohl B noch laeuft.
+		expect(chefTeams.inviteLoading).toBe(true);
+		resolveB(invite(TEAM_B.id, "b"));
+		await b;
+		expect(chefTeams.inviteLoading).toBe(false);
+	});
+
+	it("eine vor rotateInvite() gestartete Antwort ueberschreibt den neuen Link nicht", async () => {
+		chefTeams.selectedTeamId = TEAM_A.id;
+		let resolveLoad!: (v: unknown) => void;
+		accountMock.getTeamInvite.mockReturnValue(new Promise((r) => (resolveLoad = r)));
+		accountMock.rotateTeamInvite.mockResolvedValue(invite(TEAM_A.id, "neu"));
+
+		const load = chefTeams.loadInvite(TEAM_A.id);
+		await chefTeams.rotateInvite();
+		resolveLoad(invite(TEAM_A.id, "alt"));
+
+		await expect(load).resolves.toBe(false);
 		expect(chefTeams.invite?.code).toBe("neu");
+		expect(chefTeams.inviteLoading).toBe(false);
 	});
 
 	it("meldet einen Fehlschlag per Toast und gibt false zurueck, statt einen fehlenden Link vorzutaeuschen", async () => {
@@ -171,20 +207,41 @@ describe("loadInvite", () => {
 });
 
 describe("loadAdmins", () => {
-	it("eine spaeter aufgeloeste, aeltere Anfrage ueberschreibt nicht die neuere fuer dasselbe Team", async () => {
+	it("teilt einen laufenden Abruf und haelt die Ladeanzeige bis zur Antwort", async () => {
 		chefTeams.selectedTeamId = TEAM_A.id;
-		let resolveFirst!: (v: unknown) => void;
-		accountMock.listTeamAdmins
-			.mockImplementationOnce(() => new Promise((r) => (resolveFirst = r)))
-			.mockImplementationOnce(async () => [ADMIN_ANNA]);
+		let resolve!: (v: unknown) => void;
+		accountMock.listTeamAdmins.mockReturnValue(new Promise((r) => (resolve = r)));
 
 		const first = chefTeams.loadAdmins(TEAM_A.id);
 		const second = chefTeams.loadAdmins(TEAM_A.id);
-		await second;
-		resolveFirst([]);
-		await first;
+		expect(chefTeams.adminsLoading).toBe(true);
+		resolve([ADMIN_ANNA]);
+		await Promise.all([first, second]);
 
+		expect(accountMock.listTeamAdmins).toHaveBeenCalledTimes(1);
 		expect(chefTeams.admins).toEqual([ADMIN_ANNA]);
+		expect(chefTeams.adminsLoading).toBe(false);
+	});
+
+	it("eine veraltete Anfrage beendet die Ladeanzeige der laufenden nicht", async () => {
+		chefTeams.selectedTeamId = TEAM_A.id;
+		let resolveA!: (v: unknown) => void;
+		let resolveB!: (v: unknown) => void;
+		accountMock.listTeamAdmins
+			.mockImplementationOnce(() => new Promise((r) => (resolveA = r)))
+			.mockImplementationOnce(() => new Promise((r) => (resolveB = r)));
+
+		const a = chefTeams.loadAdmins(TEAM_A.id);
+		chefTeams.selectedTeamId = TEAM_B.id;
+		const b = chefTeams.loadAdmins(TEAM_B.id);
+		chefTeams.selectedTeamId = TEAM_A.id;
+		resolveA([ADMIN_ANNA]);
+		await a;
+
+		expect(chefTeams.adminsLoading).toBe(true);
+		resolveB([]);
+		await b;
+		expect(chefTeams.adminsLoading).toBe(false);
 	});
 
 	it("meldet einen Fehlschlag per Toast", async () => {
@@ -226,24 +283,37 @@ describe("removeAdmin", () => {
 });
 
 describe("loadAdminInvite", () => {
-	it("eine spaeter aufgeloeste, aeltere Anfrage ueberschreibt nicht die neuere fuer dasselbe Team", async () => {
+	it("eine veraltete Anfrage beendet die Ladeanzeige der laufenden nicht", async () => {
 		chefTeams.selectedTeamId = TEAM_A.id;
-		let resolveFirst!: (v: unknown) => void;
+		let resolveA!: (v: unknown) => void;
+		let resolveB!: (v: unknown) => void;
 		accountMock.getAdminInvite
-			.mockImplementationOnce(() => new Promise((r) => (resolveFirst = r)))
-			.mockImplementationOnce(async () => ({
-				code: "neu",
-				teamId: TEAM_A.id,
-				createdAt: 2,
-				expiresAt: null,
-				revokedAt: null
-			}));
+			.mockImplementationOnce(() => new Promise((r) => (resolveA = r)))
+			.mockImplementationOnce(() => new Promise((r) => (resolveB = r)));
 
-		const first = chefTeams.loadAdminInvite(TEAM_A.id);
-		const second = chefTeams.loadAdminInvite(TEAM_A.id);
-		await second;
-		resolveFirst({ code: "alt", teamId: TEAM_A.id, createdAt: 1, expiresAt: null, revokedAt: null });
-		await first;
+		const a = chefTeams.loadAdminInvite(TEAM_A.id);
+		chefTeams.selectedTeamId = TEAM_B.id;
+		const b = chefTeams.loadAdminInvite(TEAM_B.id);
+		chefTeams.selectedTeamId = TEAM_A.id;
+		resolveA(invite(TEAM_A.id, "alt"));
+		await a;
+
+		expect(chefTeams.adminInviteLoading).toBe(true);
+		resolveB(invite(TEAM_B.id, "b"));
+		await b;
+		expect(chefTeams.adminInviteLoading).toBe(false);
+	});
+
+	it("eine vor rotateAdminInvite() gestartete Antwort ueberschreibt den neuen Link nicht", async () => {
+		chefTeams.selectedTeamId = TEAM_A.id;
+		let resolveLoad!: (v: unknown) => void;
+		accountMock.getAdminInvite.mockReturnValue(new Promise((r) => (resolveLoad = r)));
+		accountMock.rotateAdminInvite.mockResolvedValue(invite(TEAM_A.id, "neu"));
+
+		const load = chefTeams.loadAdminInvite(TEAM_A.id);
+		await chefTeams.rotateAdminInvite();
+		resolveLoad(invite(TEAM_A.id, "alt"));
+		await load;
 
 		expect(chefTeams.adminInvite?.code).toBe("neu");
 	});

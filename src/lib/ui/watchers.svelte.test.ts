@@ -23,13 +23,11 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: ipc.invoke }));
 const messages = vi.hoisted(() => ({ send: vi.fn() }));
 // Gemeldet wird über platform/notify - die Hülle dahinter (Rust-Command oder
 // Web-Notification) ist hier nicht der Gegenstand und läuft unter vitest ohnehin
-// in keine der beiden Äste.
+// in keine der beiden Äste. Die Berechtigung gilt immer als erteilt.
 vi.mock("../platform/notify", () => ({
 	notify: messages.send,
 	ensureNotificationPermission: async () => true
 }));
-// Die Berechtigung ist hier nicht der Gegenstand: immer erteilt.
-vi.mock("./reminders", () => ({ ensureNotificationPermission: async () => true }));
 
 // Die Tagesmeldung geht sonst wirklich ins Netz. Der Rückgabewert entscheidet,
 // ob der Tag als gemeldet gilt - genau darum geht es unten. Die Adresse zählt

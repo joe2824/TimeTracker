@@ -1,26 +1,25 @@
 <script lang="ts">
+	import { absenceLabel, dayFractionLabel } from "$lib/report/labels";
 	import { app } from "$lib/app.svelte";
 	import {
 		durationSeconds,
 		entryHours,
 		fmtClock,
 		fmtDate,
-		fmtDateHuman,
 		fmtHMS,
 		fmtHoursClock,
-		midnightSplitHint,
 		noonTs
 	} from "$lib/time/time";
 	import { TIME_OFF_COLOR } from "$lib/types";
 	import { breakDeduction } from "$lib/time/breaks";
 	import { dayTotals } from "$lib/time/dayTotals";
 	import { arbzgMonths, checkArbZg, dataFromEntries, MIN_HINT_WEEKS } from "$lib/time/arbzg";
-	import { START_PRESETS, resolveStartTs, toStartArg } from "$lib/time/startTime";
+	import { START_PRESETS } from "$lib/time/startTime";
+	import { startPicker as picker } from "$lib/ui/startPicker.svelte";
 	import { Button } from "$lib/components/ui/button";
 	import * as ButtonGroup from "$lib/components/ui/button-group";
 	import { Input } from "$lib/components/ui/input";
 	import * as Card from "$lib/components/ui/card";
-	import { toast } from "svelte-sonner";
 	import SquareIcon from "@lucide/svelte/icons/square";
 	import PlayIcon from "@lucide/svelte/icons/play";
 	import StarIcon from "@lucide/svelte/icons/star";
@@ -42,36 +41,7 @@
 		onlyFavorites ? app.trackableActivities.filter((a) => a.favorite) : app.trackableActivities
 	);
 
-	// Startzeit-Auswahl: Preset "vor X min" (0 = jetzt) oder freie Uhrzeit (überschreibt Preset).
-	let presetMin = $state(0);
-	let customStart = $state("");
 	let clockInput = $state<HTMLInputElement | null>(null);
-	/** Gilt gerade die freie Uhrzeit? Steuert Hervorhebung UND Auswertung. */
-	const usingClock = $derived(customStart !== "");
-
-	// Hinweistext (tickt mit app.now); null wenn "jetzt".
-	const startHint = $derived.by(() => {
-		if (!customStart && presetMin === 0) return null;
-		const now = app.now;
-		const ts = resolveStartTs(presetMin, customStart, now);
-		if (ts == null) return "unlesbare Uhrzeit";
-		const shared = midnightSplitHint(ts, now);
-		if (shared) return `beginnt ${fmtDateHuman(ts)} um ${fmtClock(ts)} – ${shared}`;
-		return `Timer beginnt um ${fmtClock(ts)}`;
-	});
-
-	function startAt(activityId: string) {
-		const now = Date.now();
-		const ts = resolveStartTs(presetMin, customStart, now);
-		if (ts == null) {
-			toast.error("Unlesbare Startzeit.");
-			return;
-		}
-		void app.startActivity(activityId, toStartArg(ts, now));
-		// Nach dem Start auf "jetzt" zurücksetzen.
-		presetMin = 0;
-		customStart = "";
-	}
 
 	const today = $derived(fmtDate(app.now));
 	const todayEntries = $derived(
@@ -109,7 +79,7 @@
 			dataFrom: dataFromEntries(hintEntries, today),
 			workdays: app.settings.workdays,
 			deductBreaks: app.settings.breakDeduction,
-			absenceIds: new Set(app.activities.filter((a) => a.isAbsence).map((a) => a.id)),
+			absenceIds: app.absenceIds,
 			// Nicht `app.now`: sonst hängt die ganze Rechnung am Sekundentakt. Die
 			// laufende Stunde verschiebt einen 24-Wochen-Schnitt ohnehin nicht.
 			now: noonTs(today)
@@ -144,9 +114,8 @@
 			: "border-amber-500/55 bg-amber-500/7 text-amber-700 dark:text-amber-400"
 	);
 
-	const absenceIds = $derived(new Set(app.activities.filter((a) => a.isAbsence).map((a) => a.id)));
 	const todaySum = $derived(
-		dayTotals(todayEntries, absenceIds, app.settings.hoursPerDay, {
+		dayTotals(todayEntries, app.absenceIds, app.settings.hoursPerDay, {
 			now: app.now,
 			deductBreaks: app.settings.breakDeduction
 		})
@@ -244,24 +213,18 @@
 			     „ab Uhrzeit“ eingeschlossen. -->
 			<ButtonGroup.Root>
 				<Button
-					variant={usingClock || presetMin !== 0 ? "outline" : "default"}
+					variant={picker.usingClock || picker.presetMin !== 0 ? "outline" : "default"}
 					size="sm"
-					onclick={() => {
-						presetMin = 0;
-						customStart = "";
-					}}
+					onclick={() => picker.choosePreset(0)}
 				>
 					Jetzt
 				</Button>
 				{#each START_PRESETS as m (m)}
 					<Button
-						variant={!usingClock && presetMin === m ? "default" : "outline"}
+						variant={!picker.usingClock && picker.presetMin === m ? "default" : "outline"}
 						size="sm"
 						title="Vor {m} Minuten"
-						onclick={() => {
-							presetMin = m;
-							customStart = "";
-						}}
+						onclick={() => picker.choosePreset(m)}
 					>
 						<!-- Schmal nur "−15": die Einheit steht über der Leiste ("Startzeit"),
 						     und ausgeschrieben sprengt die Gruppe bei 360px die Zeile. -->
@@ -269,40 +232,38 @@
 					</Button>
 				{/each}
 				<Button
-					variant={usingClock ? "default" : "outline"}
+					variant={picker.usingClock ? "default" : "outline"}
 					size="sm"
 					title="Ab einer bestimmten Uhrzeit starten"
 					onclick={() => {
-						// Mit der aktuellen Zeit vorbelegen, damit das Feld nie leer aktiv ist.
-						if (!customStart) customStart = fmtClock(Date.now());
-						presetMin = 0;
+						picker.chooseClock();
 						clockInput?.focus();
 					}}
 				>
 					ab Uhrzeit
 				</Button>
 			</ButtonGroup.Root>
-			{#if usingClock}
+			{#if picker.usingClock}
 				<div class="flex items-center gap-1.5">
 					<Input
 						bind:ref={clockInput}
 						type="time"
-						bind:value={customStart}
+						bind:value={picker.customStart}
 						class="h-7 w-24"
-						oninput={() => (presetMin = 0)}
+						oninput={() => (picker.presetMin = 0)}
 					/>
 					<Button
 						variant="ghost"
 						size="icon-sm"
 						title="Uhrzeit verwerfen"
-						onclick={() => (customStart = "")}
+						onclick={() => (picker.customStart = "")}
 					>
 						<XIcon />
 					</Button>
 				</div>
 			{/if}
-			{#if startHint}
-				<span class="text-muted-foreground text-xs">· {startHint}</span>
+			{#if picker.hint}
+				<span class="text-muted-foreground text-xs">· {picker.hint}</span>
 			{/if}
 		</div>
 	{/if}
@@ -340,7 +301,7 @@
 					<Button
 						variant={active ? "default" : "outline"}
 						class="h-auto justify-start whitespace-normal py-2 text-left"
-						onclick={() => (active ? app.stop() : startAt(a.id))}
+						onclick={() => (active ? app.stop() : picker.start(a.id))}
 					>
 						{#if active}
 							<SquareIcon class="size-4 shrink-0" />
@@ -405,7 +366,7 @@
 									color={isTimeOff ? TIME_OFF_COLOR : app.activityColor(e.activityId)}
 								/>
 								<span class="truncate">
-									{isTimeOff ? "Zeitausgleich" : app.activityName(e.activityId)}
+									{absenceLabel(isTimeOff, app.activityName(e.activityId))}
 								</span>
 							</span>
 							<span class="text-muted-foreground shrink-0 font-mono tabular-nums">
@@ -413,7 +374,7 @@
 									<!-- Abwesenheiten sind tagesgenau: start == end. Als Uhrzeitspanne
 									     stand hier „12:00–12:00 (0:00:00)“ – während die Tagesbilanz
 									     oben den Tagessatz mitzählt. -->
-									{(e.dayFraction ?? 1) === 0.5 ? "½ Tag" : "ganzer Tag"}
+									{dayFractionLabel(e.dayFraction)}
 									&nbsp;({fmtHoursClock((e.dayFraction ?? 1) * app.settings.hoursPerDay)} h)
 								{:else}
 									{fmtClock(e.startTs)}–{e.endTs ? fmtClock(e.endTs) : "…"}

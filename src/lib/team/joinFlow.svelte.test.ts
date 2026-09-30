@@ -3,8 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const previewTeam = vi.fn();
 const completeTeamJoin = vi.fn();
 vi.mock("./join", () => ({
-	previewTeam: (...args: unknown[]) => previewTeam(...args),
 	completeTeamJoin: (...args: unknown[]) => completeTeamJoin(...args)
+}));
+vi.mock("./api", () => ({
+	previewTeamInvite: (...args: unknown[]) => previewTeam(...args)
 }));
 
 const { TeamJoinFlow } = await import("./joinFlow.svelte");
@@ -15,6 +17,7 @@ beforeEach(() => {
 });
 
 describe("TeamJoinFlow", () => {
+	// Das Rennen zweier Links prüft linkPreview.svelte.test.ts.
 	it("laedt die Vorschau und faengt einen Fehlschlag als 'error' ab", async () => {
 		const flow = new TeamJoinFlow();
 		previewTeam.mockResolvedValue({ teamName: "Vertrieb" });
@@ -25,36 +28,6 @@ describe("TeamJoinFlow", () => {
 		previewTeam.mockRejectedValue(new Error("abgelaufen"));
 		await flow.loadPreview("https://tt.example.de", "code2");
 		expect(flow.preview).toBe("error");
-	});
-
-	it("ignoriert die späte Antwort eines älteren Links", async () => {
-		const flow = new TeamJoinFlow();
-		let resolveFirst!: (v: { teamName: string }) => void;
-		previewTeam
-			.mockImplementationOnce(() => new Promise((resolve) => (resolveFirst = resolve)))
-			.mockResolvedValueOnce({ teamName: "Einkauf" });
-
-		const first = flow.loadPreview("https://tt.example.de", "codeA");
-		await flow.loadPreview("https://tt.example.de", "codeB");
-		resolveFirst({ teamName: "Vertrieb" });
-		await first;
-
-		expect(flow.preview).toEqual({ teamName: "Einkauf" });
-	});
-
-	it("ignoriert den Fehlschlag eines älteren Links", async () => {
-		const flow = new TeamJoinFlow();
-		let rejectFirst!: (e: Error) => void;
-		previewTeam
-			.mockImplementationOnce(() => new Promise((_, reject) => (rejectFirst = reject)))
-			.mockResolvedValueOnce({ teamName: "Einkauf" });
-
-		const first = flow.loadPreview("https://tt.example.de", "codeA");
-		await flow.loadPreview("https://tt.example.de", "codeB");
-		rejectFirst(new Error("abgelaufen"));
-		await first;
-
-		expect(flow.preview).toEqual({ teamName: "Einkauf" });
 	});
 
 	it("tritt bei und liefert die Team-Infos", async () => {
@@ -115,7 +88,7 @@ describe("TeamJoinFlow", () => {
 		expect(completeTeamJoin).not.toHaveBeenCalled();
 
 		flow.email = "";
-		expect(flow.canJoin).toBe(true);
+		expect(flow.canJoinAt("https://tt.example.de")).toBe(true);
 	});
 
 	it("erkennt den Link des Teams, in dem das Gerät schon ist, und tritt nicht erneut bei", async () => {
@@ -126,11 +99,15 @@ describe("TeamJoinFlow", () => {
 		flow.existing = { teamMemberId: "m1", token: "tok", teamName: "Vertrieb", serverUrl: "https://tt.example.de/" };
 
 		expect(flow.sameTeam("https://tt.example.de")).toBe(true);
+		// Sonst löst Enter im Formular einen Beitritt aus, der ohne Fehlertext scheitert.
+		expect(flow.canJoinAt("https://tt.example.de")).toBe(false);
 		expect(await flow.join("https://tt.example.de", "code1")).toBeNull();
+		expect(flow.joinError).toBeNull();
 		expect(completeTeamJoin).not.toHaveBeenCalled();
 
 		flow.existing = { ...flow.existing, teamName: "Einkauf" };
 		expect(flow.sameTeam("https://tt.example.de")).toBe(false);
+		expect(flow.canJoinAt("https://tt.example.de")).toBe(true);
 	});
 
 	it("setzt Eingaben und Fehlertext bei reset() zurueck", () => {

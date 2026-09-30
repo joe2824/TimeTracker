@@ -94,8 +94,15 @@ interface BlockedDay {
 	activityName: string;
 }
 
+/** Eine neue, eigene Aktivität - gemeinsam für Anlegen und Import. */
+function newActivity(name: string, sortOrder: number): Activity {
+	return { id: uid(), name, sortOrder, archived: false, isAbsence: false };
+}
+
 class AppState {
 	activities = $state<Activity[]>([]);
+	/** Ids der Abwesenheits-Aktivitäten, wie sie die Auswertungen erwarten. */
+	absenceIds = $derived(new Set(this.activities.filter((a) => a.isAbsence).map((a) => a.id)));
 	/** Serialisiert mergeDuplicateBuiltins() - siehe dort. */
 	#builtinRepair: Promise<void> = Promise.resolve();
 	settings = $state<Settings>({ ...defaultSettings });
@@ -215,7 +222,7 @@ class AppState {
 				this.showOnboarding = firstRun;
 				this.loaded = true;
 				this.initStep = null;
-				this.trayVersion = (this.trayVersion + 1) % 1000;
+				this.#bumpTray();
 				logInfo("Daten geladen", {
 					ms: Date.now() - started,
 					firstStart: firstRun,
@@ -403,8 +410,13 @@ class AppState {
 		// Tray-Icon und -Menü erst jetzt aktualisieren, wenn running endgültig
 		// gesetzt ist. Ein Erhöhen mitten in reload (wenn running kurz null war)
 		// würde das Icon kurz auf „idle“ wechseln – das sichtbare Flackern.
-		this.trayVersion = (this.trayVersion + 1) % 1000;
+		this.#bumpTray();
 		logDebug("Daten neu geladen", { running: this.#runningName() });
+	}
+
+	/** Tray-Icon und -Menü neu zeichnen lassen - die Fenster beobachten trayVersion. */
+	#bumpTray(): void {
+		this.trayVersion = (this.trayVersion + 1) % 1000;
 	}
 
 	/** Aktualisiert das native OS Tray Icon und Menü sofort imperativ. */
@@ -627,7 +639,7 @@ class AppState {
 		// davon.
 		this.#reindexBuiltinsLast();
 		await saveActivities($state.snapshot(this.activities) as Activity[]);
-		this.trayVersion = (this.trayVersion + 1) % 1000;
+		this.#bumpTray();
 		void notifyDataChanged();
 	}
 
@@ -640,13 +652,7 @@ class AppState {
 			const name = raw.trim();
 			if (!name || existing.has(name.toLowerCase())) continue;
 			existing.add(name.toLowerCase());
-			this.activities.push({
-				id: uid(),
-				name,
-				sortOrder: order++,
-				archived: false,
-				isAbsence: false
-			});
+			this.activities.push(newActivity(name, order++));
 			added++;
 		}
 		if (added) await this.persistActivities();
@@ -669,53 +675,49 @@ class AppState {
 			(a) => !a.archived && a.name.toLowerCase() === trimmed.toLowerCase()
 		);
 		if (existing) return existing.id;
-		const id = uid();
-		this.activities.push({
-			id,
-			name: trimmed,
-			sortOrder: this.activities.length,
-			archived: false,
-			isAbsence: false
-		});
-		this.#reindexBuiltinsLast();
+		const created = newActivity(trimmed, this.activities.length);
+		this.activities.push(created);
 		await this.persistActivities();
-		return id;
+		return created.id;
+	}
+
+	/** Aktivität suchen, ändern und speichern; eine unbekannte Id bleibt folgenlos. */
+	async #mutateActivity(
+		id: string,
+		mutate: (a: Activity) => void,
+		opts: { protectBuiltin?: boolean } = {}
+	): Promise<void> {
+		const a = this.activities.find((x) => x.id === id);
+		if (!a || (opts.protectBuiltin && isBuiltinActivity(a))) return;
+		mutate(a);
+		await this.persistActivities();
 	}
 
 	/** Umbenennen – ausser bei den eingebauten Zeilen. */
-	async renameActivity(id: string, name: string): Promise<void> {
-		const a = this.activities.find((x) => x.id === id);
-		if (!a || isBuiltinActivity(a)) return;
-		a.name = name.trim() || a.name;
-		await this.persistActivities();
+	renameActivity(id: string, name: string): Promise<void> {
+		return this.#mutateActivity(id, (a) => (a.name = name.trim() || a.name), { protectBuiltin: true });
 	}
 
-	async toggleFavorite(id: string): Promise<void> {
-		const a = this.activities.find((x) => x.id === id);
-		if (a) {
-			a.favorite = !a.favorite;
-			await this.persistActivities();
-		}
+	toggleFavorite(id: string): Promise<void> {
+		return this.#mutateActivity(id, (a) => (a.favorite = !a.favorite));
 	}
 
-	async setColor(id: string, color: string | null): Promise<void> {
-		const a = this.activities.find((x) => x.id === id);
-		if (!a) return;
-		if (color) a.color = color;
-		else delete a.color;
-		await this.persistActivities();
+	setColor(id: string, color: string | null): Promise<void> {
+		return this.#mutateActivity(id, (a) => {
+			if (color) a.color = color;
+			else delete a.color;
+		});
 	}
 
 	activityColor(id: string): string | undefined {
 		return this.activities.find((a) => a.id === id)?.color;
 	}
 
-	async setShortcut(id: string, accelerator: string | null): Promise<void> {
-		const a = this.activities.find((x) => x.id === id);
-		if (!a) return;
-		if (accelerator) a.shortcut = accelerator;
-		else delete a.shortcut;
-		await this.persistActivities();
+	setShortcut(id: string, accelerator: string | null): Promise<void> {
+		return this.#mutateActivity(id, (a) => {
+			if (accelerator) a.shortcut = accelerator;
+			else delete a.shortcut;
+		});
 	}
 
 	get hasFavorites(): boolean {
@@ -723,20 +725,12 @@ class AppState {
 	}
 
 	/** Aus der Auswahl ausblenden – erscheint aber weiterhin im Bericht/E-Mail. */
-	async toggleHidden(id: string): Promise<void> {
-		const a = this.activities.find((x) => x.id === id);
-		if (a && !isBuiltinActivity(a)) {
-			a.hidden = !a.hidden;
-			await this.persistActivities();
-		}
+	toggleHidden(id: string): Promise<void> {
+		return this.#mutateActivity(id, (a) => (a.hidden = !a.hidden), { protectBuiltin: true });
 	}
 
-	async setArchived(id: string, archived: boolean): Promise<void> {
-		const a = this.activities.find((x) => x.id === id);
-		if (a && !isBuiltinActivity(a)) {
-			a.archived = archived;
-			await this.persistActivities();
-		}
+	setArchived(id: string, archived: boolean): Promise<void> {
+		return this.#mutateActivity(id, (a) => (a.archived = archived), { protectBuiltin: true });
 	}
 
 	/** Zählt ALLE Einträge dieser Aktivität über alle Monate (lädt fehlende Monate nach). */
@@ -1049,35 +1043,20 @@ class AppState {
 		// Regel: Ganztags-Abwesenheit und Projektzeit am selben Tag schließen sich aus.
 		if (this.#reportConflict({ activityId, startTs, endTs, dayFraction })) return null;
 
-		// Abwesenheiten sind tagesgenau (start == end == Tagesmitte), ein laufender
-		// Timer hat noch kein Ende – beide können nicht über Mitternacht gehen.
-		const parts =
-			endTs === null || dayFraction != null
-				? [{ startTs, endTs }]
-				: splitAtMidnight(startTs, endTs);
-
-		// #reportConflict prüft nur den ERSTEN Tag. Ein Folgetag aus der Teilung
-		// kann trotzdem auf eine Ganztags-Abwesenheit treffen – ohne diese Wache
-		// entstünde dort still Projektzeit (dieselbe Regel, die #addSegment für
-		// den Timer-Pfad schon durchsetzt). Interaktive Aufrufer können per
-		// opts.confirmAbsenceOverride stattdessen eine Rückfrage anbieten, die
-		// die Abwesenheit entfernt statt einfach abzulehnen (siehe confirmAbsenceOverride).
-		if (parts.length > 1) {
-			const blocked = this.#collectBlockedDays(parts.slice(1));
-			if (blocked.length > 0) {
-				if (!opts.confirmAbsenceOverride) {
-					toast.error(
-						`Am ${fmtDateHuman(blocked[0].entry.startTs)} ist eine Ganztags-Abwesenheit eingetragen.`
-					);
-					return null;
-				}
-				this.absenceOverridePrompt = {
-					kind: "add",
-					args: { activityId, startTs, endTs, note, source, dayFraction, timeOff: opts.timeOff },
-					days: blocked
-				};
+		// Nur interaktive Aufrufer (opts.confirmAbsenceOverride) können eine
+		// Rückfrage zeigen; Import und Abwesenheits-Bereich lehnen stattdessen ab.
+		const { parts, blocked } = this.#dayParts(startTs, endTs, dayFraction);
+		if (blocked.length > 0) {
+			if (!opts.confirmAbsenceOverride) {
+				toast.error(`Am ${fmtDateHuman(blocked[0].entry.startTs)} ist eine Ganztags-Abwesenheit eingetragen.`);
 				return null;
 			}
+			this.absenceOverridePrompt = {
+				kind: "add",
+				args: { activityId, startTs, endTs, note, source, dayFraction, timeOff: opts.timeOff },
+				days: blocked
+			};
+			return null;
 		}
 
 		let first: Entry | null = null;
@@ -1094,6 +1073,23 @@ class AppState {
 			first ??= e;
 		}
 		return first;
+	}
+
+	/**
+	 * Tagesstücke eines Eintrags, dazu die Folgetage mit Ganztags-Abwesenheit.
+	 * #reportConflict prüft nur den ersten Tag - ohne diese Wache entstünde an
+	 * einem Folgetag still Projektzeit (dieselbe Regel wie in #addSegment).
+	 */
+	#dayParts(
+		startTs: number,
+		endTs: number | null,
+		dayFraction: number | undefined
+	): { parts: { startTs: number; endTs: number | null }[]; blocked: BlockedDay[] } {
+		// Abwesenheiten sind tagesgenau (start == end == Tagesmitte), ein laufender
+		// Timer hat noch kein Ende – beide können nicht über Mitternacht gehen.
+		const parts =
+			endTs === null || dayFraction != null ? [{ startTs, endTs }] : splitAtMidnight(startTs, endTs);
+		return { parts, blocked: parts.length > 1 ? this.#collectBlockedDays(parts.slice(1)) : [] };
 	}
 
 	/** Einen Eintrag ohne weitere Prüfung anlegen und speichern. */
@@ -1124,7 +1120,7 @@ class AppState {
 	}
 
 	isAbsenceId(activityId: string): boolean {
-		return !!this.activities.find((a) => a.id === activityId)?.isAbsence;
+		return this.absenceIds.has(activityId);
 	}
 
 	/**
@@ -1216,7 +1212,7 @@ class AppState {
 
 		// Man kann nicht gleichzeitig an zwei Dingen arbeiten.
 		if (candidate.skipOverlap) return false;
-		const absenceIds = new Set(this.activities.filter((a) => a.isAbsence).map((a) => a.id));
+		const absenceIds = this.absenceIds;
 		const overlap = overlapConflict(
 			monthEntries,
 			{ activityId: candidate.activityId, startTs: candidate.startTs, endTs: candidate.endTs ?? null },
@@ -1258,25 +1254,12 @@ class AppState {
 
 		// Über Mitternacht bearbeitet: der Eintrag behält den ersten Tag, die
 		// weiteren Tage werden eigene Einträge – wie beim Anlegen und beim Timer.
-		const rest =
-			updated.endTs !== null && updated.dayFraction == null
-				? splitAtMidnight(updated.startTs, updated.endTs).slice(1)
-				: [];
-
-		// Wie bei addEntry: #reportConflict sieht nur den ersten Tag. Ein Folgetag
-		// kann auf eine Ganztags-Abwesenheit treffen – dann erst fragen (siehe
-		// confirmAbsenceOverride), statt still Projektzeit dort anzulegen.
-		if (rest.length > 0) {
-			const blocked = this.#collectBlockedDays(rest);
-			if (blocked.length > 0) {
-				this.absenceOverridePrompt = {
-					kind: "update",
-					originalStartTs,
-					entry: { ...updated },
-					days: blocked
-				};
-				return false;
-			}
+		const { parts, blocked } = this.#dayParts(updated.startTs, updated.endTs, updated.dayFraction);
+		const rest = parts.slice(1);
+		// Immer fragen: Bearbeiten kommt nur aus dem Dialog, dort kann jemand antworten.
+		if (blocked.length > 0) {
+			this.absenceOverridePrompt = { kind: "update", originalStartTs, entry: { ...updated }, days: blocked };
+			return false;
 		}
 		if (rest.length > 0) updated.endTs = startOfNextDay(updated.startTs);
 
@@ -1454,7 +1437,7 @@ class AppState {
 		this.running = null;
 		for (const m of months) await this.#saveMonth(m);
 		// Tray-Icon und -Menü aktualisieren, nachdem running stabil null ist.
-		this.trayVersion = (this.trayVersion + 1) % 1000;
+		this.#bumpTray();
 	}
 
 	/**
@@ -1648,7 +1631,7 @@ class AppState {
 		return planBackdate(
 			Object.values(this.entriesByMonth).flat(),
 			start,
-			new Set(this.activities.filter((a) => a.isAbsence).map((a) => a.id)),
+			this.absenceIds,
 			Date.now()
 		);
 	}
@@ -1666,12 +1649,13 @@ class AppState {
 		// ist async). Ein offener Eintrag von vorgestern, der jetzt gekürzt wird, ergäbe
 		// sonst EINEN Eintrag über mehrere Tage – im Bericht eine 50-Stunden-Zeile.
 		const followUps: { from: Entry; startTs: number; endTs: number }[] = [];
-		for (const { entry, endTs } of plan.truncate) {
-			const parts = splitAtMidnight(entry.startTs, endTs);
-			entry.endTs = parts[0].endTs;
-			for (const p of parts.slice(1)) followUps.push({ from: entry, ...p });
-			months.add(monthKey(entry.startTs));
-		}
+		const closeAt = (open: Entry, endTs: number) => {
+			const parts = splitAtMidnight(open.startTs, endTs);
+			open.endTs = parts[0].endTs;
+			for (const p of parts.slice(1)) followUps.push({ from: open, ...p });
+			months.add(monthKey(open.startTs));
+		};
+		for (const { entry, endTs } of plan.truncate) closeAt(entry, endTs);
 		for (const dead of plan.remove) {
 			const m = monthKey(dead.startTs);
 			const list = this.entriesByMonth[m];
@@ -1688,11 +1672,7 @@ class AppState {
 			...plan.remove.map((r) => r.id)
 		]);
 		for (const open of this.#openEntries()) {
-			if (alreadyRecorded.has(open.id)) continue;
-			const parts = splitAtMidnight(open.startTs, start);
-			open.endTs = parts[0].endTs;
-			for (const p of parts.slice(1)) followUps.push({ from: open, ...p });
-			months.add(monthKey(open.startTs));
+			if (!alreadyRecorded.has(open.id)) closeAt(open, start);
 		}
 
 		const entry: Entry = { id: uid(), activityId, startTs: start, endTs: null, note: "", source: "timer" };
@@ -1709,7 +1689,7 @@ class AppState {
 		for (const m of months) await this.#saveMonth(m);
 		// Tray-Icon und -Menü aktualisieren, nachdem running stabil auf den neuen
 		// Eintrag zeigt (kein Zwischenzustand null → running).
-		this.trayVersion = (this.trayVersion + 1) % 1000;
+		this.#bumpTray();
 		logInfo(`Timer gestartet: ${this.activityName(activityId)}`, {
 			start: new Date(start).toISOString(),
 			backdated: Date.now() - start > 60_000 ? Math.round((Date.now() - start) / 60_000) : 0,
@@ -1791,6 +1771,8 @@ class AppState {
 			// Nur reguläre Arbeitstage; Wochenenden/freie Tage nicht als Abwesenheit buchen.
 			if (!this.settings.workdays.includes(weekdayOfDate(date))) continue;
 			const noon = noonTs(date);
+			// hasProjectEntry sieht nur geladene Monate.
+			await this.ensureMonth(monthKey(noon));
 			// Ganztags-Konflikt mit Projektzeit -> Tag still überspringen (kein Doppel-Toast).
 			if (fraction >= 1 && this.hasProjectEntry(noon)) {
 				skipped++;

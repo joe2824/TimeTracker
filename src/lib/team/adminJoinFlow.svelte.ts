@@ -6,9 +6,10 @@ import { app } from "../app.svelte";
 import { account } from "../sync/account.svelte";
 import { previewAdminInvite } from "./api";
 import { errorText, logError } from "../log";
+import { LinkPreview, type LinkPreviewState } from "./linkPreview.svelte";
 
 export class AdminJoinFlow {
-	preview = $state<{ teamName: string } | "loading" | "error">("loading");
+	#link = new LinkPreview(previewAdminInvite);
 	/** Ob feststeht, ob dieses Gerät ein Konto hat - vorher ist "nicht angemeldet" nur ein Vorurteil. */
 	ready = $state(false);
 	/** Die lokalen Daten oder das Konto ließen sich nicht starten - "angemeldet?" ist dann nicht zu beantworten. */
@@ -17,8 +18,9 @@ export class AdminJoinFlow {
 	joinError = $state<string | null>(null);
 	busy = $state(false);
 
-	/** Nummer der jüngsten Vorschau-Anfrage: eine ältere, spät antwortende darf nicht überschreiben. */
-	#previewRun = 0;
+	get preview(): LinkPreviewState {
+		return this.#link.state;
+	}
 
 	/** App und Konto starten, damit `account.linked` stimmt. */
 	async start(): Promise<void> {
@@ -34,15 +36,8 @@ export class AdminJoinFlow {
 	}
 
 	/** Vorschau für einen (neuen) Link laden. */
-	async loadPreview(serverUrl: string, code: string): Promise<void> {
-		const run = ++this.#previewRun;
-		this.preview = "loading";
-		try {
-			const result = await previewAdminInvite(serverUrl, code);
-			if (run === this.#previewRun) this.preview = result;
-		} catch {
-			if (run === this.#previewRun) this.preview = "error";
-		}
+	loadPreview(serverUrl: string, code: string): Promise<void> {
+		return this.#link.load(serverUrl, code).done;
 	}
 
 	/** Den Link annehmen. Bei Erfolg steht der Teamname in `joinedTeamName`, sonst der Grund in `joinError`. */

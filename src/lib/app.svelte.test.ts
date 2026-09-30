@@ -410,6 +410,20 @@ describe("Zeitausgleich", () => {
 		expect(added).toBe(3);
 		expect(onDisk("2026-07").every((e) => e.timeOff === true)).toBe(true);
 	});
+
+	it("überspringt einen Tag mit Projektzeit auch in einem noch nicht geladenen Monat still", async () => {
+		reset();
+		// Nur auf der Platte, nicht im Cache: der Monat wurde in dieser Sitzung nie geöffnet.
+		files.set(monthFile("2026-07"), JSON.stringify([entry("p", P1, at(17, 8), at(17, 12))]));
+		const { toast } = await import("svelte-sonner");
+		const error = vi.spyOn(toast, "error");
+
+		const result = await app.addAbsenceRange("2026-07-17", "2026-07-17");
+
+		expect(result).toEqual({ added: 0, skipped: 1 });
+		expect(error).not.toHaveBeenCalled();
+		error.mockRestore();
+	});
 });
 
 describe("deleteYearEntries", () => {

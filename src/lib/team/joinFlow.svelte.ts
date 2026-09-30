@@ -5,7 +5,9 @@
 // bei der Konto-Kopplung. Den Effekt, der die Vorschau bei einem neuen Link
 // anstösst, hält jeder Aufrufer selbst: beide beobachten eine andere Quelle
 // (teamJoin.pendingLink bzw. die Route).
-import { completeTeamJoin, previewTeam } from "./join";
+import { completeTeamJoin } from "./join";
+import { previewTeamInvite } from "./api";
+import { LinkPreview, type LinkPreviewState } from "./linkPreview.svelte";
 import { loadTeamDevice, type TeamDeviceInfo } from "../store";
 import { errorText } from "../log";
 import { cleanEmail } from "$shared/email";
@@ -15,11 +17,15 @@ export class TeamJoinFlow {
 	name = $state("");
 	email = $state("");
 	busy = $state(false);
-	preview = $state<{ teamName: string } | "loading" | "error">("loading");
+	#link = new LinkPreview(previewTeamInvite);
 	/** Text der letzten fehlgeschlagenen Beitritts-Anfrage - null, solange keine lief oder sie gelang. */
 	joinError = $state<string | null>(null);
 	/** Die Mitgliedschaft, die ein Beitritt ersetzen würde - der Dialog warnt davor. */
 	existing = $state<TeamDeviceInfo | null>(null);
+
+	get preview(): LinkPreviewState {
+		return this.#link.state;
+	}
 
 	/** Eine eingetragene, aber unbrauchbare Adresse würfe der Server still weg - dann fehlte die Erinnerung. */
 	get emailInvalid(): boolean {
@@ -34,32 +40,25 @@ export class TeamJoinFlow {
 	 */
 	sameTeam(serverUrl: string): boolean {
 		const e = this.existing;
-		if (!e || typeof this.preview !== "object") return false;
-		return normalizeServerUrl(e.serverUrl) === normalizeServerUrl(serverUrl) && e.teamName === this.preview.teamName;
+		const preview = this.preview;
+		if (!e || typeof preview !== "object") return false;
+		return normalizeServerUrl(e.serverUrl) === normalizeServerUrl(serverUrl) && e.teamName === preview.teamName;
 	}
 
-	get canJoin(): boolean {
-		return !this.busy && this.name.trim() !== "" && !this.emailInvalid;
+	/** Beitritt möglich - auch nicht zu dem Team, in dem das Gerät schon ist (siehe sameTeam). */
+	canJoinAt(serverUrl: string): boolean {
+		return !this.busy && this.name.trim() !== "" && !this.emailInvalid && !this.sameTeam(serverUrl);
 	}
-
-	/** Nummer der jüngsten Vorschau-Anfrage: eine ältere, spät antwortende darf nicht überschreiben. */
-	#previewRun = 0;
 
 	/** Vorschau für einen (neuen) Link laden. */
 	async loadPreview(serverUrl: string, code: string): Promise<void> {
-		const run = ++this.#previewRun;
-		this.preview = "loading";
+		const { run, done } = this.#link.load(serverUrl, code);
 		void loadTeamDevice()
 			.then((d) => {
-				if (run === this.#previewRun) this.existing = d;
+				if (this.#link.isCurrent(run)) this.existing = d;
 			})
 			.catch(() => {});
-		try {
-			const result = await previewTeam(serverUrl, code);
-			if (run === this.#previewRun) this.preview = result;
-		} catch {
-			if (run === this.#previewRun) this.preview = "error";
-		}
+		await done;
 	}
 
 	/** Eingaben zurücksetzen - vor einem neuen Link bzw. nach Abbrechen. */
@@ -69,9 +68,12 @@ export class TeamJoinFlow {
 		this.joinError = null;
 	}
 
-	/** Beitreten. Liefert die Team-Infos bei Erfolg, sonst null (Grund in `joinError`). */
+	/**
+	 * Beitreten. Liefert die Team-Infos bei Erfolg, sonst null - `joinError` ist
+	 * nur gesetzt, wenn die Anfrage scheiterte, nicht wenn canJoinAt() sie verhinderte.
+	 */
 	async join(serverUrl: string, code: string): Promise<TeamDeviceInfo | null> {
-		if (!this.canJoin || this.sameTeam(serverUrl)) return null;
+		if (!this.canJoinAt(serverUrl)) return null;
 		this.busy = true;
 		this.joinError = null;
 		try {

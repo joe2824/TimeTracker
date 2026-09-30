@@ -5,7 +5,72 @@
 import { account } from "../sync/account.svelte";
 import type { TeamAdminInfo, TeamInfo, TeamInvite } from "../sync/api";
 import { errorText, logWarn } from "../log";
+import { copyText } from "../ui/clipboard";
 import { toast } from "svelte-sonner";
+
+interface TeamScopedLoadOptions<T> {
+	fetch: (teamId: string) => Promise<T>;
+	/** Nur aufgerufen, solange das Team noch ausgewählt ist. */
+	apply: (value: T) => void;
+	isSelected: (teamId: string) => boolean;
+	setLoading: (on: boolean) => void;
+	failText: string;
+}
+
+/**
+ * Ein je Team geladener Wert (Beitritts-Link, Verwalter, Verwalter-Link).
+ * TeamPanel und TeamTab laden bei jedem Teamwechsel beide (bits-ui hängt alle
+ * Tabs gleichzeitig ein): ein laufender Abruf für dasselbe Team wird deshalb
+ * geteilt, und nur der jüngste Abruf darf die Ladeanzeige beenden.
+ */
+class TeamScopedLoad<T> {
+	#opts: TeamScopedLoadOptions<T>;
+	#request = new Map<string, number>();
+	#inFlight = new Map<string, { id: number; run: Promise<boolean> }>();
+	#spinnerRun = 0;
+
+	constructor(opts: TeamScopedLoadOptions<T>) {
+		this.#opts = opts;
+	}
+
+	/** true, wenn die Antwort ankam und noch galt. */
+	load(teamId: string): Promise<boolean> {
+		const current = this.#request.get(teamId) ?? 0;
+		const shared = this.#inFlight.get(teamId);
+		if (shared && shared.id === current) return shared.run;
+
+		const id = current + 1;
+		this.#request.set(teamId, id);
+		const opts = this.#opts;
+		const spinner = opts.isSelected(teamId) ? ++this.#spinnerRun : null;
+		if (spinner !== null) opts.setLoading(true);
+		const run = (async () => {
+			try {
+				const value = await opts.fetch(teamId);
+				if (this.#request.get(teamId) !== id) return false;
+				if (opts.isSelected(teamId)) opts.apply(value);
+				return true;
+			} catch (e) {
+				if (this.#request.get(teamId) !== id) return false;
+				logWarn(opts.failText, e);
+				toast.error(`${opts.failText}: ${errorText(e)}`);
+				return false;
+			} finally {
+				if (spinner !== null && spinner === this.#spinnerRun) opts.setLoading(false);
+			}
+		})();
+		this.#inFlight.set(teamId, { id, run });
+		void run.finally(() => {
+			if (this.#inFlight.get(teamId)?.run === run) this.#inFlight.delete(teamId);
+		});
+		return run;
+	}
+
+	/** Ein anderswo gesetzter Stand (neu erzeugter Link) ist aktueller als jeder noch laufende Abruf. */
+	supersede(teamId: string): void {
+		this.#request.set(teamId, (this.#request.get(teamId) ?? 0) + 1);
+	}
+}
 
 class ChefTeamsState {
 	teams = $state<TeamInfo[]>([]);
@@ -54,14 +119,7 @@ class ChefTeamsState {
 	}
 
 	async copyInviteUrl(): Promise<void> {
-		const url = this.inviteUrl;
-		if (!url) return;
-		try {
-			await navigator.clipboard.writeText(url);
-			toast.success("Link kopiert.");
-		} catch {
-			toast.error("Kopieren nicht möglich – bitte manuell kopieren.");
-		}
+		if (this.inviteUrl) await copyText(this.inviteUrl, "Link kopiert.");
 	}
 
 	// TeamPanel, ActivitiesPanel und TeamTab rufen loadTeams() unabhaengig
@@ -141,11 +199,13 @@ class ChefTeamsState {
 		if (this.selectedTeamId === teamId) this.selectedTeamId = this.teams[0]?.id;
 	}
 
-	/** Zaehlt wie #teamsRequest, aber je Team-Id - zwei gleichzeitige Aufrufe
-	 *  fuer DASSELBE Team liessen sich sonst nicht auseinanderhalten (anders
-	 *  als am Vergleich mit der aktuellen Auswahl, der zwei parallele Aufrufe
-	 *  fuer das gleiche Team nicht erkennt). */
-	#inviteRequest = new Map<string, number>();
+	#invites = new TeamScopedLoad<TeamInvite | null>({
+		fetch: (teamId) => account.getTeamInvite(teamId),
+		apply: (inv) => (this.invite = inv),
+		isSelected: (teamId) => teamId === this.selectedTeamId,
+		setLoading: (on) => (this.inviteLoading = on),
+		failText: "Team konnte nicht geladen werden"
+	});
 
 	/**
 	 * Gibt zurück, ob der Abruf wirklich durchkam - ein Fehlschlag ist kein
@@ -153,57 +213,50 @@ class ChefTeamsState {
 	 * TeamTab), würde sonst bei einem blossen Netzwerk-Hänger einen echten,
 	 * schon verteilten Link ungültig machen.
 	 */
-	async loadInvite(teamId: string): Promise<boolean> {
-		const requestId = (this.#inviteRequest.get(teamId) ?? 0) + 1;
-		this.#inviteRequest.set(teamId, requestId);
-		if (teamId === this.selectedTeamId) this.inviteLoading = true;
-		try {
-			const inv = await account.getTeamInvite(teamId);
-			if (this.#inviteRequest.get(teamId) !== requestId) return false;
-			if (teamId === this.selectedTeamId) this.invite = inv;
-			return true;
-		} catch (e) {
-			if (this.#inviteRequest.get(teamId) !== requestId) return false;
-			logWarn("Team konnte nicht geladen werden", e);
-			toast.error(`Team konnte nicht geladen werden: ${errorText(e)}`);
-			return false;
-		} finally {
-			if (teamId === this.selectedTeamId) this.inviteLoading = false;
-		}
+	loadInvite(teamId: string): Promise<boolean> {
+		return this.#invites.load(teamId);
 	}
 
-	async rotateInvite(): Promise<void> {
+	rotateInvite(): Promise<void> {
+		return this.#rotate(
+			"rotating",
+			(teamId) => account.rotateTeamInvite(teamId),
+			this.#invites,
+			(inv) => (this.invite = inv)
+		);
+	}
+
+	/** Einen Link des ausgewählten Teams neu erzeugen. */
+	async #rotate(
+		flag: "rotating" | "rotatingAdminInvite",
+		rotate: (teamId: string) => Promise<TeamInvite>,
+		loads: TeamScopedLoad<TeamInvite | null>,
+		apply: (inv: TeamInvite) => void
+	): Promise<void> {
 		const teamId = this.selectedTeamId;
-		if (!teamId || this.rotating) return;
-		this.rotating = true;
+		if (!teamId || this[flag]) return;
+		this[flag] = true;
 		try {
-			const inv = await account.rotateTeamInvite(teamId);
-			this.#inviteRequest.set(teamId, (this.#inviteRequest.get(teamId) ?? 0) + 1);
-			if (teamId === this.selectedTeamId) this.invite = inv;
+			const inv = await rotate(teamId);
+			loads.supersede(teamId);
+			if (teamId === this.selectedTeamId) apply(inv);
 		} finally {
-			this.rotating = false;
+			this[flag] = false;
 		}
 	}
 
 	// ---------- Verwalter ----------
 
-	#adminsRequest = new Map<string, number>();
+	#admins = new TeamScopedLoad<TeamAdminInfo[]>({
+		fetch: (teamId) => account.listTeamAdmins(teamId),
+		apply: (admins) => (this.admins = admins),
+		isSelected: (teamId) => teamId === this.selectedTeamId,
+		setLoading: (on) => (this.adminsLoading = on),
+		failText: "Verwalter konnten nicht geladen werden"
+	});
 
 	async loadAdmins(teamId: string): Promise<void> {
-		const requestId = (this.#adminsRequest.get(teamId) ?? 0) + 1;
-		this.#adminsRequest.set(teamId, requestId);
-		if (teamId === this.selectedTeamId) this.adminsLoading = true;
-		try {
-			const admins = await account.listTeamAdmins(teamId);
-			if (this.#adminsRequest.get(teamId) !== requestId) return;
-			if (teamId === this.selectedTeamId) this.admins = admins;
-		} catch (e) {
-			if (this.#adminsRequest.get(teamId) !== requestId) return;
-			logWarn("Verwalter konnten nicht geladen werden", e);
-			toast.error(`Verwalter konnten nicht geladen werden: ${errorText(e)}`);
-		} finally {
-			if (teamId === this.selectedTeamId) this.adminsLoading = false;
-		}
+		await this.#admins.load(teamId);
 	}
 
 	async removeAdmin(userId: string): Promise<void> {
@@ -223,46 +276,28 @@ class ChefTeamsState {
 	}
 
 	async copyAdminInviteUrl(): Promise<void> {
-		const url = this.adminInviteUrl;
-		if (!url) return;
-		try {
-			await navigator.clipboard.writeText(url);
-			toast.success("Link kopiert.");
-		} catch {
-			toast.error("Kopieren nicht möglich – bitte manuell kopieren.");
-		}
+		if (this.adminInviteUrl) await copyText(this.adminInviteUrl, "Link kopiert.");
 	}
 
-	#adminInviteRequest = new Map<string, number>();
+	#adminInvites = new TeamScopedLoad<TeamInvite | null>({
+		fetch: (teamId) => account.getAdminInvite(teamId),
+		apply: (inv) => (this.adminInvite = inv),
+		isSelected: (teamId) => teamId === this.selectedTeamId,
+		setLoading: (on) => (this.adminInviteLoading = on),
+		failText: "Verwalter-Link konnte nicht geladen werden"
+	});
 
 	async loadAdminInvite(teamId: string): Promise<void> {
-		const requestId = (this.#adminInviteRequest.get(teamId) ?? 0) + 1;
-		this.#adminInviteRequest.set(teamId, requestId);
-		if (teamId === this.selectedTeamId) this.adminInviteLoading = true;
-		try {
-			const inv = await account.getAdminInvite(teamId);
-			if (this.#adminInviteRequest.get(teamId) !== requestId) return;
-			if (teamId === this.selectedTeamId) this.adminInvite = inv;
-		} catch (e) {
-			if (this.#adminInviteRequest.get(teamId) !== requestId) return;
-			logWarn("Verwalter-Link konnte nicht geladen werden", e);
-			toast.error(`Verwalter-Link konnte nicht geladen werden: ${errorText(e)}`);
-		} finally {
-			if (teamId === this.selectedTeamId) this.adminInviteLoading = false;
-		}
+		await this.#adminInvites.load(teamId);
 	}
 
-	async rotateAdminInvite(): Promise<void> {
-		const teamId = this.selectedTeamId;
-		if (!teamId || this.rotatingAdminInvite) return;
-		this.rotatingAdminInvite = true;
-		try {
-			const inv = await account.rotateAdminInvite(teamId);
-			this.#adminInviteRequest.set(teamId, (this.#adminInviteRequest.get(teamId) ?? 0) + 1);
-			if (teamId === this.selectedTeamId) this.adminInvite = inv;
-		} finally {
-			this.rotatingAdminInvite = false;
-		}
+	rotateAdminInvite(): Promise<void> {
+		return this.#rotate(
+			"rotatingAdminInvite",
+			(teamId) => account.rotateAdminInvite(teamId),
+			this.#adminInvites,
+			(inv) => (this.adminInvite = inv)
+		);
 	}
 
 	/**

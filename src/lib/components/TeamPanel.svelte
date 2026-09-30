@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ConfirmDialog from "$lib/components/shared/ConfirmDialog.svelte";
 	import { invoke } from "@tauri-apps/api/core";
 	import { save } from "@tauri-apps/plugin-dialog";
 	import { account } from "$lib/sync/account.svelte";
@@ -71,21 +72,19 @@
 			void loadMembers(teamId);
 			void chefTeams.loadInvite(teamId);
 		} else {
+			// Auch die Nummer weiterzählen: eine noch laufende Antwort füllte sonst die geleerte Liste.
+			membersRequest++;
 			members = [];
 		}
 	});
 
 	/** Rückfrage vor Schritten, die sich nicht mit einem Klick zurückholen lassen. */
 	let pendingConfirm = $state<{ title: string; text: string; action: string; run: () => Promise<void> } | null>(null);
-	let confirmBusy = $state(false);
 
 	async function runConfirmed() {
-		if (!pendingConfirm) return;
-		confirmBusy = true;
 		try {
-			await pendingConfirm.run();
+			await pendingConfirm?.run();
 		} finally {
-			confirmBusy = false;
 			pendingConfirm = null;
 		}
 	}
@@ -608,22 +607,12 @@
 	{/if}
 </div>
 
-<Dialog.Root
+<ConfirmDialog
 	open={pendingConfirm !== null}
-	onOpenChange={(o) => {
-		if (!o && !confirmBusy) pendingConfirm = null;
-	}}
->
-	<Dialog.Content class="sm:max-w-md">
-		<Dialog.Header>
-			<Dialog.Title>{pendingConfirm?.title}</Dialog.Title>
-			<Dialog.Description>{pendingConfirm?.text}</Dialog.Description>
-		</Dialog.Header>
-		<Dialog.Footer>
-			<Button variant="outline" disabled={confirmBusy} onclick={() => (pendingConfirm = null)}>Abbrechen</Button>
-			<Button variant="destructive" disabled={confirmBusy} onclick={runConfirmed}>
-				{pendingConfirm?.action}
-			</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+	class="sm:max-w-md"
+	title={pendingConfirm?.title ?? ""}
+	description={pendingConfirm?.text}
+	confirmLabel={pendingConfirm?.action ?? ""}
+	onConfirm={runConfirmed}
+	onClose={() => (pendingConfirm = null)}
+/>

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, tick, untrack } from "svelte";
+	import { onMount, tick } from "svelte";
 	import { listen, emit } from "@tauri-apps/api/event";
 	import { getCurrentWindow } from "@tauri-apps/api/window";
 	import { invoke } from "@tauri-apps/api/core";
@@ -17,7 +17,9 @@
 	import WebOnboarding from "$lib/components/onboarding/WebOnboarding.svelte";
 	import { onboardingOpen } from "$lib/account/onboarding.svelte";
 	import PasskeyNudge from "$lib/components/onboarding/PasskeyNudge.svelte";
-	import { errorText, logError, logFile, logInfo, logWarn, pruneOldLogs } from "$lib/log";
+	import { errorText, logError, logFile, logInfo, logWarn, pruneOldLogs, userErrorText } from "$lib/log";
+	import { startPicker } from "$lib/ui/startPicker.svelte";
+	import { keepTrayInSync } from "$lib/ui/trayState.svelte";
 	import { appDataDir, join } from "@tauri-apps/api/path";
 	import { revealInFolder } from "$lib/platform/open";
 	import { Button } from "$lib/components/ui/button";
@@ -160,7 +162,7 @@
 			await account.logout();
 			toast.success("Abgemeldet.");
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : "Abmelden fehlgeschlagen");
+			toast.error(userErrorText(e, "Abmelden fehlgeschlagen"));
 		} finally {
 			busy = false;
 		}
@@ -183,7 +185,7 @@
 			// Ohne diese Zeile schliesst sich der Hinweis, und niemand ist abgemeldet.
 			await logout();
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : "Passkey konnte nicht angelegt werden");
+			toast.error(userErrorText(e, "Passkey konnte nicht angelegt werden"));
 		} finally {
 			creating = false;
 		}
@@ -465,16 +467,7 @@
 	});
 
 	// Tray-Menü: laufender Timer + Schnellstart (Favoriten, zuletzt benutzt).
-	// Lauscht auf trayVersion (wird nur nach vollständig stabilem Zustand erhöht),
-	// nicht direkt auf running/activities – sonst würde das Icon während reload()
-	// kurz auf „idle“ springen (running ist dort kurzzeitig null).
-	$effect(() => {
-		if (!app.loaded) return;
-		const _v = app.trayVersion;
-		untrack(() => {
-			void app.updateTrayState();
-		});
-	});
+	keepTrayInSync();
 
 	// Nach dem Anmelden steht die Zeiterfassung vorn. Ohne das bleibt stehen, wo
 	// man vorher war - die Anmeldeseite legt sich davor und fasst den Tab nicht an.
@@ -525,7 +518,9 @@
 					<Button variant="outline" onclick={() => location.reload()}>Neu laden</Button>
 					<!-- Hier ist die App unbedienbar; das Protokoll ist der einzige Weg,
 					     mehr ueber die Ursache zu erfahren als diese eine Zeile. -->
-					<Button variant="outline" onclick={openLogFolder}>Protokoll öffnen</Button>
+					{#if isTauri()}
+						<Button variant="outline" onclick={openLogFolder}>Protokoll öffnen</Button>
+					{/if}
 				</div>
 
 				<!-- Hilft "Erneut versuchen" nicht, gäbe es im Browser sonst keinen Weg
@@ -735,7 +730,7 @@
 	<IdleDialog />
 	<LongTimerDialog />
 	<ReportReminderDialog />
-	<BackdateDialog />
+	<BackdateDialog onapplied={() => startPicker.reset()} />
 	<AbsenceOverrideDialog />
 	<UpdateDialog />
 	<PairApprovalDialog />
