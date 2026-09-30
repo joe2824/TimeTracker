@@ -1,11 +1,12 @@
 <script lang="ts">
 	import * as Card from "$lib/components/ui/card";
-	import * as Dialog from "$lib/components/ui/dialog";
+	import ConfirmDialog from "$lib/components/shared/ConfirmDialog.svelte";
 	import { Button } from "$lib/components/ui/button";
 	import { Badge } from "$lib/components/ui/badge";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
 	import { toast } from "svelte-sonner";
+	import { userErrorText } from "$lib/log";
 	import { account } from "$lib/sync/account.svelte";
 	import { ACCOUNT_KEY, invalidate, warm } from "$lib/ui/prefetch";
 	import type { Passkey } from "$lib/sync/api";
@@ -36,16 +37,25 @@
 		try {
 			if (fresh) invalidate(ACCOUNT_KEY);
 			const info = await warm(ACCOUNT_KEY, () => account.accountInfo());
+			// Inzwischen getrennt: die Antwort gehört zum alten Konto.
+			if (!account.linked) return;
 			passkeys = info?.passkeys ?? [];
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : "Passkeys nicht abrufbar");
+			toast.error(userErrorText(e, "Passkeys nicht abrufbar"));
 		} finally {
-			isLoaded = true;
+			if (account.linked) isLoaded = true;
 		}
 	}
 
 	$effect(() => {
-		if (account.linked && !isLoaded) void loadPasskeys();
+		if (!account.linked) {
+			// Nach einer neuen Verknüpfung die Liste frisch holen, nicht die alte zeigen.
+			isLoaded = false;
+			passkeys = [];
+			invalidate(ACCOUNT_KEY);
+			return;
+		}
+		if (!isLoaded) void loadPasskeys();
 	});
 
 	async function handleAddPasskey() {
@@ -63,7 +73,7 @@
 				);
 			}
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : "Hinzufügen fehlgeschlagen");
+			toast.error(userErrorText(e, "Hinzufügen fehlgeschlagen"));
 		} finally {
 			isLoading = false;
 		}
@@ -80,7 +90,7 @@
 			await loadPasskeys(true);
 			toast.success("Passkey entfernt.");
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : "Entfernen fehlgeschlagen");
+			toast.error(userErrorText(e, "Entfernen fehlgeschlagen"));
 		}
 	}
 
@@ -90,7 +100,7 @@
 			editingPasskeyId = null;
 			await loadPasskeys(true);
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : "Umbenennen fehlgeschlagen");
+			toast.error(userErrorText(e, "Umbenennen fehlgeschlagen"));
 		}
 	}
 
@@ -115,7 +125,7 @@
 				);
 			}
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : "Einrichten fehlgeschlagen");
+			toast.error(userErrorText(e, "Einrichten fehlgeschlagen"));
 		} finally {
 			repairing = null;
 		}
@@ -125,7 +135,7 @@
 		try {
 			await openExternal(account.serverUrl);
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : "Browser konnte nicht geöffnet werden");
+			toast.error(userErrorText(e, "Browser konnte nicht geöffnet werden"));
 		}
 	}
 </script>
@@ -322,18 +332,11 @@
 	</Card.Root>
 {/if}
 
-<Dialog.Root open={passkeyToRemove !== null} onOpenChange={(o) => !o && (passkeyToRemove = null)}>
-	<Dialog.Content>
-		<Dialog.Header>
-			<Dialog.Title>„{passkeyToRemove?.label ?? 'Unbenannt'}" entfernen?</Dialog.Title>
-			<Dialog.Description>
-				Dieser Weg ins Konto fällt damit weg. Der Passkey selbst bleibt auf dem Gerät liegen,
-				öffnet hier aber nichts mehr – zurückholen lässt er sich nur, indem du ihn neu anlegst.
-			</Dialog.Description>
-		</Dialog.Header>
-		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (passkeyToRemove = null)}>Abbrechen</Button>
-			<Button variant="destructive" onclick={handleConfirmRemove}>Entfernen</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+<ConfirmDialog
+	open={passkeyToRemove !== null}
+	title={`„${passkeyToRemove?.label ?? "Unbenannt"}" entfernen?`}
+	description="Dieser Weg ins Konto fällt damit weg. Der Passkey selbst bleibt auf dem Gerät liegen, öffnet hier aber nichts mehr – zurückholen lässt er sich nur, indem du ihn neu anlegst."
+	confirmLabel="Entfernen"
+	onConfirm={handleConfirmRemove}
+	onClose={() => (passkeyToRemove = null)}
+/>

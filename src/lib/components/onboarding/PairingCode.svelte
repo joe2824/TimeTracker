@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Button } from "$lib/components/ui/button";
-	import { toast } from "svelte-sonner";
+	import { copyText } from "$lib/ui/clipboard";
 	import { formatPairingCode } from "$lib/crypto/vault";
 	import CopyIcon from "@lucide/svelte/icons/copy";
 	import CheckIcon from "@lucide/svelte/icons/check";
@@ -13,14 +13,9 @@
 	let copied = $state(false);
 
 	async function copy() {
-		try {
-			await navigator.clipboard.writeText(formatPairingCode(code));
-			copied = true;
-			toast.success("Kopplungscode kopiert.");
-			setTimeout(() => (copied = false), 2500);
-		} catch {
-			toast.error("Kopieren nicht möglich – bitte manuell kopieren.");
-		}
+		if (!(await copyText(formatPairingCode(code), "Kopplungscode kopiert."))) return;
+		copied = true;
+		setTimeout(() => (copied = false), 2500);
 	}
 </script>
 

@@ -29,7 +29,8 @@
 	import UserPlusIcon from "@lucide/svelte/icons/user-plus";
 	import KeyRoundIcon from "@lucide/svelte/icons/key-round";
 	import { RELEASES_URL, detectOs, hasDesktopApp } from "$lib/platform/os";
-	import { errorText, logWarn } from "$lib/log";
+	import { logWarn, userErrorText } from "$lib/log";
+	import { copyText } from "$lib/ui/clipboard";
 	import { linkParameter } from "$lib/account/invite";
 	import { onboardingOpen } from "$lib/account/onboarding.svelte";
 	import { pairStartLink } from "$lib/platform/deeplink";
@@ -213,7 +214,7 @@
 				inviteOpen = true;
 				return;
 			}
-			toast.error(errorMessage(e, "Konto konnte nicht angelegt werden"));
+			toast.error(userErrorText(e, "Konto konnte nicht angelegt werden"));
 		} finally {
 			running = false;
 		}
@@ -246,7 +247,7 @@
 			app.dismissOnboarding();
 			toast.success(`„${label}" ist jetzt verknüpft.`);
 		} catch (e) {
-			toast.error(errorMessage(e, "Code konnte nicht bestätigt werden"));
+			toast.error(userErrorText(e, "Code konnte nicht bestätigt werden"));
 		} finally {
 			running = false;
 		}
@@ -275,21 +276,10 @@
 			if (lastPasskey) await account.rememberPasskey(lastPasskey.credentialId);
 			toast.success("Entsperrt.");
 		} catch (e) {
-			toast.error(errorMessage(e, "Die Phrase passt nicht zu diesem Konto"));
+			toast.error(userErrorText(e, "Die Phrase passt nicht zu diesem Konto"));
 		} finally {
 			running = false;
 		}
-	}
-
-	function errorMessage(e: unknown, fallback: string): string {
-		// Ein abgebrochener Passkey-Dialog ist keine Störung, sondern eine
-		// Entscheidung - dafür braucht es keine Fehlermeldung mit Ausrufezeichen.
-		if (e instanceof Error && /NotAllowed|abort/i.test(e.name + e.message)) {
-			return "Abgebrochen.";
-		}
-		// `errorText` und nicht `e.message`: WebCrypto wirft beim Entsperren einen
-		// OperationError, dessen Meldung in Chromium-Laufzeiten LEER ist.
-		return e instanceof Error ? errorText(e) : fallback;
 	}
 
 	// ---------- Mit der Phrase zurückholen ----------
@@ -305,7 +295,7 @@
 			phraseInput = "";
 			toast.success("Konto zurückgeholt. Leg jetzt einen Passkey an, dann geht es künftig schneller.");
 		} catch (e) {
-			toast.error(errorMessage(e, "Zurückholen fehlgeschlagen"));
+			toast.error(userErrorText(e, "Zurückholen fehlgeschlagen"));
 		} finally {
 			running = false;
 		}
@@ -326,7 +316,7 @@
 		},
 		failed: (e) => {
 			pairingOpen = false;
-			toast.error(errorMessage(e, "Kopplung fehlgeschlagen"));
+			toast.error(userErrorText(e, "Kopplung fehlgeschlagen"));
 		}
 	});
 
@@ -352,7 +342,7 @@
 			await openExternal(pairStartLink(serverUrl));
 		} catch (e) {
 			waitingForApp = false;
-			toast.error(errorMessage(e, "Anwendung konnte nicht geöffnet werden"));
+			toast.error(userErrorText(e, "Anwendung konnte nicht geöffnet werden"));
 		} finally {
 			running = false;
 		}
@@ -369,7 +359,7 @@
 		} catch (e) {
 			// Ohne Code hat der Dialog nichts zu zeigen.
 			pairingOpen = false;
-			toast.error(errorMessage(e, "Kopplung konnte nicht begonnen werden"));
+			toast.error(userErrorText(e, "Kopplung konnte nicht begonnen werden"));
 		} finally {
 			running = false;
 		}
@@ -385,12 +375,7 @@
 	onDestroy(() => pairing.stop());
 
 	async function copy() {
-		try {
-			await navigator.clipboard.writeText(phrase);
-			toast.success("In die Zwischenablage kopiert.");
-		} catch {
-			toast.error("Kopieren nicht möglich – bitte abschreiben.");
-		}
+		await copyText(phrase, "In die Zwischenablage kopiert.");
 	}
 </script>
 

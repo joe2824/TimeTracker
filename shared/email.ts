@@ -10,3 +10,8 @@ export function cleanEmail(input: unknown): string | null {
 	const trimmed = input.trim();
 	return trimmed.length <= 200 && ADDRESS.test(trimmed) ? trimmed : null;
 }
+
+/** Ein Feld, das leer bleiben darf, aber wenn nicht, genau eine gültige Adresse braucht. */
+export function isInvalidOptionalEmail(input: string): boolean {
+	return input.trim() !== "" && cleanEmail(input) === null;
+}

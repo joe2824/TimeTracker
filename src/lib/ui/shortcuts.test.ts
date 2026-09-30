@@ -35,7 +35,7 @@ vi.mock("@tauri-apps/plugin-global-shortcut", () => ({
 }));
 
 const { app } = await import("../app.svelte");
-const { acceleratorFromEvent, applyShortcuts } = await import("./shortcuts");
+const { acceleratorFromEvent, applyShortcuts, recordShortcut } = await import("./shortcuts");
 
 const P1 = "p1";
 const P2 = "p2";
@@ -201,5 +201,44 @@ describe("applyShortcuts", () => {
 		expect(gs.register).not.toHaveBeenCalled();
 		// Aufgeräumt wird trotzdem – sonst blieben Kürzel eines früheren Standes stehen.
 		expect(gs.unregisterAll).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe("recordShortcut", () => {
+	function press(key: string, code: string, mods: Partial<KeyboardEvent> = {}) {
+		return { ...keyPress(code, mods), key, preventDefault: vi.fn() } as unknown as KeyboardEvent;
+	}
+
+	it("speichert die Kombination und beendet die Aufnahme", async () => {
+		const save = vi.fn(async () => {});
+		const stop = vi.fn();
+		await recordShortcut(press("t", "KeyT", { ctrlKey: true }), save, stop);
+		expect(save).toHaveBeenCalledWith("Control+T");
+		expect(stop).toHaveBeenCalledOnce();
+		expect(gs.unregisterAll).toHaveBeenCalledOnce();
+	});
+
+	it("loescht mit Backspace", async () => {
+		const save = vi.fn(async () => {});
+		const stop = vi.fn();
+		await recordShortcut(press("Backspace", "Backspace"), save, stop);
+		expect(save).toHaveBeenCalledWith(null);
+		expect(stop).toHaveBeenCalledOnce();
+	});
+
+	it("bricht mit Escape ab, ohne zu speichern", async () => {
+		const save = vi.fn(async () => {});
+		const stop = vi.fn();
+		await recordShortcut(press("Escape", "Escape"), save, stop);
+		expect(save).not.toHaveBeenCalled();
+		expect(stop).toHaveBeenCalledOnce();
+	});
+
+	it("wartet bei reinen Modifiern weiter", async () => {
+		const save = vi.fn(async () => {});
+		const stop = vi.fn();
+		await recordShortcut(press("Control", "ControlLeft", { ctrlKey: true }), save, stop);
+		expect(save).not.toHaveBeenCalled();
+		expect(stop).not.toHaveBeenCalled();
 	});
 });

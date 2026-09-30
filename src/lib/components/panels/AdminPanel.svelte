@@ -1,11 +1,14 @@
 <script lang="ts">
 	import * as Card from "$lib/components/ui/card";
-	import * as Dialog from "$lib/components/ui/dialog";
+	import ConfirmDialog from "$lib/components/shared/ConfirmDialog.svelte";
+	import StatTile from "$lib/components/shared/StatTile.svelte";
 	import { Button } from "$lib/components/ui/button";
 	import { Badge } from "$lib/components/ui/badge";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
 	import { toast } from "svelte-sonner";
+	import { userErrorText } from "$lib/log";
+	import { copyText } from "$lib/ui/clipboard";
 	import { account } from "$lib/sync/account.svelte";
 	import { BACKUPS_KEY, INVITES_KEY, invalidate, warm } from "$lib/ui/prefetch";
 	import type { BackupInfo, Invite, ServerStats } from "$lib/sync/api";
@@ -117,7 +120,6 @@
 	let backups = $state<BackupInfo[]>([]);
 	let isCreatingBackup = $state(false);
 	let backupToRestore = $state<BackupInfo | null>(null);
-	let isRestoring = $state(false);
 	let isDeletingBackup = $state<string | null>(null);
 
 	// ---------- Helpers ----------
@@ -128,13 +130,9 @@
 	}
 
 	async function copyToClipboard(text: string, notify: (active: boolean) => void) {
-		try {
-			await navigator.clipboard.writeText(text);
-			notify(true);
-			setTimeout(() => notify(false), 2000);
-		} catch {
-			toast.error("Kopieren nicht möglich – bitte von Hand markieren.");
-		}
+		if (!(await copyText(text))) return;
+		notify(true);
+		setTimeout(() => notify(false), 2000);
 	}
 
 	const baseUrl = $derived(
@@ -167,7 +165,7 @@
 			backups = backupsRes;
 			stats = statsRes;
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : "Verwaltungsdaten nicht abrufbar");
+			toast.error(userErrorText(e, "Verwaltungsdaten nicht abrufbar"));
 		} finally {
 			isLoaded = true;
 			isRefreshing = false;
@@ -184,39 +182,49 @@
 		await loadData(true);
 	}
 
-	async function handleToggleRegistration() {
-		isRegistrationUpdating = true;
-		const target = !isRegistrationOpen;
+	/** Einen Server-Schalter umlegen; `set` liefert den Stand, den der Server danach meldet. */
+	async function toggleServerFlag(
+		current: boolean,
+		set: (target: boolean) => Promise<boolean>,
+		busy: (on: boolean) => void,
+		apply: (value: boolean) => void,
+		messages: { on: string; off: string }
+	) {
+		busy(true);
 		try {
-			isRegistrationOpen = await account.setOpenRegistration(target);
-			if (isRegistrationOpen) {
-				toast.success("Offene Registrierung aktiviert. Jeder kann sich jetzt ohne Einladungscode registrieren.");
-			} else {
-				toast.success("Offene Registrierung deaktiviert. Neue Konten brauchen wieder einen Einladungscode.");
-			}
+			const value = await set(!current);
+			apply(value);
+			toast.success(value ? messages.on : messages.off);
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : "Änderung fehlgeschlagen");
+			toast.error(userErrorText(e, "Änderung fehlgeschlagen"));
 		} finally {
-			isRegistrationUpdating = false;
+			busy(false);
 		}
 	}
 
-	async function handleToggleEnvInvites() {
-		isEnvUpdating = true;
-		const target = !isEnvActive;
-		try {
-			isEnvActive = await account.setEnvInvites(target);
-			if (!isEnvActive) {
-				toast.success("Statische Einladungscodes (.env) wurden deaktiviert.");
-			} else {
-				toast.success("Statische Einladungscodes (.env) wurden wieder aktiviert.");
+	const handleToggleRegistration = () =>
+		toggleServerFlag(
+			isRegistrationOpen,
+			(t) => account.setOpenRegistration(t),
+			(on) => (isRegistrationUpdating = on),
+			(v) => (isRegistrationOpen = v),
+			{
+				on: "Offene Registrierung aktiviert. Jeder kann sich jetzt ohne Einladungscode registrieren.",
+				off: "Offene Registrierung deaktiviert. Neue Konten brauchen wieder einen Einladungscode."
 			}
-		} catch (e) {
-			toast.error(e instanceof Error ? e.message : "Änderung fehlgeschlagen");
-		} finally {
-			isEnvUpdating = false;
-		}
-	}
+		);
+
+	const handleToggleEnvInvites = () =>
+		toggleServerFlag(
+			isEnvActive,
+			(t) => account.setEnvInvites(t),
+			(on) => (isEnvUpdating = on),
+			(v) => (isEnvActive = v),
+			{
+				on: "Statische Einladungscodes (.env) wurden wieder aktiviert.",
+				off: "Statische Einladungscodes (.env) wurden deaktiviert."
+			}
+		);
 
 	async function handleCreateInvite() {
 		isCreatingInvite = true;
@@ -230,7 +238,7 @@
 			inviteDays = "";
 			await loadData(true);
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : "Ausstellen fehlgeschlagen");
+			toast.error(userErrorText(e, "Ausstellen fehlgeschlagen"));
 		} finally {
 			isCreatingInvite = false;
 		}
@@ -243,7 +251,7 @@
 			await loadData(true);
 			toast.success("Einladung zurückgezogen.");
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : "Zurückziehen fehlgeschlagen");
+			toast.error(userErrorText(e, "Zurückziehen fehlgeschlagen"));
 		}
 	}
 
@@ -254,7 +262,7 @@
 			toast.success(`Sicherung erfolgreich erstellt: ${backup.name}`);
 			await loadData(true);
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : "Sicherung fehlgeschlagen");
+			toast.error(userErrorText(e, "Sicherung fehlgeschlagen"));
 		} finally {
 			isCreatingBackup = false;
 		}
@@ -262,7 +270,6 @@
 
 	async function handleConfirmRestore() {
 		if (!backupToRestore) return;
-		isRestoring = true;
 		const targetName = backupToRestore.name;
 		try {
 			const res = await account.restoreBackup(targetName);
@@ -270,9 +277,7 @@
 			backupToRestore = null;
 			await loadData(true);
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : "Wiederherstellung fehlgeschlagen");
-		} finally {
-			isRestoring = false;
+			toast.error(userErrorText(e, "Wiederherstellung fehlgeschlagen"));
 		}
 	}
 
@@ -283,7 +288,7 @@
 			toast.success(`Sicherungsdatei gelöscht.`);
 			await loadData(true);
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : "Löschen fehlgeschlagen");
+			toast.error(userErrorText(e, "Löschen fehlgeschlagen"));
 		} finally {
 			isDeletingBackup = null;
 		}
@@ -355,6 +360,26 @@
 	});
 </script>
 
+{#snippet countBadges(title: string, counts: Record<string, number>)}
+	<div class="rounded-lg border p-3 space-y-2">
+		<div class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title} ({STATS_DAYS} Tage)</div>
+		<div class="flex flex-wrap gap-1.5">
+			{#each topEntries(counts) as [name, count] (name)}
+				<Badge variant="secondary" class="font-mono text-xs">
+					{name}: {count}
+				</Badge>
+			{:else}
+				<span class="text-xs text-muted-foreground">Keine Daten</span>
+			{/each}
+			{#if restCount(counts) > 0}
+				<span class="text-xs text-muted-foreground self-center">
+					+{restCount(counts)} weitere
+				</span>
+			{/if}
+		</div>
+	</div>
+{/snippet}
+
 {#if account.isAdmin}
 	<div class="space-y-6">
 		<!-- 0. Kachel: Nutzungsstatistik & Telemetrie -->
@@ -386,26 +411,11 @@
 					</div>
 				{:else if stats}
 					<div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
-						<div class="rounded-lg border bg-primary/5 p-3 text-center">
-							<div class="text-2xl font-bold tracking-tight text-foreground">{stats.users}</div>
-							<div class="text-xs text-muted-foreground mt-0.5">Benutzer</div>
-						</div>
-						<div class="rounded-lg border bg-muted/30 p-3 text-center">
-							<div class="text-2xl font-bold tracking-tight text-foreground">{stats.summary.today}</div>
-							<div class="text-xs text-muted-foreground mt-0.5">Heute (DAU)</div>
-						</div>
-						<div class="rounded-lg border bg-muted/30 p-3 text-center">
-							<div class="text-2xl font-bold tracking-tight text-foreground">{stats.summary.yesterday}</div>
-							<div class="text-xs text-muted-foreground mt-0.5">Gestern</div>
-						</div>
-						<div class="rounded-lg border bg-muted/30 p-3 text-center">
-							<div class="text-2xl font-bold tracking-tight text-foreground">{stats.summary.wau}</div>
-							<div class="text-xs text-muted-foreground mt-0.5">7 Tage (WAU)</div>
-						</div>
-						<div class="rounded-lg border bg-muted/30 p-3 text-center">
-							<div class="text-2xl font-bold tracking-tight text-foreground">{stats.summary.mau}</div>
-							<div class="text-xs text-muted-foreground mt-0.5">30 Tage (MAU)</div>
-						</div>
+						<StatTile label="Benutzer" class="bg-primary/5">{stats.users}</StatTile>
+						<StatTile label="Heute (DAU)">{stats.summary.today}</StatTile>
+						<StatTile label="Gestern">{stats.summary.yesterday}</StatTile>
+						<StatTile label="7 Tage (WAU)">{stats.summary.wau}</StatTile>
+						<StatTile label="30 Tage (MAU)">{stats.summary.mau}</StatTile>
 					</div>
 
 					<p class="text-xs text-muted-foreground leading-relaxed">
@@ -454,40 +464,8 @@
 					{/if}
 
 					<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-						<div class="rounded-lg border p-3 space-y-2">
-							<div class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Versionen ({STATS_DAYS} Tage)</div>
-							<div class="flex flex-wrap gap-1.5">
-								{#each topEntries(stats.summary.versions) as [ver, count]}
-									<Badge variant="secondary" class="font-mono text-xs">
-										{ver}: {count}
-									</Badge>
-								{:else}
-									<span class="text-xs text-muted-foreground">Keine Daten</span>
-								{/each}
-								{#if restCount(stats.summary.versions) > 0}
-									<span class="text-xs text-muted-foreground self-center">
-										+{restCount(stats.summary.versions)} weitere
-									</span>
-								{/if}
-							</div>
-						</div>
-						<div class="rounded-lg border p-3 space-y-2">
-							<div class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Plattformen ({STATS_DAYS} Tage)</div>
-							<div class="flex flex-wrap gap-1.5">
-								{#each topEntries(stats.summary.platforms) as [plat, count]}
-									<Badge variant="secondary" class="font-mono text-xs">
-										{plat}: {count}
-									</Badge>
-								{:else}
-									<span class="text-xs text-muted-foreground">Keine Daten</span>
-								{/each}
-								{#if restCount(stats.summary.platforms) > 0}
-									<span class="text-xs text-muted-foreground self-center">
-										+{restCount(stats.summary.platforms)} weitere
-									</span>
-								{/if}
-							</div>
-						</div>
+						{@render countBadges("Versionen", stats.summary.versions)}
+						{@render countBadges("Plattformen", stats.summary.platforms)}
 					</div>
 
 					{#if stats.history.length > 0}
@@ -873,7 +851,7 @@
 										<Badge variant="outline" class="text-[10px] px-2 py-0.5 font-normal {status.badgeClass}">
 											{status.text}
 										</Badge>
-										{#if !i.usedAt && !i.revokedAt}
+										{#if isInviteOpen(i)}
 											<Button
 												variant="ghost"
 												size="icon-sm"
@@ -904,52 +882,27 @@
 	</div>
 {/if}
 
-<!-- Bestätigungsdialog zur Wiederherstellung eines Backups -->
-<Dialog.Root
+<ConfirmDialog
 	open={backupToRestore !== null}
-	onOpenChange={(open) => {
-		if (!open && !isRestoring) backupToRestore = null;
-	}}
+	confirmLabel="Sicherung jetzt einspielen"
+	busyLabel="Spielt ein…"
+	variant="default"
+	onConfirm={handleConfirmRestore}
+	onClose={() => (backupToRestore = null)}
 >
-	<Dialog.Content
-		interactOutsideBehavior={isRestoring ? "ignore" : "close"}
-		escapeKeydownBehavior={isRestoring ? "ignore" : "close"}
-		showCloseButton={!isRestoring}
-	>
-		<Dialog.Header>
-			<div class="flex items-center gap-2">
-				<TriangleAlertIcon class="size-5 text-amber-600 dark:text-amber-400 shrink-0" />
-				<Dialog.Title>Server-Sicherung wiederherstellen?</Dialog.Title>
-			</div>
-			<Dialog.Description class="space-y-2 pt-1 text-sm">
-				<p>
-					Möchtest du den Server auf den Stand der Sicherung <strong class="font-mono text-foreground">{backupToRestore?.name}</strong> zurücksetzen?
-				</p>
-				<div class="border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-200 rounded-lg border p-3 text-xs leading-relaxed">
-					<p class="font-medium mb-1">Automatische Sicherheit:</p>
-					Vor dem Einspielen wird automatisch ein Sicherungs-Snapshot des aktuellen Live-Zustands erstellt.
-				</div>
-			</Dialog.Description>
-		</Dialog.Header>
-
-		<Dialog.Footer class="gap-3">
-			<Button
-				variant="outline"
-				onclick={() => (backupToRestore = null)}
-				disabled={isRestoring}
-			>
-				Abbrechen
-			</Button>
-			<Button
-				variant="default"
-				onclick={handleConfirmRestore}
-				disabled={isRestoring}
-				class="gap-1.5"
-			>
-				<RotateCcwIcon class="size-4 {isRestoring ? 'animate-spin' : ''}" />
-				{isRestoring ? "Spielt ein…" : "Sicherung jetzt einspielen"}
-			</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
-
+	{#snippet title()}
+		<TriangleAlertIcon class="size-5 text-amber-600 dark:text-amber-400 shrink-0" />
+		Server-Sicherung wiederherstellen?
+	{/snippet}
+	{#snippet description()}
+		<span class="block space-y-2 pt-1 text-sm">
+			<span class="block">
+				Möchtest du den Server auf den Stand der Sicherung <strong class="font-mono text-foreground">{backupToRestore?.name}</strong> zurücksetzen?
+			</span>
+			<span class="border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-200 block rounded-lg border p-3 text-xs leading-relaxed">
+				<span class="font-medium mb-1 block">Automatische Sicherheit:</span>
+				Vor dem Einspielen wird automatisch ein Sicherungs-Snapshot des aktuellen Live-Zustands erstellt.
+			</span>
+		</span>
+	{/snippet}
+</ConfirmDialog>

@@ -3,6 +3,7 @@
 	// Streifen, der stehen bleibt, bis der Passkey angelegt oder weggeklickt ist.
 	import { Button } from "$lib/components/ui/button";
 	import { toast } from "svelte-sonner";
+	import { userErrorText } from "$lib/log";
 	import { account } from "$lib/sync/account.svelte";
 	import { isTauri } from "$lib/platform/env";
 	import { missingPasskey, type MissingPasskey } from "$lib/account/passkeyStatus";
@@ -53,7 +54,7 @@
 				toast.error("Dieses Gerät kann deine Daten mit dem Passkey allein nicht entsperren.");
 			}
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : "Hat nicht geklappt");
+			toast.error(userErrorText(e, "Hat nicht geklappt"));
 		} finally {
 			running = false;
 		}

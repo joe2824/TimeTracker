@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanEmail } from "$shared/email";
+import { cleanEmail, isInvalidOptionalEmail } from "$shared/email";
 
 describe("cleanEmail", () => {
 	it("nimmt eine einzelne Adresse an und trimmt sie", () => {
@@ -21,5 +21,16 @@ describe("cleanEmail", () => {
 		expect(cleanEmail(undefined)).toBeNull();
 		expect(cleanEmail(42)).toBeNull();
 		expect(cleanEmail(`${"a".repeat(200)}@firma.de`)).toBeNull();
+	});
+});
+
+describe("isInvalidOptionalEmail", () => {
+	it("laesst ein leeres Feld zu", () => {
+		expect(isInvalidOptionalEmail("   ")).toBe(false);
+	});
+
+	it("unterscheidet gueltige und ungueltige Adressen", () => {
+		expect(isInvalidOptionalEmail(" anna@firma.de ")).toBe(false);
+		expect(isInvalidOptionalEmail("anna@firma.de; fremd@firma.de")).toBe(true);
 	});
 });

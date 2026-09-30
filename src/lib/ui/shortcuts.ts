@@ -88,3 +88,29 @@ export function acceleratorFromEvent(e: KeyboardEvent): string | null {
 	if (!key) return null;
 	return [...mods, key].join("+");
 }
+
+/**
+ * Einen Tastendruck im Aufnahme-Modus auswerten: Escape bricht ab,
+ * Backspace/Entf löscht das Kürzel, sonst wird die Kombination gespeichert.
+ * Nur Modifier gedrückt: weiter warten. `stop` beendet die Aufnahme.
+ */
+export async function recordShortcut(
+	e: KeyboardEvent,
+	save: (accelerator: string | null) => Promise<unknown>,
+	stop: () => void
+): Promise<void> {
+	e.preventDefault();
+	if (e.key === "Escape") {
+		stop();
+		return;
+	}
+	if (e.key === "Backspace" || e.key === "Delete") {
+		await save(null);
+	} else {
+		const accelerator = acceleratorFromEvent(e);
+		if (!accelerator) return;
+		await save(accelerator);
+	}
+	stop();
+	await applyShortcuts();
+}

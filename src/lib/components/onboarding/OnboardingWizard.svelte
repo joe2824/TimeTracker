@@ -2,8 +2,7 @@
 	import { onDestroy } from "svelte";
 	import { app } from "$lib/app.svelte";
 	import { account } from "$lib/sync/account.svelte";
-	import { DEFAULT_SERVER } from "$lib/defaults";
-	import { clockToMin } from "$lib/time/time";
+	import { createSettingsForm } from "$lib/ui/settingsForm.svelte";
 	import { scheduleReminders } from "$lib/ui/reminders";
 	import { errorText, logInfo, logWarn } from "$lib/log";
 	import { Button } from "$lib/components/ui/button";
@@ -12,7 +11,8 @@
 	import { Switch } from "$lib/components/ui/switch";
 	import { Textarea } from "$lib/components/ui/textarea";
 	import WorkdayPicker from "$lib/components/shared/WorkdayPicker.svelte";
-	import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
+	import { capabilities } from "$lib/platform/env";
+	import { setAutostart } from "$lib/platform/autostart";
 	import { openExternal } from "$lib/platform/open";
 	import { createLink } from "$lib/account/invite";
 	import { toast } from "svelte-sonner";
@@ -30,33 +30,30 @@
 	import CheckCircle2Icon from "@lucide/svelte/icons/check-circle-2";
 	import PairingCode from "$lib/components/onboarding/PairingCode.svelte";
 	import { PairingFlow } from "$lib/account/pairingFlow.svelte";
-	import { rememberServerUrl, rememberedServerUrl } from "$lib/account/serverUrl";
-	import { cleanEmail } from "$shared/email";
+	import { initialServerUrl, rememberServerUrl } from "$lib/account/serverUrl";
+	import { isInvalidOptionalEmail } from "$shared/email";
 
 	const STEPS = 5;
 	let step = $state(0);
 	let fileInput = $state<HTMLInputElement>();
 
-	/** Dezimalstunden -> "HH:MM" (für das Zeit-Eingabefeld). */
-	function hoursToTime(h: number): string {
-		const total = Math.max(0, Math.round(h * 60));
-		return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
-	}
+	const ONBOARDING_KEYS = [
+		"senderName",
+		"bossEmail",
+		"hoursPerDay",
+		"workdays",
+		"reminderTimes",
+		"autostart"
+	] as const;
 
-	// Felder mit den aktuellen Werten vorbelegen.
-	let senderName = $state(app.settings.senderName);
-	let bossEmail = $state(app.settings.bossEmail);
-	let workTime = $state(hoursToTime(app.settings.hoursPerDay)); // Arbeitszeit/Tag als "HH:MM"
-	let workdays = $state([...app.settings.workdays]);
-	let times = $state<string[]>(
-		app.settings.reminderTimes.length ? [...app.settings.reminderTimes] : ["14:00"]
-	);
+	// Die Arbeitskopie zieht nach, was der erste Abgleich nach dem Koppeln in
+	// Schritt 3 bringt - sonst schriebe "Los geht's" die Vorgaben darüber.
+	const { form, patch } = createSettingsForm();
 	let activitiesText = $state(""); // Aktivitäten-Import, eine je Zeile
-	let autostart = $state(app.settings.autostart);
 	let saving = $state(false);
 
 	// Server / Cloud Sync im Onboarding
-	let serverUrl = $state(account.serverUrl || rememberedServerUrl() || DEFAULT_SERVER || "");
+	let serverUrl = $state(initialServerUrl(account.serverUrl));
 	let isStartingSync = $state(false);
 
 	const pairing = new PairingFlow({
@@ -99,7 +96,7 @@
 
 	// Die Adresse geht in einen Outlook-Entwurf - ";" oder "," schleusten dort
 	// weitere Empfänger ein. Leer bleibt erlaubt.
-	const emailInvalid = $derived(bossEmail.trim() !== "" && cleanEmail(bossEmail) === null);
+	const emailInvalid = $derived(isInvalidOptionalEmail(form.bossEmail));
 
 	const stepTitles = [
 		{
@@ -146,31 +143,19 @@
 		const actLines = activitiesText.split(/\r?\n/);
 		if (actLines.some((l) => l.trim())) await app.importActivities(actLines);
 
-		const min = clockToMin(workTime);
-		const hpd = min != null && min > 0 ? min / 60 : app.settings.hoursPerDay;
-		const cleanTimes = times.filter((t) => t);
-		await app.finishOnboarding({
-			senderName: senderName.trim(),
-			bossEmail: bossEmail.trim(),
-			hoursPerDay: hpd,
-			workdays: [...workdays].sort((a, b) => a - b),
-			reminderTimes: cleanTimes,
-			autostart
-		});
+		const settings = patch(ONBOARDING_KEYS);
+		await app.finishOnboarding(settings);
 		logInfo("Willkommens-Assistent abgeschlossen", {
-			name: senderName.trim(),
-			supervisors: bossEmail.trim(),
-			hoursPerDayValue: hpd,
-			workdayCount: workdays.length,
-			reminders: cleanTimes.length
+			name: settings.senderName,
+			supervisors: settings.bossEmail,
+			hoursPerDayValue: settings.hoursPerDay,
+			workdayCount: settings.workdays?.length,
+			reminders: settings.reminderTimes?.length
 		});
 		scheduleReminders();
+		if (settings.senderName) void account.updateDisplayName(settings.senderName);
 		try {
-			if (autostart) {
-				if (!(await isEnabled())) await enable();
-			} else if (await isEnabled()) {
-				await disable();
-			}
+			await setAutostart(!!settings.autostart);
 		} catch (e) {
 			logWarn("Autostart konnte nicht gesetzt werden", e);
 		}
@@ -225,7 +210,7 @@
 				<div class="space-y-3 pt-1">
 					<div class="space-y-1">
 						<Label for="ob-name" class="text-xs">Dein Name</Label>
-						<Input id="ob-name" placeholder="z. B. Max Mustermann" bind:value={senderName} class="h-9 text-xs" />
+						<Input id="ob-name" placeholder="z. B. Max Mustermann" bind:value={form.senderName} class="h-9 text-xs" />
 					</div>
 					<div class="space-y-1">
 						<Label for="ob-boss" class="text-xs">E-Mail der/des Vorgesetzten</Label>
@@ -233,7 +218,7 @@
 							id="ob-boss"
 							type="email"
 							placeholder="name@firma.de"
-							bind:value={bossEmail}
+							bind:value={form.bossEmail}
 							aria-invalid={emailInvalid}
 							class="h-9 text-xs"
 						/>
@@ -243,14 +228,14 @@
 					</div>
 					<div class="space-y-1">
 						<Label for="ob-hpd" class="text-xs">Arbeitszeit pro Tag</Label>
-						<Input id="ob-hpd" type="time" bind:value={workTime} class="w-32 h-9 text-xs" />
+						<Input id="ob-hpd" type="time" bind:value={form.hoursPerDay} class="w-32 h-9 text-xs" />
 						<p class="text-muted-foreground text-[11px]">
 							Basis für die Soll-Arbeitszeit und Abwesenheiten.
 						</p>
 					</div>
 					<div class="space-y-1">
 						<Label class="text-xs">An welchen Tagen arbeitest du?</Label>
-						<WorkdayPicker bind:value={workdays} />
+						<WorkdayPicker bind:value={form.workdays} />
 					</div>
 				</div>
 			{:else if step === 2}
@@ -367,30 +352,32 @@
 				<div class="space-y-4 pt-1">
 					<div class="space-y-2">
 						<Label class="text-xs">Tägliche Erinnerung um</Label>
-						{#each times as _, i (i)}
+						{#each form.reminderTimes as _, i (i)}
 							<div class="flex gap-2">
-								<Input type="time" bind:value={times[i]} class="w-32 h-9 text-xs" />
+								<Input type="time" bind:value={form.reminderTimes[i]} class="w-32 h-9 text-xs" />
 								<Button
 									variant="ghost"
 									size="icon"
 									class="size-9"
-									onclick={() => (times = times.filter((_, j) => j !== i))}
+									onclick={() => (form.reminderTimes = form.reminderTimes.filter((_, j) => j !== i))}
 								>
 									<Trash2Icon class="size-4" />
 								</Button>
 							</div>
 						{/each}
-						<Button variant="outline" size="sm" onclick={() => (times = [...times, "14:00"])} class="text-xs h-8">
+						<Button variant="outline" size="sm" onclick={() => (form.reminderTimes = [...form.reminderTimes, "14:00"])} class="text-xs h-8">
 							<PlusIcon class="size-3.5" /> Uhrzeit hinzufügen
 						</Button>
 					</div>
-					<div class="flex items-center justify-between gap-3 rounded-lg border p-3">
-						<div>
-							<Label for="ob-autostart" class="text-xs font-medium">Automatisch bei Login starten</Label>
-							<p class="text-muted-foreground text-[11px]">Läuft dann versteckt im Hintergrund/Tray.</p>
+					{#if capabilities.autostart}
+						<div class="flex items-center justify-between gap-3 rounded-lg border p-3">
+							<div>
+								<Label for="ob-autostart" class="text-xs font-medium">Automatisch bei Login starten</Label>
+								<p class="text-muted-foreground text-[11px]">Läuft dann versteckt im Hintergrund/Tray.</p>
+							</div>
+							<Switch id="ob-autostart" bind:checked={form.autostart} />
 						</div>
-						<Switch id="ob-autostart" bind:checked={autostart} />
-					</div>
+					{/if}
 				</div>
 			{/if}
 		</div>

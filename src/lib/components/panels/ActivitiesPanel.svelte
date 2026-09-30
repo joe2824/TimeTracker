@@ -2,14 +2,13 @@
 	import { untrack } from "svelte";
 	import { app } from "$lib/app.svelte";
 	import {
-		BUILTIN_OTHERS,
 		ACTIVITY_COLORS,
 		byActivityOrder,
 		isBuiltinActivity,
 		reorderBySortOrder,
 		type Activity
 	} from "$lib/types";
-	import { acceleratorFromEvent, applyShortcuts } from "$lib/ui/shortcuts";
+	import { applyShortcuts, recordShortcut } from "$lib/ui/shortcuts";
 	import { account } from "$lib/sync/account.svelte";
 	import { chefTeams } from "$lib/team/chef.svelte";
 	import { syncOwnedTeamActivities, withActivitiesLock, TEAM_ACTIVITY_PREFIX } from "$lib/team/activities";
@@ -20,7 +19,7 @@
 	import { Textarea } from "$lib/components/ui/textarea";
 	import { Badge } from "$lib/components/ui/badge";
 	import * as Card from "$lib/components/ui/card";
-	import * as Dialog from "$lib/components/ui/dialog";
+	import ConfirmDialog from "$lib/components/shared/ConfirmDialog.svelte";
 	import * as Select from "$lib/components/ui/select";
 	import { toast } from "svelte-sonner";
 	import GripVerticalIcon from "@lucide/svelte/icons/grip-vertical";
@@ -56,17 +55,17 @@
 
 	let deleteTarget = $state<Activity | null>(null);
 	let deleteCount = $state(-1); // -1 = wird geladen
-	let deleting = $state(false);
 
 	async function askDelete(a: Activity) {
 		deleteTarget = a;
 		deleteCount = -1;
-		deleteCount = await app.countActivityEntries(a.id);
+		const count = await app.countActivityEntries(a.id);
+		// Inzwischen eine andere Aktivität gewählt: deren Zahl nicht überschreiben.
+		if (deleteTarget?.id === a.id) deleteCount = count;
 	}
 
 	async function confirmDelete() {
 		if (!deleteTarget) return;
-		deleting = true;
 		try {
 			const name = deleteTarget.name;
 			const n = await app.deleteActivity(deleteTarget.id);
@@ -74,8 +73,6 @@
 			deleteTarget = null;
 		} catch (e) {
 			toast.error(`Löschen fehlgeschlagen: ${errorText(e)}`);
-		} finally {
-			deleting = false;
 		}
 	}
 
@@ -84,7 +81,6 @@
 	// geht verloren, nur die eigene Zeile verschwindet.
 	let mergeSource = $state<Activity | null>(null);
 	let mergeTargetId = $state<string | undefined>(undefined);
-	let merging = $state(false);
 
 	function askMerge(a: Activity) {
 		mergeSource = a;
@@ -93,7 +89,6 @@
 
 	/** Gemeinsamer Kern für beide Zusammenführen-Dialoge - nur Quelle/Ziel und was danach geschlossen wird, unterscheiden sich. */
 	async function doMerge(fromId: string, toId: string, onDone: () => void) {
-		merging = true;
 		try {
 			const fromName = app.activityName(fromId);
 			const toName = app.activityName(toId);
@@ -106,8 +101,6 @@
 			onDone();
 		} catch (e) {
 			toast.error(`Zusammenführen fehlgeschlagen: ${errorText(e)}`);
-		} finally {
-			merging = false;
 		}
 	}
 
@@ -150,23 +143,13 @@
 	}
 
 	async function onRecordKey(e: KeyboardEvent) {
-		if (!recordingId) return;
-		e.preventDefault();
-		if (e.key === "Escape") {
-			recordingId = null;
-			return;
-		}
-		if (e.key === "Backspace" || e.key === "Delete") {
-			await app.setShortcut(recordingId, null);
-			recordingId = null;
-			await applyShortcuts();
-			return;
-		}
-		const acc = acceleratorFromEvent(e);
-		if (!acc) return; // nur Modifier gedrückt -> weiter warten
-		await app.setShortcut(recordingId, acc);
-		recordingId = null;
-		await applyShortcuts();
+		const id = recordingId;
+		if (!id) return;
+		await recordShortcut(
+			e,
+			(acc) => app.setShortcut(id, acc),
+			() => (recordingId = null)
+		);
 	}
 
 	async function clearShortcut(id: string) {
@@ -225,10 +208,6 @@
 		dropAfter = false;
 	}
 
-	function isBuiltin(name: string, isAbsence: boolean): boolean {
-		return isAbsence || name === BUILTIN_OTHERS;
-	}
-
 	// ---------- Gemeinsame Team-Aktivitäten (nur als Chef sichtbar/bearbeitbar) ----------
 	//
 	// Bearbeitet wird direkt über die Team-API, nicht über app.activities: dort
@@ -246,14 +225,18 @@
 	/** Bei A → B → A darf eine späte Antwort für das erste A die neuere nicht überschreiben. */
 	let teamActivitiesRequest = 0;
 
+	/** Der Versionsstand einer Team-Liste - der Server lehnt Speichern gegen einen älteren ab. */
+	const latestUpdate = (list: TeamActivity[]) => list.reduce((max, a) => Math.max(max, a.updatedAt), 0);
+
 	async function loadTeamActivities(teamId: string) {
 		const request = ++teamActivitiesRequest;
 		try {
 			const act = await account.listTeamActivities(teamId);
 			if (request !== teamActivitiesRequest || teamId !== chefTeams.selectedTeamId) return;
 			teamActivities = act;
-			teamActivitiesVersion = act.reduce((max, a) => Math.max(max, a.updatedAt), 0);
+			teamActivitiesVersion = latestUpdate(act);
 		} catch (e) {
+			if (request !== teamActivitiesRequest || teamId !== chefTeams.selectedTeamId) return;
 			toast.error(`Team-Aktivitäten konnten nicht geladen werden: ${errorText(e)}`);
 		}
 	}
@@ -262,8 +245,12 @@
 		if (account.linked) void chefTeams.loadTeams();
 	});
 	$effect(() => {
-		if (chefTeams.selectedTeamId) void loadTeamActivities(chefTeams.selectedTeamId);
-		else teamActivities = [];
+		const teamId = chefTeams.selectedTeamId;
+		// Die Liste des vorigen Teams nicht stehen lassen, bis die neue da ist:
+		// Hinzufügen oder Sortieren schriebe sie sonst ins neue Team.
+		teamActivities = [];
+		teamActivitiesVersion = 0;
+		if (teamId) untrack(() => void loadTeamActivities(teamId));
 	});
 	// Filter und Team-Auswahl laufen gemeinsam: der Filter setzt die Auswahl
 	// (onValueChange unten), und wählt der Team-Tab ein anderes Team, zieht der
@@ -296,7 +283,7 @@
 			const saved = await account.setTeamActivities(teamId, next, teamActivitiesVersion);
 			if (teamId === chefTeams.selectedTeamId) {
 				teamActivities = saved;
-				teamActivitiesVersion = saved.reduce((max, a) => Math.max(max, a.updatedAt), 0);
+				teamActivitiesVersion = latestUpdate(saved);
 			}
 			// Abgewartet, nicht nur angestossen: Favorit/Ausblenden/Zusammenführen auf
 			// einer gerade erst angelegten Zeile brauchen die gespiegelte Aktivität in
@@ -337,7 +324,7 @@
 		const current = isSelected ? teamActivities : await account.listTeamActivities(teamId);
 		const version = isSelected
 			? teamActivitiesVersion
-			: current.reduce((max, a) => Math.max(max, a.updatedAt), 0);
+			: latestUpdate(current);
 
 		const existing = new Set(current.map((a) => a.name.toLowerCase()));
 		const toAdd: TeamActivityInput[] = [];
@@ -355,7 +342,7 @@
 			const saved = await account.setTeamActivities(teamId, [...current.map(toTeamInput), ...toAdd], version);
 			if (isSelected) {
 				teamActivities = saved;
-				teamActivitiesVersion = saved.reduce((max, a) => Math.max(max, a.updatedAt), 0);
+				teamActivitiesVersion = latestUpdate(saved);
 			}
 			// Wie nach saveTeamActivities: die neuen Zeilen brauchen ihre Spiegelung
 			// in app.activities, sonst laufen Favorit/Ausblenden ins Leere.
@@ -594,7 +581,7 @@
 						>
 							<GripVerticalIcon class="size-4" />
 						</span>
-						{#if !isBuiltin(a.name, a.isAbsence) && !isChefTeamRow(a.id)}
+						{#if !isBuiltinActivity(a) && !isChefTeamRow(a.id)}
 							<div class="relative shrink-0">
 								<button
 									type="button"
@@ -660,7 +647,7 @@
 						{#if a.hidden && !a.archived}
 							<Badge variant="outline" class="mr-1">ausgeblendet</Badge>
 						{/if}
-						{#if !isBuiltin(a.name, a.isAbsence)}
+						{#if !isBuiltinActivity(a)}
 							{#if recordingId === realId(a.id)}
 								<span class="text-muted-foreground shrink-0 text-xs italic">
 									Taste drücken… (Esc=Abbruch)
@@ -709,7 +696,7 @@
 								</Button>
 							{/if}
 						{/if}
-						{#if isBuiltin(a.name, a.isAbsence)}
+						{#if isBuiltinActivity(a)}
 							<Badge variant="secondary">fix</Badge>
 						{:else if a.teamOwned && isChefTeamRow(a.id)}
 							<Button
@@ -781,126 +768,94 @@
 	</Card.Root>
 </div>
 
-<Dialog.Root open={!!deleteTarget} onOpenChange={(v) => { if (!v && !deleting) deleteTarget = null; }}>
-	<Dialog.Content class="sm:max-w-md">
-		<Dialog.Header>
-			<Dialog.Title>Aktivität löschen?</Dialog.Title>
-			<Dialog.Description>
-				„{deleteTarget?.name}“ wird
-				{#if deleteCount < 0}
-					mit allen zugehörigen Einträgen
-				{:else if deleteCount === 0}
-					(keine Einträge vorhanden)
-				{:else}
-					<strong>samt {deleteCount === 1 ? "1 Eintrag" : `${deleteCount} Einträgen`}</strong>
-				{/if}
-				unwiderruflich gelöscht. Diese Daten sind danach weg – auch aus dem Bericht.
-				Zum reinen Ausblenden lieber <em>Archivieren</em> nutzen.
-			</Dialog.Description>
-		</Dialog.Header>
-		<Dialog.Footer>
-			<Button type="button" variant="outline" onclick={() => (deleteTarget = null)} disabled={deleting}>
-				Abbrechen
-			</Button>
-			<Button type="button" variant="destructive" onclick={confirmDelete} disabled={deleting}>
-				<Trash2Icon class="size-4" />
-				{deleting ? "Lösche…" : "Endgültig löschen"}
-			</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
-
-<Dialog.Root open={!!teamDeleteTarget} onOpenChange={(v) => { if (!v && !teamActionBusy) teamDeleteTarget = null; }}>
-	<Dialog.Content class="sm:max-w-md">
-		<Dialog.Header>
-			<Dialog.Title>Aus der Team-Liste entfernen?</Dialog.Title>
-			<Dialog.Description>
-				„{teamDeleteTarget?.name}“ verschwindet bei allen im Team aus der Auswahl. Schon erfasste Zeiten
-				bleiben erhalten und stehen danach bei jedem als archivierte eigene Aktivität.
-			</Dialog.Description>
-		</Dialog.Header>
-		<Dialog.Footer>
-			<Button type="button" variant="outline" onclick={() => (teamDeleteTarget = null)} disabled={teamActionBusy}>
-				Abbrechen
-			</Button>
-			<Button type="button" variant="destructive" onclick={confirmDeleteTeamActivity} disabled={teamActionBusy}>
-				<Trash2Icon class="size-4" />
-				{teamActionBusy ? "Wird entfernt…" : "Entfernen"}
-			</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
-
-<Dialog.Root open={!!mergeSource} onOpenChange={(v) => { if (!v && !merging) mergeSource = null; }}>
-	<Dialog.Content class="sm:max-w-md">
-		<Dialog.Header>
-			<Dialog.Title>„{mergeSource?.name}“ zusammenführen</Dialog.Title>
-			<Dialog.Description>
-				Alle Einträge wandern zur ausgewählten Aktivität, „{mergeSource?.name}“ verschwindet danach
-				aus der Liste. Nützlich, wenn eine eigene Aktivität dasselbe ist wie eine vom Team
-				vorgegebene – nichts geht dabei verloren.
-			</Dialog.Description>
-		</Dialog.Header>
-		{#if mergeCandidates.length === 0}
-			<p class="text-muted-foreground text-sm">Keine andere Aktivität vorhanden.</p>
+<ConfirmDialog
+	open={!!deleteTarget}
+	class="sm:max-w-md"
+	title="Aktivität löschen?"
+	confirmLabel="Endgültig löschen"
+	busyLabel="Lösche…"
+	onConfirm={confirmDelete}
+	onClose={() => (deleteTarget = null)}
+>
+	{#snippet description()}
+		„{deleteTarget?.name}“ wird
+		{#if deleteCount < 0}
+			mit allen zugehörigen Einträgen
+		{:else if deleteCount === 0}
+			(keine Einträge vorhanden)
 		{:else}
-			<Select.Root type="single" bind:value={mergeTargetId}>
-				<Select.Trigger>
-					{mergeTargetId ? app.activityName(mergeTargetId) : "Ziel wählen"}
-				</Select.Trigger>
-				<Select.Content>
-					{#each mergeCandidates as c (c.id)}
-						<Select.Item value={c.id} label={c.name}>
-							{c.name}{c.teamOwned ? " (Team)" : ""}
-						</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Root>
+			<strong>samt {deleteCount === 1 ? "1 Eintrag" : `${deleteCount} Einträgen`}</strong>
 		{/if}
-		<Dialog.Footer>
-			<Button type="button" variant="outline" onclick={() => (mergeSource = null)} disabled={merging}>
-				Abbrechen
-			</Button>
-			<Button type="button" onclick={confirmMerge} disabled={merging || !mergeTargetId}>
-				<GitMergeIcon class="size-4" />
-				{merging ? "Wird zusammengeführt…" : "Zusammenführen"}
-			</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+		unwiderruflich gelöscht. Diese Daten sind danach weg – auch aus dem Bericht.
+		Zum reinen Ausblenden lieber <em>Archivieren</em> nutzen.
+	{/snippet}
+</ConfirmDialog>
 
-<Dialog.Root open={!!mergeIntoTarget} onOpenChange={(v) => { if (!v && !merging) mergeIntoTarget = null; }}>
-	<Dialog.Content class="sm:max-w-md">
-		<Dialog.Header>
-			<Dialog.Title>In „{mergeIntoTarget?.name}“ zusammenführen</Dialog.Title>
-			<Dialog.Description>
-				Alle Einträge der ausgewählten eigenen Aktivität wandern zu „{mergeIntoTarget?.name}“, sie
-				verschwindet danach aus der Liste. Nützlich, wenn sie dasselbe war, bevor das Team sie
-				vorgab – nichts geht dabei verloren.
-			</Dialog.Description>
-		</Dialog.Header>
-		{#if ownCandidates.length === 0}
-			<p class="text-muted-foreground text-sm">Keine eigene Aktivität vorhanden.</p>
-		{:else}
-			<Select.Root type="single" bind:value={mergeSourceId}>
-				<Select.Trigger>
-					{mergeSourceId ? app.activityName(mergeSourceId) : "Eigene Aktivität wählen"}
-				</Select.Trigger>
-				<Select.Content>
-					{#each ownCandidates as c (c.id)}
-						<Select.Item value={c.id} label={c.name}>{c.name}</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Root>
-		{/if}
-		<Dialog.Footer>
-			<Button type="button" variant="outline" onclick={() => (mergeIntoTarget = null)} disabled={merging}>
-				Abbrechen
-			</Button>
-			<Button type="button" onclick={confirmMergeInto} disabled={merging || !mergeSourceId}>
-				<GitMergeIcon class="size-4" />
-				{merging ? "Wird zusammengeführt…" : "Zusammenführen"}
-			</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+<ConfirmDialog
+	open={!!teamDeleteTarget}
+	class="sm:max-w-md"
+	title="Aus der Team-Liste entfernen?"
+	description={`„${teamDeleteTarget?.name}“ verschwindet bei allen im Team aus der Auswahl. Schon erfasste Zeiten bleiben erhalten und stehen danach bei jedem als archivierte eigene Aktivität.`}
+	confirmLabel="Entfernen"
+	busyLabel="Wird entfernt…"
+	onConfirm={confirmDeleteTeamActivity}
+	onClose={() => (teamDeleteTarget = null)}
+/>
+
+<ConfirmDialog
+	open={!!mergeSource}
+	class="sm:max-w-md"
+	title={`„${mergeSource?.name}“ zusammenführen`}
+	description={`Alle Einträge wandern zur ausgewählten Aktivität, „${mergeSource?.name}“ verschwindet danach aus der Liste. Nützlich, wenn eine eigene Aktivität dasselbe ist wie eine vom Team vorgegebene – nichts geht dabei verloren.`}
+	confirmLabel="Zusammenführen"
+	busyLabel="Wird zusammengeführt…"
+	variant="default"
+	confirmDisabled={!mergeTargetId}
+	onConfirm={confirmMerge}
+	onClose={() => (mergeSource = null)}
+>
+	{#if mergeCandidates.length === 0}
+		<p class="text-muted-foreground text-sm">Keine andere Aktivität vorhanden.</p>
+	{:else}
+		<Select.Root type="single" bind:value={mergeTargetId}>
+			<Select.Trigger>
+				{mergeTargetId ? app.activityName(mergeTargetId) : "Ziel wählen"}
+			</Select.Trigger>
+			<Select.Content>
+				{#each mergeCandidates as c (c.id)}
+					<Select.Item value={c.id} label={c.name}>
+						{c.name}{c.teamOwned ? " (Team)" : ""}
+					</Select.Item>
+				{/each}
+			</Select.Content>
+		</Select.Root>
+	{/if}
+</ConfirmDialog>
+
+<ConfirmDialog
+	open={!!mergeIntoTarget}
+	class="sm:max-w-md"
+	title={`In „${mergeIntoTarget?.name}“ zusammenführen`}
+	description={`Alle Einträge der ausgewählten eigenen Aktivität wandern zu „${mergeIntoTarget?.name}“, sie verschwindet danach aus der Liste. Nützlich, wenn sie dasselbe war, bevor das Team sie vorgab – nichts geht dabei verloren.`}
+	confirmLabel="Zusammenführen"
+	busyLabel="Wird zusammengeführt…"
+	variant="default"
+	confirmDisabled={!mergeSourceId}
+	onConfirm={confirmMergeInto}
+	onClose={() => (mergeIntoTarget = null)}
+>
+	{#if ownCandidates.length === 0}
+		<p class="text-muted-foreground text-sm">Keine eigene Aktivität vorhanden.</p>
+	{:else}
+		<Select.Root type="single" bind:value={mergeSourceId}>
+			<Select.Trigger>
+				{mergeSourceId ? app.activityName(mergeSourceId) : "Eigene Aktivität wählen"}
+			</Select.Trigger>
+			<Select.Content>
+				{#each ownCandidates as c (c.id)}
+					<Select.Item value={c.id} label={c.name}>{c.name}</Select.Item>
+				{/each}
+			</Select.Content>
+		</Select.Root>
+	{/if}
+</ConfirmDialog>

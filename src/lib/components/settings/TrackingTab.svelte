@@ -11,7 +11,7 @@
 	import ShortcutKey from "$lib/components/shared/ShortcutKey.svelte";
 	import * as Select from "$lib/components/ui/select";
 	import { capabilities } from "$lib/platform/env";
-	import { acceleratorFromEvent, applyShortcuts } from "$lib/ui/shortcuts";
+	import { applyShortcuts, recordShortcut } from "$lib/ui/shortcuts";
 	import XIcon from "@lucide/svelte/icons/x";
 
 	const ROUNDINGS: Record<string, string> = {
@@ -48,22 +48,11 @@
 
 	async function handleShortcutKeyDown(e: KeyboardEvent) {
 		if (!isRecordingShortcut) return;
-		e.preventDefault();
-		if (e.key === "Escape") {
-			isRecordingShortcut = false;
-			return;
-		}
-		if (e.key === "Backspace" || e.key === "Delete") {
-			await app.updateSettings({ toggleShortcut: "" });
-			isRecordingShortcut = false;
-			await applyShortcuts();
-			return;
-		}
-		const accelerator = acceleratorFromEvent(e);
-		if (!accelerator) return;
-		await app.updateSettings({ toggleShortcut: accelerator });
-		isRecordingShortcut = false;
-		await applyShortcuts();
+		await recordShortcut(
+			e,
+			(accelerator) => app.updateSettings({ toggleShortcut: accelerator ?? "" }),
+			() => (isRecordingShortcut = false)
+		);
 	}
 
 	async function handleClearShortcut() {

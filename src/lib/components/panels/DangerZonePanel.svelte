@@ -1,17 +1,13 @@
 <script lang="ts">
 	import * as Card from "$lib/components/ui/card";
-	import * as Dialog from "$lib/components/ui/dialog";
+	import ConfirmDialog from "$lib/components/shared/ConfirmDialog.svelte";
 	import { Button } from "$lib/components/ui/button";
 	import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
 	import { toast } from "svelte-sonner";
 	import { account } from "$lib/sync/account.svelte";
 	import { chefTeams } from "$lib/team/chef.svelte";
-	import { errorText } from "$lib/log";
+	import { userErrorText } from "$lib/log";
 
-	const formatError = (e: unknown, fallback: string) =>
-		e instanceof Error ? errorText(e) : fallback;
-
-	let isLoading = $state(false);
 	let isUnlinkModalOpen = $state(false);
 	let isRevokeModalOpen = $state(false);
 	let isDeleteAccountModalOpen = $state(false);
@@ -38,33 +34,26 @@
 	}
 
 	async function handleConfirmUnlink() {
-		isLoading = true;
 		try {
 			await account.unlink();
 			isUnlinkModalOpen = false;
 			toast.success("Verknüpfung gelöst. Deine erfassten Zeiten bleiben auf diesem Gerät erhalten.");
 		} catch (e) {
-			toast.error(formatError(e, "Entkoppeln fehlgeschlagen"));
-		} finally {
-			isLoading = false;
+			toast.error(userErrorText(e, "Entkoppeln fehlgeschlagen"));
 		}
 	}
 
 	async function handleConfirmRevoke() {
-		isLoading = true;
 		try {
 			await account.unlink({ revokeSelf: true });
 			isRevokeModalOpen = false;
 			toast.success("Gerät vom Konto getrennt. Deine erfassten Zeiten bleiben auf diesem Gerät erhalten.");
 		} catch (e) {
-			toast.error(formatError(e, "Trennen fehlgeschlagen"));
-		} finally {
-			isLoading = false;
+			toast.error(userErrorText(e, "Trennen fehlgeschlagen"));
 		}
 	}
 
 	async function handleConfirmDeleteAccount() {
-		isLoading = true;
 		try {
 			const summary = await account.unlink({ deleteRemote: true });
 			isDeleteAccountModalOpen = false;
@@ -77,9 +66,7 @@
 					: "Konto aufgelöst. Die Zeiten bleiben hier."
 			);
 		} catch (e) {
-			toast.error(formatError(e, "Auflösen fehlgeschlagen"));
-		} finally {
-			isLoading = false;
+			toast.error(userErrorText(e, "Auflösen fehlgeschlagen"));
 		}
 	}
 </script>
@@ -108,7 +95,6 @@
 					variant="outline"
 					size="sm"
 					class="shrink-0 self-start sm:self-center"
-					disabled={isLoading}
 					onclick={() => (isUnlinkModalOpen = true)}
 				>
 					Entkoppeln…
@@ -127,7 +113,6 @@
 						variant="outline"
 						size="sm"
 						class="shrink-0 self-start border-destructive/40 text-destructive hover:bg-destructive/10 sm:self-center"
-						disabled={isLoading}
 						onclick={() => (isRevokeModalOpen = true)}
 					>
 						Zugang widerrufen…
@@ -146,7 +131,6 @@
 					variant="destructive"
 					size="sm"
 					class="shrink-0 self-start sm:self-center"
-					disabled={isLoading}
 					onclick={handleOpenDeleteAccountDialog}
 				>
 					Konto auflösen…
@@ -156,133 +140,97 @@
 	</Card.Root>
 
 	<!-- Modal 1: Lokal entkoppeln -->
-	<Dialog.Root
+	<ConfirmDialog
 		open={isUnlinkModalOpen}
-		onOpenChange={(o) => {
-			if (!o && !isLoading) isUnlinkModalOpen = false;
-		}}
+		class="sm:max-w-md"
+		title="Dieses Gerät lokal entkoppeln?"
+		confirmLabel="Lokal entkoppeln"
+		busyLabel="Trennt…"
+		variant="default"
+		onConfirm={handleConfirmUnlink}
+		onClose={() => (isUnlinkModalOpen = false)}
 	>
-		<Dialog.Content
-			class="sm:max-w-md"
-			showCloseButton={!isLoading}
-			interactOutsideBehavior={isLoading ? "ignore" : "close"}
-			escapeKeydownBehavior={isLoading ? "ignore" : "close"}
-		>
-			<Dialog.Header>
-				<Dialog.Title>Dieses Gerät lokal entkoppeln?</Dialog.Title>
-				<Dialog.Description class="space-y-2 pt-2 text-left">
-					<p>
-						Die automatische Synchronisierung auf diesem Gerät wird beendet.
-					</p>
-					<p class="text-foreground text-xs font-medium">
-						✓ Alle erfassten Zeiten und Einstellungen bleiben lokal auf diesem Rechner erhalten.<br />
-						✓ Dein Server-Konto und alle weiteren Geräte bleiben unverändert aktiv.<br />
-						✓ Du kannst dieses Gerät jederzeit wieder neu verbinden.
-					</p>
-				</Dialog.Description>
-			</Dialog.Header>
-			<Dialog.Footer class="gap-3">
-				<Button variant="outline" disabled={isLoading} onclick={() => (isUnlinkModalOpen = false)}>
-					Abbrechen
-				</Button>
-				<Button disabled={isLoading} onclick={handleConfirmUnlink}>
-					{isLoading ? "Trennt…" : "Lokal entkoppeln"}
-				</Button>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
+		{#snippet description()}
+			<span class="block space-y-2 pt-2 text-left">
+				<span class="block">
+					Die automatische Synchronisierung auf diesem Gerät wird beendet.
+				</span>
+				<span class="text-foreground block text-xs font-medium">
+					✓ Alle erfassten Zeiten und Einstellungen bleiben lokal auf diesem Rechner erhalten.<br />
+					✓ Dein Server-Konto und alle weiteren Geräte bleiben unverändert aktiv.<br />
+					✓ Du kannst dieses Gerät jederzeit wieder neu verbinden.
+				</span>
+			</span>
+		{/snippet}
+	</ConfirmDialog>
 
 	<!-- Modal 2: Gerätezugang auf Server widerrufen -->
-	<Dialog.Root
+	<ConfirmDialog
 		open={isRevokeModalOpen}
-		onOpenChange={(o) => {
-			if (!o && !isLoading) isRevokeModalOpen = false;
-		}}
+		class="sm:max-w-md"
+		title="Gerätezugang auf dem Server widerrufen?"
+		confirmLabel="Zugang widerrufen"
+		busyLabel="Widerruft…"
+		onConfirm={handleConfirmRevoke}
+		onClose={() => (isRevokeModalOpen = false)}
 	>
-		<Dialog.Content
-			class="sm:max-w-md"
-			showCloseButton={!isLoading}
-			interactOutsideBehavior={isLoading ? "ignore" : "close"}
-			escapeKeydownBehavior={isLoading ? "ignore" : "close"}
-		>
-			<Dialog.Header>
-				<Dialog.Title>Gerätezugang auf dem Server widerrufen?</Dialog.Title>
-				<Dialog.Description class="space-y-2 pt-2 text-left">
-					<p>
-						Das Autorisierungs-Token dieses Geräts wird auf dem Server gelöscht und die lokale Verknüpfung entfernt.
-					</p>
-					<p class="text-foreground text-xs font-medium">
-						✓ Die Zeiten auf diesem Rechner bleiben vollständig erhalten.<br />
-						✓ Das Server-Konto und alle anderen Geräte bleiben aktiv.<br />
-						✓ Für eine erneute Verbindung ist eine neue Kopplung erforderlich.
-					</p>
-				</Dialog.Description>
-			</Dialog.Header>
-			<Dialog.Footer class="gap-3">
-				<Button variant="outline" disabled={isLoading} onclick={() => (isRevokeModalOpen = false)}>
-					Abbrechen
-				</Button>
-				<Button variant="destructive" disabled={isLoading} onclick={handleConfirmRevoke}>
-					{isLoading ? "Widerruft…" : "Zugang widerrufen"}
-				</Button>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
+		{#snippet description()}
+			<span class="block space-y-2 pt-2 text-left">
+				<span class="block">
+					Das Autorisierungs-Token dieses Geräts wird auf dem Server gelöscht und die lokale Verknüpfung entfernt.
+				</span>
+				<span class="text-foreground block text-xs font-medium">
+					✓ Die Zeiten auf diesem Rechner bleiben vollständig erhalten.<br />
+					✓ Das Server-Konto und alle anderen Geräte bleiben aktiv.<br />
+					✓ Für eine erneute Verbindung ist eine neue Kopplung erforderlich.
+				</span>
+			</span>
+		{/snippet}
+	</ConfirmDialog>
 
 	<!-- Modal 3: Server-Konto endgültig auflösen -->
-	<Dialog.Root
+	<ConfirmDialog
 		open={isDeleteAccountModalOpen}
-		onOpenChange={(o) => {
-			if (!o && !isLoading) isDeleteAccountModalOpen = false;
-		}}
+		class="sm:max-w-md"
+		confirmLabel="Ja, Server-Konto endgültig löschen"
+		busyLabel="Löscht…"
+		onConfirm={handleConfirmDeleteAccount}
+		onClose={() => (isDeleteAccountModalOpen = false)}
 	>
-		<Dialog.Content
-			class="sm:max-w-md"
-			showCloseButton={!isLoading}
-			interactOutsideBehavior={isLoading ? "ignore" : "close"}
-			escapeKeydownBehavior={isLoading ? "ignore" : "close"}
-		>
-			<Dialog.Header>
-				<Dialog.Title class="text-destructive flex items-center gap-2">
-					<TriangleAlertIcon class="size-5 shrink-0" />
-					Server-Konto endgültig löschen?
-				</Dialog.Title>
-				<Dialog.Description class="space-y-2 pt-2 text-left">
-					<p class="text-destructive font-medium">
-						Dieser Vorgang kann nicht rückgängig gemacht werden.
-					</p>
-					<p>
-						Alle verschlüsselten Datensätze, Passkeys und hinterlegten Geräte werden unwiderruflich vom Server gelöscht.
-						{#if linkedDeviceCount && linkedDeviceCount > 1}
-							<strong class="text-foreground block mt-1">Dies betrifft alle {linkedDeviceCount} verknüpften Geräte.</strong>
-						{/if}
-					</p>
-					{#if ownedTeamCount > 0}
-						<p class="text-foreground">
-							Du bist Chef von {ownedTeamCount === 1 ? "einem Team" : `${ownedTeamCount} Teams`}. Ein Team mit
-							Verwalter geht an den Verwalter über, der am längsten dabei ist. Ein Team ohne Verwalter wird
-							samt Mitgliedern und Berichten gelöscht. Soll ein Team weiterlaufen, lade vorher einen
-							Verwalter ein.
-						</p>
-					{:else if teamsUnknown}
-						<p class="text-foreground">
-							Ob du Chef eines Teams bist, ließ sich gerade nicht prüfen. Eigene Teams gehen an einen
-							Verwalter über; ein Team ohne Verwalter wird mit gelöscht.
-						</p>
+		{#snippet title()}
+			<span class="text-destructive flex items-center gap-2">
+				<TriangleAlertIcon class="size-5 shrink-0" />
+				Server-Konto endgültig löschen?
+			</span>
+		{/snippet}
+		{#snippet description()}
+			<span class="block space-y-2 pt-2 text-left">
+				<span class="text-destructive block font-medium">
+					Dieser Vorgang kann nicht rückgängig gemacht werden.
+				</span>
+				<span class="block">
+					Alle verschlüsselten Datensätze, Passkeys und hinterlegten Geräte werden unwiderruflich vom Server gelöscht.
+					{#if linkedDeviceCount && linkedDeviceCount > 1}
+						<strong class="text-foreground block mt-1">Dies betrifft alle {linkedDeviceCount} verknüpften Geräte.</strong>
 					{/if}
-					<p class="text-foreground text-xs font-medium border-t pt-2">
-						✓ Deine bisher auf diesem Rechner erfassten Zeiten bleiben als lokale Kopie vollständig erhalten.
-					</p>
-				</Dialog.Description>
-			</Dialog.Header>
-			<Dialog.Footer class="gap-3">
-				<Button variant="outline" disabled={isLoading} onclick={() => (isDeleteAccountModalOpen = false)}>
-					Abbrechen
-				</Button>
-				<Button variant="destructive" disabled={isLoading} onclick={handleConfirmDeleteAccount}>
-					{isLoading ? "Löscht…" : "Ja, Server-Konto endgültig löschen"}
-				</Button>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
+				</span>
+				{#if ownedTeamCount > 0}
+					<span class="text-foreground block">
+						Du bist Chef von {ownedTeamCount === 1 ? "einem Team" : `${ownedTeamCount} Teams`}. Ein Team mit
+						Verwalter geht an den Verwalter über, der am längsten dabei ist. Ein Team ohne Verwalter wird
+						samt Mitgliedern und Berichten gelöscht. Soll ein Team weiterlaufen, lade vorher einen
+						Verwalter ein.
+					</span>
+				{:else if teamsUnknown}
+					<span class="text-foreground block">
+						Ob du Chef eines Teams bist, ließ sich gerade nicht prüfen. Eigene Teams gehen an einen
+						Verwalter über; ein Team ohne Verwalter wird mit gelöscht.
+					</span>
+				{/if}
+				<span class="text-foreground block text-xs font-medium border-t pt-2">
+					✓ Deine bisher auf diesem Rechner erfassten Zeiten bleiben als lokale Kopie vollständig erhalten.
+				</span>
+			</span>
+		{/snippet}
+	</ConfirmDialog>
 {/if}

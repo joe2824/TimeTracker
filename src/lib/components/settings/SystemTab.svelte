@@ -4,13 +4,14 @@
 	import { createSettingsForm } from "$lib/ui/settingsForm.svelte";
 	import { listEntryYears, type StoredYear } from "$lib/store";
 	import { Button } from "$lib/components/ui/button";
-	import * as Dialog from "$lib/components/ui/dialog";
+	import ConfirmDialog from "$lib/components/shared/ConfirmDialog.svelte";
 	import SettingRow from "$lib/components/shared/SettingRow.svelte";
 	import SettingsCard from "$lib/components/shared/SettingsCard.svelte";
 	import SettingToggle from "$lib/components/shared/SettingToggle.svelte";
 	import { capabilities, isTauri } from "$lib/platform/env";
 	import { account } from "$lib/sync/account.svelte";
-	import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
+	import { autostartEnabled, setAutostart } from "$lib/platform/autostart";
+	import { appTimeZone } from "$lib/time/tz";
 	import { checkForUpdate, updater } from "$lib/release/updater.svelte";
 	import { relaunch } from "@tauri-apps/plugin-process";
 	import { errorText, flushLog, logInfo } from "$lib/log";
@@ -35,11 +36,9 @@
 	let isChannelChanged = $state(false);
 	let storedYears = $state<StoredYear[]>([]);
 	let yearToDelete = $state<StoredYear | null>(null);
-	let isDeletingYear = $state(false);
 
 	// Backup & Restore
 	let isExportingBackup = $state(false);
-	let isRestoringBackup = $state(false);
 	let restoreFileInput = $state<HTMLInputElement | null>(null);
 	let pendingBackup = $state<TimeTrackerBackup | null>(null);
 	let pendingBackupStats = $state<BackupStats | null>(null);
@@ -90,7 +89,6 @@
 
 	async function handleConfirmRestore() {
 		if (!pendingBackup) return;
-		isRestoringBackup = true;
 		try {
 			const result = await restoreBackup(pendingBackup, restoreMode);
 			toast.success(
@@ -100,15 +98,13 @@
 			pendingBackupStats = null;
 		} catch (e) {
 			toast.error(`Wiederherstellung fehlgeschlagen: ${errorText(e)}`);
-		} finally {
-			isRestoringBackup = false;
 		}
 	}
 
 	onMount(async () => {
 		if (capabilities.autostart) {
 			try {
-				form.autostart = await isEnabled();
+				form.autostart = await autostartEnabled();
 			} catch (e) {
 				toast.error(`Autostart-Status nicht lesbar: ${e}`, { duration: 60000 });
 			}
@@ -126,8 +122,7 @@
 
 	async function toggleAutostart(v: boolean) {
 		try {
-			if (v) await enable();
-			else await disable();
+			await setAutostart(v);
 			await app.updateSettings({ autostart: v });
 			savedSystemAt = Date.now();
 		} catch (e) {
@@ -159,15 +154,12 @@
 	async function handleConfirmDeleteYear() {
 		const target = yearToDelete;
 		if (!target) return;
-		isDeletingYear = true;
 		try {
 			const months = await app.deleteYearEntries(target.year);
 			toast.success(`${target.year} gelöscht (${months} Monatsdatei${months === 1 ? "" : "en"}).`);
 			yearToDelete = null;
 		} catch (e) {
 			toast.error(`Löschen fehlgeschlagen: ${e}`);
-		} finally {
-			isDeletingYear = false;
 		}
 	}
 </script>
@@ -301,129 +293,108 @@
 {/if}
 
 <!-- Dialog: Sicherung wiederherstellen -->
-<Dialog.Root open={pendingBackup !== null} onOpenChange={(o) => !o && (pendingBackup = null)}>
-	<Dialog.Content class="sm:max-w-md">
-		<Dialog.Header>
-			<Dialog.Title class="flex items-center gap-2">
-				<FileTextIcon class="size-5 text-primary" />
-				Sicherung wiederherstellen
-			</Dialog.Title>
-			<Dialog.Description class="pt-2 text-left space-y-3">
-				{#if pendingBackupStats}
-					<div class="rounded-lg border bg-muted/40 p-3 text-xs space-y-1.5">
-						<div class="flex justify-between text-foreground font-medium">
-							<span>Aktivitäten:</span>
-							<span>{pendingBackupStats.activityCount}</span>
-						</div>
-						<div class="flex justify-between text-foreground font-medium">
-							<span>Erfasste Monate:</span>
-							<span>{pendingBackupStats.monthCount} {pendingBackupStats.months.length > 0 ? `(${pendingBackupStats.months[0]} bis ${pendingBackupStats.months[pendingBackupStats.months.length - 1]})` : ""}</span>
-						</div>
-						<div class="flex justify-between text-foreground font-medium">
-							<span>Gesamteinträge:</span>
-							<span>{pendingBackupStats.entryCount}</span>
-						</div>
-						{#if pendingBackupStats.createdAt}
-							<div class="flex justify-between text-muted-foreground pt-1 border-t">
-								<span>Erstellt am:</span>
-								<span>{new Date(pendingBackupStats.createdAt).toLocaleString("de-DE")}</span>
-							</div>
-						{/if}
+<ConfirmDialog
+	open={pendingBackup !== null}
+	class="sm:max-w-md"
+	confirmLabel={restoreMode === "replace" ? "Datenbestand ersetzen" : "Jetzt zusammenführen"}
+	busyLabel="Stelle wieder her…"
+	variant={restoreMode === "replace" ? "destructive" : "default"}
+	onConfirm={handleConfirmRestore}
+	onClose={() => (pendingBackup = null)}
+>
+	{#snippet title()}
+		<FileTextIcon class="size-5 text-primary" />
+		Sicherung wiederherstellen
+	{/snippet}
+	{#snippet description()}
+		<div class="pt-2 text-left space-y-3">
+			{#if pendingBackupStats}
+				<div class="rounded-lg border bg-muted/40 p-3 text-xs space-y-1.5">
+					<div class="flex justify-between text-foreground font-medium">
+						<span>Aktivitäten:</span>
+						<span>{pendingBackupStats.activityCount}</span>
 					</div>
-
-					{#if !pendingBackupStats.complete}
-						<div class="flex items-start gap-2 rounded-lg border border-amber-500/50 bg-amber-500/10 p-3 text-xs text-left">
-							<TriangleAlertIcon class="size-4 shrink-0 text-amber-600 mt-0.5" />
-							<span class="text-muted-foreground">
-								Diese Datei stammt aus einer älteren Version und sagt nicht, ob damals
-								schon alle Monate da waren. Prüfe die Liste oben, bevor du ersetzt.
-							</span>
+					<div class="flex justify-between text-foreground font-medium">
+						<span>Erfasste Monate:</span>
+						<span>{pendingBackupStats.monthCount} {pendingBackupStats.months.length > 0 ? `(${pendingBackupStats.months[0]} bis ${pendingBackupStats.months[pendingBackupStats.months.length - 1]})` : ""}</span>
+					</div>
+					<div class="flex justify-between text-foreground font-medium">
+						<span>Gesamteinträge:</span>
+						<span>{pendingBackupStats.entryCount}</span>
+					</div>
+					{#if pendingBackupStats.createdAt}
+						<div class="flex justify-between text-muted-foreground pt-1 border-t">
+							<span>Erstellt am:</span>
+							<span>{new Date(pendingBackupStats.createdAt).toLocaleString("de-DE", { timeZone: appTimeZone() })}</span>
 						</div>
 					{/if}
-				{/if}
-
-				<div class="space-y-2">
-					<div class="text-xs font-medium text-foreground">Wie soll die Sicherung eingespielt werden?</div>
-					<div class="space-y-2">
-						<label
-							class="flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors {restoreMode === 'merge' ? 'border-primary bg-primary/5' : 'hover:bg-muted/30'}"
-						>
-							<input
-								type="radio"
-								name="restoreMode"
-								value="merge"
-								checked={restoreMode === 'merge'}
-								onchange={() => (restoreMode = 'merge')}
-								class="mt-0.5 text-primary"
-							/>
-							<div class="text-xs">
-								<span class="font-medium text-foreground block">Zusammenführen (Empfohlen)</span>
-								<span class="text-muted-foreground">Fügt fehlende Monate, Einträge und Aktivitäten hinzu. Bestehende neuere Zeiten bleiben erhalten.</span>
-							</div>
-						</label>
-
-						<label
-							class="flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors {restoreMode === 'replace' ? 'border-destructive bg-destructive/5' : 'hover:bg-muted/30'}"
-						>
-							<input
-								type="radio"
-								name="restoreMode"
-								value="replace"
-								checked={restoreMode === 'replace'}
-								onchange={() => (restoreMode = 'replace')}
-								class="mt-0.5 text-destructive"
-							/>
-							<div class="text-xs">
-								<span class="font-medium text-foreground block">Vollständig ersetzen</span>
-								<span class="text-muted-foreground">
-									Überschreibt Einstellungen, Aktivitäten und Monate 1:1 mit dem Stand der
-									Datei. Monate, die in der Datei fehlen, werden geleert{account.linked
-										? " – auch auf deinen anderen Geräten"
-										: ""}.
-								</span>
-							</div>
-						</label>
-					</div>
 				</div>
-			</Dialog.Description>
-		</Dialog.Header>
-		<Dialog.Footer class="gap-2 sm:gap-0">
-			<Button variant="outline" disabled={isRestoringBackup} onclick={() => (pendingBackup = null)}>
-				Abbrechen
-			</Button>
-			<Button
-				variant={restoreMode === 'replace' ? 'destructive' : 'default'}
-				disabled={isRestoringBackup}
-				onclick={handleConfirmRestore}
-			>
-				{#if isRestoringBackup}
-					Stelle wieder her…
-				{:else}
-					{restoreMode === 'replace' ? 'Datenbestand ersetzen' : 'Jetzt zusammenführen'}
+
+				{#if !pendingBackupStats.complete}
+					<div class="flex items-start gap-2 rounded-lg border border-amber-500/50 bg-amber-500/10 p-3 text-xs text-left">
+						<TriangleAlertIcon class="size-4 shrink-0 text-amber-600 mt-0.5" />
+						<span class="text-muted-foreground">
+							Diese Datei stammt aus einer älteren Version und sagt nicht, ob damals
+							schon alle Monate da waren. Prüfe die Liste oben, bevor du ersetzt.
+						</span>
+					</div>
 				{/if}
-			</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+			{/if}
 
-<Dialog.Root open={yearToDelete !== null} onOpenChange={(o) => !o && (yearToDelete = null)}>
-	<Dialog.Content>
-		<Dialog.Header>
-			<Dialog.Title>{yearToDelete?.year} löschen?</Dialog.Title>
-			<Dialog.Description>
-				{yearToDelete?.entries} Einträge aus {yearToDelete?.months} Monat{yearToDelete?.months === 1
-					? ""
-					: "e"} werden endgültig gelöscht. Das lässt sich nicht rückgängig machen.
-			</Dialog.Description>
-		</Dialog.Header>
-		<Dialog.Footer>
-			<Button variant="outline" disabled={isDeletingYear} onclick={() => (yearToDelete = null)}>
-				Abbrechen
-			</Button>
-			<Button disabled={isDeletingYear} onclick={handleConfirmDeleteYear}>
-				{isDeletingYear ? "Lösche…" : `${yearToDelete?.year} endgültig löschen`}
-			</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+			<div class="space-y-2">
+				<div class="text-xs font-medium text-foreground">Wie soll die Sicherung eingespielt werden?</div>
+				<div class="space-y-2">
+					<label
+						class="flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors {restoreMode === 'merge' ? 'border-primary bg-primary/5' : 'hover:bg-muted/30'}"
+					>
+						<input
+							type="radio"
+							name="restoreMode"
+							value="merge"
+							checked={restoreMode === 'merge'}
+							onchange={() => (restoreMode = 'merge')}
+							class="mt-0.5 text-primary"
+						/>
+						<div class="text-xs">
+							<span class="font-medium text-foreground block">Zusammenführen (Empfohlen)</span>
+							<span class="text-muted-foreground">Fügt fehlende Monate, Einträge und Aktivitäten hinzu. Bestehende neuere Zeiten bleiben erhalten.</span>
+						</div>
+					</label>
 
+					<label
+						class="flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors {restoreMode === 'replace' ? 'border-destructive bg-destructive/5' : 'hover:bg-muted/30'}"
+					>
+						<input
+							type="radio"
+							name="restoreMode"
+							value="replace"
+							checked={restoreMode === 'replace'}
+							onchange={() => (restoreMode = 'replace')}
+							class="mt-0.5 text-destructive"
+						/>
+						<div class="text-xs">
+							<span class="font-medium text-foreground block">Vollständig ersetzen</span>
+							<span class="text-muted-foreground">
+								Überschreibt Einstellungen, Aktivitäten und Monate 1:1 mit dem Stand der
+								Datei. Monate, die in der Datei fehlen, werden geleert{account.linked
+									? " – auch auf deinen anderen Geräten"
+									: ""}.
+							</span>
+						</div>
+					</label>
+				</div>
+			</div>
+		</div>
+	{/snippet}
+</ConfirmDialog>
+
+<ConfirmDialog
+	open={yearToDelete !== null}
+	title={`${yearToDelete?.year} löschen?`}
+	description={`${yearToDelete?.entries} Einträge aus ${yearToDelete?.months} Monat${yearToDelete?.months === 1 ? "" : "e"} werden endgültig gelöscht. Das lässt sich nicht rückgängig machen.`}
+	confirmLabel={`${yearToDelete?.year} endgültig löschen`}
+	busyLabel="Lösche…"
+	variant="default"
+	onConfirm={handleConfirmDeleteYear}
+	onClose={() => (yearToDelete = null)}
+/>

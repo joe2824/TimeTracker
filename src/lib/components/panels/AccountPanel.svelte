@@ -2,25 +2,22 @@
 	import { onDestroy } from "svelte";
 	import * as Card from "$lib/components/ui/card";
 	import * as Dialog from "$lib/components/ui/dialog";
+	import ConfirmDialog from "$lib/components/shared/ConfirmDialog.svelte";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
-	import { Checkbox } from "$lib/components/ui/checkbox";
 	import { Badge } from "$lib/components/ui/badge";
 	import PairingCode from "$lib/components/onboarding/PairingCode.svelte";
 	import { PairingFlow, suggestDeviceName } from "$lib/account/pairingFlow.svelte";
 	import { toast } from "svelte-sonner";
 	import { account } from "$lib/sync/account.svelte";
 	import { ACCOUNT_KEY, invalidate, warm } from "$lib/ui/prefetch";
-	import { ApiError } from "$lib/sync/api";
-	import { app } from "$lib/app.svelte";
 	import { formatPairingCode, isPairingCode, normalizePairingCode } from "$lib/crypto/vault";
 	import { fmtDateHuman } from "$lib/time/time";
 	import { isTauri } from "$lib/platform/env";
-	import { rememberServerUrl, rememberedServerUrl } from "$lib/account/serverUrl";
+	import { initialServerUrl, rememberServerUrl } from "$lib/account/serverUrl";
 	import { RELEASES_URL } from "$lib/platform/os";
-	import { errorText } from "$lib/log";
-	import { DEFAULT_SERVER } from "$lib/defaults";
+	import { userErrorText } from "$lib/log";
 	import { createLink } from "$lib/account/invite";
 	import { openExternal } from "$lib/platform/open";
 	import { pairStartLink } from "$lib/platform/deeplink";
@@ -30,13 +27,9 @@
 	import ClipboardPasteIcon from "@lucide/svelte/icons/clipboard-paste";
 	import PlusIcon from "@lucide/svelte/icons/plus";
 	import SmartphoneIcon from "@lucide/svelte/icons/smartphone";
-	import ShieldAlertIcon from "@lucide/svelte/icons/shield-alert";
 	import { Skeleton } from "$lib/components/ui/skeleton";
 
-	const formatError = (e: unknown, fallback: string) =>
-		e instanceof Error ? errorText(e) : fallback;
-
-	let serverUrl = $state(account.serverUrl || rememberedServerUrl() || DEFAULT_SERVER || "");
+	let serverUrl = $state(initialServerUrl(account.serverUrl));
 
 	$effect(() => {
 		if (serverUrl && typeof localStorage !== "undefined") {
@@ -45,16 +38,13 @@
 	});
 	let remotePairingCode = $state("");
 	let addDeviceOpen = $state(false);
-	let inviteCode = $state("");
-	let recoveryPhrase = $state("");
 	let isPhraseRecoveryOpen = $state(false);
 	let phraseRecoveryInput = $state("");
-	let isPhraseConfirmed = $state(false);
 	let isLoading = $state(false);
 
 	const pairing = new PairingFlow({
 		done: () => toast.success("Gerät verknüpft – der erste Abgleich läuft."),
-		failed: (e) => toast.error(formatError(e, "Kopplung fehlgeschlagen"))
+		failed: (e) => toast.error(userErrorText(e, "Kopplung fehlgeschlagen"))
 	});
 	// Sonst sieht der Timer weiter nach, wenn dieser Bereich verschwindet.
 	onDestroy(() => pairing.stop());
@@ -91,20 +81,13 @@
 			if (openBrowser) await openExternal(createLink(url));
 		} catch (e) {
 			toast.error(
-				formatError(e, openBrowser ? "Konnte nicht beginnen" : "Kopplung nicht möglich")
+				userErrorText(e, openBrowser ? "Konnte nicht beginnen" : "Kopplung nicht möglich")
 			);
 		} finally {
 			isLoading = false;
 		}
 	}
 
-	/**
-	 * Den Code aus der Zwischenablage holen.
-	 *
-	 * In diese Richtung geht kein Link: `timetracker://` fuehrt ZUR App, nicht
-	 * zurueck in den Browser. Wer den Code drueben kopiert hat, soll ihn hier
-	 * wenigstens nicht abtippen muessen.
-	 */
 	/**
 	 * Die Anwendung auf diesem Rechner bitten, selbst eine Kopplung zu beginnen.
 	 *
@@ -115,10 +98,17 @@
 		try {
 			await openExternal(pairStartLink(account.serverUrl));
 		} catch (e) {
-			toast.error(formatError(e, "Anwendung konnte nicht geöffnet werden"));
+			toast.error(userErrorText(e, "Anwendung konnte nicht geöffnet werden"));
 		}
 	}
 
+	/**
+	 * Den Code aus der Zwischenablage holen.
+	 *
+	 * In diese Richtung geht kein Link: `timetracker://` fuehrt ZUR App, nicht
+	 * zurueck in den Browser. Wer den Code drueben kopiert hat, soll ihn hier
+	 * wenigstens nicht abtippen muessen.
+	 */
 	async function pastePairingCode() {
 		try {
 			const text = await navigator.clipboard.readText();
@@ -145,8 +135,9 @@
 			const label = await account.approvePairing(normalized);
 			remotePairingCode = "";
 			toast.success(`„${label}" ist jetzt verknüpft.`);
+			void loadDevices(true);
 		} catch (e) {
-			toast.error(formatError(e, "Code konnte nicht bestätigt werden"));
+			toast.error(userErrorText(e, "Code konnte nicht bestätigt werden"));
 		} finally {
 			isLoading = false;
 		}
@@ -162,16 +153,25 @@
 		try {
 			if (fresh) invalidate(ACCOUNT_KEY);
 			const info = await warm(ACCOUNT_KEY, () => account.accountInfo());
+			// Inzwischen getrennt: die Antwort gehört zum alten Konto.
+			if (!account.linked) return;
 			devices = info ? info.devices.filter((d) => !d.revokedAt) : [];
 		} catch (e) {
-			toast.error(formatError(e, "Geräte nicht abrufbar"));
+			toast.error(userErrorText(e, "Geräte nicht abrufbar"));
 		} finally {
-			isDevicesLoaded = true;
+			if (account.linked) isDevicesLoaded = true;
 		}
 	}
 
 	$effect(() => {
-		if (account.linked && !isDevicesLoaded) void loadDevices();
+		if (!account.linked) {
+			// Nach einer neuen Verknüpfung die Liste frisch holen, nicht die alte zeigen.
+			isDevicesLoaded = false;
+			devices = [];
+			invalidate(ACCOUNT_KEY);
+			return;
+		}
+		if (!isDevicesLoaded) void loadDevices();
 	});
 
 	let deviceToDisconnect = $state<DeviceItem | null>(null);
@@ -185,35 +185,7 @@
 			await loadDevices(true);
 			toast.success(`„${target.label}" ist getrennt.`);
 		} catch (e) {
-			toast.error(formatError(e, "Trennen fehlgeschlagen"));
-		}
-	}
-
-	let isInviteOpen = $state(false);
-
-	async function handleCreateAccount(code = "") {
-		const url = serverUrl.trim();
-		if (!url) {
-			toast.error("Bitte die Adresse des Servers angeben.");
-			return;
-		}
-		isLoading = true;
-		try {
-			recoveryPhrase = await account.createAccount(url, app.settings.senderName.trim(), suggestDeviceName(), {
-				invite: code.trim() || undefined
-			});
-			inviteCode = "";
-			isInviteOpen = false;
-			isPhraseConfirmed = false;
-		} catch (e) {
-			if (e instanceof ApiError && e.status === 403) {
-				if (code.trim()) toast.error("Dieser Einladungscode gilt nicht.");
-				isInviteOpen = true;
-				return;
-			}
-			toast.error(formatError(e, "Konto konnte nicht angelegt werden"));
-		} finally {
-			isLoading = false;
+			toast.error(userErrorText(e, "Trennen fehlgeschlagen"));
 		}
 	}
 
@@ -230,23 +202,11 @@
 			phraseRecoveryInput = "";
 			toast.success("Konto zurückgeholt. Die Daten kommen jetzt vom Server.");
 		} catch (e) {
-			toast.error(formatError(e, "Zurückholen fehlgeschlagen"));
+			toast.error(userErrorText(e, "Zurückholen fehlgeschlagen"));
 		} finally {
 			isLoading = false;
 		}
 	}
-
-	// Ein Code aus einem Link landet nur im Feld, er wird nicht durchgewunken.
-	// Wer den Link geschickt hat, muss nicht der sein, dem der Rechner gehört:
-	// ein untergeschobenes `?pair=` verpackte sonst still den Vault-Schlüssel
-	// für ein fremdes Gerät. Bestätigt wird von Hand, nach dem Blick auf den
-	// Bildschirm des Rechners, der wirklich dazusoll.
-	$effect(() => {
-		if (!account.pairCodeFromLink) return;
-		remotePairingCode = account.pairCodeFromLink;
-		account.pairCodeFromLink = "";
-	});
-
 </script>
 
 <Card.Root>
@@ -265,38 +225,6 @@
 	</Card.Header>
 
 	<Card.Content class="space-y-4">
-		{#if recoveryPhrase}
-			<div class="border-primary/40 space-y-3 rounded-lg border bg-primary/5 p-4">
-				<div>
-					<p class="font-medium">Deine Wiederherstellungs-Phrase</p>
-					<p class="text-muted-foreground text-sm">
-						Wird genau einmal gezeigt. Solange kein Passkey und kein zweites Gerät da ist,
-						sind diese Wörter der einzige Weg zu deinen Zeiten.
-					</p>
-				</div>
-
-				<p class="bg-muted rounded-lg p-3 font-mono text-sm leading-relaxed select-all">
-					{recoveryPhrase}
-				</p>
-
-				<Label for="phrase-gesichert" class="items-start gap-2.5 text-sm font-normal">
-					<Checkbox id="phrase-gesichert" bind:checked={isPhraseConfirmed} class="mt-0.5" />
-					<span>Ich habe die Phrase gesichert.</span>
-				</Label>
-
-				<Button
-					disabled={!isPhraseConfirmed}
-					onclick={() => {
-						recoveryPhrase = "";
-						inviteCode = "";
-						toast.success("Konto angelegt. Deine Zeiten werden jetzt hochgeladen.");
-					}}
-				>
-					Weiter
-				</Button>
-			</div>
-		{/if}
-
 		<!-- Status-Box -->
 		<div class="flex flex-col gap-3 rounded-lg border bg-muted/30 p-3.5 sm:flex-row sm:items-center sm:justify-between">
 			<div class="flex items-center gap-3 min-w-0">
@@ -516,45 +444,14 @@
 	</Card.Content>
 </Card.Root>
 
-<Dialog.Root open={deviceToDisconnect !== null} onOpenChange={(o) => !o && (deviceToDisconnect = null)}>
-	<Dialog.Content>
-		<Dialog.Header>
-			<Dialog.Title>„{deviceToDisconnect?.label}" trennen?</Dialog.Title>
-			<Dialog.Description>
-				Das Gerät kommt danach nicht mehr an dieses Konto. Was dort erfasst wurde, bleibt auf
-				diesem Gerät und beim Server – nur der Zugang ist weg. Zurück geht es über eine neue
-				Kopplung.
-			</Dialog.Description>
-		</Dialog.Header>
-		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (deviceToDisconnect = null)}>Abbrechen</Button>
-			<Button variant="destructive" onclick={handleConfirmDisconnect}>Trennen</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
-
-<Dialog.Root open={isInviteOpen} onOpenChange={(o) => (isInviteOpen = o)}>
-	<Dialog.Content class="sm:max-w-sm">
-		<Dialog.Header>
-			<Dialog.Title>Einladungscode</Dialog.Title>
-			<Dialog.Description>
-				Dieser Server nimmt keine offenen Registrierungen an.
-			</Dialog.Description>
-		</Dialog.Header>
-		<Input
-			bind:value={inviteCode}
-			placeholder="ABCD-EFGH-JKLM-NPQR"
-			class="font-mono tracking-wider uppercase"
-			onkeydown={(e) => e.key === "Enter" && handleCreateAccount(inviteCode)}
-		/>
-		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (isInviteOpen = false)}>Abbrechen</Button>
-			<Button disabled={isLoading || !inviteCode.trim()} onclick={() => handleCreateAccount(inviteCode)}>
-				{isLoading ? "Legt an…" : "Konto anlegen"}
-			</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+<ConfirmDialog
+	open={deviceToDisconnect !== null}
+	title={`„${deviceToDisconnect?.label}" trennen?`}
+	description="Das Gerät kommt danach nicht mehr an dieses Konto. Was dort erfasst wurde, bleibt auf diesem Gerät und beim Server – nur der Zugang ist weg. Zurück geht es über eine neue Kopplung."
+	confirmLabel="Trennen"
+	onConfirm={handleConfirmDisconnect}
+	onClose={() => (deviceToDisconnect = null)}
+/>
 
 <Dialog.Root bind:open={addDeviceOpen}>
 	<Dialog.Content class="sm:max-w-md">

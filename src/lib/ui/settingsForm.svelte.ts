@@ -15,6 +15,8 @@ export interface SettingsFormHandle {
 	form: SettingsForm;
 	/** Die genannten Felder aus der Arbeitskopie speichern. */
 	save(keys: readonly (keyof Settings)[]): Promise<void>;
+	/** Der Patch für die genannten Felder, ohne ihn zu speichern. */
+	patch(keys: readonly (keyof Settings)[]): Partial<Settings>;
 }
 
 /**
@@ -32,8 +34,10 @@ export function createSettingsForm(): SettingsFormHandle {
 		synced = syncForm(form, synced, storedSettings());
 	});
 
+	const patch = (keys: readonly (keyof Settings)[]) => patchFrom(form, keys, storedSettings());
 	return {
 		form,
-		save: (keys) => app.updateSettings(patchFrom(form, keys, storedSettings()))
+		save: (keys) => app.updateSettings(patch(keys)),
+		patch
 	};
 }
