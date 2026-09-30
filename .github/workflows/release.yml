@@ -218,7 +218,12 @@ jobs:
           tagName: ${{ needs.target.outputs.tag }}
           releaseName: 'TimeTracker ${{ needs.target.outputs.tag }}'
           releaseBody: ${{ steps.changelog.outputs.body }}
-          releaseDraft: false
+          # Als Entwurf anlegen und erst im Schritt "Release veroeffentlichen"
+          # freigeben: tauri-action veroeffentlicht sonst, bevor latest.json
+          # hochgeladen ist, und releases/latest/download/latest.json liefert
+          # so lange 404. Die Download-Adressen im Manifest setzt tauri-action
+          # bei einem Entwurf schon auf den Tag, nicht auf "untagged-...".
+          releaseDraft: true
           prerelease: ${{ needs.target.outputs.stable == 'false' }}
           # Betas nur als NSIS-Installer: WiX/MSI nimmt keine Vorabversionen an
           # ("0.8.0-beta.1" ist keine gültige MSI-Version), der Build bräche sonst
@@ -226,6 +231,29 @@ jobs:
           # entsteht trotzdem – es hängt an createUpdaterArtifacts, nicht am
           # Bundle-Ziel; "updater" ist in Tauri v2 kein gültiges Ziel mehr.
           args: ${{ needs.target.outputs.stable == 'false' && '--bundles nsis' || '' }}
+
+      # Erst jetzt ist latest.json am Release. Vor dem Beta-Manifest, weil
+      # dieses auf die Installer DIESES Releases zeigt - solange es ein
+      # Entwurf ist, bekaeme jeder Beta-Nutzer beim Herunterladen 404.
+      - name: Release veroeffentlichen
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.target.outputs.tag }}
+          STABLE: ${{ needs.target.outputs.stable }}
+        run: |
+          set -euo pipefail
+          # Vorabversionen duerfen nie `latest` werden - dort sieht der stabile
+          # Kanal nach.
+          if [ "$STABLE" = "true" ]; then
+            FLAGS=(--prerelease=false --latest)
+          else
+            FLAGS=(--prerelease --latest=false)
+          fi
+          gh release view "$TAG" --json assets -q '.assets[].name' | grep -qx latest.json \
+            || { echo "::error::latest.json fehlt an ${TAG} - Release bleibt Entwurf."; exit 1; }
+          gh release edit "$TAG" --draft=false "${FLAGS[@]}"
+          echo "${TAG} ist veroeffentlicht."
 
       # Das Manifest des Beta-Kanals liegt an einem Release mit festem Tag `beta`
       # und wird bei JEDEM Build überschrieben – auch bei einem stabilen. So

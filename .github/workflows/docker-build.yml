@@ -95,14 +95,12 @@ jobs:
           # Container steckt, ohne ihn aufzumachen - und ob es von hier kommt.
           sbom: true
           provenance: mode=max
-          # Der Zwischenspeicher liegt in der Registry: ohne ihn uebersetzt jeder
-          # Lauf better-sqlite3 fuer beide Architekturen neu, und das dauert.
-          # Aendert sich node:22-alpine nicht, faellt der woechentliche Lauf
-          # dadurch auf denselben Digest zurueck und kostet fast nichts.
-          cache-from: |
-            type=gha
-            type=registry,ref=${{ inputs.image }}:buildcache
-          cache-to: type=gha,mode=max
+          # Ohne Cache uebersetzt jeder Lauf better-sqlite3 fuer beide
+          # Architekturen neu. `ignore-error`: der Cache-Export laeuft erst
+          # NACH dem Push - scheitert er, sind die Marken schon umgesetzt, und
+          # ein Abbruch hier liesse das Image unsigniert zurueck.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max,ignore-error=true
 
       # Beglaubigung von GitHub selbst - nachpruefbar mit
       # `gh attestation verify oci://<abbild> --repo <repo>`.
@@ -122,6 +120,19 @@ jobs:
         env:
           ZIEL: ${{ inputs.image }}@${{ steps.push.outputs.digest }}
         run: cosign sign --yes "$ZIEL"
+
+      # Dieselbe Pruefung, die Nutzer laut Release-Notiz ausfuehren: fehlt die
+      # Signatur, soll der Lauf rot sein und nicht erst beim Nutzer auffallen.
+      - name: Signatur pruefen
+        env:
+          ZIEL: ${{ inputs.image }}@${{ steps.push.outputs.digest }}
+          REPO: ${{ github.repository }}
+        run: |
+          cosign verify "$ZIEL" \
+            --certificate-identity-regexp "^https://github.com/${REPO}/\.github/workflows/docker-build\.yml@" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            > /dev/null
+          echo "Signatur von $ZIEL ist gueltig."
 
       - name: Zusammenfassung
         env:

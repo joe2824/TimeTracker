@@ -29,7 +29,7 @@ server/*.db-shm
 server/*.db-wal
 server/static/
 
-# Arbeitskopie der Wiki-Seiten (eigenes Repo, siehe scripts/wiki-push.sh)
+# Lokale Arbeitskopie des GitHub-Wikis (eigenes Repo)
 wiki/
 
 # Server-Datenbank aus Testlaeufen im Repo-Wurzelverzeichnis
