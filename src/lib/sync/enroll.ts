@@ -10,21 +10,21 @@ import type {
 import {
 	createRecoveryPhrase,
 	createVaultKey,
-	fromBase64,
+	fromBase64Url,
 	importVaultKey,
 	isValidRecoveryPhrase,
 	recoveryLookupId,
+	recoveryWrap,
 	toBase64,
+	toBase64Url,
 	unwrapWithPhrase,
 	unwrapWithPrf,
 	vaultProof,
 	type VaultKey,
-	wrapWithPhrase,
 	wrapWithPrf
 } from "../crypto/vault";
 import { Api, ApiError } from "./api";
 import { logWarn } from "../log";
-import { platformFetch } from "../platform/http";
 import { CHALLENGE_REUSE_MS } from "$shared/codes";
 
 /** Die Verpackung mit der Phrase öffnen - oder verständlich scheitern. */
@@ -34,6 +34,13 @@ async function openWithPhrase(payload: string, phrase: string): Promise<VaultKey
 	} catch {
 		throw new Error("Die Wörter passen nicht zu diesem Konto – bitte noch einmal prüfen.");
 	}
+}
+
+type Wrap = Awaited<ReturnType<Api["wraps"]>>["wraps"][number];
+
+/** Die Passkey-Verpackung zu genau diesem Passkey. */
+function passkeyWrapFor(wraps: Wrap[], credentialId: string): Wrap | undefined {
+	return wraps.find((w) => w.kind === "passkey" && w.credentialId === credentialId);
 }
 
 /** Die Verpackung mit dem PRF-Wert öffnen - oder null, wenn sie nicht aufgeht. */
@@ -72,7 +79,7 @@ export function prfBytes(first: unknown): Uint8Array | null {
 		const v = first as ArrayBufferView;
 		return new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
 	}
-	if (typeof first === "string") return fromBase64(first.replace(/-/g, "+").replace(/_/g, "/"));
+	if (typeof first === "string") return fromBase64Url(first);
 	if (typeof first === "object") {
 		// Ein ArrayBuffer, der durch structuredClone oder JSON gegangen ist, kommt
 		// als {"0":12,"1":250,...} zurück - oder als leeres Objekt, dann ist er weg.
@@ -90,11 +97,6 @@ function prfOf(response: RegistrationResponseJSON | AuthenticationResponseJSON):
 		prf?: { enabled?: boolean; results?: { first?: unknown } };
 	};
 	return prfBytes(ext?.prf?.results?.first);
-}
-
-/** WebAuthn-JSON erwartet base64url, nicht base64. */
-function toBase64Url(bytes: Uint8Array): string {
-	return toBase64(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 /** Die PRF-Eingabe an die Optionen hängen. */
@@ -151,7 +153,7 @@ const registerKey = (baseUrl: string, displayName: string, invite?: string) =>
 /** Die Anmelde-Aufgabe vorladen. */
 export function prepareLogin(baseUrl: string): Promise<LoginStart> {
 	return prepare(loginKey(baseUrl), () =>
-		new Api({ baseUrl, fetchFn: platformFetch }).loginStart()
+		new Api({ baseUrl }).loginStart()
 	);
 }
 
@@ -162,7 +164,7 @@ export function prepareRegister(
 	invite?: string
 ): Promise<RegisterStart> {
 	return prepare(registerKey(baseUrl, displayName, invite), () =>
-		new Api({ baseUrl, fetchFn: platformFetch }).registerStart(displayName, invite)
+		new Api({ baseUrl }).registerStart(displayName, invite)
 	);
 }
 
@@ -184,7 +186,7 @@ export async function register(
 	displayName: string,
 	opts: { invite?: string; email?: string } = {}
 ): Promise<EnrollResult> {
-	const api = new Api({ baseUrl, fetchFn: platformFetch });
+	const api = new Api({ baseUrl });
 
 	const task = prepareRegister(baseUrl, displayName, opts.invite);
 	const start = await task;
@@ -216,11 +218,7 @@ export async function register(
 			invite: opts.invite,
 			email: opts.email,
 			response,
-			recoveryWrap: {
-				payload: await wrapWithPhrase(key, recoveryPhrase),
-				recoveryId: await recoveryLookupId(recoveryPhrase),
-				vaultProof: await vaultProof(key)
-			},
+			recoveryWrap: await recoveryWrap(key, recoveryPhrase),
 			passkeyWrap: prf ? { payload: await wrapWithPrf(key, prf) } : null
 		});
 	} finally {
@@ -358,9 +356,7 @@ export async function reunlockWithPasskey(
 	const found = await harvestPrf(ids);
 	if (found.ok) {
 		const { wraps } = await api.wraps();
-		const wrap = wraps.find(
-			(w) => w.kind === "passkey" && w.credentialId === found.credentialId
-		);
+		const wrap = passkeyWrapFor(wraps, found.credentialId);
 		const key = wrap ? await openWithPrf(wrap.payload, found.prf) : null;
 		if (key) return key;
 	}
@@ -376,7 +372,7 @@ export async function reunlockWithPasskey(
 
 /** Anmelden. */
 export async function login(baseUrl: string): Promise<LoginResult> {
-	const api = new Api({ baseUrl, fetchFn: platformFetch });
+	const api = new Api({ baseUrl });
 	const task = prepareLogin(baseUrl);
 	const start = await task;
 	const response = await startAuthentication({
@@ -391,7 +387,7 @@ export async function login(baseUrl: string): Promise<LoginResult> {
 
 	const { wraps } = await api.wraps();
 	const prf = prfOf(response);
-	const passkeyWrap = wraps.find((w) => w.kind === "passkey" && w.credentialId === response.id);
+	const passkeyWrap = passkeyWrapFor(wraps, response.id);
 	const key = prf && passkeyWrap ? await openWithPrf(passkeyWrap.payload, prf) : null;
 
 	// Sonst ist nicht zu unterscheiden, ob der PRF-Wert fehlte oder die Verpackung.
@@ -424,7 +420,7 @@ export async function unlockWithPhrase(
 	phrase: string,
 	repair?: { credentialId: string; prf: Uint8Array | null }
 ): Promise<VaultKey> {
-	const api = new Api({ baseUrl, fetchFn: platformFetch });
+	const api = new Api({ baseUrl });
 	const { wraps } = await api.wraps();
 	const wrap = wraps.find((w) => w.kind === "recovery");
 	if (!wrap) throw new Error("Für dieses Konto ist keine Wiederherstellungs-Phrase hinterlegt.");
@@ -446,7 +442,7 @@ export async function recoverWithPhrase(
 	if (!isValidRecoveryPhrase(phrase)) {
 		throw new Error("Das sind nicht 24 gültige Wörter – bitte noch einmal prüfen.");
 	}
-	const api = new Api({ baseUrl, fetchFn: platformFetch });
+	const api = new Api({ baseUrl });
 	const recoveryId = await recoveryLookupId(phrase);
 
 	const { wrap } = await api.recoverWrap(recoveryId);
@@ -485,7 +481,7 @@ export async function registerFromDevice(
 	key: VaultKey;
 	recoveryPhrase: string;
 }> {
-	const api = new Api({ baseUrl, fetchFn: platformFetch });
+	const api = new Api({ baseUrl });
 	const created = await api.registerDevice({
 		displayName,
 		label,
@@ -501,10 +497,8 @@ export async function registerFromDevice(
 	const recoveryPhrase = createRecoveryPhrase();
 	// Die Phrase zuerst: sie ist der einzige Weg zurück. Scheitert das, scheitert
 	// das Anlegen sichtbar - statt still ein unbrauchbares Konto zu hinterlassen.
-	await api.putWrap("recovery", await wrapWithPhrase(key, recoveryPhrase), undefined, {
-		recoveryId: await recoveryLookupId(recoveryPhrase),
-		vaultProof: await vaultProof(key)
-	});
+	const { payload, ...lookup } = await recoveryWrap(key, recoveryPhrase);
+	await api.putWrap("recovery", payload, undefined, lookup);
 
 	return {
 		userId: created.userId,

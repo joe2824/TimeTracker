@@ -28,8 +28,3 @@ export async function deviceId(): Promise<string> {
 	if (created) logInfo("Geraetekennung angelegt", { id });
 	return id;
 }
-
-/** Nur für Tests: den Puffer vergessen. */
-export function resetDeviceForTests(): void {
-	cached = null;
-}

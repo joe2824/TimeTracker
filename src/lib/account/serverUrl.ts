@@ -1,8 +1,5 @@
 // Die zuletzt benutzte Serveradresse - damit sie niemand zweimal eintippt.
-//
-// Onboarding und Konto-Bereich merkten sie sich unter verschiedenen Schlüsseln
-// und lasen den jeweils anderen nie. Wer sie im Assistenten eingegeben hatte,
-// fand das Feld in den Einstellungen trotzdem leer.
+import { DEFAULT_SERVER } from "../defaults";
 
 const KEY = "preferred_server_url";
 /** Der Schlüssel aus dem Konto-Bereich. Nur noch zum Lesen, für Bestandsgeräte. */
@@ -25,4 +22,9 @@ export function rememberedServerUrl(): string {
 	} catch {
 		return "";
 	}
+}
+
+/** Vorbelegung des Adressfelds: verknüpfter Server, zuletzt benutzter, eingebauter. */
+export function initialServerUrl(linked: string): string {
+	return linked || rememberedServerUrl() || DEFAULT_SERVER || "";
 }

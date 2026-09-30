@@ -232,3 +232,33 @@ describe("Tray-Fenster: nur vormerken, nicht abgleichen", () => {
 		expect(files.has("data/outbox.json")).toBe(false);
 	});
 });
+
+describe("Serveradresse", () => {
+	it("legt die Adresse bereinigt ab, nicht so, wie sie eingegeben wurde", async () => {
+		try {
+			await account.linkWithSession("HTTP://Test.Example/", await createVaultKey(), "Ich");
+			await settled();
+
+			expect(account.serverUrl).toBe("http://test.example");
+			expect((await store.loadDevice())?.serverUrl).toBe("http://test.example");
+		} finally {
+			await account.unlink();
+		}
+	});
+
+	it("bereinigt beim Start eine Adresse, die eine ältere Fassung roh abgelegt hat", async () => {
+		try {
+			await account.linkWithSession("http://test", await createVaultKey(), "Ich");
+			await settled();
+			const info = (await store.loadDevice())!;
+			await store.saveDevice({ ...info, serverUrl: "HTTP://Test.Example//" });
+
+			await account.init();
+
+			expect(account.serverUrl).toBe("http://test.example");
+			expect((await store.loadDevice())?.serverUrl).toBe("http://test.example");
+		} finally {
+			await account.unlink();
+		}
+	});
+});

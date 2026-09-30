@@ -1,18 +1,8 @@
 // Die Spuren des Abgleichs aus dem lokalen Bestand nehmen.
 import { listEntryMonths, listTimeReportMonths, remoteStore as store } from "../store";
 import { clearChanges, pendingChanges, refreshPending } from "./outbox";
+import { isStamped as stamped, withoutStamp } from "./stamp";
 import type { Settings, SyncMeta } from "../types";
-
-/** Die drei Stempelfelder abstreifen - und sonst nichts anfassen. */
-function withoutStamp<T extends SyncMeta>(item: T): T {
-	const { updatedAt: _u, rev: _r, deviceId: _d, ...rest } = item;
-	return rest as T;
-}
-
-/** Ob an einem Datensatz überhaupt ein Stempel hängt. */
-function stamped(item: SyncMeta): boolean {
-	return item.updatedAt !== undefined || item.rev !== undefined || item.deviceId !== undefined;
-}
 
 export interface DetachResult {
 	months: number;

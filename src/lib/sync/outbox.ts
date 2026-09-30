@@ -17,6 +17,7 @@ import {
 } from "../store";
 import { diffAndStamp } from "./stamp";
 import { logWarn } from "../log";
+import { createSerialQueue } from "../utils";
 
 export type RecordKind = "entry" | "activity" | "settings" | "timereport";
 
@@ -133,7 +134,7 @@ export async function rebaseChanges(
 }
 
 /** Innerhalb dieses Fensters eine Änderung nach der anderen. */
-let chain: Promise<unknown> = Promise.resolve();
+const serial = createSerialQueue();
 
 /**
  * outbox.json lesen, `change` anwenden und zurückschreiben – `null` heisst:
@@ -147,9 +148,7 @@ function update(change: (list: PendingChange[]) => PendingChange[] | null): Prom
 			pending = next ?? onDisk;
 			if (next) await persist();
 		});
-	const next = chain.then(run, run);
-	chain = next.catch(() => {});
-	return next;
+	return serial(run);
 }
 
 async function readOutbox(): Promise<PendingChange[]> {

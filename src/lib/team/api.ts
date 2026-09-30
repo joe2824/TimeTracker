@@ -2,27 +2,8 @@
 // grossen `Api`-Klasse aus sync/api.ts: die läuft mit Geräte-Token/Sitzung für
 // ein Personenkonto, hier gibt es keins - nur den Team-Token im eigenen Kopf
 // `x-team-token`, oder noch gar keinen (Vorschau, Beitritt).
-import { ApiError, apiErrorFrom, normalizeServerUrl, type FetchFn } from "../sync/api";
+import { requestJson, type FetchFn, type TeamActivity } from "../sync/api";
 import { platformFetch } from "../platform/http";
-
-async function call<T>(
-	fetchFn: FetchFn,
-	baseUrl: string,
-	path: string,
-	init: RequestInit = {}
-): Promise<T> {
-	let res: Response;
-	try {
-		res = await fetchFn(`${normalizeServerUrl(baseUrl)}${path}`, {
-			...init,
-			headers: { "content-type": "application/json", ...(init.headers ?? {}) }
-		});
-	} catch (e) {
-		throw new ApiError(e instanceof Error ? e.message : "Server nicht erreichbar", 0);
-	}
-	if (!res.ok) throw await apiErrorFrom(res);
-	return (await res.json()) as T;
-}
 
 export interface TeamJoinResult {
 	teamMemberId: string;
@@ -36,7 +17,7 @@ export function previewTeamInvite(
 	code: string,
 	fetchFn: FetchFn = platformFetch
 ): Promise<{ teamName: string }> {
-	return call(fetchFn, serverUrl, `/api/team/join?code=${encodeURIComponent(code)}`);
+	return requestJson(fetchFn, serverUrl, `/api/team/join?code=${encodeURIComponent(code)}`);
 }
 
 /**
@@ -50,7 +31,7 @@ export function previewAdminInvite(
 	code: string,
 	fetchFn: FetchFn = platformFetch
 ): Promise<{ teamName: string }> {
-	return call(fetchFn, serverUrl, `/api/team/admin/join?code=${encodeURIComponent(code)}`);
+	return requestJson(fetchFn, serverUrl, `/api/team/admin/join?code=${encodeURIComponent(code)}`);
 }
 
 /** Beitreten - legt ein neues Mitglied an und liefert dessen Token. */
@@ -61,20 +42,10 @@ export function joinTeam(
 	email?: string,
 	fetchFn: FetchFn = platformFetch
 ): Promise<TeamJoinResult> {
-	return call(fetchFn, serverUrl, "/api/team/join", {
+	return requestJson(fetchFn, serverUrl, "/api/team/join", {
 		method: "POST",
 		body: JSON.stringify({ code, name, email })
 	});
-}
-
-export interface RemoteTeamActivity {
-	id: string;
-	name: string;
-	isAbsence: boolean;
-	sortOrder: number;
-	color: string | null;
-	archived: boolean;
-	updatedAt: number;
 }
 
 /** Die gemeinsame Aktivitätenliste - auf Zuruf, kein Push. */
@@ -82,8 +53,8 @@ export function fetchTeamActivities(
 	serverUrl: string,
 	token: string,
 	fetchFn: FetchFn = platformFetch
-): Promise<{ activities: RemoteTeamActivity[] }> {
-	return call(fetchFn, serverUrl, "/api/team/activities", { headers: { "x-team-token": token } });
+): Promise<{ activities: TeamActivity[] }> {
+	return requestJson(fetchFn, serverUrl, "/api/team/activities", { headers: { "x-team-token": token } });
 }
 
 /** Selbst austreten - der Token gilt danach nicht mehr. */
@@ -92,7 +63,7 @@ export function leaveTeamOnServer(
 	token: string,
 	fetchFn: FetchFn = platformFetch
 ): Promise<{ ok: boolean }> {
-	return call(fetchFn, serverUrl, "/api/team/membership", {
+	return requestJson(fetchFn, serverUrl, "/api/team/membership", {
 		method: "DELETE",
 		headers: { "x-team-token": token }
 	});
@@ -106,7 +77,7 @@ export function uploadTeamReport(
 	report: unknown,
 	fetchFn: FetchFn = platformFetch
 ): Promise<{ ok: boolean }> {
-	return call(fetchFn, serverUrl, "/api/team/reports", {
+	return requestJson(fetchFn, serverUrl, "/api/team/reports", {
 		method: "POST",
 		headers: { "x-team-token": token },
 		body: JSON.stringify({ month, report })

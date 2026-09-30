@@ -1,5 +1,6 @@
 // Änderungen erkennen und mit Herkunftsspuren versehen.
-import type { Entry, SyncMeta } from "../types";
+import type { SyncMeta } from "../types";
+import { stableStringify } from "../utils";
 
 /** Ein Datensatz, der eine Identität und Änderungsspuren hat. */
 export interface Identified extends SyncMeta {
@@ -18,7 +19,19 @@ export interface Changes<T extends Identified> {
 }
 
 /** Die Felder, die NICHT zum Inhalt gehören. */
-const META_KEYS: readonly (keyof SyncMeta)[] = ["updatedAt", "rev", "deviceId"];
+export const META_KEYS: readonly (keyof SyncMeta)[] = ["updatedAt", "rev", "deviceId"];
+
+/** Die Stempelfelder abstreifen - und sonst nichts anfassen. */
+export function withoutStamp<T extends SyncMeta>(item: T): T {
+	const rest = { ...item } as Record<string, unknown>;
+	for (const k of META_KEYS) delete rest[k];
+	return rest as unknown as T;
+}
+
+/** Ob an einem Datensatz überhaupt ein Stempel hängt. */
+export function isStamped(item: SyncMeta): boolean {
+	return META_KEYS.some((k) => item[k] !== undefined);
+}
 
 /** Ein Datensatz ohne seine Änderungsspuren. */
 export function contentOf<T extends Identified>(item: T): Record<string, unknown> {
@@ -35,11 +48,7 @@ export function contentOf<T extends Identified>(item: T): Record<string, unknown
 
 /** Ob sich der Inhalt zweier Stände desselben Datensatzes unterscheidet. */
 function sameContent<T extends Identified>(a: T, b: T): boolean {
-	return stable(contentOf(a)) === stable(contentOf(b));
-}
-
-function stable(obj: Record<string, unknown>): string {
-	return JSON.stringify(obj, Object.keys(obj).sort());
+	return stableStringify(contentOf(a)) === stableStringify(contentOf(b));
 }
 
 /**
@@ -76,14 +85,4 @@ export function diffAndStamp<T extends Identified>(
 	}
 
 	return { changes: { changed, deleted: [...byId.values()] }, stamped };
-}
-
-/** Einträge eines Monats vergleichen – dieselbe Rechnung, engerer Typ. */
-export function diffEntries(
-	before: Entry[],
-	after: Entry[],
-	deviceId: string,
-	now: number
-): { changes: Changes<Entry>; stamped: Entry[] } {
-	return diffAndStamp(before, after, deviceId, now);
 }

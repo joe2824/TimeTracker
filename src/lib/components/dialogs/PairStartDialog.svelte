@@ -13,6 +13,7 @@
 	import { account } from "$lib/sync/account.svelte";
 	import { PairingFlow } from "$lib/account/pairingFlow.svelte";
 	import { errorText } from "$lib/log";
+	import { normalizeServerUrl } from "$lib/sync/api";
 	import { toast } from "svelte-sonner";
 
 	let busy = $state(false);
@@ -41,7 +42,7 @@
 	/** Gleiche Adresse: dann ist es sehr wahrscheinlich dasselbe Konto. */
 	const sameServer = $derived(
 		!!account.serverUrl &&
-			account.serverUrl.replace(/\/+$/, "") === account.pairStartRequest.replace(/\/+$/, "")
+			normalizeServerUrl(account.serverUrl) === normalizeServerUrl(account.pairStartRequest)
 	);
 	let confirmed = $state(false);
 

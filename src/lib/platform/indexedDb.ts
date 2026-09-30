@@ -44,8 +44,12 @@ export function openIndexedDbStore(dbName: string, storeName: string): IndexedDb
 				new Promise<T>((resolve, reject) => {
 					const t = db.transaction(storeName, mode);
 					const req = fn(t.objectStore(storeName));
-					req.onsuccess = () => resolve(req.result);
-					req.onerror = () => reject(req.error);
+					const failed = () => reject(t.error ?? req.error ?? new Error(`${dbName}: Transaktion abgebrochen`));
+					// Geschrieben ist erst, was die Transaktion festschreibt: ein volles
+					// Kontingent bricht sie nach einer erfolgreichen Anfrage noch ab.
+					t.oncomplete = () => resolve(req.result);
+					t.onerror = failed;
+					t.onabort = failed;
 				})
 		);
 	}

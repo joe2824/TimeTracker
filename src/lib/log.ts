@@ -2,6 +2,8 @@
 import { storage } from "./platform/fs";
 import { fmtDate } from "./time/time";
 import { zonedParts } from "./time/tz";
+import { windowName } from "./platform/windows";
+import { createSerialQueue } from "./utils";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
@@ -18,6 +20,16 @@ export function logFile(ts = Date.now()): string {
 
 /** Ordner der Protokolle, relativ zum App-Datenordner. */
 export const LOG_DIR = DIR;
+
+/**
+ * Fehlertext für eine Meldung an Anwender. Ein abgebrochener Passkey-Dialog ist
+ * eine Entscheidung, keine Störung; Nicht-Errors bekommen den festen Ersatztext.
+ */
+export function userErrorText(e: unknown, fallback: string): string {
+	if (e instanceof Error && /NotAllowed|abort/i.test(e.name + e.message)) return "Abgebrochen.";
+	// errorText statt e.message: WebCrypto wirft in Chromium einen OperationError mit LEERER Meldung.
+	return e instanceof Error ? errorText(e) : fallback;
+}
 
 /** Lesbarer Text zu einem geworfenen Wert. */
 export function errorText(e: unknown): string {
@@ -50,23 +62,13 @@ function stamp(ts: number): string {
 	return `${fmtDate(ts)} ${p(z.hour)}:${p(z.minute)}:${p(z.second)}.${p(ts % 1000, 3)}`;
 }
 
-/**
- * Welches Fenster schreibt. Beide teilen sich die Tagesdatei – ohne diese
- * Kennung wäre hinterher nicht zu unterscheiden, ob ein Timer im Hauptfenster
- * oder im Tray-Flyout gestartet wurde.
- */
-function windowLabel(): string {
-	if (typeof location === "undefined") return "test";
-	return location.pathname.startsWith("/tray") ? "tray" : "main";
-}
-
 // ---- Puffer ----
 // Gesammelt schreiben, statt für jede Zeile über IPC zu gehen. Fehler und
 // Warnungen gehen sofort raus: die letzte Zeile vor einem Absturz ist die
 // interessanteste, und die darf nicht im Puffer verhungern.
 let pending: string[] = [];
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
-let writing: Promise<void> = Promise.resolve();
+const serial = createSerialQueue();
 let dirReady = false;
 
 function schedule(): void {
@@ -102,15 +104,16 @@ export function flushLog(): Promise<void> {
 		clearTimeout(flushTimer);
 		flushTimer = null;
 	}
-	writing = writing.then(writePending, writePending);
-	return writing;
+	return serial(writePending);
 }
 
+// Das Fensterkürzel (`main`/`tray`) trennt die Zeilen beider Fenster in der
+// gemeinsamen Tagesdatei.
 function record(level: LogLevel, message: string, detail?: unknown): void {
 	// Fortsetzungszeilen (Aufruflisten) einrücken: so bleibt sichtbar, dass sie
 	// zum Eintrag darüber gehören, und die Protokoll-Karte kann sie beim Filtern
 	// mitnehmen, statt einen Fehler ohne seinen Stack zu zeigen.
-	const line = `${stamp(Date.now())} ${windowLabel().padEnd(4)} ${level.toUpperCase().padEnd(5)} ${message}${
+	const line = `${stamp(Date.now())} ${windowName().padEnd(4)} ${level.toUpperCase().padEnd(5)} ${message}${
 		detail === undefined ? "" : ` | ${detailText(detail)}`
 	}`.replace(/\n/g, "\n\t");
 	// Konsole behalten: beim Entwickeln ist sie schneller zur Hand als die Datei.

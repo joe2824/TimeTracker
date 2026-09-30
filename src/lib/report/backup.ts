@@ -1,5 +1,6 @@
 import { isTauri } from "../platform/env";
-import { storage } from "../platform/fs";
+import { fmtDate } from "../time/time";
+import { storage, usingBrowserStorage } from "../platform/fs";
 import {
 	loadActivities,
 	loadEntries,
@@ -229,7 +230,7 @@ export async function downloadBackupFile(): Promise<{ success: boolean; filename
 	try {
 		const backup = await createBackupData();
 		const json = JSON.stringify(backup, null, 2);
-		const dateStr = new Date().toISOString().slice(0, 10);
+		const dateStr = fmtDate(Date.now());
 		const defaultFilename = `timetracker-backup-${dateStr}.json`;
 
 		if (isTauri()) {
@@ -277,8 +278,12 @@ const KEEP_SNAPSHOTS = 3;
  * zurueckholen.
  *
  * Wirft nie: eine fehlgeschlagene Sicherung darf das Koppeln nicht aufhalten.
+ *
+ * Nicht im Browser: dort liegt der Bestand verschlüsselt, die Sicherung wäre
+ * seine lesbare Kopie.
  */
 export async function snapshotBeforePairing(): Promise<string | null> {
+	if (usingBrowserStorage()) return null;
 	try {
 		const backup = await createBackupData();
 		if (backup.activities.length === 0 && Object.keys(backup.entries).length === 0) {

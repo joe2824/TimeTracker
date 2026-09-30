@@ -25,6 +25,7 @@ import {
 import {
 	Api,
 	ApiError,
+	normalizeServerUrl,
 	type AccountInfo,
 	type BackupInfo,
 	type DeleteSummary,
@@ -66,10 +67,14 @@ import { clearLocalVaultKey, loadLocalVaultKey, saveLocalVaultKey } from "../pla
 import type { PrfFailure } from "./enroll";
 import { isTauri } from "../platform/env";
 import { usingBrowserStorage } from "../platform/fs";
-import { platformFetch } from "../platform/http";
 import { notifyDataChanged } from "../platform/windows";
 import { APP_VERSION, DEFAULT_SERVER, TELEMETRY_KEY } from "../defaults";
 import { classifyPingFailure, detectPlatform, type PingResult } from "../analytics";
+
+/** Was der erste Abgleich vorzieht: der laufende und der vorige Monat. */
+function priorityMonths(): string[] {
+	return [monthKey(Date.now()), prevMonthKey()];
+}
 
 export type LinkState = "off" | "connecting" | "connected" | "error";
 
@@ -251,6 +256,11 @@ class AccountState {
 		this.#logoutHooks.push(fn);
 	}
 
+	#requireApi(): Api {
+		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		return this.#api;
+	}
+
 	get linked(): boolean {
 		return this.state === "connected";
 	}
@@ -324,7 +334,16 @@ class AccountState {
 				return;
 			}
 
-			this.serverUrl = info.serverUrl;
+			// Ältere Fassungen legten die Adresse roh ab; Einladungs- und Chef-Links
+			// bauen darauf auf.
+			const serverUrl = normalizeServerUrl(info.serverUrl);
+			if (serverUrl !== info.serverUrl) {
+				// Nur Aufräumen: scheitert das Schreiben, startet das Konto trotzdem.
+				await updateDevice((cur) => cur && { ...cur, serverUrl }).catch((e) =>
+					logWarn("Serveradresse nicht nachgetragen", e)
+				);
+			}
+			this.serverUrl = serverUrl;
 			this.name = info.accountName ?? "";
 			this.secretsProtected = info.protected ?? false;
 			this.passkeyId = info.passkeyId ?? null;
@@ -336,7 +355,7 @@ class AccountState {
 				this.#key = storedKey;
 				this.#device = await deviceId();
 				this.hasDeviceToken = token !== null;
-				await this.#startEngine(info.serverUrl, token, {
+				await this.#startEngine(serverUrl, token, {
 					seq: info.seq ?? 0,
 					priority: info.priority
 				});
@@ -378,7 +397,7 @@ class AccountState {
 				// ohne Fensterfokus (versteckter Autostart) käme sie nie in Gang.
 				if (isTauri()) this.#openStream();
 
-				logInfo("Konto verknüpft", { server: info.serverUrl });
+				logInfo("Konto verknüpft", { server: serverUrl });
 				void this.syncWithFollowUp();
 			} catch (e) {
 				// Der häufigste Grund: die Datei stammt von einem anderen
@@ -397,7 +416,7 @@ class AccountState {
 		// diesem Aufruf, und ein $effect, der auf account.linked reagiert (z.B.
 		// loadTeams()), darf #api nie null vorfinden. Ohne await dazwischen kommt
 		// kein Effekt zum Zug, bevor #api steht.
-		this.#api = new Api({ baseUrl: url, token, fetchFn: platformFetch });
+		this.#api = new Api({ baseUrl: url, token });
 		state = await this.#rewindForNewKinds(state);
 		const engine = new SyncEngine({
 			api: this.#api,
@@ -480,7 +499,7 @@ class AccountState {
 		// schon auf der Platte liegen und die Sicherung erlaubt bleibt.
 		const priority = state.priority
 			? { ...state.priority, seq: 0 }
-			: { seq: 0, months: [monthKey(Date.now()), prevMonthKey()], historyLocal: state.seq > 0 };
+			: { seq: 0, months: priorityMonths(), historyLocal: state.seq > 0 };
 		const rewound: SyncState = { seq: 0, priority };
 		// Stand 0 heisst: es gibt nichts nachzuholen - frisch verknüpft, oder noch
 		// nie abgeglichen. Nur der Merker war fällig. Der Nachlauf-Vermerk darf
@@ -1004,7 +1023,7 @@ class AccountState {
 		label: string,
 		opts: { invite?: string; email?: string } = {}
 	): Promise<string> {
-		const url = serverUrl.replace(/\/+$/, "");
+		const url = normalizeServerUrl(serverUrl);
 		const { registerFromDevice } = await import("./enroll");
 		const r = await registerFromDevice(url, displayName, label, opts);
 		await this.#persistLink(url, r.deviceToken, r.key, r.displayName, r.userId);
@@ -1013,7 +1032,7 @@ class AccountState {
 
 	/** Ein Konto allein mit der Wiederherstellungs-Phrase zurückholen. */
 	async recoverWithPhrase(serverUrl: string, phrase: string, label: string): Promise<void> {
-		const url = serverUrl.replace(/\/+$/, "");
+		const url = normalizeServerUrl(serverUrl);
 		const { recoverWithPhrase } = await import("./enroll");
 		const r = await recoverWithPhrase(url, phrase, label);
 		await this.#persistLink(url, r.deviceToken, r.key, r.displayName, r.userId);
@@ -1031,8 +1050,8 @@ class AccountState {
 	} | null = null;
 
 	async startPairing(serverUrl: string, label: string): Promise<string> {
-		const url = serverUrl.replace(/\/+$/, "");
-		const api = new Api({ baseUrl: url, fetchFn: platformFetch });
+		const url = normalizeServerUrl(serverUrl);
+		const api = new Api({ baseUrl: url });
 		const pair = await createPairingKeyPair();
 		const raw = await exportPairingPublicKey(pair);
 		const publicKey = toBase64(raw);
@@ -1064,7 +1083,7 @@ class AccountState {
 	async checkPairing(): Promise<boolean> {
 		if (!this.#pairing) return false;
 		const { pair, code, url, claimSecret } = this.#pairing;
-		const api = new Api({ baseUrl: url, fetchFn: platformFetch });
+		const api = new Api({ baseUrl: url });
 		const answer = await api.pairClaim(code, claimSecret);
 		if (answer.pending) return false;
 
@@ -1114,7 +1133,7 @@ class AccountState {
 		name: string,
 		userId?: string
 	): Promise<void> {
-		await this.#persistLink(url.replace(/\/+$/, ""), null, key, name, userId);
+		await this.#persistLink(url, null, key, name, userId);
 	}
 
 	/**
@@ -1136,7 +1155,7 @@ class AccountState {
 		try {
 			const key = await this.#loadStoredKey(info);
 			if (!key) return false;
-			await this.#persistLink(url.replace(/\/+$/, ""), null, key, info.accountName ?? "", userId);
+			await this.#persistLink(url, null, key, info.accountName ?? "", userId);
 			return true;
 		} catch (e) {
 			logWarn("Hinterlegter Schlüssel ließ sich nicht öffnen", e);
@@ -1153,6 +1172,7 @@ class AccountState {
 		name = "",
 		userId?: string
 	): Promise<void> {
+		url = normalizeServerUrl(url);
 		// VOR allem anderen: gleich raeumt ein Kontowechsel den lokalen Bestand weg,
 		// und der erste Abgleich laesst bei einem Konflikt die neuere Fassung
 		// gewinnen - auch gegen eine eigene, noch nicht hochgeladene Aenderung.
@@ -1215,7 +1235,7 @@ class AccountState {
 		// also die ältesten Einträge zuerst.
 		const startState: SyncState = {
 			seq: 0,
-			priority: { seq: 0, months: [monthKey(Date.now()), prevMonthKey()] }
+			priority: { seq: 0, months: priorityMonths() }
 		};
 
 		// Wessen Konto ist das? Zwei Konten haben verschiedene Vault-Schlüssel,
@@ -1334,8 +1354,7 @@ class AccountState {
 
 	/** Die Passkeys des Kontos - aus `accountInfo`, das sie ohnehin mitbringt. */
 	async passkeys(): Promise<Passkey[]> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		return (await this.#api.me()).passkeys;
+		return (await this.#requireApi().me()).passkeys;
 	}
 
 	/**
@@ -1434,8 +1453,7 @@ class AccountState {
 	 */
 	async #exportableKey(): Promise<{ api: Api; key: VaultKey }> {
 		if (!this.#key) throw new Error("Das Konto ist nicht entsperrt");
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		const api = this.#api;
+		const api = this.#requireApi();
 		if (isExportable(this.#key)) return { api, key: this.#key };
 		const { reunlockWithPasskey } = await import("./enroll");
 		const key = await reunlockWithPasskey(api, {
@@ -1456,19 +1474,17 @@ class AccountState {
 
 	/** Ein anderes Gerät vom Konto trennen. Es kommt danach nicht mehr hinein. */
 	async revokeDevice(id: string): Promise<void> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+		const api = this.#requireApi();
 		if (id === this.#device) throw new Error("Das ist dieses Gerät – dafür gibt es „Entkoppeln“.");
-		await this.#api.revokeDevice(id);
+		await api.revokeDevice(id);
 	}
 
 	async renamePasskey(id: string, label: string): Promise<void> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		await this.#api.renamePasskey(id, label);
+		await this.#requireApi().renamePasskey(id, label);
 	}
 
 	async removePasskey(id: string): Promise<void> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		await this.#api.removePasskey(id);
+		await this.#requireApi().removePasskey(id);
 		// Sonst haelt #exportableKey() den geloeschten Passkey noch fuer nutzbar
 		// und schlaegt den WebAuthn-Dialog fuer genau den vor.
 		this.#forgetWrapIds();
@@ -1485,8 +1501,7 @@ class AccountState {
 		envInvitesActive: boolean;
 		openRegistration: boolean;
 	}> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		const res = await this.#api.invites();
+		const res = await this.#requireApi().invites();
 		return {
 			invites: res.invites,
 			envInvitesConfigured: Boolean(res.envInvitesConfigured),
@@ -1496,97 +1511,79 @@ class AccountState {
 	}
 
 	async setOpenRegistration(open: boolean): Promise<boolean> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		const res = await this.#api.setOpenRegistration(open);
+		const res = await this.#requireApi().setOpenRegistration(open);
 		return res.openRegistration;
 	}
 
 	async setEnvInvites(active: boolean): Promise<boolean> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		const res = await this.#api.setEnvInvites(active);
+		const res = await this.#requireApi().setEnvInvites(active);
 		return res.envInvitesActive;
 	}
 
 	async createInvite(opts: { note?: string; validDays?: number } = {}): Promise<Invite> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		return this.#api.createInvite(opts);
+		return this.#requireApi().createInvite(opts);
 	}
 
 	async revokeInvite(code: string): Promise<void> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		await this.#api.revokeInvite(code);
+		await this.#requireApi().revokeInvite(code);
 	}
 
 	// ---------- Team-Modus ----------
 
 	async listTeams(): Promise<TeamInfo[]> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		return (await this.#api.listTeams()).teams;
+		return (await this.#requireApi().listTeams()).teams;
 	}
 
 	async createTeam(name: string): Promise<TeamInfo> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		return this.#api.createTeam(name);
+		return this.#requireApi().createTeam(name);
 	}
 
 	async deleteTeam(teamId: string): Promise<void> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		await this.#api.deleteTeam(teamId);
+		await this.#requireApi().deleteTeam(teamId);
 	}
 
 	async getTeamInvite(teamId: string): Promise<TeamInvite | null> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		return (await this.#api.getTeamInvite(teamId)).invite;
+		return (await this.#requireApi().getTeamInvite(teamId)).invite;
 	}
 
 	async rotateTeamInvite(teamId: string): Promise<TeamInvite> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		return this.#api.rotateTeamInvite(teamId);
+		return this.#requireApi().rotateTeamInvite(teamId);
 	}
 
 	async listTeamMembers(teamId: string): Promise<TeamMemberInfo[]> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		return (await this.#api.listTeamMembers(teamId)).members;
+		return (await this.#requireApi().listTeamMembers(teamId)).members;
 	}
 
 	async revokeTeamMember(teamId: string, memberId: string): Promise<void> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		await this.#api.revokeTeamMember(teamId, memberId);
+		await this.#requireApi().revokeTeamMember(teamId, memberId);
 	}
 
 	async listTeamAdmins(teamId: string): Promise<TeamAdminInfo[]> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		return (await this.#api.listTeamAdmins(teamId)).admins;
+		return (await this.#requireApi().listTeamAdmins(teamId)).admins;
 	}
 
 	async removeTeamAdmin(teamId: string, userId: string): Promise<void> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		await this.#api.removeTeamAdmin(teamId, userId);
+		await this.#requireApi().removeTeamAdmin(teamId, userId);
 	}
 
 	async getAdminInvite(teamId: string): Promise<TeamInvite | null> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		return (await this.#api.getAdminInvite(teamId)).invite;
+		return (await this.#requireApi().getAdminInvite(teamId)).invite;
 	}
 
 	async rotateAdminInvite(teamId: string): Promise<TeamInvite> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		return this.#api.rotateAdminInvite(teamId);
+		return this.#requireApi().rotateAdminInvite(teamId);
 	}
 
 	async joinTeamAsAdmin(code: string): Promise<TeamInfo> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		return this.#api.joinTeamAsAdmin(code);
+		return this.#requireApi().joinTeamAsAdmin(code);
 	}
 
 	async transferTeamOwnership(teamId: string, newOwnerUserId: string): Promise<void> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		await this.#api.transferTeamOwnership(teamId, newOwnerUserId);
+		await this.#requireApi().transferTeamOwnership(teamId, newOwnerUserId);
 	}
 
 	async listTeamActivities(teamId: string): Promise<TeamActivity[]> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		return (await this.#api.listTeamActivities(teamId)).activities;
+		return (await this.#requireApi().listTeamActivities(teamId)).activities;
 	}
 
 	async setTeamActivities(
@@ -1594,18 +1591,15 @@ class AccountState {
 		activities: TeamActivityInput[],
 		expectedVersion?: number
 	): Promise<TeamActivity[]> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		return (await this.#api.setTeamActivities(teamId, activities, expectedVersion)).activities;
+		return (await this.#requireApi().setTeamActivities(teamId, activities, expectedVersion)).activities;
 	}
 
 	async listTeamReports(teamId: string, month: string): Promise<TeamReportStatus[]> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		return (await this.#api.listTeamReports(teamId, month)).reports;
+		return (await this.#requireApi().listTeamReports(teamId, month)).reports;
 	}
 
 	async markTeamReportSent(teamId: string, memberId: string, month: string): Promise<void> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		await this.#api.markTeamReportSent(teamId, memberId, month);
+		await this.#requireApi().markTeamReportSent(teamId, memberId, month);
 	}
 
 	async clearTeamReportStatus(
@@ -1614,35 +1608,29 @@ class AccountState {
 		month: string,
 		expectedSubmittedAt: number
 	): Promise<void> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		await this.#api.clearTeamReportStatus(teamId, memberId, month, expectedSubmittedAt);
+		await this.#requireApi().clearTeamReportStatus(teamId, memberId, month, expectedSubmittedAt);
 	}
 
 	async backups(): Promise<BackupInfo[]> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		const res = await this.#api.backups();
+		const res = await this.#requireApi().backups();
 		return res.backups;
 	}
 
 	async createBackup(): Promise<BackupInfo> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		const res = await this.#api.createBackup();
+		const res = await this.#requireApi().createBackup();
 		return res.backup;
 	}
 
 	async restoreBackup(name: string): Promise<{ ok: boolean; restored: string; preRestoreBackup: string }> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		return this.#api.restoreBackup(name);
+		return this.#requireApi().restoreBackup(name);
 	}
 
 	async deleteBackup(name: string): Promise<void> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		await this.#api.deleteBackup(name);
+		await this.#requireApi().deleteBackup(name);
 	}
 
 	async stats(days = 30): Promise<ServerStats> {
-		if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
-		return this.#api.stats(days);
+		return this.#requireApi().stats(days);
 	}
 
 	/**
@@ -1668,7 +1656,7 @@ class AccountState {
 	async sendUsagePing(): Promise<PingResult> {
 		const target = this.usagePingServer;
 		if (!target) return "retry";
-		const api = this.#api ?? new Api({ baseUrl: target, fetchFn: platformFetch });
+		const api = this.#api ?? new Api({ baseUrl: target });
 		try {
 			await api.telemetry({
 				deviceId: await deviceId(),
@@ -1704,13 +1692,13 @@ class AccountState {
 		let summary: DeleteSummary | null = null;
 
 		if (opts.deleteRemote || opts.revokeSelf) {
-			if (!this.#api) throw new Error("Dieses Gerät ist nicht verknüpft");
+			const api = this.#requireApi();
 			// Zuerst der Server, solange Zugang und Token noch stehen. Danach ist
 			// beides weg und der Vorgang liesse sich nicht mehr nachholen.
 			if (opts.deleteRemote) {
-				summary = await this.#api.deleteAccount(await this.#confirmWithPasskey());
+				summary = await api.deleteAccount(await this.#confirmWithPasskey());
 			} else {
-				await this.#api.revokeDevice();
+				await api.revokeDevice();
 			}
 		}
 

@@ -4,29 +4,25 @@
 // bleiben unangetastet.
 import { app } from "../app.svelte";
 import { clearTeamDevice, loadTeamDevice, loadTeamRemovedFrom, saveTeamRemovedFrom } from "../store";
-import { fetchTeamActivities, leaveTeamOnServer, type RemoteTeamActivity } from "./api";
+import { fetchTeamActivities, leaveTeamOnServer } from "./api";
 import { chefTeams } from "./chef.svelte";
 import { account } from "../sync/account.svelte";
 import { ApiError, type TeamActivity } from "../sync/api";
 import { teamJoin } from "./state.svelte";
 import { logWarn } from "../log";
+import { createSerialQueue } from "../utils";
 import { TEAM_ACTIVITY_PREFIX, type Activity } from "../types";
 
 export { TEAM_ACTIVITY_PREFIX };
 
-/** Nur die Felder, die beide Server-Antworten (Mitglied wie Chef) gemeinsam haben. */
-interface RemoteActivityLike {
-	id: string;
-	name: string;
-	isAbsence: boolean;
-	sortOrder: number;
-	color: string | null;
-	archived: boolean;
+/** Die lokale Id einer Team-Zeile zur Server-Id. */
+export function teamActivityId(serverId: string): string {
+	return `${TEAM_ACTIVITY_PREFIX}${serverId}`;
 }
 
-function toLocal(remote: RemoteActivityLike, team: { id?: string; name: string }): Activity {
+function toLocal(remote: Omit<TeamActivity, "updatedAt">, team: { id?: string; name: string }): Activity {
 	return {
-		id: `${TEAM_ACTIVITY_PREFIX}${remote.id}`,
+		id: teamActivityId(remote.id),
 		name: remote.name,
 		isAbsence: remote.isAbsence,
 		sortOrder: remote.sortOrder,
@@ -44,14 +40,9 @@ function toLocal(remote: RemoteActivityLike, team: { id?: string; name: string }
  * überschreibt eine spät auflösende Anfrage mit ihrem eigenen, inzwischen
  * veralteten Ausgangsstand, was eine andere Operation dazwischen schon
  * geschrieben hat - genau die Art Race, die diesem Projekt schon einmal
- * Team-Daten gekostet hat. Gleiches Muster wie SyncEngine#serial.
+ * Team-Daten gekostet hat.
  */
-let chain: Promise<unknown> = Promise.resolve();
-export function withActivitiesLock<T>(fn: () => Promise<T>): Promise<T> {
-	const run = chain.then(fn, fn);
-	chain = run.catch(() => {});
-	return run;
-}
+export const withActivitiesLock = createSerialQueue();
 
 /** Über den Beitritts-Link gespiegelt - eigene Team-Listen des Chefs tragen stattdessen eine teamId. */
 export const isJoinedTeamRow = (a: Activity): boolean => a.teamOwned === true && a.teamId === undefined;
@@ -108,7 +99,7 @@ export async function syncTeamActivities(): Promise<TeamSyncResult> {
 		return "none";
 	}
 
-	let remote: RemoteTeamActivity[];
+	let remote: TeamActivity[];
 	// 401: das Team wurde gelöscht oder dieses Mitglied entfernt. Wie eine leere
 	// Antwort behandelt - alle Zeilen lösen sich ab, danach wird die
 	// Mitgliedschaft vergessen. Jeder andere Fehler ist ein Netz-Aussetzer.
@@ -140,7 +131,7 @@ export async function syncTeamActivities(): Promise<TeamSyncResult> {
 		// nur aus der aktuellen Liste, erfasste Stunden gingen verloren), sondern
 		// wie beim Verlassen mit NEUER Id archivieren: dieselbe Server-Id kann
 		// nach einem erneuten Beitritt wiederkommen.
-		const remoteIds = new Set(remote.map((r) => `${TEAM_ACTIVITY_PREFIX}${r.id}`));
+		const remoteIds = new Set(remote.map((r) => teamActivityId(r.id)));
 		const gone = new Set(
 			app.activities.filter((a) => isJoinedTeamRow(a) && !remoteIds.has(a.id)).map((a) => a.id)
 		);
@@ -221,7 +212,7 @@ export async function syncOwnedTeamActivities(): Promise<void> {
 	const currentTeams = new Map(chefTeams.teams.map((t) => [t.id, t]));
 	const deletedTeamIds = new Set(
 		app.activities
-			.filter((a) => a.teamOwned && a.teamId !== undefined && !currentTeams.has(a.teamId))
+			.filter((a) => isOwnTeamRow(a) && !currentTeams.has(a.teamId!))
 			.map((a) => a.teamId!)
 	);
 	if (currentTeams.size === 0 && deletedTeamIds.size === 0) return;
@@ -245,13 +236,13 @@ export async function syncOwnedTeamActivities(): Promise<void> {
 		ownedSyncApplied = seq;
 		const loaded = results.filter((r): r is NonNullable<typeof r> => r !== null);
 		const isOwnedRowOf = (teamIds: Set<string>) => (a: Activity) =>
-			a.teamOwned === true && a.teamId !== undefined && teamIds.has(a.teamId);
+			isOwnTeamRow(a) && teamIds.has(a.teamId!);
 
 		const gone = new Set<string>();
 		for (const { team, remote } of loaded) {
-			const remoteIds = new Set(remote.map((r) => `${TEAM_ACTIVITY_PREFIX}${r.id}`));
+			const remoteIds = new Set(remote.map((r) => teamActivityId(r.id)));
 			for (const a of app.activities) {
-				if (a.teamOwned && a.teamId === team.id && !remoteIds.has(a.id)) gone.add(a.id);
+				if (isOwnTeamRow(a) && a.teamId === team.id && !remoteIds.has(a.id)) gone.add(a.id);
 			}
 		}
 		const refreshed = new Set(loaded.map((r) => r.team.id));

@@ -1,6 +1,28 @@
 // Der Draht zum Server.
-import type { WrapKind } from "../crypto/vault";
+import type {
+	BackupInfo,
+	PullPage,
+	PushAnswer,
+	PushRecord,
+	ServerRecord,
+	TeamActivity,
+	TeamActivityInput,
+	TeamReportStatus,
+	WrapKind
+} from "$shared/apiTypes";
+
+export type {
+	BackupInfo,
+	PullPage,
+	PushAnswer,
+	PushRecord,
+	ServerRecord,
+	TeamActivity,
+	TeamActivityInput,
+	TeamReportStatus
+};
 import { TELEMETRY_KEY } from "../defaults";
+import { platformFetch } from "../platform/http";
 
 export type FetchFn = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -12,47 +34,6 @@ export interface TelemetryPing {
 	deviceId: string;
 	version: string;
 	platform: string;
-}
-
-export interface ServerRecord {
-	id: string;
-	kind: string;
-	bucket: string | null;
-	seq: number;
-	rev: number;
-	updatedAt: number;
-	deviceId: string | null;
-	deletedAt: number | null;
-	payload: string | null;
-}
-
-export interface OutgoingRecord {
-	id: string;
-	kind: string;
-	bucket?: string | null;
-	baseRev: number;
-	updatedAt: number;
-	deletedAt?: number | null;
-	payload?: string | null;
-}
-
-export interface PullPage {
-	records: ServerRecord[];
-	nextSeq: number;
-	hasMore: boolean;
-}
-
-export interface PushAnswer {
-	accepted: { id: string; rev: number; seq: number }[];
-	conflicts: { id: string; current: ServerRecord }[];
-	seq: number;
-}
-
-export interface BackupInfo {
-	name: string;
-	size: number;
-	mtime: number;
-	verified: boolean;
 }
 
 export interface ServerStats {
@@ -128,36 +109,6 @@ export interface TeamMemberInfo {
 	createdAt: number;
 	lastSeenAt: number | null;
 	revokedAt: number | null;
-}
-
-export interface TeamReportStatus {
-	memberId: string;
-	memberName: string;
-	memberEmail: string | null;
-	/** null = für den abgefragten Monat noch nichts eingegangen. */
-	submittedAt: number | null;
-	/** Die Form von MonthReport (report/report.ts) - dem Transport nach undurchsichtig. */
-	payload: unknown | null;
-}
-
-export interface TeamActivity {
-	id: string;
-	name: string;
-	isAbsence: boolean;
-	sortOrder: number;
-	color: string | null;
-	archived: boolean;
-	updatedAt: number;
-}
-
-export interface TeamActivityInput {
-	/** Fehlt sie, vergibt der Server eine neue - so entsteht eine Zeile. */
-	id?: string;
-	name: string;
-	isAbsence: boolean;
-	sortOrder: number;
-	color?: string | null;
-	archived: boolean;
 }
 
 export interface AccountInfo {
@@ -241,6 +192,37 @@ export function normalizeServerUrl(raw: string): string {
 	}
 }
 
+/**
+ * Eine JSON-Anfrage an den Server. Jeder Fehlschlag kommt als `ApiError`;
+ * Status 0 heisst "gar nicht erst angekommen" und ist einen zweiten Versuch wert.
+ */
+export async function requestJson<T>(
+	fetchFn: FetchFn,
+	baseUrl: string,
+	path: string,
+	init: RequestInit = {}
+): Promise<T> {
+	let res: Response;
+	try {
+		res = await fetchFn(`${normalizeServerUrl(baseUrl)}${path}`, {
+			...init,
+			headers: { "content-type": "application/json", ...(init.headers ?? {}) }
+		});
+	} catch (e) {
+		if (init.signal?.aborted) throw new ApiError("Anfrage abgebrochen", 0);
+		throw new ApiError(e instanceof Error ? e.message : "Server nicht erreichbar", 0);
+	}
+
+	if (!res.ok) throw await apiErrorFrom(res);
+
+	try {
+		return (await res.json()) as T;
+	} catch (e) {
+		if (init.signal?.aborted) throw new ApiError("Anfrage abgebrochen", 0);
+		throw e;
+	}
+}
+
 export class Api {
 	#baseUrl: string;
 	#token: string | null;
@@ -249,45 +231,23 @@ export class Api {
 	constructor(opts: ApiOptions) {
 		this.#baseUrl = normalizeServerUrl(opts.baseUrl);
 		this.#token = opts.token ?? null;
-		this.#fetch = opts.fetchFn ?? ((i, init) => globalThis.fetch(i, init));
+		this.#fetch = opts.fetchFn ?? platformFetch;
 	}
 
 	setToken(token: string | null): void {
 		this.#token = token;
 	}
 
-	async #call<T>(path: string, init: RequestInit = {}): Promise<T> {
-		let res: Response;
-		try {
-			res = await this.#fetch(`${this.#baseUrl}${path}`, {
-				...init,
-				headers: {
-					"content-type": "application/json",
-					...(this.#token ? { authorization: `Bearer ${this.#token}` } : {}),
-					...(init.headers ?? {})
-				},
-				// Ohne Token läuft es über das Cookie - das muss ausdrücklich mit.
-				credentials: this.#token ? "omit" : "include"
-			});
-		} catch (e) {
-			if (init.signal?.aborted) {
-				throw new ApiError("Anfrage abgebrochen", 0);
-			}
-			// Kein Netz, Name nicht auflösbar, Verbindung abgebrochen. Status 0 heisst
-			// "gar nicht erst angekommen" und ist damit immer einen zweiten Versuch wert.
-			throw new ApiError(e instanceof Error ? e.message : "Server nicht erreichbar", 0);
-		}
-
-		if (!res.ok) throw await apiErrorFrom(res);
-
-		try {
-			return (await res.json()) as T;
-		} catch (e) {
-			if (init.signal?.aborted) {
-				throw new ApiError("Anfrage abgebrochen", 0);
-			}
-			throw e;
-		}
+	#call<T>(path: string, init: RequestInit = {}): Promise<T> {
+		return requestJson<T>(this.#fetch, this.#baseUrl, path, {
+			...init,
+			headers: {
+				...(this.#token ? { authorization: `Bearer ${this.#token}` } : {}),
+				...(init.headers ?? {})
+			},
+			// Ohne Token läuft es über das Cookie - das muss ausdrücklich mit.
+			credentials: this.#token ? "omit" : "include"
+		});
 	}
 
 	// ---------- Telemetrie ----------
@@ -412,7 +372,7 @@ export class Api {
 		return this.#call("/api/sync/buckets");
 	}
 
-	push(records: OutgoingRecord[]): Promise<PushAnswer> {
+	push(records: PushRecord[]): Promise<PushAnswer> {
 		return this.#call<PushAnswer>("/api/sync", {
 			method: "POST",
 			body: JSON.stringify({ records })

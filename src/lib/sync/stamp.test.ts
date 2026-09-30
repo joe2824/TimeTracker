@@ -80,6 +80,13 @@ describe("diffAndStamp", () => {
 		expect(diffAndStamp([old], [fresh], DEV, NOW).changes.changed).toEqual([]);
 	});
 
+	it("erkennt eine Aenderung in einem verschachtelten Feld", () => {
+		const old = { id: "settings", map: { besprechung: "a" }, updatedAt: 500 };
+		const next = { ...old, map: { besprechung: "b" } };
+		const { changes } = diffAndStamp([old], [next], DEV, NOW);
+		expect(changes.changed).toHaveLength(1);
+	});
+
 	it("stoert sich nicht an der Schluesselreihenfolge", () => {
 		// Ein frisch gebauter Eintrag hat sie anders als einer aus JSON.parse.
 		const old = e("1", { updatedAt: 500 });

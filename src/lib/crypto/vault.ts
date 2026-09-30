@@ -106,7 +106,7 @@ interface RecordHeader {
  * `wrapForDevice`/`unwrapForDevice` unten und `pairings.wrapped_key`, nicht
  * über diesen Weg.
  */
-export type WrapKind = "recovery" | "passkey";
+export type { WrapKind } from "$shared/apiTypes";
 
 /**
  * Einen Datensatz verschlüsseln - `alg:"dir"`, der Vault-Schlüssel wird
@@ -165,8 +165,7 @@ export async function bucketFor(key: VaultKey, month: string): Promise<string> {
 
 /** Die Kennung, unter der ein Konto seine Phrasen-Verpackung findet. */
 export async function recoveryLookupId(phrase: string): Promise<string> {
-	const entropy = mnemonicToEntropy(normalizePhrase(phrase), wordlist);
-	const base = await crypto.subtle.importKey("raw", entropy as BufferSource, "HKDF", false, [
+	const base = await crypto.subtle.importKey("raw", phraseEntropy(phrase) as BufferSource, "HKDF", false, [
 		"deriveBits"
 	]);
 	const bits = await crypto.subtle.deriveBits(
@@ -240,6 +239,11 @@ export function normalizePhrase(phrase: string): string {
 	return phrase.trim().toLowerCase().split(/\s+/).join(" ");
 }
 
+/** Die Entropie hinter der Phrase - gleich für jede Schreibweise. */
+function phraseEntropy(phrase: string): Uint8Array {
+	return mnemonicToEntropy(normalizePhrase(phrase), wordlist);
+}
+
 /**
  * Die Phrase verpackt den Vault-Schlüssel - `PBES2-HS512+A256KW`, das
  * Passwort ist die Entropie der Phrase, nicht ihr Text (derselbe Schlüssel
@@ -247,17 +251,27 @@ export function normalizePhrase(phrase: string): string {
  * Iterationszahl liegen automatisch im JWE-Header, `p2c` explizit gesetzt.
  */
 export async function wrapWithPhrase(vaultKey: VaultKey, phrase: string): Promise<string> {
-	const entropy = mnemonicToEntropy(normalizePhrase(phrase), wordlist);
-	return wrapVaultKey(vaultKey, { alg: "PBES2-HS512+A256KW" }, entropy as Uint8Array, {
+	return wrapVaultKey(vaultKey, { alg: "PBES2-HS512+A256KW" }, phraseEntropy(phrase), {
 		p2c: PBES2_ITERATIONS
 	});
 }
 
 export async function unwrapWithPhrase(wrap: string, phrase: string): Promise<VaultKey> {
-	const entropy = mnemonicToEntropy(normalizePhrase(phrase), wordlist);
-	return unwrapVaultKey(wrap, entropy as Uint8Array, ["PBES2-HS512+A256KW"], {
+	return unwrapVaultKey(wrap, phraseEntropy(phrase), ["PBES2-HS512+A256KW"], {
 		maxPBES2Count: PBES2_ITERATIONS
 	});
+}
+
+/** Alles, was der Server zur Phrasen-Verpackung ablegt. */
+export async function recoveryWrap(
+	vaultKey: VaultKey,
+	phrase: string
+): Promise<{ payload: string; recoveryId: string; vaultProof: string }> {
+	return {
+		payload: await wrapWithPhrase(vaultKey, phrase),
+		recoveryId: await recoveryLookupId(phrase),
+		vaultProof: await vaultProof(vaultKey)
+	};
 }
 
 // ---------- Verpackung aus einem Passkey (PRF) ----------
@@ -354,8 +368,7 @@ export async function createClaimSecret(): Promise<{ secret: string; hash: strin
 
 /** SHA-256 einer Zeichenkette, hexadezimal - die Form, in der der Server ablegt. */
 export async function sha256Hex(text: string): Promise<string> {
-	const raw = new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(text)));
-	return [...raw].map((b) => b.toString(16).padStart(2, "0")).join("");
+	return toHex(new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(text))));
 }
 
 /** Der hinterlegte Schlüssel - aber nur, wenn er zu diesem Code gehört. */
@@ -424,4 +437,13 @@ export function fromBase64(b64: string): Uint8Array {
 	const out = new Uint8Array(s.length);
 	for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
 	return out;
+}
+
+/** Base64url ohne Auffüllung - die Form, die WebAuthn-JSON erwartet. */
+export function toBase64Url(bytes: Uint8Array): string {
+	return toBase64(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+export function fromBase64Url(b64url: string): Uint8Array {
+	return fromBase64(b64url.replace(/-/g, "+").replace(/_/g, "/"));
 }

@@ -11,6 +11,7 @@ import {
 	exportVaultKey,
 	formatPairingCode,
 	fromBase64,
+	fromBase64Url,
 	fromHex,
 	importVaultKey,
 	isPairingCode,
@@ -21,8 +22,10 @@ import {
 	openRecord,
 	pairingCode,
 	recoveryLookupId,
+	recoveryWrap,
 	sealRecord,
 	toBase64,
+	toBase64Url,
 	toHex,
 	type RecordBinding,
 	type VaultKey,
@@ -528,5 +531,25 @@ describe("Wiederherstellung ueber die Phrase", () => {
 		expect(new Uint8Array(await exportVaultKey(back))).toEqual(
 			new Uint8Array(await exportVaultKey(key))
 		);
+	});
+});
+
+describe("Base64url", () => {
+	it("kommt ohne +, / und Auffüllung aus und liefert dieselben Bytes zurück", () => {
+		const bytes = Uint8Array.from([251, 255, 191, 0, 62]);
+		const encoded = toBase64Url(bytes);
+		expect(encoded).not.toMatch(/[+/=]/);
+		expect([...fromBase64Url(encoded)]).toEqual([...bytes]);
+	});
+});
+
+describe("recoveryWrap", () => {
+	it("bündelt Verpackung, Kennung und Nachweis passend zur Phrase", async () => {
+		const key = await createVaultKey();
+		const phrase = createRecoveryPhrase();
+		const wrap = await recoveryWrap(key, phrase);
+		expect(wrap.recoveryId).toBe(await recoveryLookupId(phrase));
+		expect(wrap.vaultProof).toBe(await vaultProof(key));
+		expect(await vaultProof(await unwrapWithPhrase(wrap.payload, phrase))).toBe(wrap.vaultProof);
 	});
 });

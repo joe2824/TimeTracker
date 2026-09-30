@@ -10,6 +10,7 @@ import type { TimeReportDay, TimeReportFlag } from "./report/timeReport";
 import type { SyncPriority } from "./sync/engine";
 import { defaultSettings } from "./types";
 import { logError, logWarn } from "./log";
+import { stableStringify } from "./utils";
 import {
 	fromBase64,
 	importVaultKey,
@@ -263,6 +264,20 @@ function queued(file: string, op: () => Promise<void>): Promise<void> {
 	return next;
 }
 
+/** Eine Datei im Datenordner löschen, falls es sie gibt - nur innerhalb von `queued`. */
+async function removeFileNow(file: string): Promise<void> {
+	const path = `${DIR}/${file}`;
+	if (await storage.exists(path)) await storage.remove(path);
+}
+
+/**
+ * Eine Datei löschen, hinter allem, was an ihr schon eingereiht ist: ein
+ * laufendes Speichern landete sonst NACH dem Löschen, und die Datei wäre zurück.
+ */
+function removeDataFile(file: string): Promise<void> {
+	return queued(file, () => removeFileNow(file));
+}
+
 /**
  * `fn` unter einer Sperre, die auch andere Fenster derselben Anwendung achten.
  *
@@ -459,11 +474,10 @@ async function saveEntriesWith(
 		// Ein leerer Monat hinterlässt keine Datei: sonst bliebe eine "[]"-Datei
 		// liegen und der Monat geisterte ohne Einträge weiter durch die Monatsauswahl.
 		if (next.length === 0) {
-			const path = `${DIR}/${file}`;
 			// Auch das Leeren geht durch den Haken: sonst verschwände ein
 			// geleerter Monat, ohne dass der Abgleich die Löschungen je erfährt.
 			if (hook) await hook.entries(month, before, []);
-			if (await storage.exists(path)) await storage.remove(path);
+			await removeFileNow(file);
 			return;
 		}
 		const stamped = hook ? await hook.entries(month, before, next) : next;
@@ -473,9 +487,7 @@ async function saveEntriesWith(
 
 /** Inhaltsgleich, unabhängig von der Reihenfolge der Felder. */
 function sameEntry(a: Entry, b: Entry): boolean {
-	const canon = (e: Entry) =>
-		JSON.stringify(Object.fromEntries(Object.entries(e).sort(([x], [y]) => x.localeCompare(y))));
-	return canon(a) === canon(b);
+	return stableStringify(a) === stableStringify(b);
 }
 
 /**
@@ -644,8 +656,7 @@ async function deleteTimeReportWith(hook: WriteHook | null, month: string): Prom
 	const file = reportFile(month);
 	return queued(file, async () => {
 		if (hook) await hook.timeReport(month, await loadTimeReportRaw(month), null);
-		const path = `${DIR}/${file}`;
-		if (await storage.exists(path)) await storage.remove(path);
+		await removeFileNow(file);
 	});
 }
 
@@ -774,12 +785,7 @@ export async function clearAccountData(): Promise<void> {
 		// erneutes Koppeln wiedererkennen. Die Kontodaten daneben streift das
 		// Abmelden ab.
 		if (name === "device.json") continue;
-		// Durch dieselbe Warteschlange wie das Schreiben: ein bereits eingereihtes
-		// Speichern landete sonst NACH dem Löschen - und der Bestand wäre zurück.
-		await queued(name, async () => {
-			const path = `${DIR}/${name}`;
-			if (await storage.exists(path)) await storage.remove(path);
-		});
+		await removeDataFile(name);
 	}
 }
 
@@ -792,12 +798,7 @@ export async function clearAccountData(): Promise<void> {
 export function clearOutbox(): Promise<void> {
 	// Dieselbe Sperre wie sync/outbox.ts: sonst schriebe ein Fenster, das gerade
 	// gelesen hat, die Liste des vorigen Kontos wieder zurück.
-	return acrossWindows("outbox", () =>
-		queued("outbox.json", async () => {
-			const path = `${DIR}/outbox.json`;
-			if (await storage.exists(path)) await storage.remove(path);
-		})
-	);
+	return acrossWindows("outbox", () => removeDataFile("outbox.json"));
 }
 
 /** Die Feldnamen vor 0.9.2. Zum Lesen alter Dateien, nicht zum Schreiben. */
@@ -890,14 +891,12 @@ export async function loadTeamRemovedFrom(): Promise<string | null> {
 
 export async function saveTeamRemovedFrom(teamName: string | null): Promise<void> {
 	if (teamName !== null) return writeJson("team-removed.json", { teamName });
-	const path = `${DIR}/team-removed.json`;
-	if (await storage.exists(path)) await storage.remove(path);
+	return removeDataFile("team-removed.json");
 }
 
 /** Die Team-Mitgliedschaft aufgeben - z.B. nach dem Hinauswerfen durch den Chef. */
-export async function clearTeamDevice(): Promise<void> {
-	const path = `${DIR}/team.json`;
-	if (await storage.exists(path)) await storage.remove(path);
+export function clearTeamDevice(): Promise<void> {
+	return removeDataFile("team.json");
 }
 
 /**

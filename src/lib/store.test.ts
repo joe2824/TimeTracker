@@ -621,3 +621,29 @@ describe("loadTimeReport", () => {
 		expect(report?.days[0].flags[0].key).toBe("restBreak");
 	});
 });
+
+describe("Löschen hinter einem eingereihten Schreiben", () => {
+	beforeEach(() => resetFakeFs());
+
+	it("clearTeamDevice räumt auch eine Datei weg, deren Schreiben noch läuft", async () => {
+		const { saveTeamDevice, clearTeamDevice } = await import("./store");
+		const release = blockWrites();
+		const writing = saveTeamDevice({ teamMemberId: "m1", token: "t", teamName: "Team", serverUrl: "https://firma.de" });
+		const clearing = clearTeamDevice();
+		release();
+		await Promise.all([writing, clearing]);
+
+		expect(files.has("data/team.json")).toBe(false);
+	});
+
+	it("saveTeamRemovedFrom(null) räumt auch eine Datei weg, deren Schreiben noch läuft", async () => {
+		const { saveTeamRemovedFrom } = await import("./store");
+		const release = blockWrites();
+		const writing = saveTeamRemovedFrom("Team");
+		const clearing = saveTeamRemovedFrom(null);
+		release();
+		await Promise.all([writing, clearing]);
+
+		expect(files.has("data/team-removed.json")).toBe(false);
+	});
+});

@@ -10,7 +10,7 @@
 // Klartext für die Reihenfolge.
 import type { Entry, Activity, Settings } from "../types";
 import type { StoredTimeReport } from "../store";
-import { Api, ApiError, type OutgoingRecord, type ServerRecord } from "./api";
+import { Api, ApiError, type PushRecord, type ServerRecord } from "./api";
 import {
 	clearChanges,
 	monthOfTimeReportId,
@@ -25,6 +25,7 @@ import { mergeRecord, resolveOpenEntries } from "./merge";
 import { contentOf } from "./stamp";
 import { bucketFor, openRecord, sealRecord, type VaultKey } from "../crypto/vault";
 import { logError, logInfo, logWarn } from "../log";
+import { createSerialQueue } from "../utils";
 import { monthKey, prevMonthKey, startOfNextDay } from "../time/time";
 
 /** Wie oft nach einem Konflikt neu versucht wird, bevor aufgegeben wird. */
@@ -39,6 +40,27 @@ const BATCH = 200;
  * der nächste Durchgang erst danach pusht.
  */
 const BACKLOG_PAGES = 5;
+
+/** Ob der Server den Datensatz als gelöscht führt. */
+function isTombstone(r: ServerRecord): boolean {
+	return r.deletedAt !== null && r.deletedAt !== undefined;
+}
+
+/** Der entschlüsselte Inhalt mit den Stempeln des Servers. */
+function fromServer<T extends object>(
+	r: ServerRecord,
+	content: T
+): T & { id: string; updatedAt: number; rev: number; deviceId: string | undefined } {
+	return { ...content, id: r.id, updatedAt: r.updatedAt, rev: r.rev, deviceId: r.deviceId ?? undefined };
+}
+
+/** Die Löschmarke für `mergeRecord`: ein gelöschter Stand trägt `deletedAt`. */
+function withTombstone<T extends object>(r: ServerRecord, value: T): T & { deletedAt?: number } {
+	return isTombstone(r) ? { ...value, deletedAt: r.updatedAt } : value;
+}
+
+const carriesTombstone = (v: object): boolean =>
+	(v as { deletedAt?: number }).deletedAt !== undefined;
 
 /** Die Ablage, wie der Abgleich sie braucht: Schreiben am Haken vorbei (remoteStore). */
 export interface LocalStore {
@@ -178,13 +200,7 @@ export class SyncEngine {
 	 * dieselbe Monatsdatei lesen, ändern und zurückschreiben, verlören sonst
 	 * die Änderung der jeweils anderen.
 	 */
-	#chain: Promise<unknown> = Promise.resolve();
-
-	#serial<T>(op: () => Promise<T>): Promise<T> {
-		const next = this.#chain.then(op, op);
-		this.#chain = next.catch(() => {});
-		return next;
-	}
+	#serial = createSerialQueue();
 
 	/** Der gerade laufende Durchgang, damit ein zweiter Aufruf mitwarten kann. */
 	#current: Promise<SyncOutcome> | null = null;
@@ -356,7 +372,7 @@ export class SyncEngine {
 					// Weg ist weg: hat der Server selbst einen Löschmarker, ist die
 					// Löschung von hier erledigt. Und wurde dort nach ihr noch etwas
 					// geändert, gilt dieser jüngere Stand.
-					if (k.current.deletedAt !== null || k.current.updatedAt > change.at) {
+					if (isTombstone(k.current) || k.current.updatedAt > change.at) {
 						obsolete.push(change);
 					} else {
 						rebased.push({ kind: change.kind, id: change.id, rev: k.current.rev });
@@ -382,8 +398,8 @@ export class SyncEngine {
 		return { pushed: total, pulled, lostEdits, staleTimerSplits };
 	}
 
-	async #toOutgoing(changes: PendingChange[]): Promise<OutgoingRecord[]> {
-		const out: OutgoingRecord[] = [];
+	async #toOutgoing(changes: PendingChange[]): Promise<PushRecord[]> {
+		const out: PushRecord[] = [];
 		// Die Monatsdateien einmal lesen statt je Änderung: ein Tag mit zwanzig
 		// Einträgen läge sonst zwanzigmal auf dem Tisch.
 		const months = new Map<string, Entry[]>();
@@ -422,7 +438,7 @@ export class SyncEngine {
 		change: PendingChange,
 		item: ({ id: string } & { updatedAt?: number; rev?: number; deviceId?: string }) | undefined,
 		month?: string
-	): Promise<OutgoingRecord> {
+	): Promise<PushRecord> {
 		const bucket = month ? await bucketFor(this.#key, month) : null;
 		// Ob gelöscht wurde, sagt die Outbox - nicht das Fehlen des Datensatzes.
 		if (change.deleted || !item) {
@@ -663,14 +679,8 @@ export class SyncEngine {
 
 		for (const { r, content } of decrypted) {
 			if (content === undefined) continue;
-			const entry: Entry = {
-				...content,
-				id: r.id,
-				updatedAt: r.updatedAt,
-				rev: r.rev,
-				deviceId: r.deviceId ?? undefined
-			};
-			const deleted = r.deletedAt !== null;
+			const entry: Entry = fromServer(r, content);
+			const deleted = isTombstone(r);
 
 			// Zwei verschiedene Monate, und sie auseinanderzuhalten ist der Punkt:
 			// `oldMonth` ist, wo der Eintrag HEUTE lokal liegt, `targetMonth`, wo er nach
@@ -726,10 +736,10 @@ export class SyncEngine {
 			const result = mergeRecord(
 				{
 					local: localEntry,
-					remote: deleted ? { ...entry, deletedAt: entry.updatedAt } : entry,
+					remote: withTombstone(r, entry),
 					localPending
 				},
-				(v) => (v as Entry & { deletedAt?: number }).deletedAt !== undefined
+				carriesTombstone
 			);
 			if (result.lostLocalEdit) lost++;
 			// Die Fortsetzung selbst bleibt unangetastet - beide Seiten koennen recht
@@ -822,17 +832,10 @@ export class SyncEngine {
 		for (const r of records) {
 			const content = await this.#open<Activity>(r);
 			if (content === undefined) continue;
-			const remote: Activity & { deletedAt?: number } = {
-				...content,
-				id: r.id,
-				updatedAt: r.updatedAt,
-				rev: r.rev,
-				deviceId: r.deviceId ?? undefined,
-				...(r.deletedAt ? { deletedAt: r.updatedAt } : {})
-			};
+			const remote: Activity & { deletedAt?: number } = withTombstone(r, fromServer(r, content));
 			const result = mergeRecord(
 				{ local: byId.get(r.id), remote, localPending: open.has(`activity:${r.id}`) },
-				(v) => (v as { deletedAt?: number }).deletedAt !== undefined
+				carriesTombstone
 			);
 			if (result.lostLocalEdit) lost++;
 			if (!result.changed) continue;
@@ -854,13 +857,7 @@ export class SyncEngine {
 		const result = mergeRecord(
 			{
 				local: { ...local, id: SETTINGS_ID },
-				remote: {
-					...content,
-					id: SETTINGS_ID,
-					updatedAt: record.updatedAt,
-					rev: record.rev,
-					deviceId: record.deviceId ?? undefined
-				},
+				remote: { ...fromServer(record, content), id: SETTINGS_ID },
 				localPending: open.has(`settings:${SETTINGS_ID}`)
 			},
 			() => false // Einstellungen werden nie gelöscht - es gibt immer welche.
@@ -891,22 +888,13 @@ export class SyncEngine {
 		const content = await this.#open<StoredTimeReport & { id?: string }>(record);
 		if (content === undefined) return 0;
 		const local = await this.#store.timeReport(month);
-		const deleted = record.deletedAt !== null;
 		const result = mergeRecord<StoredTimeReport & { id: string; deletedAt?: number }>(
 			{
 				local: local ? { ...local, id: record.id } : undefined,
-				remote: {
-					...content,
-					id: record.id,
-					month,
-					updatedAt: record.updatedAt,
-					rev: record.rev,
-					deviceId: record.deviceId ?? undefined,
-					...(deleted ? { deletedAt: record.updatedAt } : {})
-				},
+				remote: withTombstone(record, { ...fromServer(record, content), month }),
 				localPending: open.has(`timereport:${record.id}`)
 			},
-			(v) => v.deletedAt !== undefined
+			carriesTombstone
 		);
 		if (!result.changed) return result.lostLocalEdit ? 1 : 0;
 		if (result.value === null) await this.#store.deleteTimeReport(month);
@@ -919,7 +907,7 @@ export class SyncEngine {
 
 	/** Einen Datensatz öffnen. */
 	async #open<T>(r: ServerRecord): Promise<T | undefined> {
-		if (!r.payload) return r.deletedAt ? ({} as T) : undefined;
+		if (!r.payload) return isTombstone(r) ? ({} as T) : undefined;
 		try {
 			return await openRecord<T>(this.#key, r.payload, {
 				id: r.id,
