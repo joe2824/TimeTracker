@@ -18,6 +18,7 @@ const accountMock = vi.hoisted(() => ({
 	rotateTeamInvite: vi.fn(),
 	listTeamAdmins: vi.fn(),
 	removeTeamAdmin: vi.fn(),
+	leaveTeamAsAdmin: vi.fn(),
 	getAdminInvite: vi.fn(),
 	rotateAdminInvite: vi.fn(),
 	transferTeamOwnership: vi.fn(),
@@ -40,6 +41,7 @@ beforeEach(() => {
 	accountMock.rotateTeamInvite.mockReset();
 	accountMock.listTeamAdmins.mockReset();
 	accountMock.removeTeamAdmin.mockReset();
+	accountMock.leaveTeamAsAdmin.mockReset();
 	accountMock.getAdminInvite.mockReset();
 	accountMock.rotateAdminInvite.mockReset();
 	accountMock.transferTeamOwnership.mockReset();
@@ -274,11 +276,14 @@ describe("removeAdmin", () => {
 
 		const remove = chefTeams.removeAdmin(ADMIN_ANNA.userId);
 		chefTeams.selectedTeamId = TEAM_B.id; // Chef wechselt das Team, waehrend der Request noch laeuft
+		// Inzwischen geladener Stand von B.
+		chefTeams.admins = [ADMIN_ANNA];
+		chefTeams.adminInvite = invite(TEAM_B.id, "b");
 		resolveRemove();
 		await remove;
 
 		expect(chefTeams.admins).toEqual([ADMIN_ANNA]);
-		expect(chefTeams.adminInvite).not.toBeNull();
+		expect(chefTeams.adminInvite?.code).toBe("b");
 	});
 });
 
@@ -354,5 +359,120 @@ describe("transferOwnership", () => {
 		expect(chefTeams.admins).toEqual([]);
 		expect(chefTeams.adminInvite).toBeNull();
 		expect(chefTeams.isOwner).toBe(false);
+	});
+});
+
+describe("leaveAsAdmin", () => {
+	const ADMIN_TEAM = { ...TEAM_A, role: "admin" as const };
+
+	it("nimmt das Team aus der Liste, wählt das nächste und verwirft alles Team-Bezogene", async () => {
+		accountMock.leaveTeamAsAdmin.mockResolvedValue(undefined);
+		chefTeams.teams = [ADMIN_TEAM, TEAM_B];
+		chefTeams.selectedTeamId = ADMIN_TEAM.id;
+		chefTeams.invite = invite("t1", "ALT");
+		chefTeams.admins = [ADMIN_ANNA];
+
+		await chefTeams.leaveAsAdmin();
+
+		expect(accountMock.leaveTeamAsAdmin).toHaveBeenCalledWith("t1");
+		expect(chefTeams.teams).toEqual([TEAM_B]);
+		expect(chefTeams.selectedTeamId).toBe("t2");
+		expect(chefTeams.invite).toBeNull();
+		expect(chefTeams.admins).toEqual([]);
+	});
+
+	it("lässt die Liste stehen, wenn der Server ablehnt", async () => {
+		accountMock.leaveTeamAsAdmin.mockRejectedValue(new Error("offline"));
+		chefTeams.teams = [ADMIN_TEAM];
+		chefTeams.selectedTeamId = ADMIN_TEAM.id;
+
+		await expect(chefTeams.leaveAsAdmin()).rejects.toThrow("offline");
+		expect(chefTeams.teams).toEqual([ADMIN_TEAM]);
+	});
+});
+
+describe("Teamwechsel", () => {
+	it("verwirft Link, Verwalter und Verwalter-Link des bisher ausgewählten Teams", () => {
+		chefTeams.selectedTeamId = TEAM_A.id;
+		chefTeams.invite = invite(TEAM_A.id, "a");
+		chefTeams.adminInvite = invite(TEAM_A.id, "va");
+		chefTeams.admins = [ADMIN_ANNA];
+
+		chefTeams.selectedTeamId = TEAM_B.id;
+
+		expect(chefTeams.invite).toBeNull();
+		expect(chefTeams.adminInvite).toBeNull();
+		expect(chefTeams.admins).toEqual([]);
+	});
+
+	it("X → A → B → wieder A, solange A lädt: B beendet die Ladeanzeige nicht und der Link von X bleibt nicht stehen", async () => {
+		const TEAM_X = { ...TEAM_A, id: "tx" };
+		chefTeams.selectedTeamId = TEAM_X.id;
+		chefTeams.invite = invite(TEAM_X.id, "x");
+		let resolveA!: (v: unknown) => void;
+		let resolveB!: (v: unknown) => void;
+		accountMock.getTeamInvite
+			.mockImplementationOnce(() => new Promise((r) => (resolveA = r)))
+			.mockImplementationOnce(() => new Promise((r) => (resolveB = r)));
+
+		chefTeams.selectedTeamId = TEAM_A.id;
+		const a = chefTeams.loadInvite(TEAM_A.id);
+		chefTeams.selectedTeamId = TEAM_B.id;
+		const b = chefTeams.loadInvite(TEAM_B.id);
+		chefTeams.selectedTeamId = TEAM_A.id;
+		const aAgain = chefTeams.loadInvite(TEAM_A.id); // teilt den laufenden Abruf
+		expect(accountMock.getTeamInvite).toHaveBeenCalledTimes(2);
+
+		resolveB(invite(TEAM_B.id, "b"));
+		await b;
+		expect(chefTeams.inviteLoading).toBe(true);
+		expect(chefTeams.invite).toBeNull();
+
+		resolveA(invite(TEAM_A.id, "a"));
+		await Promise.all([a, aAgain]);
+		expect(chefTeams.inviteLoading).toBe(false);
+		expect(chefTeams.invite?.code).toBe("a");
+	});
+});
+
+describe("Veraltete Abrufe nach einer Änderung", () => {
+	it("ein vor removeAdmin() gestarteter Abruf bringt den entfernten Verwalter und den widerrufenen Link nicht zurück", async () => {
+		chefTeams.selectedTeamId = TEAM_A.id;
+		let resolveAdmins!: (v: unknown) => void;
+		let resolveInvite!: (v: unknown) => void;
+		accountMock.listTeamAdmins.mockReturnValue(new Promise((r) => (resolveAdmins = r)));
+		accountMock.getAdminInvite.mockReturnValue(new Promise((r) => (resolveInvite = r)));
+		accountMock.removeTeamAdmin.mockResolvedValue(undefined);
+
+		const admins = chefTeams.loadAdmins(TEAM_A.id);
+		const inv = chefTeams.loadAdminInvite(TEAM_A.id);
+		await chefTeams.removeAdmin(ADMIN_ANNA.userId);
+		resolveAdmins([ADMIN_ANNA]);
+		resolveInvite(invite(TEAM_A.id, "widerrufen"));
+		await Promise.all([admins, inv]);
+
+		expect(chefTeams.admins).toEqual([]);
+		expect(chefTeams.adminInvite).toBeNull();
+	});
+
+	it("dasselbe nach transferOwnership()", async () => {
+		chefTeams.teams = [TEAM_A];
+		chefTeams.selectedTeamId = TEAM_A.id;
+		let resolveAdmins!: (v: unknown) => void;
+		let resolveInvite!: (v: unknown) => void;
+		accountMock.listTeamAdmins.mockReturnValue(new Promise((r) => (resolveAdmins = r)));
+		accountMock.getAdminInvite.mockReturnValue(new Promise((r) => (resolveInvite = r)));
+		accountMock.transferTeamOwnership.mockResolvedValue(undefined);
+		accountMock.listTeams.mockResolvedValue([{ ...TEAM_A, role: "admin" }]);
+
+		const admins = chefTeams.loadAdmins(TEAM_A.id);
+		const inv = chefTeams.loadAdminInvite(TEAM_A.id);
+		await chefTeams.transferOwnership(ADMIN_ANNA.userId);
+		resolveAdmins([ADMIN_ANNA]);
+		resolveInvite(invite(TEAM_A.id, "alt"));
+		await Promise.all([admins, inv]);
+
+		expect(chefTeams.admins).toEqual([]);
+		expect(chefTeams.adminInvite).toBeNull();
 	});
 });

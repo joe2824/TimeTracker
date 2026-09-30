@@ -4,8 +4,7 @@
 	import { Button } from "$lib/components/ui/button";
 	import TeamJoinForm from "./TeamJoinForm.svelte";
 	import { teamJoin } from "$lib/team/state.svelte";
-	import { TeamJoinFlow } from "$lib/team/joinFlow.svelte";
-	import { normalizeServerUrl } from "$lib/sync/api";
+	import { TeamJoinFlow, serverHostOf } from "$lib/team/joinFlow.svelte";
 	import { toast } from "svelte-sonner";
 
 	const flow = new TeamJoinFlow();
@@ -14,20 +13,13 @@
 	// Der Link bestimmt den Server frei - ohne diese Anzeige sähe der Nutzer nie,
 	// wohin Name/E-Mail beim Beitreten tatsächlich gehen (auch ein untergeschobener
 	// Link zeigt ja einen Teamnamen an, den holt er sich vom selben fremden Server).
-	const serverHost = $derived.by(() => {
-		const link = teamJoin.pendingLink;
-		if (!link) return "";
-		try {
-			return new URL(normalizeServerUrl(link.serverUrl)).host;
-		} catch {
-			return link.serverUrl;
-		}
-	});
+	const serverHost = $derived(teamJoin.pendingLink ? serverHostOf(teamJoin.pendingLink.serverUrl) : "");
+	const ready = $derived(!flow.consentHost && flow.preview !== "loading" && flow.preview !== "error");
 
 	$effect(() => {
 		const link = teamJoin.pendingLink;
 		if (!link) return;
-		void flow.loadPreview(link.serverUrl, link.code);
+		void flow.openLink(link.serverUrl, link.code);
 	});
 
 	function dismiss() {
@@ -57,7 +49,9 @@
 	<Dialog.Content class="sm:max-w-md">
 		<Dialog.Header>
 			<Dialog.Title>
-				{#if flow.preview === "loading"}
+				{#if flow.consentHost}
+					Einladung von {flow.consentHost} öffnen?
+				{:else if flow.preview === "loading"}
 					Team-Link wird geprüft…
 				{:else if flow.preview === "error"}
 					Link nicht gültig
@@ -66,7 +60,10 @@
 				{/if}
 			</Dialog.Title>
 			<Dialog.Description>
-				{#if flow.preview === "error"}
+				{#if flow.consentHost}
+					Mit diesem Server ist dein Gerät bisher nicht verbunden. Erst wenn du die Einladung öffnest,
+					wird dort nachgesehen, zu welchem Team sie gehört. Öffne sie nur, wenn du sie erwartet hast.
+				{:else if flow.preview === "error"}
 					Dieser Link ist abgelaufen oder wurde zurückgezogen – frag deinen Chef nach einem neuen.
 				{:else}
 					Die gemeinsamen Aktivitäten dieses Teams werden auf diesem Gerät verfügbar. Wenn du deinen
@@ -76,13 +73,15 @@
 			</Dialog.Description>
 		</Dialog.Header>
 
-		{#if teamJoin.pendingLink && flow.preview !== "loading" && flow.preview !== "error"}
+		{#if teamJoin.pendingLink && ready}
 			<TeamJoinForm {flow} serverUrl={teamJoin.pendingLink.serverUrl} {serverHost} onjoin={join} />
 		{/if}
 
 		<Dialog.Footer>
 			<Button variant="outline" disabled={flow.busy} onclick={dismiss}>Abbrechen</Button>
-			{#if flow.preview !== "loading" && flow.preview !== "error"}
+			{#if flow.consentHost}
+				<Button onclick={() => void flow.confirmOpen()}>Einladung öffnen</Button>
+			{:else if ready}
 				<Button
 					disabled={!teamJoin.pendingLink || !flow.canJoinAt(teamJoin.pendingLink.serverUrl)}
 					onclick={join}

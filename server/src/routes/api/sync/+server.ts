@@ -17,6 +17,8 @@ export const GET: RequestHandler = ({ locals, url }) => {
 	const since = Number(url.searchParams.get("since") ?? 0);
 	const limitRaw = url.searchParams.get("limit");
 	if (!Number.isFinite(since) || since < 0) error(400, "Ungültiger Stand");
+	const limit = limitRaw ? Number(limitRaw) : undefined;
+	if (limit !== undefined && !(Number.isFinite(limit) && limit >= 1)) error(400, "Ungültige Seitengröße");
 
 	// Mehrfach angebbar: ?bucket=a&bucket=b. Ohne jede Angabe bleibt es beim
 	// vollen Durchlauf, damit ältere Geräte unverändert weiterlaufen.
@@ -26,7 +28,7 @@ export const GET: RequestHandler = ({ locals, url }) => {
 	try {
 		const result = pullRecords(locals.db, userId, {
 			since,
-			limit: limitRaw ? Number(limitRaw) : undefined,
+			limit,
 			buckets: url.searchParams.has("bucket") ? buckets : undefined,
 			includeUnbucketed: unbucketed
 		});

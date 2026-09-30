@@ -3,7 +3,7 @@ import type { BackupInfo } from "$shared/apiTypes";
 export type { BackupInfo };
 import type Database from "better-sqlite3";
 import { mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { BACKUP_DIR, BACKUP_INTERVAL_HOURS, BACKUP_KEEP } from "./config";
 import { migrate } from "./db/index";
 
@@ -67,6 +67,7 @@ export function cleanupBackups(dir: string, keepCount: number): number {
 			for (const file of toDelete) {
 				try {
 					unlinkSync(file.path);
+					integrityCache.delete(file.path);
 					deletedCount++;
 				} catch (err) {
 					console.warn(`[Backup] Konnte alte Sicherung ${file.name} nicht löschen:`, err);
@@ -94,11 +95,25 @@ function cachedIntegrity(path: string, mtime: number, size: number): boolean {
 	return verified;
 }
 
+/** Nur für Tests: welche Pfade gerade ein Prüfergebnis haben. */
+export function cachedIntegrityPaths(): string[] {
+	return [...integrityCache.keys()];
+}
+
+/** Einträge für Sicherungen in `dir`, die es nicht mehr gibt, vergessen. */
+function pruneIntegrityCache(dir: string, present: Set<string>): void {
+	for (const path of integrityCache.keys()) {
+		if (dirname(path) === dir && !present.has(path)) integrityCache.delete(path);
+	}
+}
+
 /** Alle verfügbaren Sicherungen auflisten (neueste zuerst). */
 export function listBackups(dir: string = BACKUP_DIR): BackupInfo[] {
 	try {
 		mkdirSync(dir, { recursive: true });
-		return backupNames(dir)
+		const names = backupNames(dir);
+		pruneIntegrityCache(dir, new Set(names.map((f) => join(dir, f))));
+		return names
 			.map((f) => {
 				const full = join(dir, f);
 				const st = statSync(full);
@@ -122,6 +137,7 @@ export function deleteBackupFile(dir: string, name: string): boolean {
 	try {
 		const full = join(dir, cleanName);
 		unlinkSync(full);
+		integrityCache.delete(full);
 		return true;
 	} catch {
 		return false;

@@ -10,8 +10,18 @@ import { previewTeamInvite } from "./api";
 import { LinkPreview, type LinkPreviewState } from "./linkPreview.svelte";
 import { loadTeamDevice, type TeamDeviceInfo } from "../store";
 import { errorText } from "../log";
-import { cleanEmail } from "$shared/email";
+import { isInvalidOptionalEmail } from "$shared/email";
 import { normalizeServerUrl } from "../sync/api";
+import { account } from "../sync/account.svelte";
+
+/** Der Host eines Servers, wie ihn der Nutzer lesen soll. */
+export function serverHostOf(serverUrl: string): string {
+	try {
+		return new URL(normalizeServerUrl(serverUrl)).host;
+	} catch {
+		return serverUrl;
+	}
+}
 
 export class TeamJoinFlow {
 	name = $state("");
@@ -22,6 +32,10 @@ export class TeamJoinFlow {
 	joinError = $state<string | null>(null);
 	/** Die Mitgliedschaft, die ein Beitritt ersetzen würde - der Dialog warnt davor. */
 	existing = $state<TeamDeviceInfo | null>(null);
+	/** Host eines fremden Servers, bei dem erst nach Rückfrage nachgefragt wird - sonst null. */
+	consentHost = $state<string | null>(null);
+	#pending: { serverUrl: string; code: string } | null = null;
+	#openRun = 0;
 
 	get preview(): LinkPreviewState {
 		return this.#link.state;
@@ -29,7 +43,7 @@ export class TeamJoinFlow {
 
 	/** Eine eingetragene, aber unbrauchbare Adresse würfe der Server still weg - dann fehlte die Erinnerung. */
 	get emailInvalid(): boolean {
-		return this.email.trim() !== "" && cleanEmail(this.email) === null;
+		return isInvalidOptionalEmail(this.email);
 	}
 
 	/**
@@ -50,6 +64,39 @@ export class TeamJoinFlow {
 		return !this.busy && this.name.trim() !== "" && !this.emailInvalid && !this.sameTeam(serverUrl);
 	}
 
+	/**
+	 * Einen eingehenden Link öffnen. Die Vorschau verrät dem Server im Link, dass
+	 * er geöffnet wurde - bei einem Server, mit dem dieses Gerät schon verbunden
+	 * ist (Konto oder Team), ist das nichts Neues; bei einem fremden erst nach
+	 * Bestätigung (consentHost, confirmOpen).
+	 */
+	async openLink(serverUrl: string, code: string): Promise<void> {
+		const run = ++this.#openRun;
+		this.consentHost = null;
+		this.#pending = null;
+		const target = normalizeServerUrl(serverUrl);
+		const device = await loadTeamDevice().catch(() => null);
+		if (run !== this.#openRun) return;
+		const known = [account.linked ? account.serverUrl : "", device?.serverUrl ?? ""]
+			.filter((u) => u)
+			.some((u) => normalizeServerUrl(u) === target);
+		if (known) {
+			await this.loadPreview(serverUrl, code);
+			return;
+		}
+		this.#pending = { serverUrl, code };
+		this.consentHost = serverHostOf(serverUrl);
+	}
+
+	/** Nach der Rückfrage: die Vorschau beim fremden Server doch laden. */
+	async confirmOpen(): Promise<void> {
+		const pending = this.#pending;
+		if (!pending) return;
+		this.#pending = null;
+		this.consentHost = null;
+		await this.loadPreview(pending.serverUrl, pending.code);
+	}
+
 	/** Vorschau für einen (neuen) Link laden. */
 	async loadPreview(serverUrl: string, code: string): Promise<void> {
 		const { run, done } = this.#link.load(serverUrl, code);
@@ -66,6 +113,9 @@ export class TeamJoinFlow {
 		this.name = "";
 		this.email = "";
 		this.joinError = null;
+		this.#openRun++;
+		this.#pending = null;
+		this.consentHost = null;
 	}
 
 	/**

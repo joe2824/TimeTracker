@@ -532,6 +532,11 @@ export class Api {
 		});
 	}
 
+	/** Als Verwalter selbst austreten - widerruft dabei auch den Verwalter-Link. */
+	leaveTeamAsAdmin(teamId: string): Promise<{ ok: boolean }> {
+		return this.#call(`/api/team/${encodeURIComponent(teamId)}/admins/me`, { method: "DELETE" });
+	}
+
 	getAdminInvite(teamId: string): Promise<{ invite: TeamInvite | null }> {
 		return this.#call(`/api/team/${encodeURIComponent(teamId)}/admin-invite`);
 	}

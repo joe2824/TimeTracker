@@ -3,7 +3,7 @@
 import type { TeamActivity, TeamActivityInput, TeamReportStatus } from "$shared/apiTypes";
 export type { TeamActivityInput, TeamReportStatus };
 import { error } from "@sveltejs/kit";
-import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, ne } from "drizzle-orm";
 import type { Db, DbLike } from "./db/index";
 import {
 	teamActivities,
@@ -29,10 +29,20 @@ export interface TeamRow {
 	role?: "owner" | "admin";
 }
 
-/** Ein Team anlegen. */
-export function createTeam(db: DbLike, ownerUserId: string, name: string): TeamRow {
+/** Obergrenzen gegen ein Konto, das den Server mit Teams oder Beitritten füllt. */
+export const MAX_TEAMS_PER_OWNER = 20;
+export const MAX_MEMBERS_PER_TEAM = 200;
+
+/** Ein Team anlegen - Zählen und Einfügen in einer Transaktion, damit parallele Anfragen die Grenze nicht überholen. */
+export function createTeam(db: Db, ownerUserId: string, name: string): TeamRow {
 	const row = { id: crypto.randomUUID(), ownerUserId, name: name.slice(0, TEAM_TEXT_MAX), createdAt: Date.now() };
-	db.insert(teams).values(row).run();
+	db.transaction((tx) => {
+		const owned = tx.select({ n: count() }).from(teams).where(eq(teams.ownerUserId, ownerUserId)).get();
+		if ((owned?.n ?? 0) >= MAX_TEAMS_PER_OWNER) {
+			error(409, `Mehr als ${MAX_TEAMS_PER_OWNER} Teams lassen sich nicht anlegen. Löschen Sie zuerst ein Team, das Sie nicht mehr brauchen.`);
+		}
+		tx.insert(teams).values(row).run();
+	});
 	return row;
 }
 
@@ -188,26 +198,37 @@ export interface TeamMemberAuth {
  * kein Abgleich gegen vorhandene Namen/E-Mails).
  */
 export function joinTeam(
-	db: DbLike,
+	db: Db,
 	code: string,
 	name: string,
 	email?: string
 ): { teamMemberId: string; token: string; teamName: string } | null {
-	const team = teamFromInviteCode(db, code);
-	if (!team) return null;
 	const id = crypto.randomUUID();
 	const token = newSecret();
-	db.insert(teamMembers)
-		.values({
-			id,
-			teamId: team.id,
-			name: readLabel(name, "Ohne Namen", TEAM_TEXT_MAX),
-			email: cleanEmail(email),
-			tokenHash: hashSecret(token),
-			createdAt: Date.now()
-		})
-		.run();
-	return { teamMemberId: id, token, teamName: team.name };
+	return db.transaction((tx) => {
+		const team = teamFromInviteCode(tx, code);
+		if (!team) return null;
+		// Hinausgeworfene zählen nicht - ihre Zeilen bleiben nur für alte Berichte stehen.
+		const active = tx
+			.select({ n: count() })
+			.from(teamMembers)
+			.where(and(eq(teamMembers.teamId, team.id), isNull(teamMembers.revokedAt)))
+			.get();
+		if ((active?.n ?? 0) >= MAX_MEMBERS_PER_TEAM) {
+			error(409, `Dieses Team hat bereits ${MAX_MEMBERS_PER_TEAM} Mitglieder. Bitte wenden Sie sich an die Teamleitung.`);
+		}
+		tx.insert(teamMembers)
+			.values({
+				id,
+				teamId: team.id,
+				name: readLabel(name, "Ohne Namen", TEAM_TEXT_MAX),
+				email: cleanEmail(email),
+				tokenHash: hashSecret(token),
+				createdAt: Date.now()
+			})
+			.run();
+		return { teamMemberId: id, token, teamName: team.name };
+	});
 }
 
 /** `lastSeenAt` gilt als aktuell genug, wenn es innerhalb dieser Frist liegt - kein Schreiben bei jeder Anfrage. */
@@ -336,6 +357,19 @@ export function removeTeamAdmin(db: Db, teamId: string, userId: string): boolean
 	if (r.changes === 0) return false;
 	revokeInvites(db, ADMIN_INVITES, teamId, Date.now());
 	return true;
+}
+
+/**
+ * Ein Verwalter gibt die Verwaltung selbst ab - wie removeTeamAdmin, samt
+ * Widerruf des Verwalter-Links. Der Chef kann so nicht gehen: das Team braucht
+ * einen Besitzer, er muss es übergeben oder löschen.
+ */
+export function leaveTeamAsAdmin(db: Db, teamId: string, userId: string): boolean {
+	const team = db.select({ ownerUserId: teams.ownerUserId }).from(teams).where(eq(teams.id, teamId)).get();
+	if (team?.ownerUserId === userId) {
+		error(409, "Als Chef können Sie das Team nicht verlassen. Übergeben Sie es zuerst oder löschen Sie es.");
+	}
+	return removeTeamAdmin(db, teamId, userId);
 }
 
 /**

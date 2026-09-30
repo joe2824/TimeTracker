@@ -7,7 +7,8 @@ import {
 	listBackups,
 	performBackup,
 	restoreBackup,
-	verifyBackupIntegrity
+	verifyBackupIntegrity,
+	cachedIntegrityPaths
 } from "./backup";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -117,6 +118,29 @@ describe("Datenbanksicherungen", () => {
 		expect(deleteBackupFile(backupDir, "invalid.txt")).toBe(false);
 		expect(deleteBackupFile(backupDir, b.name)).toBe(true);
 		expect(listBackups(backupDir).length).toBe(0);
+	});
+
+	it("vergisst das Prüfergebnis gelöschter Sicherungen", async () => {
+		const { raw } = openDb(dbFile);
+		const a = await performBackup(raw, { dir: backupDir });
+		raw.close();
+		listBackups(backupDir);
+		const pathA = join(backupDir, a.name);
+		expect(cachedIntegrityPaths()).toContain(pathA);
+
+		expect(deleteBackupFile(backupDir, a.name)).toBe(true);
+		expect(cachedIntegrityPaths()).not.toContain(pathA);
+	});
+
+	it("listBackups räumt Einträge für von aussen verschwundene Sicherungen weg", async () => {
+		const { raw } = openDb(dbFile);
+		const a = await performBackup(raw, { dir: backupDir });
+		raw.close();
+		listBackups(backupDir);
+		rmSync(join(backupDir, a.name));
+
+		listBackups(backupDir);
+		expect(cachedIntegrityPaths()).not.toContain(join(backupDir, a.name));
 	});
 
 	it("restoreBackup stellt eine Sicherung wieder her und legt ein Pre-Restore Backup an", async () => {

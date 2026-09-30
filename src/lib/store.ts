@@ -24,7 +24,7 @@ import {
 	loadLocalVaultKey,
 	saveLocalVaultKey
 } from "./platform/keyStore";
-import { unprotectSecret } from "./platform/secrets";
+import { protectSecret, unprotectSecret } from "./platform/secrets";
 
 const DIR = "data";
 
@@ -876,9 +876,9 @@ export function updateDevice(
  * Was dieses Gerät über seine Team-Mitgliedschaft weiss.
  *
  * Eigene Datei, nicht `device.json`: ein Team-Mitglied hat kein Konto und
- * keinen Vault-Schlüssel - beides bleibt hier komplett aussen vor. Wie
- * `device.json` bewusst NICHT verschlüsselt (siehe oben): das Token ist
- * selbst schon der Zugang, kein Inhalt, der einen Schlüssel bräuchte.
+ * keinen Vault-Schlüssel - beides bleibt hier komplett aussen vor. Das Token
+ * schützt wie bei `device.json` das Betriebssystem (protectSecret); im Browser
+ * bleibt es ungeschützt.
  */
 export interface TeamDeviceInfo {
 	teamMemberId: string;
@@ -888,12 +888,34 @@ export interface TeamDeviceInfo {
 	serverUrl: string;
 }
 
+/** `protected` fehlt nur in Dateien aus der Zeit, als das Token im Klartext stand. */
+type StoredTeamDevice = TeamDeviceInfo & { protected?: boolean };
+
 export async function loadTeamDevice(): Promise<TeamDeviceInfo | null> {
-	return readJson<TeamDeviceInfo | null>("team.json", null);
+	const stored = await readJson<StoredTeamDevice | null>("team.json", null);
+	if (!stored) return null;
+	const { protected: wasProtected, ...info } = stored;
+	if (wasProtected === undefined) {
+		// Alte Klartext-Datei: gleich geschützt neu ablegen.
+		void saveTeamDevice(info).catch((e) => logWarn("team.json nicht geschützt neu geschrieben", e));
+		return info;
+	}
+	try {
+		return { ...info, token: await unprotectSecret(info.token, wasProtected) };
+	} catch (e) {
+		logWarn("Team-Token konnte nicht entschlüsselt werden", e);
+		return null;
+	}
 }
 
-export async function saveTeamDevice(info: TeamDeviceInfo): Promise<void> {
-	return writeJson("team.json", info);
+export function saveTeamDevice(info: TeamDeviceInfo): Promise<void> {
+	// Das Schützen läuft in der Warteschlange: ein direkt danach eingereihtes
+	// clearTeamDevice muss auch nach diesem Schreiben drankommen.
+	return queued("team.json", async () => {
+		const secret = await protectSecret(info.token);
+		const stored: StoredTeamDevice = { ...info, token: secret.data, protected: secret.protected };
+		await writeJsonNow("team.json", stored);
+	});
 }
 
 /**

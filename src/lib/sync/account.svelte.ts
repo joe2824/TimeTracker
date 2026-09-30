@@ -1591,6 +1591,10 @@ class AccountState {
 		await this.#requireApi().removeTeamAdmin(teamId, userId);
 	}
 
+	async leaveTeamAsAdmin(teamId: string): Promise<void> {
+		await this.#requireApi().leaveTeamAsAdmin(teamId);
+	}
+
 	async getAdminInvite(teamId: string): Promise<TeamInvite | null> {
 		return (await this.#requireApi().getAdminInvite(teamId)).invite;
 	}

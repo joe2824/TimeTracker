@@ -1,7 +1,7 @@
 // Durchstich durch die Endpunkte - gegen einen echten Server, über echtes HTTP.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { openDb, type Db } from "./db/index";
-import { telemetryPings, users } from "./db/schema";
+import { teamMembers, teams, telemetryPings, users } from "./db/schema";
 import { createDevice, createSession, hashSecret, sha256Hex } from "./auth";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -279,6 +279,12 @@ describe("Abgleich ueber HTTP", () => {
 	it("weist einen unsinnigen Stand ab", async () => {
 		expect((await api(annaToken, "/api/sync?since=-5")).status).toBe(400);
 		expect((await api(annaToken, "/api/sync?since=abc")).status).toBe(400);
+	});
+
+	it("weist eine unsinnige Seitengröße ab, statt eine leere Seite zu liefern", async () => {
+		expect((await api(annaToken, "/api/sync?since=0&limit=abc")).status).toBe(400);
+		expect((await api(annaToken, "/api/sync?since=0&limit=0")).status).toBe(400);
+		expect((await api(annaToken, "/api/sync?since=0&limit=10")).status).toBe(200);
 	});
 });
 
@@ -2113,5 +2119,149 @@ describe("Team", () => {
 			body: JSON.stringify({ memberId: teamMemberId, month: REPORT_MONTH })
 		});
 		expect(foreign.status).toBe(404);
+	});
+
+	describe("Verwalter gegen Chef-Rechte", () => {
+		/** Anna ist Chefin, Bodo tritt über ihren Verwalter-Link bei. */
+		async function teamWithAdmin() {
+			const team = await createTeamFor(annaToken);
+			const link = await apiFrom(annaToken, `/api/team/${team.id}/admin-invite`, { method: "POST" });
+			expect(link.status).toBe(201);
+			const { code } = (await link.json()) as { code: string };
+			const joined = await apiFrom(bodoToken, "/api/team/admin/join", {
+				method: "POST",
+				body: JSON.stringify({ code })
+			});
+			expect(joined.status).toBe(201);
+			return team;
+		}
+
+		/** Ein drittes Konto, das ebenfalls Verwalter wird - als Ziel für "jemand anderen entfernen". */
+		async function thirdAdmin(teamId: string) {
+			db.insert(users).values({ id: "user-clara", displayName: "Clara", createdAt: 1, seqCounter: 0 }).run();
+			const claraToken = createDevice(db, "user-clara", "Claras Rechner").token;
+			const link = await apiFrom(annaToken, `/api/team/${teamId}/admin-invite`, { method: "POST" });
+			const { code } = (await link.json()) as { code: string };
+			const joined = await apiFrom(claraToken, "/api/team/admin/join", {
+				method: "POST",
+				body: JSON.stringify({ code })
+			});
+			expect(joined.status).toBe(201);
+			return claraToken;
+		}
+
+		it("ein Verwalter bekommt 404 bei allem, was dem Chef vorbehalten ist", async () => {
+			const team = await teamWithAdmin();
+			await thirdAdmin(team.id);
+
+			expect((await apiFrom(bodoToken, `/api/team/${team.id}`, { method: "DELETE" })).status).toBe(404);
+			expect((await apiFrom(bodoToken, `/api/team/${team.id}/admin-invite`)).status).toBe(404);
+			expect(
+				(await apiFrom(bodoToken, `/api/team/${team.id}/admin-invite`, { method: "POST" })).status
+			).toBe(404);
+			expect(
+				(
+					await apiFrom(bodoToken, `/api/team/${team.id}/admins`, {
+						method: "DELETE",
+						body: JSON.stringify({ userId: "user-clara" })
+					})
+				).status
+			).toBe(404);
+			expect(
+				(
+					await apiFrom(bodoToken, `/api/team/${team.id}/owner`, {
+						method: "POST",
+						body: JSON.stringify({ newOwnerUserId: BODO })
+					})
+				).status
+			).toBe(404);
+
+			// Nichts davon hat gewirkt: Clara ist noch Verwalterin, Anna noch Chefin.
+			const admins = await apiFrom(annaToken, `/api/team/${team.id}/admins`);
+			expect((await admins.json()).admins.map((a: { userId: string }) => a.userId).sort()).toEqual(
+				[BODO, "user-clara"].sort()
+			);
+		});
+
+		it("dieselben Aufrufe gelingen dem Chef", async () => {
+			const team = await teamWithAdmin();
+			await thirdAdmin(team.id);
+
+			expect((await apiFrom(annaToken, `/api/team/${team.id}/admin-invite`)).status).toBe(200);
+			expect(
+				(await apiFrom(annaToken, `/api/team/${team.id}/admin-invite`, { method: "POST" })).status
+			).toBe(201);
+			expect(
+				(
+					await apiFrom(annaToken, `/api/team/${team.id}/admins`, {
+						method: "DELETE",
+						body: JSON.stringify({ userId: "user-clara" })
+					})
+				).status
+			).toBe(200);
+			expect(
+				(
+					await apiFrom(annaToken, `/api/team/${team.id}/owner`, {
+						method: "POST",
+						body: JSON.stringify({ newOwnerUserId: BODO })
+					})
+				).status
+			).toBe(200);
+			// Jetzt ist Bodo Chef - und darf löschen.
+			expect((await apiFrom(bodoToken, `/api/team/${team.id}`, { method: "DELETE" })).status).toBe(200);
+		});
+
+		it("ein Verwalter gibt die Verwaltung selbst ab, sein Link gilt danach nicht mehr", async () => {
+			const team = await teamWithAdmin();
+			const invite = await apiFrom(annaToken, `/api/team/${team.id}/admin-invite`);
+			const { code } = (await invite.json()).invite as { code: string };
+
+			const leave = await apiFrom(bodoToken, `/api/team/${team.id}/admins/me`, { method: "DELETE" });
+			expect(leave.status).toBe(200);
+
+			expect((await apiFrom(bodoToken, `/api/team/${team.id}/members`)).status).toBe(404);
+			expect((await (await apiFrom(bodoToken, "/api/team")).json()).teams).toEqual([]);
+			expect((await (await apiFrom(annaToken, `/api/team/${team.id}/admin-invite`)).json()).invite).toBeNull();
+			const rejoin = await apiFrom(bodoToken, "/api/team/admin/join", {
+				method: "POST",
+				body: JSON.stringify({ code })
+			});
+			expect(rejoin.status).toBe(404);
+		});
+
+		it("der Chef kann nicht austreten, ein Fremder bekommt 404", async () => {
+			const team = await createTeamFor(annaToken);
+			const owner = await apiFrom(annaToken, `/api/team/${team.id}/admins/me`, { method: "DELETE" });
+			expect(owner.status).toBe(409);
+			const foreign = await apiFrom(bodoToken, `/api/team/${team.id}/admins/me`, { method: "DELETE" });
+			expect(foreign.status).toBe(404);
+		});
+	});
+
+	describe("Obergrenzen", () => {
+		it("ein Konto kann nicht beliebig viele Teams anlegen", async () => {
+			for (let i = 0; i < 20; i++) {
+				db.insert(teams).values({ id: `t-${i}`, ownerUserId: ANNA, name: `Team ${i}`, createdAt: 1 }).run();
+			}
+			const res = await apiFrom(annaToken, "/api/team", { method: "POST", body: JSON.stringify({ name: "Zu viel" }) });
+			expect(res.status).toBe(409);
+			expect((await res.json()).message).toMatch(/20 Teams/);
+		});
+
+		it("ein volles Team nimmt niemanden mehr auf", async () => {
+			const team = await createTeamFor(annaToken);
+			const invite = await inviteFor(annaToken, team.id);
+			for (let i = 0; i < 200; i++) {
+				db.insert(teamMembers)
+					.values({ id: `m-${i}`, teamId: team.id, name: `Person ${i}`, tokenHash: `h-${i}`, createdAt: 1 })
+					.run();
+			}
+			const res = await apiFrom(null, "/api/team/join", {
+				method: "POST",
+				body: JSON.stringify({ code: invite.code, name: "Anna Meier" })
+			});
+			expect(res.status).toBe(409);
+			expect((await res.json()).message).toMatch(/200 Mitglieder/);
+		});
 	});
 });

@@ -9,6 +9,7 @@ import {
 	deleteTeam,
 	joinTeam,
 	joinTeamAsAdmin,
+	leaveTeamAsAdmin,
 	listTeamActivities,
 	listTeamAdmins,
 	listTeamMembers,
@@ -31,9 +32,11 @@ import {
 	ADMIN_INVITE_TTL_MS,
 	isPlausibleReportMonth,
 	sanitizeTeamReport,
-	MAX_TEAM_REPORT_ROWS
+	MAX_TEAM_REPORT_ROWS,
+	MAX_MEMBERS_PER_TEAM,
+	MAX_TEAMS_PER_OWNER
 } from "./teams";
-import { teamAdminInvites } from "./db/schema";
+import { teamAdminInvites, teamMembers, teams } from "./db/schema";
 
 const rep = (total: number) => ({ rows: [], total, workHours: total, absenceHours: 0 });
 
@@ -632,5 +635,67 @@ describe("sanitizeTeamReport", () => {
 		expect(sanitizeTeamReport(null)).toBeNull();
 		expect(sanitizeTeamReport({ total: 3 })).toBeNull();
 		expect(sanitizeTeamReport("text")).toBeNull();
+	});
+});
+
+describe("Obergrenzen", () => {
+	/** Status des geworfenen SvelteKit-Fehlers - oder null, wenn nichts geworfen wurde. */
+	function statusOf(fn: () => unknown): number | null {
+		try {
+			fn();
+			return null;
+		} catch (e) {
+			return (e as { status?: number }).status ?? -1;
+		}
+	}
+
+	it("mehr als MAX_TEAMS_PER_OWNER Teams je Konto gibt 409", () => {
+		for (let i = 0; i < MAX_TEAMS_PER_OWNER; i++) createTeam(db, ANNA, `Team ${i}`);
+		expect(statusOf(() => createTeam(db, ANNA, "Eins zu viel"))).toBe(409);
+		expect(db.select().from(teams).all()).toHaveLength(MAX_TEAMS_PER_OWNER);
+		// Ein anderes Konto ist davon nicht betroffen.
+		expect(statusOf(() => createTeam(db, BODO, "Support"))).toBeNull();
+	});
+
+	it("mehr als MAX_MEMBERS_PER_TEAM aktive Mitglieder gibt 409", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		const invite = rotateTeamInvite(db, team.id);
+		for (let i = 0; i < MAX_MEMBERS_PER_TEAM; i++) {
+			db.insert(teamMembers)
+				.values({ id: `m-${i}`, teamId: team.id, name: `Person ${i}`, tokenHash: `h-${i}`, createdAt: 1 })
+				.run();
+		}
+		expect(statusOf(() => joinTeam(db, invite.code, "Eins zu viel"))).toBe(409);
+		expect(listTeamMembers(db, team.id)).toHaveLength(MAX_MEMBERS_PER_TEAM);
+	});
+
+	it("hinausgeworfene Mitglieder zählen nicht mit", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		const invite = rotateTeamInvite(db, team.id);
+		for (let i = 0; i < MAX_MEMBERS_PER_TEAM; i++) {
+			db.insert(teamMembers)
+				.values({ id: `m-${i}`, teamId: team.id, name: `Person ${i}`, tokenHash: `h-${i}`, createdAt: 1 })
+				.run();
+		}
+		revokeTeamMember(db, team.id, "m-0");
+		expect(joinTeam(db, invite.code, "Anna Meier")).not.toBeNull();
+	});
+});
+
+describe("Verwalter tritt selbst aus", () => {
+	it("leaveTeamAsAdmin nimmt den Zugang zurück und widerruft den Verwalter-Link", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		const invite = rotateAdminInvite(db, team.id);
+		joinTeamAsAdmin(db, invite.code, BODO);
+
+		expect(leaveTeamAsAdmin(db, team.id, BODO)).toBe(true);
+		expect(() => requireTeamAccess(db, BODO, team.id)).toThrow();
+		expect(activeAdminInvite(db, team.id)).toBeNull();
+	});
+
+	it("der Chef kann nicht austreten, nur übergeben oder löschen", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		expect(() => leaveTeamAsAdmin(db, team.id, ANNA)).toThrow();
+		expect(requireOwnTeam(db, ANNA, team.id).id).toBe(team.id);
 	});
 });

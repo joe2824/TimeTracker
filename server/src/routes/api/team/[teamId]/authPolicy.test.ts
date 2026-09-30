@@ -20,6 +20,8 @@ const EXPECTED: Record<string, Partial<Record<Method, AuthCheck>>> = {
 	"reports/+server.ts": { GET: "requireTeamAccess", POST: "requireTeamAccess", DELETE: "requireTeamAccess" },
 	"invite/+server.ts": { GET: "requireTeamAccess", POST: "requireTeamAccess" },
 	"admins/+server.ts": { GET: "requireTeamAccess", DELETE: "requireOwnTeam" },
+	// Nur das eigene Austreten - wen es trifft, steht fest (die eigene Kennung), nicht im Body.
+	"admins/me/+server.ts": { DELETE: "requireTeamAccess" },
 	"admin-invite/+server.ts": { GET: "requireOwnTeam", POST: "requireOwnTeam" },
 	"activities/+server.ts": { GET: "requireTeamAccess", PUT: "requireTeamAccess" },
 	"owner/+server.ts": { POST: "requireOwnTeam" },

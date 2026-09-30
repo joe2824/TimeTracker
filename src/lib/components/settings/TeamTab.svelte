@@ -183,6 +183,20 @@
 	// eines blossen Knopfdrucks.
 	let deleteTarget = $state<TeamInfo | null>(null);
 
+	// Name festhalten: leaveAsAdmin() nimmt das Team noch während der Bestätigung aus der Liste.
+	let leaveAdminTeamName = $state<string | null>(null);
+
+	async function confirmLeaveAdmin() {
+		try {
+			await chefTeams.leaveAsAdmin();
+			void syncOwnedTeamActivities();
+			toast.success(`Du verwaltest „${leaveAdminTeamName}“ nicht mehr.`);
+			leaveAdminTeamName = null;
+		} catch (e) {
+			toast.error(`Verwaltung abgeben fehlgeschlagen: ${errorText(e)}`);
+		}
+	}
+
 	async function confirmDeleteTeam() {
 		if (!deleteTarget) return;
 		try {
@@ -343,6 +357,14 @@
 			{/if}
 			{#if chefTeams.selectedTeam && !chefTeams.isOwner}
 				<span class="text-muted-foreground text-xs">(du bist Verwalter, nicht Chef)</span>
+				<Button
+					variant="ghost"
+					size="sm"
+					class="ml-auto"
+					onclick={() => (leaveAdminTeamName = chefTeams.selectedTeam?.name ?? null)}
+				>
+					<LogOutIcon class="size-4" /> Verwaltung abgeben
+				</Button>
 			{/if}
 			{#if chefTeams.selectedTeam && chefTeams.isOwner}
 				<Button
@@ -350,6 +372,7 @@
 					size="icon-sm"
 					class="ml-auto"
 					title="Team endgültig löschen"
+					aria-label="Team endgültig löschen"
 					onclick={() => (deleteTarget = chefTeams.selectedTeam)}
 				>
 					<Trash2Icon class="text-destructive size-4" />
@@ -390,6 +413,7 @@
 					variant="ghost"
 					size="icon"
 					title="Abbrechen"
+					aria-label="Abbrechen"
 					onclick={() => {
 						addingTeam = false;
 						newTeamName = "";
@@ -437,6 +461,7 @@
 									size="icon-sm"
 									class="text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
 									title="Nicht mehr Verwalter"
+									aria-label={`${a.displayName} als Verwalter entfernen`}
 									onclick={() => removeAdmin(a.userId, a.displayName)}
 								>
 									<Trash2Icon class="size-3.5" />
@@ -507,6 +532,17 @@
 		busyLabel="Wird übergeben…"
 		onConfirm={confirmTransfer}
 		onClose={() => (confirmingTransfer = false)}
+	/>
+
+	<ConfirmDialog
+		open={!!leaveAdminTeamName}
+		class="sm:max-w-md"
+		title={`Verwaltung von „${leaveAdminTeamName}“ abgeben?`}
+		description="Du siehst danach weder Mitglieder noch Berichte dieses Teams. Um wieder Verwalter zu werden, brauchst du einen neuen Einladungs-Link vom Chef."
+		confirmLabel="Verwaltung abgeben"
+		busyLabel="Wird abgegeben…"
+		onConfirm={confirmLeaveAdmin}
+		onClose={() => (leaveAdminTeamName = null)}
 	/>
 
 	<ConfirmDialog

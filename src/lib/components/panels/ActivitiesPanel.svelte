@@ -659,6 +659,7 @@
 									size="icon"
 									class="size-6"
 									title="Shortcut entfernen"
+									aria-label={`Shortcut von „${a.name}“ entfernen`}
 									onclick={() => clearShortcut(realId(a.id))}
 								>
 									<XIcon class="size-3.5" />
@@ -668,6 +669,7 @@
 									variant="ghost"
 									size="icon"
 									title="Globalen Shortcut festlegen"
+									aria-label={`Shortcut für „${a.name}“ festlegen`}
 									onclick={() => (recordingId = realId(a.id))}
 								>
 									<KeyboardIcon class="size-4" />
@@ -677,6 +679,8 @@
 								variant="ghost"
 								size="icon-sm"
 								title={a.favorite ? "Favorit entfernen" : "Als Favorit markieren"}
+								aria-label={`„${a.name}“ als Favorit`}
+								aria-pressed={!!a.favorite}
 								onclick={() => app.toggleFavorite(realId(a.id))}
 							>
 								<StarIcon class={"size-4 " + (a.favorite ? "fill-yellow-400 text-yellow-400" : "")} />
@@ -686,6 +690,8 @@
 									variant="ghost"
 									size="icon-sm"
 									title={a.hidden ? "In Auswahl einblenden" : "Aus Auswahl ausblenden (bleibt im Bericht)"}
+									aria-label={`„${a.name}“ ausblenden`}
+									aria-pressed={!!a.hidden}
 									onclick={() => app.toggleHidden(realId(a.id))}
 								>
 									{#if a.hidden}
@@ -703,6 +709,7 @@
 								variant="ghost"
 								size="icon-sm"
 								title="Eigene Aktivität hier zusammenführen – z.B. wenn sie dasselbe war, bevor das Team sie vorgab"
+								aria-label={`Eigene Aktivität in „${a.name}“ zusammenführen`}
 								onclick={() => askMergeInto(a)}
 							>
 								<GitMergeIcon class="size-4" />
@@ -712,6 +719,7 @@
 								size="icon-sm"
 								disabled={teamActionBusy}
 								title="Aus der Team-Liste entfernen – verschwindet auf allen Geräten des Teams"
+								aria-label={`„${a.name}“ aus der Team-Liste entfernen`}
 								onclick={() => (teamDeleteTarget = { id: teamRowId(a.id), name: a.name })}
 							>
 								<Trash2Icon class="text-destructive size-4" />
@@ -724,6 +732,7 @@
 								variant="ghost"
 								size="icon-sm"
 								title="Eigene Aktivität hier zusammenführen – z.B. wenn sie dasselbe war, bevor das Team sie vorgab"
+								aria-label={`Eigene Aktivität in „${a.name}“ zusammenführen`}
 								onclick={() => askMergeInto(a)}
 							>
 								<GitMergeIcon class="size-4" />
@@ -733,12 +742,19 @@
 								variant="ghost"
 								size="icon-sm"
 								title="Mit einer anderen Aktivität zusammenführen – alle Einträge wandern mit, nichts geht verloren"
+								aria-label={`„${a.name}“ mit einer anderen zusammenführen`}
 								onclick={() => askMerge(a)}
 							>
 								<GitMergeIcon class="size-4" />
 							</Button>
 							{#if a.archived}
-								<Button variant="ghost" size="icon-sm" title="Wiederherstellen (zurück in die Auswahl)" onclick={() => app.setArchived(a.id, false)}>
+								<Button
+									variant="ghost"
+									size="icon-sm"
+									title="Wiederherstellen (zurück in die Auswahl)"
+									aria-label={`„${a.name}“ wiederherstellen`}
+									onclick={() => app.setArchived(a.id, false)}
+								>
 									<RotateCcwIcon class="size-4" />
 								</Button>
 							{:else}
@@ -746,6 +762,7 @@
 									variant="ghost"
 									size="icon-sm"
 									title="Archivieren – aus Auswahl/Timer entfernen; erfasste Stunden bleiben im Bericht"
+									aria-label={`„${a.name}“ archivieren`}
 									onclick={() => app.setArchived(a.id, true)}
 								>
 									<ArchiveIcon class="size-4" />
@@ -755,6 +772,7 @@
 								variant="ghost"
 								size="icon-sm"
 								title="Löschen – Aktivität und alle Einträge unwiderruflich entfernen"
+								aria-label={`„${a.name}“ löschen`}
 								onclick={() => askDelete(a)}
 							>
 								<Trash2Icon class="text-destructive size-4" />

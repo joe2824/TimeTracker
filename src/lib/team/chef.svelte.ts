@@ -37,7 +37,16 @@ class TeamScopedLoad<T> {
 	load(teamId: string): Promise<boolean> {
 		const current = this.#request.get(teamId) ?? 0;
 		const shared = this.#inFlight.get(teamId);
-		if (shared && shared.id === current) return shared.run;
+		if (shared && shared.id === current) {
+			if (!this.#opts.isSelected(teamId)) return shared.run;
+			// Wieder ausgewählt, während der Abruf noch läuft: eigene Marke, sonst
+			// beendete ein älterer Abruf für ein anderes Team die Ladeanzeige.
+			const spinner = ++this.#spinnerRun;
+			this.#opts.setLoading(true);
+			return shared.run.finally(() => {
+				if (spinner === this.#spinnerRun) this.#opts.setLoading(false);
+			});
+		}
 
 		const id = current + 1;
 		this.#request.set(teamId, id);
@@ -74,7 +83,7 @@ class TeamScopedLoad<T> {
 
 class ChefTeamsState {
 	teams = $state<TeamInfo[]>([]);
-	selectedTeamId = $state<string | undefined>(undefined);
+	#selectedTeamId = $state<string | undefined>(undefined);
 	teamsLoading = $state(false);
 	/** Letzter Ladeversuch ohne Antwort - die Team-Ansicht zeigt dann einen Hinweis statt "kein Team". */
 	teamsLoadFailed = $state(false);
@@ -100,6 +109,19 @@ class ChefTeamsState {
 		this.selectedTeamId = undefined;
 		this.teamsLoading = false;
 		this.teamsLoadFailed = false;
+		this.invite = null;
+		this.admins = [];
+		this.adminInvite = null;
+	}
+
+	get selectedTeamId(): string | undefined {
+		return this.#selectedTeamId;
+	}
+
+	/** Ein Wechsel verwirft Link und Verwalter des bisherigen Teams, bis die des neuen geladen sind. */
+	set selectedTeamId(id: string | undefined) {
+		if (id === this.#selectedTeamId) return;
+		this.#selectedTeamId = id;
 		this.invite = null;
 		this.admins = [];
 		this.adminInvite = null;
@@ -187,6 +209,18 @@ class ChefTeamsState {
 
 	async deleteTeam(teamId: string): Promise<void> {
 		await account.deleteTeam(teamId);
+		this.#forgetTeam(teamId);
+	}
+
+	/** Als Verwalter die Verwaltung des ausgewählten Teams abgeben - danach ist es aus der Liste verschwunden. */
+	async leaveAsAdmin(): Promise<void> {
+		const teamId = this.selectedTeamId;
+		if (!teamId) return;
+		await account.leaveTeamAsAdmin(teamId);
+		this.#forgetTeam(teamId);
+	}
+
+	#forgetTeam(teamId: string): void {
 		this.#teamsRequest++;
 		this.teams = this.teams.filter((t) => t.id !== teamId);
 		// Der bisherige Link, die Verwalter und der Verwalter-Link gehoerten
@@ -263,6 +297,9 @@ class ChefTeamsState {
 		const teamId = this.selectedTeamId;
 		if (!teamId) return;
 		await account.removeTeamAdmin(teamId, userId);
+		// Ein vorher losgeschickter Abruf brächte sonst den alten Stand zurück.
+		this.#admins.supersede(teamId);
+		this.#adminInvites.supersede(teamId);
 		if (teamId !== this.selectedTeamId) return; // Auswahl wechselte waehrend des Requests
 		this.admins = this.admins.filter((a) => a.userId !== userId);
 		// Der Server widerruft beim Aussetzen eines Verwalters auch den bisherigen
@@ -309,6 +346,8 @@ class ChefTeamsState {
 		const teamId = this.selectedTeamId;
 		if (!teamId) return;
 		await account.transferTeamOwnership(teamId, newOwnerUserId);
+		this.#admins.supersede(teamId);
+		this.#adminInvites.supersede(teamId);
 		this.admins = [];
 		this.adminInvite = null;
 		await this.loadTeams();
