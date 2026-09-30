@@ -104,6 +104,22 @@ describe("storeWrap", () => {
 			)
 		).toThrow();
 	});
+
+	it("eine Phrasen-Verpackung ohne Kennung und Nachweis wird abgelehnt", () => {
+		// Sonst ersetzte sie die bisherige, und die Phrase fände das Konto nicht mehr.
+		expect(() =>
+			db.transaction((tx) => storeWrap(tx, ANNA, { kind: "recovery", payload: "{}" }))
+		).toThrow();
+		expect(db.select().from(keyWraps).where(eq(keyWraps.userId, ANNA)).all()).toEqual([]);
+	});
+
+	it("eine Passkey-Verpackung ohne Passkey wird abgelehnt", () => {
+		// Sie gehörte zu keinem Passkey, liesse sich nie ersetzen und häufte sich an.
+		expect(() =>
+			db.transaction((tx) => storeWrap(tx, ANNA, { kind: "passkey", payload: "p" }))
+		).toThrow();
+		expect(db.select().from(keyWraps).where(eq(keyWraps.userId, ANNA)).all()).toEqual([]);
+	});
 });
 
 describe("Passkey und Verpackung entstehen zusammen", () => {

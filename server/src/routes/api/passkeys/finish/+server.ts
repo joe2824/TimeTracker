@@ -4,18 +4,21 @@ import type { RequestHandler } from "./$types";
 import { storeCredential, verifyRegistration } from "$lib/server/webauthn";
 import { takeChallenge } from "$lib/server/auth";
 import { credentials } from "$lib/server/db/schema";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
+import { readJson } from "$lib/server/request";
+import { requireUser } from "$lib/server/guards";
+import { LABEL_MAX, readLabel } from "$shared/labels";
 
 export const POST: RequestHandler = async ({ locals, request }) => {
-	if (!locals.userId) error(401, "Nicht angemeldet");
-	const body = await request.json().catch(() => null);
+	const userId = requireUser(locals);
+	const body = await readJson(request);
 
 	const task = takeChallenge(locals.db, String(body?.challengeId ?? ""), "addkey");
 	if (!task) error(400, "Aufgabe abgelaufen – bitte erneut versuchen");
 	// Die Aufgabe wurde für DIESES Konto ausgegeben. Ohne diese Zeile liesse sich
 	// eine anderswo abgeholte Aufgabe hier einlösen und ein fremder Passkey an
 	// ein fremdes Konto hängen.
-	if (task.userId !== locals.userId) error(403, "Aufgabe gehört zu einem anderen Konto");
+	if (task.userId !== userId) error(403, "Aufgabe gehört zu einem anderen Konto");
 
 	const checked = await verifyRegistration(body?.response, task.challenge);
 	if (!checked.verified || !checked.registrationInfo) {
@@ -31,10 +34,10 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		error(409, "Dieser Passkey ist bereits hinterlegt");
 	}
 
-	const label = String(body?.label ?? "").trim().slice(0, 64) || null;
+	const label = readLabel(body?.label, null, LABEL_MAX);
 	storeCredential(
 		locals.db,
-		locals.userId,
+		userId,
 		checked.registrationInfo.credential,
 		checked.registrationInfo.credential.transports,
 		label

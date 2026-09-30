@@ -11,6 +11,7 @@ import { teamMemberFromToken } from "$lib/server/teams";
 import { startBackupScheduler } from "$lib/server/backup";
 import { APP_SHELL_FILE, CLIENT_DIR, DB_FILE, INACTIVE_ACCOUNT_DAYS, INACTIVE_ACCOUNT_MS } from "$lib/server/config";
 import { SESSION_COOKIE, setSessionCookie } from "$lib/server/session";
+import { jsonError } from "$lib/server/request";
 import {
 	LIMIT_AUTH,
 	LIMIT_AUTH_START,
@@ -202,10 +203,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 			? isLocked(limitKey, rateLimit[1])
 			: !takeAttempt(limitKey, rateLimit[1]).allowed;
 		if (locked) {
-			return new Response(JSON.stringify({ message: "Zu viele Versuche" }), {
-				status: 429,
-				headers: { "content-type": "application/json", "retry-after": "60" }
-			});
+			return jsonError(429, "Zu viele Versuche", { "retry-after": "60" });
 		}
 	}
 
@@ -216,10 +214,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 		const originValue = event.request.headers.get("origin");
 		const own = originValue !== null && isOwnOrigin(originValue, event.request.headers);
 		if (originValue && !own && !ALLOWED_ORIGINS.includes(originValue)) {
-			return new Response(JSON.stringify({ message: "Herkunft nicht erlaubt" }), {
-				status: 403,
-				headers: { "content-type": "application/json" }
-			});
+			return jsonError(403, "Herkunft nicht erlaubt");
 		}
 	}
 

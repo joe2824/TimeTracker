@@ -1,24 +1,24 @@
 // Invite management: creation, validation, consumption, and admin role checking.
-import { error } from "@sveltejs/kit";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, or } from "drizzle-orm";
 import type { Db, DbLike } from "./db/index";
 import { invites, serverSettings, users } from "./db/schema";
 import { INVITE_CODES, REGISTRATION_OPEN } from "./config";
 import { randomInt } from "node:crypto";
 import { safeEqual } from "./auth";
-import { CODE_ALPHABET } from "$shared/codes";
-
-/** Character set for generated invite codes - shared with the pairing code. */
-const ALPHABET = CODE_ALPHABET;
+import {
+	CODE_ALPHABET,
+	INVITE_CODE_GROUP_LENGTH,
+	INVITE_CODE_GROUPS,
+	isInviteCode,
+	normalizeInviteCode
+} from "$shared/codes";
 
 /** Generate a new formatted invite code: 4 groups of 4 characters. */
 export function generateInviteCode(): string {
 	const group = () =>
-		Array.from({ length: 4 }, () => ALPHABET[randomInt(ALPHABET.length)]).join("");
-	return [group(), group(), group(), group()].join("-");
+		Array.from({ length: INVITE_CODE_GROUP_LENGTH }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join("");
+	return Array.from({ length: INVITE_CODE_GROUPS }, group).join("-");
 }
-
-export const newCode = generateInviteCode;
 
 export interface InviteRow {
 	code: string;
@@ -78,88 +78,114 @@ export function revokeInvite(db: Db, code: string): boolean {
 	return res.changes > 0;
 }
 
+type SettingKey = "open_registration" | "env_invites_disabled";
+
+function getSetting(db: DbLike, key: SettingKey): string | undefined {
+	return db.select().from(serverSettings).where(eq(serverSettings.key, key)).get()?.value;
+}
+
+function setSetting(db: DbLike, key: SettingKey, value: string): void {
+	const now = Date.now();
+	db.insert(serverSettings)
+		.values({ key, value, updatedAt: now })
+		.onConflictDoUpdate({ target: serverSettings.key, set: { value, updatedAt: now } })
+		.run();
+}
+
 /** Check if open registration (without invite code) is enabled. */
 export function isRegistrationOpen(db: DbLike): boolean {
-	const row = db
-		.select()
-		.from(serverSettings)
-		.where(eq(serverSettings.key, "open_registration"))
-		.get();
-	if (row) return row.value === "true";
-	return REGISTRATION_OPEN;
+	const value = getSetting(db, "open_registration");
+	return value === undefined ? REGISTRATION_OPEN : value === "true";
 }
 
 /** Toggle open registration setting at runtime. */
 export function setRegistrationOpen(db: DbLike, open: boolean): void {
-	const val = open ? "true" : "false";
-	const now = Date.now();
-	db.insert(serverSettings)
-		.values({ key: "open_registration", value: val, updatedAt: now })
-		.onConflictDoUpdate({
-			target: serverSettings.key,
-			set: { value: val, updatedAt: now }
-		})
-		.run();
+	setSetting(db, "open_registration", open ? "true" : "false");
 }
 
 /** Check if static invite codes from INVITE_CODES (.env) are disabled. */
 export function isEnvInvitesDisabled(db: DbLike): boolean {
-	const row = db
-		.select()
-		.from(serverSettings)
-		.where(eq(serverSettings.key, "env_invites_disabled"))
-		.get();
-	return row?.value === "true";
+	return getSetting(db, "env_invites_disabled") === "true";
 }
-
-export const envInvitesDisabled = isEnvInvitesDisabled;
 
 /** Toggle static .env invite codes at runtime. */
 export function setEnvInvitesDisabled(db: DbLike, disabled: boolean): void {
-	const val = disabled ? "true" : "false";
-	const now = Date.now();
-	db.insert(serverSettings)
-		.values({ key: "env_invites_disabled", value: val, updatedAt: now })
-		.onConflictDoUpdate({
-			target: serverSettings.key,
-			set: { value: val, updatedAt: now }
-		})
-		.run();
+	setSetting(db, "env_invites_disabled", disabled ? "true" : "false");
+}
+
+/**
+ * Ob der Code einer der statischen aus INVITE_CODES ist. Die dürfen beliebig
+ * aussehen - verziehen wird (Grossschreibung, Striche) nur bei denen, die die
+ * Form eines erzeugten Codes haben.
+ */
+function isEnvInviteCode(db: DbLike, code: string): boolean {
+	if (!code || isEnvInvitesDisabled(db)) return false;
+	const normalized = normalizeInviteCode(code);
+	return INVITE_CODES.some((c) => {
+		if (safeEqual(c, code)) return true;
+		return hasInviteCodeShape(c) && safeEqual(normalizeInviteCode(c), normalized);
+	});
+}
+
+/**
+ * Ob ein statischer Code bis auf Schreibweise ein erzeugter ist. Nur Striche
+ * und Leerzeichen dürfen wegfallen - sonst passte "ABCD-EFGH-JKLM-NPQR-0" auch
+ * ohne die "0".
+ */
+function hasInviteCodeShape(c: string): boolean {
+	const shaped = normalizeInviteCode(c);
+	return isInviteCode(shaped) && shaped.replaceAll("-", "") === c.toUpperCase().replace(/[\s-]/g, "");
+}
+
+/**
+ * Wie ein Code in der Tabelle stehen kann: so wie getippt, oder - bei einem
+ * erzeugten Code - in seiner verziehenen Form. Die wörtliche Form bleibt drin,
+ * damit Codes, die nicht aus generateInviteCode stammen, weiter gelten.
+ */
+export function inviteCodeCandidates(code: string): string[] {
+	const raw = code.trim();
+	const normalized = normalizeInviteCode(raw);
+	return isInviteCode(normalized) && normalized !== raw ? [raw, normalized] : [raw];
+}
+
+/** Ein Tabellen-Code, der weder benutzt, zurückgezogen noch abgelaufen ist. */
+function usableInvite(code: string, now: number) {
+	return and(
+		inArray(invites.code, inviteCodeCandidates(code)),
+		isNull(invites.usedAt),
+		isNull(invites.revokedAt),
+		or(isNull(invites.expiresAt), gt(invites.expiresAt, now))
+	);
 }
 
 /** Validate whether an invite code is currently valid. */
 export function isValidInviteCode(db: DbLike, code: string): boolean {
 	if (isRegistrationOpen(db)) return true;
 	if (!code) return false;
-	if (!isEnvInvitesDisabled(db) && INVITE_CODES.some((c) => safeEqual(c, code))) return true;
-
-	const row = db.select().from(invites).where(eq(invites.code, code)).get();
-	if (!row) return false;
-	if (row.usedAt || row.revokedAt) return false;
-	if (row.expiresAt && row.expiresAt < Date.now()) return false;
-	return true;
+	if (isEnvInviteCode(db, code)) return true;
+	return db.select().from(invites).where(usableInvite(code, Date.now())).get() !== undefined;
 }
 
-export const validCode = isValidInviteCode;
-
-/** Mark an invite code as consumed by a registered user. */
-export function consumeInviteCode(db: DbLike, code: string, userId: string): void {
-	db.update(invites)
-		.set({ usedAt: Date.now(), usedBy: userId })
-		.where(and(eq(invites.code, code), isNull(invites.usedAt)))
+/**
+ * Den Code beim Anlegen des Kontos entwerten - false, wenn er (inzwischen)
+ * nicht mehr gilt. Die Prüfung sitzt in derselben Anweisung wie das
+ * Entwerten: zwischen einer früheren Prüfung und hier kann ein zweiter
+ * Aufruf denselben Code verbraucht oder ein Verwalter ihn zurückgezogen haben.
+ * Statische Codes aus INVITE_CODES gelten mehrfach und werden nicht entwertet.
+ */
+export function consumeInviteCode(db: DbLike, code: string, userId: string): boolean {
+	if (isRegistrationOpen(db)) return true;
+	if (isEnvInviteCode(db, code)) return true;
+	const now = Date.now();
+	const res = db
+		.update(invites)
+		.set({ usedAt: now, usedBy: userId })
+		.where(usableInvite(code, now))
 		.run();
+	return res.changes > 0;
 }
-
-export const consumeCode = consumeInviteCode;
 
 /** Check if a given user has the admin role. */
 export function isAdminUser(db: DbLike, userId: string): boolean {
 	return db.select().from(users).where(eq(users.id, userId)).get()?.isAdmin === true;
-}
-
-/** Nur für Verwalter - wirft, wenn nicht angemeldet oder nicht berechtigt. */
-export function requireAdmin(locals: { userId: string | null; db: DbLike }): string {
-	if (!locals.userId) error(401, "Nicht angemeldet");
-	if (!isAdminUser(locals.db, locals.userId)) error(403, "Keine Berechtigung");
-	return locals.userId;
 }

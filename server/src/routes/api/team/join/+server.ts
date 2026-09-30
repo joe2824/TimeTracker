@@ -2,6 +2,8 @@
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { joinTeam, teamFromInviteCode } from "$lib/server/teams";
+import { readJson } from "$lib/server/request";
+import { readLabel, TEAM_TEXT_MAX } from "$shared/labels";
 
 /** Vorschau vor dem Beitritt: nur der Teamname, nichts Vertrauliches. */
 export const GET: RequestHandler = ({ locals, url }) => {
@@ -12,9 +14,9 @@ export const GET: RequestHandler = ({ locals, url }) => {
 };
 
 export const POST: RequestHandler = async ({ locals, request }) => {
-	const body = await request.json().catch(() => null);
+	const body = await readJson(request);
 	const code = String(body?.code ?? "");
-	const name = String(body?.name ?? "").trim();
+	const name = readLabel(body?.name, "", TEAM_TEXT_MAX);
 	if (!name) error(400, "Name fehlt");
 	// Freiwillig - nur für die Erinnerung an Fehlende, sonst nirgends nötig.
 	const email = typeof body?.email === "string" ? body.email : undefined;

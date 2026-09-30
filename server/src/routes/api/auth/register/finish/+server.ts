@@ -3,13 +3,13 @@ import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { verifyRegistration, createUser, storeCredential } from "$lib/server/webauthn";
 import { createSession, takeChallenge } from "$lib/server/auth";
-import { consumeCode, isRegistrationOpen } from "$lib/server/invites";
-import { readRegistrationFields } from "$lib/server/registration";
+import { readRegistrationFields, redeemInviteCode } from "$lib/server/registration";
+import { readJson } from "$lib/server/request";
 import { setSessionCookie } from "$lib/server/session";
 import { readWrap, storeWrap } from "$lib/server/wraps";
 
 export const POST: RequestHandler = async ({ locals, request, cookies }) => {
-	const body = await request.json().catch(() => null);
+	const body = await readJson(request);
 	const challengeId = String(body?.challengeId ?? "");
 	const taken = takeChallenge(locals.db, challengeId, "register");
 	if (!taken?.userId) error(400, "Aufgabe abgelaufen – bitte erneut versuchen");
@@ -35,8 +35,10 @@ export const POST: RequestHandler = async ({ locals, request, cookies }) => {
 	locals.db.transaction((tx) => {
 		createUser(tx, taken.userId!, displayName, email);
 		// Ein Code aus der Tabelle gilt genau einmal. Hier drin, damit "Konto
-		// entstanden" und "Einladung verbraucht" nicht auseinanderfallen können.
-		if (!isRegistrationOpen(locals.db) && code) consumeCode(tx, code, taken.userId!);
+		// entstanden" und "Einladung verbraucht" nicht auseinanderfallen können -
+		// und erneut geprüft: während verifyRegistration lief, kann ein zweiter
+		// Abschluss denselben Code verbraucht haben.
+		redeemInviteCode(tx, code, taken.userId!);
 		storeCredential(
 			tx,
 			taken.userId!,

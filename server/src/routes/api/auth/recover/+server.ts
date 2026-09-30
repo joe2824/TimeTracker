@@ -5,9 +5,11 @@ import type { RequestHandler } from "./$types";
 import { keyWraps, users } from "$lib/server/db/schema";
 import { and, desc, eq } from "drizzle-orm";
 import { createDevice, hashSecret, safeEqual } from "$lib/server/auth";
+import { readJson } from "$lib/server/request";
+import { LABEL_MAX, readLabel } from "$shared/labels";
 
 export const POST: RequestHandler = async ({ locals, request }) => {
-	const body = await request.json().catch(() => null);
+	const body = await readJson(request);
 	const recoveryId = String(body?.recoveryId ?? "");
 	if (!recoveryId) error(400, "Kennung fehlt");
 
@@ -35,7 +37,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		error(401, "Nachweis stimmt nicht");
 	}
 
-	const label = String(body?.label ?? "Wiederhergestelltes Gerät").trim().slice(0, 64);
+	const label = readLabel(body?.label, "Wiederhergestelltes Gerät", LABEL_MAX);
 	const deviceRow = createDevice(locals.db, user.id, label);
 
 	return json({

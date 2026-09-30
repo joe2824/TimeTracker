@@ -8,7 +8,7 @@ import {
 	pullRecords,
 	pushRecords,
 	SyncError,
-	type IncomingRecord
+	type PushRecord
 } from "./sync";
 import { MAX_BUCKETS } from "./config";
 import { eq } from "drizzle-orm";
@@ -16,7 +16,7 @@ import { eq } from "drizzle-orm";
 let db: Db;
 
 
-const rec = (id: string, over: Partial<IncomingRecord> = {}): IncomingRecord => ({
+const rec = (id: string, over: Partial<PushRecord> = {}): PushRecord => ({
 	id,
 	kind: "entry",
 	bucket: "a1b2",
@@ -96,6 +96,37 @@ describe("Ablegen", () => {
 	it("weist einen Datensatz ohne id oder Art ab", () => {
 		expect(() => pushRecords(db, ANNA, "g1", [rec("")])).toThrow(SyncError);
 		expect(() => pushRecords(db, ANNA, "g1", [rec("e1", { kind: "" })])).toThrow(SyncError);
+	});
+
+	it("weist Datensaetze mit falschen Feldtypen als Eingabefehler ab", () => {
+		const bad: Record<string, unknown>[] = [
+			{ id: 42 },
+			{ id: "x".repeat(300) },
+			{ kind: ["entry"] },
+			{ kind: "k".repeat(100) },
+			{ bucket: 7 },
+			{ bucket: "b".repeat(300) },
+			{ updatedAt: "gestern" },
+			{ updatedAt: Number.NaN },
+			{ baseRev: "0" },
+			{ baseRev: -1 },
+			{ payload: { text: "x" } },
+			{ deletedAt: "jetzt" }
+		];
+		for (const over of bad) {
+			const attempt = () => pushRecords(db, ANNA, "g1", [rec("e1", over as Partial<PushRecord>)]);
+			expect(attempt, JSON.stringify(over)).toThrow(SyncError);
+			try {
+				attempt();
+			} catch (e) {
+				expect((e as SyncError).status).toBe(400);
+			}
+		}
+		expect(currentSeq(db, ANNA)).toBe(0);
+	});
+
+	it("weist einen Eintrag ab, der gar kein Objekt ist", () => {
+		expect(() => pushRecords(db, ANNA, "g1", [null as unknown as PushRecord])).toThrow(SyncError);
 	});
 
 	it("prueft die Groesse VOR dem Schreiben, nicht mittendrin", () => {

@@ -1,8 +1,29 @@
 import DatabaseConstructor from "better-sqlite3";
+import type { BackupInfo } from "$shared/apiTypes";
+export type { BackupInfo };
 import type Database from "better-sqlite3";
 import { mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { BACKUP_DIR, BACKUP_INTERVAL_HOURS, BACKUP_KEEP } from "./config";
+import { migrate } from "./db/index";
+
+const BACKUP_PREFIX = "timetracker-backup-";
+const BACKUP_SUFFIX = ".db";
+
+/** Ob ein Name eine Sicherung dieses Servers bezeichnet - und nicht aus dem Ordner herausführt. */
+export function isBackupName(name: string): boolean {
+	return (
+		name.startsWith(BACKUP_PREFIX) &&
+		name.endsWith(BACKUP_SUFFIX) &&
+		!name.includes("..") &&
+		!name.includes("/") &&
+		!name.includes("\\")
+	);
+}
+
+function backupNames(dir: string): string[] {
+	return readdirSync(dir).filter(isBackupName);
+}
 
 /** Formatierter Zeitstempel für den Dateinamen (z.B. 2026-08-30_10-00-00). */
 function formatTimestamp(): string {
@@ -33,8 +54,7 @@ export function verifyBackupIntegrity(backupPath: string): boolean {
 export function cleanupBackups(dir: string, keepCount: number): number {
 	if (keepCount <= 0) return 0;
 	try {
-		const files = readdirSync(dir)
-			.filter((f) => f.startsWith("timetracker-backup-") && f.endsWith(".db"))
+		const files = backupNames(dir)
 			.map((f) => {
 				const full = join(dir, f);
 				return { name: f, path: full, mtime: statSync(full).mtimeMs };
@@ -59,19 +79,26 @@ export function cleanupBackups(dir: string, keepCount: number): number {
 	}
 }
 
-export interface BackupInfo {
-	name: string;
-	size: number;
-	mtime: number;
-	verified: boolean;
+/**
+ * Ergebnis der Integritätsprüfung je Datei. quick_check liest die ganze Datei -
+ * bei jedem Aufruf der Liste über alle Sicherungen wäre das spürbar langsam.
+ * Ändern sich Grösse oder Zeitstempel, wird neu geprüft.
+ */
+const integrityCache = new Map<string, { mtime: number; size: number; verified: boolean }>();
+
+function cachedIntegrity(path: string, mtime: number, size: number): boolean {
+	const hit = integrityCache.get(path);
+	if (hit && hit.mtime === mtime && hit.size === size) return hit.verified;
+	const verified = verifyBackupIntegrity(path);
+	integrityCache.set(path, { mtime, size, verified });
+	return verified;
 }
 
 /** Alle verfügbaren Sicherungen auflisten (neueste zuerst). */
 export function listBackups(dir: string = BACKUP_DIR): BackupInfo[] {
 	try {
 		mkdirSync(dir, { recursive: true });
-		return readdirSync(dir)
-			.filter((f) => f.startsWith("timetracker-backup-") && f.endsWith(".db"))
+		return backupNames(dir)
 			.map((f) => {
 				const full = join(dir, f);
 				const st = statSync(full);
@@ -79,7 +106,7 @@ export function listBackups(dir: string = BACKUP_DIR): BackupInfo[] {
 					name: f,
 					size: st.size,
 					mtime: Math.round(st.mtimeMs),
-					verified: verifyBackupIntegrity(full)
+					verified: cachedIntegrity(full, st.mtimeMs, st.size)
 				};
 			})
 			.sort((a, b) => b.mtime - a.mtime);
@@ -91,12 +118,7 @@ export function listBackups(dir: string = BACKUP_DIR): BackupInfo[] {
 /** Einzelne Sicherungsdatei löschen (mit Path-Traversal-Schutz). */
 export function deleteBackupFile(dir: string, name: string): boolean {
 	const cleanName = name.trim();
-	if (!cleanName || cleanName.includes("..") || cleanName.includes("/") || cleanName.includes("\\")) {
-		return false;
-	}
-	if (!cleanName.startsWith("timetracker-backup-") || !cleanName.endsWith(".db")) {
-		return false;
-	}
+	if (!isBackupName(cleanName)) return false;
 	try {
 		const full = join(dir, cleanName);
 		unlinkSync(full);
@@ -118,22 +140,20 @@ export async function restoreBackup(
 ): Promise<{ ok: boolean; restored: string; preRestoreBackup: string }> {
 	const dir = opts.dir ?? BACKUP_DIR;
 	const cleanName = name.trim();
-	if (!cleanName || cleanName.includes("..") || cleanName.includes("/") || cleanName.includes("\\")) {
-		throw new Error("Ungültiger Dateiname für Sicherung");
-	}
-	if (!cleanName.startsWith("timetracker-backup-") || !cleanName.endsWith(".db")) {
-		throw new Error("Ungültiges Dateiformat der Sicherung");
-	}
+	if (!isBackupName(cleanName)) throw new Error("Ungültiger Dateiname für Sicherung");
 
 	const backupPath = join(dir, cleanName);
 	if (!verifyBackupIntegrity(backupPath)) {
 		throw new Error("Die Sicherungsdatei ist beschädigt oder keine gültige SQLite-Datenbank");
 	}
 
-	// 1. Vorab-Sicherheits-Backup des aktuellen Bestands anlegen
+	// 1. Vorab-Sicherheits-Backup des aktuellen Bestands anlegen. Ohne
+	// Aufräumen (keep: 0): sonst fiele bei voller Aufbewahrung ausgerechnet die
+	// älteste Sicherung weg - und das kann genau die sein, die zurück soll.
 	const preRestore = await performBackup(liveDb, {
 		dir,
-		customName: `timetracker-backup-pre-restore-${formatTimestamp()}.db`,
+		keep: 0,
+		customName: `${BACKUP_PREFIX}pre-restore-${formatTimestamp()}${BACKUP_SUFFIX}`,
 		verify: true
 	});
 
@@ -152,6 +172,10 @@ export async function restoreBackup(
 		/* ignore */
 	}
 
+	// 4. Eine Sicherung aus einer älteren Fassung hat ein älteres Schema - ohne
+	// diesen Schritt liefe der Server bis zum nächsten Neustart dagegen.
+	migrate(liveDb);
+
 	return { ok: true, restored: cleanName, preRestoreBackup: preRestore.name };
 }
 
@@ -166,7 +190,7 @@ export async function performBackup(
 
 	mkdirSync(dir, { recursive: true });
 
-	const name = opts.customName ?? `timetracker-backup-${formatTimestamp()}.db`;
+	const name = opts.customName ?? `${BACKUP_PREFIX}${formatTimestamp()}${BACKUP_SUFFIX}`;
 	const destPath = join(dir, name);
 
 	await raw.backup(destPath);
@@ -214,8 +238,7 @@ export function startBackupScheduler(raw: Database.Database): void {
 	// Erste Sicherung 60 Sekunden nach Serverstart (falls noch nie eine existiert)
 	setTimeout(() => {
 		try {
-			const files = readdirSync(BACKUP_DIR).filter((f) => f.endsWith(".db"));
-			if (files.length === 0) {
+			if (backupNames(BACKUP_DIR).length === 0) {
 				triggerBackup("Erste Sicherung nach Serverstart");
 			}
 		} catch {

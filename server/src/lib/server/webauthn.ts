@@ -15,6 +15,27 @@ import type { Db, DbLike } from "./db/index";
 import { credentials, users } from "./db/schema";
 import { RP_ID, RP_NAME, WEBAUTHN_ORIGINS } from "./config";
 
+type CredentialRow = typeof credentials.$inferSelect;
+
+/** Die gespeicherten Übertragungswege eines Passkeys (USB, NFC, intern ...). */
+export function parseTransports(raw: string | null): AuthenticatorTransportFuture[] | undefined {
+	return raw ? (JSON.parse(raw) as AuthenticatorTransportFuture[]) : undefined;
+}
+
+/** Alle Passkeys eines Kontos. */
+export function listCredentials(db: DbLike, userId: string): CredentialRow[] {
+	return db.select().from(credentials).where(eq(credentials.userId, userId)).all();
+}
+
+/** Passkeys in der Form, die allow-/excludeCredentials erwarten. */
+export function credentialDescriptors(rows: CredentialRow[]) {
+	return rows.map((c) => ({
+		type: "public-key" as const,
+		id: c.id,
+		transports: parseTransports(c.transports)
+	}));
+}
+
 /** Die PRF-Erweiterung anfordern. */
 const PRF_EXTENSION = { prf: {} } as unknown as AuthenticationExtensionsClientInputs;
 
@@ -67,18 +88,12 @@ export async function verifyRegistration(
 
 /** Die Aufgabe für eine BESTAETIGUNG, nicht für eine Anmeldung. */
 export async function confirmationOptions(db: Db, userId: string) {
-	const own = db.select().from(credentials).where(eq(credentials.userId, userId)).all();
 	return generateAuthenticationOptions({
 		rpID: RP_ID,
 		// Anders als bei der Anmeldung wird hier eingeschränkt: es ist bereits
 		// bekannt, wer bestätigt. Ein fremder Passkey darf gar nicht erst
 		// angeboten werden.
-		allowCredentials: own.map((c) => ({
-			id: c.id,
-			transports: c.transports
-				? (JSON.parse(c.transports) as AuthenticatorTransportFuture[])
-				: undefined
-		})),
+		allowCredentials: credentialDescriptors(listCredentials(db, userId)),
 		userVerification: "required"
 	});
 }
@@ -113,7 +128,7 @@ export async function verifyAuthentication(
 			id: cred.id,
 			publicKey: new Uint8Array(cred.publicKey),
 			counter: cred.counter,
-			transports: cred.transports ? JSON.parse(cred.transports) : undefined
+			transports: parseTransports(cred.transports)
 		},
 		requireUserVerification
 	});

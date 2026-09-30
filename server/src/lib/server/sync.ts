@@ -1,4 +1,6 @@
 // Abholen und Ablegen versiegelter Datensätze.
+import type { PullPage, PushAnswer, PushConflict, PushRecord, ServerRecord } from "$shared/apiTypes";
+export type { PullPage, PushAnswer, PushRecord, ServerRecord };
 import { and, asc, eq, gt, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import type { Db } from "./db/index";
 import { records, users } from "./db/schema";
@@ -10,54 +12,6 @@ import {
 	MAX_RECORDS_PER_USER
 } from "./config";
 
-/** Ein Datensatz, wie ihn der Server ausliefert. */
-export interface StoredRecord {
-	id: string;
-	kind: string;
-	bucket: string | null;
-	seq: number;
-	rev: number;
-	updatedAt: number;
-	deviceId: string | null;
-	deletedAt: number | null;
-	/** Chiffrat, base64. Null bei einer Löschung. */
-	payload: string | null;
-}
-
-/** Ein Datensatz, wie ihn ein Gerät ablegen will. */
-export interface IncomingRecord {
-	id: string;
-	kind: string;
-	bucket?: string | null;
-	/** Die Fassung, die dieses Gerät zuletzt gesehen hat. 0 = "gibt es noch nicht". */
-	baseRev: number;
-	updatedAt: number;
-	deletedAt?: number | null;
-	payload?: string | null;
-}
-
-export interface PullResult {
-	records: StoredRecord[];
-	/** Der Stand, ab dem beim nächsten Mal weitergelesen wird. */
-	nextSeq: number;
-	/** Ob noch mehr da ist - der Aufrufer holt dann die nächste Seite. */
-	hasMore: boolean;
-}
-
-export interface PushConflict {
-	id: string;
-	/** Was auf dem Server steht. Der Client führt zusammen und schickt erneut. */
-	current: StoredRecord;
-}
-
-export interface PushResult {
-	/** Ids, die übernommen wurden - mit ihrer neuen Fassung. */
-	accepted: { id: string; rev: number; seq: number }[];
-	conflicts: PushConflict[];
-	/** Der höchste vergebene Stand; damit weckt der Ereigniskanal die anderen. */
-	seq: number;
-}
-
 export class SyncError extends Error {
 	constructor(
 		message: string,
@@ -67,7 +21,7 @@ export class SyncError extends Error {
 	}
 }
 
-const toStored = (r: typeof records.$inferSelect): StoredRecord => ({
+const toStored = (r: typeof records.$inferSelect): ServerRecord => ({
 	id: r.id,
 	kind: r.kind,
 	bucket: r.bucket,
@@ -89,7 +43,7 @@ export interface PullOptions {
 }
 
 /** Alles, was seit `since` dazugekommen ist - seitenweise. */
-export function pullRecords(db: Db, userId: string, opts: PullOptions = {}): PullResult {
+export function pullRecords(db: Db, userId: string, opts: PullOptions = {}): PullPage {
 	const limit = Math.min(Math.max(1, opts.limit ?? DEFAULT_PAGE), MAX_PAGE);
 	const since = Math.max(0, opts.since ?? 0);
 
@@ -150,19 +104,53 @@ export function listBuckets(db: Db, userId: string): string[] {
 		.map((r) => r.bucket as string);
 }
 
+/** Obergrenzen für die Kennungen eines Datensatzes - weit über dem, was der Client erzeugt. */
+const MAX_ID_LENGTH = 256;
+const MAX_KIND_LENGTH = 64;
+const MAX_BUCKET_LENGTH = 128;
+
+const isText = (v: unknown, max: number): v is string =>
+	typeof v === "string" && v.length > 0 && v.length <= max;
+const isOptional = (v: unknown, check: (v: unknown) => boolean): boolean =>
+	v === undefined || v === null || check(v);
+const isTimestamp = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+/**
+ * Form eines eingehenden Datensatzes prüfen - vor der Transaktion. Was hier
+ * durchrutscht, scheitert sonst erst an SQLite oder an `.length` und kommt als
+ * 500 zurück statt als verständliche Ablehnung.
+ */
+function validateIncoming(raw: unknown): asserts raw is PushRecord {
+	if (!raw || typeof raw !== "object") throw new SyncError("Datensatz ist kein Objekt", 400);
+	const r = raw as Record<string, unknown>;
+	if (!isText(r.id, MAX_ID_LENGTH) || !isText(r.kind, MAX_KIND_LENGTH)) {
+		throw new SyncError("Datensatz ohne gültige id oder kind", 400);
+	}
+	if (!isOptional(r.bucket, (v) => typeof v === "string" && v.length <= MAX_BUCKET_LENGTH)) {
+		throw new SyncError(`Datensatz ${r.id}: ungültiger Bucket`, 400);
+	}
+	if (!isTimestamp(r.updatedAt) || !isOptional(r.deletedAt, isTimestamp)) {
+		throw new SyncError(`Datensatz ${r.id}: ungültiger Zeitstempel`, 400);
+	}
+	if (!Number.isSafeInteger(r.baseRev) || (r.baseRev as number) < 0) {
+		throw new SyncError(`Datensatz ${r.id}: ungültige Fassung`, 400);
+	}
+	if (!isOptional(r.payload, (v) => typeof v === "string")) {
+		throw new SyncError(`Datensatz ${r.id}: ungültiger Inhalt`, 400);
+	}
+	if (typeof r.payload === "string" && r.payload.length > MAX_RECORD_BYTES) {
+		throw new SyncError(`Datensatz ${r.id} ist zu gross`, 413);
+	}
+}
+
 /** Geänderte Datensätze ablegen. */
 export function pushRecords(
 	db: Db,
 	userId: string,
 	deviceId: string | null,
-	incoming: IncomingRecord[]
-): PushResult {
-	for (const r of incoming) {
-		if (r.payload && r.payload.length > MAX_RECORD_BYTES) {
-			throw new SyncError(`Datensatz ${r.id} ist zu gross`, 413);
-		}
-		if (!r.id || !r.kind) throw new SyncError("Datensatz ohne id oder kind", 400);
-	}
+	incoming: PushRecord[]
+): PushAnswer {
+	for (const r of incoming) validateIncoming(r);
 
 	// Alles in einer Transaktion: ein halb geschriebener Stapel hinterliesse Lücken in
 	// der seq-Reihenfolge, und wer genau dazwischen abholt, hält den Rest für gesehen.
@@ -170,7 +158,7 @@ export function pushRecords(
 		const user = tx.select().from(users).where(eq(users.id, userId)).get();
 		if (!user) throw new SyncError("Konto nicht gefunden", 404);
 
-		const accepted: PushResult["accepted"] = [];
+		const accepted: PushAnswer["accepted"] = [];
 		const conflicts: PushConflict[] = [];
 		let seq = user.seqCounter;
 
@@ -242,7 +230,7 @@ export function pushRecords(
 }
 
 /** Der "Stand" eines Datensatzes, den es auf dem Server gar nicht gibt. */
-function emptyState(r: IncomingRecord): StoredRecord {
+function emptyState(r: PushRecord): ServerRecord {
 	return {
 		id: r.id,
 		kind: r.kind,

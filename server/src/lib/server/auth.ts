@@ -6,7 +6,7 @@
 import { and, eq, isNull, lt } from "drizzle-orm";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { Db, DbLike } from "./db/index";
-import { challenges, devices, pairings, sessions, users } from "./db/schema";
+import { challenges, devices, pairings, sessions } from "./db/schema";
 import { CHALLENGE_TTL_MS, HMAC_SECRET, SESSION_REFRESH_MS, SESSION_TTL_MS } from "./config";
 
 /** Geheimnisse werden nur als Hash abgelegt.
@@ -172,9 +172,3 @@ export function cleanupExpired(db: Db): void {
 	}
 	db.delete(pairings).where(lt(pairings.expiresAt, nowMs)).run();
 }
-
-/** Ob es das Konto (noch) gibt - nach einem Widerruf oder einer Löschung. */
-export function userExists(db: Db, userId: string): boolean {
-	return db.select().from(users).where(eq(users.id, userId)).get() !== undefined;
-}
-

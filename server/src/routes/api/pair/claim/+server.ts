@@ -4,7 +4,8 @@ import type { RequestHandler } from "./$types";
 import { pairings } from "$lib/server/db/schema";
 import { eq } from "drizzle-orm";
 import { safeEqual, sha256Hex } from "$lib/server/auth";
-import { normalizePairingCode } from "$lib/server/pairing";
+import { normalizePairingCode, openPairing } from "$lib/server/pairing";
+import { readJson } from "$lib/server/request";
 
 /**
  * Abgeholt wird mit Code UND Abhol-Geheimnis.
@@ -19,12 +20,12 @@ import { normalizePairingCode } from "$lib/server/pairing";
  * zählt genau diese 404 als Fehlgriff.
  */
 export const POST: RequestHandler = async ({ locals, request }) => {
-	const body = await request.json().catch(() => null);
+	const body = await readJson(request);
 	const code = normalizePairingCode(body?.code);
 	const claimSecret = String(body?.claimSecret ?? "");
 
-	const row = locals.db.select().from(pairings).where(eq(pairings.code, code)).get();
-	if (!row || row.expiresAt < Date.now()) error(404, "Code unbekannt oder abgelaufen");
+	const row = openPairing(locals.db, code);
+	if (!row) error(404, "Code unbekannt oder abgelaufen");
 	if (!row.claimHash || !claimSecret || !safeEqual(row.claimHash, sha256Hex(claimSecret))) {
 		error(404, "Code unbekannt oder abgelaufen");
 	}

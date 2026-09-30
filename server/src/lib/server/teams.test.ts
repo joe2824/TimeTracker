@@ -143,6 +143,25 @@ describe("joinTeam", () => {
 		expect(joinTeam(db, "UNBEKANNT-CODE", "Anna Meier")).toBeNull();
 	});
 
+	it("verzeiht Kleinschreibung, fehlende Striche und Leerzeichen im Code", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		const invite = rotateTeamInvite(db, team.id);
+		const typed = ` ${invite.code.replaceAll("-", "").toLowerCase()} `;
+		expect(teamFromInviteCode(db, typed)?.id).toBe(team.id);
+		expect(joinTeam(db, typed, "Anna Meier")).not.toBeNull();
+	});
+
+	it("ein Link, dessen Frist genau jetzt endet, gilt nicht mehr - wie beim Verwalter-Link", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		const invite = rotateTeamInvite(db, team.id);
+		const admin = rotateAdminInvite(db, team.id);
+		const now = Date.now();
+		db.$client.prepare("UPDATE team_invites SET expires_at = ?").run(now);
+		db.update(teamAdminInvites).set({ expiresAt: now }).run();
+		expect(teamFromInviteCode(db, invite.code)).toBeNull();
+		expect(teamFromAdminInviteCode(db, admin.code)).toBeNull();
+	});
+
 	it("die E-Mail ist freiwillig - fehlt sie, steht null im Roster", () => {
 		const team = createTeam(db, ANNA, "Vertrieb");
 		const invite = rotateTeamInvite(db, team.id);

@@ -3,7 +3,9 @@
 // (api/auth/device).
 import { error } from "@sveltejs/kit";
 import type { DbLike } from "./db/index";
-import { isRegistrationOpen, validCode } from "./invites";
+import { consumeInviteCode, isValidInviteCode } from "./invites";
+import { cleanEmail } from "$shared/email";
+import { isLabelTooLong, LABEL_MAX, readLabel } from "$shared/labels";
 
 export interface RegistrationFields {
 	/** Der gewünschte Name - ohne Angabe die Kennung des Kontos. */
@@ -14,27 +16,53 @@ export interface RegistrationFields {
 }
 
 /**
+ * Den Anzeigenamen einer Registrierung lesen. Anders als beim späteren
+ * Umbenennen wird ein zu langer abgelehnt statt gekürzt: hier sieht der
+ * Mensch noch das Formular und kann ihn selbst kürzen.
+ */
+export function readDisplayName(input: unknown, fallback: string): string {
+	if (isLabelTooLong(input, LABEL_MAX)) error(400, "Anzeigename ist zu lang");
+	return readLabel(input, fallback, LABEL_MAX);
+}
+
+/** Den Einladungscode prüfen (nicht entwerten) - wirft 403, wenn er nicht gilt. */
+export function checkInviteCode(db: DbLike, input: unknown): string {
+	const code = String(input ?? "").trim();
+	if (!isValidInviteCode(db, code)) error(403, "Einladungscode ungültig");
+	return code;
+}
+
+/**
+ * Den Code entwerten - innerhalb der Transaktion, die das Konto anlegt. Wirft
+ * 403, wenn er seit der Prüfung verbraucht, zurückgezogen oder abgelaufen ist;
+ * die Transaktion rollt dann zurück.
+ */
+export function redeemInviteCode(tx: DbLike, code: string, userId: string): void {
+	if (!consumeInviteCode(tx, code, userId)) error(403, "Einladungscode ungültig");
+}
+
+/**
  * Name, Einladungscode und E-Mail lesen und prüfen.
  *
  * Entwertet wird der Code hier nicht: das gehört in dieselbe Transaktion wie
- * das Anlegen des Kontos, sonst ist er verbraucht, wenn diese scheitert.
+ * das Anlegen des Kontos (redeemInviteCode), sonst ist er verbraucht, wenn
+ * diese scheitert.
  */
 export function readRegistrationFields(
 	db: DbLike,
 	body: { displayName?: unknown; invite?: unknown; email?: unknown } | null,
 	userId: string
 ): RegistrationFields {
-	const requested = String(body?.displayName ?? "").trim();
-	if (requested.length > 64) error(400, "Anzeigename ist zu lang");
+	const displayName = readDisplayName(body?.displayName, userId);
+	const code = checkInviteCode(db, body?.invite);
 
-	const code = String(body?.invite ?? "").trim();
-	if (!isRegistrationOpen(db) && !validCode(db, code)) {
-		error(403, "Einladungscode ungültig");
+	// Leer heisst "keine Angabe"; etwas Angegebenes, das keine einzelne Adresse
+	// ist, wird abgelehnt statt still verworfen.
+	let email: string | null = null;
+	if (typeof body?.email === "string" && body.email.trim()) {
+		email = cleanEmail(body.email)?.toLowerCase() ?? null;
+		if (!email) error(400, "E-Mail-Adresse ist ungültig");
 	}
 
-	return {
-		displayName: requested || userId,
-		code,
-		email: body?.email ? String(body.email).trim().toLowerCase() : null
-	};
+	return { displayName, code, email };
 }

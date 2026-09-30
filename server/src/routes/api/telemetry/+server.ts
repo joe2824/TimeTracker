@@ -1,23 +1,10 @@
 // Telemetrie-Endpunkt für anonyme Tages-Pings.
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
-import { timingSafeEqual } from "node:crypto";
 import { TELEMETRY_KEY } from "$lib/server/config";
+import { safeEqual } from "$lib/server/auth";
 import { MAX_DEVICE_ID_LEN, MIN_DEVICE_ID_LEN, recordTelemetryPing } from "$lib/server/stats";
-
-/**
- * Trägt der Aufrufer den richtigen Schlüssel?
- *
- * Vergleich ohne Laufzeitunterschied. Die Länge verrät der Vergleich
- * trotzdem - das ist hier kein Verlust, der Schlüssel steht ohnehin in jedem
- * ausgelieferten Bundle.
- */
-function keyMatches(given: string, expected: string): boolean {
-	const a = Buffer.from(given);
-	const b = Buffer.from(expected);
-	if (a.length !== b.length) return false;
-	return timingSafeEqual(a, b);
-}
+import { readJson } from "$lib/server/request";
 
 export const POST: RequestHandler = async ({ locals, request }) => {
 	// Zwei Wege herein:
@@ -28,7 +15,9 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	// - Der Schlüssel aus dem Build. Nur so zählt eine Installation, die noch
 	//   gar kein Konto hat - sie hat sonst nichts, womit sie sich ausweisen kann.
 	const givenKey = request.headers.get("x-telemetry-key");
-	const withKey = TELEMETRY_KEY && givenKey ? keyMatches(givenKey, TELEMETRY_KEY) : false;
+	// safeEqual verrät die Länge - hier kein Verlust, der Schlüssel steht ohnehin
+	// in jedem ausgelieferten Bundle.
+	const withKey = TELEMETRY_KEY && givenKey ? safeEqual(givenKey, TELEMETRY_KEY) : false;
 	if (!withKey && !locals.userId) {
 		// Der Unterschied entscheidet, ob der Client es nochmal versucht: 403 heisst
 		// für ihn "hier nie wieder fragen", 401 nur "gerade nicht". Ein Schlüssel,
@@ -38,7 +27,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		error(401, "Nicht berechtigt");
 	}
 
-	const body = await request.json().catch(() => null);
+	const body = await readJson(request);
 	if (!body || typeof body !== "object") {
 		error(400, "Ungültiger Inhalt");
 	}

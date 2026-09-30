@@ -1,13 +1,12 @@
 // Telemetrie- und Nutzungsstatistiken abrufen - nur für Verwalter.
-import { error, json } from "@sveltejs/kit";
+import { json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
-import { isAdminUser } from "$lib/server/invites";
 import { getTelemetryStats } from "$lib/server/stats";
 import { countUsers } from "$lib/server/account";
+import { requireAdmin } from "$lib/server/guards";
 
 export const GET: RequestHandler = ({ locals, url }) => {
-	if (!locals.userId) error(401, "Nicht angemeldet");
-	if (!isAdminUser(locals.db, locals.userId)) error(403, "Keine Berechtigung");
+	requireAdmin(locals);
 
 	const daysParam = url.searchParams.get("days");
 	const days = daysParam ? Math.min(90, Math.max(1, parseInt(daysParam, 10) || 30)) : 30;

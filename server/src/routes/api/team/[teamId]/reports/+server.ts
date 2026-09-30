@@ -1,21 +1,29 @@
 // Wer wann seinen Bericht gesendet hat - Chef und Verwalter sehen das, samt Inhalt.
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
-import { isPlausibleReportMonth, listTeamReports, requireTeamAccess, setTeamReportStatus } from "$lib/server/teams";
+import {
+	isPlausibleReportMonth,
+	isReportMonthFormat,
+	listTeamReports,
+	requireTeamAccess,
+	setTeamReportStatus
+} from "$lib/server/teams";
+import { readJson } from "$lib/server/request";
+import { requireUser } from "$lib/server/guards";
 
 export const GET: RequestHandler = ({ locals, params, url }) => {
-	if (!locals.userId) error(401, "Nicht angemeldet");
-	requireTeamAccess(locals.db, locals.userId, params.teamId!);
+	const userId = requireUser(locals);
+	requireTeamAccess(locals.db, userId, params.teamId!);
 	const month = String(url.searchParams.get("month") ?? "");
-	if (!/^\d{4}-\d{2}$/.test(month)) error(400, "month fehlt oder hat nicht die Form YYYY-MM");
+	if (!isReportMonthFormat(month)) error(400, "month fehlt oder hat nicht die Form YYYY-MM");
 	return json({ reports: listTeamReports(locals.db, params.teamId!, month) });
 };
 
 /** Von Hand als gesendet markieren - für Berichte, die nicht über die App kamen. */
 export const POST: RequestHandler = async ({ locals, params, request }) => {
-	if (!locals.userId) error(401, "Nicht angemeldet");
-	requireTeamAccess(locals.db, locals.userId, params.teamId!);
-	const body = await request.json().catch(() => null);
+	const userId = requireUser(locals);
+	requireTeamAccess(locals.db, userId, params.teamId!);
+	const body = await readJson(request);
 	const memberId = String(body?.memberId ?? "");
 	const month = String(body?.month ?? "");
 	// Legt eine Zeile an - wie beim Upload nur für plausible Monate.
@@ -28,12 +36,12 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 
 /** Eine von Hand gesetzte (oder echte) Markierung zurücknehmen - wieder "kein Bericht". */
 export const DELETE: RequestHandler = async ({ locals, params, request }) => {
-	if (!locals.userId) error(401, "Nicht angemeldet");
-	requireTeamAccess(locals.db, locals.userId, params.teamId!);
-	const body = await request.json().catch(() => null);
+	const userId = requireUser(locals);
+	requireTeamAccess(locals.db, userId, params.teamId!);
+	const body = await readJson(request);
 	const memberId = String(body?.memberId ?? "");
 	const month = String(body?.month ?? "");
-	if (!/^\d{4}-\d{2}$/.test(month)) error(400, "month fehlt oder hat nicht die Form YYYY-MM");
+	if (!isReportMonthFormat(month)) error(400, "month fehlt oder hat nicht die Form YYYY-MM");
 	const expectedSubmittedAt =
 		typeof body?.expectedSubmittedAt === "number" ? body.expectedSubmittedAt : undefined;
 	if (!setTeamReportStatus(locals.db, params.teamId!, memberId, month, false, expectedSubmittedAt)) {

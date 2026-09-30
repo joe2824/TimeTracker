@@ -3,20 +3,22 @@
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { listTeamAdmins, removeTeamAdmin, requireOwnTeam, requireTeamAccess } from "$lib/server/teams";
+import { readJson } from "$lib/server/request";
+import { requireUser } from "$lib/server/guards";
 
 export const GET: RequestHandler = ({ locals, params }) => {
-	if (!locals.userId) error(401, "Nicht angemeldet");
-	requireTeamAccess(locals.db, locals.userId, params.teamId!);
+	const userId = requireUser(locals);
+	requireTeamAccess(locals.db, userId, params.teamId!);
 	return json({ admins: listTeamAdmins(locals.db, params.teamId!) });
 };
 
 export const DELETE: RequestHandler = async ({ locals, params, request }) => {
-	if (!locals.userId) error(401, "Nicht angemeldet");
-	requireOwnTeam(locals.db, locals.userId, params.teamId!);
-	const body = await request.json().catch(() => null);
-	const userId = String(body?.userId ?? "");
-	if (!userId) error(400, "userId fehlt");
-	if (!removeTeamAdmin(locals.db, params.teamId!, userId)) {
+	const userId = requireUser(locals);
+	requireOwnTeam(locals.db, userId, params.teamId!);
+	const body = await readJson(request);
+	const adminUserId = String(body?.userId ?? "");
+	if (!adminUserId) error(400, "userId fehlt");
+	if (!removeTeamAdmin(locals.db, params.teamId!, adminUserId)) {
 		error(404, "Verwalter unbekannt oder schon entfernt");
 	}
 	return json({ ok: true });

@@ -3,6 +3,10 @@
 // Alphabet, Länge und Prüfung stehen in shared/codes.ts - dieselbe Datei, die
 // der Client benutzt. Nur so kann der Server nicht eine andere Form erwarten,
 // als drüben gerechnet wird.
+import { eq } from "drizzle-orm";
+import type { DbLike } from "./db/index";
+import { pairings } from "./db/schema";
+
 export { isPairingCode, normalizePairingCode, PAIRING_CODE_LENGTH } from "$shared/codes";
 
 /**
@@ -16,4 +20,16 @@ export const CLAIM_HASH_LENGTH = 64;
 /** Ob eine Zeichenkette die Form eines Abhol-Hashes hat. */
 export function isClaimHash(hash: string): boolean {
 	return hash.length === CLAIM_HASH_LENGTH && /^[0-9a-f]+$/.test(hash);
+}
+
+/** Der Kopplungsvorgang zu einem Code - auch ein abgelaufener. */
+export function pairingByCode(db: DbLike, code: string) {
+	return db.select().from(pairings).where(eq(pairings.code, code)).get() ?? null;
+}
+
+/** Der noch laufende Kopplungsvorgang zu einem Code - oder null. */
+export function openPairing(db: DbLike, code: string) {
+	const row = pairingByCode(db, code);
+	if (!row || row.expiresAt < Date.now()) return null;
+	return row;
 }

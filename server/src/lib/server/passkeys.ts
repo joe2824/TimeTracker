@@ -6,7 +6,8 @@
 // unverschlüsselt an - auch die, die beides hatten.
 import { and, eq } from "drizzle-orm";
 import type { DbLike } from "./db/index";
-import { credentials, keyWraps } from "./db/schema";
+import { keyWraps } from "./db/schema";
+import { listCredentials } from "./webauthn";
 
 export interface PasskeyView {
 	id: string;
@@ -27,16 +28,11 @@ export function listPasskeys(db: DbLike, userId: string): PasskeyView[] {
 			.map((w) => w.credentialId)
 	);
 
-	return db
-		.select()
-		.from(credentials)
-		.where(eq(credentials.userId, userId))
-		.all()
-		.map((c) => ({
-			id: c.id,
-			label: c.label,
-			hasWrap: wrapped.has(c.id),
-			createdAt: c.createdAt,
-			lastUsedAt: c.lastUsedAt
-		}));
+	return listCredentials(db, userId).map((c) => ({
+		id: c.id,
+		label: c.label,
+		hasWrap: wrapped.has(c.id),
+		createdAt: c.createdAt,
+		lastUsedAt: c.lastUsedAt
+	}));
 }

@@ -2,18 +2,19 @@
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { listPasskeys } from "$lib/server/passkeys";
-import { credentials, devices, keyWraps, users } from "$lib/server/db/schema";
+import { devices, keyWraps, users } from "$lib/server/db/schema";
 import { eq } from "drizzle-orm";
 import { currentSeq } from "$lib/server/sync";
 import { deleteAccount, cleanupTraces } from "$lib/server/account";
 import { clearSessionCookie } from "$lib/server/session";
 import { takeChallenge } from "$lib/server/auth";
 import { verifyAuthentication } from "$lib/server/webauthn";
+import { readJson } from "$lib/server/request";
+import { requireUserRow } from "$lib/server/guards";
+import { LABEL_MAX, readLabel } from "$shared/labels";
 
 export const GET: RequestHandler = ({ locals }) => {
-	if (!locals.userId) error(401, "Nicht angemeldet");
-	const user = locals.db.select().from(users).where(eq(users.id, locals.userId)).get();
-	if (!user) error(401, "Nicht angemeldet");
+	const user = requireUserRow(locals);
 
 	return json({
 		userId: user.id,
@@ -41,14 +42,12 @@ export const GET: RequestHandler = ({ locals }) => {
 
 /** Profildaten aktualisieren (z.B. Anzeigename aus den Einstellungen). */
 export const PATCH: RequestHandler = async ({ locals, request }) => {
-	if (!locals.userId) error(401, "Nicht angemeldet");
-	const user = locals.db.select().from(users).where(eq(users.id, locals.userId)).get();
-	if (!user) error(401, "Nicht angemeldet");
+	const user = requireUserRow(locals);
 
-	const body = await request.json().catch(() => null);
-	const rawName = typeof body?.displayName === "string" ? body.displayName.trim() : undefined;
-	if (rawName !== undefined) {
-		const displayName = rawName.slice(0, 64) || user.id;
+	const body = await readJson(request);
+	// Gekürzt statt abgelehnt - anders als bei der Registrierung (readDisplayName).
+	if (typeof body?.displayName === "string") {
+		const displayName = readLabel(body.displayName, user.id, LABEL_MAX);
 		locals.db.update(users).set({ displayName }).where(eq(users.id, user.id)).run();
 		return json({ ok: true, displayName });
 	}
@@ -58,14 +57,12 @@ export const PATCH: RequestHandler = async ({ locals, request }) => {
 
 /** Das Konto auflösen. */
 export const DELETE: RequestHandler = async ({ locals, cookies, request }) => {
-	if (!locals.userId) error(401, "Nicht angemeldet");
-	const user = locals.db.select().from(users).where(eq(users.id, locals.userId)).get();
-	if (!user) error(401, "Nicht angemeldet");
+	const user = requireUserRow(locals);
 
 	// Kein Geräte-Token heisst: die Anfrage kam über das Cookie. Dann muss der
 	// Mensch gerade eben zugestimmt haben.
 	if (!locals.deviceId) {
-		const body = await request.json().catch(() => null);
+		const body = await readJson(request);
 		const task = takeChallenge(locals.db, String(body?.challengeId ?? ""), "delete");
 		if (!task) error(400, "Bestätigung abgelaufen – bitte erneut versuchen");
 		// Die Aufgabe wurde für DIESES Konto ausgegeben. Ohne diese Zeile liesse

@@ -283,7 +283,8 @@ export function openDb(file: string): OpenedDb {
 	return { db: drizzle(raw, { schema }), raw };
 }
 
-function migrate(raw: Database.Database): void {
+/** Das Schema auf den aktuellen Stand bringen - auch nach dem Zurückspielen einer älteren Sicherung. */
+export function migrate(raw: Database.Database): void {
 	raw.exec(`CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)`);
 	const row = raw.prepare(`SELECT version FROM schema_version LIMIT 1`).get() as
 		| { version: number }

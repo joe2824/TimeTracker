@@ -5,9 +5,10 @@ import { createSession, takeChallenge } from "$lib/server/auth";
 import { users } from "$lib/server/db/schema";
 import { eq } from "drizzle-orm";
 import { setSessionCookie } from "$lib/server/session";
+import { readJson } from "$lib/server/request";
 
 export const POST: RequestHandler = async ({ locals, request, cookies }) => {
-	const body = await request.json().catch(() => null);
+	const body = await readJson(request);
 	const taken = takeChallenge(locals.db, String(body?.challengeId ?? ""), "login");
 	if (!taken) error(400, "Aufgabe abgelaufen – bitte erneut versuchen");
 

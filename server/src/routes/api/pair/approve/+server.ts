@@ -5,18 +5,12 @@ import { pairings } from "$lib/server/db/schema";
 import { eq } from "drizzle-orm";
 import { createDevice } from "$lib/server/auth";
 import { MAX_RECORD_BYTES } from "$lib/server/config";
-import type { Db } from "$lib/server/db";
-import { normalizePairingCode } from "$lib/server/pairing";
-
-/** Den offenen Vorgang zu einem Code holen - oder nichts. */
-function openPairing(db: Db, code: string) {
-	const row = db.select().from(pairings).where(eq(pairings.code, code)).get();
-	if (!row || row.expiresAt < Date.now()) return null;
-	return row;
-}
+import { normalizePairingCode, openPairing } from "$lib/server/pairing";
+import { readJson } from "$lib/server/request";
+import { requireUser } from "$lib/server/guards";
 
 export const GET: RequestHandler = ({ locals, url }) => {
-	if (!locals.userId) error(401, "Nicht angemeldet");
+	requireUser(locals);
 	const row = openPairing(locals.db, normalizePairingCode(url.searchParams.get("code")));
 	if (!row) error(404, "Code unbekannt oder abgelaufen");
 	// Nur was zum Verpacken gebraucht wird.
@@ -24,8 +18,8 @@ export const GET: RequestHandler = ({ locals, url }) => {
 };
 
 export const POST: RequestHandler = async ({ locals, request }) => {
-	if (!locals.userId) error(401, "Nicht angemeldet");
-	const body = await request.json().catch(() => null);
+	const userId = requireUser(locals);
+	const body = await readJson(request);
 	const code = normalizePairingCode(body?.code);
 	const wrappedKey = String(body?.wrappedKey ?? "");
 	if (!wrappedKey || wrappedKey.length > MAX_RECORD_BYTES) {
@@ -38,10 +32,10 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 
 	// Das Geräte-Token entsteht hier und wird gleich mit hinterlegt: das neue
 	// Gerät holt beides in einem Zug ab.
-	const device = createDevice(locals.db, locals.userId, row.label);
+	const device = createDevice(locals.db, userId, row.label);
 	locals.db
 		.update(pairings)
-		.set({ userId: locals.userId, wrappedKey, deviceToken: device.token })
+		.set({ userId, wrappedKey, deviceToken: device.token })
 		.where(eq(pairings.code, code))
 		.run();
 

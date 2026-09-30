@@ -416,14 +416,49 @@ fn idle_seconds() -> u64 {
     }
 }
 
-/// Schreibt Text an einen frei gewaehlten Pfad – für den CSV-Export aus dem
-/// Chef-Modus, dessen Ziel aus dem Speichern-Dialog kommt.
-#[tauri::command]
-fn write_export_file(path: String, contents: String) -> Result<(), String> {
-    let mut bytes = Vec::with_capacity(contents.len() + 3);
+/// Text als UTF-8 mit BOM schreiben - Excel und PowerShell 5 lesen Umlaute
+/// sonst in der Codepage des Systems.
+pub(crate) fn write_with_bom(path: &std::path::Path, text: &str) -> std::io::Result<()> {
+    let mut bytes = Vec::with_capacity(text.len() + 3);
     bytes.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
-    bytes.extend_from_slice(contents.as_bytes());
-    std::fs::write(&path, bytes).map_err(|e| format!("{path} konnte nicht geschrieben werden: {e}"))
+    bytes.extend_from_slice(text.as_bytes());
+    std::fs::write(path, bytes)
+}
+
+/// Was der Export schreiben darf: CSV (Chef-Modus) und JSON (Sicherung).
+const EXPORT_EXTENSIONS: [&str; 2] = ["csv", "json"];
+
+/// Ob ein Exportziel angenommen wird. `chosen_in_dialog` sagt, ob der Pfad aus
+/// dem Speichern-Dialog stammt - nur dann hat ein Mensch ihn ausgesucht.
+fn check_export_target(
+    path: &std::path::Path,
+    chosen_in_dialog: impl Fn(&std::path::Path) -> bool,
+) -> Result<(), String> {
+    let allowed_extension = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| EXPORT_EXTENSIONS.iter().any(|x| x.eq_ignore_ascii_case(e)));
+    if !allowed_extension {
+        return Err(format!("{} ist kein erlaubtes Exportziel", path.display()));
+    }
+    if !chosen_in_dialog(path) {
+        return Err(format!("{} wurde nicht im Speichern-Dialog gewählt", path.display()));
+    }
+    Ok(())
+}
+
+/// Schreibt den CSV-Export aus dem Chef-Modus bzw. die JSON-Sicherung.
+///
+/// Der Webview kann hier jeden Pfad hineinreichen - angenommen wird nur einer,
+/// den der Speichern-Dialog zurückgegeben hat: der trägt ihn in den
+/// Datei-Scope ein, und genau den fragt die Prüfung ab.
+#[tauri::command]
+fn write_export_file(app: tauri::AppHandle, path: String, contents: String) -> Result<(), String> {
+    use tauri_plugin_fs::FsExt;
+    let target = std::path::Path::new(&path);
+    let scope = app.try_fs_scope();
+    check_export_target(target, |p| scope.as_ref().is_some_and(|s| s.is_allowed(p)))?;
+    write_with_bom(target, &contents).map_err(|e| format!("{path} konnte nicht geschrieben werden: {e}"))
 }
 
 /// Setzt den Tray-Tooltip (z.B. laufende Zeit "Projekt 1 – 1:23:45").
@@ -668,3 +703,36 @@ pub fn run() {
         .run(|_handle, _event| {});
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn export_accepts_only_csv_and_json() {
+        let chosen = |_: &Path| true;
+        assert!(check_export_target(Path::new("C:/Daten/Team-Abgaben-2026-09.csv"), chosen).is_ok());
+        assert!(check_export_target(Path::new("/home/anna/timetracker-backup.JSON"), chosen).is_ok());
+        assert!(check_export_target(Path::new("C:/Users/anna/.bashrc"), chosen).is_err());
+        assert!(check_export_target(Path::new("C:/Windows/evil.exe"), chosen).is_err());
+        assert!(check_export_target(Path::new("ohne-endung"), chosen).is_err());
+    }
+
+    #[test]
+    fn export_requires_a_path_from_the_dialog() {
+        let never = |_: &Path| false;
+        assert!(check_export_target(Path::new("C:/Daten/abgaben.csv"), never).is_err());
+    }
+
+    #[test]
+    fn writes_with_bom() {
+        let dir = std::env::temp_dir().join(format!("tt-bom-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("probe.csv");
+        write_with_bom(&file, "Größe").unwrap();
+        let bytes = std::fs::read(&file).unwrap();
+        assert_eq!(&bytes[..3], &[0xEF, 0xBB, 0xBF]);
+        assert_eq!(std::str::from_utf8(&bytes[3..]).unwrap(), "Größe");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

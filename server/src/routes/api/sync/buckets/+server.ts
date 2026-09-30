@@ -2,11 +2,12 @@
 //
 // Damit sieht ein Gerät, zu welchen Monaten es Daten gibt, bevor es sie
 // heruntergeladen hat.
-import { error, json } from "@sveltejs/kit";
+import { json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { listBuckets } from "$lib/server/sync";
+import { requireUser } from "$lib/server/guards";
 
 export const GET: RequestHandler = ({ locals }) => {
-	if (!locals.userId) error(401, "Nicht angemeldet");
-	return json({ buckets: listBuckets(locals.db, locals.userId) });
+	const userId = requireUser(locals);
+	return json({ buckets: listBuckets(locals.db, userId) });
 };

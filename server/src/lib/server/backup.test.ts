@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { openDb } from "./db/index";
+import Database from "better-sqlite3";
+import { openDb, MIGRATIONS } from "./db/index";
 import {
 	cleanupBackups,
 	deleteBackupFile,
@@ -8,7 +9,7 @@ import {
 	restoreBackup,
 	verifyBackupIntegrity
 } from "./backup";
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -142,5 +143,51 @@ describe("Datenbanksicherungen", () => {
 
 		raw.close();
 	});
-});
 
+	it("stellt auch die aelteste von sieben Sicherungen wieder her", async () => {
+		const { raw } = openDb(dbFile);
+		raw.exec("CREATE TABLE custom (val TEXT); INSERT INTO custom VALUES ('alt');");
+		mkdirSync(backupDir, { recursive: true });
+		const names: string[] = [];
+		for (let i = 1; i <= 7; i++) {
+			const b = await performBackup(raw, {
+				dir: backupDir,
+				keep: 7,
+				customName: `timetracker-backup-2026-08-0${i}_12-00-00.db`
+			});
+			const time = 1_000_000 + i * 1000;
+			utimesSync(b.path, time, time);
+			names.push(b.name);
+		}
+		raw.exec("UPDATE custom SET val = 'neu';");
+
+		const res = await restoreBackup(raw, dbFile, names[0], { dir: backupDir });
+		expect(res.ok).toBe(true);
+		expect((raw.prepare("SELECT val FROM custom").get() as { val: string }).val).toBe("alt");
+		expect(existsSync(join(backupDir, res.preRestoreBackup))).toBe(true);
+		raw.close();
+	});
+
+	it("bringt eine Sicherung mit aelterem Schema beim Wiederherstellen auf den aktuellen Stand", async () => {
+		const agedFile = join(dir, "alt.db");
+		openDb(agedFile).raw.close();
+		const aged = new Database(agedFile);
+		const before = MIGRATIONS.findIndex((m) => m.includes("CREATE TABLE IF NOT EXISTS team_admin_invites"));
+		aged.exec("DROP TABLE team_admins; DROP TABLE team_admin_invites;");
+		aged.prepare("UPDATE schema_version SET version = ?").run(before);
+		mkdirSync(backupDir, { recursive: true });
+		await aged.backup(join(backupDir, "timetracker-backup-2026-01-01_00-00-00.db"));
+		aged.close();
+
+		const { raw } = openDb(dbFile);
+		await restoreBackup(raw, dbFile, "timetracker-backup-2026-01-01_00-00-00.db", { dir: backupDir });
+
+		const version = raw.prepare("SELECT version FROM schema_version").get() as { version: number };
+		expect(version.version).toBe(MIGRATIONS.length);
+		const table = raw
+			.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'team_admins'")
+			.get();
+		expect(table).toBeTruthy();
+		raw.close();
+	});
+});

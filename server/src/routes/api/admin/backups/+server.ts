@@ -2,8 +2,9 @@
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { deleteBackupFile, listBackups, performBackup } from "$lib/server/backup";
-import { requireAdmin } from "$lib/server/invites";
+import { requireAdmin } from "$lib/server/guards";
 import { BACKUP_DIR } from "$lib/server/config";
+import { readJson } from "$lib/server/request";
 
 /** Verwalter-Rolle prüfen. */
 export const GET: RequestHandler = ({ locals }) => {
@@ -24,7 +25,7 @@ export const POST: RequestHandler = async ({ locals }) => {
 
 export const DELETE: RequestHandler = async ({ locals, request }) => {
 	requireAdmin(locals);
-	const body = await request.json().catch(() => null);
+	const body = await readJson(request);
 	const name = String(body?.name ?? "").trim();
 	if (!name) error(400, "Dateiname der Sicherung fehlt");
 

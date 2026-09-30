@@ -1,5 +1,7 @@
 // Team-Modus: Chef, Mitglieder, Einladungslinks. Bewusst ausserhalb des
 // Ende-zu-Ende-verschlüsselten Sync-Systems - siehe db/schema.ts.
+import type { TeamActivity, TeamActivityInput, TeamReportStatus } from "$shared/apiTypes";
+export type { TeamActivityInput, TeamReportStatus };
 import { error } from "@sveltejs/kit";
 import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
 import type { Db, DbLike } from "./db/index";
@@ -13,9 +15,10 @@ import {
 	teams,
 	users
 } from "./db/schema";
-import { generateInviteCode } from "./invites";
+import { generateInviteCode, inviteCodeCandidates } from "./invites";
 import { hashSecret, newSecret } from "./auth";
 import { cleanEmail } from "$shared/email";
+import { readLabel, TEAM_TEXT_MAX } from "$shared/labels";
 
 export interface TeamRow {
 	id: string;
@@ -28,7 +31,7 @@ export interface TeamRow {
 
 /** Ein Team anlegen. */
 export function createTeam(db: DbLike, ownerUserId: string, name: string): TeamRow {
-	const row = { id: crypto.randomUUID(), ownerUserId, name: name.slice(0, 100), createdAt: Date.now() };
+	const row = { id: crypto.randomUUID(), ownerUserId, name: name.slice(0, TEAM_TEXT_MAX), createdAt: Date.now() };
 	db.insert(teams).values(row).run();
 	return row;
 }
@@ -80,39 +83,99 @@ export interface TeamInviteRow {
 	revokedAt: number | null;
 }
 
-/** Der aktuell gültige Link dieses Teams - oder null. */
-export function activeTeamInvite(db: Db, teamId: string): TeamInviteRow | null {
+/** Ein Verwalter-Link hat dieselbe Form wie ein Beitritts-Link. */
+export type TeamAdminInviteRow = TeamInviteRow;
+
+/** Ein Verwalter-Link oeffnet alle Berichte - weitergeleitet soll er nicht ewig gelten. */
+export const ADMIN_INVITE_TTL_MS = 30 * 24 * 60 * 60_000;
+
+/**
+ * Die beiden Arten von Team-Links: Beitritt (ohne Ablauf) und Verwalter (mit).
+ * Tabelle und Frist sind das Einzige, worin sie sich unterscheiden.
+ */
+interface InviteKind {
+	table: typeof teamInvites | typeof teamAdminInvites;
+	/** null = gilt bis zum Widerruf. */
+	ttlMs: number | null;
+}
+const MEMBER_INVITES: InviteKind = { table: teamInvites, ttlMs: null };
+const ADMIN_INVITES: InviteKind = { table: teamAdminInvites, ttlMs: ADMIN_INVITE_TTL_MS };
+
+/**
+ * Wann ein Link abläuft - null für nie. Verwalter-Links aus den Betas stehen
+ * ohne Ablauf in der DB; sie laufen ab ihrer Erzeugung genauso ab.
+ */
+function inviteExpiresAt(kind: InviteKind, r: { createdAt: number; expiresAt: number | null }): number | null {
+	return r.expiresAt ?? (kind.ttlMs === null ? null : r.createdAt + kind.ttlMs);
+}
+
+/** Gültig heisst: nicht widerrufen und die Frist liegt noch in der Zukunft. */
+function isInviteLive(kind: InviteKind, r: TeamInviteRow, now: number): boolean {
+	if (r.revokedAt) return false;
+	const expiresAt = inviteExpiresAt(kind, r);
+	return expiresAt === null || expiresAt > now;
+}
+
+function revokeInvites(db: DbLike, kind: InviteKind, teamId: string, now: number): void {
+	db.update(kind.table)
+		.set({ revokedAt: now })
+		.where(and(eq(kind.table.teamId, teamId), isNull(kind.table.revokedAt)))
+		.run();
+}
+
+function activeInvite(db: Db, kind: InviteKind, teamId: string): TeamInviteRow | null {
 	const now = Date.now();
-	const rows = db
+	const rows: TeamInviteRow[] = db
 		.select()
-		.from(teamInvites)
-		.where(and(eq(teamInvites.teamId, teamId), isNull(teamInvites.revokedAt)))
-		.orderBy(desc(teamInvites.createdAt))
+		.from(kind.table)
+		.where(and(eq(kind.table.teamId, teamId), isNull(kind.table.revokedAt)))
+		.orderBy(desc(kind.table.createdAt))
 		.all();
-	return rows.find((r) => !r.expiresAt || r.expiresAt > now) ?? null;
+	return rows.find((r) => isInviteLive(kind, r, now)) ?? null;
 }
 
 /**
  * Einen neuen Link erzeugen - widerruft dabei alle bisher aktiven, damit stets
  * höchstens einer gilt ("Neuen Link erzeugen" ersetzt den alten).
  */
-export function rotateTeamInvite(db: Db, teamId: string): TeamInviteRow {
+function rotateInvite(db: Db, kind: InviteKind, teamId: string): TeamInviteRow {
 	const now = Date.now();
-	db.update(teamInvites)
-		.set({ revokedAt: now })
-		.where(and(eq(teamInvites.teamId, teamId), isNull(teamInvites.revokedAt)))
-		.run();
-	const row = { code: generateInviteCode(), teamId, createdAt: now, expiresAt: null, revokedAt: null };
-	db.insert(teamInvites).values(row).run();
+	revokeInvites(db, kind, teamId, now);
+	const row = {
+		code: generateInviteCode(),
+		teamId,
+		createdAt: now,
+		expiresAt: kind.ttlMs === null ? null : now + kind.ttlMs,
+		revokedAt: null
+	};
+	db.insert(kind.table).values(row).run();
 	return row;
 }
 
-/** Team hinter einem gültigen, nicht widerrufenen/abgelaufenen Code - oder null. */
-export function teamFromInviteCode(db: DbLike, code: string): TeamRow | null {
-	const invite = db.select().from(teamInvites).where(eq(teamInvites.code, code)).get();
-	if (!invite || invite.revokedAt) return null;
-	if (invite.expiresAt && invite.expiresAt < Date.now()) return null;
+/** Team hinter einem gültigen Code - oder null. Getipptes wird wie beim Konto-Code verziehen. */
+function teamFromCode(db: DbLike, kind: InviteKind, code: string): TeamRow | null {
+	const invite: TeamInviteRow | undefined = db
+		.select()
+		.from(kind.table)
+		.where(inArray(kind.table.code, inviteCodeCandidates(code)))
+		.get();
+	if (!invite || !isInviteLive(kind, invite, Date.now())) return null;
 	return db.select().from(teams).where(eq(teams.id, invite.teamId)).get() ?? null;
+}
+
+/** Der aktuell gültige Beitritts-Link dieses Teams - oder null. */
+export function activeTeamInvite(db: Db, teamId: string): TeamInviteRow | null {
+	return activeInvite(db, MEMBER_INVITES, teamId);
+}
+
+/** Neuen Beitritts-Link erzeugen, der bisherige gilt nicht mehr. */
+export function rotateTeamInvite(db: Db, teamId: string): TeamInviteRow {
+	return rotateInvite(db, MEMBER_INVITES, teamId);
+}
+
+/** Team hinter einem gültigen Beitritts-Code - oder null. */
+export function teamFromInviteCode(db: DbLike, code: string): TeamRow | null {
+	return teamFromCode(db, MEMBER_INVITES, code);
 }
 
 export interface TeamMemberAuth {
@@ -138,7 +201,7 @@ export function joinTeam(
 		.values({
 			id,
 			teamId: team.id,
-			name: name.slice(0, 100) || "Ohne Namen",
+			name: readLabel(name, "Ohne Namen", TEAM_TEXT_MAX),
 			email: cleanEmail(email),
 			tokenHash: hashSecret(token),
 			createdAt: Date.now()
@@ -271,10 +334,7 @@ export function removeTeamAdmin(db: Db, teamId: string, userId: string): boolean
 		.where(and(eq(teamAdmins.teamId, teamId), eq(teamAdmins.userId, userId)))
 		.run();
 	if (r.changes === 0) return false;
-	db.update(teamAdminInvites)
-		.set({ revokedAt: Date.now() })
-		.where(and(eq(teamAdminInvites.teamId, teamId), isNull(teamAdminInvites.revokedAt)))
-		.run();
+	revokeInvites(db, ADMIN_INVITES, teamId, Date.now());
 	return true;
 }
 
@@ -285,70 +345,48 @@ export function removeTeamAdmin(db: Db, teamId: string, userId: string): boolean
  */
 export function transferTeamOwnership(db: Db, team: TeamRow, newOwnerUserId: string): void {
 	if (!isTeamAdmin(db, team.id, newOwnerUserId)) error(400, "Nur ein bestehender Verwalter kann Chef werden");
-	db.transaction((tx) => {
-		tx.update(teams).set({ ownerUserId: newOwnerUserId }).where(eq(teams.id, team.id)).run();
-		tx.delete(teamAdmins)
-			.where(and(eq(teamAdmins.teamId, team.id), eq(teamAdmins.userId, newOwnerUserId)))
-			.run();
-		tx.insert(teamAdmins)
-			.values({ teamId: team.id, userId: team.ownerUserId, createdAt: Date.now() })
-			.onConflictDoNothing()
-			.run();
-	});
+	db.transaction((tx) =>
+		handOverTeam(tx, team.id, newOwnerUserId, { formerOwnerStaysAdmin: team.ownerUserId })
+	);
 }
 
-export interface TeamAdminInviteRow {
-	code: string;
-	teamId: string;
-	createdAt: number;
-	expiresAt: number | null;
-	revokedAt: number | null;
+/**
+ * Den Besitz eines Teams auf einen seiner Verwalter umschreiben - der ist
+ * danach Chef und steht nicht mehr doppelt in der Verwalterliste.
+ * `formerOwnerStaysAdmin` setzt den bisherigen Chef als Verwalter ein; bei
+ * einer Kontolöschung (account.ts) entfällt das, der geht ja.
+ */
+export function handOverTeam(
+	db: DbLike,
+	teamId: string,
+	newOwnerUserId: string,
+	opts: { formerOwnerStaysAdmin?: string } = {}
+): void {
+	db.update(teams).set({ ownerUserId: newOwnerUserId }).where(eq(teams.id, teamId)).run();
+	db.delete(teamAdmins)
+		.where(and(eq(teamAdmins.teamId, teamId), eq(teamAdmins.userId, newOwnerUserId)))
+		.run();
+	if (opts.formerOwnerStaysAdmin) {
+		db.insert(teamAdmins)
+			.values({ teamId, userId: opts.formerOwnerStaysAdmin, createdAt: Date.now() })
+			.onConflictDoNothing()
+			.run();
+	}
 }
 
 /** Der aktuell gültige Verwalter-Link dieses Teams - oder null. */
 export function activeAdminInvite(db: Db, teamId: string): TeamAdminInviteRow | null {
-	const now = Date.now();
-	const rows = db
-		.select()
-		.from(teamAdminInvites)
-		.where(and(eq(teamAdminInvites.teamId, teamId), isNull(teamAdminInvites.revokedAt)))
-		.orderBy(desc(teamAdminInvites.createdAt))
-		.all();
-	return rows.find((r) => adminInviteExpiresAt(r) > now) ?? null;
-}
-
-/** Ein Verwalter-Link oeffnet alle Berichte - weitergeleitet soll er nicht ewig gelten. */
-export const ADMIN_INVITE_TTL_MS = 30 * 24 * 60 * 60_000;
-
-/** Links aus den Betas stehen ohne Ablauf in der DB - sie laufen ab ihrer Erzeugung genauso ab. */
-function adminInviteExpiresAt(r: { createdAt: number; expiresAt: number | null }): number {
-	return r.expiresAt ?? r.createdAt + ADMIN_INVITE_TTL_MS;
+	return activeInvite(db, ADMIN_INVITES, teamId);
 }
 
 /** Wie rotateTeamInvite, nur fuer den Verwalter-Link - und mit Ablauf. */
 export function rotateAdminInvite(db: Db, teamId: string): TeamAdminInviteRow {
-	const now = Date.now();
-	db.update(teamAdminInvites)
-		.set({ revokedAt: now })
-		.where(and(eq(teamAdminInvites.teamId, teamId), isNull(teamAdminInvites.revokedAt)))
-		.run();
-	const row = {
-		code: generateInviteCode(),
-		teamId,
-		createdAt: now,
-		expiresAt: now + ADMIN_INVITE_TTL_MS,
-		revokedAt: null
-	};
-	db.insert(teamAdminInvites).values(row).run();
-	return row;
+	return rotateInvite(db, ADMIN_INVITES, teamId);
 }
 
 /** Team hinter einem gültigen Verwalter-Code - oder null. */
 export function teamFromAdminInviteCode(db: DbLike, code: string): TeamRow | null {
-	const invite = db.select().from(teamAdminInvites).where(eq(teamAdminInvites.code, code)).get();
-	if (!invite || invite.revokedAt) return null;
-	if (adminInviteExpiresAt(invite) < Date.now()) return null;
-	return db.select().from(teams).where(eq(teams.id, invite.teamId)).get() ?? null;
+	return teamFromCode(db, ADMIN_INVITES, code);
 }
 
 /**
@@ -367,24 +405,8 @@ export function joinTeamAsAdmin(db: Db, code: string, userId: string): TeamRow |
 	return team;
 }
 
-export interface TeamActivityRow {
-	id: string;
+export interface TeamActivityRow extends TeamActivity {
 	teamId: string;
-	name: string;
-	isAbsence: boolean;
-	sortOrder: number;
-	color: string | null;
-	archived: boolean;
-	updatedAt: number;
-}
-
-export interface TeamActivityInput {
-	id?: string;
-	name: string;
-	isAbsence: boolean;
-	sortOrder: number;
-	color?: string | null;
-	archived: boolean;
 }
 
 export const MAX_TEAM_ACTIVITIES = 500;
@@ -434,7 +456,7 @@ export function setTeamActivities(
 	const rows: TeamActivityRow[] = items.map((it, i) => ({
 		id: it.id ?? crypto.randomUUID(),
 		teamId,
-		name: it.name.slice(0, 100),
+		name: it.name.slice(0, TEAM_TEXT_MAX),
 		isAbsence: it.isAbsence,
 		sortOrder: it.sortOrder ?? i,
 		color: it.color && HEX_COLOR.test(it.color) ? it.color : null,
@@ -464,13 +486,23 @@ export function listTeamActivities(db: Db, teamId: string): TeamActivityRow[] {
 /** Obergrenze je Bericht - ein echter Monat hat eine Handvoll Aktivitäten, nicht Tausende. */
 export const MAX_TEAM_REPORT_ROWS = 200;
 
+const REPORT_MONTH = /^(\d{4})-(\d{2})$/;
+
+/**
+ * Nur die Form `YYYY-MM` - zum Ansehen und Löschen. Dort muss auch ein alter
+ * Monat gehen, anders als beim Anlegen (isPlausibleReportMonth).
+ */
+export function isReportMonthFormat(month: string): boolean {
+	return REPORT_MONTH.test(month);
+}
+
 /**
  * Monatsangabe `YYYY-MM`, und zwar eine plausible: zwei Jahre zurück bis ein
  * Jahr voraus. Sonst wären je Mitglied eine Million Schlüssel (0000-00 …
  * 9999-99) frei, jeder eine eigene Zeile.
  */
 export function isPlausibleReportMonth(month: string, now = new Date()): boolean {
-	const m = /^(\d{4})-(\d{2})$/.exec(month);
+	const m = REPORT_MONTH.exec(month);
 	if (!m) return false;
 	const year = Number(m[1]);
 	const mon = Number(m[2]);
@@ -502,7 +534,7 @@ export function sanitizeTeamReport(payload: unknown): TeamReportPayload | null {
 		.filter((r) => typeof r.name === "string")
 		.slice(0, MAX_TEAM_REPORT_ROWS)
 		.map((r) => ({
-			name: (r.name as string).slice(0, 100),
+			name: (r.name as string).slice(0, TEAM_TEXT_MAX),
 			hours: finiteHours(r.hours),
 			isAbsence: r.isAbsence === true
 		}));
@@ -512,6 +544,15 @@ export function sanitizeTeamReport(payload: unknown): TeamReportPayload | null {
 		workHours: finiteHours(p.workHours),
 		absenceHours: finiteHours(p.absenceHours)
 	};
+}
+
+/** Der Stand des Berichts eines Mitglieds für einen Monat - oder undefined. */
+function findTeamReport(db: DbLike, memberId: string, month: string): { submittedAt: number } | undefined {
+	return db
+		.select({ submittedAt: teamReports.submittedAt })
+		.from(teamReports)
+		.where(and(eq(teamReports.memberId, memberId), eq(teamReports.month, month)))
+		.get();
 }
 
 /**
@@ -530,11 +571,7 @@ export function upsertTeamReport(
 	// Systemuhr bei ~15 ms, zwei schnell aufeinanderfolgende Uploads koennten
 	// also denselben Wert bekommen - und genau ueber diesen Wert erkennt
 	// setTeamReportStatus einen zwischenzeitlich veralteten Stand.
-	const existing = db
-		.select({ submittedAt: teamReports.submittedAt })
-		.from(teamReports)
-		.where(and(eq(teamReports.memberId, memberId), eq(teamReports.month, month)))
-		.get();
+	const existing = findTeamReport(db, memberId, month);
 	const submittedAt = Math.max(Date.now(), (existing?.submittedAt ?? 0) + 1);
 	db.insert(teamReports)
 		.values({ teamId, memberId, month, submittedAt, payload: JSON.stringify(payload) })
@@ -574,22 +611,13 @@ export function setTeamReportStatus(
 		// Nicht blind upserten: ein Mitglied kann zwischen Laden der Ansicht und
 		// diesem Klick selbst einen echten Bericht hochgeladen haben - der darf
 		// nicht durch die von-Hand-Markierung (payload: null) ersetzt werden.
-		const existing = db
-			.select({ memberId: teamReports.memberId })
-			.from(teamReports)
-			.where(and(eq(teamReports.memberId, memberId), eq(teamReports.month, month)))
-			.get();
-		if (!existing) upsertTeamReport(db, teamId, memberId, month, null);
+		if (!findTeamReport(db, memberId, month)) upsertTeamReport(db, teamId, memberId, month, null);
 	} else {
 		// Dieselbe Verwechslungsgefahr umgekehrt: zwischen Laden der Ansicht und
 		// diesem Klick könnte ein echter Bericht eingetroffen sein. Stimmt der
 		// mitgegebene Stand nicht mehr mit der Datenbank überein, nicht blind
 		// darüberlöschen, sondern ablehnen - der Client lädt dann neu.
-		const existing = db
-			.select({ submittedAt: teamReports.submittedAt })
-			.from(teamReports)
-			.where(and(eq(teamReports.memberId, memberId), eq(teamReports.month, month)))
-			.get();
+		const existing = findTeamReport(db, memberId, month);
 		if (existing && expectedSubmittedAt !== undefined && existing.submittedAt !== expectedSubmittedAt) {
 			error(409, "Der Bericht wurde inzwischen geändert");
 		}
@@ -598,15 +626,6 @@ export function setTeamReportStatus(
 			.run();
 	}
 	return true;
-}
-
-export interface TeamReportStatus {
-	memberId: string;
-	memberName: string;
-	memberEmail: string | null;
-	/** null = für diesen Monat noch nichts eingegangen. */
-	submittedAt: number | null;
-	payload: unknown | null;
 }
 
 /** Für einen Monat: jedes Mitglied, ob und wann es gesendet hat - samt Inhalt. */

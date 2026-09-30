@@ -1,6 +1,6 @@
 // Der Weckruf-Kanal.
-import { error } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
+import { requireUser } from "$lib/server/guards";
 import { subscribe } from "$lib/server/events";
 import { currentSeq } from "$lib/server/sync";
 
@@ -8,8 +8,7 @@ import { currentSeq } from "$lib/server/sync";
 const HEARTBEAT_MS = 30_000;
 
 export const GET: RequestHandler = ({ locals }) => {
-	const userId = locals.userId;
-	if (!userId) error(401, "Nicht angemeldet");
+	const userId = requireUser(locals);
 
 	const enc = new TextEncoder();
 	let unsubscribe: (() => void) | null = null;

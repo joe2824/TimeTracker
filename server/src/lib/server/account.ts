@@ -20,6 +20,7 @@ import {
 	teams,
 	users
 } from "./db/schema";
+import { handOverTeam } from "./teams";
 
 /** Wie viele Konten es auf diesem Server gibt. Für die Verwaltungsansicht. */
 export function countUsers(db: DbLike): number {
@@ -55,8 +56,7 @@ function handOverOwnedTeams(db: DbLike, userId: string): { transferred: number; 
 			.orderBy(asc(teamAdmins.createdAt))
 			.get();
 		if (!heir) continue;
-		db.update(teams).set({ ownerUserId: heir.userId }).where(eq(teams.id, id)).run();
-		db.delete(teamAdmins).where(and(eq(teamAdmins.teamId, id), eq(teamAdmins.userId, heir.userId))).run();
+		handOverTeam(db, id, heir.userId);
 		transferred++;
 	}
 	return { transferred, deleted: owned.length - transferred };
@@ -64,8 +64,10 @@ function handOverOwnedTeams(db: DbLike, userId: string): { transferred: number; 
 
 /** Alles zu diesem Konto entfernen. */
 export function deleteAccount(db: DbLike, userId: string): DeleteSummary {
+	// count(*) statt Zeilen holen: bei records hiesse das sonst jedes Chiffrat
+	// des Kontos in den Speicher laden, nur um es zu zählen.
 	const countRows = (table: typeof records | typeof devices | typeof credentials | typeof keyWraps) =>
-		db.select().from(table).where(eq(table.userId, userId)).all().length;
+		Number(db.select({ n: sql<number>`count(*)` }).from(table).where(eq(table.userId, userId)).get()?.n ?? 0);
 
 	const summary: DeleteSummary = {
 		records: countRows(records),

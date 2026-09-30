@@ -79,6 +79,9 @@ const startBody = (publicKey: string, label: string, code: string, hash = SECRET
 /** Schritt 3, mit dem Ausweis. */
 const claimBody = (code: string, secret = SECRET) => JSON.stringify({ code, claimSecret: secret });
 
+/** Kennung und Nachweis, ohne die der Server keine Phrasen-Verpackung annimmt. */
+const RECOVERY_IDS = { recoveryId: "kennung-test", vaultProof: "nachweis-test" };
+
 const rec = (id: string, over: Record<string, unknown> = {}) => ({
 	id,
 	kind: "entry",
@@ -305,7 +308,7 @@ describe("Mandantentrennung ueber HTTP", () => {
 	it("Bodo sieht Annas Verpackungen nicht", async () => {
 		await api(annaToken, "/api/wraps", {
 			method: "POST",
-			body: JSON.stringify({ kind: "recovery", payload: "dmVycGFja3VuZw==" })
+			body: JSON.stringify({ kind: "recovery", payload: "dmVycGFja3VuZw==", ...RECOVERY_IDS })
 		});
 		expect((await (await api(bodoToken, "/api/wraps")).json()).wraps).toEqual([]);
 		expect((await (await api(annaToken, "/api/wraps")).json()).wraps).toHaveLength(1);
@@ -324,7 +327,7 @@ describe("Verpackungen", () => {
 		for (const p of ["ZXJzdGU=", "enZlaXRl"]) {
 			await api(annaToken, "/api/wraps", {
 				method: "POST",
-				body: JSON.stringify({ kind: "recovery", payload: p })
+				body: JSON.stringify({ kind: "recovery", payload: p, ...RECOVERY_IDS })
 			});
 		}
 		const wraps = (await (await api(annaToken, "/api/wraps")).json()).wraps;
@@ -708,6 +711,23 @@ describe("Warteschleife statt Ereigniskanal", () => {
 	it("verlangt eine Anmeldung", async () => {
 		expect((await fetch(`${base}/api/sync/wait?since=0`)).status).toBe(401);
 	});
+
+	it("weist einen unsinnigen Stand ab, statt die volle Zeit zu warten", async () => {
+		for (const since of ["abc", "-1"]) {
+			const started = Date.now();
+			const answer = await api(annaToken, `/api/sync/wait?since=${since}`);
+			expect(answer.status).toBe(400);
+			expect(Date.now() - started).toBeLessThan(700);
+		}
+	});
+
+	it("nimmt Datensaetze mit falschen Feldtypen als Eingabefehler, nicht als Serverfehler", async () => {
+		const res = await api(annaToken, "/api/sync", {
+			method: "POST",
+			body: JSON.stringify({ records: [rec("e1", { updatedAt: "gestern" })] })
+		});
+		expect(res.status).toBe(400);
+	});
 });
 
 describe("Konto aufloesen", () => {
@@ -719,7 +739,7 @@ describe("Konto aufloesen", () => {
 		});
 		await api(annaToken, "/api/wraps", {
 			method: "POST",
-			body: JSON.stringify({ kind: "recovery", payload: "verpackt" })
+			body: JSON.stringify({ kind: "recovery", payload: "verpackt", ...RECOVERY_IDS })
 		});
 	}
 
@@ -1503,7 +1523,7 @@ describe("Konto von einem Geraet aus anlegen", () => {
 
 		const res = await api(deviceToken, "/api/wraps", {
 			method: "POST",
-			body: JSON.stringify({ kind: "recovery", payload: "verpackt" })
+			body: JSON.stringify({ kind: "recovery", payload: "verpackt", ...RECOVERY_IDS })
 		});
 		expect(res.status).toBe(200);
 

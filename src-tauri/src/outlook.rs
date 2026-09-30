@@ -19,10 +19,7 @@ mod imp {
             return Ok(path);
         }
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let mut bytes = Vec::with_capacity(OUTLOOK_PS1.len() + 3);
-        bytes.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
-        bytes.extend_from_slice(OUTLOOK_PS1.as_bytes());
-        std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
+        crate::write_with_bom(&path, OUTLOOK_PS1).map_err(|e| e.to_string())?;
         *written = true;
         Ok(path)
     }
@@ -41,6 +38,25 @@ mod imp {
         cmd
     }
 
+    /// Das Skript ausführen: stdout bei Erfolg, sonst stderr als Fehler.
+    fn run(cmd: &mut Command) -> Result<String, String> {
+        let output = cmd
+            .output()
+            .map_err(|e| format!("PowerShell konnte nicht gestartet werden: {e}"))?;
+        if output.status.success() {
+            Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+        } else {
+            Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+        }
+    }
+
+    /// Wie `run`, die Ausgabe als JSON gelesen.
+    fn run_json(cmd: &mut Command) -> Result<serde_json::Value, String> {
+        let stdout = run(cmd)?;
+        serde_json::from_str(&stdout)
+            .map_err(|e| format!("JSON konnte nicht gelesen werden: {e}; Ausgabe: {stdout}"))
+    }
+
     pub fn create_outlook_draft(
         app: tauri::AppHandle,
         to: String,
@@ -56,37 +72,19 @@ mod imp {
         ));
         std::fs::write(&body_file, html_body).map_err(|e| e.to_string())?;
 
-        let output = powershell(&script)
-            .args(["-Action", "draft", "-To", &to, "-Subject", &subject])
-            .arg("-BodyFile")
-            .arg(&body_file)
-            .output()
-            .map_err(|e| format!("PowerShell konnte nicht gestartet werden: {e}"));
-
+        let result = run(
+            powershell(&script)
+                .args(["-Action", "draft", "-To", &to, "-Subject", &subject])
+                .arg("-BodyFile")
+                .arg(&body_file),
+        );
         let _ = std::fs::remove_file(&body_file);
-        let output = output?;
-
-        if output.status.success() {
-            Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-        } else {
-            Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
-        }
+        result
     }
 
     pub fn detect_outlook(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
         let script = ensure_script(&app)?;
-        let output = powershell(&script)
-            .args(["-Action", "detect"])
-            .output()
-            .map_err(|e| format!("PowerShell konnte nicht gestartet werden: {e}"))?;
-
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            serde_json::from_str(stdout.trim())
-                .map_err(|e| format!("JSON konnte nicht gelesen werden: {e}; Ausgabe: {stdout}"))
-        } else {
-            Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
-        }
+        run_json(powershell(&script).args(["-Action", "detect"]))
     }
 
     pub fn read_outlook_calendar(
@@ -95,18 +93,7 @@ mod imp {
         end: String,
     ) -> Result<serde_json::Value, String> {
         let script = ensure_script(&app)?;
-        let output = powershell(&script)
-            .args(["-Action", "calendar", "-Start", &start, "-End", &end])
-            .output()
-            .map_err(|e| format!("PowerShell konnte nicht gestartet werden: {e}"))?;
-
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            serde_json::from_str(stdout.trim())
-                .map_err(|e| format!("JSON konnte nicht gelesen werden: {e}; Ausgabe: {stdout}"))
-        } else {
-            Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
-        }
+        run_json(powershell(&script).args(["-Action", "calendar", "-Start", &start, "-End", &end]))
     }
 }
 

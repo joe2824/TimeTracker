@@ -5,7 +5,9 @@ import { pairings } from "$lib/server/db/schema";
 import { PAIRING_TTL_MS } from "$lib/server/config";
 import { eq } from "drizzle-orm";
 import { safeEqual } from "$lib/server/auth";
-import { isPairingCode, isClaimHash, normalizePairingCode } from "$lib/server/pairing";
+import { isPairingCode, isClaimHash, normalizePairingCode, pairingByCode } from "$lib/server/pairing";
+import { LABEL_MAX, readLabel } from "$shared/labels";
+import { readJson } from "$lib/server/request";
 
 /**
  * Der Code kommt vom Gerät, nicht von hier - er ist der Abdruck des öffentlichen
@@ -16,9 +18,9 @@ import { isPairingCode, isClaimHash, normalizePairingCode } from "$lib/server/pa
  * und taugt deshalb nicht als Ausweis beim Abholen.
  */
 export const POST: RequestHandler = async ({ locals, request }) => {
-	const body = await request.json().catch(() => null);
+	const body = await readJson(request);
 	const publicKey = String(body?.publicKey ?? "");
-	const label = String(body?.label ?? "Neues Gerät").slice(0, 64);
+	const label = readLabel(body?.label, "Neues Gerät", LABEL_MAX);
 	const code = normalizePairingCode(body?.code);
 	const claimHash = String(body?.claimHash ?? "");
 	if (!publicKey || publicKey.length > 512) error(400, "Öffentlicher Schlüssel fehlt");
@@ -31,7 +33,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	}
 
 	const expiresAt = Date.now() + PAIRING_TTL_MS;
-	const present = locals.db.select().from(pairings).where(eq(pairings.code, code)).get();
+	const present = pairingByCode(locals.db, code);
 
 	// Derselbe Schlüssel ergibt denselben Code - ein zweiter Aufruf desselben
 	// Geräts landet also zwangsläufig hier. Das ist ein erneuter Versuch und

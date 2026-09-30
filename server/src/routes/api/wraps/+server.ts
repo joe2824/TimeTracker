@@ -4,23 +4,24 @@ import type { RequestHandler } from "./$types";
 import { keyWraps } from "$lib/server/db/schema";
 import { eq } from "drizzle-orm";
 import { readWrap, storeWrap, type WrapKind } from "$lib/server/wraps";
+import { readJson } from "$lib/server/request";
+import { requireUser } from "$lib/server/guards";
 
 export const GET: RequestHandler = ({ locals }) => {
-	if (!locals.userId) error(401, "Nicht angemeldet");
+	const userId = requireUser(locals);
 	return json({
 		wraps: locals.db
 			.select()
 			.from(keyWraps)
-			.where(eq(keyWraps.userId, locals.userId))
+			.where(eq(keyWraps.userId, userId))
 			.all()
 			.map((w) => ({ id: w.id, kind: w.kind, credentialId: w.credentialId, payload: w.payload }))
 	});
 };
 
 export const POST: RequestHandler = async ({ locals, request }) => {
-	if (!locals.userId) error(401, "Nicht angemeldet");
-	const userId = locals.userId;
-	const body = await request.json().catch(() => null);
+	const userId = requireUser(locals);
+	const body = await readJson(request);
 	const kind = String(body?.kind ?? "");
 	if (!["recovery", "passkey"].includes(kind)) error(400, "Unbekannte Art");
 

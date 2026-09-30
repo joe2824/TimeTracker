@@ -1,17 +1,18 @@
 // Der Einladungslink eines Teams - Chef und Verwalter sehen/erzeugen ihn.
-import { error, json } from "@sveltejs/kit";
+import { json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { activeTeamInvite, requireTeamAccess, rotateTeamInvite } from "$lib/server/teams";
+import { requireUser } from "$lib/server/guards";
 
 export const GET: RequestHandler = ({ locals, params }) => {
-	if (!locals.userId) error(401, "Nicht angemeldet");
-	requireTeamAccess(locals.db, locals.userId, params.teamId!);
+	const userId = requireUser(locals);
+	requireTeamAccess(locals.db, userId, params.teamId!);
 	return json({ invite: activeTeamInvite(locals.db, params.teamId!) });
 };
 
 /** Erzeugt einen neuen Link und widerruft dabei den bisherigen - "Neuen Link erzeugen". */
 export const POST: RequestHandler = ({ locals, params }) => {
-	if (!locals.userId) error(401, "Nicht angemeldet");
-	requireTeamAccess(locals.db, locals.userId, params.teamId!);
+	const userId = requireUser(locals);
+	requireTeamAccess(locals.db, userId, params.teamId!);
 	return json(rotateTeamInvite(locals.db, params.teamId!), { status: 201 });
 };

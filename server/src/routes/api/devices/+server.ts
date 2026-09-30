@@ -2,12 +2,14 @@
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { revokeDevice } from "$lib/server/auth";
+import { readJson } from "$lib/server/request";
+import { requireUser } from "$lib/server/guards";
 
 /** Ein Gerät lösen. */
 export const DELETE: RequestHandler = async ({ locals, request }) => {
-	if (!locals.userId) error(401, "Nicht angemeldet");
+	const userId = requireUser(locals);
 
-	const body = await request.json().catch(() => null);
+	const body = await readJson(request);
 	const requested = String(body?.deviceId ?? "");
 	const deviceId = requested || locals.deviceId;
 
@@ -16,7 +18,7 @@ export const DELETE: RequestHandler = async ({ locals, request }) => {
 	// /api/auth/logout da.
 	if (!deviceId) error(400, "Kein Gerät angegeben, und die Sitzung ist keines");
 
-	if (!revokeDevice(locals.db, locals.userId, deviceId)) {
+	if (!revokeDevice(locals.db, userId, deviceId)) {
 		error(404, "Gerät unbekannt oder bereits widerrufen");
 	}
 	return json({ ok: true, deviceId });

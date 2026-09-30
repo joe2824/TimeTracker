@@ -2,37 +2,31 @@
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import {
-	envInvitesDisabled,
 	createInvite,
+	isEnvInvitesDisabled,
 	isRegistrationOpen,
-	isAdminUser,
 	listInvites,
 	setEnvInvitesDisabled,
 	setRegistrationOpen,
 	revokeInvite
 } from "$lib/server/invites";
 import { INVITE_CODES } from "$lib/server/config";
-
-/** Verwalter sein - und zwar frisch geprüft, nicht aus einem Token geglaubt. */
-function adminOnly(locals: App.Locals): string {
-	if (!locals.userId) error(401, "Nicht angemeldet");
-	if (!isAdminUser(locals.db, locals.userId)) error(403, "Keine Berechtigung");
-	return locals.userId;
-}
+import { readJson } from "$lib/server/request";
+import { requireAdmin } from "$lib/server/guards";
 
 export const GET: RequestHandler = ({ locals }) => {
-	adminOnly(locals);
+	requireAdmin(locals);
 	return json({
 		invites: listInvites(locals.db),
 		envInvitesConfigured: INVITE_CODES.length > 0,
-		envInvitesActive: INVITE_CODES.length > 0 && !envInvitesDisabled(locals.db),
+		envInvitesActive: INVITE_CODES.length > 0 && !isEnvInvitesDisabled(locals.db),
 		openRegistration: isRegistrationOpen(locals.db)
 	});
 };
 
 export const POST: RequestHandler = async ({ locals, request }) => {
-	const who = adminOnly(locals);
-	const body = await request.json().catch(() => null);
+	const who = requireAdmin(locals);
+	const body = await readJson(request);
 
 	// gueltigTage ist der alte Feldname. Eine Desktop-Anwendung wird unabhängig
 	// vom Server aktualisiert - ohne den Rückfall bekäme eine ältere Fassung
@@ -50,8 +44,8 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 };
 
 export const PATCH: RequestHandler = async ({ locals, request }) => {
-	adminOnly(locals);
-	const body = await request.json().catch(() => null);
+	requireAdmin(locals);
+	const body = await readJson(request);
 	if (typeof body?.openRegistration === "boolean") {
 		setRegistrationOpen(locals.db, body.openRegistration);
 	}
@@ -60,14 +54,14 @@ export const PATCH: RequestHandler = async ({ locals, request }) => {
 	}
 	return json({
 		ok: true,
-		envInvitesActive: INVITE_CODES.length > 0 && !envInvitesDisabled(locals.db),
+		envInvitesActive: INVITE_CODES.length > 0 && !isEnvInvitesDisabled(locals.db),
 		openRegistration: isRegistrationOpen(locals.db)
 	});
 };
 
 export const DELETE: RequestHandler = async ({ locals, request }) => {
-	adminOnly(locals);
-	const body = await request.json().catch(() => null);
+	requireAdmin(locals);
+	const body = await readJson(request);
 	const code = String(body?.code ?? "");
 	if (!revokeInvite(locals.db, code)) {
 		error(404, "Code unbekannt, schon benutzt oder bereits zurückgezogen");
