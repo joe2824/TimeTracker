@@ -155,7 +155,7 @@
 	-->
 	<!-- Bewusst KEIN aria-live: die Uhr tickt im Sekundentakt und würde als
 	     Live-Bereich jeden Screenreader zuschütten. -->
-	<Card.Root class={app.running ? "ring-primary/25 bg-primary/[0.04]" : ""}>
+	<Card.Root class={app.running ? "ring-primary/25 bg-primary/4" : ""}>
 		<Card.Content class="py-1">
 			{#if app.running}
 				<div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">

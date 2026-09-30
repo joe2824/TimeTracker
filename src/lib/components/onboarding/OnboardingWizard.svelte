@@ -176,14 +176,14 @@
 	class="bg-background/80 fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm overflow-hidden"
 >
 	<div
-		class="bg-card text-card-foreground border-border/80 flex h-[600px] max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border shadow-2xl"
+		class="bg-card text-card-foreground border-border/80 flex h-150 max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border shadow-2xl"
 	>
 		<!-- Fester Kopfbereich: Bild & Titel springen nie -->
 		<div class="px-6 pt-5 pb-2 text-center shrink-0 space-y-2">
 			<div class="flex items-center justify-center">
 				<img src="/logo.svg" alt="TimeTracker" class="h-10 w-auto" />
 			</div>
-			<div class="space-y-0.5 min-h-[44px] flex flex-col justify-center">
+			<div class="space-y-0.5 min-h-11 flex flex-col justify-center">
 				<h1 class="text-lg font-semibold tracking-tight">{stepTitles[step].title}</h1>
 				<p class="text-muted-foreground text-xs">{stepTitles[step].subtitle}</p>
 			</div>
@@ -300,7 +300,7 @@
 							<CheckCircle2Icon class="size-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
 							<div>
 								<div class="font-medium text-xs">Bereits erfolgreich verknüpft</div>
-								<div class="opacity-90 font-mono text-[11px] truncate max-w-[280px]">{account.serverUrl}</div>
+								<div class="opacity-90 font-mono text-[11px] truncate max-w-70">{account.serverUrl}</div>
 							</div>
 						</div>
 					{:else if pairing.waiting}
@@ -406,11 +406,11 @@
 				{/if}
 				<div class="flex items-center gap-2">
 					{#if step > 0}
-						<Button variant="outline" size="sm" onclick={back} disabled={saving} class="text-xs h-8 min-w-[70px]">
+						<Button variant="outline" size="sm" onclick={back} disabled={saving} class="text-xs h-8 min-w-17.5">
 							Zurück
 						</Button>
 					{/if}
-					<Button size="sm" onclick={next} disabled={saving || (step === 1 && emailInvalid)} class="text-xs h-8 min-w-[85px]">
+					<Button size="sm" onclick={next} disabled={saving || (step === 1 && emailInvalid)} class="text-xs h-8 min-w-21.25">
 						{step < STEPS - 1 ? "Weiter" : saving ? "Speichere…" : "Los geht's"}
 					</Button>
 				</div>

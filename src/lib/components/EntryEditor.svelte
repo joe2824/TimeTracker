@@ -643,7 +643,7 @@
 						<!-- Schmal eine eigene Zeile: neben Datum und Kennzahlen blieben bei
 						     360px keine 60px für den Eintragsnamen, alles war abgeschnitten. -->
 						<div
-							class="order-last min-w-0 basis-full space-y-1 py-0.5 sm:order-none sm:basis-0 sm:flex-1"
+							class="order-last min-w-0 basis-full space-y-1 py-0.5 sm:order-0 sm:basis-0 sm:flex-1"
 						>
 							{#each day.entries as e (e.id)}
 								{@const isAbs = app.isAbsenceId(e.activityId)}

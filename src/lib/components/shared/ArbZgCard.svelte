@@ -198,14 +198,14 @@
 				<Skeleton class="h-20 w-full" />
 				<div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
 					{#each [0, 1, 2, 3, 4] as i (i)}
-						<Skeleton class="h-[4.75rem] w-full {i === 4 ? 'col-span-2 sm:col-span-1' : ''}" />
+						<Skeleton class="h-19 w-full {i === 4 ? 'col-span-2 sm:col-span-1' : ''}" />
 					{/each}
 				</div>
 				<Skeleton class="h-3 w-3/4" />
 			</div>
 			<div class="space-y-2">
 				<Skeleton class="h-4 w-40" />
-				<Skeleton class="h-[220px] w-full" />
+				<Skeleton class="h-55 w-full" />
 			</div>
 		{:else}
 		<!-- Das Urteil zuerst: die Frage lautet "muss ich etwas tun?", und die
