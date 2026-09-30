@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
 	import { buildReport, reportToHtml, reportToText } from "$lib/report/report";
-	import { copyReportToClipboard, openMailWithReport, reportSubject } from "$lib/report/reportSend";
+	import { copyReportToClipboard, sendReport } from "$lib/report/reportSend";
 	import { fmtHoursClock } from "$lib/time/time";
-	import { createOutlookDraft, reportOutlookError } from "$lib/report/outlook";
+	import { reportOutlookError } from "$lib/report/outlook";
 	import { capabilities } from "$lib/platform/env";
 	import { logInfo } from "$lib/log";
 	import { Button } from "$lib/components/ui/button";
@@ -41,14 +41,12 @@
 		)
 	);
 	const html = $derived(reportToHtml(report));
-	const subject = $derived(reportSubject(report.label));
 
 	/** @returns true, wenn der Entwurf geöffnet wurde. */
 	async function sendToOutlook(): Promise<boolean> {
 		sending = true;
 		try {
-			await createOutlookDraft(app.settings.bossEmail, subject, html);
-			await app.markReportSent(month);
+			await sendReport(month, "outlook");
 			logInfo(`Outlook-Entwurf für ${month} erstellt`, { to: app.settings.bossEmail });
 			toast.success("Outlook-Entwurf geöffnet. Bitte prüfen und senden.");
 			return true;
@@ -95,12 +93,8 @@
 	async function prepareMail(): Promise<boolean> {
 		let mode;
 		try {
-			mode = await openMailWithReport(
-				app.settings.bossEmail,
-				subject,
-				html,
-				reportToText(report)
-			);
+			const result = await sendReport(month, "mail");
+			mode = result.via === "mail" ? result.clipboard : null;
 		} catch (err) {
 			toast.error(`Mailprogramm konnte nicht geöffnet werden: ${err}`);
 			return false;

@@ -72,11 +72,18 @@ export async function openMailWithReport(
 export type SendResult = { via: "outlook" } | { via: "mail"; clipboard: ClipboardMode };
 
 /**
- * Bringt den Monatsbericht auf den Weg und markiert ihn als erledigt: per
- * Outlook-Entwurf, wo es Outlook gibt, sonst über das Mailprogramm des
- * Systems. Wirft, wenn beides fehlschlägt (Aufrufer zeigt Toast).
+ * Bringt den Monatsbericht auf den Weg, markiert ihn als erledigt und reicht
+ * ihn ans Team weiter. Einziger Versandweg - jeder Knopf, der einen Bericht
+ * verschickt, muss hier durch, sonst fehlt er dem Chef als abgegeben.
+ *
+ * `via` erzwingt einen Weg (etwa das Mailprogramm als Rückfall, wenn Outlook
+ * scheitert); ohne Angabe Outlook, wo es das gibt. Wirft, wenn der Weg
+ * fehlschlägt (Aufrufer zeigt Toast) - der Monat bleibt dann offen.
  */
-export async function sendReport(month: string): Promise<SendResult> {
+export async function sendReport(
+	month: string,
+	via: SendResult["via"] = capabilities.outlook ? "outlook" : "mail"
+): Promise<SendResult> {
 	await app.ensureMonth(month);
 	const report = buildReport(
 		month,
@@ -92,7 +99,7 @@ export async function sendReport(month: string): Promise<SendResult> {
 	const subject = reportSubject(report.label);
 
 	let result: SendResult;
-	if (capabilities.outlook) {
+	if (via === "outlook") {
 		await createOutlookDraft(app.settings.bossEmail, subject, html);
 		result = { via: "outlook" };
 	} else {

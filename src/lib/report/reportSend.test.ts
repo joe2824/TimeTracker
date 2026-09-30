@@ -23,6 +23,13 @@ const opener = vi.hoisted(() => ({
 }));
 vi.mock("../platform/open", () => ({ openExternal: opener.openExternal }));
 
+// pretendDesktop() schaltet isTauri() ein, den Rust-Teil für den Team-Token
+// gibt es im Test aber nicht.
+vi.mock("../platform/secrets", () => ({
+	protectSecret: async (plain: string) => ({ data: plain, protected: false }),
+	unprotectSecret: async (data: string) => data
+}));
+
 const http = vi.hoisted(() => ({ platformFetch: vi.fn() }));
 vi.mock("../platform/http", () => ({ platformFetch: http.platformFetch }));
 
@@ -249,6 +256,40 @@ describe("sendReport – Team-Upload", () => {
 		const body = JSON.parse(init.body as string);
 		expect(body.month).toBe("2026-07");
 		expect(body.report.rows[0]).toMatchObject({ name: "Projekt 1" });
+	});
+
+	it("laedt auch auf dem erzwungenen Mail-Weg hoch und markiert den Monat", async () => {
+		// Der Rueckfall im Bericht-Tab, wenn Outlook scheitert: auch dann muss der
+		// Bericht beim Chef als abgegeben erscheinen.
+		await saveTeamDevice({
+			teamMemberId: "m1",
+			token: "team-tok",
+			teamName: "Vertrieb",
+			serverUrl: "https://tt.example.de"
+		});
+		fakeClipboard();
+
+		const res = await sendReport("2026-07", "mail");
+
+		expect(res).toEqual({ via: "mail", clipboard: "rich" });
+		expect(outlook.createOutlookDraft).not.toHaveBeenCalled();
+		expect(opener.openExternal).toHaveBeenCalledTimes(1);
+		expect(app.isReportSent("2026-07")).toBe(true);
+		expect(http.platformFetch).toHaveBeenCalledTimes(1);
+		expect(String(http.platformFetch.mock.calls[0][0])).toBe("https://tt.example.de/api/team/reports");
+	});
+
+	it("laedt nicht hoch, wenn der Versand scheitert", async () => {
+		await saveTeamDevice({
+			teamMemberId: "m1",
+			token: "team-tok",
+			teamName: "Vertrieb",
+			serverUrl: "https://tt.example.de"
+		});
+		outlook.createOutlookDraft.mockRejectedValueOnce(new Error("Outlook antwortet nicht"));
+
+		await expect(sendReport("2026-07", "outlook")).rejects.toThrow("Outlook antwortet nicht");
+		expect(http.platformFetch).not.toHaveBeenCalled();
 	});
 
 	it("bleibt ohne Team-Mitgliedschaft ein No-Op", async () => {
