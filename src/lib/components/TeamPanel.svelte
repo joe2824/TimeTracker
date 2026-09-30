@@ -257,7 +257,7 @@
 				filters: [{ name: "CSV", extensions: ["csv"] }]
 			});
 			if (!path) return;
-			await invoke("write_export_file", { path, contents: teamReportsToCsv(reports) });
+			await invoke("write_export_file", { path, kind: "csv", contents: teamReportsToCsv(reports) });
 			toast.success("CSV gespeichert.");
 		} catch (e) {
 			logError("Chef-Modus: CSV-Export fehlgeschlagen", e);

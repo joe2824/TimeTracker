@@ -241,8 +241,8 @@ export async function downloadBackupFile(): Promise<{ success: boolean; filename
 			});
 			if (!filePath) return { success: false };
 
-			await invoke("write_export_file", { path: filePath, contents: json });
-			return { success: true, path: filePath, filename: defaultFilename };
+			const savedPath = await invoke<string>("write_export_file", { path: filePath, kind: "json", contents: json });
+			return { success: true, path: savedPath, filename: defaultFilename };
 		} else {
 			// Web / PWA Download
 			const blob = new Blob([json], { type: "application/json;charset=utf-8" });

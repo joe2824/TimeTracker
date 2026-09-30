@@ -88,6 +88,13 @@ const UPDATE_BETA: &str = "https://github.com/joe2824/timetracker/releases/downl
 /// Endpunkte müssen stehen, BEVOR das Updater-Plugin seine Konfiguration liest.
 #[cfg(desktop)]
 fn beta_updates_enabled() -> bool {
+    // Das Beta-Manifest fuehrt nur den NSIS-Installer. Eine MSI-Installation
+    // bekaeme ihn trotzdem, NSIS deinstallierte dann das MSI und installierte
+    // neu. Die Einstellung bleibt stehen, weil sie mit anderen Geraeten
+    // abgeglichen wird, auf denen sie gelten soll.
+    if is_msi_install() {
+        return false;
+    }
     let Some(path) = app_data_dir().map(|d| d.join("data").join("settings.json")) else {
         return false;
     };
@@ -98,6 +105,21 @@ fn beta_updates_enabled() -> bool {
         .ok()
         .and_then(|v| v.get("betaUpdates").and_then(serde_json::Value::as_bool))
         .unwrap_or(false)
+}
+
+#[cfg(desktop)]
+fn is_msi_install() -> bool {
+    matches!(
+        tauri::utils::platform::bundle_type(),
+        Some(tauri::utils::config::BundleType::Msi)
+    )
+}
+
+/// Womit die Anwendung installiert wurde ("msi", "nsis", ...); `None` bei
+/// `tauri dev` und unbekannten Paketen.
+#[tauri::command]
+fn bundle_type() -> Option<String> {
+    tauri::utils::platform::bundle_type().map(|b| b.to_string())
 }
 
 /// Den Beta-Kanal in die Updater-Konfiguration eintragen, bevor das Plugin sie
@@ -428,37 +450,59 @@ pub(crate) fn write_with_bom(path: &std::path::Path, text: &str) -> std::io::Res
 /// Was der Export schreiben darf: CSV (Chef-Modus) und JSON (Sicherung).
 const EXPORT_EXTENSIONS: [&str; 2] = ["csv", "json"];
 
-/// Ob ein Exportziel angenommen wird. `chosen_in_dialog` sagt, ob der Pfad aus
-/// dem Speichern-Dialog stammt - nur dann hat ein Mensch ihn ausgesucht.
+/// Prüft ein Exportziel und gibt den Pfad zurück, unter dem geschrieben wird.
+///
+/// `chosen_in_dialog` sagt, ob der Pfad aus dem Speichern-Dialog stammt - nur
+/// dann hat ein Mensch ihn ausgesucht. Geprüft wird deshalb genau dieser Pfad;
+/// fehlt ihm die zu `kind` passende Endung, wird sie danach angehängt.
 fn check_export_target(
     path: &std::path::Path,
+    kind: &str,
     chosen_in_dialog: impl Fn(&std::path::Path) -> bool,
-) -> Result<(), String> {
-    let allowed_extension = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| EXPORT_EXTENSIONS.iter().any(|x| x.eq_ignore_ascii_case(e)));
-    if !allowed_extension {
-        return Err(format!("{} ist kein erlaubtes Exportziel", path.display()));
-    }
+) -> Result<std::path::PathBuf, String> {
+    let Some(ext) = EXPORT_EXTENSIONS.iter().find(|x| **x == kind) else {
+        return Err(format!("{kind} ist keine erlaubte Exportart"));
+    };
     if !chosen_in_dialog(path) {
         return Err(format!("{} wurde nicht im Speichern-Dialog gewählt", path.display()));
     }
-    Ok(())
+    let has_extension = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case(ext));
+    if has_extension {
+        return Ok(path.to_path_buf());
+    }
+    let Some(name) = path.file_name() else {
+        return Err(format!("{} ist kein Dateiname", path.display()));
+    };
+    let mut name = name.to_os_string();
+    name.push(".");
+    name.push(ext);
+    Ok(path.with_file_name(name))
 }
 
-/// Schreibt den CSV-Export aus dem Chef-Modus bzw. die JSON-Sicherung.
+/// Schreibt den CSV-Export aus dem Chef-Modus bzw. die JSON-Sicherung und gibt
+/// den tatsächlich geschriebenen Pfad zurück.
 ///
 /// Der Webview kann hier jeden Pfad hineinreichen - angenommen wird nur einer,
 /// den der Speichern-Dialog zurückgegeben hat: der trägt ihn in den
 /// Datei-Scope ein, und genau den fragt die Prüfung ab.
 #[tauri::command]
-fn write_export_file(app: tauri::AppHandle, path: String, contents: String) -> Result<(), String> {
+fn write_export_file(
+    app: tauri::AppHandle,
+    path: String,
+    kind: String,
+    contents: String,
+) -> Result<String, String> {
     use tauri_plugin_fs::FsExt;
-    let target = std::path::Path::new(&path);
     let scope = app.try_fs_scope();
-    check_export_target(target, |p| scope.as_ref().is_some_and(|s| s.is_allowed(p)))?;
-    write_with_bom(target, &contents).map_err(|e| format!("{path} konnte nicht geschrieben werden: {e}"))
+    let target = check_export_target(std::path::Path::new(&path), &kind, |p| {
+        scope.as_ref().is_some_and(|s| s.is_allowed(p))
+    })?;
+    write_with_bom(&target, &contents)
+        .map_err(|e| format!("{} konnte nicht geschrieben werden: {e}", target.display()))?;
+    Ok(target.to_string_lossy().into_owned())
 }
 
 /// Setzt den Tray-Tooltip (z.B. laufende Zeit "Projekt 1 – 1:23:45").
@@ -530,6 +574,54 @@ fn show_flyout(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Übergabedatei im Datenordner: darüber reicht die zweite Instanz einen
+/// Deep-Link weiter, wenn das single-instance-Plugin ihn nicht transportieren kann.
+const DEEP_LINK_HANDOFF: &str = "deep-link-handoff.txt";
+
+/// Ältere Übergaben stammen nicht vom gerade geklickten Link und werden verworfen.
+const DEEP_LINK_HANDOFF_MAX_AGE: std::time::Duration = std::time::Duration::from_secs(60);
+
+const DEEP_LINK_MAX_LEN: usize = 4096;
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn write_deep_link_handoff(dir: &std::path::Path, url: &str) -> std::io::Result<()> {
+    if !url.starts_with(DEEP_LINK_PREFIX) || url.len() > DEEP_LINK_MAX_LEN {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "kein Deep-Link"));
+    }
+    std::fs::create_dir_all(dir)?;
+    // Erst vollständig schreiben, dann umbenennen: die erste Instanz soll nie
+    // eine halb geschriebene Adresse lesen.
+    let tmp = dir.join(format!("{DEEP_LINK_HANDOFF}.tmp"));
+    std::fs::write(&tmp, url)?;
+    std::fs::rename(&tmp, dir.join(DEEP_LINK_HANDOFF))
+}
+
+/// Liest und entfernt eine Übergabe. `None`, wenn keine da, sie zu alt oder
+/// kein Deep-Link ist.
+fn take_deep_link_handoff(dir: &std::path::Path, max_age: std::time::Duration) -> Option<String> {
+    let file = dir.join(DEEP_LINK_HANDOFF);
+    let meta = std::fs::metadata(&file).ok()?;
+    let fresh = meta
+        .modified()
+        .ok()
+        .and_then(|m| m.elapsed().ok())
+        .is_some_and(|age| age <= max_age);
+    let url = (fresh && meta.len() <= DEEP_LINK_MAX_LEN as u64)
+        .then(|| std::fs::read_to_string(&file).ok())
+        .flatten();
+    let _ = std::fs::remove_file(&file);
+    url.filter(|u| u.starts_with(DEEP_LINK_PREFIX))
+}
+
+/// Gegenstück zum Fallback in `enforce_single_instance`: die zweite Instanz
+/// holt dieses Fenster nach vorn, der Fokus löst hier die Übergabe aus.
+fn deliver_deep_link_handoff(app: &tauri::AppHandle) {
+    let Some(dir) = app_data_dir() else { return };
+    if let Some(url) = take_deep_link_handoff(&dir, DEEP_LINK_HANDOFF_MAX_AGE) {
+        let _ = app.emit("deep-link", url);
+    }
+}
+
 /// Zweite Instanz abfangen, bevor Tauri irgendetwas aufbaut.
 #[cfg(windows)]
 fn enforce_single_instance() {
@@ -575,7 +667,13 @@ fn enforce_single_instance() {
     }
 
     // Fenster der laufenden Instanz nach vorn holen und uns beenden – das ist
-    // das, was das Plugin hier haette tun sollen.
+    // das, was das Plugin hier haette tun sollen. Den Deep-Link vorher ablegen:
+    // der Fokuswechsel ist das Signal, auf das die erste Instanz ihn abholt.
+    if let Some(url) = std::env::args().find(|a| a.starts_with(DEEP_LINK_PREFIX)) {
+        if let Some(Err(e)) = app_data_dir().map(|dir| write_deep_link_handoff(&dir, &url)) {
+            log_line("WARN", &format!("Deep-Link nicht uebergeben: {e}"));
+        }
+    }
     unsafe {
         if IsIconic(main) != 0 {
             ShowWindow(main, SW_RESTORE);
@@ -594,8 +692,24 @@ fn enforce_single_instance() {
 #[cfg(not(windows))]
 fn enforce_single_instance() {}
 
+/// Beim Klick auf eine Benachrichtigung startet Windows eine zweite Instanz mit
+/// dem Deep-Link und gibt nur ihr das Recht, ein Fenster nach vorn zu holen.
+/// Freigeben, damit die erste Instanz ihr Fenster zeigen darf, an die der Link
+/// weitergereicht wird – sonst blinkt nur die Taskleiste.
+#[cfg(windows)]
+fn allow_foreground_for_deep_link() {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{AllowSetForegroundWindow, ASFW_ANY};
+    if std::env::args().any(|a| a.starts_with(DEEP_LINK_PREFIX)) {
+        unsafe { AllowSetForegroundWindow(ASFW_ANY) };
+    }
+}
+
+#[cfg(not(windows))]
+fn allow_foreground_for_deep_link() {}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    allow_foreground_for_deep_link();
     install_panic_logging();
     // Eine Zeile je Prozessstart: erst daran ist im Protokoll zu erkennen, dass
     // die App zwischendurch neu gestartet wurde – etwa durch ein Update.
@@ -676,6 +790,9 @@ pub fn run() {
                     let _ = window.hide();
                     api.prevent_close();
                 }
+                tauri::WindowEvent::Focused(true) if window.label() == "main" => {
+                    deliver_deep_link_handoff(window.app_handle());
+                }
                 // Flyout verschwindet, sobald es den Fokus verliert (wie OneDrive).
                 tauri::WindowEvent::Focused(false) if window.label() == "tray" => {
                     let _ = window.hide();
@@ -687,6 +804,7 @@ pub fn run() {
             set_tray_state,
             show_main_window,
             show_flyout,
+            bundle_type,
             idle_seconds,
             set_tray_tooltip,
             quit_now,
@@ -711,17 +829,80 @@ mod tests {
     #[test]
     fn export_accepts_only_csv_and_json() {
         let chosen = |_: &Path| true;
-        assert!(check_export_target(Path::new("C:/Daten/Team-Abgaben-2026-09.csv"), chosen).is_ok());
-        assert!(check_export_target(Path::new("/home/anna/timetracker-backup.JSON"), chosen).is_ok());
-        assert!(check_export_target(Path::new("C:/Users/anna/.bashrc"), chosen).is_err());
-        assert!(check_export_target(Path::new("C:/Windows/evil.exe"), chosen).is_err());
-        assert!(check_export_target(Path::new("ohne-endung"), chosen).is_err());
+        assert!(check_export_target(Path::new("C:/Daten/abgaben.csv"), "csv", chosen).is_ok());
+        assert!(check_export_target(Path::new("C:/Daten/abgaben.exe"), "exe", chosen).is_err());
+        assert!(check_export_target(Path::new("C:/Daten/abgaben.csv"), "CSV", chosen).is_err());
+        assert!(check_export_target(Path::new("C:/Daten/abgaben.csv"), "", chosen).is_err());
     }
 
     #[test]
-    fn export_requires_a_path_from_the_dialog() {
+    fn export_keeps_a_matching_extension() {
+        let chosen = |_: &Path| true;
+        assert_eq!(
+            check_export_target(Path::new("/home/anna/timetracker-backup.JSON"), "json", chosen),
+            Ok(Path::new("/home/anna/timetracker-backup.JSON").to_path_buf())
+        );
+    }
+
+    #[test]
+    fn export_appends_the_expected_extension() {
+        let chosen = |_: &Path| true;
+        let target = |p: &str, kind: &str| check_export_target(Path::new(p), kind, chosen).unwrap();
+        assert_eq!(target("C:/Daten/ohne-endung", "csv"), Path::new("C:/Daten/ohne-endung.csv"));
+        assert_eq!(target("C:/Daten/abgaben.txt", "csv"), Path::new("C:/Daten/abgaben.txt.csv"));
+        assert_eq!(target("C:/Daten/abgaben.exe", "json"), Path::new("C:/Daten/abgaben.exe.json"));
+        assert_eq!(target("C:/Daten/abgaben.json", "csv"), Path::new("C:/Daten/abgaben.json.csv"));
+        assert!(check_export_target(Path::new(""), "csv", chosen).is_err());
+    }
+
+    #[test]
+    fn export_checks_the_path_from_the_dialog() {
         let never = |_: &Path| false;
-        assert!(check_export_target(Path::new("C:/Daten/abgaben.csv"), never).is_err());
+        assert!(check_export_target(Path::new("C:/Daten/abgaben.csv"), "csv", never).is_err());
+        // Geprüft wird der Pfad aus dem Dialog, nicht der mit angehängter Endung.
+        let only_dialog = |p: &Path| p == Path::new("C:/Daten/abgaben");
+        assert!(check_export_target(Path::new("C:/Daten/abgaben"), "csv", only_dialog).is_ok());
+        assert!(check_export_target(Path::new("C:/Daten/abgaben.csv"), "csv", only_dialog).is_err());
+    }
+
+    fn handoff_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("tt-handoff-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    #[test]
+    fn deep_link_handoff_is_taken_once() {
+        let dir = handoff_dir("once");
+        let url = "timetracker://team/join/abc";
+        write_deep_link_handoff(&dir, url).unwrap();
+        assert_eq!(take_deep_link_handoff(&dir, DEEP_LINK_HANDOFF_MAX_AGE).as_deref(), Some(url));
+        assert_eq!(take_deep_link_handoff(&dir, DEEP_LINK_HANDOFF_MAX_AGE), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn deep_link_handoff_rejects_other_addresses() {
+        let dir = handoff_dir("prefix");
+        assert!(write_deep_link_handoff(&dir, "https://firma.de/").is_err());
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join(DEEP_LINK_HANDOFF);
+        std::fs::write(&file, "file:///C:/Windows/evil.exe").unwrap();
+        assert_eq!(take_deep_link_handoff(&dir, DEEP_LINK_HANDOFF_MAX_AGE), None);
+        assert!(!file.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn deep_link_handoff_ignores_stale_files() {
+        let dir = handoff_dir("stale");
+        write_deep_link_handoff(&dir, "timetracker://pair/abc").unwrap();
+        let file = dir.join(DEEP_LINK_HANDOFF);
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(120);
+        std::fs::File::options().write(true).open(&file).unwrap().set_modified(old).unwrap();
+        assert_eq!(take_deep_link_handoff(&dir, DEEP_LINK_HANDOFF_MAX_AGE), None);
+        assert!(!file.exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

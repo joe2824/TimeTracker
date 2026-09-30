@@ -10,6 +10,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const plugin = vi.hoisted(() => ({ check: vi.fn(), relaunch: vi.fn() }));
 vi.mock("@tauri-apps/plugin-updater", () => ({ check: plugin.check }));
 vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: plugin.relaunch }));
+const core = vi.hoisted(() => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => core);
 
 const toastMock = vi.hoisted(() => ({
 	success: vi.fn(),
@@ -29,7 +31,7 @@ const log = vi.hoisted(() => ({
 }));
 vi.mock("../log", () => log);
 
-const { checkForUpdate, installUpdate, openUpdateDialog, updater } = await import(
+const { checkForUpdate, installUpdate, isMsiInstall, openUpdateDialog, updater } = await import(
 	"./updater.svelte"
 );
 
@@ -224,5 +226,25 @@ describe("installUpdate", () => {
 
 		expect(updater.installing).toBe(false);
 		expect(plugin.relaunch).not.toHaveBeenCalled();
+	});
+});
+
+describe("isMsiInstall", () => {
+	it("erkennt eine MSI-Installation", async () => {
+		core.invoke.mockResolvedValue("msi");
+		expect(await isMsiInstall()).toBe(true);
+		expect(core.invoke).toHaveBeenCalledWith("bundle_type");
+	});
+
+	it("verneint beim Setup-Installer und ohne bekanntes Paket", async () => {
+		core.invoke.mockResolvedValue("nsis");
+		expect(await isMsiInstall()).toBe(false);
+		core.invoke.mockResolvedValue(null);
+		expect(await isMsiInstall()).toBe(false);
+	});
+
+	it("verneint, wenn der Rust-Teil nicht erreichbar ist", async () => {
+		core.invoke.mockRejectedValue(new Error("kein Tauri"));
+		expect(await isMsiInstall()).toBe(false);
 	});
 });

@@ -2,7 +2,7 @@
 	import { onMount } from "svelte";
 	import { app } from "$lib/app.svelte";
 	import { createSettingsForm } from "$lib/ui/settingsForm.svelte";
-	import { listEntryYears, type StoredYear } from "$lib/store";
+	import { countYearEntries, listEntryYears, type StoredYear } from "$lib/store";
 	import { Button } from "$lib/components/ui/button";
 	import ConfirmDialog from "$lib/components/shared/ConfirmDialog.svelte";
 	import SettingRow from "$lib/components/shared/SettingRow.svelte";
@@ -12,9 +12,10 @@
 	import { account } from "$lib/sync/account.svelte";
 	import { autostartEnabled, setAutostart } from "$lib/platform/autostart";
 	import { appTimeZone } from "$lib/time/tz";
-	import { checkForUpdate, updater } from "$lib/release/updater.svelte";
+	import { checkForUpdate, isMsiInstall, updater } from "$lib/release/updater.svelte";
+	import { Switch } from "$lib/components/ui/switch";
 	import { relaunch } from "@tauri-apps/plugin-process";
-	import { errorText, flushLog, logInfo } from "$lib/log";
+	import { errorText, flushLog, logError, logInfo } from "$lib/log";
 	import { toast } from "svelte-sonner";
 	import Trash2Icon from "@lucide/svelte/icons/trash-2";
 
@@ -34,8 +35,10 @@
 	const { form, save } = createSettingsForm();
 	let savedSystemAt = $state(0);
 	let isChannelChanged = $state(false);
+	let msiInstall = $state(false);
 	let storedYears = $state<StoredYear[]>([]);
 	let yearToDelete = $state<StoredYear | null>(null);
+	let yearToDeleteEntries = $state<number | null>(null);
 
 	// Backup & Restore
 	let isExportingBackup = $state(false);
@@ -102,6 +105,7 @@
 	}
 
 	onMount(async () => {
+		if (capabilities.updater) msiInstall = await isMsiInstall();
 		if (capabilities.autostart) {
 			try {
 				form.autostart = await autostartEnabled();
@@ -111,9 +115,7 @@
 		}
 	});
 
-	// Nur auf dem Rechner: die Karte darunter steht unter `{#if isTauri()}`, im
-	// Browser würde hier bei jeder Änderung jede Monatsdatei gelesen - für
-	// Zahlen, die niemand zu sehen bekommt.
+	// Nur auf dem Rechner: die Karte darunter steht unter `{#if isTauri()}`.
 	$effect(() => {
 		if (!isTauri()) return;
 		app.entriesVersion;
@@ -151,6 +153,18 @@
 		void checkForUpdate();
 	}
 
+	// Die Einträge zählen heisst jede Monatsdatei des Jahres lesen - daher erst,
+	// wenn jemand wirklich löschen will.
+	function askDeleteYear(y: StoredYear) {
+		yearToDelete = y;
+		yearToDeleteEntries = null;
+		countYearEntries(y.year)
+			.then((n) => {
+				if (yearToDelete?.year === y.year) yearToDeleteEntries = n;
+			})
+			.catch((e) => logError("Einträge des Jahres nicht zählbar", e));
+	}
+
 	async function handleConfirmDeleteYear() {
 		const target = yearToDelete;
 		if (!target) return;
@@ -180,13 +194,25 @@
 			/>
 		{/if}
 		<div class="space-y-3">
-			<SettingToggle
-				id="beta"
-				title="Vorabversionen (Beta)"
-				description="Neue Funktionen früher bekommen – dafür kann auch mal etwas klemmen. Aus heißt: nur fertige Versionen."
-				bind:checked={form.betaUpdates}
-				onCheckedChange={saveBetaUpdates}
-			/>
+			{#if msiInstall}
+				<SettingRow
+					id="beta"
+					title="Vorabversionen (Beta)"
+					description="Vorabversionen gibt es nur mit dem Setup-Installer."
+				>
+					{#snippet control()}
+						<Switch id="beta" checked={false} disabled />
+					{/snippet}
+				</SettingRow>
+			{:else}
+				<SettingToggle
+					id="beta"
+					title="Vorabversionen (Beta)"
+					description="Neue Funktionen früher bekommen – dafür kann auch mal etwas klemmen. Aus heißt: nur fertige Versionen."
+					bind:checked={form.betaUpdates}
+					onCheckedChange={saveBetaUpdates}
+				/>
+			{/if}
 			{#if isChannelChanged}
 				<div class="bg-muted/40 flex flex-wrap items-center gap-2 rounded-lg p-3 text-sm">
 					<span class="text-muted-foreground">Wirkt nach einem Neustart der App.</span>
@@ -278,12 +304,10 @@
 					<div>
 						<div class="text-sm font-medium">{y.year}</div>
 						<div class="text-muted-foreground text-xs">
-							{y.months} Monat{y.months === 1 ? "" : "e"} · {y.entries} Eintr{y.entries === 1
-								? "ag"
-								: "äge"}
+							{y.months} Monat{y.months === 1 ? "" : "e"}
 						</div>
 					</div>
-					<Button variant="destructive" size="sm" onclick={() => (yearToDelete = y)}>
+					<Button variant="destructive" size="sm" onclick={() => askDeleteYear(y)}>
 						<Trash2Icon class="size-4" /> Löschen
 					</Button>
 				</div>
@@ -391,7 +415,7 @@
 <ConfirmDialog
 	open={yearToDelete !== null}
 	title={`${yearToDelete?.year} löschen?`}
-	description={`${yearToDelete?.entries} Einträge aus ${yearToDelete?.months} Monat${yearToDelete?.months === 1 ? "" : "e"} werden endgültig gelöscht. Das lässt sich nicht rückgängig machen.`}
+	description={`${yearToDeleteEntries ?? "…"} Einträge aus ${yearToDelete?.months} Monat${yearToDelete?.months === 1 ? "" : "e"} werden endgültig gelöscht. Das lässt sich nicht rückgängig machen.`}
 	confirmLabel={`${yearToDelete?.year} endgültig löschen`}
 	busyLabel="Lösche…"
 	variant="default"

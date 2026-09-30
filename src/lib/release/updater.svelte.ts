@@ -1,6 +1,7 @@
 // Update-Suche und -Installation als gemeinsamer Zustand.
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { invoke } from "@tauri-apps/api/core";
 import { toast } from "svelte-sonner";
 import { errorText, flushLog, logDebug, logError, logInfo, logWarn } from "../log";
 
@@ -122,5 +123,18 @@ export async function installUpdate(): Promise<void> {
 		logError("Update fehlgeschlagen", e);
 		toast.error(`Update fehlgeschlagen: ${errorText(e)}`, { duration: 60000 });
 		updater.installing = false;
+	}
+}
+
+/**
+ * Mit dem MSI-Paket installiert? Dafür gibt es keine Vorabversionen: das
+ * Beta-Manifest führt nur den Setup-Installer, und der Rust-Teil bleibt für
+ * MSI-Installationen deshalb immer auf dem stabilen Kanal.
+ */
+export async function isMsiInstall(): Promise<boolean> {
+	try {
+		return (await invoke<string | null>("bundle_type")) === "msi";
+	} catch {
+		return false;
 	}
 }

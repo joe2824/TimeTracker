@@ -6,6 +6,7 @@ vi.mock("@tauri-apps/plugin-fs", async () => (await import("./testing/fakeFs")).
 
 const {
 	clearAccountData,
+	countYearEntries,
 	deleteYear,
 	listEntryMonths,
 	listEntryYears,
@@ -245,13 +246,30 @@ describe("listEntryYears", () => {
 		await saveEntries("2026-01", [entry("c")]);
 		await saveEntries("2026-02", [entry("d"), entry("e"), entry("f")]);
 		expect(await listEntryYears()).toEqual([
-			{ year: 2026, months: 2, entries: 4 },
-			{ year: 2025, months: 1, entries: 2 }
+			{ year: 2026, months: 2 },
+			{ year: 2025, months: 1 }
 		]);
+	});
+
+	it("kommt ohne Lesen der Monatsdateien aus", async () => {
+		await saveEntries("2026-01", [entry("c")]);
+		fsFaults.readThrows = true;
+		expect(await listEntryYears()).toEqual([{ year: 2026, months: 1 }]);
 	});
 
 	it("ist leer, wenn nichts erfasst wurde", async () => {
 		expect(await listEntryYears()).toEqual([]);
+	});
+});
+
+describe("countYearEntries", () => {
+	it("zaehlt nur die Eintraege des genannten Jahres", async () => {
+		await saveEntries("2025-11", [entry("a"), entry("b")]);
+		await saveEntries("2026-01", [entry("c")]);
+		await saveEntries("2026-02", [entry("d"), entry("e"), entry("f")]);
+		expect(await countYearEntries(2026)).toBe(4);
+		expect(await countYearEntries(2025)).toBe(2);
+		expect(await countYearEntries(2024)).toBe(0);
 	});
 });
 

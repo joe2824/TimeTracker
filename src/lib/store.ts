@@ -987,22 +987,30 @@ export interface StoredYear {
 	year: number;
 	/** Monate mit Einträgen in diesem Jahr */
 	months: number;
-	/** Einträge insgesamt – damit vor dem Löschen sichtbar ist, was weg wäre */
-	entries: number;
 }
 
-/** Jahre mit Einträgen, neueste zuerst, inkl. Umfang für die Lösch-Abfrage. */
+/**
+ * Jahre mit Einträgen, neueste zuerst. Liest nur Dateinamen: ein leerer Monat
+ * hinterlässt keine Datei, jede Monatsdatei zählt also als Monat mit Einträgen.
+ */
 export async function listEntryYears(): Promise<StoredYear[]> {
 	const byYear = new Map<number, StoredYear>();
 	for (const m of await listEntryMonths()) {
 		const year = Number(m.slice(0, 4));
-		const count = (await loadEntries(m)).length;
-		const acc = byYear.get(year) ?? { year, months: 0, entries: 0 };
+		const acc = byYear.get(year) ?? { year, months: 0 };
 		acc.months += 1;
-		acc.entries += count;
 		byYear.set(year, acc);
 	}
 	return [...byYear.values()].sort((a, b) => b.year - a.year);
+}
+
+/** Einträge eines Jahres – erst für die Lösch-Abfrage gebraucht, daher getrennt. */
+export async function countYearEntries(year: number): Promise<number> {
+	let count = 0;
+	for (const m of await listEntryMonths()) {
+		if (m.startsWith(`${year}-`)) count += (await loadEntries(m)).length;
+	}
+	return count;
 }
 
 /** Alle Monatsdateien eines Jahres löschen. Gibt die gelöschten Monate zurück. */
