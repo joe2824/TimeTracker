@@ -4,6 +4,7 @@
 	import { app } from "$lib/app.svelte";
 	import { entriesFocus } from "$lib/ui/entriesFocus.svelte";
 	import {
+		clockSpan,
 		clockToMin,
 		durationHours,
 		entryHours,
@@ -21,11 +22,12 @@
 		parseHours,
 		toTs
 	} from "$lib/time/time";
-	import { daysInMonth, weekdayOfDate, zonedParts } from "$lib/time/tz";
+	import { daysInMonth, parseMonthKey, weekdayOfDate, zonedParts } from "$lib/time/tz";
+	import { absenceLabel, dayFractionLabel } from "$lib/report/labels";
 	import type { Entry, EntrySource } from "$lib/types";
 	import { loadTimeReport, type StoredTimeReport } from "$lib/store";
 	import {
-		reconcile,
+		reconcileWithSettings,
 		targetEntryHours,
 		type Interval,
 		type ReconcileDay
@@ -41,6 +43,7 @@
 	import TimeReportImport from "$lib/components/import/TimeReportImport.svelte";
 	import ActivityCombobox from "$lib/components/shared/ActivityCombobox.svelte";
 	import DateInput from "$lib/components/shared/DateInput.svelte";
+	import ClockInput from "$lib/components/shared/ClockInput.svelte";
 	import BulkEntryDialog from "$lib/components/dialogs/BulkEntryDialog.svelte";
 	import VacationRange from "$lib/components/shared/VacationRange.svelte";
 	import MonthSelector from "$lib/components/shared/MonthSelector.svelte";
@@ -63,23 +66,20 @@
 	let reportPreview = $state(false);
 	const anyPreview = $derived(importPreview || reportPreview);
 
-	/** Ab welcher Abweichung ein Tag auffällt (Stunden) – wie im Abgleich: 15 Minuten. */
-	const REPORT_TOLERANCE = 0.25;
 	/** Der eingelesene LOGA-Report dieses Monats, falls einer vorliegt. */
 	let report = $state<StoredTimeReport | null>(null);
-	const absenceIds = $derived(new Set(app.activities.filter((a) => a.isAbsence).map((a) => a.id)));
 
-	/** Der Abgleich dieses Monats, Tag für Tag. */
+	/** Der Abgleich dieses Monats, Tag für Tag – dieselbe Rechnung wie im Abgleich selbst. */
 	const reportByDate = $derived.by(() => {
 		const out = new Map<string, ReconcileDay>();
 		if (!report) return out;
-		const summary = reconcile(report.days, app.monthEntries(month), {
-			hoursPerDay: app.settings.hoursPerDay,
-			tolerance: REPORT_TOLERANCE,
-			absenceIds,
-			now: app.now,
-			deductBreaks: app.settings.breakDeduction
-		});
+		const summary = reconcileWithSettings(
+			report.days,
+			app.monthEntries(month),
+			app.settings,
+			app.absenceIds,
+			app.now
+		);
 		for (const d of summary.days) out.set(d.date, d);
 		return out;
 	});
@@ -139,11 +139,12 @@
 	 */
 	const splitHint = $derived.by(() => {
 		if (draftIsAbsence) return null;
-		const s = toTs(draft.date, startText || draft.start);
-		let e = toTs(draft.date, endText || draft.end);
-		if (Number.isNaN(s) || Number.isNaN(e)) return null;
-		if (e < s) e = toTs(fmtDate(startOfNextDay(s)), endText || draft.end);
-		if (Number.isNaN(e) || e <= s) return null;
+		const { startTs: s, endTs: e } = clockSpan(
+			draft.date,
+			startText || draft.start,
+			endText || draft.end
+		);
+		if (Number.isNaN(s) || Number.isNaN(e) || e <= s) return null;
 		const shared = midnightSplitHint(s, e);
 		return shared ? `Geht ${shared}: ${fmtDateHuman(s)} und ${fmtDateHuman(e)}.` : null;
 	});
@@ -272,25 +273,8 @@
 		endText = draft.end;
 	}
 
-	/** Von-Eingabe beim Verlassen normalisieren (z.B. "1800" -> "18:00"). */
-	function commitStart() {
-		const p = parseClock(startText);
-		if (p) {
-			draft.start = p;
-			recalcDur();
-		}
-		startText = draft.start;
-	}
-
-	/** Bis-Eingabe beim Verlassen normalisieren. */
-	function commitEnd() {
-		const p = parseClock(endText);
-		if (p) {
-			draft.end = p;
-			recalcDur();
-		}
-		endText = draft.end;
-	}
+	let startInput = $state<ReturnType<typeof ClockInput> | null>(null);
+	let endInput = $state<ReturnType<typeof ClockInput> | null>(null);
 
 	function emptyDraft(): Draft {
 		const hh = String(zonedParts(Date.now()).hour).padStart(2, "0");
@@ -390,7 +374,7 @@
 
 	// Alle Tage des Monats als Gitter.
 	const days = $derived.by(() => {
-		const [y, m] = month.split("-").map(Number);
+		const [y, m] = parseMonthKey(month) ?? [0, 1];
 		const count = daysInMonth(y, m);
 		const byDate = new Map<string, Entry[]>();
 		for (const e of app.monthEntries(month)) {
@@ -402,9 +386,11 @@
 			const date = `${month}-${String(d).padStart(2, "0")}`;
 			const wd = weekdayOfDate(date);
 			const entries = (byDate.get(date) ?? []).sort((a, b) => a.startTs - b.startTs);
-			const totals = dayTotals(entries, absenceIds, app.settings.hoursPerDay, {
+			// Mit Arbeitstagen: die Monatssumme soll zum Bericht passen.
+			const totals = dayTotals(entries, app.absenceIds, app.settings.hoursPerDay, {
 				now: app.now,
-				deductBreaks: app.settings.breakDeduction
+				deductBreaks: app.settings.breakDeduction,
+				workdays: app.settings.workdays
 			});
 			const pause = totals.pause;
 			const hours = totals.total;
@@ -491,8 +477,8 @@
 		}
 		const absence = app.isAbsenceId(activityId);
 		if (!absence) {
-			commitStart();
-			commitEnd();
+			startInput?.commit();
+			endInput?.commit();
 		}
 		let startTs: number;
 		let endTs: number;
@@ -500,11 +486,7 @@
 			startTs = noonTs(draft.date);
 			endTs = startTs;
 		} else {
-			startTs = toTs(draft.date, draft.start);
-			endTs = toTs(draft.date, draft.end);
-			// Bis vor Von -> Folgetag. startOfNextDay statt +24 h: an DST-Tagen hat
-			// ein Tag 23 oder 25 Stunden.
-			if (endTs < startTs) endTs = toTs(fmtDate(startOfNextDay(startTs)), draft.end);
+			({ startTs, endTs } = clockSpan(draft.date, draft.start, draft.end));
 			// Unangetastete Felder dürfen ihre Sekunden behalten – sonst rücken sie
 			// auf :00 und stossen in den Nachbar-Eintrag (siehe `keepSeconds`).
 			if (draft.id) {
@@ -558,9 +540,9 @@
 	}
 
 	function entryLabel(e: Entry): string {
-		const name = app.isTimeOff(e) ? "Zeitausgleich" : app.activityName(e.activityId);
+		const name = absenceLabel(app.isTimeOff(e), app.activityName(e.activityId));
 		if (app.isAbsenceId(e.activityId)) {
-			const span = (e.dayFraction ?? 1) === 0.5 ? "½ Tag" : "ganzer Tag";
+			const span = dayFractionLabel(e.dayFraction);
 			const h = entryHours(e, true, app.settings.hoursPerDay, app.now);
 			return `${name} · ${span} (${fmtHoursClock(h)} h)`;
 		}
@@ -850,26 +832,24 @@
 					</div>
 					<div class="space-y-1">
 						<Label for="start">Von</Label>
-						<Input
+						<ClockInput
+							bind:this={startInput}
 							id="start"
-							type="text"
-							inputmode="numeric"
 							placeholder="z. B. 1800"
-							value={startText}
-							oninput={(e) => (startText = e.currentTarget.value)}
-							onchange={commitStart}
+							bind:value={draft.start}
+							bind:text={startText}
+							oncommit={recalcDur}
 						/>
 					</div>
 					<div class="space-y-1">
 						<Label for="end">Bis</Label>
-						<Input
+						<ClockInput
+							bind:this={endInput}
 							id="end"
-							type="text"
-							inputmode="numeric"
 							placeholder="z. B. 1830"
-							value={endText}
-							oninput={(e) => (endText = e.currentTarget.value)}
-							onchange={commitEnd}
+							bind:value={draft.end}
+							bind:text={endText}
+							oncommit={recalcDur}
 						/>
 					</div>
 					<div class="col-span-2 space-y-1 sm:col-span-1">

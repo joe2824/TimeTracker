@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { reportReminderDate } from "../report/report";
 import { wallToTs, zonedParts } from "../time/tz";
+import { nextReminderDelay } from "./reminders";
 
 /** Referenzmonat: Juli 2026 – letzter Tag ist Fr, 31.07. */
 const JULY = new Date(wallToTs(2026, 7, 1, 0, 0, 0));
@@ -36,5 +37,27 @@ describe("reportReminderDate", () => {
 		const d = reportReminderDate(JULY, "quatsch", 0);
 		expect(zonedParts(d.getTime()).hour).toBe(16);
 		expect(zonedParts(d.getTime()).minute).toBe(0);
+	});
+});
+
+describe("nextReminderDelay", () => {
+	const NOW = wallToTs(2026, 7, 8, 10, 0, 0);
+
+	it("nimmt die nächste Uhrzeit heute", () => {
+		expect(nextReminderDelay(["09:00", "16:30"], NOW)).toBe(6.5 * 3_600_000);
+	});
+
+	it("geht auf morgen, wenn heute alles vorbei ist", () => {
+		expect(nextReminderDelay(["09:00"], NOW)).toBe(23 * 3_600_000);
+	});
+
+	// setTimeout(NaN) feuert sofort – und plant danach wieder NaN: Dauerfeuer.
+	it("überspringt unmögliche Uhrzeiten statt NaN zu liefern", () => {
+		expect(nextReminderDelay(["24:00", "7:60", "quatsch"], NOW)).toBeNull();
+		expect(nextReminderDelay(["24:00", "12:00"], NOW)).toBe(2 * 3_600_000);
+	});
+
+	it("liefert ohne Uhrzeiten nichts", () => {
+		expect(nextReminderDelay([], NOW)).toBeNull();
 	});
 });

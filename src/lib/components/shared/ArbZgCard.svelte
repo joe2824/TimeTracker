@@ -12,15 +12,18 @@
 	} from "$lib/time/arbzg";
 	import { entriesFocus } from "$lib/ui/entriesFocus.svelte";
 	import {
+		fmtCalendarDate,
 		fmtDate,
 		fmtDateHuman,
 		fmtHoursClock,
 		MINUTE_MS,
+		monthKey,
 		monthLabel,
 		noonTs,
-		quantize
+		quantize,
+		shiftMonthKey
 	} from "$lib/time/time";
-	import { appTimeZone, wallToTs, zonedParts } from "$lib/time/tz";
+	import { appTimeZone, lastDayOfMonth, zonedParts } from "$lib/time/tz";
 	import type { Entry } from "$lib/types";
 	import { Badge } from "$lib/components/ui/badge";
 	import { Button } from "$lib/components/ui/button";
@@ -48,8 +51,7 @@
 	/** Stichtag: das Monatsende – aber nie in der Zukunft. */
 	const until = $derived.by(() => {
 		const today = fmtDate(Date.now());
-		const [y, m] = month.split("-").map(Number);
-		const monthEnd = fmtDate(new Date(y, m, 0).getTime());
+		const monthEnd = lastDayOfMonth(month);
 		return monthEnd > today ? today : monthEnd;
 	});
 
@@ -62,7 +64,6 @@
 	/** Sind alle zwölf Monate da? */
 	const ready = $derived(monthsNeeded.every((m) => app.monthLoaded(m)));
 
-	const absenceIds = $derived(new Set(app.activities.filter((a) => a.isAbsence).map((a) => a.id)));
 	const entries = $derived(monthsNeeded.flatMap((m) => app.monthEntries(m) as Entry[]));
 
 	const dataFrom = $derived(dataFromEntries(entries, until));
@@ -84,7 +85,7 @@
 			dataFrom,
 			workdays: app.settings.workdays,
 			deductBreaks: app.settings.breakDeduction,
-			absenceIds,
+			absenceIds: app.absenceIds,
 			now: checkNow,
 			paceWeeks
 		})
@@ -126,13 +127,12 @@
 		if (chartData.length === 0) return out;
 		const first = chartData[0].ts;
 		const last = chartData[chartData.length - 1].ts;
-		// Monatsindex statt Date-Cursor: der Monatserste hängt sonst an der Zone
-		// des Geräts und die Marken sässen neben den Datenpunkten.
-		const p = zonedParts(first.getTime());
-		let idx = p.year * 12 + (p.month - 1);
-		const tickAt = (i: number) => new Date(wallToTs(Math.floor(i / 12), (i % 12) + 1, 1, 12));
-		if (tickAt(idx) < first) idx++;
-		for (let t = tickAt(idx); t <= last; t = tickAt(++idx)) out.push(t);
+		// Monatsschlüssel statt Date-Cursor: der Monatserste hängt sonst an der
+		// Zone des Geräts und die Marken sässen neben den Datenpunkten.
+		let key = monthKey(first.getTime());
+		const tickAt = (k: string) => new Date(noonTs(`${k}-01`));
+		if (tickAt(key) < first) key = shiftMonthKey(key, 1);
+		for (let t = tickAt(key); t <= last; key = shiftMonthKey(key, 1), t = tickAt(key)) out.push(t);
 		return out;
 	});
 
@@ -268,8 +268,8 @@
 						<!-- Jahr nur, wenn es ein anderes ist: der Umkehrpunkt liegt oft
 						     Monate voraus und dann auch mal im nächsten Jahr, wo "22.02."
 						     nach übermorgen aussähe. -->
-						{new Date(noonTs(strict.easeOffDate)).toLocaleDateString(
-							"de-DE",
+						{fmtCalendarDate(
+							strict.easeOffDate,
 							strict.easeOffDate.slice(0, 4) === until.slice(0, 4)
 								? { day: "2-digit", month: "2-digit" }
 								: { day: "2-digit", month: "2-digit", year: "2-digit" }

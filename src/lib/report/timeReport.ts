@@ -1,7 +1,7 @@
 // Zeitwirtschaftsreport aus LOGA (Scout -> "gesetzliche Arbeitszeitverstöße").
 import type { XlsxSheet } from "./xlsx";
-import { minToClock } from "../time/time";
-import { deductBreakFromHours } from "../time/breaks";
+import { clockToMin, durationHours, minToClock } from "../time/time";
+import { breakDeduction, deductBreakFromHours } from "../time/breaks";
 
 /** Ein gesetzter Verstoss-Hinweis aus dem Report. */
 export interface TimeReportFlag {
@@ -143,12 +143,10 @@ export function parseReportDate(raw: string): string | null {
 export function parseReportClock(raw: string): string | null {
 	const t = raw.trim();
 	if (!t) return null;
-	const hm = /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(t);
+	const hm = /^(\d{1,2}:\d{2})(?::\d{2})?$/.exec(t);
 	if (hm) {
-		const h = Number(hm[1]);
-		const m = Number(hm[2]);
-		if (h > 23 || m > 59) return null;
-		return minToClock(h * 60 + m);
+		const min = clockToMin(hm[1]);
+		return min === null ? null : minToClock(min);
 	}
 	const n = Number(t.replace(",", "."));
 	// Die 0 gilt als „nicht gestempelt“, nicht als Mitternacht: als Uhrzeit gelesen
@@ -187,22 +185,17 @@ function isUnreadableHours(raw: string): boolean {
 
 /**
  * Pausenregel des Hauses: ab 4 h 15 Minuten, ab 6 h weitere 30 Minuten
- * (zusammen 45). LOGA zieht sie automatisch von der Anwesenheit ab.
+ * (zusammen 45). LOGA zieht sie automatisch von der Anwesenheit ab – dieselbe
+ * Regel wie der App-eigene Abzug.
  */
 export function ruleBreakHours(grossHours: number): number {
-	if (grossHours > 6) return 0.75;
-	if (grossHours > 4) return 0.25;
-	return 0;
+	return breakDeduction(grossHours);
 }
 
-/** Anwesenheit laut Stempeln in Stunden. 0, wenn nicht gestempelt wurde. */
+/** Anwesenheit laut Stempeln in Stunden (über Mitternacht zählt +24 h). 0, wenn nicht gestempelt wurde. */
 export function grossHours(day: TimeReportDay): number {
 	if (!day.firstIn || !day.lastOut) return 0;
-	const [ih, im] = day.firstIn.split(":").map(Number);
-	const [oh, om] = day.lastOut.split(":").map(Number);
-	let min = oh * 60 + om - (ih * 60 + im);
-	if (min < 0) min += 1440; // über Mitternacht gestempelt
-	return min / 60;
+	return durationHours(day.firstIn, day.lastOut);
 }
 
 /** Die Pause dieses Tages in Stunden. */
@@ -233,9 +226,7 @@ export function withEstimatedHours(day: TimeReportDay): TimeReportDay {
 	if (day.flags.some((f) => f.key === "sunday" || f.key === "holiday")) return day;
 	const gross = grossHours(day);
 	if (gross <= 0) return day;
-	// Dieselbe Hausregel wie beim App-eigenen Pausenabzug (breaks.ts) – ruleBreakHours
-	// bildet sie separat noch einmal nach, um LOGAs tatsächlichen Abzug zu erkennen
-	// (siehe breakHours/ruleMismatch); hier reicht die fertige Umkehrfunktion.
+	// Dieselbe Hausregel wie beim App-eigenen Pausenabzug (breaks.ts).
 	return { ...day, hours: Math.round(deductBreakFromHours(gross) * 100) / 100, estimated: true };
 }
 

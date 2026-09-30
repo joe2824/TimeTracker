@@ -1,8 +1,8 @@
-import { ensureNotificationPermission, notify } from "../platform/notify";
+import { ensureNotificationPermission } from "../platform/notify";
+import { notifyIfAllowed } from "./notifyIfAllowed";
 import { app } from "../app.svelte";
 import { reportReminderDate } from "../report/report";
-import { fmtDate, stepDate, toTs } from "../time/time";
-import { wallToTs, zonedParts } from "../time/tz";
+import { clockToMin, fmtDate, minToClock, monthKey, noonTs, shiftMonthKey, stepDate, toTs } from "../time/time";
 
 let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -11,23 +11,25 @@ let timer: ReturnType<typeof setTimeout> | null = null;
 // damit die bisherigen Aufrufer unverändert bleiben.
 export { ensureNotificationPermission };
 
-/** Millisekunden bis zur nächsten konfigurierten Erinnerungszeit. */
-function nextReminderDelay(times: string[]): number | null {
-	if (!times.length) return null;
-	const now = Date.now();
+/**
+ * Millisekunden bis zur nächsten konfigurierten Erinnerungszeit, oder null.
+ * Unlesbare Uhrzeiten ("24:00") fallen weg: ein NaN liesse setTimeout sofort
+ * feuern und gleich wieder NaN planen.
+ */
+export function nextReminderDelay(times: string[], now = Date.now()): number | null {
 	const today = fmtDate(now);
 	let best = Infinity;
 	for (const t of times) {
-		const [h, m] = t.split(":").map(Number);
-		if (Number.isNaN(h) || Number.isNaN(m)) continue;
-		const clock = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+		const min = clockToMin(t);
+		if (min === null) continue;
+		const clock = minToClock(min);
 		// Über den Kalender auf morgen, nicht per +24 h: an einem
 		// Umstellungstag hat ein Tag 23 oder 25 Stunden.
 		let ts = toTs(today, clock);
 		if (ts <= now) ts = toTs(stepDate(today, 1), clock);
-		best = Math.min(best, ts - now);
+		if (!Number.isNaN(ts)) best = Math.min(best, ts - now);
 	}
-	return best === Infinity ? null : best;
+	return Number.isFinite(best) ? best : null;
 }
 
 let reportTimer: ReturnType<typeof setTimeout> | null = null;
@@ -48,16 +50,10 @@ export function scheduleReportReminder(): void {
 	// wurde negativ, setTimeout feuerte sofort, benachrichtigte und plante neu:
 	// Dauerfeuer.
 	let target = reportReminderDate(now, time, lead);
+	const thisMonth = monthKey(now.getTime());
 	for (let i = 0; i < 24 && target.getTime() <= now.getTime(); i++) {
-		// Den Monatsersten über die Kalenderrechnung bilden: eine lokale
-		// Date-Konstruktion hängt an der Zone des Geräts.
-		const p = zonedParts(now.getTime());
-		const idx = p.year * 12 + (p.month - 1) + 1 + i;
-		target = reportReminderDate(
-			new Date(wallToTs(Math.floor(idx / 12), (idx % 12) + 1, 1)),
-			time,
-			lead
-		);
+		const next = shiftMonthKey(thisMonth, i + 1);
+		target = reportReminderDate(new Date(noonTs(`${next}-01`)), time, lead);
 	}
 	if (target.getTime() <= now.getTime()) return; // unerreichbar -> gar nicht planen
 	// setTimeout-delay ist auf ~24,8 Tage (2^31-1 ms) begrenzt. Bei größerem
@@ -70,13 +66,11 @@ export function scheduleReportReminder(): void {
 			scheduleReportReminder(); // war gekappt -> erneut planen
 			return;
 		}
-		if (await ensureNotificationPermission()) {
-			await notify({
-				title: "TimeTracker – Bericht senden",
-				body: "Monatsende: Stundenbericht an die Vorgesetzten schicken nicht vergessen.",
-				tag: "bericht"
-			});
-		}
+		await notifyIfAllowed({
+			title: "TimeTracker – Bericht senden",
+			body: "Monatsende: Stundenbericht an die Vorgesetzten schicken nicht vergessen.",
+			tag: "bericht"
+		});
 		scheduleReportReminder();
 	}, delay);
 }
@@ -90,18 +84,16 @@ export function scheduleReminders(): void {
 	const delay = nextReminderDelay(app.settings.reminderTimes);
 	if (delay == null) return;
 	timer = setTimeout(async () => {
-		if (await ensureNotificationPermission()) {
-			const running = app.running
-				? `Aktuell läuft: ${app.activityName(app.running.activityId)}.`
-				: "Kein Timer läuft.";
-			await notify({
-				title: "TimeTracker – Zeiten eintragen",
-				body: `Woran hast du gearbeitet? ${running}`,
-				// Eine wiederholte Erinnerung ersetzt die vorherige, statt sich auf dem
-				// Sperrbildschirm zu stapeln.
-				tag: "erinnerung"
-			});
-		}
+		const running = app.running
+			? `Aktuell läuft: ${app.activityName(app.running.activityId)}.`
+			: "Kein Timer läuft.";
+		await notifyIfAllowed({
+			title: "TimeTracker – Zeiten eintragen",
+			body: `Woran hast du gearbeitet? ${running}`,
+			// Eine wiederholte Erinnerung ersetzt die vorherige, statt sich auf dem
+			// Sperrbildschirm zu stapeln.
+			tag: "erinnerung"
+		});
 		scheduleReminders();
 	}, delay);
 }

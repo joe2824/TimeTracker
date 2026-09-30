@@ -1,10 +1,11 @@
 <script lang="ts">
+	import { untrack } from "svelte";
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
 	import { app } from "$lib/app.svelte";
-	import { fmtClock, fmtDate, fmtDateHuman, fmtHMS, monthKey } from "$lib/time/time";
+	import { fmtClock, fmtDate, fmtDateHuman, fmtHMS, monthKey, toTs } from "$lib/time/time";
 	import { checkEnd, suggestLongTimerEnd } from "$lib/time/longTimer";
 	import { watchers, resolveLongTimer } from "$lib/ui/watchers.svelte";
 
@@ -37,22 +38,26 @@
 
 	// Beim Öffnen vorbelegen. NICHT mit "jetzt": lief der Timer über Nacht, ist
 	// "jetzt" der Morgen danach, und ein unbesehen bestätigter Dialog schreibt
-	// die ganze Nacht auf das Projekt.
+	// die ganze Nacht auf das Projekt. Nur am Start hängen: ein Sync, der
+	// Einträge oder Einstellungen schreibt, überschriebe sonst die Eingabe.
 	$effect(() => {
-		if (!p) return;
-		const start = p.startTs;
-		endValue = toLocal(
-			suggestLongTimerEnd({
-				runStartTs: start,
-				now: Date.now(),
-				dayStartTs: dayStartTs(start),
-				hoursPerDay: app.settings.hoursPerDay,
-				deductBreaks: app.settings.breakDeduction
-			})
-		);
+		const start = p?.startTs;
+		if (start === undefined) return;
+		untrack(() => {
+			endValue = toLocal(
+				suggestLongTimerEnd({
+					runStartTs: start,
+					now: Date.now(),
+					dayStartTs: dayStartTs(start),
+					hoursPerDay: app.settings.hoursPerDay,
+					deductBreaks: app.settings.breakDeduction
+				})
+			);
+		});
 	});
 
-	const endTs = $derived(endValue ? new Date(endValue).getTime() : NaN);
+	/** Der Wert ist Wanduhrzeit der Kontozone – so wurde er auch gebaut (`toLocal`). */
+	const endTs = $derived(endValue ? toTs(endValue.slice(0, 10), endValue.slice(11, 16)) : NaN);
 	const error = $derived(p ? checkEnd(endTs, p.startTs, app.now) : null);
 	const errorText = $derived(
 		error === "future"

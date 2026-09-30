@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { app } from "$lib/app.svelte";
 	import { readOutlookCalendar, reportOutlookError, type CalendarEvent } from "$lib/report/outlook";
-	import { allDayNoons, fmtDate, isWorkday } from "$lib/time/time";
+	import { allDayNoons, fmtClock, fmtDate, isWorkday, monthKey } from "$lib/time/time";
+	import { lastDayOfMonth } from "$lib/time/tz";
 	import { activityOptions, guessActivity } from "$lib/report/calendarMap";
 	import { Button } from "$lib/components/ui/button";
 	import { Badge } from "$lib/components/ui/badge";
@@ -34,23 +35,19 @@
 
 	/** Fällt (mindestens ein Tag) des Termins auf einen regulären Arbeitstag? */
 	function eventHasWorkday(ev: CalendarEvent): boolean {
-		const start = new Date(ev.start).getTime();
 		if (ev.allDay) {
-			return allDayNoons(start, new Date(ev.end).getTime()).some((ts) =>
-				isWorkday(ts, app.settings.workdays)
-			);
+			return allDayNoons(ev.start, ev.end).some((ts) => isWorkday(ts, app.settings.workdays));
 		}
-		return isWorkday(start, app.settings.workdays);
+		return isWorkday(new Date(ev.start).getTime(), app.settings.workdays);
 	}
 
 	// ---- Duplikat-Erkennung: bereits importierte Termine (source="calendar") ----
-	const monthOf = (ts: number) => fmtDate(ts).slice(0, 7);
 
 	/** Existiert schon eine importierte Abwesenheit mit gleichem Tag + Betreff? */
 	function dayAlreadyImported(dayTs: number, subject: string): boolean {
 		const dstr = fmtDate(dayTs);
 		return app
-			.monthEntries(monthOf(dayTs))
+			.monthEntries(monthKey(dayTs))
 			.some(
 				(e) =>
 					e.source === "calendar" &&
@@ -63,7 +60,7 @@
 	/** Existiert schon ein importierter Zeit-Eintrag mit gleichem Start/Ende/Betreff? */
 	function timedAlreadyImported(startTs: number, endTs: number, subject: string): boolean {
 		return app
-			.monthEntries(monthOf(startTs))
+			.monthEntries(monthKey(startTs))
 			.some(
 				(e) =>
 					e.source === "calendar" &&
@@ -79,7 +76,7 @@
 		const endTs = new Date(ev.end).getTime();
 		if (Number.isNaN(startTs) || Number.isNaN(endTs)) return false;
 		if (ev.allDay) {
-			const days = allDayNoons(startTs, endTs).filter((ts) =>
+			const days = allDayNoons(ev.start, ev.end).filter((ts) =>
 				isWorkday(ts, app.settings.workdays)
 			);
 			return days.length > 0 && days.every((ts) => dayAlreadyImported(ts, ev.subject));
@@ -94,10 +91,7 @@
 		loaded = false;
 		loading = true;
 		try {
-			const [y, m] = month.split("-").map(Number);
-			const start = `${month}-01`;
-			const end = fmtDate(new Date(y, m, 0).getTime());
-			events = await readOutlookCalendar(start, end);
+			events = await readOutlookCalendar(`${month}-01`, lastDayOfMonth(month));
 			// Termine ohne Arbeitstag oder bereits importierte standardmäßig auf „ignorieren".
 			mapping = events.map((ev) =>
 				eventHasWorkday(ev) && !alreadyImported(ev) ? guessFor(ev) : ""
@@ -151,9 +145,9 @@
 
 			if (isAbsence && ev.allDay) {
 				// Ganztägig (evtl. mehrtägig): für JEDEN Arbeitstag im Bereich einen ganzen Abwesenheitstag.
-				for (const dayTs of allDayNoons(startTs, endTs)) {
+				for (const dayTs of allDayNoons(ev.start, ev.end)) {
 					if (!isWorkday(dayTs, app.settings.workdays)) continue;
-					await app.ensureMonth(monthOf(dayTs));
+					await app.ensureMonth(monthKey(dayTs));
 					if (dayAlreadyImported(dayTs, ev.subject)) continue; // schon importiert -> überspringen
 					const created = await app.addEntry(activityId, dayTs, dayTs, ev.subject, "calendar", 1);
 					if (created) count++;
@@ -164,7 +158,7 @@
 				if (isAbsence) continue;
 				// Wochenenden/freie Tage nicht importieren – sind keine Arbeitstage.
 				if (!isWorkday(startTs, app.settings.workdays)) continue;
-				await app.ensureMonth(monthOf(startTs));
+				await app.ensureMonth(monthKey(startTs));
 				if (timedAlreadyImported(startTs, endTs, ev.subject)) continue; // schon importiert
 				const created = await app.addEntry(activityId, startTs, endTs, ev.subject, "calendar");
 				if (created) count++;
@@ -262,8 +256,12 @@
 						{@const alreadyImp = alreadyImported(ev)}
 					<li class="flex flex-wrap items-center gap-3 px-4 py-1.5 {hasWorkday && !alreadyImp ? '' : 'opacity-60'} {isAbs ? 'bg-amber-500/15' : ''}">
 						<span class="text-muted-foreground w-28 shrink-0 font-mono text-xs">
-							{fmtDate(new Date(ev.start).getTime()).slice(5)}
-							{new Date(ev.start).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}
+							{#if ev.allDay}
+								{ev.start.slice(5, 10)}
+							{:else}
+								{fmtDate(new Date(ev.start).getTime()).slice(5)}
+								{fmtClock(new Date(ev.start).getTime())}
+							{/if}
 						</span>
 						<span class="flex min-w-40 flex-1 items-center gap-1.5">
 							{#if isAbs}
@@ -274,10 +272,7 @@
 							</span>
 						</span>
 						{#if ev.allDay}
-							{@const nDays = allDayNoons(
-								new Date(ev.start).getTime(),
-								new Date(ev.end).getTime()
-							).length}
+							{@const nDays = allDayNoons(ev.start, ev.end).length}
 							<Badge variant="secondary">
 								{nDays > 1 ? `ganztägig · ${nDays} Tage` : "ganztägig"}
 							</Badge>

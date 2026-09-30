@@ -30,9 +30,6 @@
 		for (const m of monthKeys) void app.ensureMonth(m);
 	});
 
-	const absenceIds = $derived(
-		new Set(app.activities.filter((a) => a.isAbsence).map((a) => a.id))
-	);
 	const yearEntries = $derived(monthKeys.flatMap((m) => app.monthEntries(m) as Entry[]));
 
 	/** Ist das ganze Jahr geladen? */
@@ -53,7 +50,7 @@
 	const statsNow = $derived(runningInYear ? quantize(app.now, 5 * MINUTE_MS) : 0);
 
 	// Einmal aufschlüsseln, Summen daraus ableiten – nicht zweimal über alles laufen.
-	const detailByDay = $derived(dayActivityHours(yearEntries, absenceIds, statsNow, app.settings.breakDeduction));
+	const detailByDay = $derived(dayActivityHours(yearEntries, app.absenceIds, statsNow, app.settings.breakDeduction));
 	const byDay = $derived(sumPerDay(detailByDay));
 	const weeks = $derived(heatmapYear(year, byDay));
 

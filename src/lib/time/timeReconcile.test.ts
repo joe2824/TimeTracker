@@ -7,6 +7,8 @@ import {
 	planFill,
 	rebalanceShares,
 	reconcile,
+	reconcileWithSettings,
+	RECONCILE_TOLERANCE,
 	splitBlocks,
 	targetEntryHours,
 	type ReconcileDay
@@ -678,5 +680,35 @@ describe("rebalanceShares", () => {
 
 	it("laesst einen einzelnen Regler auf 100 stehen", () => {
 		expect(rebalanceShares([100], 0, 40)).toEqual([100]);
+	});
+});
+
+describe("reconcileWithSettings", () => {
+	it("rechnet wie reconcile mit Toleranz und Pausenabzug aus den Einstellungen", () => {
+		const entries = [entry("2026-01-12", "09:00", "17:00")];
+		const settings = { hoursPerDay: 7.5, breakDeduction: true };
+		const now = toTs("2026-01-13", "12:00");
+		expect(reconcileWithSettings([day()], entries, settings, ABSENCE_IDS, now)).toEqual(
+			reconcile([day()], entries, {
+				hoursPerDay: 7.5,
+				tolerance: RECONCILE_TOLERANCE,
+				absenceIds: ABSENCE_IDS,
+				now,
+				deductBreaks: true
+			})
+		);
+	});
+
+	// Ein offener Eintrag von gestern zählt nur bis Mitternacht – wie im Bericht.
+	it("kappt einen offenen Eintrag am Ende seines Tages", () => {
+		const open = { ...entry("2026-01-12", "09:00", "10:00"), endTs: null };
+		const r = reconcileWithSettings(
+			[day({ hours: 15 })],
+			[open],
+			{ hoursPerDay: 7.5, breakDeduction: false },
+			ABSENCE_IDS,
+			toTs("2026-01-14", "12:00")
+		);
+		expect(r.days[0].tracked).toBe(15);
 	});
 });

@@ -1,7 +1,7 @@
 <script lang="ts">
+	import { untrack } from "svelte";
 	import { app } from "$lib/app.svelte";
-	import { fmtDate, noonTs, parseClock, parseHours, startOfNextDay, toTs } from "$lib/time/time";
-	import { stepDate } from "$lib/time/time";
+	import { clockSpan, fmtDate, noonTs, parseHours, stepDate, toTs } from "$lib/time/time";
 	import { weekdayOfDate } from "$lib/time/tz";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
@@ -10,6 +10,7 @@
 	import ActivityCombobox from "$lib/components/shared/ActivityCombobox.svelte";
 	import WorkdayPicker from "$lib/components/shared/WorkdayPicker.svelte";
 	import DateInput from "$lib/components/shared/DateInput.svelte";
+	import ClockInput from "$lib/components/shared/ClockInput.svelte";
 	import { toast } from "svelte-sonner";
 
 	let {
@@ -32,44 +33,31 @@
 	let endText = $state("16:00");
 	let lumpHours = $state(""); // pauschale Stunden je Tag (wenn keine Uhrzeit)
 
+	let startInput = $state<ReturnType<typeof ClockInput> | null>(null);
+	let endInput = $state<ReturnType<typeof ClockInput> | null>(null);
+
 	// Beim Öffnen alles auf Standard: keine Aktivität, Datums-Defaults, Arbeitstage.
+	// Nur am Öffnen hängen: ein Sync, der die Einstellungen schreibt, während der
+	// Dialog offen ist, würde sonst alle Eingaben verwerfen.
 	$effect(() => {
 		if (!open) return;
-		activityId = "";
-		fromDate = toDate = fmtDate(Date.now()); // Default: heute
-		days = [...app.settings.workdays];
-		start = startText = "08:00";
-		end = endText = "16:00";
-		lumpHours = "";
+		untrack(() => {
+			activityId = "";
+			fromDate = toDate = fmtDate(Date.now()); // Default: heute
+			days = [...app.settings.workdays];
+			start = startText = "08:00";
+			end = endText = "16:00";
+			lumpHours = "";
+		});
 	});
-
-	/** Uhrzeit beim Verlassen normalisieren; leere Eingabe bleibt leer (= pauschal). */
-	function commitStart() {
-		const t = startText.trim();
-		if (t === "") {
-			start = startText = "";
-			return;
-		}
-		start = parseClock(t) ?? start;
-		startText = start;
-	}
-	function commitEnd() {
-		const t = endText.trim();
-		if (t === "") {
-			end = endText = "";
-			return;
-		}
-		end = parseClock(t) ?? end;
-		endText = end;
-	}
 
 	async function save() {
 		if (!activityId) {
 			toast.error("Bitte eine Aktivität wählen.");
 			return;
 		}
-		commitStart();
-		commitEnd();
+		startInput?.commit();
+		endInput?.commit();
 		const a = noonTs(fromDate);
 		const b = noonTs(toDate);
 		if (Number.isNaN(a) || Number.isNaN(b) || a > b) {
@@ -99,11 +87,8 @@
 		for (let date = fmtDate(a); date <= fmtDate(b); date = stepDate(date, 1)) {
 			if (!days.includes(weekdayOfDate(date))) continue; // nur gewählte Wochentage
 			if (useTimes) {
-				const s = toTs(date, start);
-				let e = toTs(date, end);
-				// Bis vor Von -> Folgetag. startOfNextDay statt +24 h: an DST-Tagen hat
-				// ein Tag 23 oder 25 Stunden. Über Mitternacht teilt addEntry selbst.
-				if (e < s) e = toTs(fmtDate(startOfNextDay(s)), end);
+				// Über Mitternacht teilt addEntry selbst.
+				const { startTs: s, endTs: e } = clockSpan(date, start, end);
 				if (await app.addEntry(activityId, s, e, "", "manual")) count++;
 			} else {
 				const s = toTs(date, "08:00");
@@ -164,26 +149,24 @@
 				<div class="grid grid-cols-2 gap-2">
 						<div class="space-y-1">
 							<Label for="bstart">Von (Uhrzeit)</Label>
-							<Input
+							<ClockInput
+								bind:this={startInput}
 								id="bstart"
-								type="text"
-								inputmode="numeric"
 								placeholder="z. B. 0800"
-								value={startText}
-								oninput={(e) => (startText = e.currentTarget.value)}
-								onchange={commitStart}
+								allowEmpty
+								bind:value={start}
+								bind:text={startText}
 							/>
 						</div>
 						<div class="space-y-1">
 							<Label for="bend">Bis (Uhrzeit)</Label>
-							<Input
+							<ClockInput
+								bind:this={endInput}
 								id="bend"
-								type="text"
-								inputmode="numeric"
 								placeholder="z. B. 1600"
-								value={endText}
-								oninput={(e) => (endText = e.currentTarget.value)}
-								onchange={commitEnd}
+								allowEmpty
+								bind:value={end}
+								bind:text={endText}
 							/>
 						</div>
 					</div>

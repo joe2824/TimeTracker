@@ -5,27 +5,29 @@
 // Gesendet wird in `account.sendUsagePing()` - der Weg dorthin ist derselbe wie
 // bei jedem anderen Serveraufruf und weist sich damit auch genauso aus.
 
+import { isTauri } from "./platform/env";
+import { detectOs, type OperatingSystem } from "./platform/os";
+
 /**
  * Ermittelt das Betriebssystem bzw. die Plattform für die Statistik.
+ *
+ * Die Namen erwartet der Server so (KNOWN_PLATFORMS in server/src/lib/server/stats.ts);
+ * Handys zählen als "web", eine eigene Kennung dafür kennt er nicht.
  */
 export function detectPlatform(): string {
 	if (typeof window === "undefined") return "unknown";
-	const inTauri = "__TAURI_INTERNALS__" in window;
-	const ua = (navigator.userAgent || "").toLowerCase();
-	const plat = ((navigator as any).platform || "").toLowerCase();
-
-	if (inTauri) {
-		if (ua.includes("mac") || plat.includes("mac")) return "macos";
-		if (ua.includes("win") || plat.includes("win")) return "windows";
-		if (ua.includes("linux") || plat.includes("linux")) return "linux";
-		return "desktop";
-	}
-
-	if (ua.includes("mac") || plat.includes("mac")) return "web-mac";
-	if (ua.includes("win") || plat.includes("win")) return "web-win";
-	if (ua.includes("linux") || plat.includes("linux")) return "web-linux";
-	return "web";
+	const os = detectOs();
+	if (isTauri()) return os === "windows" || os === "macos" || os === "linux" ? os : "desktop";
+	return WEB_PLATFORM[os];
 }
+
+const WEB_PLATFORM: Record<OperatingSystem, string> = {
+	windows: "web-win",
+	macos: "web-mac",
+	linux: "web-linux",
+	mobil: "web",
+	unbekannt: "web"
+};
 
 /**
  * Wie eine Tagesmeldung ausgegangen ist.

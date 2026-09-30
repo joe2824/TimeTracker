@@ -3,7 +3,16 @@ import type { Entry } from "../types";
 import type { TimeReportDay } from "../report/timeReport";
 import { breakHours, grossHours, hasStamps, isOpenDay, withEstimatedHours } from "../report/timeReport";
 import { deductBreakFromHours, grossForNet } from "./breaks";
-import { entryHours, fmtDate, openEntryUntil, startOfNextDay } from "./time";
+import {
+	clockToMin,
+	entryHours,
+	fmtDate,
+	mergeIntervals,
+	openEntryUntil,
+	roundToMinute,
+	startOfNextDay
+} from "./time";
+import { dayWorkHours } from "../report/stats";
 import { zonedParts } from "./tz";
 
 /** Zeitspanne innerhalb eines Tages, in Minuten ab Mitternacht. */
@@ -74,9 +83,27 @@ export interface ReconcileSummary {
 	missingHours: number;
 }
 
-/** Rundung auf Minuten – 7,469999 h soll nicht als Abweichung durchgehen. */
-function toMinutes(h: number): number {
-	return Math.round(h * 60) / 60;
+/** Ab welcher Abweichung ein Tag auffällt, in Stunden: 15 Minuten. */
+export const RECONCILE_TOLERANCE = 0.25;
+
+/**
+ * `reconcile` mit den Optionen, die sich aus den Einstellungen ergeben – so
+ * rechnen Tagesliste und Abgleich garantiert gleich.
+ */
+export function reconcileWithSettings(
+	days: TimeReportDay[],
+	entries: Entry[],
+	settings: { hoursPerDay: number; breakDeduction: boolean },
+	absenceIds: Set<string>,
+	now?: number
+): ReconcileSummary {
+	return reconcile(days, entries, {
+		hoursPerDay: settings.hoursPerDay,
+		tolerance: RECONCILE_TOLERANCE,
+		absenceIds,
+		now,
+		deductBreaks: settings.breakDeduction
+	});
 }
 
 /** Den Report eines Monats gegen die erfassten Einträge stellen. */
@@ -91,16 +118,15 @@ export function reconcile(
 	// Erfasste Stunden je Tag; Abwesenheiten mit ihrem Tagesanteil.
 	// Projektzeit und Abwesenheit getrennt sammeln: die Pause wird nur von der
 	// gearbeiteten Zeit abgezogen, nie von einem Urlaubstag.
-	const work = new Map<string, number>();
+	const work = dayWorkHours(entries, absenceIds, now);
 	const absence = new Map<string, number>();
 	const fullDayAbsence = new Set<string>();
 	const anyAbsence = new Set<string>();
 	const filled = new Set<string>();
 	for (const e of entries) {
 		const day = fmtDate(e.startTs);
-		const isAbsence = absenceIds.has(e.activityId);
-		const h = entryHours(e, isAbsence, hoursPerDay, openEntryUntil(e, now));
-		if (isAbsence) {
+		if (absenceIds.has(e.activityId)) {
+			const h = entryHours(e, true, hoursPerDay);
 			// Der Zeitausgleich zählt NICHT als erfasste Zeit: an einem abgefeierten
 			// Tag stempelt niemand, LOGA meldet dort 0 Stunden. Würde er hier
 			// mitzählen, stünde an JEDEM solchen Tag ein "zu viel erfasst".
@@ -108,8 +134,6 @@ export function reconcile(
 			if (e.timeOff !== true) absence.set(day, (absence.get(day) ?? 0) + h);
 			anyAbsence.add(day);
 			if ((e.dayFraction ?? 1) >= 1) fullDayAbsence.add(day);
-		} else {
-			work.set(day, (work.get(day) ?? 0) + h);
 		}
 		if (e.source === "loga") filled.add(day);
 	}
@@ -129,9 +153,9 @@ export function reconcile(
 		// (LOGA meldet 0 h) auf die geschätzten Stunden aufgelöst wird – wirkt
 		// dadurch bei jedem Aufruf, nicht erst nach einem erneuten Einlesen.
 		const report = withEstimatedHours(rawReport);
-		const trackedHours = toMinutes(tracked.get(report.date) ?? 0);
-		const reportHours = toMinutes(report.hours);
-		const diff = toMinutes(reportHours - trackedHours);
+		const trackedHours = roundToMinute(tracked.get(report.date) ?? 0);
+		const reportHours = roundToMinute(report.hours);
+		const diff = roundToMinute(reportHours - trackedHours);
 
 		let status: ReconcileStatus;
 		if (reportHours <= 0) {
@@ -161,7 +185,7 @@ export function reconcile(
 			date: report.date,
 			report,
 			tracked: trackedHours,
-			workedGross: toMinutes(work.get(report.date) ?? 0),
+			workedGross: roundToMinute(work.get(report.date) ?? 0),
 			diff,
 			status,
 			looksLikeAbsence,
@@ -178,15 +202,14 @@ export function reconcile(
 		if (status === "missing" || status === "partial") summary.missingHours += diff;
 	}
 
-	return { days: out, ...summary, missingHours: toMinutes(summary.missingHours) };
+	return { days: out, ...summary, missingHours: roundToMinute(summary.missingHours) };
 }
 
 // ---------- Nachtrag planen ----------
 
-/** "HH:MM" -> Minuten ab Mitternacht. */
-function clockMin(t: string): number {
-	const [h, m] = t.split(":").map(Number);
-	return h * 60 + m;
+/** "HH:MM" -> Minuten ab Mitternacht; 0 bei unlesbarer Angabe. */
+function clockMinOr0(t: string): number {
+	return clockToMin(t) ?? 0;
 }
 
 /**
@@ -228,15 +251,7 @@ export function occupiedIntervals(entries: Entry[], date: string, now: number): 
 			end: stop >= dayEnd ? 1440 : ceilMinutesOfDay(stop)
 		});
 	}
-	raw.sort((a, b) => a.start - b.start);
-
-	const merged: Interval[] = [];
-	for (const iv of raw) {
-		const last = merged[merged.length - 1];
-		if (last && iv.start <= last.end) last.end = Math.max(last.end, iv.end);
-		else merged.push({ ...iv });
-	}
-	return merged;
+	return mergeIntervals(raw);
 }
 
 /** `window` ohne die belegten Spannen. */
@@ -376,7 +391,7 @@ export function planFill(
 	// gilt. Ohne Verlängerung gibt es diese Grenze nicht.
 	let stampEnd = Infinity;
 	if (hasStamps(day.report)) {
-		window = { start: clockMin(day.report.firstIn!), end: clockMin(day.report.lastOut!) };
+		window = { start: clockMinOr0(day.report.firstIn!), end: clockMinOr0(day.report.lastOut!) };
 		if (window.end <= window.start) window.end = 1440; // über Mitternacht gestempelt
 		// Der Report kann MEHR Stunden melden, als zwischen Kommen und Gehen
 		// liegen (nachgebuchte Zeit, Dienstreise, Korrektur) – ohne Verlängerung
@@ -387,7 +402,7 @@ export function planFill(
 			stretched = true;
 		}
 	} else {
-		const start = clockMin(opts.defaultStart);
+		const start = clockMinOr0(opts.defaultStart);
 		window = { start, end: Math.min(1440, start + missingMin + pauseMin) };
 	}
 
@@ -406,7 +421,7 @@ export function planFill(
 		blocks = carve(free, [{ take: true, min: takeMin }]);
 	} else {
 		// Arbeit vor der Mittagspause: so viel freie Zeit, wie vor `lunchAt` liegt.
-		const lunch = clockMin(opts.lunchAt);
+		const lunch = clockMinOr0(opts.lunchAt);
 		const beforeLunch = free.reduce(
 			(s, iv) => s + Math.max(0, Math.min(iv.end, lunch) - iv.start),
 			0

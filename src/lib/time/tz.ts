@@ -156,28 +156,35 @@ const HALF_DAY_MS = 12 * 3_600_000;
 
 /** Wie `wallToTs`, aber aus einem "YYYY-MM-DD" und "HH:MM". NaN bei Unsinn. */
 export function wallStringToTs(date: string, time: string, tz = currentZone): number {
-	const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date.trim());
+	const d = parseIsoDate(date);
 	const t = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(time.trim());
 	if (!d || !t) return NaN;
 	const hour = Number(t[1]);
 	const minute = Number(t[2]);
 	if (hour > 23 || minute > 59) return NaN;
-	return wallToTs(
-		Number(d[1]),
-		Number(d[2]),
-		Number(d[3]),
-		hour,
-		minute,
-		t[3] ? Number(t[3]) : 0,
-		tz
-	);
+	return wallToTs(d[0], d[1], d[2], hour, minute, t[3] ? Number(t[3]) : 0, tz);
+}
+
+/** "YYYY-MM-DD" -> [Jahr, Monat, Tag], oder null bei Unsinn. */
+export function parseIsoDate(date: string): [number, number, number] | null {
+	const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date.trim());
+	return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+}
+
+/** "YYYY-MM" -> [Jahr, Monat], oder null bei Unsinn. */
+export function parseMonthKey(month: string): [number, number] | null {
+	const m = /^(\d{4})-(\d{2})$/.exec(month.trim());
+	if (!m) return null;
+	const y = Number(m[1]);
+	const mo = Number(m[2]);
+	return mo >= 1 && mo <= 12 ? [y, mo] : null;
 }
 
 /** Ein Kalenderdatum um Tage verschieben – rein im Kalender, ohne Zeitzone. */
 export function addCalendarDays(date: string, delta: number): string {
-	const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date.trim());
-	if (!m) return date;
-	const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+	const p = parseIsoDate(date);
+	if (!p) return date;
+	const d = new Date(Date.UTC(p[0], p[1] - 1, p[2]));
 	d.setUTCDate(d.getUTCDate() + delta);
 	return isoDate(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
 }
@@ -195,12 +202,22 @@ export function resetTimeZoneCaches(): void {
 
 /** Wochentag (0=So..6=Sa) eines "YYYY-MM-DD" – reine Kalenderrechnung. */
 export function weekdayOfDate(date: string): number {
-	const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date.trim());
-	if (!m) return NaN;
-	return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))).getUTCDay();
+	const p = parseIsoDate(date);
+	if (!p) return NaN;
+	return new Date(Date.UTC(p[0], p[1] - 1, p[2])).getUTCDay();
 }
 
 /** Anzahl Tage eines Monats – reine Kalenderrechnung, `month` ist 1-basiert. */
 export function daysInMonth(year: number, month: number): number {
 	return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+/**
+ * Letzter Tag eines Monats "YYYY-MM" als "YYYY-MM-DD" – reine Kalenderrechnung.
+ * Eine lokale Date-Konstruktion hinge an der Zone des Geräts.
+ */
+export function lastDayOfMonth(month: string): string {
+	const p = parseMonthKey(month);
+	if (!p) return month;
+	return isoDate(p[0], p[1], daysInMonth(p[0], p[1]));
 }

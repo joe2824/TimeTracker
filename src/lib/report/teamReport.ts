@@ -4,6 +4,7 @@
 // wird daraus eine CSV-Datei und ein Erinnerungstext.
 import type { TeamReportStatus } from "../sync/api";
 import { fmtClock, fmtDate } from "../time/time";
+import { escapeHtml } from "./report";
 
 function csvCell(s: string): string {
 	// Excel wertet eine Zelle, die mit = + - @ beginnt, als FORMEL aus. Namen
@@ -38,7 +39,7 @@ export function teamReminderSubject(label: string): string {
  * an alle Fehlenden zugleich, niemand soll darin lesen, wer sonst noch saeumig ist.
  */
 export function teamReminderHtml(label: string): string {
-	const safe = label.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+	const safe = escapeHtml(label);
 	return `<p style="font-family:Calibri,Arial,sans-serif;font-size:11pt;">
 Hallo,<br><br>
 für ${safe} liegt mir deine Stundenerfassung noch nicht vor.

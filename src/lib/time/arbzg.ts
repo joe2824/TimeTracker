@@ -19,8 +19,11 @@ import {
 	fmtDateHuman,
 	fmtHoursClock,
 	isWorkday,
+	mergeIntervals,
 	noonTs,
 	openEntryUntil,
+	roundToMinute,
+	shiftMonthKey,
 	stepDate
 } from "./time";
 import { weekdayOfDate } from "./tz";
@@ -249,15 +252,9 @@ export interface ArbZgResult {
 
 /** Die Monate, die für einen Stichtag geladen sein müssen. */
 export function arbzgMonths(until: string): string[] {
-	const [y, m] = until.split("-").map(Number);
+	const month = until.slice(0, 7);
 	const out: string[] = [];
-	// Über Monatszahlen rechnen, nicht über Zeitstempel: eine lokale
-	// Date-Konstruktion hängt an der Zone des Geräts und verschob den ersten
-	// Monat des Fensters je nach Standort um einen.
-	for (let i = 11; i >= 0; i--) {
-		const idx = (y * 12 + (m - 1)) - i;
-		out.push(`${Math.floor(idx / 12)}-${String((idx % 12) + 1).padStart(2, "0")}`);
-	}
+	for (let i = 11; i >= 0; i--) out.push(shiftMonthKey(month, -i));
 	return out;
 }
 
@@ -272,11 +269,6 @@ export function dataFromEntries(entries: Entry[], fallback: string): string {
 }
 
 // ---------- Tagesdaten ----------
-
-/** Stunden auf ganze Minuten – dieselbe Rundung wie fmtHoursClock. */
-function toMinute(hours: number): number {
-	return Math.round(hours * 60) / 60;
-}
 
 /** Die Einträge zu Tagesdaten verdichten. */
 export function dayFacts(
@@ -298,7 +290,7 @@ export function dayFacts(
 				date,
 				// Auf die Minute, wie angezeigt: der Timer speichert Sekunden, und
 				// 10:00:27 h hiessen sonst "> 10 h" neben einer Anzeige von 10:00 h.
-				hours: toMinute(hours.get(date) ?? 0),
+				hours: roundToMinute(hours.get(date) ?? 0),
 				firstStart: null,
 				lastEnd: null,
 				absenceFraction: 0,
@@ -336,7 +328,7 @@ export function dayFacts(
 	if (!deductBreaks) {
 		for (const [date, list] of spans) {
 			const f = facts(date);
-			const merged = mergeSpans(list);
+			const merged = mergeIntervals(list, MIN_PAUSE_SEGMENT_MIN * 60000);
 			let pause = 0;
 			let longest = 0;
 			for (let i = 0; i < merged.length; i++) {
@@ -344,28 +336,10 @@ export function dayFacts(
 				if (i > 0) pause += (merged[i].start - merged[i - 1].end) / 60000;
 			}
 			f.pauseMinutes = Math.round(pause);
-			f.longestStretch = toMinute(longest);
+			f.longestStretch = roundToMinute(longest);
 		}
 	}
 
-	return out;
-}
-
-/**
- * Spannen sortieren und alles zusammenziehen, was weniger als 15 Minuten
- * auseinanderliegt.
- */
-function mergeSpans(list: { start: number; end: number }[]): { start: number; end: number }[] {
-	const sorted = [...list].sort((a, b) => a.start - b.start);
-	const out: { start: number; end: number }[] = [];
-	for (const s of sorted) {
-		const last = out[out.length - 1];
-		if (last && s.start - last.end < MIN_PAUSE_SEGMENT_MIN * 60000) {
-			last.end = Math.max(last.end, s.end);
-		} else {
-			out.push({ ...s });
-		}
-	}
 	return out;
 }
 

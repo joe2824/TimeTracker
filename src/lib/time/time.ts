@@ -1,5 +1,13 @@
 import type { Entry } from "../types";
-import { addCalendarDays, appTimeZone, isoDate, wallStringToTs, zonedParts } from "./tz";
+import {
+	addCalendarDays,
+	appTimeZone,
+	isoDate,
+	parseIsoDate,
+	parseMonthKey,
+	wallStringToTs,
+	zonedParts
+} from "./tz";
 
 /**
  * "YYYY-MM" für einen Zeitstempel – in der Zeitzone des Kontos, nicht der des
@@ -13,10 +21,7 @@ export function monthKey(ts: number): string {
 
 /** Der Vormonat als "YYYY-MM". */
 export function prevMonthKey(now = Date.now()): string {
-	const p = zonedParts(now);
-	const year = p.month === 1 ? p.year - 1 : p.year;
-	const month = p.month === 1 ? 12 : p.month - 1;
-	return `${year}-${String(month).padStart(2, "0")}`;
+	return shiftMonthKey(monthKey(now), -1);
 }
 
 /**
@@ -26,9 +31,9 @@ export function prevMonthKey(now = Date.now()): string {
  * des Geräts, und an einer Sommerzeit-Grenze trifft er den falschen Monat.
  */
 export function shiftMonthKey(month: string, delta: number): string {
-	const [y, m] = month.split("-").map(Number);
-	if (!y || !m) return month;
-	const total = y * 12 + (m - 1) + delta;
+	const p = parseMonthKey(month);
+	if (!p) return month;
+	const total = p[0] * 12 + (p[1] - 1) + delta;
 	const year = Math.floor(total / 12);
 	const index = total - year * 12;
 	return `${year}-${String(index + 1).padStart(2, "0")}`;
@@ -137,21 +142,26 @@ export function isWorkday(ts: number, workdays: number[]): boolean {
 }
 
 /**
- * Tages-Mitten (12:00 lokal) aller Tage eines Ganztags-Termins.
- * Outlook liefert das Ende exklusiv (nächster Tag 00:00), daher Iteration bis < Ende-Mitternacht.
- * Fällt immer auf mindestens den Starttag zurück (z. B. wenn Ende <= Start).
+ * Tages-Mitten (12:00 in der Zone des Kontos) aller Tage eines Ganztags-Termins.
+ *
+ * Nimmt Start und Ende so, wie Outlook sie liefert ("2026-07-08T00:00:00.0000000",
+ * ohne Zonenangabe) und liest nur das DATUM daraus: als Zeitpunkt gelesen wäre
+ * das Mitternacht des Geräts, und in einer westlicheren Kontozone fiele der
+ * Termin auf den Vortag. Das Ende ist exklusiv (nächster Tag 00:00). Fällt immer
+ * auf mindestens den Starttag zurück (z. B. wenn Ende <= Start); NaN-frei leer,
+ * wenn der Start kein Datum ist.
  */
-export function allDayNoons(startTs: number, endExclusiveTs: number): number[] {
+export function allDayNoons(start: string, endExclusive: string): number[] {
+	const date0 = start.slice(0, 10);
+	if (!parseIsoDate(date0)) return [];
+	const endDate = endExclusive.slice(0, 10);
 	const out: number[] = [];
-	let date = fmtDate(startTs);
-	const endDate = fmtDate(endExclusiveTs);
 	// Über die Kalendertage laufen, nicht über Zeitstempel: an einer
 	// Sommerzeit-Grenze träfe eine 24-Stunden-Addition den Tag daneben.
-	while (date < endDate) {
+	for (let date = date0; date < endDate; date = addCalendarDays(date, 1)) {
 		out.push(noonTs(date));
-		date = addCalendarDays(date, 1);
 	}
-	if (out.length === 0) out.push(noonTs(fmtDate(startTs)));
+	if (out.length === 0) out.push(noonTs(date0));
 	return out;
 }
 
@@ -166,6 +176,46 @@ export function fmtHoursClock(hours: number): string {
 	const sign = totalMin < 0 ? "-" : "";
 	const abs = Math.abs(totalMin);
 	return `${sign}${Math.floor(abs / 60)}:${String(abs % 60).padStart(2, "0")}`;
+}
+
+/** Stunden auf ganze Minuten – dieselbe Rundung wie `fmtHoursClock`. */
+export function roundToMinute(hours: number): number {
+	return Math.round(hours * 60) / 60;
+}
+
+/**
+ * Spannen sortieren und zusammenziehen: was sich überlappt oder berührt, immer;
+ * was weniger als `maxGap` auseinanderliegt, ebenfalls.
+ */
+export function mergeIntervals<T extends { start: number; end: number }>(
+	list: T[],
+	maxGap = 0
+): T[] {
+	const sorted = [...list].sort((a, b) => a.start - b.start);
+	const out: T[] = [];
+	for (const iv of sorted) {
+		const last = out[out.length - 1];
+		const gap = last ? iv.start - last.end : Infinity;
+		if (last && (gap <= 0 || gap < maxGap)) last.end = Math.max(last.end, iv.end);
+		else out.push({ ...iv });
+	}
+	return out;
+}
+
+/**
+ * Datum + Von/Bis-Uhrzeit als Zeitspanne. Liegt Bis vor Von, gilt der Folgetag –
+ * über den Kalender statt +24 h, weil ein Umstellungstag 23 oder 25 Stunden hat.
+ * NaN in einem Feld bei ungültiger Eingabe.
+ */
+export function clockSpan(
+	date: string,
+	startClock: string,
+	endClock: string
+): { startTs: number; endTs: number } {
+	const startTs = toTs(date, startClock);
+	let endTs = toTs(date, endClock);
+	if (endTs < startTs) endTs = toTs(fmtDate(startOfNextDay(startTs)), endClock);
+	return { startTs, endTs };
 }
 
 /** "HH:MM" -> Minuten seit Mitternacht, oder null bei ungültiger Eingabe. */
@@ -295,12 +345,20 @@ export function fmtDateHuman(ts: number): string {
 
 /** Monatsname deutsch, z.B. "Juni 2026" aus "2026-06". */
 export function monthLabel(monthKey: string): string {
-	const [y, m] = monthKey.split("-").map(Number);
-	// Über UTC bauen und in UTC formatieren: eine lokale Konstruktion des
-	// Monatsersten kann in westlichen Zonen auf den Vormonat kippen.
-	return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("de-DE", {
-		timeZone: "UTC",
-		month: "long",
-		year: "numeric"
+	return fmtCalendarDate(`${monthKey}-01`, { month: "long", year: "numeric" });
+}
+
+/**
+ * Ein Kalenderdatum "YYYY-MM-DD" deutsch formatieren, z.B. "Mo., 12.01.".
+ *
+ * Über UTC bauen und in UTC formatieren: das Datum IST schon der Tag des Kontos,
+ * jede Umrechnung über eine Zone könnte ihn nur noch verschieben.
+ */
+export function fmtCalendarDate(date: string, options: Intl.DateTimeFormatOptions): string {
+	const p = parseIsoDate(date);
+	if (!p) return date;
+	return new Date(Date.UTC(p[0], p[1] - 1, p[2])).toLocaleDateString("de-DE", {
+		...options,
+		timeZone: "UTC"
 	});
 }

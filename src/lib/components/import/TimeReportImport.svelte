@@ -16,7 +16,8 @@
 		DEFAULT_FILL_OPTIONS,
 		distributeDays,
 		planFill,
-		reconcile,
+		RECONCILE_TOLERANCE,
+		reconcileWithSettings,
 		splitBlocks,
 		type FillPlan,
 		type ReconcileDay,
@@ -33,7 +34,9 @@
 	} from "$lib/store";
 	import { BUILTIN_OTHERS } from "$lib/types";
 	import { errorText, logError, logInfo } from "$lib/log";
+	import { dayFractionLabel } from "$lib/report/labels";
 	import {
+		fmtCalendarDate,
 		fmtDateHuman,
 		fmtHoursClock,
 		minToClock,
@@ -70,8 +73,6 @@
 		previewActive = $bindable(false)
 	}: { month: string; previewActive?: boolean } = $props();
 
-	/** Ab welcher Abweichung ein Tag auffällt (Stunden). 15 Minuten. */
-	const TOLERANCE = 0.25;
 	/** Notiz der nachgetragenen Einträge – macht sie in der Tagesliste erkennbar. */
 	const NOTE = "Zeitwächter";
 
@@ -143,16 +144,15 @@
 	// ---------- Abgleich ----------
 
 	const absenceId = $derived(app.absenceActivity?.id ?? "");
-	const absenceIds = $derived(new Set(app.activities.filter((a) => a.isAbsence).map((a) => a.id)));
 
 	function summarize(report: StoredTimeReport) {
-		return reconcile(report.days, app.monthEntries(report.month), {
-			hoursPerDay: app.settings.hoursPerDay,
-			tolerance: TOLERANCE,
-			absenceIds,
-			now: app.now,
-			deductBreaks: app.settings.breakDeduction
-		});
+		return reconcileWithSettings(
+			report.days,
+			app.monthEntries(report.month),
+			app.settings,
+			app.absenceIds,
+			app.now
+		);
 	}
 
 	const summary = $derived(active ? summarize(active) : null);
@@ -585,11 +585,7 @@
 
 	/** "Mo 12.01." – kurz genug für die Tabellenspalte. */
 	function dayLabel(date: string): string {
-		return new Date(noonTs(date)).toLocaleDateString("de-DE", {
-			weekday: "short",
-			day: "2-digit",
-			month: "2-digit"
-		});
+		return fmtCalendarDate(date, { weekday: "short", day: "2-digit", month: "2-digit" });
 	}
 
 	/** Blöcke eines Vorschlags als Text: "08:00–12:00, 12:30–16:30". */
@@ -599,7 +595,7 @@
 	}
 
 	function planLabel(plan: FillPlan): string {
-		if (plan.kind === "absence") return plan.fraction === 0.5 ? "½ Tag" : "ganzer Tag";
+		if (plan.kind === "absence") return dayFractionLabel(plan.fraction);
 		return blockRanges(plan.blocks);
 	}
 
@@ -611,7 +607,7 @@
 	function ruleMismatch(day: ReconcileDay): boolean {
 		if (!app.settings.breakDeduction || !hasStamps(day.report)) return false;
 		const gross = grossHours(day.report);
-		return Math.abs(gross - day.report.hours - ruleBreakHours(gross)) > TOLERANCE;
+		return Math.abs(gross - day.report.hours - ruleBreakHours(gross)) > RECONCILE_TOLERANCE;
 	}
 
 	function stampLabel(day: ReconcileDay): string {

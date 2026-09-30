@@ -1,16 +1,17 @@
 import type { Activity, Entry } from "../types";
-import { addCalendarDays, daysInMonth, isoDate, wallToTs, weekdayOfDate, zonedParts } from "../time/tz";
+import {
+	addCalendarDays,
+	daysInMonth,
+	isoDate,
+	parseIsoDate,
+	wallToTs,
+	weekdayOfDate,
+	zonedParts
+} from "../time/tz";
 import { DEFAULT_SUBJECT } from "../types";
 import { deductBreakFromDay } from "../time/breaks";
-import {
-	entryHours,
-	fmtDate,
-	fmtHoursClock,
-	isWorkday,
-	monthLabel,
-	openEntryUntil,
-	roundHours
-} from "../time/time";
+import { entryHours, fmtDate, fmtHoursClock, isWorkday, monthLabel, roundHours } from "../time/time";
+import { dayActivityHours } from "./stats";
 
 /** Betreff aus der Vorlage bauen. Platzhalter: {month}, {name}. */
 export function buildSubject(template: string, label: string, name: string): string {
@@ -73,9 +74,6 @@ export function buildReport(
 ): MonthReport {
 	const absenceIds = new Set(activities.filter((a) => a.isAbsence).map((a) => a.id));
 
-	// Endzeitpunkt für die Stundenrechnung – siehe openEntryUntil() in time.ts.
-	const until = (e: Entry) => openEntryUntil(e, now);
-
 	// Zeitausgleich sitzt auf derselben Zeile wie Urlaub und Krankheit und wird
 	// genauso verrechnet. Getrennt gezählt wird er nur für die Anzeige.
 	const isTimeOff = (e: Entry) => absenceIds.has(e.activityId) && e.timeOff === true;
@@ -105,29 +103,18 @@ export function buildReport(
 	const add = (id: string, h: number) =>
 		hoursByActivity.set(id, (hoursByActivity.get(id) ?? 0) + h);
 
-	// Projektzeit erst je TAG sammeln: der Pausenabzug hängt an der
-	// Tagesarbeitszeit. Abwesenheiten laufen daran vorbei – auf einen Urlaubstag
-	// gibt es keine Pause.
-	const workByDay = new Map<string, Map<string, number>>();
 	for (const e of entries) {
-		const isAbs = absenceIds.has(e.activityId);
-		// Abwesenheit an einem Nicht-Arbeitstag komplett ignorieren.
-		if (isAbs && workdays && !isWorkday(e.startTs, workdays)) continue;
-		// Projekteinträge an Ganztags-Abwesenheitstagen ignorieren.
-		if (!isAbs && fullDayAbsenceDays.has(fmtDate(e.startTs))) continue;
-		const h = entryHours(e, isAbs, hoursPerDay, until(e));
-		if (isAbs) {
-			add(e.activityId, h);
-			continue;
-		}
-		const day = fmtDate(e.startTs);
-		let perActivity = workByDay.get(day);
-		if (!perActivity) {
-			perActivity = new Map();
-			workByDay.set(day, perActivity);
-		}
-		perActivity.set(e.activityId, (perActivity.get(e.activityId) ?? 0) + h);
+		if (isCountedAbsence(e)) add(e.activityId, entryHours(e, true, hoursPerDay));
 	}
+
+	// Projektzeit je TAG: der Pausenabzug hängt an der Tagesarbeitszeit.
+	// Abwesenheiten laufen daran vorbei – auf einen Urlaubstag gibt es keine
+	// Pause. Projekteinträge an Ganztags-Abwesenheitstagen zählen nicht.
+	const workByDay = dayActivityHours(
+		entries.filter((e) => !fullDayAbsenceDays.has(fmtDate(e.startTs))),
+		absenceIds,
+		now
+	);
 
 	let breakHours = 0;
 	for (const perActivity of workByDay.values()) {
@@ -228,7 +215,8 @@ export function reportToText(report: MonthReport): string {
 	return lines.join("\n");
 }
 
-function escapeHtml(s: string): string {
+/** Text für HTML entschärfen – Aktivitäts- und Monatsnamen landen im Mail-Body. */
+export function escapeHtml(s: string): string {
 	return s
 		.replace(/&/g, "&amp;")
 		.replace(/</g, "&lt;")
@@ -261,12 +249,7 @@ export function reportReminderDate(d: Date, time: string, lead: number): Date {
 		day = addCalendarDays(day, -1);
 		stepBackToWeekday();
 	}
-	return new Date(wallToTs(...isoParts(day), h, m, 0));
-}
-
-/** "YYYY-MM-DD" -> [Jahr, Monat, Tag] für `wallToTs`. */
-function isoParts(date: string): [number, number, number] {
-	const [y, m, d] = date.split("-").map(Number);
-	return [y, m, d];
+	const [y, mo, dd] = parseIsoDate(day)!;
+	return new Date(wallToTs(y, mo, dd, h, m, 0));
 }
 

@@ -25,8 +25,15 @@ import {
 	toTs,
 	MINUTE_MS,
 	quantize,
-	shiftMonthKey
+	shiftMonthKey,
+	clockSpan,
+	roundToMinute,
+	mergeIntervals,
+	fmtCalendarDate,
+	prevMonthKey
 } from "./time";
+import type { Entry } from "../types";
+import { appTimeZone, setAppTimeZone, wallToTs, zonedParts } from "./tz";
 
 describe("stepDate", () => {
 	it("rollt über Monats- und Jahresgrenzen", () => {
@@ -61,40 +68,141 @@ describe("isWorkday", () => {
 });
 
 describe("allDayNoons", () => {
-	// Outlook: Ganztags-Ende ist exklusiv (nächster Tag 00:00).
+	// Outlook: Ganztags-Ende ist exklusiv (nächster Tag 00:00), ohne Zonenangabe.
+	const ol = (date: string) => `${date}T00:00:00.0000000`;
+
 	it("einzelner Ganztags-Termin -> genau der Starttag", () => {
-		const start = wallToTs(2026, 7, 8, 0, 0, 0); // Mi 08.07.
-		const end = wallToTs(2026, 7, 9, 0, 0, 0); // Do 09.07. 00:00 (exklusiv)
-		const days = allDayNoons(start, end);
+		const days = allDayNoons(ol("2026-07-08"), ol("2026-07-09"));
 		expect(days.map(fmtDate)).toEqual(["2026-07-08"]);
 	});
 
 	it("mehrtägiger Ganztags-Termin -> jeder Tag im Bereich", () => {
-		const start = wallToTs(2026, 7, 8, 0, 0, 0); // Mi 08.07.
-		const end = wallToTs(2026, 7, 11, 0, 0, 0); // Sa 11.07. 00:00 (exklusiv)
-		const days = allDayNoons(start, end);
+		const days = allDayNoons(ol("2026-07-08"), ol("2026-07-11"));
 		expect(days.map(fmtDate)).toEqual(["2026-07-08", "2026-07-09", "2026-07-10"]);
 	});
 
 	it("Ende <= Start -> Fallback auf den Starttag", () => {
-		const start = wallToTs(2026, 7, 8, 0, 0, 0);
-		expect(allDayNoons(start, start).map(fmtDate)).toEqual(["2026-07-08"]);
+		expect(allDayNoons(ol("2026-07-08"), ol("2026-07-08")).map(fmtDate)).toEqual(["2026-07-08"]);
+	});
+
+	it("liefert bei unlesbarem Start nichts statt NaN", () => {
+		expect(allDayNoons("quatsch", ol("2026-07-08"))).toEqual([]);
+	});
+
+	// Als Zeitpunkt gelesen wäre "2026-07-08T00:00" Mitternacht des GERÄTS –
+	// in einer Kontozone westlich davon fiel der Termin auf den 07.07.
+	it("bleibt auf dem Kalendertag, wenn die Kontozone westlich des Geräts liegt", () => {
+		const before = appTimeZone();
+		setAppTimeZone("Pacific/Midway");
+		try {
+			const days = allDayNoons(ol("2026-07-08"), ol("2026-07-10"));
+			expect(days.map(fmtDate)).toEqual(["2026-07-08", "2026-07-09"]);
+		} finally {
+			setAppTimeZone(before);
+		}
 	});
 
 	// Über BEIDE Umstellungen: der 25.10.2026 hat 25 Stunden, der 29.03.2026 nur 23.
-	// Wer hier mit +24h rechnet statt mit setDate(+1), landet auf 11:00 bzw. 13:00 und
-	// schiebt die Tage danach über Mitternacht in den falschen Tag.
 	it.each([
-		["Winterzeit-Umstellung", new Date(wallToTs(2026, 10, 23, 0, 0, 0)), new Date(wallToTs(2026, 10, 28, 0, 0, 0))],
-		["Sommerzeit-Umstellung", new Date(wallToTs(2026, 3, 27, 0, 0, 0)), new Date(wallToTs(2026, 4, 1, 0, 0, 0))]
+		["Winterzeit-Umstellung", "2026-10-23", "2026-10-28"],
+		["Sommerzeit-Umstellung", "2026-03-27", "2026-04-01"]
 	])("alle Zeitstempel liegen auf 12:00 (%s)", (_name, from, to) => {
-		const noons = allDayNoons(from.getTime(), to.getTime());
+		const noons = allDayNoons(ol(from), ol(to));
 		expect(noons.length).toBeGreaterThan(2); // sonst prüft die Schleife nichts
 		for (const ts of noons) expect(zonedParts(ts).hour).toBe(12);
 	});
 });
-import type { Entry } from "../types";
-import { wallToTs, zonedParts } from "./tz";
+
+describe("clockSpan", () => {
+	it("nimmt Von/Bis am selben Tag", () => {
+		const { startTs, endTs } = clockSpan("2026-07-08", "08:00", "16:30");
+		expect(startTs).toBe(wallToTs(2026, 7, 8, 8, 0));
+		expect(endTs).toBe(wallToTs(2026, 7, 8, 16, 30));
+	});
+
+	it("legt Bis vor Von auf den Folgetag", () => {
+		const { endTs } = clockSpan("2026-07-08", "22:00", "01:00");
+		expect(endTs).toBe(wallToTs(2026, 7, 9, 1, 0));
+	});
+
+	// 24,5 h statt 23,5 h, wenn mit +24 h statt über den Kalender gerechnet würde.
+	it("rechnet über den Kalender, nicht mit +24 h (Winterzeit)", () => {
+		const { startTs, endTs } = clockSpan("2026-10-24", "23:00", "01:00");
+		expect(fmtDate(endTs)).toBe("2026-10-25");
+		expect(zonedParts(endTs).hour).toBe(1);
+		expect(endTs - startTs).toBe(2 * 3_600_000);
+	});
+
+	it("liefert NaN bei unlesbarer Uhrzeit", () => {
+		expect(clockSpan("2026-07-08", "quatsch", "10:00").startTs).toBeNaN();
+	});
+});
+
+describe("roundToMinute", () => {
+	it("rundet auf ganze Minuten", () => {
+		expect(roundToMinute(7.469999)).toBe(7.466666666666667);
+		expect(roundToMinute(10 + 27 / 3600)).toBe(10);
+	});
+});
+
+describe("mergeIntervals", () => {
+	it("zieht Überlappendes und Aneinanderstossendes zusammen", () => {
+		expect(
+			mergeIntervals([
+				{ start: 60, end: 120 },
+				{ start: 0, end: 30 },
+				{ start: 30, end: 45 },
+				{ start: 100, end: 150 }
+			])
+		).toEqual([
+			{ start: 0, end: 45 },
+			{ start: 60, end: 150 }
+		]);
+	});
+
+	it("zieht Lücken unter maxGap zusammen, gleich lange nicht", () => {
+		const list = [
+			{ start: 0, end: 10 },
+			{ start: 14, end: 20 },
+			{ start: 35, end: 40 }
+		];
+		expect(mergeIntervals(list, 15)).toEqual([
+			{ start: 0, end: 20 },
+			{ start: 35, end: 40 }
+		]);
+	});
+
+	it("verändert die Eingabe nicht", () => {
+		const list = [{ start: 0, end: 10 }, { start: 5, end: 20 }];
+		mergeIntervals(list);
+		expect(list[0]).toEqual({ start: 0, end: 10 });
+	});
+});
+
+describe("fmtCalendarDate", () => {
+	// Das Datum ist schon der Tag des Kontos – keine Zone darf ihn verschieben.
+	it.each(["Pacific/Kiritimati", "Pacific/Midway", "Europe/Berlin"])(
+		"bleibt auf dem Tag (Kontozone %s)",
+		(tz) => {
+			const before = appTimeZone();
+			setAppTimeZone(tz);
+			try {
+				expect(
+					fmtCalendarDate("2026-01-12", { weekday: "short", day: "2-digit", month: "2-digit" })
+				).toBe("Mo., 12.01.");
+			} finally {
+				setAppTimeZone(before);
+			}
+		}
+	);
+});
+
+describe("prevMonthKey", () => {
+	it("geht über die Jahresgrenze", () => {
+		expect(prevMonthKey(wallToTs(2026, 1, 15, 12))).toBe("2025-12");
+		expect(prevMonthKey(wallToTs(2026, 7, 1, 0, 30))).toBe("2026-06");
+	});
+});
 
 describe("roundHours", () => {
 	it("rundet auf halbe Stunden", () => {

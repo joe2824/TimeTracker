@@ -5,6 +5,9 @@ import {
 	daysInMonth,
 	isValidTimeZone,
 	isoDate,
+	lastDayOfMonth,
+	parseIsoDate,
+	parseMonthKey,
 	setAppTimeZone,
 	wallStringToTs,
 	wallToTs,
@@ -181,5 +184,38 @@ describe("Sommerzeit in einer Zone mit halbstuendigem Abstand", () => {
 			expect([parts.month, parts.day]).toEqual([10, 4]);
 			expect([parts.hour, parts.minute]).toEqual([3, 15]);
 		});
+	});
+});
+
+describe("lastDayOfMonth", () => {
+	// Früher über `new Date(y, m, 0)` gerechnet – das hängt an der Zone des
+	// Geräts und traf in einer östlicheren Kontozone den Vortag.
+	it.each(["Pacific/Kiritimati", "Pacific/Midway", "Australia/Eucla"])(
+		"liefert den Kalender-Letzten unabhängig von der Kontozone (%s)",
+		(tz) =>
+			inZone(tz, () => {
+				expect(lastDayOfMonth("2026-07")).toBe("2026-07-31");
+				expect(lastDayOfMonth("2026-02")).toBe("2026-02-28");
+				expect(lastDayOfMonth("2028-02")).toBe("2028-02-29");
+				expect(lastDayOfMonth("2026-12")).toBe("2026-12-31");
+			})
+	);
+
+	it("lässt einen unbrauchbaren Schlüssel stehen", () => {
+		expect(lastDayOfMonth("")).toBe("");
+	});
+});
+
+describe("parseIsoDate / parseMonthKey", () => {
+	it("zerlegt gültige Angaben", () => {
+		expect(parseIsoDate("2026-07-08")).toEqual([2026, 7, 8]);
+		expect(parseMonthKey("2026-07")).toEqual([2026, 7]);
+	});
+
+	it("weist Unsinn ab", () => {
+		expect(parseIsoDate("2026-7-8")).toBeNull();
+		expect(parseIsoDate("")).toBeNull();
+		expect(parseMonthKey("2026-13")).toBeNull();
+		expect(parseMonthKey("2026-07-01")).toBeNull();
 	});
 });
