@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeSyncServer } from "../testing/fakeSyncServer";
 import { freshAccountEnv, restoreFetch, settled } from "../testing/accountHarness";
+import { FakeDevice, onDevice } from "../testing/syncDevice";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("../testing/fakeFs")).fakeFs);
 vi.mock("svelte-sonner", () => import("../testing/toastStub"));
@@ -15,9 +16,10 @@ const { account } = await import("./account.svelte");
 const { app } = await import("../app.svelte");
 const store = await import("../store");
 const { monthKey } = await import("../time/time");
-const { BUILTIN_OTHERS_ID } = await import("../types");
+const { BUILTIN_OTHERS_ID, defaultSettings } = await import("../types");
+const { appTimeZone, setAppTimeZone, wallToTs } = await import("../time/tz");
 const { resetOutboxForTests } = await import("./outbox");
-const { files } = await import("../testing/fakeFs");
+const { files, resetFakeFs } = await import("../testing/fakeFs");
 
 let server: FakeSyncServer;
 
@@ -268,6 +270,59 @@ describe("Serveradresse", () => {
 
 			expect(account.serverUrl).toBe("http://test.example");
 			expect((await store.loadDevice())?.serverUrl).toBe("http://test.example");
+		} finally {
+			await account.unlink();
+		}
+	});
+});
+
+describe("Zonenwechsel im selben Abruf wie die Einträge", () => {
+	/** +14 h: dort ist der späte Abend des 31. Juli schon der 1. August. */
+	const FAR = "Pacific/Kiritimati";
+	let home: string;
+
+	beforeEach(() => {
+		home = appTimeZone();
+		vi.useFakeTimers({ toFake: ["Date"], shouldAdvanceTime: true });
+		vi.setSystemTime(Date.UTC(2026, 7, 1, 12));
+	});
+	afterEach(() => {
+		vi.useRealTimers();
+		setAppTimeZone(home);
+	});
+
+	it("legt die Einträge in die Monate der Kontozone, die mit ihnen ankommt", async () => {
+		const key = await createVaultKey();
+		const boundary = wallToTs(2026, 7, 31, 23, 30, 0, home);
+		// Das andere Gerät arbeitet schon in der Kontozone.
+		setAppTimeZone(FAR);
+		await onDevice({ server, key }, new FakeDevice("anderes-geraet"), async (engine) => {
+			await store.saveSettings({ ...defaultSettings, timeZone: FAR });
+			await store.saveEntries("2026-08", [
+				{
+					id: "grenze",
+					activityId: BUILTIN_OTHERS_ID,
+					startTs: boundary,
+					endTs: boundary + 1800_000,
+					note: "",
+					source: "manual"
+				}
+			]);
+			await engine.sync();
+		});
+		// Dieses Gerät kennt die Kontozone noch nicht und rechnet in seiner eigenen.
+		setAppTimeZone(home);
+		resetFakeFs();
+		resetOutboxForTests();
+
+		try {
+			await account.linkWithSession("http://test", key, "Ich");
+			await settled();
+
+			expect(appTimeZone()).toBe(FAR);
+			expect((await store.loadEntries("2026-08")).map((e) => e.id)).toEqual(["grenze"]);
+			expect(await store.loadEntries("2026-07")).toEqual([]);
+			expect(app.monthEntries("2026-08").map((e) => e.id)).toEqual(["grenze"]);
 		} finally {
 			await account.unlink();
 		}

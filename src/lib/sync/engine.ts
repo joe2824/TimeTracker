@@ -26,7 +26,7 @@ import { contentOf } from "./stamp";
 import { bucketFor, openRecord, sealRecord, type VaultKey } from "../crypto/vault";
 import { logError, logInfo, logWarn } from "../log";
 import { createSerialQueue } from "../utils";
-import { monthKey, prevMonthKey, startOfNextDay } from "../time/time";
+import { monthKey, prevMonthKey, shiftMonthKey, startOfNextDay } from "../time/time";
 
 /** Wie oft nach einem Konflikt neu versucht wird, bevor aufgegeben wird. */
 const MAX_ROUNDS = 5;
@@ -420,8 +420,7 @@ export class SyncEngine {
 		for (const c of changes) {
 			try {
 				if (c.kind === "entry") {
-					const list = await monthOf(c.month ?? "");
-					const entry = list.find((e) => e.id === c.id);
+					const entry = await this.#pendingEntry(c, monthOf);
 					out.push(await this.#record(c, entry, entry ? monthKey(entry.startTs) : c.month));
 				} else if (c.kind === "activity") {
 					activities ??= await this.#store.activities();
@@ -440,6 +439,26 @@ export class SyncEngine {
 			}
 		}
 		return out;
+	}
+
+	/**
+	 * Der Eintrag zu einer vorgemerkten Änderung. Nach einem Zonenwechsel kann er
+	 * einen Monat daneben liegen; ohne diese Suche ginge er als Löschung hoch.
+	 */
+	async #pendingEntry(
+		change: PendingChange,
+		monthOf: (m: string) => Promise<Entry[]>
+	): Promise<Entry | undefined> {
+		const month = change.month ?? "";
+		const months =
+			change.deleted || !month
+				? [month]
+				: [month, shiftMonthKey(month, -1), shiftMonthKey(month, 1)];
+		for (const m of months) {
+			const hit = (await monthOf(m)).find((e) => e.id === change.id);
+			if (hit) return hit;
+		}
+		return undefined;
 	}
 
 	async #record(

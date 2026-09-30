@@ -2,6 +2,7 @@ import { isTauri } from "../platform/env";
 import { fmtDate } from "../time/time";
 import { storage, usingBrowserStorage } from "../platform/fs";
 import {
+	forgetEntryZone,
 	loadActivities,
 	loadEntries,
 	loadSettings,
@@ -215,6 +216,9 @@ export async function restoreBackup(
 		}
 	}
 
+	// Die Sicherung kann aus einer anderen Zeitzone stammen: reload() sortiert
+	// die Monatsdateien dann neu ein.
+	await forgetEntryZone();
 	// App-Zustand neu laden. Die wiederhergestellten Monate ausdrücklich dazu:
 	// `reload` liest von sich aus nur, was schon im Speicher steht.
 	await app.reload(Object.keys(backup.entries));

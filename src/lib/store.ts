@@ -544,6 +544,102 @@ export function mergeOntoDisk(
 	return out;
 }
 
+// ---- Monatsdateien nach einem Zonenwechsel ----
+
+/**
+ * In welcher Zone die Monatsdateien zuletzt vollständig einsortiert wurden.
+ * Fehlt die Datei, ist das unbekannt - dann wird einmal alles geprüft.
+ */
+const ENTRY_ZONE_FILE = "entry-zone.json";
+
+export async function loadEntryZone(): Promise<string | null> {
+	const stored = await readJson<{ zone?: unknown } | null>(ENTRY_ZONE_FILE, null, {
+		encrypted: true
+	});
+	return typeof stored?.zone === "string" ? stored.zone : null;
+}
+
+export function saveEntryZone(zone: string): Promise<void> {
+	return writeJson(ENTRY_ZONE_FILE, { zone }, { encrypted: true });
+}
+
+/** Beim nächsten Laden alle Monatsdateien prüfen - nach Dateien fremder Herkunft. */
+export function forgetEntryZone(): Promise<void> {
+	return removeDataFile(ENTRY_ZONE_FILE);
+}
+
+/** Von zwei Fassungen desselben Eintrags die jüngere; bei Gleichstand `kept`. */
+function newerOf(kept: Entry, other: Entry): Entry {
+	return (other.updatedAt ?? 0) > (kept.updatedAt ?? 0) ? other : kept;
+}
+
+/**
+ * Jeden Eintrag in die Datei des Monats legen, den `monthOf` für seinen Beginn
+ * nennt. Am Schreib-Haken vorbei: der Inhalt ändert sich nicht, nur die Datei -
+ * über den Haken ginge jeder verschobene Eintrag als neue Änderung an alle Geräte.
+ *
+ * Liegt derselbe Eintrag schon im Zielmonat, bleibt die jüngere Fassung. Das
+ * Ziel wird vor der Quelle geschrieben: bricht es dazwischen ab, steht der
+ * Eintrag doppelt da, und der nächste Durchlauf räumt das auf.
+ *
+ * @returns je verschobenem Eintrag sein neuer Monat; `complete`, wenn jede
+ *   Datei lesbar war
+ */
+export async function rebucketEntryFiles(
+	monthOf: (ts: number) => string
+): Promise<{ moved: Map<string, string>; complete: boolean }> {
+	const moved = new Map<string, string>();
+	let complete = true;
+	for (const source of await listEntryMonths()) {
+		const read = await readJsonResult<Entry[]>(entriesFile(source), { encrypted: true });
+		if (read.status !== "ok") {
+			complete = false;
+			continue;
+		}
+		const targets = new Set(read.value.map((e) => monthOf(e.startTs)).filter((m) => m !== source));
+		for (const target of targets) {
+			if (!(await moveBetween(source, target, monthOf, moved))) complete = false;
+		}
+	}
+	return { moved, complete };
+}
+
+async function moveBetween(
+	source: string,
+	target: string,
+	monthOf: (ts: number) => string,
+	moved: Map<string, string>
+): Promise<boolean> {
+	const [first, second] = [entriesFile(source), entriesFile(target)].sort();
+	let done = true;
+	await queued(first, () =>
+		queued(second, async () => {
+			const from = await readJsonResult<Entry[]>(entriesFile(source), { encrypted: true });
+			const into = await readJsonResult<Entry[]>(entriesFile(target), { encrypted: true });
+			// Eine unlesbare Datei bleibt unangetastet - leer ist sie deshalb nicht.
+			if (from.status === "unreadable" || into.status === "unreadable") {
+				done = false;
+				return;
+			}
+			if (from.status !== "ok") return;
+			const stray = from.value.filter((e) => monthOf(e.startTs) === target);
+			if (stray.length === 0) return;
+			const byId = new Map((into.status === "ok" ? into.value : []).map((e) => [e.id, e]));
+			for (const e of stray) {
+				const present = byId.get(e.id);
+				byId.set(e.id, present ? newerOf(present, e) : e);
+				moved.set(e.id, target);
+			}
+			const next = [...byId.values()].sort((a, b) => a.startTs - b.startTs);
+			await writeJsonNow(entriesFile(target), next, { encrypted: true });
+			const rest = from.value.filter((e) => monthOf(e.startTs) !== target);
+			if (rest.length === 0) await removeFileNow(entriesFile(source));
+			else await writeJsonNow(entriesFile(source), rest, { encrypted: true });
+		})
+	);
+	return done;
+}
+
 /** Alle Monats-Keys mit Einträgen, neueste zuerst. */
 export async function listEntryMonths(): Promise<string[]> {
 	return (await dataFiles(MONTH_FILE_RE)).map(([, month]) => month).sort().reverse();

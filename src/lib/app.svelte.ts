@@ -24,7 +24,8 @@ import {
 	startOfNextDay,
 	stepDate
 } from "./time/time";
-import { setAppTimeZone, systemTimeZone, weekdayOfDate } from "./time/tz";
+import { appTimeZone, setAppTimeZone, systemTimeZone, weekdayOfDate } from "./time/tz";
+import { rebucketEntries } from "./sync/rebucket";
 import { dayConflict, overlapConflict } from "./time/conflicts";
 import { planBackdate, planNeedsConfirm, type BackdatePlan } from "./time/backdate";
 import { errorText, logDebug, logError, logInfo, logWarn } from "./log";
@@ -1342,6 +1343,20 @@ class AppState {
 		return out;
 	}
 
+	/**
+	 * Der geladene Monat, in dessen Liste der Eintrag steht. Nach einem
+	 * Zonenwechsel, der noch nicht umsortiert ist, muss das nicht der Monat
+	 * seines Beginns sein - gespeichert werden muss aber die Liste, die ihn hält.
+	 */
+	#monthHolding(entry: Entry): string {
+		const own = monthKey(entry.startTs);
+		if (this.entriesByMonth[own]?.some((e) => e.id === entry.id)) return own;
+		for (const [month, list] of Object.entries(this.entriesByMonth)) {
+			if (list.some((e) => e.id === entry.id)) return month;
+		}
+		return own;
+	}
+
 	/** Die zusammenhängenden Stücke EINES Laufs, ältestes zuerst. */
 	runChain(entry: Entry): Entry[] {
 		const all = Object.values(this.entriesByMonth).flat();
@@ -1405,7 +1420,7 @@ class AppState {
 				// Sonst zerlegte ein offen gebliebenes Vorgängerstück den Folgetag
 				// noch einmal – neben dem Stück, das ihn schon abdeckt.
 				const bis = Math.min(end, chain[i + 1]?.startTs ?? end);
-				const m = monthKey(piece.startTs);
+				const m = this.#monthHolding(piece);
 				months.add(m);
 				const list = this.entriesByMonth[m] ?? [];
 				// Haben zwei Geräte den Lauf geteilt, folgt die Kette je Tag nur einem
@@ -1497,7 +1512,7 @@ class AppState {
 			const parts = splitAtMidnight(cur.startTs, Date.now());
 			if (parts.length < 2) return;
 
-			const months = new Set<string>([monthKey(cur.startTs)]);
+			const months = new Set<string>([this.#monthHolding(cur)]);
 			cur.endTs = parts[0].endTs;
 			// Kein Mensch hat hier gestoppt - ein echtes Ende von anderswo gewinnt.
 			cur.autoEnded = true;
@@ -1570,7 +1585,7 @@ class AppState {
 			const end = Math.min(open[i - 1].startTs, startOfNextDay(e.startTs));
 			e.endTs = Math.max(e.startTs, end);
 			if (e.endTs > e.startTs) estimated++;
-			months.add(monthKey(e.startTs));
+			months.add(this.#monthHolding(e));
 		}
 		for (const m of months) await this.#saveMonth(m);
 
@@ -1673,11 +1688,11 @@ class AppState {
 			open.endTs = parts[0].endTs;
 			delete open.autoEnded;
 			for (const p of parts.slice(1)) followUps.push({ from: open, ...p });
-			months.add(monthKey(open.startTs));
+			months.add(this.#monthHolding(open));
 		};
 		for (const { entry, endTs } of plan.truncate) closeAt(entry, endTs);
 		for (const dead of plan.remove) {
-			const m = monthKey(dead.startTs);
+			const m = this.#monthHolding(dead);
 			const list = this.entriesByMonth[m];
 			const i = list?.findIndex((e) => e.id === dead.id) ?? -1;
 			if (i >= 0) list.splice(i, 1);
@@ -1867,21 +1882,32 @@ class AppState {
 	/** Die Zeitzone des Kontos in Kraft setzen. */
 	async #applyTimeZone(): Promise<void> {
 		const stored = this.settings.timeZone;
-		if (stored && setAppTimeZone(stored)) return;
-		const fallback = systemTimeZone();
-		setAppTimeZone(fallback);
-		if (stored) logWarn(`Unbekannte Zeitzone „${stored}“, nutze ${fallback}`);
-		this.settings = { ...this.settings, timeZone: fallback };
-		await saveSettings($state.snapshot(this.settings) as Settings);
-		logInfo("Zeitzone festgeschrieben", { zone: fallback });
+		if (!stored || !setAppTimeZone(stored)) {
+			const fallback = systemTimeZone();
+			setAppTimeZone(fallback);
+			if (stored) logWarn(`Unbekannte Zeitzone „${stored}“, nutze ${fallback}`);
+			this.settings = { ...this.settings, timeZone: fallback };
+			await saveSettings($state.snapshot(this.settings) as Settings);
+			logInfo("Zeitzone festgeschrieben", { zone: fallback });
+		}
+		// Vor dem Laden der Monate: die Dateien müssen zur Zone passen, sonst
+		// fehlen Einträge an der Monatsgrenze im Monat, in den sie gehören.
+		try {
+			await rebucketEntries();
+		} catch (e) {
+			logWarn("Einträge ließen sich nicht der Zeitzone nach einsortieren", e);
+		}
 	}
 
 	async updateSettings(patch: Partial<Settings>): Promise<void> {
+		const zoneBefore = appTimeZone();
 		this.settings = { ...this.settings, ...patch };
 		// Sofort wirksam machen: alles Weitere in diesem Durchlauf rechnet sonst
 		// noch gegen die alte Zone.
 		if (patch.timeZone !== undefined) setAppTimeZone(patch.timeZone);
 		await saveSettings($state.snapshot(this.settings) as Settings);
+		// Die geladenen Monate stammen aus der alten Einteilung.
+		if (appTimeZone() !== zoneBefore) await this.reload();
 		// Mit Werten: „E-Mail war leer“ ist die Art Frage, die hinterher niemand
 		// mehr beantworten kann. Die Einstellungen sind harmlos – kein Passwort,
 		// keine Zeiten, nur die Konfiguration, die der Benutzer selbst sieht.

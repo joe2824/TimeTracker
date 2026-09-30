@@ -133,6 +133,26 @@ export async function rebaseChanges(
 	});
 }
 
+/**
+ * Vorgemerkte Einträge ihrem neuen Monat zuordnen (`id -> Monat`).
+ *
+ * Der Abgleich sucht einen Eintrag in dem Monat, der hier vermerkt ist; findet
+ * er ihn dort nicht, hält er ihn für gelöscht.
+ */
+export async function relocateChanges(moved: ReadonlyMap<string, string>): Promise<void> {
+	if (moved.size === 0) return;
+	await update((list) => {
+		let touched = false;
+		const next = list.map((c) => {
+			const month = c.kind === "entry" ? moved.get(c.id) : undefined;
+			if (month === undefined || c.month === month) return c;
+			touched = true;
+			return { ...c, month };
+		});
+		return touched ? next : null;
+	});
+}
+
 /** Innerhalb dieses Fensters eine Änderung nach der anderen. */
 const serial = createSerialQueue();
 

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Activity, Entry } from "./types";
 import { BUILTIN_ABSENCE_ID, BUILTIN_OTHERS_ID, defaultSettings } from "./types";
 import { blockWrites, fakeFs, files, fsFaults, resetFakeFs } from "./testing/fakeFs";
-import { appTimeZone, wallToTs } from "./time/tz";
+import { appTimeZone, setAppTimeZone, wallToTs } from "./time/tz";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("./testing/fakeFs")).fakeFs);
 // Toasts sind hier Beiwerk; die Meldungen selbst prüft niemand.
@@ -20,6 +20,7 @@ const ACTIVITIES: Activity[] = [
 ];
 
 const at = (day: number, h: number, min = 0) => wallToTs(2026, 7, day, h, min, 0);
+const aug = (day: number, h: number) => wallToTs(2026, 8, day, h, 0, 0);
 const monthFile = (m: string) => `data/entries-${m}.json`;
 const onDisk = (m: string): Entry[] => JSON.parse(files.get(monthFile(m)) ?? "[]");
 
@@ -939,7 +940,6 @@ describe("Start von der Platte", () => {
 		});
 
 		it("verliert einen in den Nachbarmonat verschobenen Eintrag nicht, wenn reload() dazwischenkommt", async () => {
-			const aug = (d: number, h: number) => wallToTs(2026, 8, d, h, 0, 0);
 			const x = entry("x", P1, at(31, 10), at(31, 11));
 			const y = entry("y", P1, at(30, 10), at(30, 11));
 			const z = entry("z", P1, aug(1, 12), aug(1, 13));
@@ -1112,8 +1112,8 @@ describe("Eingebaute Zeilen: Duplikate zusammenfuehren", () => {
 			[row("alt-a", "Abwesenheiten", true, 0), row("alt-b", "Abwesenheiten", true, 1)],
 			{
 				"2026-08": [
-					entry("e1", "alt-a", at(3, 9), at(3, 17)),
-					entry("e2", "alt-b", at(4, 9), at(4, 17))
+					entry("e1", "alt-a", aug(3, 9), aug(3, 17)),
+					entry("e2", "alt-b", aug(4, 9), aug(4, 17))
 				]
 			}
 		);
@@ -1127,7 +1127,7 @@ describe("Eingebaute Zeilen: Duplikate zusammenfuehren", () => {
 		// Sonst legte ein frisch aufgesetztes Gerät die feste Id an und der
 		// Abgleich brachte prompt wieder ein Duplikat.
 		await withActivities([row("alt-einzeln", "Abwesenheiten", true, 0)], {
-			"2026-08": [entry("e1", "alt-einzeln", at(3, 9), at(3, 17))]
+			"2026-08": [entry("e1", "alt-einzeln", aug(3, 9), aug(3, 17))]
 		});
 
 		expect(app.activities.filter((a) => a.isAbsence)).toHaveLength(1);
@@ -1182,7 +1182,7 @@ describe("Reparatur der eingebauten Zeilen erreicht den Abgleich", () => {
 		);
 		files.set(
 			"data/entries-2026-08.json",
-			JSON.stringify([{ ...entry("e1", "alt-a", at(3, 9), at(3, 17)), rev: 3 }])
+			JSON.stringify([{ ...entry("e1", "alt-a", aug(3, 9), aug(3, 17)), rev: 3 }])
 		);
 
 		resetOutboxForTests();
@@ -1381,5 +1381,65 @@ describe("resolveStaleTimerSplit", () => {
 		await app.resolveStaleTimerSplit({ endedEntry: ended, continuationEntry: continuation }, "ended");
 
 		expect(onDisk("2026-07").map((e) => e.id)).toEqual(["x"]);
+	});
+});
+
+describe("Wechsel der Kontozeitzone", () => {
+	const HOME = appTimeZone();
+	/** +14 h: dort ist der späte Abend des 31. Juli schon der 1. August. */
+	const FAR = "Pacific/Kiritimati";
+	const boundary = wallToTs(2026, 7, 31, 23, 30, 0, HOME);
+	const allOnDisk = () => [...onDisk("2026-07"), ...onDisk("2026-08")];
+
+	beforeEach(() => {
+		vi.useFakeTimers({ toFake: ["Date"], shouldAdvanceTime: true });
+		vi.setSystemTime(boundary + 3600_000);
+		app.now = Date.now();
+	});
+	afterEach(() => {
+		vi.useRealTimers();
+		setAppTimeZone(HOME);
+		app.settings = { ...defaultSettings, timeZone: HOME };
+	});
+
+	it("sortiert die Monatsdateien um, wenn die Zone in den Einstellungen wechselt", async () => {
+		reset({ "2026-07": [entry("grenze", P1, boundary, boundary + 1800_000)] });
+		app.settings = { ...defaultSettings, timeZone: HOME };
+
+		await app.updateSettings({ timeZone: FAR });
+
+		expect(onDisk("2026-08").map((e) => e.id)).toEqual(["grenze"]);
+		expect(onDisk("2026-07")).toEqual([]);
+		expect(app.monthEntries("2026-08").map((e) => e.id)).toEqual(["grenze"]);
+		expect(app.monthEntries("2026-07")).toEqual([]);
+	});
+
+	it("hinterlässt nach einem Zonenwechsel von einem anderen Gerät beim Stoppen keinen offenen Eintrag", async () => {
+		const run = entry("lauf", P1, boundary, null);
+		reset({ "2026-07": [run] });
+		app.settings = { ...defaultSettings, timeZone: HOME };
+		app.running = run;
+		// So kommt die neue Zone über den Abgleich: direkt in die Datei, danach reload().
+		files.set("data/settings.json", JSON.stringify({ ...defaultSettings, timeZone: FAR }));
+		await app.reload();
+
+		await app.stop(boundary + 1800_000);
+
+		const copies = allOnDisk().filter((e) => e.id === "lauf");
+		expect(copies).toHaveLength(1);
+		expect(copies[0].endTs).toBe(boundary + 1800_000);
+		expect(allOnDisk().filter((e) => e.endTs === null)).toEqual([]);
+		expect(app.running).toBeNull();
+	});
+
+	it("repariert beim Laden Dateien, die in einer anderen Zone abgelegt wurden", async () => {
+		// Eine frühere Fassung hat nach dem Zonenwechsel nicht umsortiert.
+		reset({ "2026-08": [entry("grenze", P1, boundary, boundary + 1800_000)] });
+
+		await app.reload();
+
+		expect(onDisk("2026-07").map((e) => e.id)).toEqual(["grenze"]);
+		expect(onDisk("2026-08")).toEqual([]);
+		expect(app.monthEntries("2026-07").map((e) => e.id)).toEqual(["grenze"]);
 	});
 });
