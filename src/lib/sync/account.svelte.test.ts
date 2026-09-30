@@ -28,6 +28,17 @@ beforeEach(() => {
 afterEach(restoreFetch);
 
 describe("Zwischenspeicher nach gescheitertem Abgleich", () => {
+	// Fester Zeitpunkt, an dem Berlin noch im September und Kiritimati (+14)
+	// schon im Oktober liegt: wechselte die Kontozone im Lauf auf die des Geräts,
+	// fiele das hier in jeder fernen Zone auf, nicht nur zufällig am Monatsende.
+	beforeEach(() => {
+		vi.useFakeTimers({ toFake: ["Date"], shouldAdvanceTime: true });
+		vi.setSystemTime(Date.UTC(2026, 8, 30, 12, 40));
+	});
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
 	it("liest nach einem gescheiterten Durchgang neu, statt einen bereits eingetroffenen Eintrag zu verlieren", async () => {
 		try {
 			await account.linkWithSession("http://test", await createVaultKey(), "Ich");

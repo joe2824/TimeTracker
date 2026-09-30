@@ -21,7 +21,7 @@ import {
 	SETTINGS_ID,
 	type PendingChange
 } from "./outbox";
-import { mergeRecord, resolveOpenEntries } from "./merge";
+import { adoptRev, isAutoEnd, mergeRecord, realEndWinner, resolveOpenEntries, type MergeResult } from "./merge";
 import { contentOf } from "./stamp";
 import { bucketFor, openRecord, sealRecord, type VaultKey } from "../crypto/vault";
 import { logError, logInfo, logWarn } from "../log";
@@ -65,8 +65,16 @@ const carriesTombstone = (v: object): boolean =>
 /** Die Ablage, wie der Abgleich sie braucht: Schreiben am Haken vorbei (remoteStore). */
 export interface LocalStore {
 	entriesOfMonth(month: string): Promise<Entry[]>;
-	/** `base`: der gelesene Stand – siehe saveEntries/mergeOntoDisk in store.ts. */
-	saveEntries(month: string, entries: Entry[], base?: Entry[]): Promise<void>;
+	/**
+	 * `base`: der gelesene Stand, `closeIfOpen`: nur geschlossen, solange noch
+	 * offen - siehe saveEntries/mergeOntoDisk in store.ts.
+	 */
+	saveEntries(
+		month: string,
+		entries: Entry[],
+		base?: Entry[],
+		closeIfOpen?: ReadonlySet<string>
+	): Promise<void>;
 	activities(): Promise<Activity[]>;
 	saveActivities(list: Activity[]): Promise<void>;
 	settings(): Promise<Settings>;
@@ -677,8 +685,22 @@ export class SyncEngine {
 			})
 		);
 
+		const now = Date.now();
+		// Entscheidungen dieses Stapels, die der Server erfahren muss - geschrieben
+		// wird am Schreib-Haken vorbei.
+		const noted: PendingChange[] = [];
+		// Hier verworfene Fortsetzungen: kommt ihr Datensatz im selben Stapel noch
+		// einmal, bleibt er draussen.
+		const dropped = new Set<string>();
+		const drop = async (id: string, month: string, rev: number | undefined) => {
+			(await monthOf(month)).delete(id);
+			touched.add(month);
+			dropped.add(id);
+			noted.push({ kind: "entry", id, month, deleted: true, rev, at: now });
+		};
+
 		for (const { r, content } of decrypted) {
-			if (content === undefined) continue;
+			if (content === undefined || dropped.has(r.id)) continue;
 			const entry: Entry = fromServer(r, content);
 			const deleted = isTombstone(r);
 
@@ -704,57 +726,96 @@ export class SyncEngine {
 			// Serverstand" - und eine eigene, jüngere Änderung fiele lautlos weg.
 			const localEntry = oldMonth ? (await monthOf(oldMonth)).get(r.id) : undefined;
 			let localPending = open.has(`entry:${r.id}`);
-			// Haengt an diesem Ende eine unversendete Mitternachts-Fortsetzung (kein
-			// `rev`), ist das Ende selbst keine bewusste eigene Entscheidung, die einen
-			// Konflikt ausfechten duerfte - sonst gewinnt die Teilung rein zufaellig
-			// dadurch, dass der Rechner erst NACH der echten fremden Aenderung wieder
-			// online kam (spaeterer Stempel, aber ohne jede Kenntnis vom echten Ende).
-			let continuationEntry: Entry | undefined;
-			// Nur eine Teilung genau an der Tagesgrenze: zwei aufeinanderfolgende
-			// Einträge mitten am Tag sind keine, und ein eigener Endzeit-Edit daran
-			// darf nicht verworfen werden.
-			if (
-				localEntry &&
-				localEntry.endTs !== null &&
-				localEntry.endTs === startOfNextDay(localEntry.startTs)
-			) {
-				const contMonth = await monthOf(monthKey(localEntry.endTs));
-				continuationEntry = [...contMonth.values()].find(
-					(e) =>
-						e.activityId === localEntry.activityId &&
-						e.startTs === localEntry.endTs &&
-						e.rev === undefined
+			// Lokal weg, aber vorgemerkt: eine Löschung, die noch hoch muss. Der
+			// Serverstand aus einem Konflikt legte den Eintrag sonst wieder an, und
+			// nach dem Hochladen der Löschung käme das eigene Echo nie zurück.
+			if (!localEntry && localPending) continue;
+
+			// Eine Fortsetzung, deren Lauf hier schon vor Mitternacht beendet ist:
+			// geraten, auf einem Gerät mit altem Stand. Offen wird sie verworfen,
+			// bewusst beendet ist sie eine zweite Aussage - dann fragt der Dialog.
+			let endedHere: Entry | undefined;
+			if (!deleted && entry.autoContinued === true && (localEntry?.endTs ?? null) === null) {
+				endedHere = await this.#runEndedBefore(entry, monthOf);
+				if (endedHere && entry.endTs === null) {
+					await drop(r.id, oldMonth ?? writeMonth, r.rev);
+					continue;
+				}
+			}
+
+			const realEnd = localEntry ? realEndWinner(localEntry, deleted ? null : entry) : null;
+			let result: MergeResult<Entry>;
+			// Hängt am lokalen Ende eine Fortsetzung, die mit dem Lauf fällt?
+			let continuation: Entry[] = [];
+			let legacyContinuation: Entry | undefined;
+			if (realEnd === "remote") {
+				// Das automatische Ende war keine Handlung des Menschen: kein Verlust.
+				result = { value: deleted ? null : entry, changed: true, lostLocalEdit: false };
+				continuation = await this.#continuationOf(localEntry!, monthOf);
+			} else if (realEnd === "local") {
+				result = adoptRev(localEntry!, entry);
+				// Der Server hält das automatische Ende - er muss das echte zurückbekommen.
+				if (!localPending) noted.push({ kind: "entry", id: r.id, month: oldMonth!, deleted: false, at: now });
+			} else {
+				// Teilungen aus Fassungen ohne `autoEnded`: dort verrät nur eine
+				// unversendete, noch offene Fortsetzung, dass das Ende an Mitternacht
+				// keine eigene Entscheidung war. Ein über Mitternacht bearbeiteter
+				// Eintrag hat eine geschlossene Fortsetzung und behält seinen Stempel.
+				if (
+					localEntry &&
+					localEntry.autoEnded !== true &&
+					localEntry.endTs !== null &&
+					localEntry.endTs === startOfNextDay(localEntry.startTs)
+				) {
+					const contMonth = await monthOf(monthKey(localEntry.endTs));
+					legacyContinuation = [...contMonth.values()].find(
+						(e) =>
+							e.activityId === localEntry.activityId &&
+							e.startTs === localEntry.endTs &&
+							e.endTs === null &&
+							e.autoContinued !== true &&
+							e.rev === undefined
+					);
+				}
+				// Nur wenn der Lauf dort wirklich beendet (oder gelöscht) wurde. Ist er
+				// noch offen (z.B. nur die Notiz geändert), wusste das andere Gerät nichts
+				// von Mitternacht - dann bleibt es beim normalen Stempelvergleich.
+				const remoteClosed = deleted || entry.endTs !== null;
+				if (!remoteClosed) legacyContinuation = undefined;
+				if (localPending && legacyContinuation) localPending = false;
+				result = mergeRecord(
+					{
+						local: localEntry,
+						remote: withTombstone(r, entry),
+						localPending
+					},
+					carriesTombstone
 				);
 			}
-			// Nur wenn der Lauf dort wirklich beendet (oder gelöscht) wurde. Ist er
-			// noch offen (z.B. nur die Notiz geändert), wusste das andere Gerät nichts
-			// von Mitternacht - dann bleibt es beim normalen Stempelvergleich, und es
-			// gibt nichts zu prüfen.
-			const remoteClosed = deleted || entry.endTs !== null;
-			const hasUnresolvedContinuation = continuationEntry !== undefined && remoteClosed;
-			if (localPending && hasUnresolvedContinuation) localPending = false;
-			const result = mergeRecord(
-				{
-					local: localEntry,
-					remote: withTombstone(r, entry),
-					localPending
-				},
-				carriesTombstone
-			);
 			if (result.lostLocalEdit) lost++;
-			// Die Fortsetzung selbst bleibt unangetastet - beide Seiten koennen recht
-			// haben (der Nutzer hat vielleicht doch weitergearbeitet und den Timer nur
-			// nicht neu gestartet). Statt zu raten, meldet #applyInner das nach oben,
-			// damit ein Mensch den Tag prueft.
-			// Nur wenn sich die Endzeit tatsächlich geändert hat: ein Echo oder eine
-			// bloße Notiz-Änderung mit gleichem Ende gibt dem Menschen nichts zu prüfen.
+
+			if (continuation.length > 0) {
+				const last = continuation[continuation.length - 1];
+				const untouched = continuation.every((c) => c.note === localEntry!.note);
+				if (last.endTs === null && untouched) {
+					for (const c of continuation) await drop(c.id, monthKey(c.startTs), c.rev);
+				} else if (result.value) {
+					staleTimerSplits.push({ endedEntry: result.value, continuationEntry: continuation[0] });
+				}
+			}
+			if (endedHere && result.changed && result.value && result.value.endTs !== null) {
+				staleTimerSplits.push({ endedEntry: endedHere, continuationEntry: result.value });
+			}
+			// Ohne Marke ist nicht zu erkennen, ob die Fortsetzung geraten war: sie
+			// bleibt stehen, und ein Mensch prüft den Tag. Nur wenn sich die Endzeit
+			// tatsächlich geändert hat - ein Echo gibt ihm nichts zu prüfen.
 			if (
-				hasUnresolvedContinuation &&
+				legacyContinuation &&
 				result.changed &&
 				result.value &&
 				result.value.endTs !== localEntry?.endTs
 			) {
-				staleTimerSplits.push({ endedEntry: result.value, continuationEntry: continuationEntry! });
+				staleTimerSplits.push({ endedEntry: result.value, continuationEntry: legacyContinuation });
 			}
 			if (!result.changed) continue;
 
@@ -768,39 +829,94 @@ export class SyncEngine {
 			touched.add(writeMonth);
 		}
 
-		if (touched.size === 0) return { lost, staleTimerSplits };
-		await this.#closeSurplusOpen(loaded, touched, monthOf);
+		if (touched.size === 0) {
+			await noteChanges(noted);
+			return { lost, staleTimerSplits };
+		}
+		const closedHere = await this.#closeSurplusOpen(loaded, touched, monthOf);
 
 		for (const month of touched) {
 			const list = [...loaded.get(month)!.values()].sort((a, b) => a.startTs - b.startTs);
-			await this.#store.saveEntries(month, list, asRead.get(month));
+			await this.#store.saveEntries(month, list, asRead.get(month), closedHere);
 			// Ein Monat, den wir gerade selbst angelegt haben, steht in keiner
 			// Verzeichnisliste, die vor diesem Durchgang gezogen wurde.
 			this.#rememberMonth(month);
 		}
+		await noteChanges(noted);
 		return { lost, staleTimerSplits };
+	}
+
+	/**
+	 * Die Stücke, die die Mitternachts-Teilung an `ended` angehängt hat: erst
+	 * ganze Zwischentage, zuletzt das Stück, das weiterlief.
+	 */
+	async #continuationOf(
+		ended: Entry,
+		monthOf: (m: string) => Promise<Map<string, Entry>>
+	): Promise<Entry[]> {
+		const pieces: Entry[] = [];
+		let cur = ended;
+		while (cur.endTs !== null && pieces.length < 366) {
+			const end = cur.endTs;
+			const next = [...(await monthOf(monthKey(end))).values()].find(
+				(e) =>
+					e.id !== cur.id &&
+					e.activityId === ended.activityId &&
+					e.startTs === end &&
+					e.autoContinued === true
+			);
+			if (!next) break;
+			pieces.push(next);
+			if (!isAutoEnd(next)) break;
+			cur = next;
+		}
+		return pieces;
+	}
+
+	/**
+	 * Der Lauf, den `continuation` fortsetzt - sofern er hier schon vor
+	 * Mitternacht endet. Das ist das jüngste Stück derselben Aktivität am Vortag;
+	 * ein früheres, längst beendetes Stück sagt über den Lauf nichts.
+	 */
+	async #runEndedBefore(
+		continuation: Entry,
+		monthOf: (m: string) => Promise<Map<string, Entry>>
+	): Promise<Entry | undefined> {
+		const dayBefore = [...(await monthOf(monthKey(continuation.startTs - 1))).values()].filter(
+			(e) =>
+				e.id !== continuation.id &&
+				e.activityId === continuation.activityId &&
+				startOfNextDay(e.startTs) === continuation.startTs
+		);
+		if (dayBefore.length === 0) return undefined;
+		const run = dayBefore.reduce((a, b) => (b.startTs > a.startTs ? b : a));
+		return run.endTs !== null && run.endTs < continuation.startTs ? run : undefined;
 	}
 
 	/**
 	 * Die eine Regel, die der Abgleich neu einführt: höchstens EIN offener
 	 * Eintrag - und zwar über alle Monate hinweg.
+	 *
+	 * Liefert die geschlossenen Ids: gemessen wurde am Stand vor dem Schreiben,
+	 * und hat der Mensch den Timer inzwischen selbst gestoppt, gilt sein Ende.
 	 */
 	async #closeSurplusOpen(
 		loaded: Map<string, Map<string, Entry>>,
 		touched: Set<string>,
 		monthOf: (m: string) => Promise<Map<string, Entry>>
-	): Promise<void> {
+	): Promise<Set<string>> {
+		const closedHere = new Set<string>();
 		const openAmong = [...touched].some((m) =>
 			[...loaded.get(m)!.values()].some((e) => e.endTs === null)
 		);
-		if (!openAmong) return;
+		if (!openAmong) return closedHere;
 
 		for (const month of await this.#knownMonths()) await monthOf(month);
 
 		const all: Entry[] = [];
 		for (const monthMap of loaded.values()) all.push(...monthMap.values());
 		const toClose = resolveOpenEntries(all);
-		if (toClose.length === 0) return;
+		if (toClose.length === 0) return closedHere;
 
 		const now = Date.now();
 		const noted: PendingChange[] = [];
@@ -811,6 +927,7 @@ export class SyncEngine {
 			for (const [month, monthMap] of loaded) {
 				if (!monthMap.has(e.id)) continue;
 				monthMap.set(e.id, closed);
+				closedHere.add(e.id);
 				touched.add(month);
 				noted.push({ kind: "entry", id: e.id, month, deleted: false, at: now });
 			}
@@ -821,6 +938,7 @@ export class SyncEngine {
 		// auseinander - der Server sähe nie, was hier entschieden wurde.
 		await noteChanges(noted);
 		logInfo("Mehrere laufende Timer zusammengeführt", { closed: toClose.length });
+		return closedHere;
 	}
 
 	async #applyActivities(records: ServerRecord[], open: Set<string>): Promise<number> {

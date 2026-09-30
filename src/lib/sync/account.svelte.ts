@@ -42,6 +42,7 @@ import {
 } from "./api";
 
 import { detachLocalData } from "./detach";
+import { clearStaleSplits, forgetStaleSplit, rememberStaleSplits, restoreStaleSplits } from "./staleSplits";
 import { monthKey, prevMonthKey, shiftMonthKey } from "../time/time";
 import { SyncEngine, type StaleTimerSplitInfo, type SyncOutcome, type SyncState } from "./engine";
 import {
@@ -478,6 +479,7 @@ class AccountState {
 		setChangeListener(() => this.syncSoon());
 		this.#installNetworkListeners();
 		this.#openStream();
+		await this.#refreshStaleTimerSplits();
 	}
 
 	/**
@@ -694,6 +696,23 @@ class AccountState {
 		}, 1500);
 	}
 
+	/** Die Rückfragen zu Mitternachts-Teilungen, frisch von der Platte. */
+	async #refreshStaleTimerSplits(): Promise<void> {
+		const engine = this.#engine;
+		try {
+			const splits = await restoreStaleSplits();
+			if (this.#engine === engine) this.staleTimerSplits = splits;
+		} catch (e) {
+			logWarn("Rückfragen zur Mitternachts-Teilung nicht lesbar", e);
+		}
+	}
+
+	/** Eine beantwortete Rückfrage austragen - auch aus der Datei. */
+	async dropStaleTimerSplit(split: StaleTimerSplitInfo): Promise<void> {
+		this.staleTimerSplits = this.staleTimerSplits.filter((s) => s !== split);
+		await forgetStaleSplit(split);
+	}
+
 	/** Welcher Durchgang gerade seinen Nachlauf bekommt, und wer darauf wartet - siehe `syncNow`. */
 	#handling: Promise<SyncOutcome | null> | null = null;
 	#processing: Promise<void> | null = null;
@@ -755,8 +774,11 @@ class AccountState {
 			if (result) {
 				this.lostEdits += result.lostEdits;
 				if (result.staleTimerSplits.length > 0) {
-					this.staleTimerSplits = [...this.staleTimerSplits, ...result.staleTimerSplits];
+					await rememberStaleSplits(result.staleTimerSplits).catch((e) =>
+						logWarn("Rückfrage zur Mitternachts-Teilung nicht abgelegt", e)
+					);
 				}
+				await this.#refreshStaleTimerSplits();
 				if (result.pushed || result.pulled) {
 					logInfo("Abgeglichen", result);
 				}
@@ -1267,7 +1289,10 @@ class AccountState {
 			// Die Merkliste gehört IMMER dem vorigen Konto - auf beiden Plattformen.
 			// Ohne diese Zeile lädt sie der nächste Abgleich ins neue Konto: `#pushAll`
 			// liest die Outbox, nicht den Stempel.
-			if (switched || foreignCopy) await clearOutbox();
+			if (switched || foreignCopy) {
+				await clearOutbox();
+				await clearStaleSplits();
+			}
 
 			// Wem der Bestand gehört: nach einem Wechsel weiterhin dem alten Konto
 			// (dann bleibt er hier liegen), sonst diesem. Wer noch nie ein Konto hatte,
@@ -1788,6 +1813,7 @@ class AccountState {
 		// Mitternachts-Rückfragen gehören dem alten Konto: im nächsten würde
 		// "weiter" sonst dessen Eintrag in die Monatsdatei des neuen schreiben.
 		this.staleTimerSplits = [];
+		await clearStaleSplits().catch((e) => logWarn("Rückfragen zur Mitternachts-Teilung nicht gelöscht", e));
 		this.lostEdits = 0;
 		this.bulkSync = null;
 		this.syncProgress = null;

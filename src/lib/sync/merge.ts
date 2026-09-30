@@ -87,13 +87,38 @@ export function mergeRecord<T extends { id: string } & SyncMeta>(
 }
 
 /** Denselben Inhalt behalten, aber die Fassung des Servers übernehmen. */
-function adoptRev<T extends SyncMeta>(local: T, remote: T): MergeResult<T> {
+export function adoptRev<T extends SyncMeta>(local: T, remote: T): MergeResult<T> {
 	const fresh = (remote.rev ?? 0) > (local.rev ?? 0);
 	return {
 		value: fresh ? { ...local, rev: remote.rev } : local,
 		changed: fresh,
 		lostLocalEdit: false
 	};
+}
+
+/**
+ * Ob das Ende von der Mitternachts-Teilung stammt. Nur zusammen mit einem Ende
+ * genau an der Tagesgrenze: hat eine ältere Fassung das Ende verschoben und die
+ * Marke mitgeschleppt, zählt das Ende als echt.
+ */
+export function isAutoEnd(e: Entry): boolean {
+	return e.autoEnded === true && e.endTs !== null && e.endTs === startOfNextDay(e.startTs);
+}
+
+/**
+ * Ein echtes Ende gegen ein automatisches - unabhängig vom Stempel.
+ *
+ * `remote === null` steht für eine Löschung. `null` als Ergebnis heisst: die
+ * Regel greift nicht, es entscheidet der Stempel.
+ */
+export function realEndWinner(local: Entry, remote: Entry | null): "local" | "remote" | null {
+	if (remote === null) return isAutoEnd(local) ? "remote" : null;
+	if (remote.endTs === local.endTs) return null;
+	const localAuto = isAutoEnd(local);
+	const remoteAuto = isAutoEnd(remote);
+	if (localAuto && !remoteAuto && remote.endTs !== null) return "remote";
+	if (remoteAuto && !localAuto && local.endTs !== null) return "local";
+	return null;
 }
 
 /**

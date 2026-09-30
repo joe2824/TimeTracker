@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mergeRecord, pickWinner, resolveOpenEntries } from "./merge";
+import { isAutoEnd, mergeRecord, pickWinner, realEndWinner, resolveOpenEntries } from "./merge";
 import type { Entry } from "../types";
 import { anEntry, ts } from "../testing/fixtures";
 import { startOfNextDay } from "../time/time";
@@ -259,5 +259,31 @@ describe("resolveOpenEntries", () => {
 		expect(resolveOpenEntries([a, b]).map((x) => x.id)).toEqual(
 			resolveOpenEntries([b, a]).map((x) => x.id)
 		);
+	});
+});
+
+describe("realEndWinner - ein echtes Ende schlägt die Mitternachts-Teilung", () => {
+	const midnight = startOfNextDay(ts(15, 9));
+	const split = anEntry("d1", { startTs: ts(15, 9), endTs: midnight, autoEnded: true });
+	const stopped = anEntry("d1", { startTs: ts(15, 9), endTs: ts(15, 17) });
+
+	it("erkennt ein automatisches Ende nur an der Tagesgrenze", () => {
+		expect(isAutoEnd(split)).toBe(true);
+		expect(isAutoEnd({ ...split, endTs: ts(15, 17) })).toBe(false);
+		expect(isAutoEnd({ ...split, autoEnded: undefined })).toBe(false);
+	});
+
+	it("gibt dem echten Ende recht, egal von welcher Seite", () => {
+		expect(realEndWinner(split, stopped)).toBe("remote");
+		expect(realEndWinner(stopped, split)).toBe("local");
+		expect(realEndWinner(split, null)).toBe("remote");
+	});
+
+	it("greift nicht, wo beide Seiten gleich sind oder der Lauf drüben offen ist", () => {
+		expect(realEndWinner(split, { ...split, note: "x" })).toBeNull();
+		expect(realEndWinner(split, { ...stopped, endTs: null })).toBeNull();
+		expect(realEndWinner(stopped, { ...stopped, endTs: ts(15, 16) })).toBeNull();
+		// Einträge aus 1.0 tragen keine Marke: dort entscheidet der Stempel.
+		expect(realEndWinner({ ...split, autoEnded: undefined }, stopped)).toBeNull();
 	});
 });

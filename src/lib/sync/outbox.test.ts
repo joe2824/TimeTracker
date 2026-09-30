@@ -13,6 +13,7 @@ const {
 	mergePending,
 	refreshPending,
 	noteChanges,
+	rebaseChanges,
 	rememberUnstamped,
 	SETTINGS_ID
 } = await import("./outbox");
@@ -252,5 +253,24 @@ describe("outbox.json vorübergehend nicht lesbar", () => {
 		}
 		await refreshPending();
 		expect(pendingChanges().map((c) => c.id).sort()).toEqual(["a", "b"]);
+	});
+});
+
+describe("rebaseChanges", () => {
+	it("setzt eine offene Löschung auf die Fassung des Servers und lässt den Rest stehen", async () => {
+		await noteChanges([
+			{ kind: "entry", id: "weg", month: "2026-07", deleted: true, rev: 1, at: 1 },
+			{ kind: "entry", id: "andere", month: "2026-07", deleted: false, at: 2 }
+		]);
+
+		await rebaseChanges([{ kind: "entry", id: "weg", rev: 4 }]);
+
+		expect(pendingChanges()).toEqual([
+			expect.objectContaining({ id: "weg", deleted: true, rev: 4 }),
+			expect.objectContaining({ id: "andere", deleted: false })
+		]);
+		// Auf der Platte, nicht nur im Speicher: das Tray-Fenster liest dort.
+		await refreshPending();
+		expect(pendingChanges().find((c) => c.id === "weg")!.rev).toBe(4);
 	});
 });

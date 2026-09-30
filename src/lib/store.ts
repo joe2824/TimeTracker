@@ -459,7 +459,8 @@ async function saveEntriesWith(
 	hook: WriteHook | null,
 	month: string,
 	entries: Entry[],
-	base?: Entry[]
+	base?: Entry[],
+	closeIfOpen?: ReadonlySet<string>
 ): Promise<void> {
 	const file = entriesFile(month);
 	if (!base && entries.length > 0 && !hook) return writeJson(file, entries, { encrypted: true });
@@ -470,7 +471,7 @@ async function saveEntriesWith(
 		// unlesbar ist oder gerade als beschädigt zur Seite gelegt wurde.
 		const reliable =
 			read.status === "ok" || (read.status === "missing" && !(base && (await hasQuarantined(file))));
-		const next = base ? mergeOntoDisk(base, entries, before, reliable) : entries;
+		const next = base ? mergeOntoDisk(base, entries, before, reliable, closeIfOpen) : entries;
 		// Ein leerer Monat hinterlässt keine Datei: sonst bliebe eine "[]"-Datei
 		// liegen und der Monat geisterte ohne Einträge weiter durch die Monatsauswahl.
 		if (next.length === 0) {
@@ -501,12 +502,17 @@ function sameEntry(a: Entry, b: Entry): boolean {
  * Platte steht – auch ein Fehlen dort, also eine Löschung auf einem anderen
  * Gerät. Nur ohne `diskReliable` (Datei unlesbar oder beschädigt) bleibt ein
  * unveränderter Eintrag, denn dann ist die Liste der App die einzige Kopie.
+ *
+ * `closeIfOpen`: Einträge, die nur geschlossen werden, solange sie auf der
+ * Platte noch offen sind. Hat inzwischen jemand den Timer gestoppt oder den
+ * Eintrag gelöscht, gilt das.
  */
 export function mergeOntoDisk(
 	base: Entry[],
 	ours: Entry[],
 	disk: Entry[],
-	diskReliable = true
+	diskReliable = true,
+	closeIfOpen: ReadonlySet<string> = new Set()
 ): Entry[] {
 	const baseById = new Map(base.map((e) => [e.id, e]));
 	const oursById = new Map(ours.map((e) => [e.id, e]));
@@ -519,6 +525,13 @@ export function mergeOntoDisk(
 		// Nur die Fassung gehoben (Echo des eigenen Uploads): der Inhalt der
 		// Platte gilt, die Fassung des Servers kommt dazu.
 		const onlyRev = known !== undefined && !untouched && sameEntry({ ...known, rev: e.rev }, e);
+		if (closeIfOpen.has(e.id) && diskReliable) {
+			if (onDisk && onDisk.endTs !== null) {
+				out.push(onDisk);
+				continue;
+			}
+			if (!onDisk && known) continue;
+		}
 		if (onlyRev && onDisk) out.push({ ...onDisk, rev: e.rev });
 		else if (!untouched) out.push(e);
 		else if (onDisk) out.push(onDisk);
@@ -669,8 +682,12 @@ async function deleteTimeReportWith(hook: WriteHook | null, month: string): Prom
  */
 export const remoteStore = {
 	entriesOfMonth: loadEntries,
-	saveEntries: (month: string, entries: Entry[], base?: Entry[]) =>
-		saveEntriesWith(null, month, entries, base),
+	saveEntries: (
+		month: string,
+		entries: Entry[],
+		base?: Entry[],
+		closeIfOpen?: ReadonlySet<string>
+	) => saveEntriesWith(null, month, entries, base, closeIfOpen),
 	activities: loadActivities,
 	saveActivities: (list: Activity[]) => saveActivitiesWith(null, list),
 	settings: loadSettings,
@@ -913,6 +930,35 @@ export async function loadOutbox<T>(): Promise<T[]> {
 
 export async function saveOutbox<T>(changes: T[]): Promise<void> {
 	return writeJson("outbox.json", changes);
+}
+
+/**
+ * Offene Rückfragen zu Mitternachts-Teilungen - nur die Ids, der Inhalt steht
+ * in den Monatsdateien. Liegt im Datenordner und geht damit beim Leeren des
+ * Kontos mit.
+ */
+export interface StaleSplitIds {
+	endedId: string;
+	continuationId: string;
+}
+
+const STALE_SPLITS_FILE = "stale-splits.json";
+
+export async function loadStaleSplits(): Promise<StaleSplitIds[]> {
+	const stored = await readJson<unknown>(STALE_SPLITS_FILE, []);
+	if (!Array.isArray(stored)) return [];
+	return stored.filter(
+		(p): p is StaleSplitIds =>
+			typeof p?.endedId === "string" && typeof p?.continuationId === "string"
+	);
+}
+
+export function saveStaleSplits(pairs: StaleSplitIds[]): Promise<void> {
+	if (pairs.length === 0) return removeDataFile(STALE_SPLITS_FILE);
+	return writeJson(
+		STALE_SPLITS_FILE,
+		pairs.map(({ endedId, continuationId }) => ({ endedId, continuationId }))
+	);
 }
 
 export interface StoredYear {

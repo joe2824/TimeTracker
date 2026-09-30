@@ -89,6 +89,14 @@ export interface Entry extends SyncMeta {
 	 * den Chef taucht er nicht auf.
 	 */
 	timeOff?: boolean;
+	/**
+	 * Das Ende hat die Mitternachts-Teilung gesetzt, kein Mensch. Beim Abgleich
+	 * gewinnt ein echtes Ende dagegen, egal welcher Stempel jünger ist.
+	 * Einträge aus 1.0 kennen das Feld nicht und gelten als echt beendet.
+	 */
+	autoEnded?: boolean;
+	/** Der Beginn stammt aus der Mitternachts-Teilung: das Stück setzt einen Lauf fort. */
+	autoContinued?: boolean;
 }
 
 export interface Settings {

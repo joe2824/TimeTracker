@@ -1,5 +1,5 @@
 // Zwei Geräte an einem Konto - der ganze Weg.
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeSyncServer } from "../testing/fakeSyncServer";
 import { FakeDevice, onDevice, withoutAccount } from "../testing/syncDevice";
 import type { VaultKey } from "../crypto/vault";
@@ -1139,6 +1139,16 @@ describe("onProgress – Ladeanzeige beim Massenimport", () => {
 });
 
 describe("Vorgezogenes Laden", () => {
+	// Feste Uhr: `currentMonthEntry` liegt zwei Stunden zurück und damit in den
+	// ersten Stunden eines Monats noch im Vormonat.
+	beforeEach(() => {
+		vi.useFakeTimers({ toFake: ["Date"], shouldAdvanceTime: true });
+		vi.setSystemTime(Date.UTC(2026, 8, 30, 12, 40));
+	});
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
 	/** Ein Laptop, das den vorgezogenen Teil vor sich hat - Server schon gefüllt. */
 	async function laptopAtStart(): Promise<FakeDevice> {
 		await seedServer();
@@ -1304,5 +1314,249 @@ describe("Vorgezogenes Laden", () => {
 		const pulls = server.queries.filter((q) => q.startsWith("GET /api/sync?"));
 		expect(pulls.every((q) => !q.includes("bucket="))).toBe(true);
 		expect((await entries(laptop, OLD)).map((e) => e.id)).toEqual(["alt-1"]);
+	});
+});
+
+describe("Ein echtes Ende schlaegt die Mitternachts-Teilung", () => {
+	const midnight = () => startOfNextDay(ts(15, 9));
+
+	/** Was #rolloverAtMidnight offline aus einem offenen Lauf macht. */
+	async function splitOffline(g: FakeDevice, id: string, contId: string): Promise<void> {
+		await on(g, async () => {
+			const list = await store.loadEntries(MONTH);
+			await store.saveEntries(MONTH, [
+				...list.map((e) => (e.id === id ? { ...e, endTs: midnight(), autoEnded: true } : e)),
+				entry(contId, { startTs: midnight(), endTs: null, autoContinued: true })
+			]);
+		});
+	}
+
+	/** Einen Eintrag auf einem Gerät beenden - ohne abzugleichen. */
+	async function stopOffline(g: FakeDevice, id: string, endTs: number): Promise<void> {
+		await on(g, async () => {
+			const list = await store.loadEntries(MONTH);
+			await store.saveEntries(MONTH, list.map((e) => (e.id === id ? { ...e, endTs } : e)));
+		});
+	}
+
+	it("der Stopp im Browser gewinnt, auch wenn der Rechner danach mit altem Stand teilt", async () => {
+		const pc = await deviceWith("rechner", entry("p1", { startTs: ts(15, 9), endTs: null }));
+		const web = new FakeDevice("web");
+		await on(web, (engine) => engine.sync());
+		await afterwards();
+		await stopOffline(web, "p1", ts(15, 18));
+		await on(web, (engine) => engine.sync());
+
+		// Der Rechner war aus, startet am Morgen und teilt den Lauf von gestern.
+		await afterwards();
+		await splitOffline(pc, "p1", "p2");
+		const outcome = await on(pc, (engine) => engine.sync());
+		await on(pc, (engine) => engine.sync());
+
+		const list = await entries(pc);
+		expect(list.find((e) => e.id === "p1")!.endTs).toBe(ts(15, 18));
+		// Die Fortsetzung war geraten - sie läuft nicht als Timer weiter.
+		expect(list.find((e) => e.id === "p2")).toBeUndefined();
+		expect(outcome!.staleTimerSplits).toEqual([]);
+		expect(outcome!.lostEdits).toBe(0);
+
+		await on(web, (engine) => engine.sync());
+		const onWeb = await entries(web);
+		expect(onWeb.find((e) => e.id === "p1")!.endTs).toBe(ts(15, 18));
+		expect(onWeb.find((e) => e.id === "p2")).toBeUndefined();
+	});
+
+	it("ein offline gesetztes Ende gewinnt gegen eine spätere Teilung mit altem Stand", async () => {
+		const desktop = await deviceWith("rechner", entry("d1", { startTs: ts(15, 9), endTs: null }));
+		const phone = new FakeDevice("handy");
+		await on(phone, (engine) => engine.sync());
+
+		// Das Handy stoppt offline um 17 Uhr.
+		await afterwards();
+		await stopOffline(phone, "d1", ts(15, 17));
+
+		// Der Rechner teilt den Lauf später - sein Stempel ist der jüngere - und
+		// lädt die Teilung hoch.
+		await afterwards();
+		await splitOffline(desktop, "d1", "d2");
+		await on(desktop, (engine) => engine.sync());
+
+		// Das Handy kommt wieder online.
+		const outcome = await on(phone, (engine) => engine.sync());
+		await on(phone, (engine) => engine.sync());
+
+		const onPhone = await entries(phone);
+		expect(onPhone.find((e) => e.id === "d1")!.endTs).toBe(ts(15, 17));
+		expect(onPhone.find((e) => e.id === "d2")).toBeUndefined();
+		expect(outcome!.lostEdits).toBe(0);
+		expect(outcome!.staleTimerSplits).toEqual([]);
+
+		// Und der Rechner übernimmt das echte Ende samt Wegfall der Fortsetzung.
+		const there = await on(desktop, (engine) => engine.sync());
+		await on(desktop, (engine) => engine.sync());
+		const onDesktop = await entries(desktop);
+		expect(onDesktop.find((e) => e.id === "d1")!.endTs).toBe(ts(15, 17));
+		expect(onDesktop.find((e) => e.id === "d2")).toBeUndefined();
+		expect(there!.staleTimerSplits).toEqual([]);
+		expect(server.rows.get("d2")?.deletedAt ?? null).not.toBeNull();
+	});
+
+	it("fragt nach, wenn die Fortsetzung drüben ebenfalls bewusst beendet wurde", async () => {
+		const desktop = await deviceWith("rechner", entry("d1", { startTs: ts(15, 9), endTs: null }));
+		const phone = new FakeDevice("handy");
+		await on(phone, (engine) => engine.sync());
+
+		await afterwards();
+		await stopOffline(phone, "d1", ts(15, 17));
+
+		// Der Rechner teilt und beendet die Fortsetzung am Morgen von Hand: dort
+		// steht eine eigene Aussage gegen die vom Handy.
+		await afterwards();
+		await splitOffline(desktop, "d1", "d2");
+		await stopOffline(desktop, "d2", ts(16, 8));
+		await on(desktop, (engine) => engine.sync());
+
+		const outcome = await on(phone, (engine) => engine.sync());
+		const onPhone = await entries(phone);
+		expect(onPhone.find((e) => e.id === "d1")!.endTs).toBe(ts(15, 17));
+		expect(onPhone.find((e) => e.id === "d2")!.endTs).toBe(ts(16, 8));
+		expect(outcome!.staleTimerSplits.map((s) => [s.endedEntry.id, s.continuationEntry.id])).toEqual([
+			["d1", "d2"]
+		]);
+
+		const there = await on(desktop, (engine) => engine.sync());
+		const onDesktop = await entries(desktop);
+		expect(onDesktop.find((e) => e.id === "d1")!.endTs).toBe(ts(15, 17));
+		expect(onDesktop.find((e) => e.id === "d2")!.endTs).toBe(ts(16, 8));
+		expect(there!.staleTimerSplits.map((s) => [s.endedEntry.id, s.continuationEntry.id])).toEqual([
+			["d1", "d2"]
+		]);
+	});
+
+	it("laesst zwei Teilungen derselben Mitternacht beim Stempel", async () => {
+		// Beide Enden automatisch: keines ist eine Aussage des Menschen.
+		const desktop = await deviceWith("rechner", entry("d1", { startTs: ts(15, 9), endTs: null }));
+		const phone = new FakeDevice("handy");
+		await on(phone, (engine) => engine.sync());
+		await afterwards();
+		await splitOffline(phone, "d1", "h2");
+		await on(phone, (engine) => engine.sync());
+		await afterwards();
+		await splitOffline(desktop, "d1", "d2");
+
+		const outcome = await on(desktop, (engine) => engine.sync());
+		expect((await entries(desktop)).find((e) => e.id === "d1")!.endTs).toBe(midnight());
+		expect(outcome!.staleTimerSplits).toEqual([]);
+	});
+
+	it("ein ueber Mitternacht bearbeiteter Eintrag ist keine Teilung", async () => {
+		// Der Editor teilt an Mitternacht wie der Timer - die Fortsetzung ist
+		// dabei aber geschlossen, und die Bearbeitung ist die jüngere Handlung.
+		const desktop = await deviceWith("rechner", entry("d1", { startTs: ts(15, 9), endTs: ts(15, 12) }));
+		const phone = new FakeDevice("handy");
+		await on(phone, (engine) => engine.sync());
+		await afterwards();
+		await stopOffline(phone, "d1", ts(15, 17));
+		await on(phone, (engine) => engine.sync());
+
+		await afterwards();
+		await on(desktop, async () => {
+			const list = await store.loadEntries(MONTH);
+			await store.saveEntries(MONTH, [
+				...list.map((e) => (e.id === "d1" ? { ...e, endTs: midnight() } : e)),
+				entry("d2", { startTs: midnight(), endTs: midnight() + 2 * 3600_000 })
+			]);
+		});
+		const outcome = await on(desktop, (engine) => engine.sync());
+
+		expect((await entries(desktop)).find((e) => e.id === "d1")!.endTs).toBe(midnight());
+		expect(outcome!.staleTimerSplits).toEqual([]);
+	});
+});
+
+describe("Ein Timer-Stopp waehrend des Einspielens", () => {
+	it("behaelt das Ende, das der Mensch gesetzt hat, statt es nach dem alten Stand zu schliessen", async () => {
+		const desktop = await deviceWith("rechner", entry("r1", { startTs: ts(15, 9), endTs: null }));
+		// Das Handy startet später einen eigenen Timer: der jüngere Lauf gewinnt,
+		// r1 wäre zu schliessen.
+		await afterwards();
+		const phone = new FakeDevice("handy");
+		await changeAndSync(phone, () =>
+			store.saveEntries(MONTH, [entry("h1", { startTs: ts(15, 14), endTs: null })])
+		);
+
+		const original = store.remoteStore.saveEntries;
+		// Zwischen Lesen und Schreiben stoppt jemand am Rechner den Timer.
+		const spy = vi
+			.spyOn(store.remoteStore, "saveEntries")
+			.mockImplementationOnce(async (month, list, ...rest) => {
+				const disk = await store.loadEntries(month);
+				await store.saveEntries(
+					month,
+					disk.map((e) => (e.id === "r1" ? { ...e, endTs: ts(15, 12) } : e))
+				);
+				return original(month, list, ...rest);
+			});
+		try {
+			await on(desktop, (engine) => engine.sync());
+		} finally {
+			spy.mockRestore();
+		}
+
+		const list = await entries(desktop);
+		expect(list.find((e) => e.id === "r1")!.endTs).toBe(ts(15, 12));
+		expect(list.find((e) => e.id === "h1")!.endTs).toBeNull();
+	});
+});
+
+describe("Loeschung im Konflikt", () => {
+	it("nimmt den juengeren Stand des Servers, wenn dort nach der Loeschung noch geaendert wurde", async () => {
+		const phone = await phoneWith(entry("e1", { note: "alt" }));
+		const desktop = new FakeDevice("rechner");
+		await on(desktop, (engine) => engine.sync());
+
+		// Der Rechner löscht offline ...
+		await on(desktop, () => store.saveEntries(MONTH, []));
+		// ... das Handy ändert danach und lädt hoch.
+		await afterwards();
+		await on(phone, async (engine) => {
+			const mine = (await store.loadEntries(MONTH))[0];
+			await store.saveEntries(MONTH, [{ ...mine, note: "danach geändert" }]);
+			return engine.sync();
+		});
+
+		await on(desktop, (engine) => engine.sync());
+
+		// Die Löschung ist erledigt, nicht endlos abgelehnt - und der jüngere
+		// Stand gilt.
+		expect(await on(desktop, async () => pendingChanges())).toEqual([]);
+		expect((await entries(desktop)).map((e) => e.note)).toEqual(["danach geändert"]);
+		expect(server.rows.get("e1")!.deletedAt ?? null).toBeNull();
+	});
+
+	it("setzt eine juengere Loeschung auf die Fassung des Servers und bringt sie durch", async () => {
+		const phone = await phoneWith(entry("e1", { note: "alt" }));
+		const desktop = new FakeDevice("rechner");
+		await on(desktop, (engine) => engine.sync());
+
+		// Das Handy ändert offline, der Rechner löscht danach offline.
+		await on(phone, async () => {
+			const mine = (await store.loadEntries(MONTH))[0];
+			await store.saveEntries(MONTH, [{ ...mine, note: "vorher geändert" }]);
+		});
+		await afterwards();
+		await on(desktop, () => store.saveEntries(MONTH, []));
+
+		// Das Handy lädt zuerst hoch - die Löschung trifft auf eine neuere Fassung.
+		await afterwards();
+		await on(phone, (engine) => engine.sync());
+		await on(desktop, (engine) => engine.sync());
+
+		expect(server.rows.get("e1")!.deletedAt ?? null).not.toBeNull();
+		expect(await entries(desktop)).toEqual([]);
+		expect(await on(desktop, async () => pendingChanges())).toEqual([]);
+
+		await on(phone, (engine) => engine.sync());
+		expect(await entries(phone)).toEqual([]);
 	});
 });

@@ -822,6 +822,49 @@ describe("Start von der Platte", () => {
 			expect(app.running?.startTs).toBe(at(19, 0));
 		});
 
+		it("markiert das automatische Ende und die Fortsetzung", async () => {
+			const run = entry("t1", P1, at(16, 9), null);
+			await startFromDisk(at(18, 8), { "2026-07": [run] }, { ticking: true });
+
+			await vi.advanceTimersByTimeAsync(1000);
+
+			const byStart = (ts: number) => onDisk("2026-07").find((e) => e.startTs === ts)!;
+			expect(byStart(at(16, 9))).toMatchObject({ endTs: at(17, 0), autoEnded: true });
+			// Ein ganzer Zwischentag ist beides.
+			expect(byStart(at(17, 0))).toMatchObject({ endTs: at(18, 0), autoEnded: true, autoContinued: true });
+			const cont = byStart(at(18, 0));
+			expect(cont).toMatchObject({ endTs: null, autoContinued: true });
+			expect(cont.autoEnded).toBeUndefined();
+		});
+
+		it("ein Stopp vor Mitternacht macht das Ende wieder echt", async () => {
+			const run = entry("t1", P1, at(16, 9), null);
+			await startFromDisk(at(17, 8), { "2026-07": [run] }, { ticking: true });
+			await vi.advanceTimersByTimeAsync(1000);
+			app.dispose();
+
+			// Leerlauf seit gestern Abend: der Stopp setzt das Ende vor die Teilung.
+			await app.stop(at(16, 18));
+
+			const t1 = onDisk("2026-07").find((e) => e.id === "t1")!;
+			expect(t1.endTs).toBe(at(16, 18));
+			expect(t1.autoEnded).toBeUndefined();
+		});
+
+		it("bearbeiten nimmt beide Marken weg", async () => {
+			const ended = { ...entry("t1", P1, at(16, 9), at(17, 0)), autoEnded: true };
+			const cont = { ...entry("t2", P1, at(17, 0), null), autoContinued: true };
+			reset({ "2026-07": [ended, cont] });
+
+			await app.updateEntry(ended.startTs, { ...ended, note: "geprüft" });
+			await app.updateEntry(cont.startTs, { ...cont, note: "auch" });
+
+			for (const e of onDisk("2026-07")) {
+				expect(e.autoEnded).toBeUndefined();
+				expect(e.autoContinued).toBeUndefined();
+			}
+		});
+
 		it("verliert nichts, wenn reload() in einen hängenden Wechsel fällt", async () => {
 			// Der Wechsel wartet beim Speichern hinter den Schreibvorgängen des Abgleichs,
 			// und der Abgleich ruft danach reload(). Tauscht das die Monatslisten

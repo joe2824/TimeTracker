@@ -57,10 +57,17 @@ async function asIfFreshlyLinked(): Promise<void> {
 let server: FakeSyncServer;
 
 beforeEach(() => {
+	// Ein Zeitpunkt, an dem Berlin und die fernen Zonen der CI in verschiedenen
+	// Monaten liegen - die vorgezogenen Monate müssen trotzdem zusammenpassen.
+	vi.useFakeTimers({ toFake: ["Date"], shouldAdvanceTime: true });
+	vi.setSystemTime(Date.UTC(2026, 8, 30, 12, 40));
 	server = freshAccountEnv();
 });
 
-afterEach(restoreFetch);
+afterEach(() => {
+	restoreFetch();
+	vi.useRealTimers();
+});
 
 describe("Lade-Modal beim gestuften Abruf", () => {
 	it("endet mit dem vorgezogenen Teil, waehrend die Historie noch laeuft", async () => {

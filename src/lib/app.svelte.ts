@@ -1262,6 +1262,10 @@ class AppState {
 			return false;
 		}
 		if (rest.length > 0) updated.endTs = startOfNextDay(updated.startTs);
+		// Wer den Eintrag gespeichert hat, hat Beginn und Ende gesehen: beides
+		// gilt ab jetzt als seine Angabe.
+		delete updated.autoEnded;
+		delete updated.autoContinued;
 
 		if (oldMonth === newMonth) {
 			const list = this.entriesByMonth[oldMonth];
@@ -1428,6 +1432,7 @@ class AppState {
 				// Monatsdatei und damit im falschen Bericht.
 				const parts = splitAtMidnight(piece.startTs, Math.max(piece.startTs, bis));
 				piece.endTs = parts[0].endTs;
+				delete piece.autoEnded;
 				for (const p of parts.slice(1)) {
 					const seg = await this.#addSegment(piece, p.startTs, p.endTs);
 					if (seg) months.add(seg);
@@ -1445,7 +1450,12 @@ class AppState {
 	 * oder null, wenn der Tag eine Ganztags-Abwesenheit trägt oder ein anderes
 	 * Gerät ihn schon geteilt und abgeglichen hat.
 	 */
-	async #addSegment(from: Entry, startTs: number, endTs: number | null): Promise<string | null> {
+	async #addSegment(
+		from: Entry,
+		startTs: number,
+		endTs: number | null,
+		auto = false
+	): Promise<string | null> {
 		const m = monthKey(startTs);
 		await this.ensureMonth(m);
 		if (this.hasFullDayAbsence(startTs)) return null;
@@ -1457,14 +1467,20 @@ class AppState {
 				(e.endTs === null || e.endTs === endTs)
 		);
 		if (exists) return null;
-		this.entriesByMonth[m].push({
+		const segment: Entry = {
 			id: uid(),
 			activityId: from.activityId,
 			startTs,
 			endTs,
 			note: from.note,
 			source: from.source
-		});
+		};
+		// Ein ganzer Tag aus der Mitternachts-Teilung: Beginn und Ende automatisch.
+		if (auto) {
+			segment.autoContinued = true;
+			segment.autoEnded = true;
+		}
+		this.entriesByMonth[m].push(segment);
 		return m;
 	}
 
@@ -1483,9 +1499,11 @@ class AppState {
 
 			const months = new Set<string>([monthKey(cur.startTs)]);
 			cur.endTs = parts[0].endTs;
+			// Kein Mensch hat hier gestoppt - ein echtes Ende von anderswo gewinnt.
+			cur.autoEnded = true;
 			// Zwischentage entstehen, wenn die App durchlief; das letzte Stück läuft weiter.
 			for (const p of parts.slice(1, -1)) {
-				const seg = await this.#addSegment(cur, p.startTs, p.endTs);
+				const seg = await this.#addSegment(cur, p.startTs, p.endTs, true);
 				if (seg) months.add(seg);
 			}
 
@@ -1520,7 +1538,8 @@ class AppState {
 				startTs: last.startTs,
 				endTs: null,
 				note: cur.note,
-				source: cur.source
+				source: cur.source,
+				autoContinued: true
 			};
 			this.entriesByMonth[m].push(next);
 			this.running = next;
@@ -1652,6 +1671,7 @@ class AppState {
 		const closeAt = (open: Entry, endTs: number) => {
 			const parts = splitAtMidnight(open.startTs, endTs);
 			open.endTs = parts[0].endTs;
+			delete open.autoEnded;
 			for (const p of parts.slice(1)) followUps.push({ from: open, ...p });
 			months.add(monthKey(open.startTs));
 		};

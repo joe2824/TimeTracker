@@ -1,10 +1,8 @@
 <script lang="ts">
-	// Ein Timer lief über Mitternacht, während das Gerät offline war, und wurde
-	// dabei automatisch in Tagesstücke geteilt. Hat ein anderes Gerät denselben
-	// Lauf inzwischen früher beendet, weiss der Abgleich nicht, ob danach echt
-	// weitergearbeitet wurde oder nicht - das kann nur ein Mensch entscheiden.
-	// Deshalb bleiben beide Einträge stehen, und hier zeigt der Hinweis beide
-	// Endzeiten direkt zur Auswahl an, statt nur auf den Zeiten-Bereich zu verweisen.
+	// Ein Timer wurde an Mitternacht automatisch geteilt. Ein Gerät hat den Lauf
+	// vorher beendet, ein anderes die Fortsetzung danach ebenfalls bewusst - zwei
+	// Aussagen, zwischen denen nur ein Mensch entscheiden kann. Deshalb bleiben
+	// beide Einträge stehen, und der Hinweis bietet beide Endzeiten zur Auswahl.
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { Button } from "$lib/components/ui/button";
 	import { account } from "$lib/sync/account.svelte";
@@ -40,7 +38,7 @@
 		busyKey = keyOf(s);
 		try {
 			await app.resolveStaleTimerSplit(s, keep);
-			account.staleTimerSplits = account.staleTimerSplits.filter((x) => x !== s);
+			await account.dropStaleTimerSplit(s);
 		} catch (e) {
 			toast.error(`Speichern fehlgeschlagen: ${errorText(e)}`);
 		} finally {
@@ -61,8 +59,8 @@
 		<Dialog.Header>
 			<Dialog.Title>Bitte einen Tag prüfen</Dialog.Title>
 			<Dialog.Description>
-				Ein Timer lief über Mitternacht, während dieses Gerät offline war. Auf einem anderen Gerät
-				wurde er in der Zwischenzeit schon früher beendet. Welche Zeit stimmt?
+				Ein Timer lief über Mitternacht. Auf einem Gerät wurde er schon vorher beendet, auf einem
+				anderen lief er nach Mitternacht weiter. Welche Zeit stimmt?
 			</Dialog.Description>
 		</Dialog.Header>
 
