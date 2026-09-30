@@ -4,7 +4,7 @@ import { wallToTs } from "./time/tz";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("./testing/fakeFs")).fakeFs);
 
-const { clearLogs, errorText, flushLog, listLogs, logError, logFile, logInfo, pruneOldLogs, readLog } =
+const { clearLogs, errorText, flushLog, listLogs, logError, logFile, logInfo, passkeyErrorText, pruneOldLogs, readLog, userErrorText } =
 	await import("./log");
 
 const today = () => files.get(logFile()) ?? "";
@@ -95,14 +95,22 @@ describe("readLog", () => {
 
 	it("nimmt den Vortag dazu, wenn heute erst wenig steht", async () => {
 		// Kurz nach Mitternacht ist die heutige Datei fast leer und das Gesuchte
-		// von gestern.
-		files.set(logFile(Date.now() - 24 * 60 * 60 * 1000), "gestern A\ngestern B\n");
-		logInfo("heute");
-		await flushLog();
+		// von gestern. Feste Uhr: an einem 25-Stunden-Tag lägen "jetzt" und "vor
+		// 24 Stunden" im selben Tag, und kurz vor Mitternacht wechselte der Tag
+		// zwischen dem Anlegen und dem Protokollieren.
+		vi.useFakeTimers({ toFake: ["Date"], shouldAdvanceTime: true });
+		vi.setSystemTime(Date.UTC(2026, 6, 15, 10));
+		try {
+			files.set(logFile(Date.now() - 24 * 60 * 60 * 1000), "gestern A\ngestern B\n");
+			logInfo("heute");
+			await flushLog();
 
-		const lines = await readLog();
-		expect(lines[0]).toBe("gestern A");
-		expect(lines.at(-1)).toContain("heute");
+			const lines = await readLog();
+			expect(lines[0]).toBe("gestern A");
+			expect(lines.at(-1)).toContain("heute");
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it("ist leer, solange nichts protokolliert wurde", async () => {
@@ -151,5 +159,18 @@ describe("errorText", () => {
 		expect(errorText(new Error("kaputt"))).toBe("kaputt");
 		expect(errorText("fs.scope forbidden path")).toBe("fs.scope forbidden path");
 		expect(errorText({ code: 5 })).toBe('{"code":5}');
+	});
+});
+
+describe("userErrorText / passkeyErrorText", () => {
+	it("zeigt einen echten Fehler mit 'abort' im Text als Fehler", () => {
+		const e = new Error("Transaction aborted");
+		expect(userErrorText(e, "x")).toBe("Transaction aborted");
+		expect(passkeyErrorText(new DOMException("", "NotAllowedError"), "x")).toBe("Abgebrochen.");
+	});
+
+	it("nimmt den Ersatztext nur für Nicht-Errors", () => {
+		expect(userErrorText("kaputt", "Ersatz")).toBe("Ersatz");
+		expect(userErrorText(new Error(""), "Ersatz")).toBe("Error");
 	});
 });

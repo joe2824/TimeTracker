@@ -21,14 +21,20 @@ export function logFile(ts = Date.now()): string {
 /** Ordner der Protokolle, relativ zum App-Datenordner. */
 export const LOG_DIR = DIR;
 
-/**
- * Fehlertext für eine Meldung an Anwender. Ein abgebrochener Passkey-Dialog ist
- * eine Entscheidung, keine Störung; Nicht-Errors bekommen den festen Ersatztext.
- */
+/** Fehlertext für eine Meldung an Anwender; Nicht-Errors bekommen den festen Ersatztext. */
 export function userErrorText(e: unknown, fallback: string): string {
-	if (e instanceof Error && /NotAllowed|abort/i.test(e.name + e.message)) return "Abgebrochen.";
 	// errorText statt e.message: WebCrypto wirft in Chromium einen OperationError mit LEERER Meldung.
 	return e instanceof Error ? errorText(e) : fallback;
+}
+
+/**
+ * Wie userErrorText, für Schritte mit Passkey-Dialog: ein abgebrochener Dialog
+ * ist eine Entscheidung, keine Störung. Nur dort, sonst sähe ein echter Fehler
+ * mit "abort" im Text wie ein Abbruch aus.
+ */
+export function passkeyErrorText(e: unknown, fallback: string): string {
+	if (e instanceof Error && /NotAllowed|abort/i.test(e.name + e.message)) return "Abgebrochen.";
+	return userErrorText(e, fallback);
 }
 
 /** Lesbarer Text zu einem geworfenen Wert. */

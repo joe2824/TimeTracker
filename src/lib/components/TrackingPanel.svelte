@@ -117,7 +117,8 @@
 	const todaySum = $derived(
 		dayTotals(todayEntries, app.absenceIds, app.settings.hoursPerDay, {
 			now: app.now,
-			deductBreaks: app.settings.breakDeduction
+			deductBreaks: app.settings.breakDeduction,
+			workdays: app.settings.workdays
 		})
 	);
 </script>

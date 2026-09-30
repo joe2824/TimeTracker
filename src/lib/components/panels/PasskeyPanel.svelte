@@ -6,7 +6,7 @@
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
 	import { toast } from "svelte-sonner";
-	import { userErrorText } from "$lib/log";
+	import { passkeyErrorText, userErrorText } from "$lib/log";
 	import { account } from "$lib/sync/account.svelte";
 	import { ACCOUNT_KEY, invalidate, warm } from "$lib/ui/prefetch";
 	import type { Passkey } from "$lib/sync/api";
@@ -73,7 +73,7 @@
 				);
 			}
 		} catch (e) {
-			toast.error(userErrorText(e, "Hinzufügen fehlgeschlagen"));
+			toast.error(passkeyErrorText(e, "Hinzufügen fehlgeschlagen"));
 		} finally {
 			isLoading = false;
 		}
@@ -125,7 +125,7 @@
 				);
 			}
 		} catch (e) {
-			toast.error(userErrorText(e, "Einrichten fehlgeschlagen"));
+			toast.error(passkeyErrorText(e, "Einrichten fehlgeschlagen"));
 		} finally {
 			repairing = null;
 		}

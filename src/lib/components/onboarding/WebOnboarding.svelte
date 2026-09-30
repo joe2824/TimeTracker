@@ -29,7 +29,7 @@
 	import UserPlusIcon from "@lucide/svelte/icons/user-plus";
 	import KeyRoundIcon from "@lucide/svelte/icons/key-round";
 	import { RELEASES_URL, detectOs, hasDesktopApp } from "$lib/platform/os";
-	import { logWarn, userErrorText } from "$lib/log";
+	import { logWarn, passkeyErrorText } from "$lib/log";
 	import { copyText } from "$lib/ui/clipboard";
 	import { linkParameter } from "$lib/account/invite";
 	import { onboardingOpen } from "$lib/account/onboarding.svelte";
@@ -214,7 +214,7 @@
 				inviteOpen = true;
 				return;
 			}
-			toast.error(userErrorText(e, "Konto konnte nicht angelegt werden"));
+			toast.error(passkeyErrorText(e, "Konto konnte nicht angelegt werden"));
 		} finally {
 			running = false;
 		}
@@ -247,7 +247,7 @@
 			app.dismissOnboarding();
 			toast.success(`„${label}" ist jetzt verknüpft.`);
 		} catch (e) {
-			toast.error(userErrorText(e, "Code konnte nicht bestätigt werden"));
+			toast.error(passkeyErrorText(e, "Code konnte nicht bestätigt werden"));
 		} finally {
 			running = false;
 		}
@@ -276,7 +276,7 @@
 			if (lastPasskey) await account.rememberPasskey(lastPasskey.credentialId);
 			toast.success("Entsperrt.");
 		} catch (e) {
-			toast.error(userErrorText(e, "Die Phrase passt nicht zu diesem Konto"));
+			toast.error(passkeyErrorText(e, "Die Phrase passt nicht zu diesem Konto"));
 		} finally {
 			running = false;
 		}
@@ -295,7 +295,7 @@
 			phraseInput = "";
 			toast.success("Konto zurückgeholt. Leg jetzt einen Passkey an, dann geht es künftig schneller.");
 		} catch (e) {
-			toast.error(userErrorText(e, "Zurückholen fehlgeschlagen"));
+			toast.error(passkeyErrorText(e, "Zurückholen fehlgeschlagen"));
 		} finally {
 			running = false;
 		}
@@ -316,7 +316,7 @@
 		},
 		failed: (e) => {
 			pairingOpen = false;
-			toast.error(userErrorText(e, "Kopplung fehlgeschlagen"));
+			toast.error(passkeyErrorText(e, "Kopplung fehlgeschlagen"));
 		}
 	});
 
@@ -342,7 +342,7 @@
 			await openExternal(pairStartLink(serverUrl));
 		} catch (e) {
 			waitingForApp = false;
-			toast.error(userErrorText(e, "Anwendung konnte nicht geöffnet werden"));
+			toast.error(passkeyErrorText(e, "Anwendung konnte nicht geöffnet werden"));
 		} finally {
 			running = false;
 		}
@@ -359,7 +359,7 @@
 		} catch (e) {
 			// Ohne Code hat der Dialog nichts zu zeigen.
 			pairingOpen = false;
-			toast.error(userErrorText(e, "Kopplung konnte nicht begonnen werden"));
+			toast.error(passkeyErrorText(e, "Kopplung konnte nicht begonnen werden"));
 		} finally {
 			running = false;
 		}

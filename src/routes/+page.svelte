@@ -17,7 +17,7 @@
 	import WebOnboarding from "$lib/components/onboarding/WebOnboarding.svelte";
 	import { onboardingOpen } from "$lib/account/onboarding.svelte";
 	import PasskeyNudge from "$lib/components/onboarding/PasskeyNudge.svelte";
-	import { errorText, logError, logFile, logInfo, logWarn, pruneOldLogs, userErrorText } from "$lib/log";
+	import { errorText, logError, logFile, logInfo, logWarn, passkeyErrorText, pruneOldLogs, userErrorText } from "$lib/log";
 	import { startPicker } from "$lib/ui/startPicker.svelte";
 	import { keepTrayInSync } from "$lib/ui/trayState.svelte";
 	import { appDataDir, join } from "@tauri-apps/api/path";
@@ -185,7 +185,7 @@
 			// Ohne diese Zeile schliesst sich der Hinweis, und niemand ist abgemeldet.
 			await logout();
 		} catch (e) {
-			toast.error(userErrorText(e, "Passkey konnte nicht angelegt werden"));
+			toast.error(passkeyErrorText(e, "Passkey konnte nicht angelegt werden"));
 		} finally {
 			creating = false;
 		}
