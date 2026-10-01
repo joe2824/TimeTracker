@@ -37,6 +37,7 @@ import {
 	MAX_TEAMS_PER_OWNER
 } from "./teams";
 import { teamAdminInvites, teamMembers, teams } from "./db/schema";
+import { TEAM_ACCESS_DENIED } from "$shared/teamAccess";
 
 const rep = (total: number) => ({ rows: [], total, workHours: total, absenceHours: 0 });
 
@@ -252,6 +253,17 @@ describe("requireTeamMember", () => {
 		expect(() => requireTeamMember({ teamMemberId: null, teamId: null })).toThrow();
 		expect(() => requireTeamMember({ teamMemberId: "m1", teamId: null })).toThrow();
 		expect(requireTeamMember({ teamMemberId: "m1", teamId: "t1" })).toBe("t1");
+	});
+
+	it("sagt mit dem vereinbarten Wortlaut ab - daran erkennt das Gerät den Server", () => {
+		// Auf genau diese Absage hin baut ein Gerät seine Mitgliedschaft ab.
+		let thrown: unknown;
+		try {
+			requireTeamMember({ teamMemberId: null, teamId: null });
+		} catch (e) {
+			thrown = e;
+		}
+		expect(thrown).toMatchObject({ status: 401, body: { message: TEAM_ACCESS_DENIED } });
 	});
 });
 

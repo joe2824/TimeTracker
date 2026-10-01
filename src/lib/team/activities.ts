@@ -12,6 +12,7 @@ import { teamJoin } from "./state.svelte";
 import { logWarn } from "../log";
 import { createSerialQueue } from "../utils";
 import { TEAM_ACTIVITY_PREFIX, type Activity } from "../types";
+import { TEAM_ACCESS_DENIED } from "$shared/teamAccess";
 
 export { TEAM_ACTIVITY_PREFIX };
 
@@ -117,14 +118,15 @@ export async function syncTeamActivities(): Promise<TeamSyncResult> {
 	}
 
 	let remote: TeamActivity[];
-	// 401: das Team wurde gelöscht oder dieses Mitglied entfernt. Wie eine leere
-	// Antwort behandelt - alle Zeilen lösen sich ab, danach wird die
-	// Mitgliedschaft vergessen. Jeder andere Fehler ist ein Netz-Aussetzer.
+	// Die Absage des Servers: das Team wurde gelöscht oder dieses Mitglied
+	// entfernt. Wie eine leere Antwort behandelt - alle Zeilen lösen sich ab,
+	// danach wird die Mitgliedschaft vergessen. Jeder andere Fehler ist ein
+	// Netz-Aussetzer, auch ein 401 ohne den Wortlaut des Servers (Proxy davor).
 	let membershipGone = false;
 	try {
 		remote = (await fetchTeamActivities(device.serverUrl, device.token)).activities;
 	} catch (e) {
-		if (e instanceof ApiError && e.status === 401) {
+		if (e instanceof ApiError && e.status === 401 && e.message === TEAM_ACCESS_DENIED) {
 			remote = [];
 			membershipGone = true;
 		} else {

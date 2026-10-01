@@ -19,6 +19,7 @@ import { generateInviteCode, inviteCodeCandidates } from "./invites";
 import { hashSecret, newSecret } from "./auth";
 import { cleanEmail } from "$shared/email";
 import { readLabel, TEAM_TEXT_MAX } from "$shared/labels";
+import { TEAM_ACCESS_DENIED } from "$shared/teamAccess";
 
 export interface TeamRow {
 	id: string;
@@ -288,7 +289,7 @@ export function revokeTeamMember(db: Db, teamId: string, memberId: string): bool
 
 /** Team-Mitglied sein - wirft 401, wenn der `x-team-token`-Kopf fehlt oder ungültig war. */
 export function requireTeamMember(locals: { teamMemberId: string | null; teamId: string | null }): string {
-	if (!locals.teamMemberId || !locals.teamId) error(401, "Kein Team-Zugang");
+	if (!locals.teamMemberId || !locals.teamId) error(401, TEAM_ACCESS_DENIED);
 	return locals.teamId;
 }
 

@@ -195,6 +195,28 @@ describe("syncTeamActivities", () => {
 		expect(detached?.teamOwned).toBeUndefined();
 	});
 
+	it("baut bei einem 401, das nicht vom Server selbst stammt, nichts ab", async () => {
+		// Ein Proxy oder eine Wartungsseite davor antwortet auch mit 401. Der Abbau
+		// lässt sich nicht zurücknehmen - er braucht die Absage des Servers selbst.
+		const device = { teamMemberId: "m1", token: "tok", teamName: "Vertrieb", serverUrl: "https://tt.example.de" };
+		await saveTeamDevice(device);
+		remote.mockResolvedValue({
+			activities: [
+				{ id: "a1", name: "Projekt A", isAbsence: false, sortOrder: 0, color: null, archived: false, updatedAt: 1 }
+			]
+		});
+		await syncTeamActivities();
+
+		remote.mockRejectedValue(new ApiError("Unauthorized", 401));
+		await expect(syncTeamActivities()).resolves.toBe("offline");
+
+		expect(await loadTeamDevice()).toEqual(device);
+		expect(app.activities.find((a) => a.id === `${TEAM_ACTIVITY_PREFIX}a1`)).toMatchObject({
+			teamOwned: true,
+			archived: false
+		});
+	});
+
 	it("entfernt, neu beigetreten: keine doppelte Aktivität, Stunden hängen an genau einer Zeile", async () => {
 		const device = { teamMemberId: "m1", token: "tok", teamName: "Vertrieb", serverUrl: "https://tt.example.de" };
 		const a1 = { id: "a1", name: "Projekt A", isAbsence: false, sortOrder: 0, color: null, archived: false, updatedAt: 1 };
