@@ -216,6 +216,29 @@ describe("Nachlauf fuer eine neue Datensatzart", () => {
 		}
 	});
 
+	it("holt die Team-Mitgliedschaft nach, die eine Fassung ohne diese Art uebersprungen hat", async () => {
+		const team = { teamMemberId: "m1", token: "team-tok", teamName: "Vertrieb", serverUrl: "http://test" };
+		try {
+			await account.linkWithSession("http://test", await createVaultKey(), "Ich");
+			await store.saveTeamDevice(team);
+			await settled();
+
+			// Die Fassung davor kannte Reports (Nachlauf 1), Mitgliedschaften nicht:
+			// sie hat den Datensatz übergangen und ihren Stand dahinter gesetzt.
+			await store.saveDevice({ ...(await store.loadDevice())!, resyncGeneration: 1 });
+			files.delete("data/team.json");
+			resetOutboxForTests();
+
+			await account.init();
+			await settled();
+
+			expect(await store.loadTeamDevice()).toEqual(team);
+		} finally {
+			restoreFetch();
+			await account.unlink();
+		}
+	});
+
 	it("laesst dem Geraet mitten im Backfill die vorgezogenen Monate", async () => {
 		// Stand > 0 UND vorgezogene Monate heisst: die Historie fehlt hier noch
 		// zum Teil. Nimmt der Nachlauf ihm den vorgezogenen Teil, läuft der

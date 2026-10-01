@@ -143,7 +143,7 @@ const BACKFILL_RELOAD_MS = 5_000;
  * einmalig von vorne holen; das Zusammenführen ändert dabei nichts an dem, was
  * schon stimmt.
  */
-export const RESYNC_GENERATION = 1;
+export const RESYNC_GENERATION = 2;
 
 class AccountState {
 	state = $state<LinkState>("off");
