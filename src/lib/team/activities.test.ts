@@ -1,7 +1,7 @@
 // Merge-Regel: Team-Aktivitäten ersetzen nur sich selbst, persönliche bleiben stehen.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Activity } from "../types";
-import { resetFakeFs } from "../testing/fakeFs";
+import { files, resetFakeFs } from "../testing/fakeFs";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("../testing/fakeFs")).fakeFs);
 vi.mock("svelte-sonner", () => import("../testing/toastStub"));
@@ -66,6 +66,18 @@ describe("syncTeamActivities", () => {
 		expect(detached).toMatchObject({ archived: true });
 		expect(detached?.teamOwned).toBeUndefined();
 		expect(remote).not.toHaveBeenCalled();
+	});
+
+	it("lässt die Team-Zeilen stehen, wenn die Mitgliedschaft da, aber gerade nicht lesbar ist", async () => {
+		// Etwa wenn sich der Token beim versteckten Autostart noch nicht öffnen
+		// lässt. Das ist kein Austritt - Ablösen hängte alle Einträge um.
+		files.set("data/team.json", JSON.stringify({ teamMemberId: "m1", token: "x", teamName: "Vertrieb", serverUrl: "https://tt.example.de", protected: true }));
+		const joined = { id: "team:j", name: "Beigetreten", sortOrder: 1, archived: false, isAbsence: false, teamOwned: true };
+		app.activities = [PERSONAL, joined];
+
+		await expect(syncTeamActivities()).resolves.toBe("none");
+
+		expect(app.activities).toEqual([PERSONAL, joined]);
 	});
 
 	it("fügt Team-Aktivitäten mit Namensraum-Id ein, ohne die eigenen anzufassen", async () => {

@@ -10,8 +10,10 @@ vi.mock("./api", () => ({
 	fetchOwnTeamReport: (...args: unknown[]) => fetchOwnTeamReport(...args)
 }));
 let pending: PendingTeamReport[] = [];
+let teamFilePresent = false;
 vi.mock("../store", () => ({
 	loadTeamDevice: () => loadTeamDevice(),
+	teamFileExists: async () => teamFilePresent,
 	loadPendingTeamReports: async () => pending,
 	savePendingTeamReports: async (list: PendingTeamReport[]) => {
 		pending = list;
@@ -43,6 +45,7 @@ beforeEach(() => {
 	fetchOwnTeamReport.mockReset();
 	loadTeamDevice.mockReset();
 	pending = [];
+	teamFilePresent = false;
 });
 
 const MEMBER = { teamMemberId: "m1", token: "tok", teamName: "Vertrieb", serverUrl: "https://tt.example.de" };
@@ -99,6 +102,16 @@ describe("Team-Upload nachholen", () => {
 
 		expect(uploadTeamReport).not.toHaveBeenCalled();
 		expect(pending).toEqual([]);
+	});
+
+	it("behält Vorgemerktes, solange die Mitgliedschaft nur nicht lesbar ist", async () => {
+		loadTeamDevice.mockResolvedValue(null);
+		teamFilePresent = true;
+		pending = [{ month: "2026-08", teamMemberId: "m1", report: teamReportPayload(REPORT) }];
+
+		await retryTeamReportUploads();
+
+		expect(pending).toHaveLength(1);
 	});
 
 	it("ein geglückter Upload streicht den älteren Vormerk desselben Monats", async () => {

@@ -9,7 +9,7 @@ vi.mock("@tauri-apps/plugin-fs", async () => (await import("../testing/fakeFs"))
 const { createVaultKey, bucketFor } = await import("../crypto/vault");
 const { monthKey, prevMonthKey, startOfNextDay } = await import("../time/time");
 const { resetOutboxForTests, pendingChanges, rememberUnstamped } = await import("./outbox");
-const { resetFakeFs } = await import("../testing/fakeFs");
+const { files, resetFakeFs } = await import("../testing/fakeFs");
 const store = await import("../store");
 const { defaultSettings } = await import("../types");
 import type { Entry } from "../types";
@@ -1623,6 +1623,18 @@ describe("Team-Mitgliedschaft gehört zum Konto", () => {
 		await on(desktop, (engine) => engine.sync());
 
 		expect(await on(desktop, () => store.loadTeamDevice())).toBeNull();
+	});
+
+	it("ein gerade nicht lesbarer Token wird nicht als Austritt hochgeladen", async () => {
+		const phone = new FakeDevice("handy");
+		await on(phone, async (engine) => {
+			await store.saveTeamDevice(TEAM);
+			// Vorgemerkt, aber die Datei lässt sich nicht öffnen (Token an ein anderes Gerät gebunden).
+			files.set("data/team.json", JSON.stringify({ ...TEAM, token: "x", protected: true }));
+			return engine.sync();
+		});
+
+		expect(server.rows.get("team-membership")?.deletedAt ?? null).toBeNull();
 	});
 
 	it("lokales Vergessen ist kein Austritt - das Konto behält die Mitgliedschaft", async () => {

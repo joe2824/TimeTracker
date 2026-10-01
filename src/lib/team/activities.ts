@@ -3,7 +3,7 @@
 // vom Team vorgegebenen Zeilen (Präfix "team:"); persönliche Aktivitäten
 // bleiben unangetastet.
 import { app } from "../app.svelte";
-import { clearTeamDevice, loadTeamDevice, loadTeamRemovedFrom, saveTeamRemovedFrom } from "../store";
+import { clearTeamDevice, loadTeamDevice, loadTeamRemovedFrom, saveTeamRemovedFrom, teamFileExists } from "../store";
 import { fetchTeamActivities, leaveTeamOnServer } from "./api";
 import { managedTeams } from "./managedTeams.svelte";
 import { account } from "../sync/account.svelte";
@@ -131,7 +131,8 @@ export async function syncTeamActivities(): Promise<TeamSyncResult> {
 		// Die Mitgliedschaft kann über das Konto enden (Austritt auf einem anderen
 		// Gerät): dann ist nur der Token weg, die Zeilen stehen noch da.
 		await withActivitiesLock(async () => {
-			if (await loadTeamDevice()) return;
+			// Nur wenn die Datei wirklich fehlt: eine unlesbare ist kein Austritt.
+			if ((await loadTeamDevice()) || (await teamFileExists())) return;
 			if (app.activities.some(isJoinedTeamRow)) await app.detachTeamActivities(isJoinedTeamRow);
 		});
 		return "none";

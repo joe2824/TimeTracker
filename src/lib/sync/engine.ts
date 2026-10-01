@@ -436,6 +436,9 @@ export class SyncEngine {
 					out.push(await this.#record(c, report ? { ...report, id: c.id } : undefined));
 				} else if (c.kind === "team") {
 					const team = await this.#store.team();
+					// Fehlt sie ohne vorgemerkte Löschung, ist die Datei nur nicht lesbar -
+					// als Löschung hochgeladen nähme das allen Geräten die Mitgliedschaft.
+					if (!team && !c.deleted) continue;
 					out.push(await this.#record(c, team ? { ...team, id: c.id } : undefined));
 				} else {
 					out.push(await this.#record(c, { ...(await this.#store.settings()), id: SETTINGS_ID }));

@@ -1,7 +1,13 @@
 // Den eigenen Bericht ans Team hochladen - zusätzlich zum gewohnten Versand,
 // nicht statt ihm. Ein Fehler hier darf den Mail-Versand nicht verhindern.
 import { fetchOwnTeamReport, uploadTeamReport } from "./api";
-import { loadPendingTeamReports, loadTeamDevice, savePendingTeamReports, type PendingTeamReport } from "../store";
+import {
+	loadPendingTeamReports,
+	loadTeamDevice,
+	savePendingTeamReports,
+	teamFileExists,
+	type PendingTeamReport
+} from "../store";
 import { ApiError } from "../sync/api";
 import { logWarn } from "../log";
 import { createSerialQueue } from "../utils";
@@ -64,6 +70,8 @@ export function retryTeamReportUploads(): Promise<void> {
 			const pending = await loadPendingTeamReports();
 			if (pending.length === 0) return;
 			const device = await loadTeamDevice();
+			// Da, aber nicht lesbar: später noch einmal, statt alles zu verwerfen.
+			if (!device && (await teamFileExists())) return;
 			const still: PendingTeamReport[] = [];
 			for (const p of pending) {
 				if (!device || p.teamMemberId !== device.teamMemberId) continue;

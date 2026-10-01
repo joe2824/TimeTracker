@@ -1040,6 +1040,14 @@ export async function loadTeamDevice(): Promise<TeamDeviceInfo | null> {
 	return info;
 }
 
+/**
+ * Ob eine Mitgliedschaft auf der Platte liegt – lesbar oder nicht. Ein Token,
+ * der sich gerade nicht öffnen lässt, ist kein Austritt.
+ */
+export function teamFileExists(): Promise<boolean> {
+	return storage.exists(`${DIR}/team.json`);
+}
+
 export function saveTeamDevice(info: TeamDeviceInfo): Promise<void> {
 	return saveTeamWith(writeHook, info);
 }
