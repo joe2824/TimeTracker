@@ -8,7 +8,7 @@ import {
 	weekdayOfDate,
 	zonedParts
 } from "../time/tz";
-import { DEFAULT_SUBJECT } from "../types";
+import { DEFAULT_SUBJECT, TEAM_ACTIVITY_PREFIX } from "../types";
 import { deductBreakFromDay } from "../time/breaks";
 import { entryHours, fmtDate, fmtHoursClock, isWorkday, monthLabel, roundHours } from "../time/time";
 import { dayActivityHours } from "./stats";
@@ -26,6 +26,9 @@ export function buildSubject(template: string, label: string, name: string): str
 		.replace(/\s{2,}/g, " ")
 		.trim();
 }
+
+/** Sammelzeile für Stunden auf Team-Aktivitäten, deren Zeile dieses Gerät nicht kennt. */
+export const FOREIGN_TEAM_ROW_ID = `${TEAM_ACTIVITY_PREFIX}*`;
 
 export interface ReportRow {
 	activityId: string;
@@ -145,6 +148,23 @@ export function buildReport(
 			isAbsence: a.isAbsence
 		};
 	});
+
+	// Einträge auf Team-Aktivitäten kommen über das Konto, die Team-Zeilen
+	// selbst nicht (siehe outbox.ts). Auf einem Gerät ohne Mitgliedschaft fehlt
+	// also die Zeile - die Stunden gehören trotzdem in Bericht und Summe.
+	const known = new Set(activities.map((a) => a.id));
+	let foreignTeamHours = 0;
+	for (const [id, raw] of hoursByActivity) {
+		if (id.startsWith(TEAM_ACTIVITY_PREFIX) && !known.has(id)) foreignTeamHours += roundHours(raw, step);
+	}
+	if (foreignTeamHours > 0) {
+		rows.push({
+			activityId: FOREIGN_TEAM_ROW_ID,
+			name: "Team-Aktivitäten (auf anderem Gerät erfasst)",
+			hours: foreignTeamHours,
+			isAbsence: false
+		});
+	}
 
 	const absenceHours = rows.filter((r) => r.isAbsence).reduce((s, r) => s + r.hours, 0);
 	const workHours = rows.filter((r) => !r.isAbsence).reduce((s, r) => s + r.hours, 0);

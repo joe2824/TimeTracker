@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildReport, buildSubject, reportToHtml } from "./report";
+import { buildReport, buildSubject, FOREIGN_TEAM_ROW_ID, reportToHtml } from "./report";
 import type { Activity, Entry } from "../types";
 import { wallToTs } from "../time/tz";
 
@@ -61,6 +61,27 @@ describe("buildReport", () => {
 		expect(report.total).toBe(14.75);
 	});
 
+
+	it("führt Stunden auf Team-Aktivitäten ohne lokale Zeile in einer eigenen Zeile", () => {
+		// Die Einträge kommen über das Konto, die Team-Zeilen nicht: auf einem
+		// Gerät ohne Mitgliedschaft fehlten die Stunden sonst in Zeilen und Summe.
+		const withTeam = buildReport(
+			"2026-06",
+			activities,
+			[work("1", "a", 7200), work("t1", "team:x", 3600), work("t2", "team:y", 4800)],
+			0.5,
+			HPD
+		);
+
+		expect(withTeam.rows.at(-1)).toEqual({
+			activityId: FOREIGN_TEAM_ROW_ID,
+			name: "Team-Aktivitäten (auf anderem Gerät erfasst)",
+			hours: 2.5, // 1.0 + 1.5 - je Aktivität gerundet, wie auf dem Gerät mit den Zeilen
+			isAbsence: false
+		});
+		expect(withTeam.workHours).toBe(4.5);
+		expect(withTeam.total).toBe(4.5);
+	});
 
 	it("klammert Abwesenheiten an Nicht-Arbeitstagen aus (workdays Mo–Fr)", () => {
 		const fri = wallToTs(2026, 7, 10, 12, 0, 0); // Freitag
