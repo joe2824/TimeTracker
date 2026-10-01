@@ -14,6 +14,7 @@
 	import { onPairLink, onTeamJoinLink } from "$lib/platform/deeplink";
 	import { teamJoin } from "$lib/team/state.svelte";
 	import { syncTeamActivities, syncOwnedTeamActivities } from "$lib/team/activities";
+	import { retryTeamReportUploads } from "$lib/team/reports";
 	import WebOnboarding from "$lib/components/onboarding/WebOnboarding.svelte";
 	import { onboardingOpen } from "$lib/account/onboarding.svelte";
 	import PasskeyNudge from "$lib/components/onboarding/PasskeyNudge.svelte";
@@ -306,7 +307,9 @@
 			await account.init();
 			// Nicht abwarten: rein additiv (siehe syncTeamActivities), ein
 			// nicht erreichbarer Server darf den Start nicht aufhalten.
-			void syncTeamActivities();
+			// Danach, nicht daneben: endete die Mitgliedschaft inzwischen, ist auch
+			// der vorgemerkte Bericht hinfällig.
+			void syncTeamActivities().finally(() => retryTeamReportUploads());
 			// Dieselbe Spiegelung für den Chef selbst - sonst sieht er die eigene
 			// Team-Liste nie in der eigenen Zeiterfassung.
 			void syncOwnedTeamActivities();

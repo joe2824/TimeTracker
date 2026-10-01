@@ -1041,6 +1041,25 @@ export function clearTeamDevice(): Promise<void> {
 	return removeDataFile("team.json");
 }
 
+/** Ein Bericht, der beim Team noch nicht angekommen ist - siehe team/reports.ts. */
+export interface PendingTeamReport {
+	month: string;
+	/** Zu welcher Mitgliedschaft er gehört - nach einem neuen Beitritt ginge er sonst ans falsche Team. */
+	teamMemberId: string;
+	report: unknown;
+}
+
+const PENDING_TEAM_REPORTS_FILE = "team-reports-pending.json";
+
+export function loadPendingTeamReports(): Promise<PendingTeamReport[]> {
+	return readJson<PendingTeamReport[]>(PENDING_TEAM_REPORTS_FILE, [], { encrypted: true });
+}
+
+export function savePendingTeamReports(list: PendingTeamReport[]): Promise<void> {
+	if (list.length === 0) return removeDataFile(PENDING_TEAM_REPORTS_FILE);
+	return writeJson(PENDING_TEAM_REPORTS_FILE, list, { encrypted: true });
+}
+
 /**
  * Ausstehende Änderungen. Der Inhalt steht in sync/outbox.ts.
  *
