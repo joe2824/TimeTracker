@@ -8,7 +8,7 @@ vi.mock("@tauri-apps/plugin-fs", async () => (await import("../testing/fakeFs"))
 
 const { createVaultKey, bucketFor } = await import("../crypto/vault");
 const { monthKey, prevMonthKey, startOfNextDay } = await import("../time/time");
-const { resetOutboxForTests, pendingChanges } = await import("./outbox");
+const { resetOutboxForTests, pendingChanges, rememberUnstamped } = await import("./outbox");
 const { resetFakeFs } = await import("../testing/fakeFs");
 const store = await import("../store");
 const { defaultSettings } = await import("../types");
@@ -1582,5 +1582,60 @@ describe("Loeschung im Konflikt", () => {
 
 		await on(phone, (engine) => engine.sync());
 		expect(await entries(phone)).toEqual([]);
+	});
+});
+
+describe("Team-Mitgliedschaft gehört zum Konto", () => {
+	const TEAM = { teamMemberId: "m1", token: "team-tok", teamName: "Vertrieb", serverUrl: "https://tt.example.de" };
+
+	it("kommt auf dem zweiten Gerät desselben Kontos an", async () => {
+		const phone = new FakeDevice("handy");
+		const desktop = new FakeDevice("rechner");
+
+		await changeAndSync(phone, () => store.saveTeamDevice(TEAM));
+		await on(desktop, (engine) => engine.sync());
+
+		expect(await on(desktop, () => store.loadTeamDevice())).toEqual(TEAM);
+	});
+
+	it("ein Beitritt ohne Konto geht nach dem Verknüpfen ins Konto", async () => {
+		const phone = new FakeDevice("handy");
+		const desktop = new FakeDevice("rechner");
+		await withoutAccount(phone, () => store.saveTeamDevice(TEAM));
+
+		await on(phone, async (engine) => {
+			await rememberUnstamped();
+			return engine.sync();
+		});
+		await on(desktop, (engine) => engine.sync());
+
+		expect(await on(desktop, () => store.loadTeamDevice())).toEqual(TEAM);
+	});
+
+	it("ein Austritt kommt auf dem zweiten Gerät an", async () => {
+		const phone = new FakeDevice("handy");
+		const desktop = new FakeDevice("rechner");
+		await changeAndSync(phone, () => store.saveTeamDevice(TEAM));
+		await on(desktop, (engine) => engine.sync());
+
+		await afterwards();
+		await changeAndSync(phone, () => store.clearTeamDevice());
+		await on(desktop, (engine) => engine.sync());
+
+		expect(await on(desktop, () => store.loadTeamDevice())).toBeNull();
+	});
+
+	it("lokales Vergessen ist kein Austritt - das Konto behält die Mitgliedschaft", async () => {
+		// So räumt das Abmelden im Browser auf: der Token verschwindet vom Gerät,
+		// die Mitgliedschaft bleibt und kommt beim nächsten Anmelden zurück.
+		const browser = new FakeDevice("browser");
+		const desktop = new FakeDevice("rechner");
+		await changeAndSync(browser, () => store.saveTeamDevice(TEAM));
+
+		await changeAndSync(browser, () => store.forgetTeamDeviceLocally());
+		expect(await on(browser, () => store.loadTeamDevice())).toBeNull();
+		await on(desktop, (engine) => engine.sync());
+
+		expect(await on(desktop, () => store.loadTeamDevice())).toEqual(TEAM);
 	});
 });

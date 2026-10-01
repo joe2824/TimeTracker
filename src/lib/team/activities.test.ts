@@ -52,6 +52,22 @@ describe("syncTeamActivities", () => {
 		expect(app.activities).toEqual([PERSONAL]);
 	});
 
+	it("löst die Team-Zeilen ab, wenn die Mitgliedschaft auf einem anderen Gerät des Kontos endete", async () => {
+		// Der Austritt kommt über das Konto an und nimmt nur den Token mit - ohne
+		// das blieben die Zeilen für immer als Team-Zeilen stehen.
+		app.activities = [
+			PERSONAL,
+			{ id: "team:j", name: "Beigetreten", sortOrder: 1, archived: false, isAbsence: false, teamOwned: true }
+		];
+
+		await expect(syncTeamActivities()).resolves.toBe("none");
+
+		const detached = app.activities.find((a) => a.name === "Beigetreten");
+		expect(detached).toMatchObject({ archived: true });
+		expect(detached?.teamOwned).toBeUndefined();
+		expect(remote).not.toHaveBeenCalled();
+	});
+
 	it("fügt Team-Aktivitäten mit Namensraum-Id ein, ohne die eigenen anzufassen", async () => {
 		await saveTeamDevice({
 			teamMemberId: "m1",

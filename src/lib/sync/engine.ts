@@ -9,7 +9,7 @@
 // Die Herkunftsspuren bleiben aus dem Chiffrat draussen: der Server braucht sie im
 // Klartext für die Reihenfolge.
 import type { Entry, Activity, Settings } from "../types";
-import type { StoredTimeReport } from "../store";
+import type { StoredTimeReport, TeamRecord } from "../store";
 import { Api, ApiError, type PushRecord, type ServerRecord } from "./api";
 import {
 	clearChanges,
@@ -84,6 +84,9 @@ export interface LocalStore {
 	timeReport(month: string): Promise<StoredTimeReport | null>;
 	saveTimeReport(report: StoredTimeReport): Promise<void>;
 	deleteTimeReport(month: string): Promise<void>;
+	team(): Promise<TeamRecord | null>;
+	saveTeam(record: TeamRecord): Promise<void>;
+	deleteTeam(): Promise<void>;
 }
 
 /**
@@ -431,6 +434,9 @@ export class SyncEngine {
 					const month = monthOfTimeReportId(c.id);
 					const report = month ? await this.#store.timeReport(month) : null;
 					out.push(await this.#record(c, report ? { ...report, id: c.id } : undefined));
+				} else if (c.kind === "team") {
+					const team = await this.#store.team();
+					out.push(await this.#record(c, team ? { ...team, id: c.id } : undefined));
 				} else {
 					out.push(await this.#record(c, { ...(await this.#store.settings()), id: SETTINGS_ID }));
 				}
@@ -663,12 +669,14 @@ export class SyncEngine {
 		const activities = records.filter((r) => r.kind === "activity");
 		const settings = records.filter((r) => r.kind === "settings");
 		const reports = records.filter((r) => r.kind === "timereport");
+		const teams = records.filter((r) => r.kind === "team");
 
 		const entryResult = await this.#applyEntries(entries, open);
 		lostEdits += entryResult.lost;
 		if (activities.length > 0) lostEdits += await this.#applyActivities(activities, open);
 		if (settings.length > 0) lostEdits += await this.#applySettings(settings[settings.length - 1], open);
 		for (const r of reports) lostEdits += await this.#applyTimeReport(r, open);
+		if (teams.length > 0) lostEdits += await this.#applyTeam(teams[teams.length - 1], open);
 		return { lostEdits, staleTimerSplits: entryResult.staleTimerSplits };
 	}
 
@@ -1051,6 +1059,31 @@ export class SyncEngine {
 		else {
 			const { id: _id, deletedAt: _deletedAt, ...rest } = result.value;
 			await this.#store.saveTimeReport(rest as StoredTimeReport);
+		}
+		return result.lostLocalEdit ? 1 : 0;
+	}
+
+	/**
+	 * Die Team-Mitgliedschaft einspielen - ein Datensatz je Konto, als Ganzes.
+	 * Ein Löschmarker heisst: irgendwo ausgetreten, dann ist auch dieses Gerät draussen.
+	 */
+	async #applyTeam(record: ServerRecord, open: Set<string>): Promise<number> {
+		const content = await this.#open<TeamRecord & { id?: string }>(record);
+		if (content === undefined) return 0;
+		const local = await this.#store.team();
+		const result = mergeRecord<TeamRecord & { id: string; deletedAt?: number }>(
+			{
+				local: local ? { ...local, id: record.id } : undefined,
+				remote: withTombstone(record, fromServer(record, content)),
+				localPending: open.has(`team:${record.id}`)
+			},
+			carriesTombstone
+		);
+		if (!result.changed) return result.lostLocalEdit ? 1 : 0;
+		if (result.value === null) await this.#store.deleteTeam();
+		else {
+			const { id: _id, deletedAt: _deletedAt, ...rest } = result.value;
+			await this.#store.saveTeam(rest as TeamRecord);
 		}
 		return result.lostLocalEdit ? 1 : 0;
 	}

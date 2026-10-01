@@ -4,8 +4,8 @@ import { logError, logInfo, logWarn, clearLogs } from "../log";
 import {
 	clearAccountData,
 	clearOutbox,
-	clearTeamDevice,
 	deviceFileExists,
+	forgetTeamDeviceLocally,
 	loadDevice,
 	loadTeamDevice,
 	saveTeamRemovedFrom,
@@ -304,8 +304,10 @@ class AccountState {
 	 * abgelegten Schlüssel. Von zwei Stellen gebraucht (kein verknüpftes Konto
 	 * beim Start, `unlink()`), deshalb hier gebündelt statt zweimal hingeschrieben.
 	 */
-	async #wipeLocalData(opts: { endTeamMembership?: boolean } = {}): Promise<void> {
-		if (opts.endTeamMembership) await this.#endTeamMembership();
+	async #wipeLocalData(opts: { forgetTeam?: boolean } = {}): Promise<void> {
+		// Beim Start ohne Konto bleibt der Token liegen: der Beitritt geht ohne
+		// Konto, und erst das Anmelden nimmt die Mitgliedschaft ins Konto auf.
+		if (opts.forgetTeam) await this.#forgetTeamLocally();
 		await clearAccountData();
 		if (usingBrowserStorage()) {
 			// Fehlschlag hier darf die restliche Aufraeumung nicht abbrechen - sonst
@@ -327,22 +329,14 @@ class AccountState {
 	}
 
 	/**
-	 * Die Team-Mitgliedschaft dieses Browsers beenden, wenn der Mensch davor geht.
-	 * Bliebe das Token liegen, gingen die Berichte des Nächsten unter dem Namen
-	 * des Vorgängers ans Team. Dem Server gemeldet, sonst stünde das Mitglied
-	 * dort jeden Monat als "kein Bericht" in der Liste.
+	 * Den Team-Token von diesem Browser nehmen. Kein Austritt: die Mitgliedschaft
+	 * gehört dem Konto und kommt beim nächsten Anmelden von dort zurück.
 	 */
-	async #endTeamMembership(): Promise<void> {
-		const device = await loadTeamDevice().catch(() => null);
-		await clearTeamDevice().catch((e) => logWarn("Team-Mitgliedschaft nicht gelöscht", e));
+	async #forgetTeamLocally(): Promise<void> {
+		await forgetTeamDeviceLocally().catch((e) => logWarn("Team-Token nicht vom Gerät genommen", e));
 		await saveTeamRemovedFrom(null).catch(() => {});
 		teamJoin.device = null;
 		teamJoin.removedFrom = null;
-		if (!device) return;
-		// Ohne darauf zu warten: eine hängende Anfrage soll das Abmelden nicht aufhalten.
-		void leaveTeamOnServer(device.serverUrl, device.token).catch((e) =>
-			logWarn("Austritt beim Team nicht gemeldet", e)
-		);
 	}
 
 	/** Beim Programmstart: falls ein Konto verknüpft ist, alles hochfahren. */
@@ -1305,10 +1299,9 @@ class AccountState {
 			// Auf dem Rechner sind die Zeiten die Sache des Menschen: sie bleiben, gehen
 			// aber nicht hoch (siehe dataOwner).
 			const foreignCopy = !isTauri() && info.accountFingerprint !== fingerprint;
+			// Der Token hier gehört dem vorigen Konto - und liegt dort im Bestand.
+			if (switched && !isTauri()) await this.#forgetTeamLocally();
 			if (foreignCopy) {
-				// Nur wenn hier vorher ein ANDERES Konto war. Ohne Kennung hat sich
-				// noch niemand angemeldet - ein Beitritt davor gehört diesem Menschen.
-				if (switched) await this.#endTeamMembership();
 				await clearAccountData();
 				app.clearLocalData();
 				logInfo("Kontowechsel / Neuverknüpfung: lokale Kopie entfernt");
@@ -1753,7 +1746,16 @@ class AccountState {
 			// Zuerst der Server, solange Zugang und Token noch stehen. Danach ist
 			// beides weg und der Vorgang liesse sich nicht mehr nachholen.
 			if (opts.deleteRemote) {
+				// Im Browser liegt die Team-Mitgliedschaft nur im Konto. Geht das
+				// Konto, gäbe es sie nirgends mehr - das Mitglied stünde für immer
+				// als "kein Bericht" in der Liste. Auf dem Rechner bleibt der Token.
+				const team = isTauri() ? null : await loadTeamDevice().catch(() => null);
 				summary = await api.deleteAccount(await this.#confirmWithPasskey());
+				if (team) {
+					void leaveTeamOnServer(team.serverUrl, team.token).catch((e) =>
+						logWarn("Austritt beim Team nicht gemeldet", e)
+					);
+				}
 			} else {
 				await api.revokeDevice();
 			}
@@ -1775,7 +1777,7 @@ class AccountState {
 		// an - und genau sie blieb dann als einziger Rest liegen.
 		logInfo("Verknüpfung gelöst", { ...opts, ...unlinked });
 		if (!isTauri()) {
-			await this.#wipeLocalData({ endTeamMembership: true });
+			await this.#wipeLocalData({ forgetTeam: true });
 		}
 		return summary;
 	}
@@ -1806,7 +1808,7 @@ class AccountState {
 	 */
 	async forgetLink(): Promise<void> {
 		await this.#forgetLocally();
-		await this.#wipeLocalData({ endTeamMembership: true });
+		await this.#wipeLocalData({ forgetTeam: true });
 	}
 
 	/** Alles abstellen und die Kontodaten dieses Geräts vergessen. */

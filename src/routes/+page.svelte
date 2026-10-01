@@ -94,6 +94,14 @@
 			reportReminder.due
 	);
 
+	// An einem frisch angemeldeten Browser kommt die Team-Mitgliedschaft erst mit
+	// dem Konto an - der Abgleich beim Start hat sie noch nicht gesehen.
+	$effect(() => {
+		if (account.linked && account.firstSyncDone) {
+			void syncTeamActivities().finally(() => retryTeamReportUploads());
+		}
+	});
+
 	// Die einzige Stelle, die die Tabs kennt: wer einen Tag zeigen will (Tracking,
 	// Arbeitszeit-Check), meldet den Wunsch an entriesFocus an, und der ruft das
 	// hier auf. Bewusst ein Rückruf und kein Effekt auf `pendingDate` – den

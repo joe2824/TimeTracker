@@ -118,7 +118,8 @@ describe("saveEntries mit Ausgangsstand", () => {
 			},
 			activities: async (_b, a) => a,
 			settings: async (_b, a) => a,
-			timeReport: async (_m, _b, a) => a
+			timeReport: async (_m, _b, a) => a,
+			team: async (_b, a) => a
 		});
 		try {
 			await saveEntries(M, [withNote("a", "x")], [entry("a")]);

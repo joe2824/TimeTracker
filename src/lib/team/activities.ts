@@ -114,6 +114,12 @@ export async function syncTeamActivities(): Promise<TeamSyncResult> {
 	teamJoin.device = device;
 	if (!device) {
 		teamJoin.removedFrom = await loadTeamRemovedFrom().catch(() => null);
+		// Die Mitgliedschaft kann über das Konto enden (Austritt auf einem anderen
+		// Gerät): dann ist nur der Token weg, die Zeilen stehen noch da.
+		await withActivitiesLock(async () => {
+			if (await loadTeamDevice()) return;
+			if (app.activities.some(isJoinedTeamRow)) await app.detachTeamActivities(isJoinedTeamRow);
+		});
 		return "none";
 	}
 

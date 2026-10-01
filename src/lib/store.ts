@@ -311,6 +311,8 @@ export interface WriteHook {
 		before: StoredTimeReport | null,
 		after: StoredTimeReport | null
 	): Promise<StoredTimeReport | null>;
+	/** `after === null` heisst: die Mitgliedschaft endet. */
+	team(before: TeamRecord | null, after: TeamRecord | null): Promise<TeamRecord | null>;
 }
 
 let writeHook: WriteHook | null = null;
@@ -791,7 +793,10 @@ export const remoteStore = {
 	changeSettings: (s: Settings) => saveSettings(s),
 	timeReport: loadTimeReport,
 	saveTimeReport: (report: StoredTimeReport) => saveTimeReportWith(null, report),
-	deleteTimeReport: (month: string) => deleteTimeReportWith(null, month)
+	deleteTimeReport: (month: string) => deleteTimeReportWith(null, month),
+	team: () => loadTeamRecord(),
+	saveTeam: (record: TeamRecord) => saveTeamWith(null, record),
+	deleteTeam: () => deleteTeamWith(null)
 };
 
 /** Der Stand einer Reportdatei, wie er auf der Platte liegt. */
@@ -902,8 +907,8 @@ export async function clearAccountData(): Promise<void> {
 		// Abmelden ab.
 		if (name === "device.json") continue;
 		// Die Team-Mitgliedschaft hängt am Team-Zugang, nicht am Konto: ein
-		// Beitritt geht ohne Konto und muss das erste Anmelden überstehen. Wer
-		// geht (Abmelden, Kontowechsel), beendet sie eigens - samt Meldung ans Team.
+		// Beitritt geht ohne Konto und muss das erste Anmelden überstehen. Wer sich
+		// abmeldet, nimmt den Token eigens vom Gerät (forgetTeamDeviceLocally).
 		if (TEAM_FILES.has(name)) continue;
 		await removeDataFile(name);
 	}
@@ -978,10 +983,12 @@ export function updateDevice(
 /**
  * Was dieses Gerät über seine Team-Mitgliedschaft weiss.
  *
- * Eigene Datei, nicht `device.json`: ein Team-Mitglied hat kein Konto und
- * keinen Vault-Schlüssel - beides bleibt hier komplett aussen vor. Das Token
- * schützt wie bei `device.json` das Betriebssystem (protectSecret); im Browser
- * bleibt es ungeschützt.
+ * Eigene Datei, nicht `device.json`: ein Team-Mitglied braucht kein Konto.
+ * Gibt es eines, gleicht es die Mitgliedschaft als eigenen Datensatz mit ab
+ * (sync/outbox.ts) - sie gehört dem Menschen, nicht dem Gerät, und kommt nach
+ * dem Anmelden an einem leeren Browser von dort zurück. Das Token schützt wie
+ * bei `device.json` das Betriebssystem (protectSecret); im Browser bleibt es
+ * ungeschützt.
  */
 export interface TeamDeviceInfo {
 	teamMemberId: string;
@@ -991,33 +998,65 @@ export interface TeamDeviceInfo {
 	serverUrl: string;
 }
 
-/** `protected` fehlt nur in Dateien aus der Zeit, als das Token im Klartext stand. */
-type StoredTeamDevice = TeamDeviceInfo & { protected?: boolean };
+/** Die Mitgliedschaft samt Stempel - für den Abgleich, nicht für die Oberfläche. */
+export type TeamRecord = TeamDeviceInfo & SyncMeta;
 
-export async function loadTeamDevice(): Promise<TeamDeviceInfo | null> {
+/** `protected` fehlt nur in Dateien aus der Zeit, als das Token im Klartext stand. */
+type StoredTeamDevice = TeamRecord & { protected?: boolean };
+
+async function readTeamRecord(): Promise<{ record: TeamRecord; plain: boolean } | null> {
 	const stored = await readJson<StoredTeamDevice | null>("team.json", null);
 	if (!stored) return null;
-	const { protected: wasProtected, ...info } = stored;
-	if (wasProtected === undefined) {
-		// Alte Klartext-Datei: gleich geschützt neu ablegen.
-		void saveTeamDevice(info).catch((e) => logWarn("team.json nicht geschützt neu geschrieben", e));
-		return info;
-	}
+	const { protected: wasProtected, ...record } = stored;
+	if (wasProtected === undefined) return { record, plain: true };
 	try {
-		return { ...info, token: await unprotectSecret(info.token, wasProtected) };
+		return { record: { ...record, token: await unprotectSecret(record.token, wasProtected) }, plain: false };
 	} catch (e) {
 		logWarn("Team-Token konnte nicht entschlüsselt werden", e);
 		return null;
 	}
 }
 
+async function writeTeamRecordNow(record: TeamRecord): Promise<void> {
+	const secret = await protectSecret(record.token);
+	const stored: StoredTeamDevice = { ...record, token: secret.data, protected: secret.protected };
+	await writeJsonNow("team.json", stored);
+}
+
+async function loadTeamRecord(): Promise<TeamRecord | null> {
+	return (await readTeamRecord())?.record ?? null;
+}
+
+export async function loadTeamDevice(): Promise<TeamDeviceInfo | null> {
+	const read = await readTeamRecord();
+	if (!read) return null;
+	if (read.plain) {
+		// Alte Klartext-Datei: gleich geschützt neu ablegen.
+		void queued("team.json", () => writeTeamRecordNow(read.record)).catch((e) =>
+			logWarn("team.json nicht geschützt neu geschrieben", e)
+		);
+	}
+	const { updatedAt: _updatedAt, rev: _rev, deviceId: _deviceId, ...info } = read.record;
+	return info;
+}
+
 export function saveTeamDevice(info: TeamDeviceInfo): Promise<void> {
+	return saveTeamWith(writeHook, info);
+}
+
+function saveTeamWith(hook: WriteHook | null, record: TeamRecord): Promise<void> {
 	// Das Schützen läuft in der Warteschlange: ein direkt danach eingereihtes
 	// clearTeamDevice muss auch nach diesem Schreiben drankommen.
 	return queued("team.json", async () => {
-		const secret = await protectSecret(info.token);
-		const stored: StoredTeamDevice = { ...info, token: secret.data, protected: secret.protected };
-		await writeJsonNow("team.json", stored);
+		const stamped = hook ? await hook.team(await loadTeamRecord(), record) : null;
+		await writeTeamRecordNow(stamped ?? record);
+	});
+}
+
+function deleteTeamWith(hook: WriteHook | null): Promise<void> {
+	return queued("team.json", async () => {
+		if (hook) await hook.team(await loadTeamRecord(), null);
+		await removeFileNow("team.json");
 	});
 }
 
@@ -1036,9 +1075,21 @@ export async function saveTeamRemovedFrom(teamName: string | null): Promise<void
 	return removeDataFile("team-removed.json");
 }
 
-/** Die Team-Mitgliedschaft aufgeben - z.B. nach dem Hinauswerfen durch die Leitung. */
+/**
+ * Die Team-Mitgliedschaft aufgeben - z.B. nach dem Hinauswerfen durch die
+ * Leitung. Geht durch den Haken: auch die anderen Geräte des Kontos sind dann
+ * draussen.
+ */
 export function clearTeamDevice(): Promise<void> {
-	return removeDataFile("team.json");
+	return deleteTeamWith(writeHook);
+}
+
+/**
+ * Den Team-Token nur von diesem Gerät nehmen (Abmelden im Browser). Am Haken
+ * vorbei: die Mitgliedschaft besteht weiter und kommt mit dem Konto zurück.
+ */
+export function forgetTeamDeviceLocally(): Promise<void> {
+	return deleteTeamWith(null);
 }
 
 /** Ein Bericht, der beim Team noch nicht angekommen ist - siehe team/reports.ts. */

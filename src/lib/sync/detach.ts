@@ -48,6 +48,11 @@ export async function detachLocalData(): Promise<DetachResult> {
 		result.timeReports++;
 	}
 
+	// Die Team-Mitgliedschaft bleibt auf dem Rechner; mit Stempel ginge sie ins
+	// nächste Konto nicht mit hoch.
+	const team = await store.team();
+	if (team && stamped(team)) await store.saveTeam(withoutStamp(team));
+
 	// Was noch offen war, bezog sich auf ein Konto, das dieses Gerät nicht mehr
 	// hat. Stehen zu lassen hiesse: beim nächsten Koppeln wird als Erstes eine
 	// Handvoll uralter Änderungen hochgeladen, die niemand mehr erwartet.

@@ -1,7 +1,7 @@
 // Was noch nicht beim Server ist. Gemerkt wird NUR, WAS sich geändert hat - Art, Id,
 // bei Einträgen der Monat - nie der Inhalt selbst.
 import type { Activity, Entry, Settings, SyncMeta } from "../types";
-import type { StoredTimeReport, WriteHook } from "../store";
+import type { StoredTimeReport, TeamRecord, WriteHook } from "../store";
 import {
 	acrossWindows,
 	listEntryMonths,
@@ -11,6 +11,7 @@ import {
 	loadOutbox,
 	loadSettings,
 	loadTimeReport,
+	remoteStore,
 	saveOutbox,
 	setWriteHook,
 	settingsFileExists
@@ -19,10 +20,13 @@ import { diffAndStamp } from "./stamp";
 import { logWarn } from "../log";
 import { createSerialQueue } from "../utils";
 
-export type RecordKind = "entry" | "activity" | "settings" | "timereport";
+export type RecordKind = "entry" | "activity" | "settings" | "timereport" | "team";
 
 /** Die Id des einen Einstellungs-Datensatzes – es gibt genau einen. */
 export const SETTINGS_ID = "settings";
+
+/** Die Id der Team-Mitgliedschaft – je Konto höchstens eine. */
+export const TEAM_RECORD_ID = "team-membership";
 
 /**
  * Die Id eines Reports: der Monat mit Vorsatz.
@@ -251,6 +255,11 @@ export async function rememberUnstamped(forceAll = false): Promise<void> {
 			changes.push({ kind: "timereport", id: timeReportId(month), deleted: false, at: now });
 		}
 	}
+	// Ohne Konto beigetreten: die Mitgliedschaft liegt bisher nur auf diesem Gerät.
+	const team = await remoteStore.team();
+	if (team && (forceAll || team.rev === undefined)) {
+		changes.push({ kind: "team", id: TEAM_RECORD_ID, deleted: false, at: now });
+	}
 
 	await note(changes);
 }
@@ -341,6 +350,25 @@ const hook: WriteHook = {
 		if (stamped.length === 0) return null;
 		const { id: _id, ...rest } = stamped[0];
 		return rest as StoredTimeReport;
+	},
+
+	async team(before, after) {
+		const now = Date.now();
+		const wrap = (r: TeamRecord | null) => (r ? [{ ...r, id: TEAM_RECORD_ID }] : []);
+		const { changes, stamped } = diffAndStamp(wrap(before), wrap(after), deviceId, now);
+		await note([
+			...changes.changed.map(() => ({ kind: "team" as const, id: TEAM_RECORD_ID, deleted: false, at: now })),
+			...changes.deleted.map((r) => ({
+				kind: "team" as const,
+				id: TEAM_RECORD_ID,
+				deleted: true,
+				rev: r.rev,
+				at: now
+			}))
+		]);
+		if (stamped.length === 0) return null;
+		const { id: _id, ...rest } = stamped[0];
+		return rest as TeamRecord;
 	}
 };
 

@@ -7,6 +7,8 @@ import { files, resetFakeFs } from "../testing/fakeFs";
 
 vi.mock("@tauri-apps/plugin-fs", async () => (await import("../testing/fakeFs")).fakeFs);
 vi.mock("svelte-sonner", () => import("../testing/toastStub"));
+// Das Auflösen des Kontos lässt sich im Browser mit dem Passkey bestätigen.
+vi.mock("@simplewebauthn/browser", () => ({ startAuthentication: async () => ({}) }));
 
 const { createVaultKey, vaultProof } = await import("../crypto/vault");
 const { account } = await import("./account.svelte");
@@ -14,7 +16,7 @@ const { app } = await import("../app.svelte");
 const store = await import("../store");
 const { resetOutboxForTests } = await import("./outbox");
 const { teamJoin } = await import("../team/state.svelte");
-const { waitFor } = await import("../testing/accountHarness");
+const { settled, waitFor } = await import("../testing/accountHarness");
 
 class MockServer {
 	/** Ein eigener Nachbau je Konto - eigener Bestand, eigener Stand. */
@@ -115,6 +117,12 @@ class MockServer {
 					});
 				}
 				return new Response(JSON.stringify({ ok: true }), { status: 200 });
+			}
+			if (pathname === "/api/me/confirm") {
+				return new Response(JSON.stringify({ challengeId: "c1", options: {} }), { status: 200 });
+			}
+			if (pathname === "/api/me" && init?.method === "DELETE") {
+				return new Response(JSON.stringify({ records: 0, teamsTransferred: 0 }), { status: 200 });
 			}
 			if (pathname === "/api/team/membership" && init?.method === "DELETE") {
 				this.teamLeaves.push(new Headers(init.headers).get("x-team-token") ?? "");
@@ -441,6 +449,7 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 
 	describe("Team-Mitgliedschaft im Browser", () => {
 		const TEAM = { teamMemberId: "m1", token: "team-tok", teamName: "Vertrieb", serverUrl: "http://test-server" };
+		const dataFiles = () => [...files.keys()].filter((f) => f.startsWith("data/")).sort();
 
 		it("bleibt beim Start ohne Konto stehen", async () => {
 			// Der Beitritt über den Link braucht kein Konto - das Aufräumen beim
@@ -463,35 +472,106 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 			});
 		});
 
-		it("endet beim Abmelden und wird dem Team gemeldet", async () => {
-			// Bliebe das Token liegen, gingen die Berichte des Nächsten an diesem
-			// Rechner unter dem Namen des Vorgängers ans Team.
-			await withServer("browser-device", async (server) => {
-				await account.linkWithSession("http://test-server", await createVaultKey(), "Anna");
-				await store.saveTeamDevice(TEAM);
-				teamJoin.device = TEAM;
-
-				await account.logout();
-				await waitFor(() => server.teamLeaves.length > 0);
-
-				expect(await store.loadTeamDevice()).toBeNull();
-				expect(teamJoin.device).toBeNull();
-				expect(server.teamLeaves).toEqual(["team-tok"]);
-			});
-		});
-
-		it("endet, wenn sich ein anderes Konto anmeldet", async () => {
+		it("verschwindet beim Abmelden aus dem Browser, ohne dass das Team einen Austritt erfährt", async () => {
+			// Abmelden räumt den Browser leer - auch den Team-Token. Ein Austritt ist
+			// es nicht: die Mitgliedschaft besteht weiter, wie das Konto selbst.
 			await withServer("browser-device", async (server) => {
 				await account.linkWithSession("http://test-server/alice", await createVaultKey(), "Alice");
 				await store.saveTeamDevice(TEAM);
 				teamJoin.device = TEAM;
+				await account.syncNow();
+
+				await account.logout();
+				await new Promise((r) => setTimeout(r, 20));
+
+				expect(dataFiles()).toEqual(["data/device.json"]);
+				expect(teamJoin.device).toBeNull();
+				expect(server.teamLeaves).toEqual([]);
+			});
+		});
+
+		it("kommt beim erneuten Anmelden aus dem Konto zurück", async () => {
+			await withServer("browser-device", async (server) => {
+				const key = await createVaultKey();
+				await account.linkWithSession("http://test-server/alice", key, "Alice");
+				await store.saveTeamDevice(TEAM);
+				await account.syncNow();
+				await account.logout();
+
+				await account.linkWithSession("http://test-server/alice", key, "Alice");
+				await account.syncNow();
+
+				expect(await store.loadTeamDevice()).toEqual(TEAM);
+				expect(server.teamLeaves).toEqual([]);
+			});
+		});
+
+		it("kommt auch zurück, wenn der Beitritt vor dem ersten Anmelden lag", async () => {
+			await withServer("browser-device", async () => {
+				const key = await createVaultKey();
+				await store.saveTeamDevice(TEAM);
+				await account.linkWithSession("http://test-server/alice", key, "Alice");
+				await settled();
+				await account.logout();
+
+				await account.linkWithSession("http://test-server/alice", key, "Alice");
+				await account.syncNow();
+
+				expect(await store.loadTeamDevice()).toEqual(TEAM);
+			});
+		});
+
+		it("geht nicht auf ein anderes Konto über, das sich danach anmeldet", async () => {
+			// Sonst gingen dessen Berichte unter dem Namen des Vorgängers ans Team.
+			await withServer("browser-device", async (server) => {
+				const keyA = await createVaultKey();
+				await account.linkWithSession("http://test-server/alice", keyA, "Alice");
+				await store.saveTeamDevice(TEAM);
+				await account.syncNow();
+				await account.logout();
 
 				await account.linkWithSession("http://test-server/bob", await createVaultKey(), "Bob");
+				await account.syncNow();
+				expect(await store.loadTeamDevice()).toBeNull();
+				await account.logout();
+
+				// Alice ist weiterhin Mitglied.
+				await account.linkWithSession("http://test-server/alice", keyA, "Alice");
+				await account.syncNow();
+				expect(await store.loadTeamDevice()).toEqual(TEAM);
+				expect(server.teamLeaves).toEqual([]);
+			});
+		});
+
+		it("endet, wenn das Konto im Browser aufgelöst wird", async () => {
+			// Mit dem Konto verschwindet der einzige Ort, an dem die Mitgliedschaft
+			// liegt - ohne Meldung stünde das Mitglied für immer als "kein Bericht" da.
+			await withServer("browser-device", async (server) => {
+				await account.linkWithSession("http://test-server/alice", await createVaultKey(), "Alice");
+				await store.saveTeamDevice(TEAM);
+
+				await account.unlink({ deleteRemote: true });
 				await waitFor(() => server.teamLeaves.length > 0);
+
+				expect(server.teamLeaves).toEqual(["team-tok"]);
+				expect(await store.loadTeamDevice()).toBeNull();
+			});
+		});
+
+		it("bleibt dem ersten Konto, wenn sich ohne Abmelden ein anderes anmeldet", async () => {
+			await withServer("browser-device", async (server) => {
+				const keyA = await createVaultKey();
+				await account.linkWithSession("http://test-server/alice", keyA, "Alice");
+				await store.saveTeamDevice(TEAM);
+				teamJoin.device = TEAM;
+				await account.syncNow();
+
+				await account.linkWithSession("http://test-server/bob", await createVaultKey(), "Bob");
+				await account.syncNow();
 
 				expect(await store.loadTeamDevice()).toBeNull();
 				expect(teamJoin.device).toBeNull();
-				expect(server.teamLeaves).toEqual(["team-tok"]);
+				expect(server.teamLeaves).toEqual([]);
 			});
 		});
 	});

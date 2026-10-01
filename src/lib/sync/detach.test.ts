@@ -119,6 +119,18 @@ describe("Vom Konto loesen", () => {
 		expect(pendingChanges()).toHaveLength(0);
 	});
 
+	it("behält die Team-Mitgliedschaft auf dem Rechner und nimmt ihr nur den Stempel", async () => {
+		// Mit Stempel hielte das nächste Konto sie für längst hochgeladen.
+		const team = { teamMemberId: "m1", token: "team-tok", teamName: "Vertrieb", serverUrl: "https://tt.example.de" };
+		await store.saveTeamDevice(team);
+		expect((await store.remoteStore.team())?.updatedAt).toBeDefined();
+
+		await detachLocalData();
+
+		expect(await store.loadTeamDevice()).toEqual(team);
+		expect((await store.remoteStore.team())?.updatedAt).toBeUndefined();
+	});
+
 	it("streift den Stempel auch von den eingelesenen Reports", async () => {
 		// Bliebe er stehen, hielte rememberUnstamped den Report für längst
 		// hochgeladen - beim nächsten Konto wäre er nur noch lokal da.
