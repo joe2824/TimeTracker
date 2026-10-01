@@ -7,7 +7,6 @@ import {
 	deviceFileExists,
 	forgetTeamDeviceLocally,
 	loadDevice,
-	loadTeamDevice,
 	saveTeamRemovedFrom,
 	getLocalEncryptionKey,
 	listEntryMonths,
@@ -1788,16 +1787,7 @@ class AccountState {
 			// Zuerst der Server, solange Zugang und Token noch stehen. Danach ist
 			// beides weg und der Vorgang liesse sich nicht mehr nachholen.
 			if (opts.deleteRemote) {
-				// Im Browser liegt die Team-Mitgliedschaft nur im Konto. Geht das
-				// Konto, gäbe es sie nirgends mehr - das Mitglied stünde für immer
-				// als "kein Bericht" in der Liste. Auf dem Rechner bleibt der Token.
-				const team = isTauri() ? null : await loadTeamDevice().catch(() => null);
 				summary = await api.deleteAccount(await this.#confirmWithPasskey());
-				if (team) {
-					void leaveTeamOnServer(team.serverUrl, team.token).catch((e) =>
-						logWarn("Austritt beim Team nicht gemeldet", e)
-					);
-				}
 			} else {
 				await api.revokeDevice();
 			}

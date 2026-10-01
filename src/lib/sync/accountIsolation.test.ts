@@ -16,7 +16,7 @@ const { app } = await import("../app.svelte");
 const store = await import("../store");
 const { resetOutboxForTests } = await import("./outbox");
 const { teamJoin } = await import("../team/state.svelte");
-const { settled, waitFor } = await import("../testing/accountHarness");
+const { settled } = await import("../testing/accountHarness");
 
 class MockServer {
 	/** Ein eigener Nachbau je Konto - eigener Bestand, eigener Stand. */
@@ -564,17 +564,17 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 			});
 		});
 
-		it("endet, wenn das Konto im Browser aufgelöst wird", async () => {
-			// Mit dem Konto verschwindet der einzige Ort, an dem die Mitgliedschaft
-			// liegt - ohne Meldung stünde das Mitglied für immer als "kein Bericht" da.
+		it("Konto auflösen im Browser meldet keinen Austritt", async () => {
+			// Den Token teilen alle Geräte des Kontos - ein Austritt hier würfe
+			// auch die Desktop-Anwendung aus dem Team.
 			await withServer("browser-device", async (server) => {
 				await account.linkWithSession("http://test-server/alice", await createVaultKey(), "Alice");
 				await store.saveTeamDevice(TEAM);
 
 				await account.unlink({ deleteRemote: true });
-				await waitFor(() => server.teamLeaves.length > 0);
+				await new Promise((r) => setTimeout(r, 20));
 
-				expect(server.teamLeaves).toEqual(["team-tok"]);
+				expect(server.teamLeaves).toEqual([]);
 				expect(await store.loadTeamDevice()).toBeNull();
 			});
 		});
