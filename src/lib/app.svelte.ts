@@ -57,6 +57,11 @@ function uid(): string {
 	return crypto.randomUUID();
 }
 
+/** Unter welcher Id eine abgelöste Team-Zeile weiterlebt - bewusst ohne das Team-Präfix. */
+function detachedActivityId(teamRowId: string): string {
+	return `detached:${teamRowId.slice(TEAM_ACTIVITY_PREFIX.length)}`;
+}
+
 /**
  * Zweites Tagesstück desselben Laufs zu `piece` (ab Mitternacht, ganzer Tag oder
  * offen). Von Hand erfasste oder kürzere Einträge sind echte Zeit, kein Zwilling.
@@ -796,18 +801,25 @@ class AppState {
 	 * Neue Id je Zeile, Einträge und Stichwortregeln ziehen mit: dieselbe
 	 * Server-Id kann nach einem erneuten Beitritt wiederkommen, und zwei Zeilen
 	 * mit derselben Id zählten ihre Stunden doppelt.
+	 * Die neue Id ist aus der alten abgeleitet, nicht gewürfelt: zwei Geräte
+	 * desselben Kontos lösen dieselbe Zeile unabhängig ab und müssen nach dem
+	 * Abgleich auf einer gemeinsamen landen.
 	 */
 	async detachTeamActivities(which: (a: Activity) => boolean): Promise<void> {
 		const teamOwned = this.activities.filter((a) => a.teamOwned && which(a));
 		if (teamOwned.length === 0) return;
-		const idMap = new Map(teamOwned.map((a) => [a.id, uid()]));
+		const idMap = new Map(teamOwned.map((a) => [a.id, detachedActivityId(a.id)]));
 		await this.#remapActivities(idMap);
 
-		this.activities = this.activities.map((a) => {
+		const alreadyDetached = new Set(this.activities.filter((a) => !idMap.has(a.id)).map((a) => a.id));
+		this.activities = this.activities.flatMap((a) => {
 			const newId = idMap.get(a.id);
-			if (!newId) return a;
+			if (!newId) return [a];
+			// Schon einmal abgelöst (früherer Austritt, oder vom anderen Gerät über
+			// den Abgleich): die Einträge hängen jetzt an der bestehenden Zeile.
+			if (alreadyDetached.has(newId)) return [];
 			const { teamOwned: _teamOwned, teamName: _teamName, teamId: _teamId, ...rest } = a;
-			return { ...rest, id: newId, archived: true };
+			return [{ ...rest, id: newId, archived: true }];
 		});
 		await this.persistActivities();
 

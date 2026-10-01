@@ -1325,6 +1325,46 @@ describe("detachTeamActivities", () => {
 		expect(onDisk("2026-07")[0].activityId).toBe(detached?.id);
 	});
 
+	it("leitet die neue Id aus der Team-Zeile ab - zwei Geräte eines Kontos landen auf derselben Zeile", async () => {
+		// Mit einer Zufalls-Id je Gerät lägen nach dem Abgleich zwei gleichnamige
+		// archivierte Zeilen da, und die Stunden hingen mal an der einen, mal an der anderen.
+		const teamRow: Activity = { id: "team:x", name: "Vertrieb", sortOrder: 3, archived: false, isAbsence: false, teamOwned: true };
+		const detachedId = async () => {
+			reset();
+			app.activities = [...ACTIVITIES, { ...teamRow }];
+			await app.detachTeamActivities(() => true);
+			return app.activities.find((a) => a.name === "Vertrieb")!.id;
+		};
+
+		const onLaptop = await detachedId();
+		const onPhone = await detachedId();
+
+		expect(onPhone).toBe(onLaptop);
+		expect(onLaptop.startsWith("team:")).toBe(false);
+	});
+
+	it("geht in der schon abgelösten Zeile auf, wenn dieselbe Team-Zeile erneut abgelöst wird", async () => {
+		// Nach Austritt und neuem Beitritt, oder wenn die abgelöste Zeile des
+		// anderen Geräts schon über den Abgleich angekommen ist.
+		reset({ "2026-07": [entry("e1", "team:x", at(16, 9), at(16, 12))] });
+		app.activities = [
+			...ACTIVITIES,
+			{ id: "team:x", name: "Vertrieb", sortOrder: 3, archived: false, isAbsence: false, teamOwned: true }
+		];
+		await app.detachTeamActivities(() => true);
+		const first = app.activities.find((a) => a.name === "Vertrieb")!;
+
+		app.activities = [
+			...app.activities,
+			{ id: "team:x", name: "Vertrieb", sortOrder: 4, archived: false, isAbsence: false, teamOwned: true }
+		];
+		app.entriesByMonth["2026-07"].push(entry("e2", "team:x", at(17, 9), at(17, 12)));
+		await app.detachTeamActivities(() => true);
+
+		expect(app.activities.filter((a) => a.name === "Vertrieb")).toEqual([first]);
+		expect(onDisk("2026-07").map((e) => e.activityId)).toEqual([first.id, first.id]);
+	});
+
 	it("traegt Kalender-Stichwortregeln auf die neue Id nach", async () => {
 		reset();
 		app.activities = [
