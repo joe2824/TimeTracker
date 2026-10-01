@@ -35,7 +35,7 @@ vi.mock("../platform/http", () => ({ platformFetch: http.platformFetch }));
 
 const { app } = await import("../app.svelte");
 const { saveTeamDevice } = await import("../store");
-const { PASTE_HINT, reportSubject, sendReport } = await import("./reportSend");
+const { PASTE_HINT, confirmReportSent, reportSubject, sendReport } = await import("./reportSend");
 
 const P1 = "p1";
 const ACTIVITIES_DE: Activity[] = [
@@ -290,6 +290,22 @@ describe("sendReport – Team-Upload", () => {
 
 		await expect(sendReport("2026-07", "outlook")).rejects.toThrow("Outlook antwortet nicht");
 		expect(http.platformFetch).not.toHaveBeenCalled();
+	});
+
+	it("vermerkt einen anders verschickten Bericht und gibt ihn beim Team ab, ohne Mail zu oeffnen", async () => {
+		await saveTeamDevice({
+			teamMemberId: "m1",
+			token: "team-tok",
+			teamName: "Vertrieb",
+			serverUrl: "https://tt.example.de"
+		});
+
+		await confirmReportSent("2026-07");
+
+		expect(app.isReportSent("2026-07")).toBe(true);
+		expect(outlook.createOutlookDraft).not.toHaveBeenCalled();
+		expect(opener.openExternal).not.toHaveBeenCalled();
+		expect(String(http.platformFetch.mock.calls[0][0])).toBe("https://tt.example.de/api/team/reports");
 	});
 
 	it("bleibt ohne Team-Mitgliedschaft ein No-Op", async () => {

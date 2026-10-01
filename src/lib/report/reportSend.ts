@@ -80,12 +80,9 @@ export type SendResult = { via: "outlook" } | { via: "mail"; clipboard: Clipboar
  * scheitert); ohne Angabe Outlook, wo es das gibt. Wirft, wenn der Weg
  * fehlschlägt (Aufrufer zeigt Toast) - der Monat bleibt dann offen.
  */
-export async function sendReport(
-	month: string,
-	via: SendResult["via"] = capabilities.outlook ? "outlook" : "mail"
-): Promise<SendResult> {
+async function monthReport(month: string) {
 	await app.ensureMonth(month);
-	const report = buildReport(
+	return buildReport(
 		month,
 		app.activities,
 		app.monthEntries(month),
@@ -95,6 +92,23 @@ export async function sendReport(
 		Date.now(),
 		app.settings.breakDeduction
 	);
+}
+
+/**
+ * Bericht wurde auf anderem Weg verschickt (etwa per "HTML kopieren"): Monat als
+ * gesendet vermerken und, wie beim Versand aus der App, beim Team abgeben.
+ */
+export async function confirmReportSent(month: string): Promise<void> {
+	const report = await monthReport(month);
+	await app.markReportSent(month);
+	await uploadReportIfTeamMember(month, report);
+}
+
+export async function sendReport(
+	month: string,
+	via: SendResult["via"] = capabilities.outlook ? "outlook" : "mail"
+): Promise<SendResult> {
+	const report = await monthReport(month);
 	const html = reportToHtml(report);
 	const subject = reportSubject(report.label);
 

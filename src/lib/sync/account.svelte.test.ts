@@ -36,6 +36,9 @@ describe("Zwischenspeicher nach gescheitertem Abgleich", () => {
 	beforeEach(() => {
 		vi.useFakeTimers({ toFake: ["Date"], shouldAdvanceTime: true });
 		vi.setSystemTime(Date.UTC(2026, 8, 30, 12, 40));
+		// app.now steht seit dem Laden des Moduls auf der echten Zeit; ohne das
+		// rechnete die App den aktuellen Monat am festen Zeitpunkt vorbei.
+		app.now = Date.now();
 	});
 	afterEach(() => {
 		vi.useRealTimers();

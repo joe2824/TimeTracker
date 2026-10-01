@@ -4,7 +4,7 @@
 	import { app } from "$lib/app.svelte";
 	import { account } from "$lib/sync/account.svelte";
 	import { monthLabel } from "$lib/time/time";
-	import { sendReport } from "$lib/report/reportSend";
+	import { confirmReportSent, sendReport } from "$lib/report/reportSend";
 	import { capabilities } from "$lib/platform/env";
 	import { watchers } from "$lib/ui/watchers.svelte";
 	import { toast } from "svelte-sonner";
@@ -56,8 +56,8 @@
 		}
 	}
 
-	async function neverAgain() {
-		if (month) await app.markReportSent(month);
+	async function alreadySent() {
+		if (month) await confirmReportSent(month);
 		watchers.reportReminderDismissed = true;
 		watchers.forceReportReminder = false;
 	}
@@ -81,7 +81,7 @@
 			</Dialog.Description>
 		</Dialog.Header>
 		<Dialog.Footer>
-			<Button variant="ghost" onclick={neverAgain}>Nicht mehr erinnern</Button>
+			<Button variant="ghost" onclick={alreadySent}>Schon gesendet</Button>
 			<Button onclick={send} disabled={sending}>
 				<MailIcon class="size-4" />
 				{sending ? "Öffne…" : capabilities.outlook ? "Per Outlook senden" : "E-Mail vorbereiten"}
