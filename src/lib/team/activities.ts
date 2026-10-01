@@ -11,7 +11,7 @@ import { ApiError, type TeamActivity } from "../sync/api";
 import { teamJoin } from "./state.svelte";
 import { logWarn } from "../log";
 import { createSerialQueue } from "../utils";
-import { TEAM_ACTIVITY_PREFIX, type Activity } from "../types";
+import { detachedActivityId, TEAM_ACTIVITY_PREFIX, type Activity } from "../types";
 import { TEAM_ACCESS_DENIED } from "$shared/teamAccess";
 
 export { TEAM_ACTIVITY_PREFIX };
@@ -42,7 +42,8 @@ function toLocal(remote: Omit<TeamActivity, "updatedAt">, team: { id?: string; n
 function withDeviceFlags(fresh: Activity[]): Activity[] {
 	const current = new Map(app.activities.map((a) => [a.id, a]));
 	return fresh.map((a) => {
-		const { favorite, hidden, shortcut } = current.get(a.id) ?? {};
+		// Kommt die Zeile nach einem neuen Beitritt zurück, trägt ihre abgelöste Kopie die Einstellungen.
+		const { favorite, hidden, shortcut } = current.get(a.id) ?? current.get(detachedActivityId(a.id)) ?? {};
 		return {
 			...a,
 			...(favorite !== undefined && { favorite }),
@@ -50,6 +51,19 @@ function withDeviceFlags(fresh: Activity[]): Activity[] {
 			...(shortcut !== undefined && { shortcut })
 		};
 	});
+}
+
+/**
+ * Eine Team-Zeile, die hier schon einmal abgelöst wurde (Austritt, Rauswurf,
+ * zurückgespielter Server) und nach einem neuen Beitritt wiederkommt, nimmt
+ * ihre abgelöste Kopie wieder auf. Sonst stünden die alten Stunden auf einer
+ * archivierten Zeile gleichen Namens daneben.
+ */
+async function reattachDetached(rows: Activity[]): Promise<void> {
+	for (const row of rows) {
+		const detachedId = detachedActivityId(row.id);
+		if (app.activities.some((a) => a.id === detachedId)) await app.mergeActivityInto(detachedId, row.id);
+	}
 }
 
 /**
@@ -166,13 +180,12 @@ export async function syncTeamActivities(): Promise<TeamSyncResult> {
 		// über die eigene Liste - die behält ihre teamId und damit Vorrang, sonst
 		// nähme "Team verlassen" der Leitung ihre eigenen Team-Stunden mit.
 		const ownIds = new Set(app.activities.filter(isOwnTeamRow).map((a) => a.id));
-		app.activities = withoutDuplicateIds([
-			...app.activities.filter((a) => !isJoinedTeamRow(a)),
-			...withDeviceFlags(remote.map((r) => toLocal(r, { name: device.teamName }))).filter(
-				(a) => !ownIds.has(a.id)
-			)
-		]);
+		const joined = withDeviceFlags(remote.map((r) => toLocal(r, { name: device.teamName }))).filter(
+			(a) => !ownIds.has(a.id)
+		);
+		app.activities = withoutDuplicateIds([...app.activities.filter((a) => !isJoinedTeamRow(a)), ...joined]);
 		await app.persistActivities();
+		await reattachDetached(joined);
 
 		if (membershipGone) {
 			await clearTeamDevice();
@@ -288,5 +301,6 @@ export async function syncOwnedTeamActivities(): Promise<void> {
 			)
 		]);
 		await app.persistActivities();
+		await reattachDetached(fresh);
 	});
 }

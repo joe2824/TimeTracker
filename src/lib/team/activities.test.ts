@@ -22,7 +22,7 @@ const accountMock = vi.hoisted(() => ({
 vi.mock("../sync/account.svelte", () => ({ account: accountMock }));
 
 const { app } = await import("../app.svelte");
-const { loadTeamDevice, loadTeamRemovedFrom, saveTeamDevice } = await import("../store");
+const { loadEntries, loadTeamDevice, loadTeamRemovedFrom, saveEntries, saveTeamDevice } = await import("../store");
 const { ApiError } = await import("../sync/api");
 const { managedTeams } = await import("./managedTeams.svelte");
 const { teamJoin } = await import("./state.svelte");
@@ -233,24 +233,34 @@ describe("syncTeamActivities", () => {
 		});
 	});
 
-	it("entfernt, neu beigetreten: keine doppelte Aktivität, Stunden hängen an genau einer Zeile", async () => {
+	it("entfernt, neu beigetreten: die Stunden hängen wieder an der Team-Zeile", async () => {
+		// Nach Rauswurf, Austritt oder einem zurückgespielten Server bleibt nur der
+		// neue Beitritt. Die abgelöste Kopie geht dann wieder in der Team-Zeile auf -
+		// sonst stünden die alten Stunden auf einer archivierten Zeile daneben.
 		const device = { teamMemberId: "m1", token: "tok", teamName: "Vertrieb", serverUrl: "https://tt.example.de" };
 		const a1 = { id: "a1", name: "Projekt A", isAbsence: false, sortOrder: 0, color: null, archived: false, updatedAt: 1 };
+		const teamRowId = `${TEAM_ACTIVITY_PREFIX}a1`;
+		app.entriesByMonth = {};
 		await saveTeamDevice(device);
 		remote.mockResolvedValue({ activities: [a1] });
 		await syncTeamActivities();
+		await saveEntries("2026-07", [
+			{ id: "e1", activityId: teamRowId, startTs: Date.UTC(2026, 6, 16, 9), endTs: Date.UTC(2026, 6, 16, 12), note: "", source: "manual" }
+		]);
+		await app.toggleFavorite(teamRowId);
 
 		remote.mockRejectedValue(new ApiError("Kein Team-Zugang", 401));
 		await syncTeamActivities();
+		expect((await loadEntries("2026-07"))[0].activityId).not.toBe(teamRowId);
 
 		await saveTeamDevice({ ...device, teamMemberId: "m2", token: "tok2" });
 		remote.mockResolvedValue({ activities: [a1] });
 		await syncTeamActivities();
 
-		const ids = app.activities.map((a) => a.id);
-		expect(new Set(ids).size).toBe(ids.length);
-		expect(app.activities.filter((a) => a.name === "Projekt A")).toHaveLength(2);
-		expect(app.activities.filter((a) => a.id === `${TEAM_ACTIVITY_PREFIX}a1`)).toHaveLength(1);
+		expect(app.activities.filter((a) => a.name === "Projekt A")).toEqual([
+			expect.objectContaining({ id: teamRowId, teamOwned: true, archived: false, favorite: true })
+		]);
+		expect((await loadEntries("2026-07"))[0].activityId).toBe(teamRowId);
 	});
 
 	it("eine 401 zum alten Token löscht keine inzwischen neu geschlossene Mitgliedschaft", async () => {
@@ -461,6 +471,27 @@ describe("syncOwnedTeamActivities", () => {
 		expect(detached).toMatchObject({ archived: true });
 		expect(detached?.id).not.toBe(`${TEAM_ACTIVITY_PREFIX}a1`);
 		expect(detached?.teamOwned).toBeUndefined();
+	});
+
+	it("ein Team, das zurückkommt, nimmt seine abgelösten Zeilen wieder auf", async () => {
+		// Etwa wer die Verwaltung abgibt und später wieder Verwalter wird.
+		const a1 = { id: "a1", name: "Projekt A", isAbsence: false, sortOrder: 0, color: null, archived: false, updatedAt: 1 };
+		accountMock.linked = true;
+		accountMock.listTeams.mockResolvedValue([{ id: "t1", name: "A", ownerUserId: "u1", createdAt: 1 }]);
+		accountMock.listTeamActivities.mockResolvedValue([a1]);
+		await syncOwnedTeamActivities();
+
+		managedTeams.teams = [];
+		accountMock.listTeams.mockResolvedValue([]);
+		await syncOwnedTeamActivities();
+		expect(app.activities.find((a) => a.name === "Projekt A")).toMatchObject({ archived: true });
+
+		accountMock.listTeams.mockResolvedValue([{ id: "t1", name: "A", ownerUserId: "u1", createdAt: 1 }]);
+		await syncOwnedTeamActivities();
+
+		expect(app.activities.filter((a) => a.name === "Projekt A")).toEqual([
+			expect.objectContaining({ id: `${TEAM_ACTIVITY_PREFIX}a1`, teamOwned: true, teamId: "t1", archived: false })
+		]);
 	});
 
 	it("Leitung tritt dem eigenen Team per Link bei: keine doppelte Id", async () => {

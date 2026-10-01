@@ -10,6 +10,7 @@ import {
 	byActivityOrder,
 	isBuiltinActivity,
 	defaultSettings,
+	detachedActivityId,
 	reorderBySortOrder,
 	TEAM_ACTIVITY_PREFIX
 } from "./types";
@@ -55,11 +56,6 @@ import { usingBrowserStorage } from "./platform/fs";
 
 function uid(): string {
 	return crypto.randomUUID();
-}
-
-/** Unter welcher Id eine abgelöste Team-Zeile weiterlebt - bewusst ohne das Team-Präfix. */
-function detachedActivityId(teamRowId: string): string {
-	return `detached:${teamRowId.slice(TEAM_ACTIVITY_PREFIX.length)}`;
 }
 
 /**

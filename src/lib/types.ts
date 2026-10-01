@@ -215,6 +215,15 @@ export const BUILTIN_ABSENCE_ID = "builtin-absence";
 export const TEAM_ACTIVITY_PREFIX = "team:";
 
 /**
+ * Unter welcher Id eine abgelöste Team-Zeile weiterlebt - bewusst ohne das
+ * Team-Präfix, aber aus der Team-Zeile abgeleitet: so finden zwei Geräte
+ * dieselbe Zeile, und eine zurückkehrende Team-Zeile ihre abgelöste Kopie.
+ */
+export function detachedActivityId(teamRowId: string): string {
+	return `detached:${teamRowId.slice(TEAM_ACTIVITY_PREFIX.length)}`;
+}
+
+/**
  * Die eingebauten Zeilen - „Others“ und die Abwesenheiten.
  *
  * Über den Namen und nicht über die feste Id: ältere Fassungen vergaben
