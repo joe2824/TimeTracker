@@ -1088,6 +1088,8 @@ export class SyncEngine {
 			const { id: _id, deletedAt: _deletedAt, ...rest } = result.value;
 			await this.#store.saveTeam(rest as TeamRecord);
 		}
+		// Der offene Stand von hier ist unterlegen - nicht noch einmal hochladen.
+		if (result.lostLocalEdit) await clearChanges([{ kind: "team", id: record.id }]);
 		return result.lostLocalEdit ? 1 : 0;
 	}
 

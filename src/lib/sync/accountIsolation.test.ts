@@ -521,6 +521,27 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 			});
 		});
 
+		it("ein neuer Beitritt vor dem Anmelden gilt, auch wenn das Konto einen älteren Austritt kennt", async () => {
+			await withServer("browser-device", async () => {
+				const key = await createVaultKey();
+				await account.linkWithSession("http://test-server/alice", key, "Alice");
+				await store.saveTeamDevice(TEAM);
+				await account.syncNow();
+				await new Promise((r) => setTimeout(r, 5));
+				await store.clearTeamDevice();
+				await account.syncNow();
+				await account.logout();
+				await new Promise((r) => setTimeout(r, 5));
+
+				const rejoined = { ...TEAM, teamMemberId: "m2", token: "team-tok-2" };
+				await store.saveTeamDevice(rejoined);
+				await account.linkWithSession("http://test-server/alice", key, "Alice");
+				await settled();
+
+				expect(await store.loadTeamDevice()).toEqual(rejoined);
+			});
+		});
+
 		it("geht nicht auf ein anderes Konto über, das sich danach anmeldet", async () => {
 			// Sonst gingen dessen Berichte unter dem Namen des Vorgängers ans Team.
 			await withServer("browser-device", async (server) => {

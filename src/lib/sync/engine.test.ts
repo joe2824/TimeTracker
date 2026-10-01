@@ -8,7 +8,7 @@ vi.mock("@tauri-apps/plugin-fs", async () => (await import("../testing/fakeFs"))
 
 const { createVaultKey, bucketFor } = await import("../crypto/vault");
 const { monthKey, prevMonthKey, startOfNextDay } = await import("../time/time");
-const { resetOutboxForTests, pendingChanges, rememberUnstamped } = await import("./outbox");
+const { resetOutboxForTests, pendingChanges, rememberUnstamped, rememberUnsyncedTeam } = await import("./outbox");
 const { files, resetFakeFs } = await import("../testing/fakeFs");
 const store = await import("../store");
 const { defaultSettings } = await import("../types");
@@ -1623,6 +1623,46 @@ describe("Team-Mitgliedschaft gehört zum Konto", () => {
 		await on(desktop, (engine) => engine.sync());
 
 		expect(await on(desktop, () => store.loadTeamDevice())).toBeNull();
+	});
+
+	it("ein Beitritt ohne Abgleich schlägt einen älteren Austritt im Konto", async () => {
+		// Der Beitritt über den Link im Browser läuft ohne Abgleich. Gegen den
+		// Löschmarker eines früheren Austritts darf er nicht einfach verlieren.
+		const phone = new FakeDevice("handy");
+		const desktop = new FakeDevice("rechner");
+		await changeAndSync(phone, () => store.saveTeamDevice(TEAM));
+		await afterwards();
+		await changeAndSync(phone, () => store.clearTeamDevice());
+		await on(desktop, (engine) => engine.sync());
+		await afterwards();
+
+		const rejoined = { ...TEAM, teamMemberId: "m2", token: "team-tok-2" };
+		await withoutAccount(desktop, () => store.saveTeamDevice(rejoined));
+		await on(desktop, async (engine) => {
+			await rememberUnsyncedTeam();
+			return engine.sync();
+		});
+
+		expect(await on(desktop, () => store.loadTeamDevice())).toEqual(rejoined);
+		await on(phone, (engine) => engine.sync());
+		expect(await on(phone, () => store.loadTeamDevice())).toEqual(rejoined);
+	});
+
+	it("ein Beitritt ohne Abgleich weicht einem jüngeren Stand des Kontos", async () => {
+		const phone = new FakeDevice("handy");
+		const desktop = new FakeDevice("rechner");
+		const older = { ...TEAM, teamMemberId: "m0", token: "team-tok-0" };
+		await withoutAccount(desktop, () => store.saveTeamDevice(older));
+		await afterwards();
+		await changeAndSync(phone, () => store.saveTeamDevice(TEAM));
+
+		await on(desktop, async (engine) => {
+			await rememberUnsyncedTeam();
+			return engine.sync();
+		});
+
+		expect(await on(desktop, () => store.loadTeamDevice())).toEqual(TEAM);
+		expect(await on(desktop, async () => pendingChanges())).toEqual([]);
 	});
 
 	it("ein gerade nicht lesbarer Token wird nicht als Austritt hochgeladen", async () => {

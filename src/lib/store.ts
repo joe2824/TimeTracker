@@ -1049,7 +1049,11 @@ export function teamFileExists(): Promise<boolean> {
 }
 
 export function saveTeamDevice(info: TeamDeviceInfo): Promise<void> {
-	return saveTeamWith(writeHook, info);
+	// Ohne Haken (kein Konto, oder die Beitritts-Seite im Browser) bekommt der
+	// Beitritt wenigstens seinen Zeitpunkt mit: daran entscheidet sich später,
+	// ob er oder der Stand des Kontos gilt. Ohne ihn verlöre er gegen alles,
+	// auch gegen den Löschmarker eines früheren Austritts.
+	return saveTeamWith(writeHook, writeHook ? info : { ...info, updatedAt: Date.now() });
 }
 
 function saveTeamWith(hook: WriteHook | null, record: TeamRecord): Promise<void> {

@@ -264,6 +264,18 @@ export async function rememberUnstamped(forceAll = false): Promise<void> {
 	await note(changes);
 }
 
+/**
+ * Eine Mitgliedschaft vormerken, die der Server noch nie gesehen hat - VOR dem
+ * ersten Abruf, anders als der übrige ungestempelte Bestand. Sie trägt den
+ * Zeitpunkt des Beitritts und tritt damit gegen den Stand des Kontos an; erst
+ * nach dem Abruf wäre sie schon überschrieben.
+ */
+export async function rememberUnsyncedTeam(): Promise<void> {
+	const team = await remoteStore.team();
+	if (!team || team.rev !== undefined) return;
+	await note([{ kind: "team", id: TEAM_RECORD_ID, deleted: false, at: Date.now() }]);
+}
+
 /** Den Abgleich abschalten – das Programm verhält sich danach wieder rein lokal. */
 export function stopTracking(): void {
 	setWriteHook(null);

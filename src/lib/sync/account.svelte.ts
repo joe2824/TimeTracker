@@ -23,7 +23,8 @@ import {
 	stopTracking,
 	pendingChanges,
 	setChangeListener,
-	rememberUnstamped
+	rememberUnstamped,
+	rememberUnsyncedTeam
 } from "./outbox";
 import {
 	Api,
@@ -485,6 +486,7 @@ class AccountState {
 		// nicht eine leere Ansicht mit dem Hinweis, später wiederzukommen.
 		app.setMonthFetcher((month) => this.ensureMonthSynced(month));
 		await startTracking(this.#device);
+		if (await this.#dataIsOurs()) await rememberUnsyncedTeam();
 		// Ab hier steht der Schreib-Haken. Erst jetzt darf die Reparatur der
 		// eingebauten Zeilen laufen: sie hängt Einträge um, die bereits ein `rev`
 		// tragen - ohne Haken würde rememberUnstamped() sie nicht aufsammeln und
