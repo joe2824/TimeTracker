@@ -1,4 +1,4 @@
-// Das Roster eines Teams - Chef und Verwalter sehen/verwalten es.
+// Das Roster eines Teams - Leitung und Verwalter sehen/verwalten es.
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { listTeamMembers, requireTeamAccess, revokeTeamMember } from "$lib/server/teams";

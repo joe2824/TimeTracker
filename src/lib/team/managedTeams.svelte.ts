@@ -1,4 +1,4 @@
-// Reaktiver Zustand rund um die vom Chef verwalteten Teams - geteilt zwischen
+// Reaktiver Zustand rund um die von der Leitung verwalteten Teams - geteilt zwischen
 // dem Team-Tab (Übersicht, Link kopieren) und den Einstellungen (Anlegen,
 // Link erzeugen), damit beide dieselbe Auswahl und denselben Link-Stand
 // sehen, ohne dass ein Speichern im einen Tab im anderen veraltet aussieht.
@@ -92,7 +92,7 @@ class ManagedTeamsState {
 	rotating = $state(false);
 	creating = $state(false);
 
-	// Verwalter des ausgewaehlten Teams - nur der Chef darf sie einladen oder entfernen
+	// Verwalter des ausgewaehlten Teams - nur die Leitung darf sie einladen oder entfernen
 	// oder den Verwalter-Link erzeugen (siehe isOwner), sehen darf sie jeder
 	// mit Zugang.
 	admins = $state<TeamAdminInfo[]>([]);
@@ -131,7 +131,7 @@ class ManagedTeamsState {
 		return this.teams.find((t) => t.id === this.selectedTeamId) ?? null;
 	}
 
-	/** Chef statt nur Verwalter - entscheidet ueber Loeschen, Verwalter-Link, Besitzuebergabe. */
+	/** Leitung statt nur Verwalter - entscheidet ueber Loeschen, Verwalter-Link, Besitzuebergabe. */
 	get isOwner(): boolean {
 		return this.selectedTeam?.role !== "admin";
 	}

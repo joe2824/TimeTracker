@@ -1,5 +1,5 @@
 // Mitgliedsseite: selbst austreten. Ohne das bliebe ein ausgetretenes Mitglied
-// beim Chef jeden Monat als "kein Bericht" stehen, bis er es von Hand entfernt.
+// bei der Leitung jeden Monat als "kein Bericht" stehen, bis sie es von Hand entfernt.
 import { json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { requireTeamMember, revokeTeamMember } from "$lib/server/teams";

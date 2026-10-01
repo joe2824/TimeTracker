@@ -108,7 +108,7 @@ export function deleteAccount(db: DbLike, userId: string): DeleteSummary {
  * eine gültige Browser-Sitzung benutzt haben - wer so lange nicht vorbeischaut,
  * benutzt die Anwendung nicht mehr. Eine Sitzung zählt schon durch ihr blosses
  * Bestehen: sie verlängert sich bei jeder Nutzung (touchSession in auth.ts),
- * ein Chef, der nur im Browser arbeitet und nie ein Gerät koppelt oder erneut
+ * wer ein Team leitet, nur im Browser arbeitet und nie ein Gerät koppelt oder erneut
  * einen Passkey anlegt, würde sonst trotz laufender Nutzung als inaktiv
  * gelten. Ebenso ein Team, dessen Mitglieder sich melden oder Berichte
  * senden. Ein Konto ohne jedes Gerät/Passkey/Sitzung (sollte nicht vorkommen,
@@ -155,7 +155,7 @@ export function deleteInactiveAccounts(db: Db, maxAgeMs: number, now = Date.now(
 		if (validSession) return true;
 
 		// Mitglieder und Berichte laufen über den Team-Token, nicht über ein Gerät
-		// des Chefs: ein Team, das noch benutzt wird, hält sein Konto am Leben.
+		// der Leitung: ein Team, das noch benutzt wird, hält ihr Konto am Leben.
 		// Sonst nähme die Kaskade Team, Mitglieder und Berichte mit.
 		const recentMember = db
 			.select({ id: teamMembers.id })

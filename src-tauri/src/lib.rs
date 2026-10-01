@@ -447,7 +447,7 @@ pub(crate) fn write_with_bom(path: &std::path::Path, text: &str) -> std::io::Res
     std::fs::write(path, bytes)
 }
 
-/// Was der Export schreiben darf: CSV (Chef-Modus) und JSON (Sicherung).
+/// Was der Export schreiben darf: CSV (Vorgesetzten-Modus) und JSON (Sicherung).
 const EXPORT_EXTENSIONS: [&str; 2] = ["csv", "json"];
 
 /// Prüft ein Exportziel und gibt den Pfad zurück, unter dem geschrieben wird.
@@ -482,7 +482,7 @@ fn check_export_target(
     Ok(path.with_file_name(name))
 }
 
-/// Schreibt den CSV-Export aus dem Chef-Modus bzw. die JSON-Sicherung und gibt
+/// Schreibt den CSV-Export aus dem Vorgesetzten-Modus bzw. die JSON-Sicherung und gibt
 /// den tatsächlich geschriebenen Pfad zurück.
 ///
 /// Der Webview kann hier jeden Pfad hineinreichen - angenommen wird nur einer,

@@ -32,7 +32,7 @@
 	import XIcon from "@lucide/svelte/icons/x";
 	import CheckIcon from "@lucide/svelte/icons/check";
 
-	// ---------- Team-Mitgliedschaft (dieses Gerät ist Mitglied, kein Chef) ----------
+	// ---------- Team-Mitgliedschaft (dieses Gerät ist Mitglied, keine Leitung) ----------
 	//
 	// Aus teamJoin.device gelesen, nicht selbst per onMount geladen: bits-ui
 	// baut alle Einstellungs-Tabs beim Start mit auf, ein einmaliges Laden hier
@@ -65,7 +65,7 @@
 		}
 	}
 
-	// ---------- Chef-Modus ----------
+	// ---------- Vorgesetzten-Modus ----------
 
 	const BOSS_KEYS = ["bossMode"] as const;
 	const { form, save } = createSettingsForm();
@@ -87,8 +87,8 @@
 	$effect(() => {
 		const teamId = managedTeams.selectedTeamId;
 		if (!form.bossMode || !teamId) return;
-		// Fehlt der Link noch (frisch angelegtes Team), gleich erzeugen statt den
-		// Chef erst auf "Link erzeugen" klicken zu lassen.
+		// Fehlt der Link noch (frisch angelegtes Team), gleich erzeugen statt die
+		// Leitung erst auf "Link erzeugen" klicken zu lassen.
 		void managedTeams.loadInvite(teamId).then((ok) => {
 			if (ok && teamId === managedTeams.selectedTeamId && !managedTeams.invite && managedTeams.isOwner) {
 				void rotateInvite();
@@ -144,8 +144,8 @@
 		}
 	}
 
-	// Auswahl per Dropdown, Bestaetigung per Dialog: uebergibt der Chef
-	// versehentlich an die falsche Person, ist das nur durch die neue Chefin
+	// Auswahl per Dropdown, Bestaetigung per Dialog: uebergibt die Leitung
+	// versehentlich an die falsche Person, ist das nur durch die neue Leitung
 	// rueckgaengig zu machen, nicht mehr von hier aus.
 	let transferPickId = $state<string | undefined>(undefined);
 	const transferTarget = $derived(

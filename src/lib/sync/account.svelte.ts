@@ -360,7 +360,7 @@ class AccountState {
 				return;
 			}
 
-			// Ältere Fassungen legten die Adresse roh ab; Einladungs- und Chef-Links
+			// Ältere Fassungen legten die Adresse roh ab; Einladungs- und Verwalter-Links
 			// bauen darauf auf.
 			const serverUrl = normalizeServerUrl(info.serverUrl);
 			if (serverUrl !== info.serverUrl) {

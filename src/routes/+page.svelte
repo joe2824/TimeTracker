@@ -308,7 +308,7 @@
 			// Danach, nicht daneben: endete die Mitgliedschaft inzwischen, ist auch
 			// der vorgemerkte Bericht hinfällig.
 			void syncTeamActivities().finally(() => retryTeamReportUploads());
-			// Dieselbe Spiegelung für den Chef selbst - sonst sieht er die eigene
+			// Dieselbe Spiegelung für die Leitung selbst - sonst sieht sie die eigene
 			// Team-Liste nie in der eigenen Zeiterfassung.
 			void syncOwnedTeamActivities();
 			whatsNew.checkOnStartup(app.showOnboarding);
@@ -483,7 +483,7 @@
 		wasLoggedOut = loggedOut;
 	});
 
-	// Chef-Modus abgeschaltet, während der Team-Tab offen war: sonst bliebe eine
+	// Vorgesetzten-Modus abgeschaltet, während der Team-Tab offen war: sonst bliebe eine
 	// leere Seite ohne zugehörigen Reiter stehen.
 	$effect(() => {
 		if (tab === "team" && !app.settings.bossMode) tab = "tracking";
@@ -712,7 +712,7 @@
 			<Tabs.Content value="report">
 				<ReportView />
 			</Tabs.Content>
-			<!-- Nur bei aktivem Chef-Modus einhaengen: bits-ui baut sonst alle
+			<!-- Nur bei aktivem Vorgesetzten-Modus einhaengen: bits-ui baut sonst alle
 			     Tab-Inhalte mit auf, auch wenn niemand den Tab je oeffnet. -->
 			{#if app.settings.bossMode}
 				<Tabs.Content value="team">

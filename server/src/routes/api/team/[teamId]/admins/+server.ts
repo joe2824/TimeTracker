@@ -1,5 +1,5 @@
-// Die Verwalter eines Teams - Chef und Verwalter sehen die Liste, nur der
-// Chef darf jemanden wieder aussetzen.
+// Die Verwalter eines Teams - Leitung und Verwalter sehen die Liste, nur die
+// Leitung darf jemanden wieder aussetzen.
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { listTeamAdmins, removeTeamAdmin, requireOwnTeam, requireTeamAccess } from "$lib/server/teams";

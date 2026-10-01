@@ -275,7 +275,7 @@ describe("removeAdmin", () => {
 		accountMock.removeTeamAdmin.mockReturnValue(new Promise<void>((r) => (resolveRemove = r)));
 
 		const remove = managedTeams.removeAdmin(ADMIN_ANNA.userId);
-		managedTeams.selectedTeamId = TEAM_B.id; // Chef wechselt das Team, waehrend der Request noch laeuft
+		managedTeams.selectedTeamId = TEAM_B.id; // Leitung wechselt das Team, waehrend der Request noch laeuft
 		// Inzwischen geladener Stand von B.
 		managedTeams.admins = [ADMIN_ANNA];
 		managedTeams.adminInvite = invite(TEAM_B.id, "b");

@@ -49,7 +49,7 @@ export class TeamJoinFlow {
 	/**
 	 * Der Link gehört zu dem Team, in dem dieses Gerät schon ist. Ein erneuter
 	 * Beitritt legte beim Server ein neues Mitglied an und gäbe das alte auf -
-	 * der Chef sähe den laufenden Monat dann wieder als "kein Bericht".
+	 * die Leitung sähe den laufenden Monat dann wieder als "kein Bericht".
 	 * Erkannt an Server und Teamname: die Vorschau nennt keine Team-Id.
 	 */
 	sameTeam(serverUrl: string): boolean {

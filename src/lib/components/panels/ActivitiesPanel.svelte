@@ -208,7 +208,7 @@
 		dropAfter = false;
 	}
 
-	// ---------- Gemeinsame Team-Aktivitäten (nur als Chef sichtbar/bearbeitbar) ----------
+	// ---------- Gemeinsame Team-Aktivitäten (nur als Leitung sichtbar/bearbeitbar) ----------
 	//
 	// Bearbeitet wird direkt über die Team-API, nicht über app.activities: dort
 	// steht nur die Spiegelung (team/activities.ts, Präfix "team:"), die der
@@ -399,7 +399,7 @@
 	}
 
 	/**
-	 * Die eigene Sicht des Chefs auf die Team-Liste, in Aktivitäts-Form fürs
+	 * Die eigene Sicht der Leitung auf die Team-Liste, in Aktivitäts-Form fürs
 	 * gemeinsame Rendern. Name/Löschen laufen über die Team-API (managedTeams),
 	 * aber Favorit/Ausblenden/Shortcut sind Geräte-Einstellungen und gehören
 	 * der gespiegelten Zeile in app.activities (syncOwnedTeamActivities) - hier
@@ -725,7 +725,7 @@
 								<Trash2Icon class="text-destructive size-4" />
 							</Button>
 						{:else if a.teamOwned}
-							<!-- Ändern/Löschen nur im Aktivitäten-Tab des Chefs - eine lokale
+							<!-- Ändern/Löschen nur im Aktivitäten-Tab der Leitung - eine lokale
 							     Löschung käme beim nächsten Abgleich ohnehin zurück. Die eigene,
 							     nun überflüssige Aktivität lässt sich aber hier hinein zusammenführen. -->
 							<Button

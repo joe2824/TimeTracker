@@ -1036,7 +1036,7 @@ export async function saveTeamRemovedFrom(teamName: string | null): Promise<void
 	return removeDataFile("team-removed.json");
 }
 
-/** Die Team-Mitgliedschaft aufgeben - z.B. nach dem Hinauswerfen durch den Chef. */
+/** Die Team-Mitgliedschaft aufgeben - z.B. nach dem Hinauswerfen durch die Leitung. */
 export function clearTeamDevice(): Promise<void> {
 	return removeDataFile("team.json");
 }

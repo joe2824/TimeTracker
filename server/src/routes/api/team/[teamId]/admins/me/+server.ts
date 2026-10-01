@@ -1,4 +1,4 @@
-// Ein Verwalter gibt die Verwaltung selbst ab - der Chef geht so nicht (siehe leaveTeamAsAdmin).
+// Ein Verwalter gibt die Verwaltung selbst ab - die Leitung geht so nicht (siehe leaveTeamAsAdmin).
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { leaveTeamAsAdmin, requireTeamAccess } from "$lib/server/teams";

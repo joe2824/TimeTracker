@@ -65,7 +65,7 @@ describe("lokale Verschlüsselung im Browser", () => {
 			}
 		]);
 		await saveSettings({
-			bossEmail: "chef@geheim.de",
+			bossEmail: "leitung@geheim.de",
 			senderName: "Jemand",
 			rounding: 0.25,
 			hoursPerDay: 8,
@@ -89,7 +89,7 @@ describe("lokale Verschlüsselung im Browser", () => {
 		expect(reportRaw.split(".")).toHaveLength(5);
 
 		expect((await loadEntries("2026-08"))[0].note).toBe("Geheimprojekt Phoenix");
-		expect((await loadSettings()).bossEmail).toBe("chef@geheim.de");
+		expect((await loadSettings()).bossEmail).toBe("leitung@geheim.de");
 		expect((await loadTimeReport("2026-08"))?.deviceId).toBe("d1");
 	});
 
@@ -151,7 +151,7 @@ describe("lokale Verschlüsselung im Browser", () => {
 		// auf die anderen Geräte.
 		setLocalEncryptionKey(await freshKey());
 		await saveActivities([{ id: "a1", name: "x", color: "#fff", sortOrder: 0, archived: false, isAbsence: false }]);
-		await saveSettings({ bossEmail: "chef@geheim.de" } as never);
+		await saveSettings({ bossEmail: "leitung@geheim.de" } as never);
 		await saveTimeReport({
 			month: "2026-08",
 			importedAt: 1,

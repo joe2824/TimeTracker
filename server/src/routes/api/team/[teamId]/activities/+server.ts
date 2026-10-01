@@ -1,4 +1,4 @@
-// Die gemeinsame Aktivitätenliste eines Teams - Chef und Verwalter ändern sie.
+// Die gemeinsame Aktivitätenliste eines Teams - Leitung und Verwalter ändern sie.
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { listTeamActivities, requireTeamAccess, setTeamActivities, type TeamActivityInput } from "$lib/server/teams";

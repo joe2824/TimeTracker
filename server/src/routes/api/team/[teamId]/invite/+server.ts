@@ -1,4 +1,4 @@
-// Der Einladungslink eines Teams - Chef und Verwalter sehen/erzeugen ihn.
+// Der Einladungslink eines Teams - Leitung und Verwalter sehen/erzeugen ihn.
 import { json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { activeTeamInvite, requireTeamAccess, rotateTeamInvite } from "$lib/server/teams";

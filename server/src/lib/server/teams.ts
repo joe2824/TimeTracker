@@ -1,4 +1,4 @@
-// Team-Modus: Chef, Mitglieder, Einladungslinks. Bewusst ausserhalb des
+// Team-Modus: Leitung, Mitglieder, Einladungslinks. Bewusst ausserhalb des
 // Ende-zu-Ende-verschlüsselten Sync-Systems - siehe db/schema.ts.
 import type { TeamActivity, TeamActivityInput, TeamReportStatus } from "$shared/apiTypes";
 export type { TeamActivityInput, TeamReportStatus };
@@ -48,7 +48,7 @@ export function createTeam(db: Db, ownerUserId: string, name: string): TeamRow {
 }
 
 /**
- * Die Teams, bei denen dieses Konto mitreden darf - als Chef ODER als
+ * Die Teams, bei denen dieses Konto mitreden darf - als Leitung ODER als
  * Verwalter, neueste zuerst. `role` sagt, welches von beiden.
  */
 export function listTeams(db: Db, userId: string): TeamRow[] {
@@ -293,7 +293,7 @@ export function requireTeamMember(locals: { teamMemberId: string | null; teamId:
 	return locals.teamId;
 }
 
-// ---------- Verwalter: ein zweites Konto neben dem Chef ----------
+// ---------- Verwalter: ein zweites Konto neben der Leitung ----------
 //
 // Anders als teamMembers ein echtes Konto (users.id) - darf alles Operative
 // (Aktivitaeten, Mitglieder, Berichte, den einfachen Beitritts-Link), aber
@@ -310,8 +310,8 @@ export function isTeamAdmin(db: Db, teamId: string, userId: string): boolean {
 }
 
 /**
- * Ein Team, dem dieses Konto als Chef ODER Verwalter angehoert - wirft 404
- * sonst. Fuer die operativen Routen; wo nur der Chef darf, bleibt es bei
+ * Ein Team, dem dieses Konto als Leitung ODER Verwalter angehoert - wirft 404
+ * sonst. Fuer die operativen Routen; wo nur die Leitung darf, bleibt es bei
  * requireOwnTeam.
  */
 export function requireTeamAccess(db: Db, userId: string, teamId: string): TeamRow {
@@ -328,7 +328,7 @@ export interface TeamAdminRow {
 	createdAt: number;
 }
 
-/** Die Verwalter eines Teams, neueste zuerst - der Chef steht nicht mit drin. */
+/** Die Verwalter eines Teams, neueste zuerst - die Leitung steht nicht mit drin. */
 export function listTeamAdmins(db: Db, teamId: string): TeamAdminRow[] {
 	return db
 		.select({
@@ -345,9 +345,9 @@ export function listTeamAdmins(db: Db, teamId: string): TeamAdminRow[] {
 }
 
 /**
- * Einen Verwalter wieder entfernen - Chef-only, sein eigener Zugang bleibt (der laeuft ueber ownerUserId).
+ * Einen Verwalter wieder entfernen - nur die Leitung darf das, ihr eigener Zugang bleibt (der laeuft ueber ownerUserId).
  * Widerruft dabei auch den aktuell gueltigen Verwalter-Link: sonst kaeme die entfernte Person ueber
- * denselben Code sofort wieder hinein. Fuer eine neue Einladung muss der Chef bewusst "Neuen Link
+ * denselben Code sofort wieder hinein. Fuer eine neue Einladung muss die Leitung bewusst "Neuen Link
  * erzeugen" klicken.
  */
 export function removeTeamAdmin(db: Db, teamId: string, userId: string): boolean {
@@ -362,7 +362,7 @@ export function removeTeamAdmin(db: Db, teamId: string, userId: string): boolean
 
 /**
  * Ein Verwalter gibt die Verwaltung selbst ab - wie removeTeamAdmin, samt
- * Widerruf des Verwalter-Links. Der Chef kann so nicht gehen: das Team braucht
+ * Widerruf des Verwalter-Links. Die Leitung kann so nicht gehen: das Team braucht
  * einen Besitzer, er muss es übergeben oder löschen.
  */
 export function leaveTeamAsAdmin(db: Db, teamId: string, userId: string): boolean {
@@ -375,7 +375,7 @@ export function leaveTeamAsAdmin(db: Db, teamId: string, userId: string): boolea
 
 /**
  * Besitz uebergeben - das Ziel muss bereits Verwalter sein (kein Uebergeben an
- * ein x-beliebiges Konto per Tippfehler). Der bisherige Chef wird selbst zum
+ * ein x-beliebiges Konto per Tippfehler). Die bisherige Leitung wird selbst zum
  * Verwalter, verliert also nicht schlagartig den Zugang.
  */
 export function transferTeamOwnership(db: Db, team: TeamRow, newOwnerUserId: string): void {
@@ -387,8 +387,8 @@ export function transferTeamOwnership(db: Db, team: TeamRow, newOwnerUserId: str
 
 /**
  * Den Besitz eines Teams auf einen seiner Verwalter umschreiben - der ist
- * danach Chef und steht nicht mehr doppelt in der Verwalterliste.
- * `formerOwnerStaysAdmin` setzt den bisherigen Chef als Verwalter ein; bei
+ * danach Leitung und steht nicht mehr doppelt in der Verwalterliste.
+ * `formerOwnerStaysAdmin` setzt die bisherige Leitung als Verwalter ein; bei
  * einer Kontolöschung (account.ts) entfällt das, der geht ja.
  */
 export function handOverTeam(
@@ -426,7 +426,7 @@ export function teamFromAdminInviteCode(db: DbLike, code: string): TeamRow | nul
 
 /**
  * Einen Verwalter-Link annehmen - braucht (anders als joinTeam) ein
- * angemeldetes Konto. Wer den Chef selbst einliest, aendert nichts (schon
+ * angemeldetes Konto. Wer die Leitung selbst einliest, aendert nichts (schon
  * automatisch Zugang). Mehrfaches Annehmen ist folgenlos (Unique-Index).
  */
 export function joinTeamAsAdmin(db: Db, code: string, userId: string): TeamRow | null {
@@ -460,8 +460,8 @@ function teamActivitiesVersion(db: DbLike, teamId: string): number {
 /**
  * Die gemeinsame Liste ersetzen - voller Ersatz, kein Zusammenführen.
  *
- * In der Regel EIN Schreiber (der Chef) - `expectedVersion` fängt trotzdem den
- * Fall ab, dass derselbe Chef die Liste in zwei Tabs/Geräten offen hat: ohne
+ * In der Regel EIN Schreiber (die Leitung) - `expectedVersion` fängt trotzdem den
+ * Fall ab, dass dieselbe Leitung die Liste in zwei Tabs/Geräten offen hat: ohne
  * die Prüfung überschriebe der zuletzt speichernde Tab den anderen lautlos.
  */
 export function setTeamActivities(
@@ -508,7 +508,7 @@ export function setTeamActivities(
 	return rows;
 }
 
-/** Die gemeinsame Liste, sortiert wie der Chef sie angeordnet hat. */
+/** Die gemeinsame Liste, sortiert wie die Leitung sie angeordnet hat. */
 export function listTeamActivities(db: Db, teamId: string): TeamActivityRow[] {
 	return db
 		.select()
@@ -618,7 +618,7 @@ export function upsertTeamReport(
 }
 
 /**
- * Der Chef setzt den Status von Hand - für Berichte, die auf einem anderen
+ * Die Leitung setzt den Status von Hand - für Berichte, die auf einem anderen
  * Weg ankamen (Zuruf, Zettel). `sent=false` löscht die Zeile wieder (z.B. um
  * ein Versehen rückgängig zu machen), ohne das Mitglied zu verlieren.
  *
@@ -632,7 +632,7 @@ export function setTeamReportStatus(
 	memberId: string,
 	month: string,
 	sent: boolean,
-	/** Der submittedAt-Stand, den der Chef beim Klick vor Augen hatte - siehe unten. */
+	/** Der submittedAt-Stand, den die Leitung beim Klick vor Augen hatte - siehe unten. */
 	expectedSubmittedAt?: number | null
 ): boolean {
 	const member = db
@@ -676,8 +676,8 @@ export function listTeamReports(db: Db, teamId: string, month: string): TeamRepo
 	const activeIds = new Set(members.map((m) => m.id));
 
 	// listTeamMembers lässt hinausgeworfene Mitglieder aussen vor - ausser eines
-	// hat für GENAU diesen Monat schon einen Bericht abgegeben: der darf dem
-	// Chef nicht verloren gehen, nur weil das Mitglied inzwischen weg ist.
+	// hat für GENAU diesen Monat schon einen Bericht abgegeben: der darf der
+	// Leitung nicht verloren gehen, nur weil das Mitglied inzwischen weg ist.
 	const revokedSubmitters =
 		rows.length === 0
 			? []

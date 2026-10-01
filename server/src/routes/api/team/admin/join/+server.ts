@@ -17,7 +17,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	const userId = requireUser(locals);
 	const body = await readJson(request);
 	const code = String(body?.code ?? "");
-	// Wer den eigenen Link einliest, ist schon Chef - joinTeamAsAdmin legt dann
+	// Wer den eigenen Link einliest, ist schon Leitung - joinTeamAsAdmin legt dann
 	// keine Zeile an. 200 statt 201, das waere sonst "erstellt" ohne Erstellung.
 	const wasAlreadyOwner = teamFromAdminInviteCode(locals.db, code)?.ownerUserId === userId;
 	const team = joinTeamAsAdmin(locals.db, code, userId);

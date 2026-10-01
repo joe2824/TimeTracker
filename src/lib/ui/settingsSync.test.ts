@@ -12,14 +12,14 @@ describe("changedSettingKeys", () => {
 	it("meldet die Adresse der Vorgesetzten, wenn der Assistent sie eingetragen hat", () => {
 		// Der Fall aus dem Willkommens-Assistenten: die Einstellungs-Seite steht
 		// bereits mit leeren Feldern da und muss diesen Wert nachziehen.
-		const changed = changedSettingKeys(s(), s({ bossEmail: "chef@firma.de" }));
+		const changed = changedSettingKeys(s(), s({ bossEmail: "leitung@firma.de" }));
 		expect([...changed]).toEqual(["bossEmail"]);
 	});
 
 	it("meldet mehrere Felder auf einmal", () => {
 		const changed = changedSettingKeys(
 			s(),
-			s({ bossEmail: "chef@firma.de", senderName: "Max", hoursPerDay: 8 })
+			s({ bossEmail: "leitung@firma.de", senderName: "Max", hoursPerDay: 8 })
 		);
 		expect(changed).toEqual(new Set(["bossEmail", "senderName", "hoursPerDay"]));
 	});
@@ -131,10 +131,10 @@ describe("syncForm", () => {
 		const prev = s();
 		const form = formFromSettings(prev);
 		form.senderName = "gerade getippt";
-		const next = s({ bossEmail: "chef@firma.de" });
+		const next = s({ bossEmail: "leitung@firma.de" });
 
 		expect(syncForm(form, prev, next)).toBe(next);
-		expect(form.bossEmail).toBe("chef@firma.de");
+		expect(form.bossEmail).toBe("leitung@firma.de");
 		// Die unbestätigte Eingabe in einer anderen Karte bleibt stehen.
 		expect(form.senderName).toBe("gerade getippt");
 	});

@@ -99,7 +99,7 @@ beforeEach(() => {
 	app.dispose();
 	app.settings = {
 		...defaultSettings,
-		bossEmail: "chef@firma.de",
+		bossEmail: "leitung@firma.de",
 		senderName: "Anna"
 	};
 	app.activities = [...ACTIVITIES_DE];
@@ -144,7 +144,7 @@ describe("sendReport", () => {
 
 		expect(outlook.createOutlookDraft).toHaveBeenCalledTimes(1);
 		const [to, subject, html] = outlook.createOutlookDraft.mock.calls[0];
-		expect(to).toBe("chef@firma.de");
+		expect(to).toBe("leitung@firma.de");
 		expect(subject).toContain("Juli 2026");
 		expect(html).toContain("Projekt 1");
 		expect(html).toContain("<table");
@@ -206,7 +206,7 @@ describe("sendReport ohne Outlook", () => {
 		// Im Body steht nur die Anleitung: die Liste zusätzlich hineinzuschreiben
 		// hätte sie doppelt in der Mail, sobald jemand die Tabelle einfügt.
 		const url = opener.openExternal.mock.calls[0][0];
-		expect(url).toContain("mailto:chef%40firma.de");
+		expect(url).toContain("mailto:leitung%40firma.de");
 		expect(url).toContain("subject=");
 		const body = new URL(url).searchParams.get("body");
 		expect(body).toBe(PASTE_HINT);
@@ -260,7 +260,7 @@ describe("sendReport – Team-Upload", () => {
 
 	it("laedt auch auf dem erzwungenen Mail-Weg hoch und markiert den Monat", async () => {
 		// Der Rueckfall im Bericht-Tab, wenn Outlook scheitert: auch dann muss der
-		// Bericht beim Chef als abgegeben erscheinen.
+		// Bericht bei der Leitung als abgegeben erscheinen.
 		await saveTeamDevice({
 			teamMemberId: "m1",
 			token: "team-tok",

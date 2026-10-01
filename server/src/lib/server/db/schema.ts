@@ -204,9 +204,9 @@ export const telemetryPings = sqliteTable(
 );
 
 /**
- * Ein Team. Der Chef ist ein normales Konto (`ownerUserId`) - keine eigene
- * Identität dafür. Kein Unique-Constraint auf `ownerUserId`: ein Chef kann
- * mehrere Teams führen.
+ * Ein Team. Die Leitung ist ein normales Konto (`ownerUserId`) - keine eigene
+ * Identität dafür. Kein Unique-Constraint auf `ownerUserId`: ein Konto kann
+ * mehrere Teams leiten.
  */
 export const teams = sqliteTable(
 	"teams",
@@ -262,7 +262,7 @@ export const teamMembers = sqliteTable(
 );
 
 /**
- * Die gemeinsame Aktivitätenliste eines Teams - der Chef ist die einzige
+ * Die gemeinsame Aktivitätenliste eines Teams - die Leitung ist die einzige
  * Feder. Voller Ersatz bei jedem Speichern (siehe `setTeamActivities`), kein
  * Zusammenführen nötig: "kein Echtzeit-Abgleich" heisst, es gibt immer nur
  * einen Schreiber.
@@ -286,10 +286,10 @@ export const teamActivities = sqliteTable(
 
 /**
  * Ein gesendeter Monatsbericht, wie ihn `sendReport()` ohnehin schon baut
- * (`MonthReport` - Stunden je Aktivität, keine Einzeleinträge/Notizen). Der
- * Chef soll ihn sehen dürfen, deshalb ausserhalb der Ende-zu-Ende-
+ * (`MonthReport` - Stunden je Aktivität, keine Einzeleinträge/Notizen). Die
+ * Leitung soll ihn sehen dürfen, deshalb ausserhalb der Ende-zu-Ende-
  * Verschlüsselung. `teamId` steht doppelt (folgt aus `memberId`), erspart dem
- * Chef-Abruf aber den Join.
+ * Abruf der Leitung aber den Join.
  */
 export const teamReports = sqliteTable(
 	"team_reports",
@@ -332,8 +332,8 @@ export const teamAdminInvites = sqliteTable(
 );
 
 /**
- * Ein Verwalter neben dem Chef (`teams.ownerUserId`) - ein Konto, kein
- * anonymes Mitglied wie `teamMembers`. Darf alles Operative, was der Chef
+ * Ein Verwalter neben der Leitung (`teams.ownerUserId`) - ein Konto, kein
+ * anonymes Mitglied wie `teamMembers`. Darf alles Operative, was die Leitung
  * auch darf (Aktivitaeten, Mitglieder, Berichte, den einfachen Beitritts-
  * Link), nicht aber das Team loeschen, weitere Verwalter ein-/aussetzen oder
  * den Besitz uebergeben - siehe requireTeamAccess vs. requireOwnTeam.

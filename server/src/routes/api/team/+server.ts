@@ -1,4 +1,4 @@
-// Teams anlegen und auflisten - nur der Chef selbst (sein normales Konto).
+// Teams anlegen und auflisten - nur die Leitung selbst (ihr normales Konto).
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { createTeam, listTeams } from "$lib/server/teams";

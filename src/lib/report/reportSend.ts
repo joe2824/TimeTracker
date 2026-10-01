@@ -74,7 +74,7 @@ export type SendResult = { via: "outlook" } | { via: "mail"; clipboard: Clipboar
 /**
  * Bringt den Monatsbericht auf den Weg, markiert ihn als erledigt und reicht
  * ihn ans Team weiter. Einziger Versandweg - jeder Knopf, der einen Bericht
- * verschickt, muss hier durch, sonst fehlt er dem Chef als abgegeben.
+ * verschickt, muss hier durch, sonst fehlt er der Leitung als abgegeben.
  *
  * `via` erzwingt einen Weg (etwa das Mailprogramm als Rückfall, wenn Outlook
  * scheitert); ohne Angabe Outlook, wo es das gibt. Wirft, wenn der Weg

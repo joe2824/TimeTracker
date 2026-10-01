@@ -62,11 +62,11 @@ function withDeviceFlags(fresh: Activity[]): Activity[] {
  */
 export const withActivitiesLock = createSerialQueue();
 
-/** Über den Beitritts-Link gespiegelt - eigene Team-Listen des Chefs tragen stattdessen eine teamId. */
+/** Über den Beitritts-Link gespiegelt - eigene Team-Listen der Leitung tragen stattdessen eine teamId. */
 export const isJoinedTeamRow = (a: Activity): boolean => a.teamOwned === true && a.teamId === undefined;
 
 /**
- * Doppelte Ids verwerfen, die erste gewinnt. Tritt ein Chef dem eigenen Team
+ * Doppelte Ids verwerfen, die erste gewinnt. Tritt eine Leitung dem eigenen Team
  * per Link bei, kommt dieselbe Server-Id über beide Wege an - zwei Zeilen mit
  * derselben Id zählten ihre Stunden im Bericht doppelt.
  */
@@ -95,14 +95,14 @@ let memberSyncApplied = 0;
 let ownedSyncSeq = 0;
 let ownedSyncApplied = 0;
 
-/** Eigene Team-Liste des Chefs - hat bei einer Kollision mit einer beigetretenen Zeile Vorrang. */
+/** Eigene Team-Liste der Leitung - hat bei einer Kollision mit einer beigetretenen Zeile Vorrang. */
 const isOwnTeamRow = (a: Activity): boolean => a.teamOwned === true && a.teamId !== undefined;
 
 /**
  * Die gemeinsame Liste des Teams (falls dieses Gerät eines hat) neu einlesen.
  *
  * Ersetzt nur die Zeilen aus isJoinedTeamRow. Eigene, per
- * syncOwnedTeamActivities gespiegelte Zeilen (Konto ist gleichzeitig Chef
+ * syncOwnedTeamActivities gespiegelte Zeilen (Konto ist gleichzeitig Leitung
  * eines anderen Teams) bleiben unangetastet.
  */
 export async function syncTeamActivities(): Promise<TeamSyncResult> {
@@ -146,7 +146,7 @@ export async function syncTeamActivities(): Promise<TeamSyncResult> {
 		applied = true;
 		memberSyncApplied = seq;
 
-		// Eine vom Chef entfernte Zeile nicht verschwinden lassen (report.ts baut
+		// Eine von der Leitung entfernte Zeile nicht verschwinden lassen (report.ts baut
 		// nur aus der aktuellen Liste, erfasste Stunden gingen verloren), sondern
 		// wie beim Verlassen mit NEUER Id archivieren: dieselbe Server-Id kann
 		// nach einem erneuten Beitritt wiederkommen.
@@ -156,9 +156,9 @@ export async function syncTeamActivities(): Promise<TeamSyncResult> {
 		);
 		if (gone.size > 0) await app.detachTeamActivities((a) => isJoinedTeamRow(a) && gone.has(a.id));
 
-		// Tritt ein Chef dem eigenen Team per Link bei, kommt dieselbe Id schon
+		// Tritt eine Leitung dem eigenen Team per Link bei, kommt dieselbe Id schon
 		// über die eigene Liste - die behält ihre teamId und damit Vorrang, sonst
-		// nähme "Team verlassen" dem Chef seine eigenen Team-Stunden mit.
+		// nähme "Team verlassen" der Leitung ihre eigenen Team-Stunden mit.
 		const ownIds = new Set(app.activities.filter(isOwnTeamRow).map((a) => a.id));
 		app.activities = withoutDuplicateIds([
 			...app.activities.filter((a) => !isJoinedTeamRow(a)),
@@ -196,7 +196,7 @@ export async function leaveTeam(): Promise<void> {
 	if (!device) return;
 	// Ausserhalb des Locks und ohne darauf zu warten: eine hängende Anfrage soll
 	// weder Abgleiche noch den Knopf aufhalten. Offline oder schon entfernt:
-	// lokal ist man trotzdem draussen, der Chef sieht das Mitglied dann weiter,
+	// lokal ist man trotzdem draussen, die Leitung sieht das Mitglied dann weiter,
 	// bis er es entfernt.
 	void leaveTeamOnServer(device.serverUrl, device.token).catch((e) =>
 		logWarn("Austritt beim Team nicht gemeldet", e)
@@ -210,10 +210,10 @@ export async function dismissTeamRemoved(): Promise<void> {
 }
 
 /**
- * Die selbst verwalteten Team-Listen des Chefs in app.activities spiegeln.
+ * Die selbst verwalteten Team-Listen der Leitung in app.activities spiegeln.
  *
  * Ohne das taucht eine Team-Aktivität in der eigenen Zeiterfassung (Auswahl,
- * Bericht, Ausblenden) nie auf - der Chef sieht sie nur in der separaten
+ * Bericht, Ausblenden) nie auf - die Leitung sieht sie nur in der separaten
  * Verwaltung im Aktivitäten-Tab, nie beim eigenen Timer. Holt alle Teams
  * parallel und schreibt app.activities genau einmal.
  *
@@ -271,7 +271,7 @@ export async function syncOwnedTeamActivities(): Promise<void> {
 			await app.detachTeamActivities((a) => isOwnedRowOf(refreshed)(a) && gone.has(a.id));
 		}
 
-		// Eigene zuerst: kollidiert eine beigetretene Zeile (Chef im eigenen Team)
+		// Eigene zuerst: kollidiert eine beigetretene Zeile (Leitung im eigenen Team)
 		// mit derselben Id, gewinnt die eigene samt teamId.
 		const fresh = withDeviceFlags(loaded.flatMap(({ team, remote }) => remote.map((r) => toLocal(r, team))));
 		const freshIds = new Set(fresh.map((a) => a.id));

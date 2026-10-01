@@ -99,7 +99,7 @@ describe("AdminJoinFlow.accept", () => {
 		expect(flow.joinedTeamName).toBe("Vertrieb");
 		expect(flow.busy).toBe(false);
 		expect(flow.joinError).toBeNull();
-		// Ohne Chef-Modus gäbe es den Team-Tab nicht, in dem ein Verwalter arbeitet.
+		// Ohne Vorgesetzten-Modus gäbe es den Team-Tab nicht, in dem ein Verwalter arbeitet.
 		expect(updateSettings).toHaveBeenCalledWith({ bossMode: true });
 	});
 

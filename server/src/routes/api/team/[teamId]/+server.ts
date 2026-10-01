@@ -1,4 +1,4 @@
-// Ein einzelnes Team - nur der Chef selbst (sein normales Konto).
+// Ein einzelnes Team - nur die Leitung selbst (ihr normales Konto).
 import { json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { deleteTeam, requireOwnTeam } from "$lib/server/teams";

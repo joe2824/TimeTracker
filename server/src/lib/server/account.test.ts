@@ -86,7 +86,7 @@ describe("deleteInactiveAccounts", () => {
 	});
 
 	it("lässt ein Konto mit gültiger Browser-Sitzung in Ruhe, auch ohne Gerät oder Passkey", () => {
-		// Ein Chef, der ein Team nur über den Browser führt, koppelt nie ein
+		// Wer ein Team nur über den Browser leitet, koppelt nie ein
 		// Gerät und legt nie erneut einen Passkey an - die Sitzung ist dort der
 		// einzige Beleg, dass das Konto noch benutzt wird.
 		user("frida", YEAR_MS * 2);
@@ -139,9 +139,9 @@ describe("deleteInactiveAccounts", () => {
 			.run();
 	}
 
-	it("lässt einen Chef in Ruhe, dessen Team-Mitglied sich kürzlich gemeldet hat", () => {
-		// Mitglieder melden sich über ihren Team-Token, nicht über ein Gerät des
-		// Chefs - das Team lebt, auch wenn der Chef selbst nie vorbeischaut.
+	it("lässt ein Konto in Ruhe, dessen Team-Mitglied sich kürzlich gemeldet hat", () => {
+		// Mitglieder melden sich über ihren Team-Token, nicht über ein Gerät der
+		// Leitung - das Team lebt, auch wenn die Leitung selbst nie vorbeischaut.
 		user("hanna", YEAR_MS * 2);
 		teamWithMember("hanna", YEAR_MS / 2);
 
@@ -149,7 +149,7 @@ describe("deleteInactiveAccounts", () => {
 		expect(db.select().from(teams).where(eq(teams.id, "team-hanna")).get()).toBeDefined();
 	});
 
-	it("lässt einen Chef in Ruhe, dessen Team kürzlich einen Bericht bekommen hat", () => {
+	it("lässt ein Konto in Ruhe, dessen Team kürzlich einen Bericht bekommen hat", () => {
 		user("ida", YEAR_MS * 2);
 		teamWithMember("ida", YEAR_MS * 2);
 		db.insert(teamReports)
@@ -165,14 +165,14 @@ describe("deleteInactiveAccounts", () => {
 		expect(deleteInactiveAccounts(db, YEAR_MS, NOW)).toBe(0);
 	});
 
-	it("lässt einen Chef in Ruhe, dessen Team-Mitglied kürzlich beigetreten ist, aber noch nie abgerufen hat", () => {
+	it("lässt ein Konto in Ruhe, dessen Team-Mitglied kürzlich beigetreten ist, aber noch nie abgerufen hat", () => {
 		user("kira", YEAR_MS * 2);
 		teamWithMember("kira", null, YEAR_MS / 2);
 
 		expect(deleteInactiveAccounts(db, YEAR_MS, NOW)).toBe(0);
 	});
 
-	it("löscht einen Chef, dessen Team ebenfalls seit der Frist ruht", () => {
+	it("löscht ein Konto, dessen Team ebenfalls seit der Frist ruht", () => {
 		user("jonas", YEAR_MS * 2);
 		teamWithMember("jonas", YEAR_MS * 2);
 

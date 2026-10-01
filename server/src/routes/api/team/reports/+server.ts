@@ -11,7 +11,7 @@ import {
 } from "$lib/server/teams";
 import { readJson } from "$lib/server/request";
 
-/** Ob für den Monat schon ein Bericht dieses Mitglieds vorliegt - auch ein vom Chef von Hand vermerkter. */
+/** Ob für den Monat schon ein Bericht dieses Mitglieds vorliegt - auch ein von der Leitung von Hand vermerkter. */
 export const GET: RequestHandler = async ({ locals, url }) => {
 	requireTeamMember(locals);
 	const month = url.searchParams.get("month") ?? "";

@@ -1,4 +1,4 @@
-// Der Verwalter-Einladungslink eines Teams - nur der Chef erzeugt ihn, nicht
+// Der Verwalter-Einladungslink eines Teams - nur die Leitung erzeugt ihn, nicht
 // delegierbar an einen bestehenden Verwalter (sonst koennte ein Verwalter
 // beliebig weitere Verwalter einsetzen).
 import { json } from "@sveltejs/kit";

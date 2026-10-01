@@ -1926,7 +1926,7 @@ describe("Team", () => {
 		expect(throttled).toBe(true);
 	});
 
-	it("der Chef setzt die gemeinsame Liste, ein Mitglied liest sie ohne Konto", async () => {
+	it("die Leitung setzt die gemeinsame Liste, ein Mitglied liest sie ohne Konto", async () => {
 		const team = await createTeamFor(annaToken);
 		const invite = await inviteFor(annaToken, team.id);
 		const join = await apiFrom(null, "/api/team/join", {
@@ -1961,7 +1961,7 @@ describe("Team", () => {
 		expect(res.status).toBe(404);
 	});
 
-	it("ein Mitglied sendet einen Bericht, der Chef sieht ihn samt Inhalt und Zeitpunkt", async () => {
+	it("ein Mitglied sendet einen Bericht, die Leitung sieht ihn samt Inhalt und Zeitpunkt", async () => {
 		const team = await createTeamFor(annaToken);
 		const invite = await inviteFor(annaToken, team.id);
 		const join = await apiFrom(null, "/api/team/join", {
@@ -2050,7 +2050,7 @@ describe("Team", () => {
 		});
 	});
 
-	it("ein Mitglied tritt selbst aus: danach gilt sein Token nicht mehr und der Chef sieht es nicht mehr", async () => {
+	it("ein Mitglied tritt selbst aus: danach gilt sein Token nicht mehr und die Leitung sieht es nicht mehr", async () => {
 		const team = await createTeamFor(annaToken);
 		const invite = await inviteFor(annaToken, team.id);
 		const join = await apiFrom(null, "/api/team/join", {
@@ -2076,7 +2076,7 @@ describe("Team", () => {
 		expect(res.status).toBe(401);
 	});
 
-	it("der Chef markiert von Hand als gesendet und nimmt es wieder zurueck", async () => {
+	it("die Leitung markiert von Hand als gesendet und nimmt es wieder zurueck", async () => {
 		const team = await createTeamFor(annaToken);
 		const invite = await inviteFor(annaToken, team.id);
 		const join = await apiFrom(null, "/api/team/join", {
@@ -2131,8 +2131,8 @@ describe("Team", () => {
 		expect(foreign.status).toBe(404);
 	});
 
-	describe("Verwalter gegen Chef-Rechte", () => {
-		/** Anna ist Chefin, Bodo tritt über ihren Verwalter-Link bei. */
+	describe("Verwalter gegen Rechte der Leitung", () => {
+		/** Anna leitet das Team, Bodo tritt über ihren Verwalter-Link bei. */
 		async function teamWithAdmin() {
 			const team = await createTeamFor(annaToken);
 			const link = await apiFrom(annaToken, `/api/team/${team.id}/admin-invite`, { method: "POST" });
@@ -2160,7 +2160,7 @@ describe("Team", () => {
 			return claraToken;
 		}
 
-		it("ein Verwalter bekommt 404 bei allem, was dem Chef vorbehalten ist", async () => {
+		it("ein Verwalter bekommt 404 bei allem, was der Leitung vorbehalten ist", async () => {
 			const team = await teamWithAdmin();
 			await thirdAdmin(team.id);
 
@@ -2186,14 +2186,14 @@ describe("Team", () => {
 				).status
 			).toBe(404);
 
-			// Nichts davon hat gewirkt: Clara ist noch Verwalterin, Anna noch Chefin.
+			// Nichts davon hat gewirkt: Clara ist noch Verwalterin, Anna leitet es noch.
 			const admins = await apiFrom(annaToken, `/api/team/${team.id}/admins`);
 			expect((await admins.json()).admins.map((a: { userId: string }) => a.userId).sort()).toEqual(
 				[BODO, "user-clara"].sort()
 			);
 		});
 
-		it("dieselben Aufrufe gelingen dem Chef", async () => {
+		it("dieselben Aufrufe gelingen der Leitung", async () => {
 			const team = await teamWithAdmin();
 			await thirdAdmin(team.id);
 
@@ -2217,7 +2217,7 @@ describe("Team", () => {
 					})
 				).status
 			).toBe(200);
-			// Jetzt ist Bodo Chef - und darf löschen.
+			// Jetzt leitet Bodo das Team - und darf löschen.
 			expect((await apiFrom(bodoToken, `/api/team/${team.id}`, { method: "DELETE" })).status).toBe(200);
 		});
 
@@ -2239,7 +2239,7 @@ describe("Team", () => {
 			expect(rejoin.status).toBe(404);
 		});
 
-		it("der Chef kann nicht austreten, ein Fremder bekommt 404", async () => {
+		it("die Leitung kann nicht austreten, ein Fremder bekommt 404", async () => {
 			const team = await createTeamFor(annaToken);
 			const owner = await apiFrom(annaToken, `/api/team/${team.id}/admins/me`, { method: "DELETE" });
 			expect(owner.status).toBe(409);

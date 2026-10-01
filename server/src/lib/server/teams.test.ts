@@ -54,7 +54,7 @@ describe("createTeam / listTeams", () => {
 		expect(listTeams(db, BODO)).toEqual([]);
 	});
 
-	it("ein Chef kann mehrere Teams führen", () => {
+	it("ein Konto kann mehrere Teams leiten", () => {
 		createTeam(db, ANNA, "Vertrieb");
 		createTeam(db, ANNA, "Support");
 		expect(listTeams(db, ANNA)).toHaveLength(2);
@@ -268,7 +268,7 @@ describe("requireTeamMember", () => {
 });
 
 describe("Verwalter (rotateAdminInvite / joinTeamAsAdmin / requireTeamAccess)", () => {
-	it("requireTeamAccess laesst Chef und Verwalter durch, wirft sonst 404", () => {
+	it("requireTeamAccess laesst Leitung und Verwalter durch, wirft sonst 404", () => {
 		const team = createTeam(db, ANNA, "Vertrieb");
 		expect(requireTeamAccess(db, ANNA, team.id).id).toBe(team.id);
 		expect(() => requireTeamAccess(db, BODO, team.id)).toThrow();
@@ -321,7 +321,7 @@ describe("Verwalter (rotateAdminInvite / joinTeamAsAdmin / requireTeamAccess)", 
 		expect(joinTeamAsAdmin(db, "UNBEKANNT-CODE", BODO)).toBeNull();
 	});
 
-	it("der Chef selbst einzulesen aendert nichts - er steht schon per ownerUserId drin", () => {
+	it("die Leitung selbst einzulesen aendert nichts - sie steht schon per ownerUserId drin", () => {
 		const team = createTeam(db, ANNA, "Vertrieb");
 		const invite = rotateAdminInvite(db, team.id);
 		expect(joinTeamAsAdmin(db, invite.code, ANNA)?.id).toBe(team.id);
@@ -362,7 +362,7 @@ describe("transferTeamOwnership", () => {
 		expect(() => transferTeamOwnership(db, team, BODO)).toThrow();
 	});
 
-	it("macht das Ziel zum Chef und den bisherigen Chef zum Verwalter", () => {
+	it("macht das Ziel zur Leitung und die bisherige Leitung zum Verwalter", () => {
 		const team = createTeam(db, ANNA, "Vertrieb");
 		const invite = rotateAdminInvite(db, team.id);
 		joinTeamAsAdmin(db, invite.code, BODO);
@@ -371,7 +371,7 @@ describe("transferTeamOwnership", () => {
 
 		expect(requireOwnTeam(db, BODO, team.id).ownerUserId).toBe(BODO);
 		expect(() => requireOwnTeam(db, ANNA, team.id)).toThrow();
-		// weiterhin Zugriff, aber jetzt als Verwalter statt als Chef
+		// weiterhin Zugriff, aber jetzt als Verwalter statt als Leitung
 		expect(requireTeamAccess(db, ANNA, team.id).id).toBe(team.id);
 		expect(listTeamAdmins(db, team.id).map((a) => a.userId)).toEqual([ANNA]);
 	});
@@ -449,7 +449,7 @@ describe("setTeamActivities / listTeamActivities", () => {
 		expect(listTeamActivities(db, teamB.id)).toEqual([]);
 	});
 
-	it("lehnt einen veralteten erwarteten Stand ab - z.B. ein zweiter Tab des Chefs", () => {
+	it("lehnt einen veralteten erwarteten Stand ab - z.B. ein zweiter Tab der Leitung", () => {
 		const team = createTeam(db, ANNA, "Vertrieb");
 		setTeamActivities(db, team.id, [{ name: "A", isAbsence: false, sortOrder: 0, archived: false }]);
 
@@ -705,7 +705,7 @@ describe("Verwalter tritt selbst aus", () => {
 		expect(activeAdminInvite(db, team.id)).toBeNull();
 	});
 
-	it("der Chef kann nicht austreten, nur übergeben oder löschen", () => {
+	it("die Leitung kann nicht austreten, nur übergeben oder löschen", () => {
 		const team = createTeam(db, ANNA, "Vertrieb");
 		expect(() => leaveTeamAsAdmin(db, team.id, ANNA)).toThrow();
 		expect(requireOwnTeam(db, ANNA, team.id).id).toBe(team.id);

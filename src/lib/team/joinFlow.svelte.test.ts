@@ -91,7 +91,7 @@ describe("TeamJoinFlow", () => {
 	it("tritt nicht bei, solange eine eingetragene E-Mail ungültig ist", async () => {
 		const flow = new TeamJoinFlow();
 		flow.name = "Anna Meier";
-		flow.email = "anna@firma.de; chef@firma.de";
+		flow.email = "anna@firma.de; leitung@firma.de";
 
 		expect(flow.emailInvalid).toBe(true);
 		expect(await flow.join("https://tt.example.de", "code1")).toBeNull();

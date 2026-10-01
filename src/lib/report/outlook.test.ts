@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mailtoFallback } from "./outlook";
 
 describe("mailtoFallback", () => {
-	const M = mailtoFallback("chef@firma.de", "Stundenerfassung Juli 2026 – Anna Meier", "Zeile eins\nZeile zwei");
+	const M = mailtoFallback("leitung@firma.de", "Stundenerfassung Juli 2026 – Anna Meier", "Zeile eins\nZeile zwei");
 
 	it("kodiert Leerzeichen NICHT als +", () => {
 		// URLSearchParams macht "+" daraus (Formular-Kodierung); mailto nimmt das
@@ -13,7 +13,7 @@ describe("mailtoFallback", () => {
 	});
 
 	it("kodiert Empfänger, Betreff und Text", () => {
-		expect(M.startsWith("mailto:chef%40firma.de?")).toBe(true);
+		expect(M.startsWith("mailto:leitung%40firma.de?")).toBe(true);
 		expect(M).toContain("subject=");
 		expect(M).toContain("body=");
 		expect(M).toContain("%0A"); // Zeilenumbruch im Text

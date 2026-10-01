@@ -1,4 +1,4 @@
-// Chef-Modus: Ausgabe-Helfer für die Abgabe-Übersicht (CSV, Erinnerungstext).
+// Vorgesetzten-Modus: Ausgabe-Helfer für die Abgabe-Übersicht (CSV, Erinnerungstext).
 //
 // Wer wann gesendet hat, kommt vom Server (account.listTeamReports) - hier
 // wird daraus eine CSV-Datei und ein Erinnerungstext.
@@ -9,7 +9,7 @@ import { escapeHtml } from "./report";
 function csvCell(s: string): string {
 	// Excel wertet eine Zelle, die mit = + - @ beginnt, als FORMEL aus. Namen
 	// stammen von Team-Mitgliedern - ein Name wie "=1+1" würde in der Tabelle
-	// des Chefs ausgeführt.
+	// der Leitung ausgeführt.
 	const safe = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
 	return /[";\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }

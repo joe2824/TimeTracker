@@ -2,7 +2,7 @@
 // loest vitest hier nicht auf (siehe server/vitest.config.ts), ein echter
 // Import der Routen scheitert deshalb. Bewacht stattdessen, dass jede Methode
 // jeder Team-Route den richtigen Zugriffs-Check nutzt - requireOwnTeam fuer
-// Chef-only, requireTeamAccess fuer Chef+Verwalter (siehe der Kommentar dazu
+// nur die Leitung, requireTeamAccess fuer Leitung+Verwalter (siehe der Kommentar dazu
 // in teams.ts). Eine neue oder kopierte Route mit dem falschen Check faellt
 // hier auf, statt erst im Betrieb ueberraschend zu wenig oder zu viel
 // preiszugeben.

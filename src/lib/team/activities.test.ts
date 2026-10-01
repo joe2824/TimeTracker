@@ -99,7 +99,7 @@ describe("syncTeamActivities", () => {
 		expect(teamOwned.map((a) => a.name)).toEqual(["Neu"]);
 	});
 
-	it("loest eine vom Chef entfernte Aktivität lokal ab, statt sie zu loeschen", async () => {
+	it("loest eine von der Leitung entfernte Aktivität lokal ab, statt sie zu loeschen", async () => {
 		// Sonst gingen schon erfasste Stunden lautlos aus dem Bericht verloren -
 		// der baut seine Zeilen nur aus der aktuellen activities-Liste (report.ts).
 		await saveTeamDevice({
@@ -284,7 +284,7 @@ describe("syncTeamActivities", () => {
 
 	it("laesst beim 401 eigene, per syncOwnedTeamActivities gespiegelte Zeilen unangetastet", async () => {
 		// Regression: die Aufräumung galt nur den ÜBER DEN LINK BEIGETRETENEN
-		// Zeilen (teamId === undefined). Ein Konto, das gleichzeitig Chef eines
+		// Zeilen (teamId === undefined). Ein Konto, das gleichzeitig Leitung eines
 		// anderen Teams ist, darf dessen Zeilen (mit teamId) nicht verlieren, nur
 		// weil die eigene, unabhängige Mitgliedschaft anderswo endet.
 		accountMock.linked = true;
@@ -447,7 +447,7 @@ describe("syncOwnedTeamActivities", () => {
 		expect(detached?.teamOwned).toBeUndefined();
 	});
 
-	it("Chef tritt dem eigenen Team per Link bei: keine doppelte Id", async () => {
+	it("Leitung tritt dem eigenen Team per Link bei: keine doppelte Id", async () => {
 		const a1 = { id: "a1", name: "Projekt A", isAbsence: false, sortOrder: 0, color: null, archived: false, updatedAt: 1 };
 		accountMock.linked = true;
 		accountMock.listTeams.mockResolvedValue([{ id: "t1", name: "A", ownerUserId: "u1", createdAt: 1 }]);
@@ -467,7 +467,7 @@ describe("syncOwnedTeamActivities", () => {
 		await syncTeamActivities();
 		expect(app.activities.find((a) => a.id === `${TEAM_ACTIVITY_PREFIX}a1`)?.teamId).toBe("t1");
 
-		// Team als Mitglied verlassen nimmt dem Chef seine eigene Team-Zeile nicht weg.
+		// Team als Mitglied verlassen nimmt der Leitung ihre eigene Team-Zeile nicht weg.
 		await leaveTeam();
 		expect(app.activities.find((a) => a.id === `${TEAM_ACTIVITY_PREFIX}a1`)).toMatchObject({
 			teamOwned: true,
@@ -499,7 +499,7 @@ describe("syncOwnedTeamActivities", () => {
 	});
 });
 
-describe("Chef ist gleichzeitig Mitglied eines anderen Teams", () => {
+describe("Leitung ist gleichzeitig Mitglied eines anderen Teams", () => {
 	it("syncTeamActivities loest nur die per Link beigetretene Zeile ab, nie die selbst geführte", async () => {
 		// Regression: die eigene, gefuehrte Zeile traegt eine teamId - ohne das
 		// im Abgleich zu beruecksichtigen, saehe syncTeamActivities sie als "nicht

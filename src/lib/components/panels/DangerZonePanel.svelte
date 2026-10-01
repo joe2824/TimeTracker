@@ -13,7 +13,7 @@
 	let isDeleteAccountModalOpen = $state(false);
 	let linkedDeviceCount = $state<number | null>(null);
 	let ownedTeamCount = $state(0);
-	/** Ob du Chef eines Teams bist, liess sich nicht prüfen - dann ein allgemeiner Hinweis. */
+	/** Ob du ein Team leitest, liess sich nicht prüfen - dann ein allgemeiner Hinweis. */
 	let teamsUnknown = $state(false);
 
 	async function handleOpenDeleteAccountDialog() {

@@ -287,13 +287,13 @@ describe("deleteYear", () => {
 	});
 
 	it("laesst Aktivitaeten und Einstellungen unangetastet", async () => {
-		files.set("data/settings.json", '{"bossEmail":"chef@firma.de"}');
+		files.set("data/settings.json", '{"bossEmail":"leitung@firma.de"}');
 		files.set("data/activities.json", '[{"id":"a"}]');
 		await saveEntries("2026-01", [entry("a")]);
 
 		await deleteYear(2026);
 
-		expect(files.get("data/settings.json")).toBe('{"bossEmail":"chef@firma.de"}');
+		expect(files.get("data/settings.json")).toBe('{"bossEmail":"leitung@firma.de"}');
 		expect(files.get("data/activities.json")).toBe('[{"id":"a"}]');
 	});
 

@@ -170,7 +170,7 @@ const MIGRATIONS: string[] = [
 	CREATE INDEX IF NOT EXISTS pairings_user ON pairings(user_id);`,
 
 	// Team-Modus: eigene, bewusst KLARTEXT-relationale Tabellen, ausserhalb von
-	// `records` - der Chef soll Team-Aktivitaeten und Berichts-Zusammenfassungen
+	// `records` - die Leitung soll Team-Aktivitaeten und Berichts-Zusammenfassungen
 	// serverseitig sehen koennen, anders als bei den Ende-zu-Ende-verschluesselten
 	// Sync-Daten. Mitglieder brauchen dafuer kein Konto: eigener Token-Raum.
 	`CREATE TABLE IF NOT EXISTS teams (
@@ -202,7 +202,7 @@ const MIGRATIONS: string[] = [
 	`CREATE UNIQUE INDEX IF NOT EXISTS team_members_token ON team_members(token_hash)`,
 
 	// Team-Modus, Teil 2: die gemeinsame Aktivitätenliste. Voller Ersatz bei
-	// jedem Speichern (siehe setTeamActivities) - der Chef ist die einzige Feder.
+	// jedem Speichern (siehe setTeamActivities) - die Leitung ist die einzige Feder.
 	`CREATE TABLE IF NOT EXISTS team_activities (
 		id TEXT PRIMARY KEY,
 		team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
@@ -228,7 +228,7 @@ const MIGRATIONS: string[] = [
 	`CREATE UNIQUE INDEX IF NOT EXISTS team_reports_member_month ON team_reports(member_id, month)`,
 	`CREATE INDEX IF NOT EXISTS team_reports_team_month ON team_reports(team_id, month)`,
 
-	// Team-Modus, Teil 4: Verwalter neben dem Chef - anders als team_members ein
+	// Team-Modus, Teil 4: Verwalter neben der Leitung - anders als team_members ein
 	// echtes Konto (users.id), deshalb eigener Einladungsweg statt des
 	// anonymen team_invites.
 	`CREATE TABLE IF NOT EXISTS team_admin_invites (

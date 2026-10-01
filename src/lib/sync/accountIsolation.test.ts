@@ -208,7 +208,7 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 		await withServer("browser-device", async (server) => {
 			const key = await createVaultKey();
 			await account.linkWithSession("http://test-server", key, "Alice");
-			await app.updateSettings({ bossEmail: "chef@alice.de", senderName: "Alice" });
+			await app.updateSettings({ bossEmail: "leitung@alice.de", senderName: "Alice" });
 
 			// Die Runde bleibt im Abruf stehen ...
 			server.holdPulls();
@@ -234,7 +234,7 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 		await withServer("browser-device", async (server) => {
 			const key = await createVaultKey();
 			await account.linkWithSession("http://test-server", key, "Alice");
-			await app.updateSettings({ bossEmail: "chef@alice.de" });
+			await app.updateSettings({ bossEmail: "leitung@alice.de" });
 			server.silentLogout = true;
 
 			vi.useFakeTimers();
@@ -283,13 +283,13 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 			await account.linkWithSession("http://test-server/alice", keyA, "Alice");
 			await app.updateSettings({
 				senderName: "Alice Wunder",
-				bossEmail: "chef@alice.de",
+				bossEmail: "leitung@alice.de",
 				hoursPerDay: 7
 			});
 			await account.syncNow();
 
 			expect(app.settings.senderName).toBe("Alice Wunder");
-			expect(app.settings.bossEmail).toBe("chef@alice.de");
+			expect(app.settings.bossEmail).toBe("leitung@alice.de");
 
 			// Alice hat ausserdem Zeiten erfasst - die dürfen Bob genauso wenig
 			// erreichen wie ihre Einstellungen.
@@ -354,7 +354,7 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 
 			// Alice bekommt wieder ihre exakten Einstellungen zurück
 			expect(app.settings.senderName).toBe("Alice Wunder");
-			expect(app.settings.bossEmail).toBe("chef@alice.de");
+			expect(app.settings.bossEmail).toBe("leitung@alice.de");
 			expect(app.settings.hoursPerDay).toBe(7);
 		});
 	});
@@ -423,13 +423,13 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 			// 3. User durchläuft das Onboarding und speichert seine Werte
 			await app.finishOnboarding({
 				senderName: "Max Mustermann",
-				bossEmail: "chef@firma.de",
+				bossEmail: "leitung@firma.de",
 				hoursPerDay: 8
 			});
 
 			expect(app.showOnboarding).toBe(false);
 			expect(app.settings.senderName).toBe("Max Mustermann");
-			expect(app.settings.bossEmail).toBe("chef@firma.de");
+			expect(app.settings.bossEmail).toBe("leitung@firma.de");
 
 			// 4. Daten werden in den neuen Vault synchronisiert
 			await new Promise((r) => setTimeout(r, 50));

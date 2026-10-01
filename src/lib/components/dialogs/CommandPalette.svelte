@@ -23,7 +23,7 @@
 		{ id: "nav:settings", label: "Gehe zu: Einstellungen", run: () => onNavigate?.("settings") }
 	];
 
-	/** Den Team-Tab gibt es nur im Chef-Modus – sonst führte der Eintrag ins Leere. */
+	/** Den Team-Tab gibt es nur im Vorgesetzten-Modus – sonst führte der Eintrag ins Leere. */
 	const navItems = $derived(
 		app.settings.bossMode
 			? [...nav, { id: "nav:team", label: "Gehe zu: Team", run: () => onNavigate?.("team") }]

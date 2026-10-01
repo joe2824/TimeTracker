@@ -481,7 +481,7 @@ export class Api {
 
 	// ---------- Team-Modus ----------
 	//
-	// Der Chef ist hier einfach dieses Konto - eigene, klartext-relationale
+	// Die Leitung ist hier einfach dieses Konto - eigene, klartext-relationale
 	// Tabellen auf dem Server, ausserhalb des Ende-zu-Ende-verschlüsselten
 	// Sync-Systems. Siehe server/src/lib/server/teams.ts.
 
@@ -518,13 +518,13 @@ export class Api {
 		});
 	}
 
-	// ---------- Verwalter: ein zweites Konto neben dem Chef ----------
+	// ---------- Verwalter: ein zweites Konto neben der Leitung ----------
 
 	listTeamAdmins(teamId: string): Promise<{ admins: TeamAdminInfo[] }> {
 		return this.#call(`/api/team/${encodeURIComponent(teamId)}/admins`);
 	}
 
-	/** Nimmt den Zugang wieder zurück - der Chef selbst bleibt unberührt (läuft über ownerUserId). */
+	/** Nimmt den Zugang wieder zurück - die Leitung selbst bleibt unberührt (läuft über ownerUserId). */
 	removeTeamAdmin(teamId: string, userId: string): Promise<{ ok: boolean }> {
 		return this.#call(`/api/team/${encodeURIComponent(teamId)}/admins`, {
 			method: "DELETE",
@@ -564,7 +564,7 @@ export class Api {
 	}
 
 	/**
-	 * Voller Ersatz - in der Regel die einzige Feder (der Chef), kein
+	 * Voller Ersatz - in der Regel die einzige Feder (die Leitung), kein
 	 * Zusammenführen nötig. `expectedVersion` (der höchste `updatedAt`-Stand, den
 	 * der Aufrufer zuletzt gesehen hat) lehnt der Server mit 409 ab, wenn sich
 	 * die Liste zwischenzeitlich anderswo geändert hat (z.B. zweiter Tab).

@@ -208,7 +208,7 @@ describe("buildReport – Zeitausgleich", () => {
 	});
 
 	it("steht auf der Abwesenheiten-Zeile, ohne sich zu benennen", () => {
-		// Eine eigene Zeile bekommt er nicht - der Bericht geht an den Chef, und dort
+		// Eine eigene Zeile bekommt er nicht - der Bericht geht an die Leitung, und dort
 		// ist es schlicht eine Abwesenheit.
 		const report = buildReport("2026-06", activities, [timeOff("t", 1, 5)], 0.5, HPD);
 		const absences = report.rows.find((r) => r.name === "Abwesenheiten");

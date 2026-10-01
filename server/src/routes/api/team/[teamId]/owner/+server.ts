@@ -1,4 +1,4 @@
-// Besitz übergeben - nur der amtierende Chef, und nur an einen bestehenden
+// Besitz übergeben - nur die amtierende Leitung, und nur an einen bestehenden
 // Verwalter (siehe transferTeamOwnership).
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
@@ -12,7 +12,7 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 	// (better-sqlite3), also laeuft ab hier bis zur Antwort nichts anderes
 	// dazwischen - sonst koennte ein zweiter, ueberlappender Aufruf mit einem
 	// veralteten team.ownerUserId weiterrechnen (transferTeamOwnership setzt
-	// darueber den bisherigen Chef als Verwalter wieder ein).
+	// darueber die bisherige Leitung als Verwalter wieder ein).
 	const body = await readJson(request);
 	const newOwnerUserId = String(body?.newOwnerUserId ?? "");
 	if (!newOwnerUserId) error(400, "newOwnerUserId fehlt");

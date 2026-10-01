@@ -25,14 +25,14 @@ export interface Activity extends SyncMeta {
 	color?: string;
 	/**
 	 * Vom Team vorgegeben, nicht lokal - id trägt das Präfix "team:" (siehe
-	 * team/activities.ts). Bearbeiten/Löschen bleibt dem Chef vorbehalten.
+	 * team/activities.ts). Bearbeiten/Löschen bleibt der Leitung vorbehalten.
 	 */
 	teamOwned?: boolean;
 	/** Anzeigename des Teams, dem die Zeile gehört - nur bei teamOwned gesetzt. */
 	teamName?: string;
 	/**
 	 * Id des Teams, dem die Zeile gehört - nur gesetzt, wenn dieses Konto sie
-	 * selbst verwaltet (Chef mit ggf. mehreren Teams). Auf einem reinen
+	 * selbst verwaltet (Leitung mit ggf. mehreren Teams). Auf einem reinen
 	 * Mitglieds-Gerät (ein Team, kein eigenes Konto) bleibt sie leer, weil
 	 * teamOwned dort schon eindeutig ist.
 	 */
@@ -86,7 +86,7 @@ export interface Entry extends SyncMeta {
 	 * Zeile. Verrechnet wird er genau andersherum: ein Urlaubstag füllt das
 	 * Tagessoll, ein Zeitausgleich lässt es offen. Dadurch sinkt der Saldo um die
 	 * Stunden des Tages, und genau das feiert die Überstunden ab. Im Bericht an
-	 * den Chef taucht er nicht auf.
+	 * die Leitung taucht er nicht auf.
 	 */
 	timeOff?: boolean;
 	/**
@@ -151,7 +151,7 @@ export interface Settings {
 	arbzgEnabled: boolean;
 	/** Kurzer Hinweis auf der Tracking-Seite, wenn der Arbeitszeit-Check anschlägt. */
 	arbzgTrackingHint: boolean;
-	/** Chef-Modus: Tab „Team“ zum Anlegen von Teams und Verwalten der Mitglieder */
+	/** Vorgesetzten-Modus: Tab „Team“ zum Anlegen von Teams und Verwalten der Mitglieder */
 	bossMode: boolean;
 	/** Vorabversionen beziehen. Liest auch der Rust-Teil aus der settings.json - wirkt erst nach Neustart. */
 	betaUpdates: boolean;

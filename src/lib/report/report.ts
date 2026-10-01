@@ -49,7 +49,7 @@ export interface MonthReport {
 	 *
 	 * Er zählt wie jede andere Abwesenheit - steckt also bereits in
 	 * `absenceHours` und `total`. Die Zahl steht hier nur zusätzlich, damit die
-	 * Auswertung "davon X h Zeitausgleich" zeigen kann. Im Bericht an den Chef
+	 * Auswertung "davon X h Zeitausgleich" zeigen kann. Im Bericht an die Leitung
 	 * bekommt er keine eigene Zeile.
 	 */
 	timeOffHours: number;

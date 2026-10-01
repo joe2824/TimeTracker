@@ -1,4 +1,4 @@
-// Wer wann seinen Bericht gesendet hat - Chef und Verwalter sehen das, samt Inhalt.
+// Wer wann seinen Bericht gesendet hat - Leitung und Verwalter sehen das, samt Inhalt.
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import {
