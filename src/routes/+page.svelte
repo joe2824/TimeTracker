@@ -94,12 +94,19 @@
 			reportReminder.due
 	);
 
-	// An einem frisch angemeldeten Browser kommt die Team-Mitgliedschaft erst mit
-	// dem Konto an - der Abgleich beim Start hat sie noch nicht gesehen.
+	// Die eine Stelle, die die Team-Zeilen nachzieht. Mit Konto erst nach dem
+	// ersten Abgleich: vorher kennt dieses Gerät die Mitgliedschaft des Kontos
+	// nicht (frisch angemeldeter Browser) oder nur einen veralteten Token, dessen
+	// Absage es als Rauswurf deutete. Danach bei jeder Änderung, die über das
+	// Konto hereinkommt.
+	let teamSyncArmed = $state(false);
 	$effect(() => {
-		if (account.linked && account.firstSyncDone) {
-			void syncTeamActivities().finally(() => retryTeamReportUploads());
-		}
+		if (!teamSyncArmed) return;
+		if (account.linked && !account.firstSyncDone) return;
+		void account.teamRevision;
+		// Die Berichte danach, nicht daneben: endete die Mitgliedschaft
+		// inzwischen, ist auch der vorgemerkte Bericht hinfällig.
+		void syncTeamActivities().finally(() => retryTeamReportUploads());
 	});
 
 	// Die einzige Stelle, die die Tabs kennt: wer einen Tag zeigen will (Tracking,
@@ -311,11 +318,7 @@
 			// Erst NACH dem Laden: der Abgleich schreibt in denselben Bestand, und
 			// ein nicht erreichbarer Server darf den Start nicht aufhalten.
 			await account.init();
-			// Nicht abwarten: rein additiv (siehe syncTeamActivities), ein
-			// nicht erreichbarer Server darf den Start nicht aufhalten.
-			// Danach, nicht daneben: endete die Mitgliedschaft inzwischen, ist auch
-			// der vorgemerkte Bericht hinfällig.
-			void syncTeamActivities().finally(() => retryTeamReportUploads());
+			teamSyncArmed = true;
 			// Dieselbe Spiegelung für die Leitung selbst - sonst sieht sie die eigene
 			// Team-Liste nie in der eigenen Zeiterfassung.
 			void syncOwnedTeamActivities();

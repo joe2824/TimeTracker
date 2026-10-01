@@ -48,7 +48,13 @@ import {
 import { detachLocalData } from "./detach";
 import { clearStaleSplits, forgetStaleSplit, rememberStaleSplits, restoreStaleSplits } from "./staleSplits";
 import { monthKey, prevMonthKey, shiftMonthKey } from "../time/time";
-import { SyncEngine, type StaleTimerSplitInfo, type SyncOutcome, type SyncState } from "./engine";
+import {
+	SyncEngine,
+	type LocalStore,
+	type StaleTimerSplitInfo,
+	type SyncOutcome,
+	type SyncState
+} from "./engine";
 import {
 	createPairingKeyPair,
 	createVaultKey,
@@ -225,6 +231,8 @@ class AccountState {
 	 * hereinkommen.
 	 */
 	firstSyncDone = $state(false);
+	/** Zählt hoch, wenn der Abgleich die Team-Mitgliedschaft geändert hat. */
+	teamRevision = $state(0);
 	/** Monate, die gerade vom Server nachgeholt werden - die Auswahl zeigt es an. */
 	fetchingMonths = $state<string[]>([]);
 	/**
@@ -454,7 +462,7 @@ class AccountState {
 					return { ...info, seq: s.seq, priority: s.priority };
 				});
 			},
-			store: remoteStore,
+			store: this.#storeWatchingTeam(),
 			onProgress: (p) => {
 				// Eine abgelöste Engine lädt nach stop() womöglich noch Seiten - deren
 				// Fortschritt gehört nicht zum jetzigen Konto.
@@ -501,6 +509,38 @@ class AccountState {
 		this.#installNetworkListeners();
 		this.#openStream();
 		await this.#refreshStaleTimerSplits();
+	}
+
+	/**
+	 * Die Ablage für den Abgleich, mit einem Blick auf die Team-Mitgliedschaft:
+	 * kommt über das Konto eine andere herein oder endet sie, muss die Oberfläche
+	 * die Team-Zeilen nachziehen - und eine ersetzte Mitgliedschaft wird beim
+	 * Team abgemeldet, sonst stünde sie dort für immer als "kein Bericht".
+	 */
+	#storeWatchingTeam(): LocalStore {
+		return {
+			...remoteStore,
+			saveTeam: async (record) => {
+				const previous = await remoteStore.team();
+				await remoteStore.saveTeam(record);
+				if (previous && previous.teamMemberId !== record.teamMemberId) {
+					void leaveTeamOnServer(previous.serverUrl, previous.token).catch((e) =>
+						logWarn("Ersetzte Team-Mitgliedschaft nicht abgemeldet", e)
+					);
+				}
+				// Nur die Fassung nachgetragen: für die Oberfläche hat sich nichts getan.
+				const same =
+					previous?.teamMemberId === record.teamMemberId &&
+					previous.token === record.token &&
+					previous.teamName === record.teamName &&
+					previous.serverUrl === record.serverUrl;
+				if (!same) this.teamRevision++;
+			},
+			deleteTeam: async () => {
+				await remoteStore.deleteTeam();
+				this.teamRevision++;
+			}
+		};
 	}
 
 	/**
