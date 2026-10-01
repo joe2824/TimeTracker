@@ -1,4 +1,4 @@
-// chefTeams: geteilter Zustand zwischen Team-Tab, Einstellungen und dem
+// managedTeams: geteilter Zustand zwischen Team-Tab, Einstellungen und dem
 // Aktivitäten-Tab - vor allem die Renn- und Fehlerbehandlung, die hier schon
 // einmal stillschweigend verlorenging.
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -26,7 +26,7 @@ const accountMock = vi.hoisted(() => ({
 }));
 vi.mock("../sync/account.svelte", () => ({ account: accountMock }));
 
-const { chefTeams } = await import("./chef.svelte");
+const { managedTeams } = await import("./managedTeams.svelte");
 
 const TEAM_A = { id: "t1", name: "A", ownerUserId: "u1", createdAt: 1 };
 const TEAM_B = { id: "t2", name: "B", ownerUserId: "u1", createdAt: 1 };
@@ -46,14 +46,14 @@ beforeEach(() => {
 	accountMock.rotateAdminInvite.mockReset();
 	accountMock.transferTeamOwnership.mockReset();
 	toastError.mockReset();
-	chefTeams.teams = [];
-	chefTeams.selectedTeamId = undefined;
-	chefTeams.invite = null;
-	chefTeams.admins = [];
-	chefTeams.adminInvite = null;
-	chefTeams.inviteLoading = false;
-	chefTeams.adminsLoading = false;
-	chefTeams.adminInviteLoading = false;
+	managedTeams.teams = [];
+	managedTeams.selectedTeamId = undefined;
+	managedTeams.invite = null;
+	managedTeams.admins = [];
+	managedTeams.adminInvite = null;
+	managedTeams.inviteLoading = false;
+	managedTeams.adminsLoading = false;
+	managedTeams.adminInviteLoading = false;
 });
 
 const invite = (teamId: string, code: string) => ({ code, teamId, createdAt: 1, expiresAt: null, revokedAt: null });
@@ -63,302 +63,302 @@ describe("loadTeams", () => {
 		let resolve!: (v: typeof TEAM_A[]) => void;
 		accountMock.listTeams.mockReturnValue(new Promise((r) => (resolve = r)));
 
-		const first = chefTeams.loadTeams();
-		const second = chefTeams.loadTeams();
+		const first = managedTeams.loadTeams();
+		const second = managedTeams.loadTeams();
 		resolve([TEAM_A]);
 		await Promise.all([first, second]);
 
 		expect(accountMock.listTeams).toHaveBeenCalledTimes(1);
-		expect(chefTeams.teams).toEqual([TEAM_A]);
+		expect(managedTeams.teams).toEqual([TEAM_A]);
 	});
 
 	it("meldet einen Fehlschlag über teamsLoadFailed statt per Toast und reicht die Ablehnung nicht durch", async () => {
 		// Jeder Aufruf kommt aus dem Hintergrund - offline träfe ein Toast auch jeden ohne Team.
 		accountMock.listTeams.mockRejectedValue(new Error("Netzwerk weg"));
-		await expect(chefTeams.loadTeams()).resolves.toBe(false);
+		await expect(managedTeams.loadTeams()).resolves.toBe(false);
 		expect(toastError).not.toHaveBeenCalled();
-		expect(chefTeams.teamsLoadFailed).toBe(true);
+		expect(managedTeams.teamsLoadFailed).toBe(true);
 
 		accountMock.listTeams.mockResolvedValue([]);
-		await chefTeams.loadTeams();
-		expect(chefTeams.teamsLoadFailed).toBe(false);
+		await managedTeams.loadTeams();
+		expect(managedTeams.teamsLoadFailed).toBe(false);
 	});
 
 	it("eine veraltete Antwort ueberschreibt nicht, was createTeam() inzwischen angelegt hat", async () => {
 		let resolve!: (v: typeof TEAM_A[]) => void;
 		accountMock.listTeams.mockReturnValue(new Promise((r) => (resolve = r)));
-		const stale = chefTeams.loadTeams();
+		const stale = managedTeams.loadTeams();
 
 		accountMock.createTeam.mockResolvedValue(TEAM_B);
-		await chefTeams.createTeam("B");
+		await managedTeams.createTeam("B");
 
 		resolve([TEAM_A]); // kommt jetzt erst an, kennt TEAM_B noch nicht
 
 		// false: teams ist jetzt nur lokal fortgeschrieben, kein Serverstand - sonst
 		// hielte syncOwnedTeamActivities TEAM_A für gelöscht.
 		await expect(stale).resolves.toBe(false);
-		expect(chefTeams.teams.some((t) => t.id === TEAM_B.id)).toBe(true);
+		expect(managedTeams.teams.some((t) => t.id === TEAM_B.id)).toBe(true);
 	});
 
 	it("haengt sich nach deleteTeam() nicht an eine veraltete laufende Anfrage", async () => {
 		let resolveStale!: (v: typeof TEAM_A[]) => void;
 		accountMock.listTeams.mockReturnValueOnce(new Promise((r) => (resolveStale = r)));
-		const stale = chefTeams.loadTeams();
+		const stale = managedTeams.loadTeams();
 
 		accountMock.deleteTeam.mockResolvedValue(undefined);
-		await chefTeams.deleteTeam(TEAM_B.id);
+		await managedTeams.deleteTeam(TEAM_B.id);
 
 		accountMock.listTeams.mockResolvedValueOnce([TEAM_A]);
-		const fresh = chefTeams.loadTeams();
+		const fresh = managedTeams.loadTeams();
 		resolveStale([TEAM_A, TEAM_B]);
 
 		await expect(fresh).resolves.toBe(true);
 		await expect(stale).resolves.toBe(false);
 		expect(accountMock.listTeams).toHaveBeenCalledTimes(2);
-		expect(chefTeams.teams).toEqual([TEAM_A]);
+		expect(managedTeams.teams).toEqual([TEAM_A]);
 	});
 });
 
 describe("createTeam / deleteTeam", () => {
 	it("legt vorn an und waehlt es aus", async () => {
 		accountMock.createTeam.mockResolvedValue(TEAM_A);
-		const team = await chefTeams.createTeam("A");
+		const team = await managedTeams.createTeam("A");
 		expect(team).toEqual(TEAM_A);
-		expect(chefTeams.teams).toEqual([TEAM_A]);
-		expect(chefTeams.selectedTeamId).toBe(TEAM_A.id);
+		expect(managedTeams.teams).toEqual([TEAM_A]);
+		expect(managedTeams.selectedTeamId).toBe(TEAM_A.id);
 	});
 
 	it("entfernt aus der Liste, waehlt bei Bedarf neu und verwirft den alten Link samt Verwaltern", async () => {
-		chefTeams.teams = [TEAM_A, TEAM_B];
-		chefTeams.selectedTeamId = TEAM_A.id;
-		chefTeams.invite = { code: "abc", teamId: TEAM_A.id, createdAt: 1, expiresAt: null, revokedAt: null };
-		chefTeams.admins = [ADMIN_ANNA];
-		chefTeams.adminInvite = { code: "xyz", teamId: TEAM_A.id, createdAt: 1, expiresAt: null, revokedAt: null };
+		managedTeams.teams = [TEAM_A, TEAM_B];
+		managedTeams.selectedTeamId = TEAM_A.id;
+		managedTeams.invite = { code: "abc", teamId: TEAM_A.id, createdAt: 1, expiresAt: null, revokedAt: null };
+		managedTeams.admins = [ADMIN_ANNA];
+		managedTeams.adminInvite = { code: "xyz", teamId: TEAM_A.id, createdAt: 1, expiresAt: null, revokedAt: null };
 		accountMock.deleteTeam.mockResolvedValue({ ok: true });
 
-		await chefTeams.deleteTeam(TEAM_A.id);
+		await managedTeams.deleteTeam(TEAM_A.id);
 
-		expect(chefTeams.teams).toEqual([TEAM_B]);
-		expect(chefTeams.selectedTeamId).toBe(TEAM_B.id);
-		expect(chefTeams.invite).toBeNull();
-		expect(chefTeams.admins).toEqual([]);
-		expect(chefTeams.adminInvite).toBeNull();
+		expect(managedTeams.teams).toEqual([TEAM_B]);
+		expect(managedTeams.selectedTeamId).toBe(TEAM_B.id);
+		expect(managedTeams.invite).toBeNull();
+		expect(managedTeams.admins).toEqual([]);
+		expect(managedTeams.adminInvite).toBeNull();
 	});
 });
 
 describe("loadInvite", () => {
 	it("teilt einen laufenden Abruf fuer dasselbe Team - TeamPanel und TeamTab fragen beide", async () => {
-		chefTeams.selectedTeamId = TEAM_A.id;
+		managedTeams.selectedTeamId = TEAM_A.id;
 		let resolve!: (v: unknown) => void;
 		accountMock.getTeamInvite.mockReturnValue(new Promise((r) => (resolve = r)));
 
-		const first = chefTeams.loadInvite(TEAM_A.id);
-		const second = chefTeams.loadInvite(TEAM_A.id);
+		const first = managedTeams.loadInvite(TEAM_A.id);
+		const second = managedTeams.loadInvite(TEAM_A.id);
 		resolve(invite(TEAM_A.id, "abc"));
 
 		await expect(first).resolves.toBe(true);
 		await expect(second).resolves.toBe(true);
 		expect(accountMock.getTeamInvite).toHaveBeenCalledTimes(1);
-		expect(chefTeams.invite?.code).toBe("abc");
-		expect(chefTeams.inviteLoading).toBe(false);
+		expect(managedTeams.invite?.code).toBe("abc");
+		expect(managedTeams.inviteLoading).toBe(false);
 	});
 
 	it("eine veraltete Anfrage beendet die Ladeanzeige der laufenden nicht", async () => {
-		chefTeams.selectedTeamId = TEAM_A.id;
+		managedTeams.selectedTeamId = TEAM_A.id;
 		let resolveA!: (v: unknown) => void;
 		let resolveB!: (v: unknown) => void;
 		accountMock.getTeamInvite
 			.mockImplementationOnce(() => new Promise((r) => (resolveA = r)))
 			.mockImplementationOnce(() => new Promise((r) => (resolveB = r)));
 
-		const a = chefTeams.loadInvite(TEAM_A.id);
-		chefTeams.selectedTeamId = TEAM_B.id;
-		const b = chefTeams.loadInvite(TEAM_B.id);
-		chefTeams.selectedTeamId = TEAM_A.id; // zurueck, waehrend B noch laedt
+		const a = managedTeams.loadInvite(TEAM_A.id);
+		managedTeams.selectedTeamId = TEAM_B.id;
+		const b = managedTeams.loadInvite(TEAM_B.id);
+		managedTeams.selectedTeamId = TEAM_A.id; // zurueck, waehrend B noch laedt
 		resolveA(invite(TEAM_A.id, "alt"));
 		await a;
 
 		// Sonst stuende ein Link da, als waere er fertig geladen, obwohl B noch laeuft.
-		expect(chefTeams.inviteLoading).toBe(true);
+		expect(managedTeams.inviteLoading).toBe(true);
 		resolveB(invite(TEAM_B.id, "b"));
 		await b;
-		expect(chefTeams.inviteLoading).toBe(false);
+		expect(managedTeams.inviteLoading).toBe(false);
 	});
 
 	it("eine vor rotateInvite() gestartete Antwort ueberschreibt den neuen Link nicht", async () => {
-		chefTeams.selectedTeamId = TEAM_A.id;
+		managedTeams.selectedTeamId = TEAM_A.id;
 		let resolveLoad!: (v: unknown) => void;
 		accountMock.getTeamInvite.mockReturnValue(new Promise((r) => (resolveLoad = r)));
 		accountMock.rotateTeamInvite.mockResolvedValue(invite(TEAM_A.id, "neu"));
 
-		const load = chefTeams.loadInvite(TEAM_A.id);
-		await chefTeams.rotateInvite();
+		const load = managedTeams.loadInvite(TEAM_A.id);
+		await managedTeams.rotateInvite();
 		resolveLoad(invite(TEAM_A.id, "alt"));
 
 		await expect(load).resolves.toBe(false);
-		expect(chefTeams.invite?.code).toBe("neu");
-		expect(chefTeams.inviteLoading).toBe(false);
+		expect(managedTeams.invite?.code).toBe("neu");
+		expect(managedTeams.inviteLoading).toBe(false);
 	});
 
 	it("meldet einen Fehlschlag per Toast und gibt false zurueck, statt einen fehlenden Link vorzutaeuschen", async () => {
-		chefTeams.selectedTeamId = TEAM_A.id;
+		managedTeams.selectedTeamId = TEAM_A.id;
 		accountMock.getTeamInvite.mockRejectedValue(new Error("Netzwerk weg"));
-		await expect(chefTeams.loadInvite(TEAM_A.id)).resolves.toBe(false);
+		await expect(managedTeams.loadInvite(TEAM_A.id)).resolves.toBe(false);
 		expect(toastError).toHaveBeenCalledTimes(1);
 	});
 });
 
 describe("loadAdmins", () => {
 	it("teilt einen laufenden Abruf und haelt die Ladeanzeige bis zur Antwort", async () => {
-		chefTeams.selectedTeamId = TEAM_A.id;
+		managedTeams.selectedTeamId = TEAM_A.id;
 		let resolve!: (v: unknown) => void;
 		accountMock.listTeamAdmins.mockReturnValue(new Promise((r) => (resolve = r)));
 
-		const first = chefTeams.loadAdmins(TEAM_A.id);
-		const second = chefTeams.loadAdmins(TEAM_A.id);
-		expect(chefTeams.adminsLoading).toBe(true);
+		const first = managedTeams.loadAdmins(TEAM_A.id);
+		const second = managedTeams.loadAdmins(TEAM_A.id);
+		expect(managedTeams.adminsLoading).toBe(true);
 		resolve([ADMIN_ANNA]);
 		await Promise.all([first, second]);
 
 		expect(accountMock.listTeamAdmins).toHaveBeenCalledTimes(1);
-		expect(chefTeams.admins).toEqual([ADMIN_ANNA]);
-		expect(chefTeams.adminsLoading).toBe(false);
+		expect(managedTeams.admins).toEqual([ADMIN_ANNA]);
+		expect(managedTeams.adminsLoading).toBe(false);
 	});
 
 	it("eine veraltete Anfrage beendet die Ladeanzeige der laufenden nicht", async () => {
-		chefTeams.selectedTeamId = TEAM_A.id;
+		managedTeams.selectedTeamId = TEAM_A.id;
 		let resolveA!: (v: unknown) => void;
 		let resolveB!: (v: unknown) => void;
 		accountMock.listTeamAdmins
 			.mockImplementationOnce(() => new Promise((r) => (resolveA = r)))
 			.mockImplementationOnce(() => new Promise((r) => (resolveB = r)));
 
-		const a = chefTeams.loadAdmins(TEAM_A.id);
-		chefTeams.selectedTeamId = TEAM_B.id;
-		const b = chefTeams.loadAdmins(TEAM_B.id);
-		chefTeams.selectedTeamId = TEAM_A.id;
+		const a = managedTeams.loadAdmins(TEAM_A.id);
+		managedTeams.selectedTeamId = TEAM_B.id;
+		const b = managedTeams.loadAdmins(TEAM_B.id);
+		managedTeams.selectedTeamId = TEAM_A.id;
 		resolveA([ADMIN_ANNA]);
 		await a;
 
-		expect(chefTeams.adminsLoading).toBe(true);
+		expect(managedTeams.adminsLoading).toBe(true);
 		resolveB([]);
 		await b;
-		expect(chefTeams.adminsLoading).toBe(false);
+		expect(managedTeams.adminsLoading).toBe(false);
 	});
 
 	it("meldet einen Fehlschlag per Toast", async () => {
-		chefTeams.selectedTeamId = TEAM_A.id;
+		managedTeams.selectedTeamId = TEAM_A.id;
 		accountMock.listTeamAdmins.mockRejectedValue(new Error("Netzwerk weg"));
-		await expect(chefTeams.loadAdmins(TEAM_A.id)).resolves.toBeUndefined();
+		await expect(managedTeams.loadAdmins(TEAM_A.id)).resolves.toBeUndefined();
 		expect(toastError).toHaveBeenCalledTimes(1);
 	});
 });
 
 describe("removeAdmin", () => {
 	it("entfernt aus der Liste und verwirft den (serverseitig widerrufenen) Verwalter-Link", async () => {
-		chefTeams.selectedTeamId = TEAM_A.id;
-		chefTeams.admins = [ADMIN_ANNA];
-		chefTeams.adminInvite = { code: "xyz", teamId: TEAM_A.id, createdAt: 1, expiresAt: null, revokedAt: null };
+		managedTeams.selectedTeamId = TEAM_A.id;
+		managedTeams.admins = [ADMIN_ANNA];
+		managedTeams.adminInvite = { code: "xyz", teamId: TEAM_A.id, createdAt: 1, expiresAt: null, revokedAt: null };
 		accountMock.removeTeamAdmin.mockResolvedValue(undefined);
 
-		await chefTeams.removeAdmin(ADMIN_ANNA.userId);
+		await managedTeams.removeAdmin(ADMIN_ANNA.userId);
 
-		expect(chefTeams.admins).toEqual([]);
-		expect(chefTeams.adminInvite).toBeNull();
+		expect(managedTeams.admins).toEqual([]);
+		expect(managedTeams.adminInvite).toBeNull();
 	});
 
 	it("wendet eine veraltete Antwort nicht mehr auf ein inzwischen anderes ausgewaehltes Team an", async () => {
-		chefTeams.selectedTeamId = TEAM_A.id;
-		chefTeams.admins = [ADMIN_ANNA];
-		chefTeams.adminInvite = { code: "xyz", teamId: TEAM_A.id, createdAt: 1, expiresAt: null, revokedAt: null };
+		managedTeams.selectedTeamId = TEAM_A.id;
+		managedTeams.admins = [ADMIN_ANNA];
+		managedTeams.adminInvite = { code: "xyz", teamId: TEAM_A.id, createdAt: 1, expiresAt: null, revokedAt: null };
 		let resolveRemove!: () => void;
 		accountMock.removeTeamAdmin.mockReturnValue(new Promise<void>((r) => (resolveRemove = r)));
 
-		const remove = chefTeams.removeAdmin(ADMIN_ANNA.userId);
-		chefTeams.selectedTeamId = TEAM_B.id; // Chef wechselt das Team, waehrend der Request noch laeuft
+		const remove = managedTeams.removeAdmin(ADMIN_ANNA.userId);
+		managedTeams.selectedTeamId = TEAM_B.id; // Chef wechselt das Team, waehrend der Request noch laeuft
 		// Inzwischen geladener Stand von B.
-		chefTeams.admins = [ADMIN_ANNA];
-		chefTeams.adminInvite = invite(TEAM_B.id, "b");
+		managedTeams.admins = [ADMIN_ANNA];
+		managedTeams.adminInvite = invite(TEAM_B.id, "b");
 		resolveRemove();
 		await remove;
 
-		expect(chefTeams.admins).toEqual([ADMIN_ANNA]);
-		expect(chefTeams.adminInvite?.code).toBe("b");
+		expect(managedTeams.admins).toEqual([ADMIN_ANNA]);
+		expect(managedTeams.adminInvite?.code).toBe("b");
 	});
 });
 
 describe("loadAdminInvite", () => {
 	it("eine veraltete Anfrage beendet die Ladeanzeige der laufenden nicht", async () => {
-		chefTeams.selectedTeamId = TEAM_A.id;
+		managedTeams.selectedTeamId = TEAM_A.id;
 		let resolveA!: (v: unknown) => void;
 		let resolveB!: (v: unknown) => void;
 		accountMock.getAdminInvite
 			.mockImplementationOnce(() => new Promise((r) => (resolveA = r)))
 			.mockImplementationOnce(() => new Promise((r) => (resolveB = r)));
 
-		const a = chefTeams.loadAdminInvite(TEAM_A.id);
-		chefTeams.selectedTeamId = TEAM_B.id;
-		const b = chefTeams.loadAdminInvite(TEAM_B.id);
-		chefTeams.selectedTeamId = TEAM_A.id;
+		const a = managedTeams.loadAdminInvite(TEAM_A.id);
+		managedTeams.selectedTeamId = TEAM_B.id;
+		const b = managedTeams.loadAdminInvite(TEAM_B.id);
+		managedTeams.selectedTeamId = TEAM_A.id;
 		resolveA(invite(TEAM_A.id, "alt"));
 		await a;
 
-		expect(chefTeams.adminInviteLoading).toBe(true);
+		expect(managedTeams.adminInviteLoading).toBe(true);
 		resolveB(invite(TEAM_B.id, "b"));
 		await b;
-		expect(chefTeams.adminInviteLoading).toBe(false);
+		expect(managedTeams.adminInviteLoading).toBe(false);
 	});
 
 	it("eine vor rotateAdminInvite() gestartete Antwort ueberschreibt den neuen Link nicht", async () => {
-		chefTeams.selectedTeamId = TEAM_A.id;
+		managedTeams.selectedTeamId = TEAM_A.id;
 		let resolveLoad!: (v: unknown) => void;
 		accountMock.getAdminInvite.mockReturnValue(new Promise((r) => (resolveLoad = r)));
 		accountMock.rotateAdminInvite.mockResolvedValue(invite(TEAM_A.id, "neu"));
 
-		const load = chefTeams.loadAdminInvite(TEAM_A.id);
-		await chefTeams.rotateAdminInvite();
+		const load = managedTeams.loadAdminInvite(TEAM_A.id);
+		await managedTeams.rotateAdminInvite();
 		resolveLoad(invite(TEAM_A.id, "alt"));
 		await load;
 
-		expect(chefTeams.adminInvite?.code).toBe("neu");
+		expect(managedTeams.adminInvite?.code).toBe("neu");
 	});
 
 	it("meldet einen Fehlschlag per Toast", async () => {
-		chefTeams.selectedTeamId = TEAM_A.id;
+		managedTeams.selectedTeamId = TEAM_A.id;
 		accountMock.getAdminInvite.mockRejectedValue(new Error("Netzwerk weg"));
-		await expect(chefTeams.loadAdminInvite(TEAM_A.id)).resolves.toBeUndefined();
+		await expect(managedTeams.loadAdminInvite(TEAM_A.id)).resolves.toBeUndefined();
 		expect(toastError).toHaveBeenCalledTimes(1);
 	});
 });
 
 describe("rotateAdminInvite", () => {
 	it("ersetzt den Verwalter-Link des ausgewaehlten Teams", async () => {
-		chefTeams.selectedTeamId = TEAM_A.id;
+		managedTeams.selectedTeamId = TEAM_A.id;
 		const inv = { code: "neu", teamId: TEAM_A.id, createdAt: 2, expiresAt: null, revokedAt: null };
 		accountMock.rotateAdminInvite.mockResolvedValue(inv);
 
-		await chefTeams.rotateAdminInvite();
+		await managedTeams.rotateAdminInvite();
 
-		expect(chefTeams.adminInvite).toEqual(inv);
-		expect(chefTeams.rotatingAdminInvite).toBe(false);
+		expect(managedTeams.adminInvite).toEqual(inv);
+		expect(managedTeams.rotatingAdminInvite).toBe(false);
 	});
 });
 
 describe("transferOwnership", () => {
 	it("verwirft Verwalter und Verwalter-Link und laedt die Teamliste neu (die eigene Rolle kippt)", async () => {
-		chefTeams.teams = [TEAM_A];
-		chefTeams.selectedTeamId = TEAM_A.id;
-		chefTeams.admins = [ADMIN_ANNA];
-		chefTeams.adminInvite = { code: "xyz", teamId: TEAM_A.id, createdAt: 1, expiresAt: null, revokedAt: null };
+		managedTeams.teams = [TEAM_A];
+		managedTeams.selectedTeamId = TEAM_A.id;
+		managedTeams.admins = [ADMIN_ANNA];
+		managedTeams.adminInvite = { code: "xyz", teamId: TEAM_A.id, createdAt: 1, expiresAt: null, revokedAt: null };
 		accountMock.transferTeamOwnership.mockResolvedValue(undefined);
 		accountMock.listTeams.mockResolvedValue([{ ...TEAM_A, role: "admin" }]);
 
-		await chefTeams.transferOwnership(ADMIN_ANNA.userId);
+		await managedTeams.transferOwnership(ADMIN_ANNA.userId);
 
 		expect(accountMock.transferTeamOwnership).toHaveBeenCalledWith(TEAM_A.id, ADMIN_ANNA.userId);
-		expect(chefTeams.admins).toEqual([]);
-		expect(chefTeams.adminInvite).toBeNull();
-		expect(chefTeams.isOwner).toBe(false);
+		expect(managedTeams.admins).toEqual([]);
+		expect(managedTeams.adminInvite).toBeNull();
+		expect(managedTeams.isOwner).toBe(false);
 	});
 });
 
@@ -367,97 +367,97 @@ describe("leaveAsAdmin", () => {
 
 	it("nimmt das Team aus der Liste, wählt das nächste und verwirft alles Team-Bezogene", async () => {
 		accountMock.leaveTeamAsAdmin.mockResolvedValue(undefined);
-		chefTeams.teams = [ADMIN_TEAM, TEAM_B];
-		chefTeams.selectedTeamId = ADMIN_TEAM.id;
-		chefTeams.invite = invite("t1", "ALT");
-		chefTeams.admins = [ADMIN_ANNA];
+		managedTeams.teams = [ADMIN_TEAM, TEAM_B];
+		managedTeams.selectedTeamId = ADMIN_TEAM.id;
+		managedTeams.invite = invite("t1", "ALT");
+		managedTeams.admins = [ADMIN_ANNA];
 
-		await chefTeams.leaveAsAdmin();
+		await managedTeams.leaveAsAdmin();
 
 		expect(accountMock.leaveTeamAsAdmin).toHaveBeenCalledWith("t1");
-		expect(chefTeams.teams).toEqual([TEAM_B]);
-		expect(chefTeams.selectedTeamId).toBe("t2");
-		expect(chefTeams.invite).toBeNull();
-		expect(chefTeams.admins).toEqual([]);
+		expect(managedTeams.teams).toEqual([TEAM_B]);
+		expect(managedTeams.selectedTeamId).toBe("t2");
+		expect(managedTeams.invite).toBeNull();
+		expect(managedTeams.admins).toEqual([]);
 	});
 
 	it("lässt die Liste stehen, wenn der Server ablehnt", async () => {
 		accountMock.leaveTeamAsAdmin.mockRejectedValue(new Error("offline"));
-		chefTeams.teams = [ADMIN_TEAM];
-		chefTeams.selectedTeamId = ADMIN_TEAM.id;
+		managedTeams.teams = [ADMIN_TEAM];
+		managedTeams.selectedTeamId = ADMIN_TEAM.id;
 
-		await expect(chefTeams.leaveAsAdmin()).rejects.toThrow("offline");
-		expect(chefTeams.teams).toEqual([ADMIN_TEAM]);
+		await expect(managedTeams.leaveAsAdmin()).rejects.toThrow("offline");
+		expect(managedTeams.teams).toEqual([ADMIN_TEAM]);
 	});
 });
 
 describe("Teamwechsel", () => {
 	it("verwirft Link, Verwalter und Verwalter-Link des bisher ausgewählten Teams", () => {
-		chefTeams.selectedTeamId = TEAM_A.id;
-		chefTeams.invite = invite(TEAM_A.id, "a");
-		chefTeams.adminInvite = invite(TEAM_A.id, "va");
-		chefTeams.admins = [ADMIN_ANNA];
+		managedTeams.selectedTeamId = TEAM_A.id;
+		managedTeams.invite = invite(TEAM_A.id, "a");
+		managedTeams.adminInvite = invite(TEAM_A.id, "va");
+		managedTeams.admins = [ADMIN_ANNA];
 
-		chefTeams.selectedTeamId = TEAM_B.id;
+		managedTeams.selectedTeamId = TEAM_B.id;
 
-		expect(chefTeams.invite).toBeNull();
-		expect(chefTeams.adminInvite).toBeNull();
-		expect(chefTeams.admins).toEqual([]);
+		expect(managedTeams.invite).toBeNull();
+		expect(managedTeams.adminInvite).toBeNull();
+		expect(managedTeams.admins).toEqual([]);
 	});
 
 	it("X → A → B → wieder A, solange A lädt: B beendet die Ladeanzeige nicht und der Link von X bleibt nicht stehen", async () => {
 		const TEAM_X = { ...TEAM_A, id: "tx" };
-		chefTeams.selectedTeamId = TEAM_X.id;
-		chefTeams.invite = invite(TEAM_X.id, "x");
+		managedTeams.selectedTeamId = TEAM_X.id;
+		managedTeams.invite = invite(TEAM_X.id, "x");
 		let resolveA!: (v: unknown) => void;
 		let resolveB!: (v: unknown) => void;
 		accountMock.getTeamInvite
 			.mockImplementationOnce(() => new Promise((r) => (resolveA = r)))
 			.mockImplementationOnce(() => new Promise((r) => (resolveB = r)));
 
-		chefTeams.selectedTeamId = TEAM_A.id;
-		const a = chefTeams.loadInvite(TEAM_A.id);
-		chefTeams.selectedTeamId = TEAM_B.id;
-		const b = chefTeams.loadInvite(TEAM_B.id);
-		chefTeams.selectedTeamId = TEAM_A.id;
-		const aAgain = chefTeams.loadInvite(TEAM_A.id); // teilt den laufenden Abruf
+		managedTeams.selectedTeamId = TEAM_A.id;
+		const a = managedTeams.loadInvite(TEAM_A.id);
+		managedTeams.selectedTeamId = TEAM_B.id;
+		const b = managedTeams.loadInvite(TEAM_B.id);
+		managedTeams.selectedTeamId = TEAM_A.id;
+		const aAgain = managedTeams.loadInvite(TEAM_A.id); // teilt den laufenden Abruf
 		expect(accountMock.getTeamInvite).toHaveBeenCalledTimes(2);
 
 		resolveB(invite(TEAM_B.id, "b"));
 		await b;
-		expect(chefTeams.inviteLoading).toBe(true);
-		expect(chefTeams.invite).toBeNull();
+		expect(managedTeams.inviteLoading).toBe(true);
+		expect(managedTeams.invite).toBeNull();
 
 		resolveA(invite(TEAM_A.id, "a"));
 		await Promise.all([a, aAgain]);
-		expect(chefTeams.inviteLoading).toBe(false);
-		expect(chefTeams.invite?.code).toBe("a");
+		expect(managedTeams.inviteLoading).toBe(false);
+		expect(managedTeams.invite?.code).toBe("a");
 	});
 });
 
 describe("Veraltete Abrufe nach einer Änderung", () => {
 	it("ein vor removeAdmin() gestarteter Abruf bringt den entfernten Verwalter und den widerrufenen Link nicht zurück", async () => {
-		chefTeams.selectedTeamId = TEAM_A.id;
+		managedTeams.selectedTeamId = TEAM_A.id;
 		let resolveAdmins!: (v: unknown) => void;
 		let resolveInvite!: (v: unknown) => void;
 		accountMock.listTeamAdmins.mockReturnValue(new Promise((r) => (resolveAdmins = r)));
 		accountMock.getAdminInvite.mockReturnValue(new Promise((r) => (resolveInvite = r)));
 		accountMock.removeTeamAdmin.mockResolvedValue(undefined);
 
-		const admins = chefTeams.loadAdmins(TEAM_A.id);
-		const inv = chefTeams.loadAdminInvite(TEAM_A.id);
-		await chefTeams.removeAdmin(ADMIN_ANNA.userId);
+		const admins = managedTeams.loadAdmins(TEAM_A.id);
+		const inv = managedTeams.loadAdminInvite(TEAM_A.id);
+		await managedTeams.removeAdmin(ADMIN_ANNA.userId);
 		resolveAdmins([ADMIN_ANNA]);
 		resolveInvite(invite(TEAM_A.id, "widerrufen"));
 		await Promise.all([admins, inv]);
 
-		expect(chefTeams.admins).toEqual([]);
-		expect(chefTeams.adminInvite).toBeNull();
+		expect(managedTeams.admins).toEqual([]);
+		expect(managedTeams.adminInvite).toBeNull();
 	});
 
 	it("dasselbe nach transferOwnership()", async () => {
-		chefTeams.teams = [TEAM_A];
-		chefTeams.selectedTeamId = TEAM_A.id;
+		managedTeams.teams = [TEAM_A];
+		managedTeams.selectedTeamId = TEAM_A.id;
 		let resolveAdmins!: (v: unknown) => void;
 		let resolveInvite!: (v: unknown) => void;
 		accountMock.listTeamAdmins.mockReturnValue(new Promise((r) => (resolveAdmins = r)));
@@ -465,14 +465,14 @@ describe("Veraltete Abrufe nach einer Änderung", () => {
 		accountMock.transferTeamOwnership.mockResolvedValue(undefined);
 		accountMock.listTeams.mockResolvedValue([{ ...TEAM_A, role: "admin" }]);
 
-		const admins = chefTeams.loadAdmins(TEAM_A.id);
-		const inv = chefTeams.loadAdminInvite(TEAM_A.id);
-		await chefTeams.transferOwnership(ADMIN_ANNA.userId);
+		const admins = managedTeams.loadAdmins(TEAM_A.id);
+		const inv = managedTeams.loadAdminInvite(TEAM_A.id);
+		await managedTeams.transferOwnership(ADMIN_ANNA.userId);
 		resolveAdmins([ADMIN_ANNA]);
 		resolveInvite(invite(TEAM_A.id, "alt"));
 		await Promise.all([admins, inv]);
 
-		expect(chefTeams.admins).toEqual([]);
-		expect(chefTeams.adminInvite).toBeNull();
+		expect(managedTeams.admins).toEqual([]);
+		expect(managedTeams.adminInvite).toBeNull();
 	});
 });

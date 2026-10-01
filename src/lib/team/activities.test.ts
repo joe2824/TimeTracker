@@ -24,7 +24,7 @@ vi.mock("../sync/account.svelte", () => ({ account: accountMock }));
 const { app } = await import("../app.svelte");
 const { loadTeamDevice, loadTeamRemovedFrom, saveTeamDevice } = await import("../store");
 const { ApiError } = await import("../sync/api");
-const { chefTeams } = await import("./chef.svelte");
+const { managedTeams } = await import("./managedTeams.svelte");
 const { teamJoin } = await import("./state.svelte");
 const { dismissTeamRemoved, leaveTeam, syncTeamActivities, syncOwnedTeamActivities, TEAM_ACTIVITY_PREFIX } = await import("./activities");
 
@@ -41,8 +41,8 @@ beforeEach(() => {
 	accountMock.linked = false;
 	accountMock.listTeams.mockReset();
 	accountMock.listTeamActivities.mockReset();
-	chefTeams.teams = [];
-	chefTeams.selectedTeamId = undefined;
+	managedTeams.teams = [];
+	managedTeams.selectedTeamId = undefined;
 });
 
 describe("syncTeamActivities", () => {
@@ -413,7 +413,7 @@ describe("syncOwnedTeamActivities", () => {
 		await syncOwnedTeamActivities();
 
 		// Team A wird endgültig gelöscht - listTeams() nennt es gar nicht mehr.
-		chefTeams.teams = [];
+		managedTeams.teams = [];
 		accountMock.listTeams.mockResolvedValue([{ id: "t2", name: "B", ownerUserId: "u1", createdAt: 1 }]);
 		await syncOwnedTeamActivities();
 
@@ -428,7 +428,7 @@ describe("syncOwnedTeamActivities", () => {
 	});
 
 	it("loest Zeilen auch dann ab, wenn das letzte Team gelöscht wird und listTeams() leer zurückkommt", async () => {
-		// Der scharfste Fall des vorigen Tests: chefTeams.teams.length === 0 liess
+		// Der scharfste Fall des vorigen Tests: managedTeams.teams.length === 0 liess
 		// die Funktion bisher sofort zurückkehren, bevor sie je aufräumen konnte.
 		accountMock.linked = true;
 		accountMock.listTeams.mockResolvedValue([{ id: "t1", name: "A", ownerUserId: "u1", createdAt: 1 }]);
@@ -437,7 +437,7 @@ describe("syncOwnedTeamActivities", () => {
 		]);
 		await syncOwnedTeamActivities();
 
-		chefTeams.teams = [];
+		managedTeams.teams = [];
 		accountMock.listTeams.mockResolvedValue([]);
 		await syncOwnedTeamActivities();
 
@@ -484,8 +484,8 @@ describe("syncOwnedTeamActivities", () => {
 		]);
 		await syncOwnedTeamActivities();
 
-		// Neustart ohne Netz: chefTeams beginnt leer, listTeams() schlägt fehl.
-		chefTeams.teams = [];
+		// Neustart ohne Netz: managedTeams beginnt leer, listTeams() schlägt fehl.
+		managedTeams.teams = [];
 		accountMock.listTeams.mockRejectedValue(new TypeError("Failed to fetch"));
 		accountMock.listTeamActivities.mockRejectedValue(new TypeError("Failed to fetch"));
 		await syncOwnedTeamActivities();

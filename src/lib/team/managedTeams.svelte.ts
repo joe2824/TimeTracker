@@ -81,7 +81,7 @@ class TeamScopedLoad<T> {
 	}
 }
 
-class ChefTeamsState {
+class ManagedTeamsState {
 	teams = $state<TeamInfo[]>([]);
 	#selectedTeamId = $state<string | undefined>(undefined);
 	teamsLoading = $state(false);
@@ -354,5 +354,5 @@ class ChefTeamsState {
 	}
 }
 
-export const chefTeams = new ChefTeamsState();
-account.addLogoutHook(() => chefTeams.reset());
+export const managedTeams = new ManagedTeamsState();
+account.addLogoutHook(() => managedTeams.reset());

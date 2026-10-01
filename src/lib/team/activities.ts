@@ -5,7 +5,7 @@
 import { app } from "../app.svelte";
 import { clearTeamDevice, loadTeamDevice, loadTeamRemovedFrom, saveTeamRemovedFrom } from "../store";
 import { fetchTeamActivities, leaveTeamOnServer } from "./api";
-import { chefTeams } from "./chef.svelte";
+import { managedTeams } from "./managedTeams.svelte";
 import { account } from "../sync/account.svelte";
 import { ApiError, type TeamActivity } from "../sync/api";
 import { teamJoin } from "./state.svelte";
@@ -218,7 +218,7 @@ export async function dismissTeamRemoved(): Promise<void> {
  * parallel und schreibt app.activities genau einmal.
  *
  * Ein Team, das es nicht mehr gibt (gelöscht, oder dieses Konto ist dort
- * nicht mehr Verwalter), taucht in chefTeams.teams nicht mehr auf - dessen
+ * nicht mehr Verwalter), taucht in managedTeams.teams nicht mehr auf - dessen
  * Zeilen lösen sich ab wie eine einzeln entfernte.
  *
  * Offline bleibt der zuletzt gespiegelte Stand unverändert stehen.
@@ -226,11 +226,11 @@ export async function dismissTeamRemoved(): Promise<void> {
 export async function syncOwnedTeamActivities(): Promise<void> {
 	if (!account.linked) return;
 	const seq = ++ownedSyncSeq;
-	// Ohne Serverantwort ist chefTeams.teams leer oder veraltet - jede Team-Zeile
+	// Ohne Serverantwort ist managedTeams.teams leer oder veraltet - jede Team-Zeile
 	// sähe dann wie ein gelöschtes Team aus und würde abgelöst.
-	if (!(await chefTeams.loadTeams())) return;
+	if (!(await managedTeams.loadTeams())) return;
 
-	const currentTeams = new Map(chefTeams.teams.map((t) => [t.id, t]));
+	const currentTeams = new Map(managedTeams.teams.map((t) => [t.id, t]));
 	const deletedTeamIds = new Set(
 		app.activities
 			.filter((a) => isOwnTeamRow(a) && !currentTeams.has(a.teamId!))
@@ -239,7 +239,7 @@ export async function syncOwnedTeamActivities(): Promise<void> {
 	if (currentTeams.size === 0 && deletedTeamIds.size === 0) return;
 
 	const results = await Promise.all([
-		...chefTeams.teams.map(async (team) => {
+		...managedTeams.teams.map(async (team) => {
 			try {
 				return { team, remote: await account.listTeamActivities(team.id) };
 			} catch (e) {

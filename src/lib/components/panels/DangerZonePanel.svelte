@@ -5,7 +5,7 @@
 	import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
 	import { toast } from "svelte-sonner";
 	import { account } from "$lib/sync/account.svelte";
-	import { chefTeams } from "$lib/team/chef.svelte";
+	import { managedTeams } from "$lib/team/managedTeams.svelte";
 	import { userErrorText } from "$lib/log";
 
 	let isUnlinkModalOpen = $state(false);
@@ -21,9 +21,9 @@
 		linkedDeviceCount = null;
 		ownedTeamCount = 0;
 		teamsUnknown = false;
-		void chefTeams.loadTeams().then((ok) => {
+		void managedTeams.loadTeams().then((ok) => {
 			teamsUnknown = !ok;
-			ownedTeamCount = ok ? chefTeams.teams.filter((t) => t.role !== "admin").length : 0;
+			ownedTeamCount = ok ? managedTeams.teams.filter((t) => t.role !== "admin").length : 0;
 		});
 		try {
 			const info = await account.accountInfo();

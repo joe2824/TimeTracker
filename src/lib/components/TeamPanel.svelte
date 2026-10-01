@@ -3,7 +3,7 @@
 	import { invoke } from "@tauri-apps/api/core";
 	import { save } from "@tauri-apps/plugin-dialog";
 	import { account } from "$lib/sync/account.svelte";
-	import { chefTeams } from "$lib/team/chef.svelte";
+	import { managedTeams } from "$lib/team/managedTeams.svelte";
 	import { capabilities, isTauri } from "$lib/platform/env";
 	import { ApiError, type TeamMemberInfo, type TeamReportStatus } from "$lib/sync/api";
 	import { createOutlookDraft, reportOutlookError } from "$lib/report/outlook";
@@ -43,7 +43,7 @@
 	// ---------- Team verwalten (Roster) ----------
 	//
 	// Anlegen, Auswahl und Beitritts-Link teilt sich dieser Tab mit den
-	// Einstellungen (dort verwaltet, siehe TeamTab) über chefTeams - nur das
+	// Einstellungen (dort verwaltet, siehe TeamTab) über managedTeams - nur das
 	// Kopieren des Links bleibt zusätzlich hier, griffbereit für den Alltag.
 
 	let members = $state<TeamMemberInfo[]>([]);
@@ -67,10 +67,10 @@
 	}
 
 	$effect(() => {
-		const teamId = chefTeams.selectedTeamId;
+		const teamId = managedTeams.selectedTeamId;
 		if (teamId) {
 			void loadMembers(teamId);
-			void chefTeams.loadInvite(teamId);
+			void managedTeams.loadInvite(teamId);
 		} else {
 			// Auch die Nummer weiterzählen: eine noch laufende Antwort füllte sonst die geleerte Liste.
 			membersRequest++;
@@ -111,7 +111,7 @@
 	}
 
 	async function kickMember(member: TeamMemberInfo) {
-		const teamId = chefTeams.selectedTeamId;
+		const teamId = managedTeams.selectedTeamId;
 		if (!teamId) return;
 		try {
 			await account.revokeTeamMember(teamId, member.id);
@@ -123,7 +123,7 @@
 	}
 
 	$effect(() => {
-		if (account.linked) void chefTeams.loadTeams();
+		if (account.linked) void managedTeams.loadTeams();
 	});
 
 	// ---------- Wer wann seinen Bericht gesendet hat ----------
@@ -166,7 +166,7 @@
 	}
 
 	$effect(() => {
-		if (chefTeams.selectedTeamId) void loadReports(chefTeams.selectedTeamId, month);
+		if (managedTeams.selectedTeamId) void loadReports(managedTeams.selectedTeamId, month);
 		else reports = [];
 	});
 
@@ -178,7 +178,7 @@
 
 	/** Von Hand als gesendet markieren - für Berichte, die nicht über die App kamen. */
 	async function markSent(memberId: string) {
-		const teamId = chefTeams.selectedTeamId;
+		const teamId = managedTeams.selectedTeamId;
 		if (!teamId || statusBusyId) return;
 		statusBusyId = memberId;
 		try {
@@ -194,7 +194,7 @@
 
 	/** Eine Markierung zurücknehmen - auch einen echten Upload, z.B. bei einem Versehen. */
 	async function clearSent(memberId: string) {
-		const teamId = chefTeams.selectedTeamId;
+		const teamId = managedTeams.selectedTeamId;
 		if (!teamId || statusBusyId) return;
 		const submittedAt = reports.find((r) => r.memberId === memberId)?.submittedAt;
 		if (submittedAt == null) return;
@@ -282,7 +282,7 @@
 			</Button>
 		</div>
 	{:else}
-		{#if chefTeams.teamsLoading && chefTeams.teams.length === 0}
+		{#if managedTeams.teamsLoading && managedTeams.teams.length === 0}
 			<Card.Root>
 				<Card.Header>
 					<Skeleton class="h-5 w-32" />
@@ -292,7 +292,7 @@
 					<Skeleton class="h-4 w-2/3" />
 				</Card.Content>
 			</Card.Root>
-		{:else if chefTeams.teamsLoadFailed && chefTeams.teams.length === 0}
+		{:else if managedTeams.teamsLoadFailed && managedTeams.teams.length === 0}
 			<div class="rounded-lg border border-dashed p-10 text-center">
 				<div class="bg-muted text-muted-foreground mx-auto mb-3 flex size-12 items-center justify-center rounded-full">
 					<CloudIcon class="size-6" />
@@ -301,11 +301,11 @@
 				<p class="text-muted-foreground mx-auto mt-1 max-w-sm text-xs">
 					Vermutlich besteht keine Internetverbindung. Deine Teams sind nicht verloren.
 				</p>
-				<Button size="sm" variant="outline" class="mt-4" onclick={() => void chefTeams.loadTeams()}>
+				<Button size="sm" variant="outline" class="mt-4" onclick={() => void managedTeams.loadTeams()}>
 					<RefreshCwIcon class="size-4" /> Erneut versuchen
 				</Button>
 			</div>
-		{:else if chefTeams.teams.length === 0}
+		{:else if managedTeams.teams.length === 0}
 			<div class="rounded-lg border border-dashed p-10 text-center">
 				<div class="bg-primary/10 text-primary mx-auto mb-3 flex size-12 items-center justify-center rounded-full">
 					<UsersIcon class="size-6" />
@@ -323,7 +323,7 @@
 			<Card.Root>
 				<Card.Header>
 					<Card.Title>
-						{#if chefTeams.teams.length > 1}
+						{#if managedTeams.teams.length > 1}
 							<DropdownMenu.Root>
 								<DropdownMenu.Trigger
 									class={cn(
@@ -331,19 +331,19 @@
 										"h-auto gap-1 px-1.5 text-base font-medium"
 									)}
 								>
-									{chefTeams.selectedTeam?.name ?? "Team wählen"}
+									{managedTeams.selectedTeam?.name ?? "Team wählen"}
 									<ChevronDownIcon class="text-muted-foreground size-4" />
 								</DropdownMenu.Trigger>
 								<DropdownMenu.Content align="start">
-									{#each chefTeams.teams as t (t.id)}
-										<DropdownMenu.Item onSelect={() => (chefTeams.selectedTeamId = t.id)}>
+									{#each managedTeams.teams as t (t.id)}
+										<DropdownMenu.Item onSelect={() => (managedTeams.selectedTeamId = t.id)}>
 											{t.name}
 										</DropdownMenu.Item>
 									{/each}
 								</DropdownMenu.Content>
 							</DropdownMenu.Root>
 						{:else}
-							{chefTeams.selectedTeam?.name ?? "Team"}
+							{managedTeams.selectedTeam?.name ?? "Team"}
 						{/if}
 					</Card.Title>
 					<Card.Action>
@@ -354,12 +354,12 @@
 								</Popover.Trigger>
 								<Popover.Content align="end" class="w-72 space-y-2">
 									<p class="text-muted-foreground text-xs">Beitritts-Link</p>
-									{#if chefTeams.inviteLoading}
+									{#if managedTeams.inviteLoading}
 										<p class="text-muted-foreground text-sm">Wird geladen…</p>
-									{:else if chefTeams.inviteUrl}
+									{:else if managedTeams.inviteUrl}
 										<div class="flex items-center gap-2">
-											<code class="bg-muted min-w-0 flex-1 truncate rounded px-2 py-1 text-xs">{chefTeams.inviteUrl}</code>
-											<Button variant="ghost" size="icon-sm" title="Link kopieren" onclick={() => chefTeams.copyInviteUrl()}>
+											<code class="bg-muted min-w-0 flex-1 truncate rounded px-2 py-1 text-xs">{managedTeams.inviteUrl}</code>
+											<Button variant="ghost" size="icon-sm" title="Link kopieren" onclick={() => managedTeams.copyInviteUrl()}>
 												<CopyIcon class="size-4" />
 											</Button>
 										</div>
@@ -447,7 +447,7 @@
 			</Card.Root>
 		{/if}
 
-		{#if chefTeams.selectedTeamId}
+		{#if managedTeams.selectedTeamId}
 			<div class="flex flex-wrap items-end justify-between gap-3">
 				<MonthSelector bind:month id="tmonth" />
 				<div class="flex flex-wrap gap-2">

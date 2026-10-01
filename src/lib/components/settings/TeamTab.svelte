@@ -2,7 +2,7 @@
 	import ConfirmDialog from "$lib/components/shared/ConfirmDialog.svelte";
 	import { app } from "$lib/app.svelte";
 	import { account } from "$lib/sync/account.svelte";
-	import { chefTeams } from "$lib/team/chef.svelte";
+	import { managedTeams } from "$lib/team/managedTeams.svelte";
 	import type { TeamInfo } from "$lib/sync/api";
 	import { fmtDateHuman } from "$lib/time/time";
 	import { createSettingsForm } from "$lib/ui/settingsForm.svelte";
@@ -78,24 +78,24 @@
 
 	// ---------- Team anlegen und Beitritts-Link ----------
 	//
-	// Geteilter Zustand mit dem Team-Tab (chefTeams): wer hier ein Team anlegt
+	// Geteilter Zustand mit dem Team-Tab (managedTeams): wer hier ein Team anlegt
 	// oder den Link erneuert, sieht es dort sofort - und umgekehrt.
 
 	$effect(() => {
-		if (form.bossMode && account.linked) void chefTeams.loadTeams();
+		if (form.bossMode && account.linked) void managedTeams.loadTeams();
 	});
 	$effect(() => {
-		const teamId = chefTeams.selectedTeamId;
+		const teamId = managedTeams.selectedTeamId;
 		if (!form.bossMode || !teamId) return;
 		// Fehlt der Link noch (frisch angelegtes Team), gleich erzeugen statt den
 		// Chef erst auf "Link erzeugen" klicken zu lassen.
-		void chefTeams.loadInvite(teamId).then((ok) => {
-			if (ok && teamId === chefTeams.selectedTeamId && !chefTeams.invite && chefTeams.isOwner) {
+		void managedTeams.loadInvite(teamId).then((ok) => {
+			if (ok && teamId === managedTeams.selectedTeamId && !managedTeams.invite && managedTeams.isOwner) {
 				void rotateInvite();
 			}
 		});
-		void chefTeams.loadAdmins(teamId);
-		if (chefTeams.isOwner) void chefTeams.loadAdminInvite(teamId);
+		void managedTeams.loadAdmins(teamId);
+		if (managedTeams.isOwner) void managedTeams.loadAdminInvite(teamId);
 	});
 
 	let newTeamName = $state("");
@@ -106,9 +106,9 @@
 
 	async function createTeam() {
 		const name = newTeamName.trim();
-		if (!name || chefTeams.creating) return;
+		if (!name || managedTeams.creating) return;
 		try {
-			await chefTeams.createTeam(name);
+			await managedTeams.createTeam(name);
 			newTeamName = "";
 			addingTeam = false;
 			toast.success(`Team „${name}“ angelegt.`);
@@ -119,7 +119,7 @@
 
 	async function rotateInvite() {
 		try {
-			await chefTeams.rotateInvite();
+			await managedTeams.rotateInvite();
 		} catch (e) {
 			toast.error(`Link konnte nicht erzeugt werden: ${errorText(e)}`);
 		}
@@ -129,7 +129,7 @@
 
 	async function rotateAdminInvite() {
 		try {
-			await chefTeams.rotateAdminInvite();
+			await managedTeams.rotateAdminInvite();
 		} catch (e) {
 			toast.error(`Verwalter-Link konnte nicht erzeugt werden: ${errorText(e)}`);
 		}
@@ -137,7 +137,7 @@
 
 	async function removeAdmin(userId: string, name: string) {
 		try {
-			await chefTeams.removeAdmin(userId);
+			await managedTeams.removeAdmin(userId);
 			toast.success(`„${name}“ ist nicht mehr Verwalter.`);
 		} catch (e) {
 			toast.error(`Entfernen fehlgeschlagen: ${errorText(e)}`);
@@ -149,10 +149,10 @@
 	// rueckgaengig zu machen, nicht mehr von hier aus.
 	let transferPickId = $state<string | undefined>(undefined);
 	const transferTarget = $derived(
-		chefTeams.admins.find((a) => a.userId === transferPickId) ?? null
+		managedTeams.admins.find((a) => a.userId === transferPickId) ?? null
 	);
 	let confirmingTransfer = $state(false);
-	// Eigener Stand statt live aus chefTeams.admins gelesen: transferOwnership()
+	// Eigener Stand statt live aus managedTeams.admins gelesen: transferOwnership()
 	// leert admins/adminInvite noch waehrend die Bestaetigung laeuft (die Rolle
 	// wechselt serverseitig sofort) - ein Dialog, der auf diesen Stand angewiesen
 	// waere, verlöre seinen Titel oder wuerde durch ein umschliessendes
@@ -169,7 +169,7 @@
 		if (!transferTarget) return;
 		try {
 			const userId = transferTarget.userId;
-			await chefTeams.transferOwnership(userId);
+			await managedTeams.transferOwnership(userId);
 			toast.success(`„${transferTargetName}“ leitet jetzt dieses Team.`);
 			confirmingTransfer = false;
 			transferPickId = undefined;
@@ -188,7 +188,7 @@
 
 	async function confirmLeaveAdmin() {
 		try {
-			await chefTeams.leaveAsAdmin();
+			await managedTeams.leaveAsAdmin();
 			void syncOwnedTeamActivities();
 			toast.success(`Du verwaltest „${leaveAdminTeamName}“ nicht mehr.`);
 			leaveAdminTeamName = null;
@@ -201,8 +201,8 @@
 		if (!deleteTarget) return;
 		try {
 			const name = deleteTarget.name;
-			await chefTeams.deleteTeam(deleteTarget.id);
-			// deleteTeam() raeumt nur chefTeams.teams auf - die Spiegelung in
+			await managedTeams.deleteTeam(deleteTarget.id);
+			// deleteTeam() raeumt nur managedTeams.teams auf - die Spiegelung in
 			// app.activities (Auswahl, Bericht, Timer) haengt sonst bis zum
 			// naechsten App-Start oder Aktivitaeten-Tab-Besuch als "teamOwned" fest.
 			void syncOwnedTeamActivities();
@@ -292,11 +292,11 @@
 			</Button>
 		</div>
 	</SettingsCard>
-{:else if form.bossMode && chefTeams.teamsLoading && chefTeams.teams.length === 0}
+{:else if form.bossMode && managedTeams.teamsLoading && managedTeams.teams.length === 0}
 	<SettingsCard title="Team anlegen" divided={false}>
 		<p class="text-muted-foreground text-sm">Wird geladen…</p>
 	</SettingsCard>
-{:else if form.bossMode && chefTeams.teamsLoadFailed && chefTeams.teams.length === 0}
+{:else if form.bossMode && managedTeams.teamsLoadFailed && managedTeams.teams.length === 0}
 	<!-- Nicht "Team anlegen" anbieten: sonst entstünde neben dem nur nicht
 	     geladenen Team ein zweites. -->
 	<SettingsCard title="Team" divided={false}>
@@ -304,12 +304,12 @@
 			<p class="text-muted-foreground min-w-0 flex-1 text-xs">
 				Teams konnten gerade nicht geladen werden. Vermutlich besteht keine Internetverbindung.
 			</p>
-			<Button variant="outline" size="sm" onclick={() => void chefTeams.loadTeams()}>
+			<Button variant="outline" size="sm" onclick={() => void managedTeams.loadTeams()}>
 				<RefreshCwIcon class="size-4" /> Erneut versuchen
 			</Button>
 		</div>
 	</SettingsCard>
-{:else if form.bossMode && chefTeams.teams.length === 0}
+{:else if form.bossMode && managedTeams.teams.length === 0}
 	<SettingsCard title="Team anlegen" divided={false}>
 		<div class="space-y-1.5">
 			<Label for="newteam">Name des Teams</Label>
@@ -320,7 +320,7 @@
 					placeholder="z.B. „Vertrieb“"
 					onkeydown={(e) => e.key === "Enter" && createTeam()}
 				/>
-				<Button variant="outline" disabled={!newTeamName.trim() || chefTeams.creating} onclick={createTeam}>
+				<Button variant="outline" disabled={!newTeamName.trim() || managedTeams.creating} onclick={createTeam}>
 					<PlusIcon class="size-4" /> Anlegen
 				</Button>
 			</div>
@@ -328,14 +328,14 @@
 	</SettingsCard>
 {:else if form.bossMode}
 	<SettingsCard title="Team" description="Beitritts-Link zum Einladen von Mitgliedern." divided={false}>
-		{#if chefTeams.teams.length > 1}
+		{#if managedTeams.teams.length > 1}
 			<div class="grid gap-1.5">
-				{#each chefTeams.teams as t (t.id)}
-					{@const active = t.id === chefTeams.selectedTeamId}
+				{#each managedTeams.teams as t (t.id)}
+					{@const active = t.id === managedTeams.selectedTeamId}
 					<button
 						type="button"
 						aria-pressed={active}
-						onclick={() => (chefTeams.selectedTeamId = t.id)}
+						onclick={() => (managedTeams.selectedTeamId = t.id)}
 						class={cn(
 							"flex items-center gap-2.5 rounded-lg border p-2.5 text-left text-sm transition-colors",
 							active ? "border-primary/40 bg-primary/5 font-medium" : "bg-card/60 hover:bg-card"
@@ -352,28 +352,28 @@
 		{/if}
 
 		<div class="flex items-center gap-2">
-			{#if chefTeams.teams.length <= 1}
-				<span class="text-sm font-medium">{chefTeams.selectedTeam?.name}</span>
+			{#if managedTeams.teams.length <= 1}
+				<span class="text-sm font-medium">{managedTeams.selectedTeam?.name}</span>
 			{/if}
-			{#if chefTeams.selectedTeam && !chefTeams.isOwner}
+			{#if managedTeams.selectedTeam && !managedTeams.isOwner}
 				<span class="text-muted-foreground text-xs">(du bist Verwalter, leitest das Team aber nicht)</span>
 				<Button
 					variant="ghost"
 					size="sm"
 					class="ml-auto"
-					onclick={() => (leaveAdminTeamName = chefTeams.selectedTeam?.name ?? null)}
+					onclick={() => (leaveAdminTeamName = managedTeams.selectedTeam?.name ?? null)}
 				>
 					<LogOutIcon class="size-4" /> Verwaltung abgeben
 				</Button>
 			{/if}
-			{#if chefTeams.selectedTeam && chefTeams.isOwner}
+			{#if managedTeams.selectedTeam && managedTeams.isOwner}
 				<Button
 					variant="ghost"
 					size="icon-sm"
 					class="ml-auto"
 					title="Team endgültig löschen"
 					aria-label="Team endgültig löschen"
-					onclick={() => (deleteTarget = chefTeams.selectedTeam)}
+					onclick={() => (deleteTarget = managedTeams.selectedTeam)}
 				>
 					<Trash2Icon class="text-destructive size-4" />
 				</Button>
@@ -383,14 +383,14 @@
 		<div class="space-y-1.5">
 			<Label>Beitritts-Link</Label>
 			<InviteLinkField
-				url={chefTeams.inviteUrl}
-				loading={chefTeams.inviteLoading}
-				rotating={chefTeams.rotating}
+				url={managedTeams.inviteUrl}
+				loading={managedTeams.inviteLoading}
+				rotating={managedTeams.rotating}
 				emptyText="Noch keinen Link erzeugt."
-				oncopy={() => chefTeams.copyInviteUrl()}
+				oncopy={() => managedTeams.copyInviteUrl()}
 				onrotate={rotateInvite}
 			/>
-			{#if !chefTeams.inviteLoading && chefTeams.inviteUrl}
+			{#if !managedTeams.inviteLoading && managedTeams.inviteUrl}
 				<p class="text-muted-foreground text-xs">
 					Ein neuer Link macht den bisherigen ungültig - schon beigetretene Mitglieder bleiben davon
 					unberührt.
@@ -406,7 +406,7 @@
 					aria-label="Name des weiteren Teams"
 					onkeydown={(e) => e.key === "Enter" && createTeam()}
 				/>
-				<Button variant="outline" disabled={!newTeamName.trim() || chefTeams.creating} onclick={createTeam}>
+				<Button variant="outline" disabled={!newTeamName.trim() || managedTeams.creating} onclick={createTeam}>
 					<PlusIcon class="size-4" /> Anlegen
 				</Button>
 				<Button
@@ -429,11 +429,11 @@
 		{/if}
 	</SettingsCard>
 
-	{#if chefTeams.selectedTeam}
+	{#if managedTeams.selectedTeam}
 		<SettingsCard title="Verwalter" description="Ein weiteres Konto mit denselben Rechten wie der oder die Vorgesetzte – außer Team löschen, Verwalter einladen oder entfernen und die Leitung übergeben." divided={false}>
-			{#if chefTeams.adminsLoading}
+			{#if managedTeams.adminsLoading}
 				<p class="text-muted-foreground text-sm">Wird geladen…</p>
-			{:else if chefTeams.admins.length === 0}
+			{:else if managedTeams.admins.length === 0}
 				<div class="flex items-center gap-2.5 rounded-lg border border-dashed p-3.5">
 					<div class="bg-muted flex size-7 shrink-0 items-center justify-center rounded-md">
 						<ShieldIcon class="text-muted-foreground size-3.5" />
@@ -442,7 +442,7 @@
 				</div>
 			{:else}
 				<div class="grid gap-2">
-					{#each chefTeams.admins as a (a.userId)}
+					{#each managedTeams.admins as a (a.userId)}
 						<div class="flex items-center justify-between gap-3 rounded-lg border bg-card/60 p-2.5 transition-colors hover:bg-card">
 							<div class="flex min-w-0 items-center gap-2.5">
 								<div class="bg-primary/10 text-primary flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold uppercase">
@@ -455,7 +455,7 @@
 									</div>
 								</div>
 							</div>
-							{#if chefTeams.isOwner}
+							{#if managedTeams.isOwner}
 								<Button
 									variant="ghost"
 									size="icon-sm"
@@ -472,22 +472,22 @@
 				</div>
 			{/if}
 
-			{#if chefTeams.isOwner}
+			{#if managedTeams.isOwner}
 				<div class="space-y-1.5">
 					<Label>Verwalter einladen</Label>
 					<InviteLinkField
-						url={chefTeams.adminInviteUrl}
-						loading={chefTeams.adminInviteLoading}
-						rotating={chefTeams.rotatingAdminInvite}
+						url={managedTeams.adminInviteUrl}
+						loading={managedTeams.adminInviteLoading}
+						rotating={managedTeams.rotatingAdminInvite}
 						emptyText="Kein gültiger Link."
-						oncopy={() => chefTeams.copyAdminInviteUrl()}
+						oncopy={() => managedTeams.copyAdminInviteUrl()}
 						onrotate={rotateAdminInvite}
 					/>
-					{#if !chefTeams.adminInviteLoading}
+					{#if !managedTeams.adminInviteLoading}
 						<p class="text-muted-foreground text-xs">
 							Wer den Link annimmt, sieht alle Berichte des Teams und braucht dafür ein eigenes Konto.
-							{#if chefTeams.adminInvite?.expiresAt}
-								Der Link gilt bis {fmtDateHuman(chefTeams.adminInvite.expiresAt)}.
+							{#if managedTeams.adminInvite?.expiresAt}
+								Der Link gilt bis {fmtDateHuman(managedTeams.adminInvite.expiresAt)}.
 							{:else}
 								Ein neuer Link gilt 30 Tage.
 							{/if}
@@ -498,7 +498,7 @@
 		</SettingsCard>
 	{/if}
 
-	{#if chefTeams.selectedTeam && chefTeams.isOwner && chefTeams.admins.length > 0}
+	{#if managedTeams.selectedTeam && managedTeams.isOwner && managedTeams.admins.length > 0}
 		<SettingsCard title="Leitung übergeben" description="Ein Verwalter übernimmt die Leitung, du selbst wirst Verwalter – dein Zugang bleibt erhalten." divided={false}>
 			<div class="flex flex-wrap items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3.5">
 				<div class="flex size-9 shrink-0 items-center justify-center rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400">
@@ -510,7 +510,7 @@
 							{transferTarget?.displayName ?? "Verwalter wählen"}
 						</Select.Trigger>
 						<Select.Content>
-							{#each chefTeams.admins as a (a.userId)}
+							{#each managedTeams.admins as a (a.userId)}
 								<Select.Item value={a.userId} label={a.displayName}>{a.displayName}</Select.Item>
 							{/each}
 						</Select.Content>

@@ -10,7 +10,7 @@
 	} from "$lib/types";
 	import { applyShortcuts, recordShortcut } from "$lib/ui/shortcuts";
 	import { account } from "$lib/sync/account.svelte";
-	import { chefTeams } from "$lib/team/chef.svelte";
+	import { managedTeams } from "$lib/team/managedTeams.svelte";
 	import { syncOwnedTeamActivities, withActivitiesLock, TEAM_ACTIVITY_PREFIX } from "$lib/team/activities";
 	import { ApiError, type TeamActivity, type TeamActivityInput } from "$lib/sync/api";
 	import { errorText } from "$lib/log";
@@ -161,7 +161,7 @@
 		// Nur die gerade zur Bearbeitung ausgewählte Team-Liste - Sortieren
 		// zwischen zwei verschiedenen Teams (oder Team und eigenen Zeilen) hat
 		// keine gemeinsame Reihenfolge, gegen die sich das sinnvoll aufloesen liesse.
-		if (isChefTeamRow(id)) return true;
+		if (isManagedTeamRow(id)) return true;
 		const a = app.activities.find((x) => x.id === id);
 		return !!a && !isBuiltinActivity(a) && !a.teamOwned;
 	}
@@ -193,9 +193,9 @@
 	function onDrop(e: DragEvent, targetId: string) {
 		e.preventDefault();
 		if (draggingId && draggingId !== targetId) {
-			if (isChefTeamRow(draggingId) && isChefTeamRow(targetId)) {
+			if (isManagedTeamRow(draggingId) && isManagedTeamRow(targetId)) {
 				reorderTeamActivity(teamRowId(draggingId), teamRowId(targetId), dropAfter);
-			} else if (!isChefTeamRow(draggingId) && !isChefTeamRow(targetId)) {
+			} else if (!isManagedTeamRow(draggingId) && !isManagedTeamRow(targetId)) {
 				void app.reorderActivity(draggingId, targetId, dropAfter);
 			}
 		}
@@ -214,10 +214,10 @@
 	// steht nur die Spiegelung (team/activities.ts, Präfix "team:"), die der
 	// nächste Abgleich ohnehin mit dem Serverstand ersetzt.
 	const TEAM_EDIT_PREFIX = "team-edit:";
-	const isChefTeamRow = (id: string) => id.startsWith(TEAM_EDIT_PREFIX);
+	const isManagedTeamRow = (id: string) => id.startsWith(TEAM_EDIT_PREFIX);
 	const teamRowId = (id: string) => id.slice(TEAM_EDIT_PREFIX.length);
 	/** Favorit/Ausblenden/Shortcut gehören der gespiegelten Zeile in app.activities, nicht dem Team-Entwurf. */
-	const realId = (id: string) => (isChefTeamRow(id) ? `${TEAM_ACTIVITY_PREFIX}${teamRowId(id)}` : id);
+	const realId = (id: string) => (isManagedTeamRow(id) ? `${TEAM_ACTIVITY_PREFIX}${teamRowId(id)}` : id);
 
 	let teamActivities = $state<TeamActivity[]>([]);
 	let teamActivitiesVersion = $state(0);
@@ -232,20 +232,20 @@
 		const request = ++teamActivitiesRequest;
 		try {
 			const act = await account.listTeamActivities(teamId);
-			if (request !== teamActivitiesRequest || teamId !== chefTeams.selectedTeamId) return;
+			if (request !== teamActivitiesRequest || teamId !== managedTeams.selectedTeamId) return;
 			teamActivities = act;
 			teamActivitiesVersion = latestUpdate(act);
 		} catch (e) {
-			if (request !== teamActivitiesRequest || teamId !== chefTeams.selectedTeamId) return;
+			if (request !== teamActivitiesRequest || teamId !== managedTeams.selectedTeamId) return;
 			toast.error(`Team-Aktivitäten konnten nicht geladen werden: ${errorText(e)}`);
 		}
 	}
 
 	$effect(() => {
-		if (account.linked) void chefTeams.loadTeams();
+		if (account.linked) void managedTeams.loadTeams();
 	});
 	$effect(() => {
-		const teamId = chefTeams.selectedTeamId;
+		const teamId = managedTeams.selectedTeamId;
 		// Die Liste des vorigen Teams nicht stehen lassen, bis die neue da ist:
 		// Hinzufügen oder Sortieren schriebe sie sonst ins neue Team.
 		teamActivities = [];
@@ -257,8 +257,8 @@
 	// Filter mit. Sonst zeigte er Team A, während "Hinzufügen" in Team B schriebe.
 	// Ein inzwischen gelöschtes Team fällt auf "alle" zurück.
 	$effect(() => {
-		const selected = chefTeams.selectedTeamId;
-		const teams = chefTeams.teams;
+		const selected = managedTeams.selectedTeamId;
+		const teams = managedTeams.teams;
 		untrack(() => {
 			if (activityTeamFilter === "alle") return;
 			if (!teams.some((t) => t.id === activityTeamFilter)) activityTeamFilter = "alle";
@@ -272,16 +272,16 @@
 
 	/** Die ganze Liste des ausgewählten Teams neu schreiben - der Server nimmt keine Einzel-Patches. */
 	async function saveTeamActivities(next: TeamActivityInput[]) {
-		if (!chefTeams.selectedTeamId) return;
+		if (!managedTeams.selectedTeamId) return;
 		if (teamActionBusy) {
 			toast.info("Die Team-Liste wird gerade gespeichert – bitte gleich noch einmal.");
 			return;
 		}
-		const teamId = chefTeams.selectedTeamId;
+		const teamId = managedTeams.selectedTeamId;
 		teamActionBusy = true;
 		try {
 			const saved = await account.setTeamActivities(teamId, next, teamActivitiesVersion);
-			if (teamId === chefTeams.selectedTeamId) {
+			if (teamId === managedTeams.selectedTeamId) {
 				teamActivities = saved;
 				teamActivitiesVersion = latestUpdate(saved);
 			}
@@ -292,7 +292,7 @@
 		} catch (e) {
 			if (e instanceof ApiError && e.status === 409) {
 				toast.error("Die Team-Liste wurde inzwischen anderswo geändert - neu geladen.");
-				if (teamId === chefTeams.selectedTeamId) await loadTeamActivities(teamId);
+				if (teamId === managedTeams.selectedTeamId) await loadTeamActivities(teamId);
 			} else {
 				toast.error(`Speichern fehlgeschlagen: ${errorText(e)}`);
 			}
@@ -320,7 +320,7 @@
 
 	/** Namen importieren, die es im Team noch nicht gibt - wie app.importActivities, nur serverseitig. */
 	async function importTeamActivities(teamId: string, lines: string[]): Promise<number> {
-		const isSelected = teamId === chefTeams.selectedTeamId;
+		const isSelected = teamId === managedTeams.selectedTeamId;
 		const current = isSelected ? teamActivities : await account.listTeamActivities(teamId);
 		const version = isSelected
 			? teamActivitiesVersion
@@ -387,7 +387,7 @@
 		const name = newName.trim();
 		if (!name) return;
 		if (activityTeamFilter !== "alle") {
-			if (activityTeamFilter !== chefTeams.selectedTeamId) return;
+			if (activityTeamFilter !== managedTeams.selectedTeamId) return;
 			await saveTeamActivities([
 				...teamActivities.map(toTeamInput),
 				{ name, isAbsence: false, sortOrder: teamActivities.length, archived: false }
@@ -400,7 +400,7 @@
 
 	/**
 	 * Die eigene Sicht des Chefs auf die Team-Liste, in Aktivitäts-Form fürs
-	 * gemeinsame Rendern. Name/Löschen laufen über die Team-API (chefTeams),
+	 * gemeinsame Rendern. Name/Löschen laufen über die Team-API (managedTeams),
 	 * aber Favorit/Ausblenden/Shortcut sind Geräte-Einstellungen und gehören
 	 * der gespiegelten Zeile in app.activities (syncOwnedTeamActivities) - hier
 	 * nur übernommen, damit ein Umschalten nicht ins Leere greift.
@@ -417,8 +417,8 @@
 					archived: a.archived,
 					isAbsence: a.isAbsence,
 					teamOwned: true,
-					teamId: chefTeams.selectedTeamId,
-					teamName: chefTeams.selectedTeam?.name,
+					teamId: managedTeams.selectedTeamId,
+					teamName: managedTeams.selectedTeam?.name,
 					favorite: mirrored?.favorite,
 					hidden: mirrored?.hidden,
 					shortcut: mirrored?.shortcut
@@ -436,12 +436,12 @@
 					// spiegelt syncOwnedTeamActivities sonst zusaetzlich aus
 					// app.activities. teamId nur vergleichen, wenn die Zeile wirklich
 					// eine hat - sonst wuerde ein reines Mitglieds-Geraet (teamId immer
-					// undefined, chefTeams.selectedTeamId ebenfalls) seine eigene
+					// undefined, managedTeams.selectedTeamId ebenfalls) seine eigene
 					// Team-Zeile hier faelschlich verschwinden lassen.
-					!(a.teamOwned && a.teamId !== undefined && a.teamId === chefTeams.selectedTeamId) &&
+					!(a.teamOwned && a.teamId !== undefined && a.teamId === managedTeams.selectedTeamId) &&
 					(activityTeamFilter === "alle" || a.teamId === activityTeamFilter)
 			),
-			...(activityTeamFilter === "alle" || activityTeamFilter === chefTeams.selectedTeamId
+			...(activityTeamFilter === "alle" || activityTeamFilter === managedTeams.selectedTeamId
 				? teamListed
 				: [])
 		].sort(byActivityOrder)
@@ -462,18 +462,18 @@
 			<Card.Description>Jede Zeile wird zu einer Aktivität. Vorhandene bleiben erhalten.</Card.Description>
 		</Card.Header>
 		<Card.Content class="space-y-3">
-			{#if chefTeams.teams.length > 0}
+			{#if managedTeams.teams.length > 0}
 				<div class="flex items-center gap-2">
 					<span class="text-muted-foreground text-sm">Ziel</span>
 					<Select.Root type="single" bind:value={importTarget}>
 						<Select.Trigger class="w-56">
 							{importTarget === "eigene"
 								? "Eigene Aktivitäten"
-								: (chefTeams.teams.find((t) => t.id === importTarget)?.name ?? "Eigene Aktivitäten")}
+								: (managedTeams.teams.find((t) => t.id === importTarget)?.name ?? "Eigene Aktivitäten")}
 						</Select.Trigger>
 						<Select.Content>
 							<Select.Item value="eigene" label="Eigene Aktivitäten">Eigene Aktivitäten</Select.Item>
-							{#each chefTeams.teams as t (t.id)}
+							{#each managedTeams.teams as t (t.id)}
 								<Select.Item value={t.id} label={t.name}>Team „{t.name}“</Select.Item>
 							{/each}
 						</Select.Content>
@@ -506,22 +506,22 @@
 			<Card.Title>Liste ({listed.length})</Card.Title>
 			<Card.Action>
 				<div class="flex flex-wrap gap-1">
-					{#if chefTeams.teams.length > 0}
+					{#if managedTeams.teams.length > 0}
 						<Select.Root
 							type="single"
 							bind:value={activityTeamFilter}
 							onValueChange={(v) => {
-								if (v !== "alle") chefTeams.selectedTeamId = v;
+								if (v !== "alle") managedTeams.selectedTeamId = v;
 							}}
 						>
 							<Select.Trigger class="w-44" size="sm">
 								{activityTeamFilter === "alle"
 									? "Alle Aktivitäten"
-									: `Nur ${chefTeams.teams.find((t) => t.id === activityTeamFilter)?.name ?? "Team"}`}
+									: `Nur ${managedTeams.teams.find((t) => t.id === activityTeamFilter)?.name ?? "Team"}`}
 							</Select.Trigger>
 							<Select.Content>
 								<Select.Item value="alle" label="Alle Aktivitäten">Alle Aktivitäten</Select.Item>
-								{#each chefTeams.teams as t (t.id)}
+								{#each managedTeams.teams as t (t.id)}
 									<Select.Item value={t.id} label={t.name}>Nur „{t.name}“</Select.Item>
 								{/each}
 							</Select.Content>
@@ -581,7 +581,7 @@
 						>
 							<GripVerticalIcon class="size-4" />
 						</span>
-						{#if !isBuiltinActivity(a) && !isChefTeamRow(a.id)}
+						{#if !isBuiltinActivity(a) && !isManagedTeamRow(a.id)}
 							<div class="relative shrink-0">
 								<button
 									type="button"
@@ -623,15 +623,15 @@
 						<input
 							class="hover:bg-muted/60 focus:bg-muted/60 focus-visible:ring-ring/50 min-w-0 grow basis-40 rounded-md bg-transparent px-1.5 py-1 text-sm transition-colors outline-none focus-visible:ring-3 disabled:cursor-default disabled:bg-transparent disabled:opacity-100"
 							value={a.name}
-							disabled={isBuiltinActivity(a) || (a.teamOwned && !isChefTeamRow(a.id))}
+							disabled={isBuiltinActivity(a) || (a.teamOwned && !isManagedTeamRow(a.id))}
 							title={isBuiltinActivity(a)
 								? "Eingebaute Zeile – nicht umbenennbar"
-								: a.teamOwned && !isChefTeamRow(a.id)
+								: a.teamOwned && !isManagedTeamRow(a.id)
 									? "Vom Team vorgegeben – nur der oder die Vorgesetzte kann sie ändern"
 									: "Umbenennen"}
 							onchange={(e: Event) => {
 								const value = (e.target as HTMLInputElement).value;
-								if (isChefTeamRow(a.id)) void renameTeamActivity(teamRowId(a.id), value);
+								if (isManagedTeamRow(a.id)) void renameTeamActivity(teamRowId(a.id), value);
 								else app.renameActivity(a.id, value);
 							}}
 						/>
@@ -704,7 +704,7 @@
 						{/if}
 						{#if isBuiltinActivity(a)}
 							<Badge variant="secondary">fix</Badge>
-						{:else if a.teamOwned && isChefTeamRow(a.id)}
+						{:else if a.teamOwned && isManagedTeamRow(a.id)}
 							<Button
 								variant="ghost"
 								size="icon-sm"
