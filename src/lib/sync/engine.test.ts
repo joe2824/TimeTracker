@@ -1665,6 +1665,26 @@ describe("Team-Mitgliedschaft gehört zum Konto", () => {
 		expect(await on(desktop, async () => pendingChanges())).toEqual([]);
 	});
 
+	it("die Löschung zu einem veralteten Stand nimmt den neueren Beitritt eines anderen Geräts nicht mit", async () => {
+		// Das Handy wechselt das Team. Der Rechner weiss davon noch nichts, sein
+		// alter Token wird abgewiesen, er räumt auf - das galt dem alten Stand.
+		const phone = new FakeDevice("handy");
+		const desktop = new FakeDevice("rechner");
+		await changeAndSync(phone, () => store.saveTeamDevice(TEAM));
+		await on(desktop, (engine) => engine.sync());
+		await afterwards();
+		const switched = { teamMemberId: "m2", token: "team-tok-2", teamName: "Einkauf", serverUrl: TEAM.serverUrl };
+		await changeAndSync(phone, () => store.saveTeamDevice(switched));
+		await afterwards();
+
+		await changeAndSync(desktop, () => store.clearTeamDevice());
+
+		expect(server.rows.get("team-membership")?.deletedAt ?? null).toBeNull();
+		expect(await on(desktop, () => store.loadTeamDevice())).toEqual(switched);
+		await on(phone, (engine) => engine.sync());
+		expect(await on(phone, () => store.loadTeamDevice())).toEqual(switched);
+	});
+
 	it("ein gerade nicht lesbarer Token wird nicht als Austritt hochgeladen", async () => {
 		const phone = new FakeDevice("handy");
 		await on(phone, async (engine) => {

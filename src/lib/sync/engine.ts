@@ -385,7 +385,11 @@ export class SyncEngine {
 					// Weg ist weg: hat der Server selbst einen Löschmarker, ist die
 					// Löschung von hier erledigt. Und wurde dort nach ihr noch etwas
 					// geändert, gilt dieser jüngere Stand.
-					if (isTombstone(k.current) || k.current.updatedAt > change.at) {
+					//
+					// Eine Mitgliedschaft wird gar nicht über einen neueren Stand hinweg
+					// gelöscht: die Löschung galt dem Token, den dieses Gerät kannte -
+					// nicht dem Beitritt, den ein anderes Gerät inzwischen geschrieben hat.
+					if (isTombstone(k.current) || k.current.updatedAt > change.at || change.kind === "team") {
 						obsolete.push(change);
 					} else {
 						rebased.push({ kind: change.kind, id: change.id, rev: k.current.rev });
