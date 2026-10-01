@@ -15,6 +15,7 @@
 	import { teamJoin } from "$lib/team/state.svelte";
 	import { syncTeamActivities, syncOwnedTeamActivities } from "$lib/team/activities";
 	import { retryTeamReportUploads } from "$lib/team/reports";
+	import { reportReminder } from "$lib/report/reportReminder.svelte";
 	import WebOnboarding from "$lib/components/onboarding/WebOnboarding.svelte";
 	import { onboardingOpen } from "$lib/account/onboarding.svelte";
 	import PasskeyNudge from "$lib/components/onboarding/PasskeyNudge.svelte";
@@ -90,10 +91,7 @@
 	const attention = $derived(
 		!!watchers.idlePrompt ||
 			!!watchers.longTimerPrompt ||
-			watchers.forceReportReminder ||
-			(!!app.pendingReportMonth &&
-				app.settings.reportReminderEnabled &&
-				!watchers.reportReminderDismissed)
+			reportReminder.due
 	);
 
 	// Die einzige Stelle, die die Tabs kennt: wer einen Tag zeigen will (Tracking,

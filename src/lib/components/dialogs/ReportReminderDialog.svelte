@@ -2,54 +2,23 @@
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { Button } from "$lib/components/ui/button";
 	import { app } from "$lib/app.svelte";
-	import { account } from "$lib/sync/account.svelte";
 	import { monthLabel } from "$lib/time/time";
-	import { confirmReportSent, sendReport } from "$lib/report/reportSend";
-	import { teamHasReport } from "$lib/team/reports";
+	import { sendReport } from "$lib/report/reportSend";
+	import { reportReminder } from "$lib/report/reportReminder.svelte";
 	import { capabilities } from "$lib/platform/env";
-	import { watchers } from "$lib/ui/watchers.svelte";
 	import { toast } from "svelte-sonner";
 	import MailIcon from "@lucide/svelte/icons/mail";
 
 	// Einmal pro App-Lauf zeigen (nicht erneut aufpoppen nach Schließen).
-	// Das "dismissed"-Flag liegt im watchers-Store, damit das Tray-Badge denselben
-	// Zustand kennt (Badge = offene Aufmerksamkeits-Dialoge).
 	let sending = $state(false);
-	const month = $derived(app.pendingReportMonth);
+	const month = $derived(reportReminder.month);
 	// Dev-Override: erzwungen anzeigen; Anzeige-Monat dann auf aktuellen Monat zurückfallen.
 	const shownMonth = $derived(month ?? app.currentMonth);
-	// Erst nach dem ersten Abgleich fragen. Ein gerade verknüpftes Gerät ist
-	// lokal leer: die Einträge des Vormonats kommen herein, welche Berichte
-	// längst raus sind steht aber in den Einstellungen - und die kommen mit
-	// derselben Runde. Vorher wäre die Frage nicht bloss lästig mitten im
-	// Einrichten, sondern schlicht falsch: sie gilt einem Bericht, den jemand
-	// vor Wochen von einem anderen Gerät aus geschickt hat.
-	const synced = $derived(!account.linked || account.firstSyncDone);
-	// Im Team weiss der Server, ob der Bericht schon da ist - dann wird der
-	// Monat hier vermerkt statt nachgefragt. Lässt es sich nicht klären (kein
-	// Team, kein Netz), fragt der Dialog wie bisher.
-	let teamChecked = $state<string | null>(null);
 	$effect(() => {
-		const m = month;
-		if (!m || !synced || teamChecked === m) return;
-		let stale = false;
-		void teamHasReport(m).then(async (has) => {
-			if (stale) return;
-			if (has) await app.markReportSent(m);
-			teamChecked = m;
-		});
-		return () => {
-			stale = true;
-		};
+		// Gelesen, damit der Effekt bei neuem Monat oder fertigem Abgleich erneut läuft.
+		if (reportReminder.month && reportReminder.synced) void reportReminder.checkTeam();
 	});
-	const open = $derived(
-		watchers.forceReportReminder ||
-			(!!month &&
-				teamChecked === month &&
-				synced &&
-				app.settings.reportReminderEnabled &&
-				!watchers.reportReminderDismissed)
-	);
+	const open = $derived(reportReminder.due);
 
 	async function send() {
 		if (!month) return;
@@ -66,8 +35,7 @@
 				// Wie es weitergeht, steht im Entwurf selbst.
 				toast.success("Die Tabelle wurde kopiert.");
 			}
-			watchers.reportReminderDismissed = true;
-			watchers.forceReportReminder = false;
+			reportReminder.dismiss();
 		} catch (e) {
 			toast.error(`Mail konnte nicht geöffnet werden: ${e}. Tipp: Tab „Bericht“ → „HTML kopieren“.`);
 		} finally {
@@ -76,19 +44,16 @@
 	}
 
 	async function alreadySent() {
-		if (month) await confirmReportSent(month);
-		watchers.reportReminderDismissed = true;
-		watchers.forceReportReminder = false;
+		if (!(await reportReminder.confirmSent())) {
+			toast.error("Das konnte nicht gespeichert werden. Bitte noch einmal versuchen.");
+		}
 	}
 </script>
 
 <Dialog.Root
 	{open}
 	onOpenChange={(v) => {
-		if (!v) {
-			watchers.reportReminderDismissed = true;
-			watchers.forceReportReminder = false;
-		}
+		if (!v) reportReminder.dismiss();
 	}}
 >
 	<Dialog.Content class="sm:max-w-md">

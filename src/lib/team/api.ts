@@ -11,13 +11,28 @@ export interface TeamJoinResult {
 	teamName: string;
 }
 
+/**
+ * Wie lange eine Team-Anfrage auf Antwort wartet. Ein Server, der die
+ * Verbindung annimmt und dann schweigt, hielte sonst alles auf, was auf die
+ * Antwort wartet - die Berichts-Erinnerung etwa erschiene den ganzen Lauf nicht.
+ */
+export const TEAM_REQUEST_MS = 15_000;
+
+function request<T>(fetchFn: FetchFn, serverUrl: string, path: string, init: RequestInit = {}): Promise<T> {
+	const abort = new AbortController();
+	const timer = setTimeout(() => abort.abort(), TEAM_REQUEST_MS);
+	return requestJson<T>(fetchFn, serverUrl, path, { ...init, signal: abort.signal }).finally(() =>
+		clearTimeout(timer)
+	);
+}
+
 /** Der Teamname hinter einem Link - vor dem Beitreten, zum Anzeigen. */
 export function previewTeamInvite(
 	serverUrl: string,
 	code: string,
 	fetchFn: FetchFn = platformFetch
 ): Promise<{ teamName: string }> {
-	return requestJson(fetchFn, serverUrl, `/api/team/join?code=${encodeURIComponent(code)}`);
+	return request(fetchFn, serverUrl, `/api/team/join?code=${encodeURIComponent(code)}`);
 }
 
 /**
@@ -31,7 +46,7 @@ export function previewAdminInvite(
 	code: string,
 	fetchFn: FetchFn = platformFetch
 ): Promise<{ teamName: string }> {
-	return requestJson(fetchFn, serverUrl, `/api/team/admin/join?code=${encodeURIComponent(code)}`);
+	return request(fetchFn, serverUrl, `/api/team/admin/join?code=${encodeURIComponent(code)}`);
 }
 
 /** Beitreten - legt ein neues Mitglied an und liefert dessen Token. */
@@ -42,7 +57,7 @@ export function joinTeam(
 	email?: string,
 	fetchFn: FetchFn = platformFetch
 ): Promise<TeamJoinResult> {
-	return requestJson(fetchFn, serverUrl, "/api/team/join", {
+	return request(fetchFn, serverUrl, "/api/team/join", {
 		method: "POST",
 		body: JSON.stringify({ code, name, email })
 	});
@@ -54,7 +69,7 @@ export function fetchTeamActivities(
 	token: string,
 	fetchFn: FetchFn = platformFetch
 ): Promise<{ activities: TeamActivity[] }> {
-	return requestJson(fetchFn, serverUrl, "/api/team/activities", { headers: { "x-team-token": token } });
+	return request(fetchFn, serverUrl, "/api/team/activities", { headers: { "x-team-token": token } });
 }
 
 /** Selbst austreten - der Token gilt danach nicht mehr. */
@@ -63,7 +78,7 @@ export function leaveTeamOnServer(
 	token: string,
 	fetchFn: FetchFn = platformFetch
 ): Promise<{ ok: boolean }> {
-	return requestJson(fetchFn, serverUrl, "/api/team/membership", {
+	return request(fetchFn, serverUrl, "/api/team/membership", {
 		method: "DELETE",
 		headers: { "x-team-token": token }
 	});
@@ -76,12 +91,12 @@ export function fetchOwnTeamReport(
 	month: string,
 	fetchFn: FetchFn = platformFetch
 ): Promise<{ submittedAt: number | null }> {
-	return requestJson(fetchFn, serverUrl, `/api/team/reports?month=${encodeURIComponent(month)}`, {
+	return request(fetchFn, serverUrl, `/api/team/reports?month=${encodeURIComponent(month)}`, {
 		headers: { "x-team-token": token }
 	});
 }
 
-/** Den eigenen Monatsbericht ablegen - der Chef bekommt genau das zu sehen. */
+/** Den eigenen Monatsbericht ablegen - der oder die Vorgesetzte bekommt genau das zu sehen. */
 export function uploadTeamReport(
 	serverUrl: string,
 	token: string,
@@ -89,7 +104,7 @@ export function uploadTeamReport(
 	report: unknown,
 	fetchFn: FetchFn = platformFetch
 ): Promise<{ ok: boolean }> {
-	return requestJson(fetchFn, serverUrl, "/api/team/reports", {
+	return request(fetchFn, serverUrl, "/api/team/reports", {
 		method: "POST",
 		headers: { "x-team-token": token },
 		body: JSON.stringify({ month, report })
