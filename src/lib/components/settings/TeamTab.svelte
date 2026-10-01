@@ -12,9 +12,16 @@
 	import * as Select from "$lib/components/ui/select";
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { Switch } from "$lib/components/ui/switch";
+	import { Checkbox } from "$lib/components/ui/checkbox";
 	import SettingsCard from "$lib/components/shared/SettingsCard.svelte";
 	import InviteLinkField from "$lib/components/team/InviteLinkField.svelte";
-	import { dismissTeamRemoved, leaveTeam as leaveJoinedTeam, syncOwnedTeamActivities, syncTeamActivities } from "$lib/team/activities";
+	import {
+		dismissTeamRemoved,
+		isJoinedTeamRow,
+		leaveTeam as leaveJoinedTeam,
+		syncOwnedTeamActivities,
+		syncTeamActivities
+	} from "$lib/team/activities";
 	import { teamJoin } from "$lib/team/state.svelte";
 	import { errorText } from "$lib/log";
 	import { tabFocus } from "$lib/ui/tabFocus.svelte";
@@ -54,10 +61,33 @@
 	}
 
 	let confirmLeave = $state(false);
+	/** Die Team-Aktivitäten, die nach dem Austritt als eigene weiterlaufen sollen. */
+	let keepIds = $state<ReadonlySet<string>>(new Set());
+	const joinedRows = $derived(app.activities.filter((a) => isJoinedTeamRow(a) && !a.archived));
+
+	async function askLeave() {
+		keepIds = new Set();
+		confirmLeave = true;
+		// Vorschlag: was man benutzt hat, läuft weiter. Scheitert das Nachsehen,
+		// bleibt die Auswahl leer - gefragt wird trotzdem.
+		try {
+			const used = await app.activityIdsInUse();
+			keepIds = new Set(joinedRows.filter((a) => used.has(a.id)).map((a) => a.id));
+		} catch {
+			// Die Auswahl bleibt, wie sie ist.
+		}
+	}
+
+	function toggleKeep(id: string, checked: boolean) {
+		const next = new Set(keepIds);
+		if (checked) next.add(id);
+		else next.delete(id);
+		keepIds = next;
+	}
 
 	async function leaveTeam() {
 		try {
-			await leaveJoinedTeam();
+			await leaveJoinedTeam(keepIds);
 			confirmLeave = false;
 			toast.success("Team verlassen. Deine erfassten Zeiten bleiben erhalten.");
 		} catch (e) {
@@ -240,7 +270,7 @@
 				<Button variant="outline" size="sm" disabled={refreshingTeam} onclick={refreshTeamActivities}>
 					<RefreshCwIcon class="size-4" /> Aktualisieren
 				</Button>
-				<Button variant="ghost" size="sm" onclick={() => (confirmLeave = true)}>
+				<Button variant="ghost" size="sm" onclick={askLeave}>
 					<LogOutIcon class="size-4" /> Team verlassen
 				</Button>
 			</div>
@@ -252,12 +282,31 @@
 	open={confirmLeave}
 	class="sm:max-w-md"
 	title={`Team „${teamJoin.device?.teamName}“ verlassen?`}
-	description="Deine erfassten Zeiten bleiben erhalten, die Team-Aktivitäten werden zu archivierten eigenen Aktivitäten. Deine Berichte gehen danach nicht mehr an das Team. Um wieder beizutreten, brauchst du erneut den Beitritts-Link."
+	description="Deine erfassten Zeiten bleiben erhalten. Deine Berichte gehen danach nicht mehr an das Team. Um wieder beizutreten, brauchst du erneut den Beitritts-Link."
 	confirmLabel="Team verlassen"
 	busyLabel="Wird verlassen…"
 	onConfirm={leaveTeam}
 	onClose={() => (confirmLeave = false)}
-/>
+>
+	{#if joinedRows.length > 0}
+		<div class="space-y-2">
+			<p class="text-sm font-medium">Welche Team-Aktivitäten möchtest du als eigene Aktivitäten weiterführen?</p>
+			<p class="text-muted-foreground text-xs">Die übrigen werden archiviert. Ihre Zeiten bleiben im Bericht.</p>
+			<div class="max-h-56 space-y-1.5 overflow-y-auto pr-1">
+				{#each joinedRows as a (a.id)}
+					<div class="flex items-center gap-3 rounded-md border px-3 py-2">
+						<Checkbox
+							id={`keep-${a.id}`}
+							checked={keepIds.has(a.id)}
+							onCheckedChange={(v) => toggleKeep(a.id, v === true)}
+						/>
+						<Label for={`keep-${a.id}`} class="min-w-0 flex-1 cursor-pointer truncate font-normal">{a.name}</Label>
+					</div>
+				{/each}
+			</div>
+		</div>
+	{/if}
+</ConfirmDialog>
 
 <SettingsCard title="Vorgesetzten-Modus" savedAt={savedBossAt} divided={false}>
 	{#snippet action()}

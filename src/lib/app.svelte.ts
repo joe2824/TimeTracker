@@ -735,6 +735,16 @@ class AppState {
 		return this.#mutateActivity(id, (a) => (a.archived = archived), { protectBuiltin: true });
 	}
 
+	/** Auf welchen Aktivitäten überhaupt Zeiten stehen - über alle Monate (lädt fehlende nach). */
+	async activityIdsInUse(): Promise<Set<string>> {
+		const used = new Set<string>();
+		for (const m of await listEntryMonths()) {
+			await this.ensureMonth(m);
+			for (const e of this.entriesByMonth[m] ?? []) used.add(e.activityId);
+		}
+		return used;
+	}
+
 	/** Zählt ALLE Einträge dieser Aktivität über alle Monate (lädt fehlende Monate nach). */
 	async countActivityEntries(id: string): Promise<number> {
 		let count = 0;
@@ -800,22 +810,31 @@ class AppState {
 	 * Die neue Id ist aus der alten abgeleitet, nicht gewürfelt: zwei Geräte
 	 * desselben Kontos lösen dieselbe Zeile unabhängig ab und müssen nach dem
 	 * Abgleich auf einer gemeinsamen landen.
+	 *
+	 * `keepActive`: welche der Zeilen als eigene Aktivität weiterlaufen sollen,
+	 * statt ins Archiv zu gehen - beim Austritt gefragt.
 	 */
-	async detachTeamActivities(which: (a: Activity) => boolean): Promise<void> {
+	async detachTeamActivities(
+		which: (a: Activity) => boolean,
+		keepActive: (a: Activity) => boolean = () => false
+	): Promise<void> {
 		const teamOwned = this.activities.filter((a) => a.teamOwned && which(a));
 		if (teamOwned.length === 0) return;
 		const idMap = new Map(teamOwned.map((a) => [a.id, detachedActivityId(a.id)]));
 		await this.#remapActivities(idMap);
 
 		const alreadyDetached = new Set(this.activities.filter((a) => !idMap.has(a.id)).map((a) => a.id));
+		const revived = new Set(teamOwned.filter(keepActive).map((a) => idMap.get(a.id)!));
 		this.activities = this.activities.flatMap((a) => {
+			// Die Kopie aus einem früheren Austritt, die jetzt weiterlaufen soll.
+			if (revived.has(a.id)) return [{ ...a, archived: false }];
 			const newId = idMap.get(a.id);
 			if (!newId) return [a];
 			// Schon einmal abgelöst (früherer Austritt, oder vom anderen Gerät über
 			// den Abgleich): die Einträge hängen jetzt an der bestehenden Zeile.
 			if (alreadyDetached.has(newId)) return [];
 			const { teamOwned: _teamOwned, teamName: _teamName, teamId: _teamId, ...rest } = a;
-			return [{ ...rest, id: newId, archived: true }];
+			return [{ ...rest, id: newId, archived: !keepActive(a) }];
 		});
 		await this.persistActivities();
 

@@ -606,6 +606,21 @@ describe("leaveTeam", () => {
 		expect(app.activities.find((a) => a.id === "team:o")?.teamOwned).toBe(true);
 	});
 
+	it("führt die gewählten Team-Aktivitäten als eigene weiter", async () => {
+		await saveTeamDevice({ teamMemberId: "m1", token: "tok", teamName: "Süd", serverUrl: "https://tt.example.de" });
+		app.activities = [
+			PERSONAL,
+			{ id: "team:j", name: "Weiter", sortOrder: 1, archived: false, isAbsence: false, teamOwned: true },
+			{ id: "team:k", name: "Ablage", sortOrder: 2, archived: false, isAbsence: false, teamOwned: true }
+		];
+
+		await leaveTeam(new Set(["team:j"]));
+
+		expect(app.activities.find((a) => a.name === "Weiter")).toMatchObject({ archived: false });
+		expect(app.activities.find((a) => a.name === "Ablage")).toMatchObject({ archived: true });
+		expect(app.activities.some((a) => a.teamOwned)).toBe(false);
+	});
+
 	it("ist auch offline lokal ausgetreten", async () => {
 		await saveTeamDevice({ teamMemberId: "m1", token: "tok", teamName: "Süd", serverUrl: "https://tt.example.de" });
 		leaveOnServer.mockRejectedValue(new Error("offline"));

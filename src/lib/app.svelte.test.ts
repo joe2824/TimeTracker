@@ -1365,6 +1365,36 @@ describe("detachTeamActivities", () => {
 		expect(onDisk("2026-07").map((e) => e.activityId)).toEqual([first.id, first.id]);
 	});
 
+	it("führt gewählte Zeilen als eigene Aktivität weiter, statt sie zu archivieren", async () => {
+		reset();
+		app.activities = [
+			...ACTIVITIES,
+			{ id: "team:x", name: "Weiter", sortOrder: 3, archived: false, isAbsence: false, teamOwned: true },
+			{ id: "team:y", name: "Ablage", sortOrder: 4, archived: false, isAbsence: false, teamOwned: true }
+		];
+
+		await app.detachTeamActivities(() => true, (a) => a.id === "team:x");
+
+		expect(app.activities.find((a) => a.name === "Weiter")).toMatchObject({ archived: false });
+		expect(app.activities.find((a) => a.name === "Weiter")?.teamOwned).toBeUndefined();
+		expect(app.activities.find((a) => a.name === "Ablage")).toMatchObject({ archived: true });
+	});
+
+	it("holt eine früher archivierte Kopie zurück, wenn die Zeile jetzt weitergeführt werden soll", async () => {
+		reset();
+		app.activities = [
+			...ACTIVITIES,
+			{ id: "detached:x", name: "Weiter", sortOrder: 3, archived: true, isAbsence: false },
+			{ id: "team:x", name: "Weiter", sortOrder: 4, archived: false, isAbsence: false, teamOwned: true }
+		];
+
+		await app.detachTeamActivities(() => true, () => true);
+
+		expect(app.activities.filter((a) => a.name === "Weiter")).toEqual([
+			expect.objectContaining({ id: "detached:x", archived: false })
+		]);
+	});
+
 	it("traegt Kalender-Stichwortregeln auf die neue Id nach", async () => {
 		reset();
 		app.activities = [
@@ -1393,6 +1423,19 @@ describe("detachTeamActivities", () => {
 
 		expect(app.activities.find((a) => a.name === "Beigetreten")?.teamOwned).toBeUndefined();
 		expect(app.activities.find((a) => a.id === "team:y")?.teamOwned).toBe(true);
+	});
+});
+
+describe("activityIdsInUse", () => {
+	it("nennt die Aktivitäten, auf denen in irgendeinem Monat Zeiten stehen", async () => {
+		reset({
+			"2026-06": [entry("e0", P2, wallToTs(2026, 6, 3, 9, 0, 0), wallToTs(2026, 6, 3, 10, 0, 0))],
+			"2026-07": [entry("e1", P1, at(16, 9), at(16, 12))]
+		});
+		// Wie nach dem Start: nur der laufende Monat ist geladen.
+		app.entriesByMonth = {};
+
+		expect(await app.activityIdsInUse()).toEqual(new Set([P1, P2]));
 	});
 });
 

@@ -204,11 +204,14 @@ export async function syncTeamActivities(): Promise<TeamSyncResult> {
  * Team verlassen: erst die Zeilen ablösen, dann die Mitgliedschaft vergessen.
  * Andersherum bliebe bei einem Fehler im Ablösen eine Team-Zeile ohne Team
  * stehen, die kein späterer Abgleich mehr aufräumt.
+ *
+ * `keep`: die Team-Zeilen, die als eigene Aktivitäten weiterlaufen sollen. Die
+ * übrigen gehen ins Archiv - ihre Zeiten bleiben in beiden Fällen.
  */
-export async function leaveTeam(): Promise<void> {
+export async function leaveTeam(keep: ReadonlySet<string> = new Set()): Promise<void> {
 	const device = await withActivitiesLock(async () => {
 		const current = await loadTeamDevice();
-		await app.detachTeamActivities(isJoinedTeamRow);
+		await app.detachTeamActivities(isJoinedTeamRow, (a) => keep.has(a.id));
 		await clearTeamDevice();
 		teamJoin.device = null;
 		return current;
