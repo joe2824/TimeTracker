@@ -64,10 +64,10 @@
 					Mit diesem Server ist dein Gerät bisher nicht verbunden. Erst wenn du die Einladung öffnest,
 					wird dort nachgesehen, zu welchem Team sie gehört. Öffne sie nur, wenn du sie erwartet hast.
 				{:else if flow.preview === "error"}
-					Dieser Link ist abgelaufen oder wurde zurückgezogen – frag deinen Chef nach einem neuen.
+					Dieser Link ist abgelaufen oder wurde zurückgezogen – frag deine Vorgesetzte oder deinen Vorgesetzten nach einem neuen.
 				{:else}
 					Die gemeinsamen Aktivitäten dieses Teams werden auf diesem Gerät verfügbar. Wenn du deinen
-					Monatsbericht sendest, bekommen Chef und Verwalter des Teams eine Kopie mit deinen Stunden je
+					Monatsbericht sendest, bekommen Vorgesetzte und Verwalter des Teams eine Kopie mit deinen Stunden je
 					Aktivität – auch der Aktivitäten, die nur du angelegt hast.
 				{/if}
 			</Dialog.Description>

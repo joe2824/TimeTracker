@@ -170,7 +170,7 @@
 		try {
 			const userId = transferTarget.userId;
 			await chefTeams.transferOwnership(userId);
-			toast.success(`„${transferTargetName}“ ist jetzt Chef dieses Teams.`);
+			toast.success(`„${transferTargetName}“ leitet jetzt dieses Team.`);
 			confirmingTransfer = false;
 			transferPickId = undefined;
 		} catch (e) {
@@ -229,7 +229,7 @@
 {#if teamJoin.device}
 	<SettingsCard
 		title="Team-Mitgliedschaft"
-		description="Die gemeinsamen Aktivitäten kommen von dort. Wenn du deinen Monatsbericht sendest, sehen Chef und Verwalter des Teams deine Stunden je Aktivität."
+		description="Die gemeinsamen Aktivitäten kommen von dort. Wenn du deinen Monatsbericht sendest, sehen Vorgesetzte und Verwalter des Teams deine Stunden je Aktivität."
 	>
 		<div class="flex flex-wrap items-center justify-between gap-3">
 			<div class="flex items-center gap-2">
@@ -259,7 +259,7 @@
 	onClose={() => (confirmLeave = false)}
 />
 
-<SettingsCard title="Chef-Modus" savedAt={savedBossAt} divided={false}>
+<SettingsCard title="Vorgesetzten-Modus" savedAt={savedBossAt} divided={false}>
 	{#snippet action()}
 		<Label for="bossmode" class="text-muted-foreground text-sm font-normal">Team-Tab anzeigen</Label>
 		<Switch
@@ -356,7 +356,7 @@
 				<span class="text-sm font-medium">{chefTeams.selectedTeam?.name}</span>
 			{/if}
 			{#if chefTeams.selectedTeam && !chefTeams.isOwner}
-				<span class="text-muted-foreground text-xs">(du bist Verwalter, nicht Chef)</span>
+				<span class="text-muted-foreground text-xs">(du bist Verwalter, leitest das Team aber nicht)</span>
 				<Button
 					variant="ghost"
 					size="sm"
@@ -430,7 +430,7 @@
 	</SettingsCard>
 
 	{#if chefTeams.selectedTeam}
-		<SettingsCard title="Verwalter" description="Ein weiteres Konto mit denselben Rechten wie der Chef – außer Team löschen, Verwalter einladen oder entfernen und die Chef-Rolle übergeben." divided={false}>
+		<SettingsCard title="Verwalter" description="Ein weiteres Konto mit denselben Rechten wie der oder die Vorgesetzte – außer Team löschen, Verwalter einladen oder entfernen und die Leitung übergeben." divided={false}>
 			{#if chefTeams.adminsLoading}
 				<p class="text-muted-foreground text-sm">Wird geladen…</p>
 			{:else if chefTeams.admins.length === 0}
@@ -499,7 +499,7 @@
 	{/if}
 
 	{#if chefTeams.selectedTeam && chefTeams.isOwner && chefTeams.admins.length > 0}
-		<SettingsCard title="Chef-Rolle übergeben" description="Ein Verwalter wird zum Chef, du selbst zum Verwalter – dein Zugang bleibt erhalten." divided={false}>
+		<SettingsCard title="Leitung übergeben" description="Ein Verwalter übernimmt die Leitung, du selbst wirst Verwalter – dein Zugang bleibt erhalten." divided={false}>
 			<div class="flex flex-wrap items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3.5">
 				<div class="flex size-9 shrink-0 items-center justify-center rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400">
 					<ArrowLeftRightIcon class="size-4" />
@@ -526,7 +526,7 @@
 	<ConfirmDialog
 		open={confirmingTransfer}
 		class="sm:max-w-md"
-		title={`Chef-Rolle an „${transferTargetName}“ übergeben?`}
+		title={`Leitung an „${transferTargetName}“ übergeben?`}
 		description={`„${transferTargetName}“ kann das Team danach löschen, Verwalter einladen oder entfernen und erneut übergeben - alles, was bisher nur du konntest. Du selbst bleibst als Verwalter mit dabei.`}
 		confirmLabel="Übergeben"
 		busyLabel="Wird übergeben…"
@@ -538,7 +538,7 @@
 		open={!!leaveAdminTeamName}
 		class="sm:max-w-md"
 		title={`Verwaltung von „${leaveAdminTeamName}“ abgeben?`}
-		description="Du siehst danach weder Mitglieder noch Berichte dieses Teams. Um wieder Verwalter zu werden, brauchst du einen neuen Einladungs-Link vom Chef."
+		description="Du siehst danach weder Mitglieder noch Berichte dieses Teams. Um wieder Verwalter zu werden, brauchst du einen neuen Einladungs-Link von der oder dem Vorgesetzten."
 		confirmLabel="Verwaltung abgeben"
 		busyLabel="Wird abgegeben…"
 		onConfirm={confirmLeaveAdmin}

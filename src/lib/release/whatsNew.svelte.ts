@@ -29,7 +29,7 @@ export const CURRENT_RELEASE: ReleaseInfo = {
 	version: "1.1.0",
 	title: "Teams",
 	summary:
-		"Als Chef legst du jetzt Teams an und siehst direkt in TimeTracker, wer seinen Monatsbericht schon abgegeben hat.",
+		"Als Vorgesetzte oder Vorgesetzter legst du jetzt Teams an und siehst direkt in TimeTracker, wer seinen Monatsbericht schon abgegeben hat.",
 	highlights: [
 		{
 			icon: "users",
@@ -53,7 +53,7 @@ export const CURRENT_RELEASE: ReleaseInfo = {
 			icon: "shield",
 			title: "Verwalter und Vertretung",
 			description:
-				"Lade Verwalter ein, die das Team mit dir betreuen, oder übergib die Chef-Rolle, wenn jemand anderes das Team übernimmt."
+				"Lade Verwalter ein, die das Team mit dir betreuen, oder übergib die Leitung, wenn jemand anderes das Team übernimmt."
 		}
 	]
 };

@@ -47,7 +47,7 @@
 		<div class="space-y-2 text-center">
 			<h1 class="text-xl font-semibold">Link nicht gültig</h1>
 			<p class="text-muted-foreground text-sm">
-				Dieser Link ist abgelaufen oder wurde zurückgezogen – frag deinen Chef nach einem neuen.
+				Dieser Link ist abgelaufen oder wurde zurückgezogen – frag deine Vorgesetzte oder deinen Vorgesetzten nach einem neuen.
 			</p>
 		</div>
 	{:else}
@@ -56,7 +56,7 @@
 				<h1 class="text-xl font-semibold">Mit „{flow.preview.teamName}“ verbinden?</h1>
 				<p class="text-muted-foreground text-sm">
 					Die gemeinsamen Aktivitäten dieses Teams werden auf diesem Gerät verfügbar. Wenn du deinen
-					Monatsbericht sendest, bekommen Chef und Verwalter des Teams eine Kopie mit deinen Stunden je
+					Monatsbericht sendest, bekommen Vorgesetzte und Verwalter des Teams eine Kopie mit deinen Stunden je
 					Aktivität – auch der Aktivitäten, die nur du angelegt hast.
 				</p>
 			</div>

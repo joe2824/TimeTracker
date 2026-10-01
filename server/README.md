@@ -74,7 +74,7 @@ unbrauchbar. Caddy und Traefik machen das von selbst richtig.
 | `REGISTRATION_OPEN` | `true` öffnet den Dienst für jeden, der die Adresse kennt. Voreinstellung `false`. |
 | `ALLOWED_ORIGINS` | Weitere Adressen, unter denen der Dienst erreichbar ist. Komma-getrennt. Siehe unten. |
 | `DATA_DIR` | Wohin die Datenbank kommt. Im Container `/data`. |
-| `INACTIVE_ACCOUNT_DAYS` | Konten, die so viele Tage weder ein Gerät noch einen Passkey noch eine Sitzung benutzt haben, werden gelöscht. Voreinstellung `365`, `0` schaltet es ab. Server-Admins sind ausgenommen, ein Chef mit aktivem Team gilt als aktiv, und eigene Teams gehen beim Löschen an den dienstältesten Verwalter. |
+| `INACTIVE_ACCOUNT_DAYS` | Konten, die so viele Tage weder ein Gerät noch einen Passkey noch eine Sitzung benutzt haben, werden gelöscht. Voreinstellung `365`, `0` schaltet es ab. Server-Admins sind ausgenommen, wer ein aktives Team leitet, gilt als aktiv, und eigene Teams gehen beim Löschen an den dienstältesten Verwalter. |
 
 **Eine leere `INVITE_CODES`-Zeile öffnet den Dienst NICHT.** Das war einmal so
 und war ein Konstruktionsfehler: ausgerechnet der sorgfältigere Schritt — die
@@ -341,7 +341,7 @@ Kontos.
 **Ausnahme Team-Modus — lesbar im Klartext:** Teamnamen, Namen und freiwillige
 E-Mail-Adressen der Mitglieder, die gemeinsame Aktivitätenliste und die an das
 Team gesendeten Monatsberichte (je Aktivität mit Stunden, nur Zeilen mit
-Stunden, dazu die Summen). Der Chef und seine Verwalter sollen sie ohne den
+Stunden, dazu die Summen). Vorgesetzte und Verwalter sollen sie ohne den
 Schlüssel des Mitglieds lesen können — deshalb liegen sie nicht im
 verschlüsselten Bereich. Die App sagt das beim Beitritt so.
 

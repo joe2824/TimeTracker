@@ -627,7 +627,7 @@
 							title={isBuiltinActivity(a)
 								? "Eingebaute Zeile – nicht umbenennbar"
 								: a.teamOwned && !isChefTeamRow(a.id)
-									? "Vom Team vorgegeben – nur der Chef kann sie ändern"
+									? "Vom Team vorgegeben – nur der oder die Vorgesetzte kann sie ändern"
 									: "Umbenennen"}
 							onchange={(e: Event) => {
 								const value = (e.target as HTMLInputElement).value;
@@ -636,7 +636,7 @@
 							}}
 						/>
 						{#if a.teamOwned}
-							<Badge variant="outline" class="shrink-0 gap-1" title="Vom Chef vorgegeben, für alle im Team gleich">
+							<Badge variant="outline" class="shrink-0 gap-1" title="Von der oder dem Vorgesetzten vorgegeben, für alle im Team gleich">
 								<UsersIcon class="size-3" /> {a.teamName ?? "Team"}
 							</Badge>
 						{/if}

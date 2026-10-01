@@ -368,7 +368,7 @@ export function removeTeamAdmin(db: Db, teamId: string, userId: string): boolean
 export function leaveTeamAsAdmin(db: Db, teamId: string, userId: string): boolean {
 	const team = db.select({ ownerUserId: teams.ownerUserId }).from(teams).where(eq(teams.id, teamId)).get();
 	if (team?.ownerUserId === userId) {
-		error(409, "Als Chef können Sie das Team nicht verlassen. Übergeben Sie es zuerst oder löschen Sie es.");
+		error(409, "Wer ein Team leitet, kann es nicht verlassen. Übergeben Sie es zuerst oder löschen Sie es.");
 	}
 	return removeTeamAdmin(db, teamId, userId);
 }
@@ -379,7 +379,7 @@ export function leaveTeamAsAdmin(db: Db, teamId: string, userId: string): boolea
  * Verwalter, verliert also nicht schlagartig den Zugang.
  */
 export function transferTeamOwnership(db: Db, team: TeamRow, newOwnerUserId: string): void {
-	if (!isTeamAdmin(db, team.id, newOwnerUserId)) error(400, "Nur ein bestehender Verwalter kann Chef werden");
+	if (!isTeamAdmin(db, team.id, newOwnerUserId)) error(400, "Nur ein bestehender Verwalter kann die Leitung übernehmen");
 	db.transaction((tx) =>
 		handOverTeam(tx, team.id, newOwnerUserId, { formerOwnerStaysAdmin: team.ownerUserId })
 	);

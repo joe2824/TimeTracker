@@ -58,7 +58,7 @@
 			const summary = await account.unlink({ deleteRemote: true });
 			isDeleteAccountModalOpen = false;
 			const handedOver = summary?.teamsTransferred
-				? ` ${summary.teamsTransferred === 1 ? "Ein Team hat" : `${summary.teamsTransferred} Teams haben`} jetzt einen Verwalter als Chef.`
+				? ` ${summary.teamsTransferred === 1 ? "Ein Team wird" : `${summary.teamsTransferred} Teams werden`} jetzt von einem bisherigen Verwalter geleitet.`
 				: "";
 			toast.success(
 				summary
@@ -216,14 +216,14 @@
 				</span>
 				{#if ownedTeamCount > 0}
 					<span class="text-foreground block">
-						Du bist Chef von {ownedTeamCount === 1 ? "einem Team" : `${ownedTeamCount} Teams`}. Ein Team mit
+						Du leitest {ownedTeamCount === 1 ? "ein Team" : `${ownedTeamCount} Teams`}. Ein Team mit
 						Verwalter geht an den Verwalter über, der am längsten dabei ist. Ein Team ohne Verwalter wird
 						samt Mitgliedern und Berichten gelöscht. Soll ein Team weiterlaufen, lade vorher einen
 						Verwalter ein.
 					</span>
 				{:else if teamsUnknown}
 					<span class="text-foreground block">
-						Ob du Chef eines Teams bist, ließ sich gerade nicht prüfen. Eigene Teams gehen an einen
+						Ob du ein Team leitest, ließ sich gerade nicht prüfen. Eigene Teams gehen an einen
 						Verwalter über; ein Team ohne Verwalter wird mit gelöscht.
 					</span>
 				{/if}

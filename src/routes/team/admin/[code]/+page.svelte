@@ -36,7 +36,7 @@
 		<div class="space-y-2 text-center">
 			<h1 class="text-xl font-semibold">Link nicht gültig</h1>
 			<p class="text-muted-foreground text-sm">
-				Dieser Link ist abgelaufen oder wurde zurückgezogen – frag den Chef nach einem neuen.
+				Dieser Link ist abgelaufen oder wurde zurückgezogen – frag die Vorgesetzte oder den Vorgesetzten nach einem neuen.
 			</p>
 		</div>
 	{:else if flow.startFailed}
@@ -65,7 +65,7 @@
 				<p class="text-muted-foreground text-sm">
 					Du bist angemeldet als <span class="text-foreground font-medium">{account.name}</span>.
 					Als Verwalter kannst du Aktivitäten pflegen, Mitglieder sehen und Berichte prüfen – so wie
-					der Chef, nur das Team nicht löschen oder weitere Verwalter einladen.
+					der oder die Vorgesetzte, nur das Team nicht löschen oder weitere Verwalter einladen.
 				</p>
 			</div>
 

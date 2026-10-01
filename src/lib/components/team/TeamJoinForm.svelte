@@ -24,7 +24,7 @@
 {#if serverHost}
 	<p class="bg-muted rounded-md px-3 py-2 text-sm">
 		Adresse: <span class="font-medium">{serverHost}</span> – stimmt sie nicht mit der überein, die
-		dein Chef genannt hat, lieber abbrechen.
+		dir dein Vorgesetzter oder deine Vorgesetzte genannt hat, lieber abbrechen.
 	</p>
 {/if}
 <div class="space-y-2">
@@ -51,7 +51,7 @@
 		<p class="text-destructive text-xs">Das ist keine gültige E-Mail-Adresse.</p>
 	{:else}
 		<p class="text-muted-foreground text-xs">
-			Nur damit der Chef dich erinnern kann, falls ein Bericht fehlt.
+			Nur damit dich der oder die Vorgesetzte erinnern kann, falls ein Bericht fehlt.
 		</p>
 	{/if}
 </div>

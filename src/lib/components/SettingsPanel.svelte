@@ -84,7 +84,7 @@
 				id: "team",
 				title: "Team",
 				icon: UsersIcon,
-				description: "Chef-Modus, Team anlegen und der Beitritts-Link."
+				description: "Vorgesetzten-Modus, Team anlegen und der Beitritts-Link."
 			},
 			{
 				id: "konto",

@@ -3,7 +3,8 @@
 Zeiterfassung für Projektzeiten mit Monatsbericht per E-Mail an die Vorgesetzten. Läuft als
 Desktop-Anwendung im Tray oder im Browser. Die Zeiten gleichen sich über alle Geräte ab; was
 dabei auf dem Server liegt, ist Ende-zu-Ende verschlüsselt. Ausnahme ist der optionale
-Team-Modus: an das Team gesendete Berichte liegen lesbar beim Server, damit der Chef sie sieht.
+Team-Modus: an das Team gesendete Berichte liegen lesbar beim Server, damit
+der oder die Vorgesetzte sie sieht.
 
 | | |
 |---|---|
@@ -52,8 +53,8 @@ Ohne Installation geht es im Browser gegen einen eigenen Server, siehe [Server](
   und um wie viel man je Arbeitstag herunter müsste. Lokal, abschaltbar.
 - **Zeitwächter-Abgleich** — Zeitwirtschaftsreport (.xlsx) aus LOGA/Scout einlesen, fehlende
   Tage finden, Nachträge in einem Rutsch zuordnen.
-- **Team-Modus** (optional) — Der Chef legt Teams an und lädt per Link ein; Mitglieder brauchen
-  kein Konto. Eine gemeinsame Aktivitätenliste gilt für alle. Wer seinen Monatsbericht sendet,
+- **Team-Modus** (optional) — Der oder die Vorgesetzte legt Teams an und lädt per Link ein;
+  Mitglieder brauchen kein Konto. Eine gemeinsame Aktivitätenliste gilt für alle. Wer seinen Monatsbericht sendet,
   erscheint im Tab „Team“ samt Stunden je Aktivität; diese Kopie liegt unverschlüsselt beim
   Server. CSV-Export, Sammel-Erinnerung an Fehlende, Verwalter als Vertretung.
 - **Sync** — Ende-zu-Ende verschlüsselt über einen eigenen Server. Passkey zum Anmelden,
@@ -62,7 +63,7 @@ Ohne Installation geht es im Browser gegen einen eigenen Server, siehe [Server](
 Ausführlich im Wiki: [Pausenabzug](https://github.com/joe2824/TimeTracker/wiki/Pausen-und-Regeln) ·
 [Arbeitszeit-Check](https://github.com/joe2824/TimeTracker/wiki/Arbeitszeit-Check) ·
 [Zeitwächter-Abgleich](https://github.com/joe2824/TimeTracker/wiki/Zeitwaechter-Abgleich) ·
-[Chef-Modus](https://github.com/joe2824/TimeTracker/wiki/Chef-Modus) ·
+[Vorgesetzten-Modus](https://github.com/joe2824/TimeTracker/wiki/Chef-Modus) ·
 [Datenablage](https://github.com/joe2824/TimeTracker/wiki/Datenablage)
 
 ## Server

@@ -241,10 +241,10 @@
 				teamReminderSubject(label),
 				teamReminderHtml(label)
 			);
-			logInfo(`Chef-Modus: Erinnerung für ${month} erstellt`, { count: reachableMissing.length });
+			logInfo(`Vorgesetzten-Modus: Erinnerung für ${month} erstellt`, { count: reachableMissing.length });
 			toast.success("Outlook-Entwurf geöffnet. Bitte prüfen und senden.");
 		} catch (e) {
-			toast.error(await reportOutlookError("Chef-Modus: Erinnerung fehlgeschlagen", e));
+			toast.error(await reportOutlookError("Vorgesetzten-Modus: Erinnerung fehlgeschlagen", e));
 		} finally {
 			drafting = false;
 		}
@@ -260,7 +260,7 @@
 			await invoke("write_export_file", { path, kind: "csv", contents: teamReportsToCsv(reports) });
 			toast.success("CSV gespeichert.");
 		} catch (e) {
-			logError("Chef-Modus: CSV-Export fehlgeschlagen", e);
+			logError("Vorgesetzten-Modus: CSV-Export fehlgeschlagen", e);
 			toast.error(`Export fehlgeschlagen: ${errorText(e)}`);
 		}
 	}
