@@ -35,6 +35,23 @@ function toLocal(remote: Omit<TeamActivity, "updatedAt">, team: { id?: string; n
 }
 
 /**
+ * Favorit, Ausblenden und Shortcut gelten nur auf diesem Gerät - der Server
+ * kennt sie nicht, eine frisch geholte Zeile brächte sie also nie mit.
+ */
+function withDeviceFlags(fresh: Activity[]): Activity[] {
+	const current = new Map(app.activities.map((a) => [a.id, a]));
+	return fresh.map((a) => {
+		const { favorite, hidden, shortcut } = current.get(a.id) ?? {};
+		return {
+			...a,
+			...(favorite !== undefined && { favorite }),
+			...(hidden !== undefined && { hidden }),
+			...(shortcut !== undefined && { shortcut })
+		};
+	});
+}
+
+/**
  * Serialisiert jeden schreibenden Zugriff auf app.activities, der von hier
  * oder von einer Team-Zusammenführung (ActivitiesPanel) ausgeht. Ohne das
  * überschreibt eine spät auflösende Anfrage mit ihrem eigenen, inzwischen
@@ -143,7 +160,9 @@ export async function syncTeamActivities(): Promise<TeamSyncResult> {
 		const ownIds = new Set(app.activities.filter(isOwnTeamRow).map((a) => a.id));
 		app.activities = withoutDuplicateIds([
 			...app.activities.filter((a) => !isJoinedTeamRow(a)),
-			...remote.map((r) => toLocal(r, { name: device.teamName })).filter((a) => !ownIds.has(a.id))
+			...withDeviceFlags(remote.map((r) => toLocal(r, { name: device.teamName }))).filter(
+				(a) => !ownIds.has(a.id)
+			)
 		]);
 		await app.persistActivities();
 
@@ -252,7 +271,7 @@ export async function syncOwnedTeamActivities(): Promise<void> {
 
 		// Eigene zuerst: kollidiert eine beigetretene Zeile (Chef im eigenen Team)
 		// mit derselben Id, gewinnt die eigene samt teamId.
-		const fresh = loaded.flatMap(({ team, remote }) => remote.map((r) => toLocal(r, team)));
+		const fresh = withDeviceFlags(loaded.flatMap(({ team, remote }) => remote.map((r) => toLocal(r, team))));
 		const freshIds = new Set(fresh.map((a) => a.id));
 		app.activities = withoutDuplicateIds([
 			...fresh,

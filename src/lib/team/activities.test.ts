@@ -126,6 +126,28 @@ describe("syncTeamActivities", () => {
 		expect(detached?.teamOwned).toBeUndefined();
 	});
 
+	it("behält Favorit, Ausblenden und Shortcut einer Team-Zeile über den Abgleich", async () => {
+		// Die drei gelten nur auf diesem Gerät - der Server kennt sie nicht.
+		await saveTeamDevice({ teamMemberId: "m1", token: "tok", teamName: "Vertrieb", serverUrl: "https://tt.example.de" });
+		const a1 = { id: "a1", name: "Projekt A", isAbsence: false, sortOrder: 0, color: null, archived: false, updatedAt: 1 };
+		remote.mockResolvedValue({ activities: [a1] });
+		await syncTeamActivities();
+		const id = `${TEAM_ACTIVITY_PREFIX}a1`;
+		await app.toggleFavorite(id);
+		await app.toggleHidden(id);
+		await app.setShortcut(id, "Control+Alt+1");
+
+		remote.mockResolvedValue({ activities: [{ ...a1, name: "Projekt A (neu)", updatedAt: 2 }] });
+		await syncTeamActivities();
+
+		expect(app.activities.find((a) => a.id === id)).toMatchObject({
+			name: "Projekt A (neu)",
+			favorite: true,
+			hidden: true,
+			shortcut: "Control+Alt+1"
+		});
+	});
+
 	it("bricht still ab, wenn der Server nicht erreichbar ist - persönliche Liste bleibt", async () => {
 		await saveTeamDevice({
 			teamMemberId: "m1",
@@ -293,6 +315,28 @@ describe("syncOwnedTeamActivities", () => {
 			teamOwned: true,
 			teamId: "t1",
 			teamName: "Vertrieb"
+		});
+	});
+
+	it("behält Favorit, Ausblenden und Shortcut einer eigenen Team-Zeile über den Abgleich", async () => {
+		accountMock.linked = true;
+		accountMock.listTeams.mockResolvedValue([{ id: "t1", name: "Vertrieb", ownerUserId: "u1", createdAt: 1 }]);
+		const a1 = { id: "a1", name: "Projekt A", isAbsence: false, sortOrder: 0, color: null, archived: false, updatedAt: 1 };
+		accountMock.listTeamActivities.mockResolvedValue([a1]);
+		await syncOwnedTeamActivities();
+		const id = `${TEAM_ACTIVITY_PREFIX}a1`;
+		await app.toggleFavorite(id);
+		await app.toggleHidden(id);
+		await app.setShortcut(id, "Control+Alt+1");
+
+		accountMock.listTeamActivities.mockResolvedValue([{ ...a1, name: "Projekt A (neu)", updatedAt: 2 }]);
+		await syncOwnedTeamActivities();
+
+		expect(app.activities.find((a) => a.id === id)).toMatchObject({
+			name: "Projekt A (neu)",
+			favorite: true,
+			hidden: true,
+			shortcut: "Control+Alt+1"
 		});
 	});
 
