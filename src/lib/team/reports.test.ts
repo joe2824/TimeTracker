@@ -49,8 +49,72 @@ beforeEach(() => {
 });
 
 const MEMBER = { teamMemberId: "m1", token: "tok", teamName: "Vertrieb", serverUrl: "https://tt.example.de" };
+/** Wann der vorgemerkte Bericht entstand. */
+const QUEUED_AT = 1_790_000_000_000;
 
 describe("Team-Upload nachholen", () => {
+	beforeEach(() => {
+		fetchOwnTeamReport.mockResolvedValue({ submittedAt: null });
+	});
+
+	it("verwirft Vorgemerktes, wenn beim Team schon ein jüngerer Bericht liegt", async () => {
+		// Der Monat wurde inzwischen von einem anderen Gerät korrigiert und neu
+		// gesendet - der alte Stand von hier überschriebe ihn sonst.
+		loadTeamDevice.mockResolvedValue(MEMBER);
+		pending = [{ month: "2026-08", teamMemberId: "m1", report: teamReportPayload(REPORT), at: QUEUED_AT }];
+		fetchOwnTeamReport.mockResolvedValue({ submittedAt: QUEUED_AT + 60_000 });
+
+		await retryTeamReportUploads();
+
+		expect(uploadTeamReport).not.toHaveBeenCalled();
+		expect(pending).toEqual([]);
+	});
+
+	it("reicht nach, wenn beim Team nur ein älterer Bericht liegt", async () => {
+		loadTeamDevice.mockResolvedValue(MEMBER);
+		pending = [{ month: "2026-08", teamMemberId: "m1", report: teamReportPayload(REPORT), at: QUEUED_AT }];
+		fetchOwnTeamReport.mockResolvedValue({ submittedAt: QUEUED_AT - 60_000 });
+		uploadTeamReport.mockResolvedValue({ ok: true });
+
+		await retryTeamReportUploads();
+
+		expect(uploadTeamReport).toHaveBeenCalledTimes(1);
+		expect(pending).toEqual([]);
+	});
+
+	it("wartet mit dem Nachreichen, solange sich der Stand beim Team nicht erfragen lässt", async () => {
+		loadTeamDevice.mockResolvedValue(MEMBER);
+		pending = [{ month: "2026-08", teamMemberId: "m1", report: teamReportPayload(REPORT), at: QUEUED_AT }];
+		fetchOwnTeamReport.mockRejectedValue(new ApiError("Server nicht erreichbar", 0));
+
+		await retryTeamReportUploads();
+
+		expect(uploadTeamReport).not.toHaveBeenCalled();
+		expect(pending).toHaveLength(1);
+	});
+
+	it("reicht nach, wenn der Server die Frage nach dem Stand nicht kennt", async () => {
+		// Ein älterer Server ohne diese Abfrage: dann wie zuvor ohne Prüfung.
+		loadTeamDevice.mockResolvedValue(MEMBER);
+		pending = [{ month: "2026-08", teamMemberId: "m1", report: teamReportPayload(REPORT), at: QUEUED_AT }];
+		fetchOwnTeamReport.mockRejectedValue(new ApiError("Method Not Allowed", 405));
+		uploadTeamReport.mockResolvedValue({ ok: true });
+
+		await retryTeamReportUploads();
+
+		expect(uploadTeamReport).toHaveBeenCalledTimes(1);
+	});
+
+	it("merkt vor, wenn die Absage nicht vom Server selbst stammt", async () => {
+		// Ein Proxy davor antwortet etwa mit 403 - der Bericht ist damit nicht abgelehnt.
+		loadTeamDevice.mockResolvedValue(MEMBER);
+		uploadTeamReport.mockRejectedValue(new ApiError("Forbidden", 403));
+
+		await uploadReportIfTeamMember("2026-08", REPORT);
+
+		expect(pending).toHaveLength(1);
+	});
+
 	it("merkt einen gescheiterten Upload vor", async () => {
 		// Der Monat gilt danach als gesendet - ohne Vormerken fragte nichts mehr
 		// nach, und beim Team stünde dauerhaft "kein Bericht".
@@ -59,7 +123,9 @@ describe("Team-Upload nachholen", () => {
 
 		await uploadReportIfTeamMember("2026-08", REPORT);
 
-		expect(pending).toEqual([{ month: "2026-08", teamMemberId: "m1", report: teamReportPayload(REPORT) }]);
+		expect(pending).toEqual([
+			{ month: "2026-08", teamMemberId: "m1", report: teamReportPayload(REPORT), at: expect.any(Number) }
+		]);
 	});
 
 	it("merkt nichts vor, wenn der Server den Bericht ablehnt", async () => {
@@ -74,7 +140,7 @@ describe("Team-Upload nachholen", () => {
 
 	it("holt einen vorgemerkten Upload nach und streicht ihn", async () => {
 		loadTeamDevice.mockResolvedValue(MEMBER);
-		pending = [{ month: "2026-08", teamMemberId: "m1", report: teamReportPayload(REPORT) }];
+		pending = [{ month: "2026-08", teamMemberId: "m1", report: teamReportPayload(REPORT), at: QUEUED_AT }];
 		uploadTeamReport.mockResolvedValue({ ok: true });
 
 		await retryTeamReportUploads();
@@ -85,7 +151,7 @@ describe("Team-Upload nachholen", () => {
 
 	it("lässt vorgemerkt, was erneut scheitert", async () => {
 		loadTeamDevice.mockResolvedValue(MEMBER);
-		pending = [{ month: "2026-08", teamMemberId: "m1", report: teamReportPayload(REPORT) }];
+		pending = [{ month: "2026-08", teamMemberId: "m1", report: teamReportPayload(REPORT), at: QUEUED_AT }];
 		uploadTeamReport.mockRejectedValue(new ApiError("Server nicht erreichbar", 0));
 
 		await retryTeamReportUploads();
@@ -96,7 +162,7 @@ describe("Team-Upload nachholen", () => {
 	it("verwirft Vorgemerktes einer anderen Mitgliedschaft, ohne es hochzuladen", async () => {
 		// Nach Austritt und neuem Beitritt landete der alte Bericht sonst beim falschen Team.
 		loadTeamDevice.mockResolvedValue(MEMBER);
-		pending = [{ month: "2026-08", teamMemberId: "frueher", report: teamReportPayload(REPORT) }];
+		pending = [{ month: "2026-08", teamMemberId: "frueher", report: teamReportPayload(REPORT), at: QUEUED_AT }];
 
 		await retryTeamReportUploads();
 
@@ -107,7 +173,7 @@ describe("Team-Upload nachholen", () => {
 	it("behält Vorgemerktes, solange die Mitgliedschaft nur nicht lesbar ist", async () => {
 		loadTeamDevice.mockResolvedValue(null);
 		teamFilePresent = true;
-		pending = [{ month: "2026-08", teamMemberId: "m1", report: teamReportPayload(REPORT) }];
+		pending = [{ month: "2026-08", teamMemberId: "m1", report: teamReportPayload(REPORT), at: QUEUED_AT }];
 
 		await retryTeamReportUploads();
 
@@ -116,7 +182,7 @@ describe("Team-Upload nachholen", () => {
 
 	it("ein geglückter Upload streicht den älteren Vormerk desselben Monats", async () => {
 		loadTeamDevice.mockResolvedValue(MEMBER);
-		pending = [{ month: "2026-08", teamMemberId: "m1", report: { rows: [], total: 0, workHours: 0, absenceHours: 0 } }];
+		pending = [{ month: "2026-08", teamMemberId: "m1", report: { rows: [], total: 0, workHours: 0, absenceHours: 0 }, at: QUEUED_AT }];
 		uploadTeamReport.mockResolvedValue({ ok: true });
 
 		await uploadReportIfTeamMember("2026-08", REPORT);

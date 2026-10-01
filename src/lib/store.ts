@@ -1110,6 +1110,11 @@ export interface PendingTeamReport {
 	/** Zu welcher Mitgliedschaft er gehört - nach einem neuen Beitritt ginge er sonst ans falsche Team. */
 	teamMemberId: string;
 	report: unknown;
+	/**
+	 * Wann er entstand. Liegt beim Team inzwischen ein jüngerer Bericht (von
+	 * einem anderen Gerät neu gesendet), wird dieser hier nicht mehr nachgereicht.
+	 */
+	at: number;
 }
 
 const PENDING_TEAM_REPORTS_FILE = "team-reports-pending.json";

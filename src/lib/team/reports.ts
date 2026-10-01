@@ -9,6 +9,7 @@ import {
 	type PendingTeamReport
 } from "../store";
 import { ApiError } from "../sync/api";
+import { TEAM_ACCESS_DENIED } from "$shared/teamAccess";
 import { logWarn } from "../log";
 import { createSerialQueue } from "../utils";
 import type { MonthReport } from "../report/report";
@@ -32,8 +33,17 @@ export function teamReportPayload(report: MonthReport) {
 /** Vormerken und Nachholen lesen und schreiben dieselbe Liste - nie gleichzeitig. */
 const withPendingLock = createSerialQueue();
 
-/** Lohnt ein späterer Versuch? Eine Absage des Servers käme beim zweiten Mal genauso. */
-const worthRetrying = (e: unknown): boolean => !(e instanceof ApiError) || e.retryable;
+/**
+ * Hat der Server selbst abgelehnt? Dann käme ein zweiter Versuch genauso zurück:
+ * der Bericht ist ungültig oder zu gross, oder die Mitgliedschaft ist beendet.
+ * Jede andere Absage (ein Proxy davor) sagt nichts über den Bericht.
+ */
+const refusedByServer = (e: unknown): boolean =>
+	e instanceof ApiError &&
+	(e.status === 400 || e.status === 413 || (e.status === 401 && e.message === TEAM_ACCESS_DENIED));
+
+/** Lohnt ein späterer Versuch? */
+const worthRetrying = (e: unknown): boolean => !refusedByServer(e);
 
 /**
  * Stiller No-Op ohne Team-Mitgliedschaft. Scheitert der Upload am Netz, wird
@@ -53,7 +63,7 @@ export function uploadReportIfTeamMember(month: string, report: MonthReport): Pr
 			} catch (e) {
 				logWarn("Bericht konnte nicht ans Team hochgeladen werden", e);
 				const again: PendingTeamReport[] = worthRetrying(e)
-					? [{ month, teamMemberId: device.teamMemberId, report: payload }]
+					? [{ month, teamMemberId: device.teamMemberId, report: payload, at: Date.now() }]
 					: [];
 				await savePendingTeamReports([...others, ...again]);
 			}
@@ -61,6 +71,26 @@ export function uploadReportIfTeamMember(month: string, report: MonthReport): Pr
 			logWarn("Bericht konnte nicht ans Team hochgeladen werden", e);
 		}
 	});
+}
+
+/**
+ * Ob beim Team schon ein jüngerer Bericht für den Monat liegt - etwa von einem
+ * anderen Gerät korrigiert und neu gesendet. Der Server nimmt jeden Upload
+ * ohne Prüfung an; der vorgemerkte Stand überschriebe den neueren.
+ *
+ * "unknown": gerade nicht zu klären, später noch einmal. Kennt der Server die
+ * Abfrage nicht (ältere Fassung), wird wie zuvor ohne Prüfung nachgereicht.
+ */
+async function supersededAtTeam(
+	device: { serverUrl: string; token: string },
+	p: PendingTeamReport
+): Promise<"superseded" | "current" | "unknown"> {
+	try {
+		const { submittedAt } = await fetchOwnTeamReport(device.serverUrl, device.token, p.month);
+		return typeof submittedAt === "number" && submittedAt > p.at ? "superseded" : "current";
+	} catch (e) {
+		return e instanceof ApiError && !e.retryable ? "current" : "unknown";
+	}
 }
 
 /** Vorgemerkte Berichte nachreichen - beim Start, sobald das Team erreichbar ist. */
@@ -75,6 +105,12 @@ export function retryTeamReportUploads(): Promise<void> {
 			const still: PendingTeamReport[] = [];
 			for (const p of pending) {
 				if (!device || p.teamMemberId !== device.teamMemberId) continue;
+				const state = await supersededAtTeam(device, p);
+				if (state === "superseded") continue;
+				if (state === "unknown") {
+					still.push(p);
+					continue;
+				}
 				try {
 					await uploadTeamReport(device.serverUrl, device.token, p.month, p.report);
 				} catch (e) {
