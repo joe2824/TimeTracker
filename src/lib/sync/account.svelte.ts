@@ -4,8 +4,11 @@ import { logError, logInfo, logWarn, clearLogs } from "../log";
 import {
 	clearAccountData,
 	clearOutbox,
+	clearTeamDevice,
 	deviceFileExists,
 	loadDevice,
+	loadTeamDevice,
+	saveTeamRemovedFrom,
 	getLocalEncryptionKey,
 	listEntryMonths,
 	readProtectedVaultKey,
@@ -71,6 +74,8 @@ import { usingBrowserStorage } from "../platform/fs";
 import { notifyDataChanged } from "../platform/windows";
 import { APP_VERSION, DEFAULT_SERVER, TELEMETRY_KEY } from "../defaults";
 import { classifyPingFailure, detectPlatform, type PingResult } from "../analytics";
+import { leaveTeamOnServer } from "../team/api";
+import { teamJoin } from "../team/state.svelte";
 
 /** Was der erste Abgleich vorzieht: der laufende und der vorige Monat. */
 function priorityMonths(): string[] {
@@ -299,7 +304,8 @@ class AccountState {
 	 * abgelegten Schlüssel. Von zwei Stellen gebraucht (kein verknüpftes Konto
 	 * beim Start, `unlink()`), deshalb hier gebündelt statt zweimal hingeschrieben.
 	 */
-	async #wipeLocalData(): Promise<void> {
+	async #wipeLocalData(opts: { endTeamMembership?: boolean } = {}): Promise<void> {
+		if (opts.endTeamMembership) await this.#endTeamMembership();
 		await clearAccountData();
 		if (usingBrowserStorage()) {
 			// Fehlschlag hier darf die restliche Aufraeumung nicht abbrechen - sonst
@@ -318,6 +324,25 @@ class AccountState {
 				.catch(() => {});
 		}
 		app.clearLocalData();
+	}
+
+	/**
+	 * Die Team-Mitgliedschaft dieses Browsers beenden, wenn der Mensch davor geht.
+	 * Bliebe das Token liegen, gingen die Berichte des Nächsten unter dem Namen
+	 * des Vorgängers ans Team. Dem Server gemeldet, sonst stünde das Mitglied
+	 * dort jeden Monat als "kein Bericht" in der Liste.
+	 */
+	async #endTeamMembership(): Promise<void> {
+		const device = await loadTeamDevice().catch(() => null);
+		await clearTeamDevice().catch((e) => logWarn("Team-Mitgliedschaft nicht gelöscht", e));
+		await saveTeamRemovedFrom(null).catch(() => {});
+		teamJoin.device = null;
+		teamJoin.removedFrom = null;
+		if (!device) return;
+		// Ohne darauf zu warten: eine hängende Anfrage soll das Abmelden nicht aufhalten.
+		void leaveTeamOnServer(device.serverUrl, device.token).catch((e) =>
+			logWarn("Austritt beim Team nicht gemeldet", e)
+		);
 	}
 
 	/** Beim Programmstart: falls ein Konto verknüpft ist, alles hochfahren. */
@@ -1281,6 +1306,9 @@ class AccountState {
 			// aber nicht hoch (siehe dataOwner).
 			const foreignCopy = !isTauri() && info.accountFingerprint !== fingerprint;
 			if (foreignCopy) {
+				// Nur wenn hier vorher ein ANDERES Konto war. Ohne Kennung hat sich
+				// noch niemand angemeldet - ein Beitritt davor gehört diesem Menschen.
+				if (switched) await this.#endTeamMembership();
 				await clearAccountData();
 				app.clearLocalData();
 				logInfo("Kontowechsel / Neuverknüpfung: lokale Kopie entfernt");
@@ -1747,7 +1775,7 @@ class AccountState {
 		// an - und genau sie blieb dann als einziger Rest liegen.
 		logInfo("Verknüpfung gelöst", { ...opts, ...unlinked });
 		if (!isTauri()) {
-			await this.#wipeLocalData();
+			await this.#wipeLocalData({ endTeamMembership: true });
 		}
 		return summary;
 	}
@@ -1778,7 +1806,7 @@ class AccountState {
 	 */
 	async forgetLink(): Promise<void> {
 		await this.#forgetLocally();
-		await this.#wipeLocalData();
+		await this.#wipeLocalData({ endTeamMembership: true });
 	}
 
 	/** Alles abstellen und die Kontodaten dieses Geräts vergessen. */

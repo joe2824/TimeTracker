@@ -13,6 +13,8 @@ const { account } = await import("./account.svelte");
 const { app } = await import("../app.svelte");
 const store = await import("../store");
 const { resetOutboxForTests } = await import("./outbox");
+const { teamJoin } = await import("../team/state.svelte");
+const { waitFor } = await import("../testing/accountHarness");
 
 class MockServer {
 	/** Ein eigener Nachbau je Konto - eigener Bestand, eigener Stand. */
@@ -51,6 +53,9 @@ class MockServer {
 
 	/** Das Abmelden bleibt unbeantwortet, bis der Aufrufer aufgibt. */
 	silentLogout = false;
+
+	/** Die Team-Tokens, mit denen ein Austritt gemeldet wurde. */
+	teamLeaves: string[] = [];
 
 	fetchFor(deviceId: string) {
 		return async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
@@ -109,6 +114,10 @@ class MockServer {
 						init?.signal?.addEventListener("abort", () => reject(new Error("abgebrochen")));
 					});
 				}
+				return new Response(JSON.stringify({ ok: true }), { status: 200 });
+			}
+			if (pathname === "/api/team/membership" && init?.method === "DELETE") {
+				this.teamLeaves.push(new Headers(init.headers).get("x-team-token") ?? "");
 				return new Response(JSON.stringify({ ok: true }), { status: 200 });
 			}
 			return new Response(JSON.stringify({ message: "unbekannt" }), { status: 404 });
@@ -427,6 +436,63 @@ describe("Scharfe Kontoisolation (Web & Desktop)", () => {
 			await account.syncNow();
 			const vault = server.userVaults.get("frischer-user");
 			expect(vault?.rows.size).toBeGreaterThan(0);
+		});
+	});
+
+	describe("Team-Mitgliedschaft im Browser", () => {
+		const TEAM = { teamMemberId: "m1", token: "team-tok", teamName: "Vertrieb", serverUrl: "http://test-server" };
+
+		it("bleibt beim Start ohne Konto stehen", async () => {
+			// Der Beitritt über den Link braucht kein Konto - das Aufräumen beim
+			// Start darf ihn nicht gleich wieder zurücknehmen.
+			await store.saveTeamDevice(TEAM);
+
+			await account.init();
+
+			expect(await store.loadTeamDevice()).toEqual(TEAM);
+		});
+
+		it("bleibt beim ersten Anmelden nach dem Beitritt stehen", async () => {
+			await withServer("browser-device", async (server) => {
+				await store.saveTeamDevice(TEAM);
+
+				await account.linkWithSession("http://test-server", await createVaultKey(), "Anna");
+
+				expect(await store.loadTeamDevice()).toEqual(TEAM);
+				expect(server.teamLeaves).toEqual([]);
+			});
+		});
+
+		it("endet beim Abmelden und wird dem Team gemeldet", async () => {
+			// Bliebe das Token liegen, gingen die Berichte des Nächsten an diesem
+			// Rechner unter dem Namen des Vorgängers ans Team.
+			await withServer("browser-device", async (server) => {
+				await account.linkWithSession("http://test-server", await createVaultKey(), "Anna");
+				await store.saveTeamDevice(TEAM);
+				teamJoin.device = TEAM;
+
+				await account.logout();
+				await waitFor(() => server.teamLeaves.length > 0);
+
+				expect(await store.loadTeamDevice()).toBeNull();
+				expect(teamJoin.device).toBeNull();
+				expect(server.teamLeaves).toEqual(["team-tok"]);
+			});
+		});
+
+		it("endet, wenn sich ein anderes Konto anmeldet", async () => {
+			await withServer("browser-device", async (server) => {
+				await account.linkWithSession("http://test-server/alice", await createVaultKey(), "Alice");
+				await store.saveTeamDevice(TEAM);
+				teamJoin.device = TEAM;
+
+				await account.linkWithSession("http://test-server/bob", await createVaultKey(), "Bob");
+				await waitFor(() => server.teamLeaves.length > 0);
+
+				expect(await store.loadTeamDevice()).toBeNull();
+				expect(teamJoin.device).toBeNull();
+				expect(server.teamLeaves).toEqual(["team-tok"]);
+			});
 		});
 	});
 

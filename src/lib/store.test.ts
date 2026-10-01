@@ -504,6 +504,20 @@ describe("clearAccountData", () => {
 		expect(files.has("data/activities.json")).toBe(false);
 	});
 
+	it("lässt die Team-Mitgliedschaft stehen", async () => {
+		// Sie hängt am Team-Zugang, nicht am Konto: wer ohne Konto beigetreten ist,
+		// wäre sonst beim ersten Öffnen der App schon wieder draussen.
+		files.set("data/team.json", '{"teamMemberId":"m1"}');
+		files.set("data/team-removed.json", '{"teamName":"Vertrieb"}');
+		files.set("data/activities.json", "[]");
+
+		await clearAccountData();
+
+		expect(files.get("data/team.json")).toBe('{"teamMemberId":"m1"}');
+		expect(files.get("data/team-removed.json")).toBe('{"teamName":"Vertrieb"}');
+		expect(files.has("data/activities.json")).toBe(false);
+	});
+
 	it("löscht auch das, was gerade noch geschrieben wird", async () => {
 		// Beim Abmelden ist oft noch ein Speichern unterwegs. Läuft das Löschen an
 		// der Warteschlange vorbei, landet dessen Datei DANACH - und der Bestand

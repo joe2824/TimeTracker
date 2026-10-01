@@ -880,6 +880,8 @@ export interface DeviceInfo {
 	localFilesEncrypted?: boolean;
 }
 
+const TEAM_FILES: ReadonlySet<string> = new Set(["team.json", "team-removed.json"]);
+
 /**
  * Alles löschen, was zu einem Konto gehört – Einträge, Aktivitäten, Outbox,
  * Einstellungen und eingelesene Reports.
@@ -899,6 +901,10 @@ export async function clearAccountData(): Promise<void> {
 		// erneutes Koppeln wiedererkennen. Die Kontodaten daneben streift das
 		// Abmelden ab.
 		if (name === "device.json") continue;
+		// Die Team-Mitgliedschaft hängt am Team-Zugang, nicht am Konto: ein
+		// Beitritt geht ohne Konto und muss das erste Anmelden überstehen. Wer
+		// geht (Abmelden, Kontowechsel), beendet sie eigens - samt Meldung ans Team.
+		if (TEAM_FILES.has(name)) continue;
 		await removeDataFile(name);
 	}
 }
