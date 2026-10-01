@@ -1322,11 +1322,14 @@ class AppState {
 	 * Endzeit und loescht die Fortsetzung; `keep: "continuation"` verwirft die
 	 * fremde Endzeit wieder und stellt den Bruecken-Uebergang zur Fortsetzung
 	 * her, so wie die Teilung ihn urspruenglich angelegt hatte.
+	 *
+	 * false = nicht gespeichert (etwa weil ein späterer Eintrag im Weg liegt) -
+	 * die Frage muss dann offen bleiben.
 	 */
 	async resolveStaleTimerSplit(
 		info: StaleTimerSplitInfo,
 		keep: "ended" | "continuation"
-	): Promise<void> {
+	): Promise<boolean> {
 		// Den heutigen Stand holen, nicht die Momentaufnahme von der Meldung: nach
 		// "Später" kann der Eintrag inzwischen bearbeitet oder abgeglichen worden
 		// sein - die alte Kopie überschriebe das, und als jüngste eigene Änderung
@@ -1339,10 +1342,11 @@ class AppState {
 		if (keep === "ended") {
 			const continuation = await current(info.continuationEntry);
 			if (continuation) await this.deleteEntry(continuation);
-		} else {
-			const ended = await current(info.endedEntry);
-			if (ended) await this.updateEntry(ended.startTs, { ...ended, endTs: info.continuationEntry.startTs });
+			return true;
 		}
+		const ended = await current(info.endedEntry);
+		if (!ended) return true;
+		return this.updateEntry(ended.startTs, { ...ended, endTs: info.continuationEntry.startTs });
 	}
 
 	// ---------- Timer ----------

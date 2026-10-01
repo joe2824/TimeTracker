@@ -37,8 +37,8 @@
 		if (busyKey) return;
 		busyKey = keyOf(s);
 		try {
-			await app.resolveStaleTimerSplit(s, keep);
-			await account.dropStaleTimerSplit(s);
+			// Nicht gespeichert (die Meldung dazu kam schon): die Frage bleibt stehen.
+			if (await app.resolveStaleTimerSplit(s, keep)) await account.dropStaleTimerSplit(s);
 		} catch (e) {
 			toast.error(`Speichern fehlgeschlagen: ${errorText(e)}`);
 		} finally {

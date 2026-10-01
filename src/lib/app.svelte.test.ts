@@ -1418,9 +1418,34 @@ describe("resolveStaleTimerSplit", () => {
 		const continuation = entry("c", P1, at(16, 0), null);
 		reset({ "2026-07": [ended] });
 
-		await app.resolveStaleTimerSplit({ endedEntry: ended, continuationEntry: continuation }, "ended");
+		const done = await app.resolveStaleTimerSplit({ endedEntry: ended, continuationEntry: continuation }, "ended");
 
+		// Die Frage hat sich erledigt - sie darf nicht ewig wiederkommen.
+		expect(done).toBe(true);
 		expect(onDisk("2026-07").map((e) => e.id)).toEqual(["x"]);
+	});
+
+	it("meldet, wenn sich der Übergang wegen einer Überschneidung nicht herstellen liess", async () => {
+		// Der Dialog verwirft die Frage sonst, obwohl die Lücke bis Mitternacht bleibt.
+		const ended = entry("x", P1, at(15, 9), at(15, 18));
+		const between = entry("b", P2, at(15, 19), at(15, 20));
+		const continuation = entry("c", P1, at(16, 0), null);
+		reset({ "2026-07": [ended, between, continuation] });
+
+		const done = await app.resolveStaleTimerSplit({ endedEntry: ended, continuationEntry: continuation }, "continuation");
+
+		expect(done).toBe(false);
+		expect(onDisk("2026-07").find((e) => e.id === "x")!.endTs).toBe(at(15, 18));
+	});
+
+	it("meldet Erfolg, wenn der Übergang hergestellt ist", async () => {
+		const ended = entry("x", P1, at(15, 9), at(15, 18));
+		const continuation = entry("c", P1, at(16, 0), null);
+		reset({ "2026-07": [ended, continuation] });
+
+		const done = await app.resolveStaleTimerSplit({ endedEntry: ended, continuationEntry: continuation }, "continuation");
+
+		expect(done).toBe(true);
 	});
 });
 
