@@ -1,7 +1,7 @@
 // Was noch nicht beim Server ist. Gemerkt wird NUR, WAS sich geändert hat - Art, Id,
 // bei Einträgen der Monat - nie der Inhalt selbst.
 import type { Activity, Entry, Settings, SyncMeta } from "../types";
-import type { StoredTimeReport, TeamRecord, WriteHook } from "../store";
+import type { WriteHook } from "../store";
 import {
 	acrossWindows,
 	listEntryMonths,
@@ -342,47 +342,33 @@ const hook: WriteHook = {
 		return rest as Settings;
 	},
 
-	async timeReport(month, before, after) {
-		const now = Date.now();
-		const id = timeReportId(month);
-		// Ein Report je Monat, also derselbe Kniff wie bei den Einstellungen: eine
-		// einelementige Liste mit geliehener Id.
-		const wrap = (r: StoredTimeReport | null) => (r ? [{ ...r, id }] : []);
-		const { changes, stamped } = diffAndStamp(wrap(before), wrap(after), deviceId, now);
-		await note([
-			...changes.changed.map(() => ({ kind: "timereport" as const, id, deleted: false, at: now })),
-			...changes.deleted.map((r) => ({
-				kind: "timereport" as const,
-				id,
-				deleted: true,
-				rev: r.rev,
-				at: now
-			}))
-		]);
-		if (stamped.length === 0) return null;
-		const { id: _id, ...rest } = stamped[0];
-		return rest as StoredTimeReport;
-	},
+	timeReport: (month, before, after) => noteWhole("timereport", timeReportId(month), before, after),
 
-	async team(before, after) {
-		const now = Date.now();
-		const wrap = (r: TeamRecord | null) => (r ? [{ ...r, id: TEAM_RECORD_ID }] : []);
-		const { changes, stamped } = diffAndStamp(wrap(before), wrap(after), deviceId, now);
-		await note([
-			...changes.changed.map(() => ({ kind: "team" as const, id: TEAM_RECORD_ID, deleted: false, at: now })),
-			...changes.deleted.map((r) => ({
-				kind: "team" as const,
-				id: TEAM_RECORD_ID,
-				deleted: true,
-				rev: r.rev,
-				at: now
-			}))
-		]);
-		if (stamped.length === 0) return null;
-		const { id: _id, ...rest } = stamped[0];
-		return rest as TeamRecord;
-	}
+	team: (before, after) => noteWhole("team", TEAM_RECORD_ID, before, after)
 };
+
+/**
+ * Ein Datensatz, den es nur als Ganzes gibt (Report eines Monats,
+ * Team-Mitgliedschaft): derselbe Kniff wie bei den Einstellungen - eine
+ * einelementige Liste mit geliehener Id. `after === null` heisst: er fällt weg.
+ */
+async function noteWhole<T extends SyncMeta>(
+	kind: RecordKind,
+	id: string,
+	before: T | null,
+	after: T | null
+): Promise<T | null> {
+	const now = Date.now();
+	const wrap = (r: T | null) => (r ? [{ ...r, id }] : []);
+	const { changes, stamped } = diffAndStamp(wrap(before), wrap(after), deviceId, now);
+	await note([
+		...changes.changed.map(() => ({ kind, id, deleted: false, at: now })),
+		...changes.deleted.map((r) => ({ kind, id, deleted: true, rev: r.rev, at: now }))
+	]);
+	if (stamped.length === 0) return null;
+	const { id: _id, ...rest } = stamped[0];
+	return rest as unknown as T;
+}
 
 /** Nur für Tests: den Modulzustand vergessen. */
 export function resetOutboxForTests(): void {

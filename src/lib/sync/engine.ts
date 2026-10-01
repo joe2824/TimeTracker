@@ -8,7 +8,7 @@
 //
 // Die Herkunftsspuren bleiben aus dem Chiffrat draussen: der Server braucht sie im
 // Klartext für die Reihenfolge.
-import type { Entry, Activity, Settings } from "../types";
+import type { Entry, Activity, Settings, SyncMeta } from "../types";
 import type { StoredTimeReport, TeamRecord } from "../store";
 import { Api, ApiError, type PushRecord, type ServerRecord } from "./api";
 import {
@@ -19,7 +19,8 @@ import {
 	rebaseChanges,
 	refreshPending,
 	SETTINGS_ID,
-	type PendingChange
+	type PendingChange,
+	type RecordKind
 } from "./outbox";
 import { adoptRev, isAutoEnd, mergeRecord, realEndWinner, resolveOpenEntries, type MergeResult } from "./merge";
 import { contentOf } from "./stamp";
@@ -1040,61 +1041,64 @@ export class SyncEngine {
 	}
 
 	/**
-	 * Einen Report einspielen - ein Datensatz je Monat, als Ganzes.
-	 *
-	 * Anders als bei den Einträgen gibt es hier nichts feldweise zusammenzuführen:
-	 * ein Report ist die Abschrift EINER Datei, entweder die eine oder die andere.
+	 * Einen Datensatz einspielen, den es nur als Ganzes gibt (der Report eines
+	 * Monats, die Team-Mitgliedschaft). Anders als bei den Einträgen ist hier
+	 * nichts feldweise zusammenzuführen: es gilt der eine Stand oder der andere.
 	 */
+	async #applyWhole<T extends SyncMeta>(
+		record: ServerRecord,
+		open: Set<string>,
+		slot: {
+			local: T | null;
+			remote: T;
+			save(value: T): Promise<void>;
+			remove(): Promise<void>;
+		}
+	): Promise<number> {
+		const result = mergeRecord<T & { id: string; deletedAt?: number }>(
+			{
+				local: slot.local ? { ...slot.local, id: record.id } : undefined,
+				remote: withTombstone(record, fromServer(record, slot.remote)),
+				localPending: open.has(`${record.kind}:${record.id}`)
+			},
+			carriesTombstone
+		);
+		if (!result.changed) return result.lostLocalEdit ? 1 : 0;
+		if (result.value === null) await slot.remove();
+		else {
+			const { id: _id, deletedAt: _deletedAt, ...rest } = result.value;
+			await slot.save(rest as unknown as T);
+		}
+		// Der offene Stand von hier ist unterlegen - nicht noch einmal hochladen.
+		if (result.lostLocalEdit) await clearChanges([{ kind: record.kind as RecordKind, id: record.id }]);
+		return result.lostLocalEdit ? 1 : 0;
+	}
+
 	async #applyTimeReport(record: ServerRecord, open: Set<string>): Promise<number> {
 		const month = monthOfTimeReportId(record.id);
 		// Eine Id ohne erkennbaren Monat gehört zu einer Fassung, die wir nicht
 		// kennen - dann lieber nichts tun als in die falsche Datei schreiben.
 		if (!month) return 0;
-		const content = await this.#open<StoredTimeReport & { id?: string }>(record);
+		const content = await this.#open<StoredTimeReport>(record);
 		if (content === undefined) return 0;
-		const local = await this.#store.timeReport(month);
-		const result = mergeRecord<StoredTimeReport & { id: string; deletedAt?: number }>(
-			{
-				local: local ? { ...local, id: record.id } : undefined,
-				remote: withTombstone(record, { ...fromServer(record, content), month }),
-				localPending: open.has(`timereport:${record.id}`)
-			},
-			carriesTombstone
-		);
-		if (!result.changed) return result.lostLocalEdit ? 1 : 0;
-		if (result.value === null) await this.#store.deleteTimeReport(month);
-		else {
-			const { id: _id, deletedAt: _deletedAt, ...rest } = result.value;
-			await this.#store.saveTimeReport(rest as StoredTimeReport);
-		}
-		return result.lostLocalEdit ? 1 : 0;
+		return this.#applyWhole<StoredTimeReport>(record, open, {
+			local: await this.#store.timeReport(month),
+			remote: { ...content, month },
+			save: (report) => this.#store.saveTimeReport(report),
+			remove: () => this.#store.deleteTimeReport(month)
+		});
 	}
 
-	/**
-	 * Die Team-Mitgliedschaft einspielen - ein Datensatz je Konto, als Ganzes.
-	 * Ein Löschmarker heisst: irgendwo ausgetreten, dann ist auch dieses Gerät draussen.
-	 */
+	/** Ein Löschmarker heisst: irgendwo ausgetreten, dann ist auch dieses Gerät draussen. */
 	async #applyTeam(record: ServerRecord, open: Set<string>): Promise<number> {
-		const content = await this.#open<TeamRecord & { id?: string }>(record);
+		const content = await this.#open<TeamRecord>(record);
 		if (content === undefined) return 0;
-		const local = await this.#store.team();
-		const result = mergeRecord<TeamRecord & { id: string; deletedAt?: number }>(
-			{
-				local: local ? { ...local, id: record.id } : undefined,
-				remote: withTombstone(record, fromServer(record, content)),
-				localPending: open.has(`team:${record.id}`)
-			},
-			carriesTombstone
-		);
-		if (!result.changed) return result.lostLocalEdit ? 1 : 0;
-		if (result.value === null) await this.#store.deleteTeam();
-		else {
-			const { id: _id, deletedAt: _deletedAt, ...rest } = result.value;
-			await this.#store.saveTeam(rest as TeamRecord);
-		}
-		// Der offene Stand von hier ist unterlegen - nicht noch einmal hochladen.
-		if (result.lostLocalEdit) await clearChanges([{ kind: "team", id: record.id }]);
-		return result.lostLocalEdit ? 1 : 0;
+		return this.#applyWhole<TeamRecord>(record, open, {
+			local: await this.#store.team(),
+			remote: content,
+			save: (team) => this.#store.saveTeam(team),
+			remove: () => this.#store.deleteTeam()
+		});
 	}
 
 	/** Einen Datensatz öffnen. */

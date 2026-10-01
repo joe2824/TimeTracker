@@ -223,6 +223,13 @@ export async function requestJson<T>(
 	}
 }
 
+/** `run` mit Zeitlimit: nach `ms` bricht das mitgegebene Signal die Anfrage ab. */
+export function withTimeout<T>(ms: number, run: (signal: AbortSignal) => Promise<T>): Promise<T> {
+	const abort = new AbortController();
+	const timer = setTimeout(() => abort.abort(), ms);
+	return run(abort.signal).finally(() => clearTimeout(timer));
+}
+
 export class Api {
 	#baseUrl: string;
 	#token: string | null;
@@ -285,12 +292,9 @@ export class Api {
 		// schlüssel und Bestand weg - darf nicht daran hängen, ob der Server
 		// gerade antwortet. Bleibt die Verbindung stumm, läuft die Sitzung dort
 		// von selbst ab; hier zählt, dass nichts liegen bleibt.
-		const abort = new AbortController();
-		const timer = setTimeout(() => abort.abort(), LOGOUT_MS);
-		return this.#call<{ ok: boolean }>("/api/auth/logout", {
-			method: "POST",
-			signal: abort.signal
-		}).finally(() => clearTimeout(timer));
+		return withTimeout(LOGOUT_MS, (signal) =>
+			this.#call<{ ok: boolean }>("/api/auth/logout", { method: "POST", signal })
+		);
 	}
 
 	// ---------- Registrierung und Anmeldung ----------

@@ -2,7 +2,7 @@
 // grossen `Api`-Klasse aus sync/api.ts: die läuft mit Geräte-Token/Sitzung für
 // ein Personenkonto, hier gibt es keins - nur den Team-Token im eigenen Kopf
 // `x-team-token`, oder noch gar keinen (Vorschau, Beitritt).
-import { requestJson, type FetchFn, type TeamActivity } from "../sync/api";
+import { requestJson, withTimeout, type FetchFn, type TeamActivity } from "../sync/api";
 import { platformFetch } from "../platform/http";
 
 export interface TeamJoinResult {
@@ -19,11 +19,7 @@ export interface TeamJoinResult {
 export const TEAM_REQUEST_MS = 15_000;
 
 function request<T>(fetchFn: FetchFn, serverUrl: string, path: string, init: RequestInit = {}): Promise<T> {
-	const abort = new AbortController();
-	const timer = setTimeout(() => abort.abort(), TEAM_REQUEST_MS);
-	return requestJson<T>(fetchFn, serverUrl, path, { ...init, signal: abort.signal }).finally(() =>
-		clearTimeout(timer)
-	);
+	return withTimeout(TEAM_REQUEST_MS, (signal) => requestJson<T>(fetchFn, serverUrl, path, { ...init, signal }));
 }
 
 /** Der Teamname hinter einem Link - vor dem Beitreten, zum Anzeigen. */
