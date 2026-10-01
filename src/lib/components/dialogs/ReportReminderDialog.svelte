@@ -5,6 +5,7 @@
 	import { account } from "$lib/sync/account.svelte";
 	import { monthLabel } from "$lib/time/time";
 	import { confirmReportSent, sendReport } from "$lib/report/reportSend";
+	import { teamHasReport } from "$lib/team/reports";
 	import { capabilities } from "$lib/platform/env";
 	import { watchers } from "$lib/ui/watchers.svelte";
 	import { toast } from "svelte-sonner";
@@ -24,9 +25,27 @@
 	// Einrichten, sondern schlicht falsch: sie gilt einem Bericht, den jemand
 	// vor Wochen von einem anderen Gerät aus geschickt hat.
 	const synced = $derived(!account.linked || account.firstSyncDone);
+	// Im Team weiss der Server, ob der Bericht schon da ist - dann wird der
+	// Monat hier vermerkt statt nachgefragt. Lässt es sich nicht klären (kein
+	// Team, kein Netz), fragt der Dialog wie bisher.
+	let teamChecked = $state<string | null>(null);
+	$effect(() => {
+		const m = month;
+		if (!m || !synced || teamChecked === m) return;
+		let stale = false;
+		void teamHasReport(m).then(async (has) => {
+			if (stale) return;
+			if (has) await app.markReportSent(m);
+			teamChecked = m;
+		});
+		return () => {
+			stale = true;
+		};
+	});
 	const open = $derived(
 		watchers.forceReportReminder ||
 			(!!month &&
+				teamChecked === month &&
 				synced &&
 				app.settings.reportReminderEnabled &&
 				!watchers.reportReminderDismissed)

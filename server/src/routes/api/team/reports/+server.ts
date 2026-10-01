@@ -1,8 +1,24 @@
-// Mitgliedsseite: den eigenen Monatsbericht ablegen.
+// Mitgliedsseite: den eigenen Monatsbericht ablegen und nachsehen, ob er vorliegt.
 import { error, json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
-import { isPlausibleReportMonth, requireTeamMember, sanitizeTeamReport, upsertTeamReport } from "$lib/server/teams";
+import {
+	findTeamReport,
+	isPlausibleReportMonth,
+	isReportMonthFormat,
+	requireTeamMember,
+	sanitizeTeamReport,
+	upsertTeamReport
+} from "$lib/server/teams";
 import { readJson } from "$lib/server/request";
+
+/** Ob für den Monat schon ein Bericht dieses Mitglieds vorliegt - auch ein vom Chef von Hand vermerkter. */
+export const GET: RequestHandler = async ({ locals, url }) => {
+	requireTeamMember(locals);
+	const month = url.searchParams.get("month") ?? "";
+	if (!isReportMonthFormat(month)) error(400, "month fehlt oder hat nicht die Form YYYY-MM");
+	const found = findTeamReport(locals.db, locals.teamMemberId!, month);
+	return json({ submittedAt: found?.submittedAt ?? null });
+};
 
 export const POST: RequestHandler = async ({ locals, request }) => {
 	const teamId = requireTeamMember(locals);

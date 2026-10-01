@@ -581,7 +581,7 @@ export function sanitizeTeamReport(payload: unknown): TeamReportPayload | null {
 }
 
 /** Der Stand des Berichts eines Mitglieds für einen Monat - oder undefined. */
-function findTeamReport(db: DbLike, memberId: string, month: string): { submittedAt: number } | undefined {
+export function findTeamReport(db: DbLike, memberId: string, month: string): { submittedAt: number } | undefined {
 	return db
 		.select({ submittedAt: teamReports.submittedAt })
 		.from(teamReports)

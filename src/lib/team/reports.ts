@@ -1,6 +1,6 @@
 // Den eigenen Bericht ans Team hochladen - zusätzlich zum gewohnten Versand,
 // nicht statt ihm. Ein Fehler hier darf den Mail-Versand nicht verhindern.
-import { uploadTeamReport } from "./api";
+import { fetchOwnTeamReport, uploadTeamReport } from "./api";
 import { loadTeamDevice } from "../store";
 import { logWarn } from "../log";
 import type { MonthReport } from "../report/report";
@@ -29,5 +29,21 @@ export async function uploadReportIfTeamMember(month: string, report: MonthRepor
 		await uploadTeamReport(device.serverUrl, device.token, month, teamReportPayload(report));
 	} catch (e) {
 		logWarn("Bericht konnte nicht ans Team hochgeladen werden", e);
+	}
+}
+
+/**
+ * Ob der Bericht des Monats beim Team schon vorliegt. null heisst: nicht zu
+ * klären - kein Team, Server nicht erreichbar oder zu alt für die Abfrage.
+ */
+export async function teamHasReport(month: string): Promise<boolean | null> {
+	try {
+		const device = await loadTeamDevice();
+		if (!device) return null;
+		const { submittedAt } = await fetchOwnTeamReport(device.serverUrl, device.token, month);
+		return submittedAt !== null && submittedAt !== undefined;
+	} catch (e) {
+		logWarn("Stand des Berichts beim Team nicht abrufbar", e);
+		return null;
 	}
 }

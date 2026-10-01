@@ -69,6 +69,18 @@ export function leaveTeamOnServer(
 	});
 }
 
+/** Wann der eigene Bericht des Monats beim Team einging - null, wenn noch keiner vorliegt. */
+export function fetchOwnTeamReport(
+	serverUrl: string,
+	token: string,
+	month: string,
+	fetchFn: FetchFn = platformFetch
+): Promise<{ submittedAt: number | null }> {
+	return requestJson(fetchFn, serverUrl, `/api/team/reports?month=${encodeURIComponent(month)}`, {
+		headers: { "x-team-token": token }
+	});
+}
+
 /** Den eigenen Monatsbericht ablegen - der Chef bekommt genau das zu sehen. */
 export function uploadTeamReport(
 	serverUrl: string,

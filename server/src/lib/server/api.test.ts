@@ -1998,6 +1998,16 @@ describe("Team", () => {
 		// Ein anderer Monat bleibt unberuehrt.
 		const otherMonth = await apiFrom(annaToken, `/api/team/${team.id}/reports?month=${OTHER_MONTH}`);
 		expect((await otherMonth.json()).reports[0].submittedAt).toBeNull();
+
+		// Das Mitglied selbst sieht denselben Stand - daran erkennt die App, dass
+		// sie nicht mehr erinnern muss.
+		const own = await apiAsMember(token, `/api/team/reports?month=${REPORT_MONTH}`);
+		expect(own.status).toBe(200);
+		expect((await own.json()).submittedAt).toBe(status.submittedAt);
+		const ownOther = await apiAsMember(token, `/api/team/reports?month=${OTHER_MONTH}`);
+		expect((await ownOther.json()).submittedAt).toBeNull();
+		expect((await apiAsMember(token, "/api/team/reports?month=kaputt")).status).toBe(400);
+		expect((await apiFrom(null, `/api/team/reports?month=${REPORT_MONTH}`)).status).toBe(401);
 	});
 
 	it("nimmt nur plausible Monate an und speichert nur, was die Team-Ansicht braucht", async () => {
