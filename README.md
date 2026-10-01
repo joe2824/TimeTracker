@@ -63,7 +63,7 @@ Ohne Installation geht es im Browser gegen einen eigenen Server, siehe [Server](
 Ausführlich im Wiki: [Pausenabzug](https://github.com/joe2824/TimeTracker/wiki/Pausen-und-Regeln) ·
 [Arbeitszeit-Check](https://github.com/joe2824/TimeTracker/wiki/Arbeitszeit-Check) ·
 [Zeitwächter-Abgleich](https://github.com/joe2824/TimeTracker/wiki/Zeitwaechter-Abgleich) ·
-[Vorgesetzten-Modus](https://github.com/joe2824/TimeTracker/wiki/Chef-Modus) ·
+[Vorgesetzten-Modus](https://github.com/joe2824/TimeTracker/wiki/Vorgesetzten-Modus) ·
 [Datenablage](https://github.com/joe2824/TimeTracker/wiki/Datenablage)
 
 ## Server
