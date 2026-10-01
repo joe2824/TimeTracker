@@ -501,6 +501,30 @@ describe("Zwei Geraete", () => {
 		expect((s as unknown as { id?: string }).id).toBeUndefined();
 	});
 
+	it("behaelt den Gesendet-Vermerk eines anderen Geraets, wenn hier eine juengere Einstellung offen ist", async () => {
+		const phone = new FakeDevice("handy");
+		const desktop = new FakeDevice("rechner");
+		await changeAndSync(phone, () => store.saveSettings({ ...defaultSettings, timeZone: "Europe/Berlin" }));
+		await on(desktop, (engine) => engine.sync());
+
+		await changeAndSync(phone, async () =>
+			store.saveSettings({ ...(await store.loadSettings()), reportSentMonths: ["2026-09"] })
+		);
+		// Der Rechner kennt den Vermerk noch nicht und schreibt selbst etwas -
+		// wie das tägliche usageLastDay beim Start, noch vor dem ersten Abgleich.
+		await changeAndSync(desktop, async () =>
+			store.saveSettings({ ...(await store.loadSettings()), usageLastDay: "2026-10-01" })
+		);
+
+		const onDesktop = await on(desktop, () => store.loadSettings());
+		expect(onDesktop.usageLastDay).toBe("2026-10-01");
+		expect(onDesktop.reportSentMonths).toEqual(["2026-09"]);
+
+		await on(desktop, (engine) => engine.sync());
+		await on(phone, (engine) => engine.sync());
+		expect((await on(phone, () => store.loadSettings())).reportSentMonths).toEqual(["2026-09"]);
+	});
+
 	it("gleicht Pomodoro-Einstellungen und laufenden Timer korrekt ab", async () => {
 		const phone = new FakeDevice("handy");
 		await on(phone, async (engine) => {

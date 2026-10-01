@@ -79,6 +79,8 @@ export interface LocalStore {
 	saveActivities(list: Activity[]): Promise<void>;
 	settings(): Promise<Settings>;
 	saveSettings(s: Settings): Promise<void>;
+	/** Wie saveSettings, aber als eigene Änderung: gestempelt und zum Hochladen vorgemerkt. */
+	changeSettings(s: Settings): Promise<void>;
 	timeReport(month: string): Promise<StoredTimeReport | null>;
 	saveTimeReport(report: StoredTimeReport): Promise<void>;
 	deleteTimeReport(month: string): Promise<void>;
@@ -999,7 +1001,17 @@ export class SyncEngine {
 			},
 			() => false // Einstellungen werden nie gelöscht - es gibt immer welche.
 		);
-		if (!result.changed || !result.value) return result.lostLocalEdit ? 1 : 0;
+		// Gesendet-Vermerke gehen nie verloren, gleich wer gewinnt: der Datensatz
+		// wird als Ganzes entschieden, und ein offener Stand von hier (etwa das
+		// tägliche usageLastDay beim Start) verdrängte sonst still den Vermerk
+		// eines anderen Geräts.
+		const sent = [...new Set([...(local.reportSentMonths ?? []), ...(content.reportSentMonths ?? [])])].sort();
+		const settled = result.changed && result.value ? result.value : { ...local, id: SETTINGS_ID };
+		const missesSent = sent.length > (settled.reportSentMonths ?? []).length;
+		if (!result.changed || !result.value) {
+			if (missesSent) await this.#store.changeSettings({ ...local, reportSentMonths: sent });
+			return result.lostLocalEdit ? 1 : 0;
+		}
 		const { id: _id, ...rest } = result.value;
 		await this.#store.saveSettings(rest as Settings);
 		// Der Server hat gewonnen: der lokal offene Stand ist jetzt Makulatur, nicht
@@ -1008,6 +1020,7 @@ export class SyncEngine {
 		// identisch sind, bleibt "1 Aenderung ausstehend" dauerhaft stehen, obwohl es
 		// nichts mehr zu senden gibt.
 		if (result.lostLocalEdit) await clearChanges([{ kind: "settings", id: SETTINGS_ID }]);
+		if (missesSent) await this.#store.changeSettings({ ...(rest as Settings), reportSentMonths: sent });
 		return result.lostLocalEdit ? 1 : 0;
 	}
 

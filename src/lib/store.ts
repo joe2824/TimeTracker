@@ -788,6 +788,7 @@ export const remoteStore = {
 	saveActivities: (list: Activity[]) => saveActivitiesWith(null, list),
 	settings: loadSettings,
 	saveSettings: (s: Settings) => saveSettingsWith(null, s),
+	changeSettings: (s: Settings) => saveSettings(s),
 	timeReport: loadTimeReport,
 	saveTimeReport: (report: StoredTimeReport) => saveTimeReportWith(null, report),
 	deleteTimeReport: (month: string) => deleteTimeReportWith(null, month)
