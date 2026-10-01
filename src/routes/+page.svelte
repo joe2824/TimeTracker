@@ -67,6 +67,7 @@
 	import PairApprovalDialog from "$lib/components/dialogs/PairApprovalDialog.svelte";
 	import PairStartDialog from "$lib/components/dialogs/PairStartDialog.svelte";
 	import JoinTeamDialog from "$lib/components/team/JoinTeamDialog.svelte";
+	import TeamMergeDialog from "$lib/components/team/TeamMergeDialog.svelte";
 	import LostEditsDialog from "$lib/components/dialogs/LostEditsDialog.svelte";
 	import StaleTimerSplitDialog from "$lib/components/dialogs/StaleTimerSplitDialog.svelte";
 	import WhatsNewDialog from "$lib/components/dialogs/WhatsNewDialog.svelte";
@@ -748,6 +749,7 @@
 	<PairApprovalDialog />
 	<PairStartDialog />
 	<JoinTeamDialog />
+	<TeamMergeDialog />
 	<LostEditsDialog />
 	<StaleTimerSplitDialog />
 

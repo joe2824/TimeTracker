@@ -159,6 +159,12 @@ export interface Settings {
 	timeZone: string;
 	/** Tag (YYYY-MM-DD), an dem zuletzt „aktiv“ gemeldet wurde. */
 	usageLastDay: string;
+	/**
+	 * Paare aus eigener und gleichnamiger Team-Aktivität, die bewusst getrennt
+	 * bleiben sollen - siehe team/mergeOffer.ts. Die Frage käme sonst bei jedem
+	 * Start wieder.
+	 */
+	teamMergeDeclined?: string[];
 }
 
 /** Standard-Betreff des Monatsberichts. */

@@ -13,7 +13,11 @@ export default defineConfig({
 	// Alias steht in svelte.config.js für den Build - vitest lädt die nicht.
 	resolve: {
 		conditions: ["browser"],
-		alias: { $shared: fileURLToPath(new URL("./shared", import.meta.url)) }
+		alias: {
+			$shared: fileURLToPath(new URL("./shared", import.meta.url)),
+			// Für Komponenten-Tests: die Dialoge importieren ihre Bausteine über $lib.
+			$lib: fileURLToPath(new URL("./src/lib", import.meta.url))
+		}
 	},
 	test: {
 		environment: "node",
