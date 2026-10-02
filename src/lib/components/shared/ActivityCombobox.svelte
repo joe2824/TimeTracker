@@ -10,12 +10,15 @@
 		value = $bindable(""),
 		options,
 		id = "activity",
-		placeholder = "Aktivität wählen oder suchen"
+		placeholder = "Aktivität wählen oder suchen",
+		onselect
 	}: {
 		value?: string;
 		options: Activity[];
 		id?: string;
 		placeholder?: string;
+		/** Nach einer Wahl aus der Liste (Klick oder Enter) – nicht beim blossen Tippen eines Namens. */
+		onselect?: () => void;
 	} = $props();
 
 	let text = $state("");
@@ -88,6 +91,7 @@
 		value = a.id;
 		text = a.name;
 		open = false;
+		onselect?.();
 	}
 	/** Beim Verlassen nur exakte Treffer zulassen, sonst auf letzte gültige Auswahl zurück. */
 	function commit() {

@@ -280,6 +280,12 @@
 
 	let startInput = $state<ReturnType<typeof ClockInput> | null>(null);
 	let endInput = $state<ReturnType<typeof ClockInput> | null>(null);
+	let durEl = $state<HTMLElement | null>(null);
+
+	/** Schliesst der neue Eintrag an einen Vorgänger an, fehlt nach der Aktivität nur noch die Dauer. */
+	function focusHoursAfterPick() {
+		if (draft.id === null && draft.anchorTs !== null) durEl?.focus();
+	}
 
 	function currentHourClock(): string {
 		return `${String(zonedParts(Date.now()).hour).padStart(2, "0")}:00`;
@@ -852,7 +858,12 @@
 			{/if}
 			<div class="space-y-1">
 				<Label for="act">Aktivität</Label>
-				<ActivityCombobox id="act" bind:value={draft.activityId} options={activityOptions} />
+				<ActivityCombobox
+					id="act"
+					bind:value={draft.activityId}
+					options={activityOptions}
+					onselect={focusHoursAfterPick}
+				/>
 			</div>
 
 			{#if draftIsAbsence}
@@ -897,6 +908,7 @@
 					<div class="col-span-2 space-y-1 sm:col-span-1">
 						<Label for="dur">Stunden</Label>
 						<Input
+							bind:ref={durEl}
 							id="dur"
 							type="text"
 							inputmode="decimal"

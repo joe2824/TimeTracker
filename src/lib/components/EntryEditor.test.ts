@@ -165,14 +165,77 @@ describe("Neuer Eintrag: Vorbelegung von Von und Bis", () => {
 	});
 });
 
+/** Die Liste der Aktivitäten aufklappen und einen Eintrag daraus anklicken. */
+async function pickActivity(name: string) {
+	field("act").focus();
+	await settle();
+	[...document.querySelectorAll('[role="listbox"] button')]
+		.find((b) => b.textContent?.trim() === name)!
+		.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+	await settle();
+}
+
+const focused = () => document.activeElement?.id;
+
+describe("Neuer Eintrag: nach der Wahl der Aktivität", () => {
+	it("springt zu den Stunden, wenn der Tag schon einen Eintrag hat", async () => {
+		await render();
+		await openForToday();
+		await pickActivity("Projekt A");
+		expect(focused()).toBe("dur");
+	});
+
+	it("springt auch bei der Wahl mit Enter zu den Stunden", async () => {
+		await render();
+		await openForToday();
+		field("act").focus();
+		await settle();
+		field("act").dispatchEvent(
+			new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })
+		);
+		await settle();
+		expect(field("act").value).toBe("Projekt A");
+		expect(focused()).toBe("dur");
+	});
+
+	it("bleibt bei der Aktivität, wenn der Tag noch leer ist – dort fehlt auch die Startzeit", async () => {
+		await render();
+		await openForDay("2026-06-08");
+		await pickActivity("Projekt A");
+		expect(focused()).toBe("act");
+	});
+
+	it("springt nicht schon beim Tippen eines passenden Namens", async () => {
+		await render();
+		await openForToday();
+		field("act").focus();
+		await type("act", "Projekt A");
+		expect(focused()).toBe("act");
+	});
+});
+
+/** Den Dialog für den vorhandenen Eintrag von heute öffnen. */
+async function openExisting() {
+	[...document.querySelectorAll("button")].find((b) => b.textContent?.includes("09:00–10:30"))!.click();
+	await settle();
+}
+
 describe("Eintrag bearbeiten", () => {
 	it("behält seine Zeiten, wenn das Datum wechselt", async () => {
 		await render();
-		[...document.querySelectorAll("button")].find((b) => b.textContent?.includes("09:00–10:30"))!.click();
-		await settle();
+		await openExisting();
 		expect(times()).toEqual(["09:00", "10:30"]);
 
 		await type("date", "2026-06-09");
 		expect(times()).toEqual(["09:00", "10:30"]);
+	});
+
+	it("springt nach der Wahl einer anderen Aktivität nicht zu den Stunden", async () => {
+		app.activities = [...app.activities, anActivity("other", { name: "Projekt B", sortOrder: 1 })];
+		await render();
+		await openExisting();
+		await pickActivity("Projekt B");
+		expect(field("act").value).toBe("Projekt B");
+		expect(focused()).not.toBe("dur");
 	});
 });
