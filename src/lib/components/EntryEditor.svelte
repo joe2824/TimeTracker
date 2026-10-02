@@ -22,7 +22,8 @@
 		parseHours,
 		toTs
 	} from "$lib/time/time";
-	import { daysInMonth, parseMonthKey, weekdayOfDate, zonedParts } from "$lib/time/tz";
+	import { continuationStart } from "$lib/time/entryPrefill";
+	import { daysInMonth, parseIsoDate, parseMonthKey, weekdayOfDate, zonedParts } from "$lib/time/tz";
 	import { absenceLabel, dayFractionLabel } from "$lib/report/labels";
 	import type { Entry, EntrySource } from "$lib/types";
 	import { loadTimeReport, type StoredTimeReport } from "$lib/store";
@@ -111,6 +112,10 @@
 		originalStartTs: number;
 		/** Gespeichertes Ende, sekundengenau – Grundlage für `keepSeconds`. */
 		originalEndTs: number | null;
+		/** Ende des Vorgängers, an das ein neuer Eintrag anschliesst – sekundengenau, für `keepSeconds`. */
+		anchorTs: number | null;
+		/** Uhrzeit, mit der Von/Bis vorbelegt wurden; stehen beide noch darauf, hat sie niemand angefasst. */
+		prefillClock: string | null;
 		activityId: string;
 		date: string;
 		start: string;
@@ -195,8 +200,8 @@
 		// Wohin der Eintrag käme. Bevorzugt bleibt „Von“ stehen und „Bis“ wandert;
 		// reicht der Tag dahinter nicht mehr, andersherum. Über Mitternacht zu
 		// laufen wäre hier das Gegenteil von hilfreich: `save()` macht daraus zwei
-		// Einträge, und der Tag bekäme nur den ersten Teil – ein neuer Eintrag am
-		// Abend erwischt das sofort, weil er mit der aktuellen Stunde startet.
+		// Einträge, und der Tag bekäme nur den ersten Teil – ein neuer Eintrag, der
+		// spät am Abend startet, erwischt das sofort.
 		const from = clockToMin(draftStart);
 		const to = clockToMin(draftEnd);
 		let block: Interval | null = null;
@@ -276,22 +281,54 @@
 	let startInput = $state<ReturnType<typeof ClockInput> | null>(null);
 	let endInput = $state<ReturnType<typeof ClockInput> | null>(null);
 
+	function currentHourClock(): string {
+		return `${String(zonedParts(Date.now()).hour).padStart(2, "0")}:00`;
+	}
+
 	function emptyDraft(): Draft {
-		const hh = String(zonedParts(Date.now()).hour).padStart(2, "0");
+		const clock = currentHourClock();
 		return {
 			id: null,
 			originalStartTs: 0,
 			originalEndTs: null,
+			anchorTs: null,
+			prefillClock: null,
 			// Bewusst leer: der Nutzer wählt die Aktivität selbst (kein Default).
 			activityId: "",
 			date: fmtDate(Date.now()),
-			start: `${hh}:00`,
-			end: `${hh}:00`,
+			start: clock,
+			end: clock,
 			fraction: 1,
 			timeOff: false,
 			note: "",
 			source: "manual"
 		};
+	}
+
+	/**
+	 * Von/Bis eines neuen Eintrags dorthin setzen, wo der letzte Eintrag seines
+	 * Tages aufhört – ohne einen solchen auf die aktuelle volle Stunde.
+	 */
+	function prefillTimes() {
+		const anchor = continuationStart(
+			app.monthEntries(draft.date.slice(0, 7)),
+			draft.date,
+			app.absenceIds
+		);
+		const clock = anchor === null ? currentHourClock() : fmtClock(anchor);
+		draft.anchorTs = anchor;
+		draft.start = draft.end = draft.prefillClock = clock;
+		syncTimeText();
+		recalcDur();
+	}
+
+	/** Neues Datum aus dem Dialog: unberührte Zeiten eines neuen Eintrags ziehen auf den Tag mit. */
+	function setDraftDate(value: string) {
+		const follows =
+			draft.id === null && draft.start === draft.prefillClock && draft.end === draft.prefillClock;
+		draft.date = value;
+		// Beim Tippen kommen auch halbe Daten an – erst ein gültiges hat einen Tag.
+		if (follows && parseIsoDate(value)) prefillTimes();
 	}
 
 	$effect(() => {
@@ -424,8 +461,7 @@
 		draft = emptyDraft(); // date = heute
 		if (date) draft.date = date;
 		spanNote = null;
-		recalcDur();
-		syncTimeText();
+		prefillTimes();
 		dialogOpen = true;
 	}
 
@@ -454,6 +490,8 @@
 			id: e.id,
 			originalStartTs: e.startTs,
 			originalEndTs: e.endTs,
+			anchorTs: null,
+			prefillClock: null,
 			activityId: e.activityId,
 			date: fmtDate(e.startTs),
 			start: fmtClock(e.startTs),
@@ -492,6 +530,10 @@
 			if (draft.id) {
 				startTs = keepSeconds(startTs, draft.originalStartTs);
 				endTs = keepSeconds(endTs, draft.originalEndTs);
+			} else {
+				// Der Vorgänger endet meist mitten in der Minute: auf :00 gesetzt
+				// läge der Start davor und gälte als Überschneidung.
+				startTs = keepSeconds(startTs, draft.anchorTs);
 			}
 		}
 		if (Number.isNaN(startTs) || Number.isNaN(endTs)) return;
@@ -828,7 +870,7 @@
 				<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
 					<div class="col-span-2 space-y-1 sm:col-span-3">
 						<Label for="date">Datum</Label>
-						<DateInput id="date" bind:value={draft.date} />
+						<DateInput id="date" bind:value={() => draft.date, setDraftDate} />
 					</div>
 					<div class="space-y-1">
 						<Label for="start">Von</Label>
