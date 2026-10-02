@@ -1,4 +1,3 @@
-<!-- gilt für v1.1.0-beta.24 und v1.1.0 -->
 ## TimeTracker v1.1.0
 
 ### Wichtig vor dem Update
