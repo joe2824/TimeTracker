@@ -15,6 +15,8 @@ export interface ReleaseHighlight {
 export interface ReleaseInfo {
 	version: string;
 	title: string;
+	/** Ein Satz vorweg, der nichts erklären muss. */
+	greeting?: string;
 	summary: string;
 	highlights: ReleaseHighlight[];
 }
@@ -31,6 +33,7 @@ export interface ReleaseInfo {
 export const CURRENT_RELEASE: ReleaseInfo = {
 	version: "1.1.0",
 	title: "Teams",
+	greeting: "Ja Scheißele, Herr Eisele – jetzt isch's soweit: die 1.1.0 isch do!",
 	summary:
 		"Als Vorgesetzte oder Vorgesetzter legst du jetzt Teams an und siehst direkt in TimeTracker, wer seinen Monatsbericht schon abgegeben hat.",
 	highlights: [

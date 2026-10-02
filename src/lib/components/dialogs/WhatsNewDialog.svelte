@@ -38,6 +38,9 @@
 			<Dialog.Title class="text-xl font-bold tracking-tight">
 				{CURRENT_RELEASE.title}
 			</Dialog.Title>
+			{#if CURRENT_RELEASE.greeting}
+				<p class="text-sm italic">{CURRENT_RELEASE.greeting}</p>
+			{/if}
 			<Dialog.Description class="text-xs text-muted-foreground leading-relaxed">
 				{CURRENT_RELEASE.summary}
 			</Dialog.Description>
