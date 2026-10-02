@@ -1,10 +1,9 @@
 <!-- gilt für v1.1.0-beta.24 und v1.1.0 -->
 ## TimeTracker v1.1.0
 
-_Ja Scheißele, Herr Eisele – jetzt isch's soweit: die 1.1.0 isch do!_
-
-### ⚠️ Wichtig vor dem Update
-- Für Vorgesetzte: Abgegebene Monatsberichte werden nicht mehr aus dem Outlook-Posteingang eingelesen. Lege stattdessen ein Team an und lade deine Mitarbeiter per Link ein, dann erscheinen ihre Berichte direkt in TimeTracker.
+### Wichtig vor dem Update
+- Ja Scheißele, Herr Eisele – jetzt isch's soweit: die 1.1.0 isch do!
+- Es wird Zeit für Teams in TimeTracker: Team anlegen, Mitarbeiter per Link einladen und ihre Monatsberichte direkt in der App sehen.
 - Konten, die ein Jahr lang auf keinem Gerät benutzt wurden, werden künftig automatisch vom Server gelöscht. Wer TimeTracker regelmäßig nutzt, ist davon nicht betroffen; wer den Server selbst betreibt, kann die Frist ändern oder abschalten.
 
 ### Neu: Teams
