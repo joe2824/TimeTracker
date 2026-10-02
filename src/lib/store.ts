@@ -1088,6 +1088,20 @@ export async function saveTeamRemovedFrom(teamName: string | null): Promise<void
 }
 
 /**
+ * Welche Fassung von „Was ist neu“ dieses Gerät zuletzt gesehen hat - als Datei,
+ * weil WebView2 nach einem harten Prozessende bei jedem Start auf einen alten
+ * Stand seines localStorage zurückfallen kann.
+ */
+export async function loadSeenRelease(): Promise<string | null> {
+	const stored = await readJson<{ version?: unknown } | null>("release-seen.json", null);
+	return typeof stored?.version === "string" ? stored.version : null;
+}
+
+export function saveSeenRelease(version: string): Promise<void> {
+	return writeJson("release-seen.json", { version });
+}
+
+/**
  * Die Team-Mitgliedschaft aufgeben - z.B. nach dem Hinauswerfen durch die
  * Leitung. Geht durch den Haken: auch die anderen Geräte des Kontos sind dann
  * draussen.

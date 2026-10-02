@@ -323,7 +323,7 @@
 			// Dieselbe Spiegelung für die Leitung selbst - sonst sieht sie die eigene
 			// Team-Liste nie in der eigenen Zeiterfassung.
 			void syncOwnedTeamActivities();
-			whatsNew.checkOnStartup(app.showOnboarding);
+			void whatsNew.checkOnStartup(app.showOnboarding);
 			scheduleReminders();
 			scheduleReportReminder();
 			// Vor der Desktop-Weiche: die Tagesmeldung gilt auch im Browser.

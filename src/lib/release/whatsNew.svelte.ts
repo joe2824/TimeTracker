@@ -1,7 +1,10 @@
 // Verwaltung des „Was ist neu“-Dialogs für Haupt-Releases.
+import { logWarn } from "../log";
 import { isTauri } from "../platform/env";
+import { loadSeenRelease, saveSeenRelease } from "../store";
 
-const STORAGE_KEY = "timetracker:last_seen_release";
+/** Nur noch zum Lesen, für Bestandsgeräte - der Vermerk liegt jetzt im Datenordner. */
+const LEGACY_STORAGE_KEY = "timetracker:last_seen_release";
 
 export interface ReleaseHighlight {
 	icon: "cloud" | "shield" | "key" | "database" | "sparkles" | "users";
@@ -71,43 +74,54 @@ function isAtLeast(seen: string, wanted: string): boolean {
 	return true;
 }
 
+/** Der Vermerk aus der Zeit, als er nur im localStorage lag. */
+function legacySeenRelease(): string | null {
+	if (typeof localStorage === "undefined") return null;
+	try {
+		return localStorage.getItem(LEGACY_STORAGE_KEY);
+	} catch {
+		return null;
+	}
+}
+
 class WhatsNewState {
 	isOpen = $state(false);
 
 	/** Prüfen, ob nach einem Update das Info-Modal automatisch gezeigt werden soll (nur in der Desktop-App). */
-	checkOnStartup(isFirstAppStart = false): void {
+	async checkOnStartup(isFirstAppStart = false): Promise<void> {
 		// Nur in der Desktop-App (Tauri), nicht im Web-Browser / auf dem Server
 		if (!isTauri()) return;
-		if (typeof localStorage === "undefined") return;
 		// Bei einer komplett frischen Erstinstallation zeigen wir das reguläre Onboarding, kein Update-Modal
 		if (isFirstAppStart) {
-			this.markAsSeen();
+			await this.markAsSeen();
 			return;
 		}
 
-		try {
-			const lastSeen = localStorage.getItem(STORAGE_KEY);
-			// Verglichen wird der RANG, nicht die Gleichheit: wer schon eine spätere
-			// Fassung gesehen hat, kennt diesen Inhalt. Mit "!==" bekäme jeder den
-			// Dialog erneut, sobald die Nummer hier einmal zurückgesetzt wird.
-			if (!(lastSeen && isAtLeast(lastSeen, CURRENT_RELEASE.version))) {
-				// Kurz verzögert öffnen, damit die App fertig geladen hat
-				setTimeout(() => {
-					this.isOpen = true;
-				}, 600);
-			}
-		} catch {
-			/* localStorage nicht zugänglich */
+		const stored = await loadSeenRelease().catch(() => null);
+		const lastSeen = stored ?? legacySeenRelease();
+		// Verglichen wird der RANG, nicht die Gleichheit: wer schon eine spätere
+		// Fassung gesehen hat, kennt diesen Inhalt. Mit "!==" bekäme jeder den
+		// Dialog erneut, sobald die Nummer hier einmal zurückgesetzt wird.
+		if (lastSeen && isAtLeast(lastSeen, CURRENT_RELEASE.version)) {
+			if (stored === null) await this.remember(lastSeen);
+			return;
 		}
+		// Kurz verzögert öffnen, damit die App fertig geladen hat
+		setTimeout(() => {
+			this.isOpen = true;
+		}, 600);
 	}
 
-	markAsSeen(): void {
+	async markAsSeen(): Promise<void> {
 		this.isOpen = false;
-		if (typeof localStorage === "undefined") return;
+		await this.remember(CURRENT_RELEASE.version);
+	}
+
+	private async remember(version: string): Promise<void> {
 		try {
-			localStorage.setItem(STORAGE_KEY, CURRENT_RELEASE.version);
-		} catch {
-			/* ignoriere storage Fehler */
+			await saveSeenRelease(version);
+		} catch (e) {
+			logWarn("Vermerk zu „Was ist neu“ nicht gespeichert", e);
 		}
 	}
 

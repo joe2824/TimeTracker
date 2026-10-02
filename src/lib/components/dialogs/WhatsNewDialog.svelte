@@ -24,7 +24,7 @@
 	open={whatsNew.isOpen}
 	onOpenChange={(v) => {
 		whatsNew.isOpen = v;
-		if (!v) whatsNew.markAsSeen();
+		if (!v) void whatsNew.markAsSeen();
 	}}
 >
 	<Dialog.Content class="sm:max-w-lg">
@@ -59,7 +59,7 @@
 		</div>
 
 		<Dialog.Footer class="pt-2">
-			<Button class="w-full sm:w-auto" onclick={() => whatsNew.markAsSeen()}>
+			<Button class="w-full sm:w-auto" onclick={() => void whatsNew.markAsSeen()}>
 				Verstanden
 			</Button>
 		</Dialog.Footer>
