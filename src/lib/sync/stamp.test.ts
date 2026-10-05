@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { diffAndStamp } from "./stamp";
+import { diffAndStamp, withoutStamp } from "./stamp";
 import { anEntry as e } from "../testing/fixtures";
 
 const DEV = "geraet-1";
@@ -92,5 +92,14 @@ describe("diffAndStamp", () => {
 		const old = e("1", { updatedAt: 500 });
 		const fresh = JSON.parse(JSON.stringify({ note: "", source: "manual", endTs: 2000, startTs: 1000, activityId: "a", id: "1", updatedAt: 500 }));
 		expect(diffAndStamp([old], [fresh], DEV, NOW).changes.changed).toEqual([]);
+	});
+});
+
+describe("withoutStamp", () => {
+	it("nimmt auch die Feldstempel mit - im nächsten Konto gälten sie sonst als jüngere Änderungen", () => {
+		const stamped = { ...e("e1"), updatedAt: 5, rev: 2, deviceId: "handy", fieldUpdatedAt: { note: 5 } };
+		const plain = withoutStamp(stamped);
+		expect(plain).not.toHaveProperty("fieldUpdatedAt");
+		expect(plain).not.toHaveProperty("rev");
 	});
 });

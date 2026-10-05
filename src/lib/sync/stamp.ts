@@ -1,7 +1,9 @@
 // Änderungen erkennen und mit Herkunftsspuren versehen.
 import type { SyncMeta } from "../types";
 import { stableStringify } from "../utils";
-import { stampFields, type FieldRules } from "./fieldMerge";
+import { contentOf, META_KEYS, stampFields, type FieldRules } from "./fieldMerge";
+
+export { contentOf, META_KEYS };
 
 /** Ein Datensatz, der eine Identität und Änderungsspuren hat. */
 export interface Identified extends SyncMeta {
@@ -19,32 +21,20 @@ export interface Changes<T extends Identified> {
 	deleted: T[];
 }
 
-/** Die Felder, die NICHT zum Inhalt gehören - die Feldstempel schon: sie reisen verschlüsselt mit. */
-export const META_KEYS: readonly (keyof SyncMeta)[] = ["updatedAt", "rev", "deviceId"];
-
-/** Die Stempelfelder abstreifen - und sonst nichts anfassen. */
+/**
+ * Die Stempel abstreifen - und sonst nichts anfassen. Auch die Feldstempel: sie
+ * gehören zum Konto, in dem sie entstanden; im nächsten gälten sie als
+ * jüngere Änderungen und schöben den Stand dieses Geräts über den des Kontos.
+ */
 export function withoutStamp<T extends SyncMeta>(item: T): T {
 	const rest = { ...item } as Record<string, unknown>;
-	for (const k of META_KEYS) delete rest[k];
+	for (const k of [...META_KEYS, "fieldUpdatedAt"]) delete rest[k];
 	return rest as unknown as T;
 }
 
 /** Ob an einem Datensatz überhaupt ein Stempel hängt. */
 export function isStamped(item: SyncMeta): boolean {
 	return META_KEYS.some((k) => item[k] !== undefined);
-}
-
-/** Ein Datensatz ohne seine Änderungsspuren. */
-export function contentOf<T extends Identified>(item: T): Record<string, unknown> {
-	const out: Record<string, unknown> = {};
-	for (const [k, v] of Object.entries(item)) {
-		if ((META_KEYS as readonly string[]).includes(k)) continue;
-		// Ein fehlendes und ein undefined-Feld sind derselbe Inhalt. Ohne das
-		// zählte `{note: undefined}` gegen `{}` als Änderung.
-		if (v === undefined) continue;
-		out[k] = v;
-	}
-	return out;
 }
 
 /** Ob sich der Inhalt zweier Stände desselben Datensatzes unterscheidet. */

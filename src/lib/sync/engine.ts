@@ -24,8 +24,8 @@ import {
 } from "./outbox";
 import { adoptRev, isAutoEnd, mergeRecord, realEndWinner, resolveOpenEntries, type MergeResult } from "./merge";
 import { contentOf } from "./stamp";
-import { ACTIVITY_FIELDS, ENTRY_FIELDS, stampFields } from "./fieldMerge";
-import { lostLocalField, mergeSettings, sameSettings, type StampedSettings } from "./settingsMerge";
+import { ACTIVITY_FIELDS, ENTRY_FIELDS, lostLocalField, sameFields, stampFields } from "./fieldMerge";
+import { mergeSettings, SETTINGS_FIELDS, type StampedSettings } from "./settingsMerge";
 import { bucketFor, openRecord, sealRecord, type VaultKey } from "../crypto/vault";
 import { logError, logInfo, logWarn } from "../log";
 import { createSerialQueue } from "../utils";
@@ -1034,8 +1034,8 @@ export class SyncEngine {
 		const local = (await this.#store.settings()) as StampedSettings;
 		const merged = mergeSettings(local, remote);
 		const pending = open.has(`settings:${SETTINGS_ID}`);
-		if (!sameSettings(merged, local) || merged.rev !== local.rev) await this.#store.saveSettings(merged);
-		if (sameSettings(merged, remote)) {
+		if (!sameFields(merged, local) || merged.rev !== local.rev) await this.#store.saveSettings(merged);
+		if (sameFields(merged, remote)) {
 			// Der Server hat schon alles: ein offener Stand von hier ist erledigt.
 			// Bliebe er stehen, zeigte die App dauerhaft "1 Änderung ausstehend".
 			if (pending) await clearChanges([{ kind: "settings", id: SETTINGS_ID }]);
@@ -1043,7 +1043,7 @@ export class SyncEngine {
 			// Hier steht ein jüngeres Feld, das der Server nicht hat - hinauf damit.
 			await noteChanges([{ kind: "settings", id: SETTINGS_ID, deleted: false, at: Date.now() }]);
 		}
-		return pending && lostLocalField(local, merged) ? 1 : 0;
+		return pending && lostLocalField(local, merged, SETTINGS_FIELDS) ? 1 : 0;
 	}
 
 	/**

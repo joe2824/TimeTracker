@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Entry } from "../types";
-import { ENTRY_FIELDS, mergeFields, overlayTouched, stampFields } from "./fieldMerge";
+import { ACTIVITY_FIELDS, ENTRY_FIELDS, mergeFields, overlayTouched, stampFields } from "./fieldMerge";
 
 const base: Entry = {
 	id: "e1",
@@ -34,6 +34,16 @@ describe("Feldgruppen", () => {
 		const merged = mergeFields(phone, { ...desktop, rev: 2 }, ENTRY_FIELDS);
 
 		expect(merged).toMatchObject({ note: "Kundentermin", endTs: 300, rev: 2 });
+	});
+
+	it("ein Feld, das eine ältere Fassung entfernt hat, bleibt entfernt", () => {
+		// Ohne Feldstempel ist ein fehlendes Feld bei Aktivitäten und Einträgen
+		// eine Aussage (Farbe entfernt) - so alt wie der Datensatz, nicht uralt.
+		const activity = { id: "a1", name: "Alpha", sortOrder: 0, archived: false, isAbsence: false };
+		const local = { ...activity, color: "#f00", updatedAt: 10, rev: 1 };
+		const remote = { ...activity, updatedAt: 20, rev: 2 };
+
+		expect(mergeFields(local, remote, ACTIVITY_FIELDS)).not.toHaveProperty("color");
 	});
 
 	it("zwei Stände ohne Feldstempel bekommen keine - sonst ginge jeder Altbestand erneut hinauf", () => {

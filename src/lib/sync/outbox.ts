@@ -17,8 +17,8 @@ import {
 	settingsFileExists
 } from "../store";
 import { diffAndStamp } from "./stamp";
-import { stampFields, type StampedSettings } from "./settingsMerge";
-import { ACTIVITY_FIELDS, ENTRY_FIELDS } from "./fieldMerge";
+import { SETTINGS_FIELDS, type StampedSettings } from "./settingsMerge";
+import { ACTIVITY_FIELDS, ENTRY_FIELDS, stampFields } from "./fieldMerge";
 import { logWarn } from "../log";
 import { createSerialQueue } from "../utils";
 
@@ -338,7 +338,7 @@ const hook: WriteHook = {
 		// Die Einstellungen sind EIN Datensatz, kein Bestand – deshalb über eine
 		// einelementige Liste mit fester Id statt über echte Identitäten.
 		const wrap = (s: Settings | null) => (s ? [{ ...s, id: SETTINGS_ID }] : []);
-		const fielded = stampFields(before as StampedSettings | null, after as StampedSettings, now);
+		const fielded = stampFields(before as StampedSettings | null, after as StampedSettings, now, SETTINGS_FIELDS);
 		const { changes, stamped } = diffAndStamp(wrap(before), wrap(fielded), deviceId, now);
 		await note(changes.changed.map(() => ({ kind: "settings" as const, id: SETTINGS_ID, deleted: false, at: now })));
 		// Die geliehene Id gehört nicht in die Datei zurück.

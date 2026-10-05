@@ -1,40 +1,37 @@
 // Die Einstellungen feldweise - siehe fieldMerge.ts. Besonderheiten: ein
-// fehlendes Feld ist die Voreinstellung, und Gesendet-Vermerke werden vereinigt.
+// fehlendes Feld ist die Voreinstellung, und was nur wächst, wird vereinigt.
 import { defaultSettings, type Settings, type SyncMeta } from "../types";
-import {
-	lostLocalField as lostField,
-	mergeFields,
-	stampFields as stamp,
-	type FieldRules
-} from "./fieldMerge";
-
-export { sameFields as sameSettings } from "./fieldMerge";
+import { mergeFields, type FieldRules } from "./fieldMerge";
 
 /** Einstellungen samt Abgleich-Spuren, wie sie auf der Platte und beim Server liegen. */
 export type StampedSettings = Settings & SyncMeta;
 
-const SETTINGS_FIELDS: FieldRules = { defaults: defaultSettings };
+/**
+ * Ein fehlendes Feld ist die Voreinstellung. Auf einem frischen Gerät zählt
+ * damit nur, was davon abweicht - sonst schöbe es seine Voreinstellungen über
+ * das, was das Konto längst eingestellt hat.
+ */
+export const SETTINGS_FIELDS: FieldRules = { defaults: defaultSettings };
+
+const union = (a: string[] | undefined, b: string[] | undefined): string[] =>
+	[...new Set([...(a ?? []), ...(b ?? [])])].sort();
 
 /**
- * Feldstempel für einen Schreibvorgang. Auf einem frischen Gerät (`before`
- * null) zählt nur, was von der Voreinstellung abweicht - sonst schöbe es seine
- * Voreinstellungen über das, was das Konto längst eingestellt hat.
+ * Zwei Stände feldweise zusammenführen. Gesendet-Vermerke, abgelehnte
+ * Zusammenführungen und Stichwort-Zuordnungen wachsen nur: was ein Gerät
+ * dazugelernt hat, darf das andere nicht verdrängen. Bei einem Stichwort, das
+ * beide kennen, gilt die jüngere Zuordnung.
  */
-export function stampFields(
-	before: StampedSettings | null,
-	after: StampedSettings,
-	now: number
-): StampedSettings {
-	return stamp(before, after, now, SETTINGS_FIELDS);
-}
-
-/** Zwei Stände feldweise zusammenführen; ein Monat ist erledigt, sobald ein Gerät ihn so vermerkt. */
 export function mergeSettings(local: StampedSettings, remote: StampedSettings): StampedSettings {
 	const merged = mergeFields(local, remote, SETTINGS_FIELDS);
-	const sent = [...(local.reportSentMonths ?? []), ...(remote.reportSentMonths ?? [])];
-	return { ...merged, reportSentMonths: [...new Set(sent)].sort() };
-}
-
-export function lostLocalField(local: StampedSettings, merged: StampedSettings): boolean {
-	return lostField(local, merged, SETTINGS_FIELDS);
+	return {
+		...merged,
+		reportSentMonths: union(local.reportSentMonths, remote.reportSentMonths),
+		teamMergeDeclined: union(local.teamMergeDeclined, remote.teamMergeDeclined),
+		calendarKeywordMap: {
+			...local.calendarKeywordMap,
+			...remote.calendarKeywordMap,
+			...merged.calendarKeywordMap
+		}
+	};
 }

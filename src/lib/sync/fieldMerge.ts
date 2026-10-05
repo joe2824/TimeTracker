@@ -24,7 +24,23 @@ export const ENTRY_FIELDS: FieldRules = { groups: [["startTs", "endTs", "autoEnd
 
 export const ACTIVITY_FIELDS: FieldRules = {};
 
-const NOT_A_FIELD = new Set(["updatedAt", "rev", "deviceId", "id", "fieldUpdatedAt", "deletedAt"]);
+/** Die Felder, die NICHT zum Inhalt gehören - die Feldstempel schon: sie reisen verschlüsselt mit. */
+export const META_KEYS: readonly (keyof SyncMeta)[] = ["updatedAt", "rev", "deviceId"];
+
+/** Ein Datensatz ohne seine Änderungsspuren. */
+export function contentOf<T extends SyncMeta>(item: T): Record<string, unknown> {
+	const out: Record<string, unknown> = {};
+	for (const [k, v] of Object.entries(item)) {
+		if ((META_KEYS as readonly string[]).includes(k)) continue;
+		// Ein fehlendes und ein undefined-Feld sind derselbe Inhalt. Ohne das
+		// zählte `{note: undefined}` gegen `{}` als Änderung.
+		if (v === undefined) continue;
+		out[k] = v;
+	}
+	return out;
+}
+
+const NOT_A_FIELD = new Set<string>([...META_KEYS, "id", "fieldUpdatedAt", "deletedAt"]);
 
 type Loose = Record<string, unknown>;
 
@@ -46,11 +62,14 @@ function slotsOf(rules: FieldRules, ...sides: object[]): Map<string, string[]> {
  * Wann ein Feld zuletzt geändert wurde.
  *
  * Ein Stand ohne Feldstempel (ältere Fassung) gibt jedem Feld die Zeit des
- * Datensatzes; ein Feld, das dort fehlt, ist älter als jede Änderung.
+ * Datensatzes. Auch einem fehlenden: bei Aktivitäten und Einträgen heisst das
+ * „entfernt" (keine Farbe mehr). Nur wo Voreinstellungen gelten, kennt die
+ * ältere Fassung das Feld schlicht nicht - dort ist es älter als jede Änderung.
  */
-function stampOf(s: FieldStamped, slot: string, keys: string[]): number {
+function stampOf(s: FieldStamped, slot: string, keys: string[], rules: FieldRules): number {
 	if (s.fieldUpdatedAt) return s.fieldUpdatedAt[slot] ?? 0;
-	return keys.some((k) => Object.hasOwn(s, k)) ? (s.updatedAt ?? 0) : 0;
+	if (rules.defaults && !keys.some((k) => Object.hasOwn(s, k))) return 0;
+	return s.updatedAt ?? 0;
 }
 
 function valuesOf(s: object, keys: string[], rules: FieldRules): string {
@@ -84,7 +103,7 @@ export function stampFields<T extends FieldStamped>(
 	const prior = before ?? ({} as T);
 	const stamps: FieldStamps = {};
 	for (const [slot, keys] of slotsOf(rules, prior, after)) {
-		const old = stampOf(prior, slot, keys);
+		const old = stampOf(prior, slot, keys, rules);
 		const given = after.fieldUpdatedAt?.[slot] ?? 0;
 		if (given > old) stamps[slot] = given;
 		else if (valuesOf(prior, keys, rules) !== valuesOf(after, keys, rules)) stamps[slot] = now;
@@ -98,15 +117,15 @@ export function stampFields<T extends FieldStamped>(
  * (`remote`), damit ein Hochladen danach auf ihr aufsetzt.
  *
  * Gleich alt und doch verschieden sind Felder nur zwischen Ständen ohne
- * Feldstempel - dort entscheidet der Datensatz als Ganzes, wie bisher.
+ * Feldstempel - dort entscheidet der Datensatz als Ganzes.
  */
 export function mergeFields<T extends FieldStamped>(local: T, remote: T, rules: FieldRules): T {
 	const whole = pickWinner(local, remote) === "local" ? local : remote;
 	const out = { ...remote } as Loose;
 	const stamps: FieldStamps = {};
 	for (const [slot, keys] of slotsOf(rules, local, remote)) {
-		const l = stampOf(local, slot, keys);
-		const r = stampOf(remote, slot, keys);
+		const l = stampOf(local, slot, keys, rules);
+		const r = stampOf(remote, slot, keys, rules);
 		const from = (l > r ? local : r > l ? remote : whole) as Loose;
 		for (const k of keys) {
 			if (Object.hasOwn(from, k)) out[k] = from[k];
@@ -114,8 +133,8 @@ export function mergeFields<T extends FieldStamped>(local: T, remote: T, rules: 
 		}
 		if (Math.max(l, r) > 0) stamps[slot] = Math.max(l, r);
 	}
-	// Ohne Stempel auf beiden Seiten bleibt es bei der alten Form: sonst ginge
-	// jeder Datensatz aus einer älteren Fassung allein deshalb erneut hinauf.
+	// Ohne Stempel auf beiden Seiten bleibt der Datensatz ohne: sonst ginge jeder
+	// Datensatz aus einer älteren Fassung allein deshalb erneut hinauf.
 	if (local.fieldUpdatedAt || remote.fieldUpdatedAt) out.fieldUpdatedAt = stamps;
 	else delete out.fieldUpdatedAt;
 	const newer = (local.updatedAt ?? 0) > (remote.updatedAt ?? 0) ? local : remote;
@@ -123,13 +142,11 @@ export function mergeFields<T extends FieldStamped>(local: T, remote: T, rules: 
 }
 
 /** Ob zwei Stände inhaltlich gleich sind - Fassung, Zeit und Gerät außen vor. */
-export function sameFields(a: object, b: object): boolean {
-	const content = (s: object) =>
-		Object.fromEntries(
-			Object.entries(s).filter(
-				([k, v]) => k !== "id" && k !== "updatedAt" && k !== "rev" && k !== "deviceId" && v !== undefined
-			)
-		);
+export function sameFields(a: SyncMeta, b: SyncMeta): boolean {
+	const content = (s: SyncMeta) => {
+		const { id: _id, ...rest } = contentOf(s);
+		return rest;
+	};
 	return stableStringify(content(a)) === stableStringify(content(b));
 }
 
@@ -140,7 +157,7 @@ export function sameFields(a: object, b: object): boolean {
 export function lostLocalField<T extends FieldStamped>(local: T, merged: T, rules: FieldRules): boolean {
 	if (local.updatedAt === undefined) return false;
 	for (const [slot, keys] of slotsOf(rules, local)) {
-		if (stampOf(local, slot, keys) !== local.updatedAt) continue;
+		if (stampOf(local, slot, keys, rules) !== local.updatedAt) continue;
 		if (valuesOf(local, keys, rules) !== valuesOf(merged, keys, rules)) return true;
 	}
 	return false;

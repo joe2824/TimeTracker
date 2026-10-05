@@ -438,12 +438,15 @@ async function saveActivitiesWith(
  * Dreiwege-Abgleich je Datensatz und Feld: `base` ist, was die App zuletzt
  * gelesen oder geschrieben hat, `ours` ihr jetziger Stand, `disk` die Platte.
  *
- * Der Abgleich schreibt direkt auf die Platte; bis die App neu liest, ist ihre
- * Liste veraltet. Als Ganzes geschrieben, galt ein dazwischen angekommener
- * Datensatz als gelöscht und eine Änderung von dort als zurückgenommen - und
- * beides ging an alle Geräte. Regel: Was die App angefasst hat, gilt; alles
- * andere bleibt, wie es auf der Platte steht. Nur ohne `diskReliable` bleibt ein
- * unveränderter Datensatz, denn dann ist die Liste der App die einzige Kopie.
+ * Der Abgleich schreibt direkt auf die Platte, die Liste der App kann also
+ * veraltet sein. Als Ganzes geschrieben, gälte ein dort angekommener Datensatz
+ * als gelöscht und eine Änderung von dort als zurückgenommen - für alle Geräte.
+ * Regel: Was die App angefasst hat, gilt, und zwar je Feld; alles andere bleibt,
+ * wie es auf der Platte steht - auch ein Fehlen dort, also eine Löschung auf
+ * einem anderen Gerät. Nur ohne `diskReliable` (Datei unlesbar oder beschädigt)
+ * bleibt ein unveränderter Datensatz, denn dann ist die Liste der App die
+ * einzige Kopie. Nur die Fassung gehoben (Echo des eigenen Uploads): der Inhalt
+ * der Platte gilt, mit der höheren Fassung.
  */
 export function mergeListOntoDisk<T extends { id: string }>(
 	base: T[],
@@ -461,7 +464,7 @@ export function mergeListOntoDisk<T extends { id: string }>(
 		const onDisk = diskById.get(x.id);
 		if (!known) out.push(x);
 		else if (!touchedAny(known, x, fields)) {
-			if (onDisk) out.push(onDisk);
+			if (onDisk) out.push(withHigherRev(onDisk, x));
 			else if (!diskReliable) out.push(x);
 		} else out.push(onDisk ? overlayTouched(known, x, onDisk, fields) : x);
 	}
@@ -470,6 +473,12 @@ export function mergeListOntoDisk<T extends { id: string }>(
 		if (!oursById.has(x.id) && !baseById.has(x.id)) out.push(x);
 	}
 	return out;
+}
+
+function withHigherRev<T>(onDisk: T, ours: T): T {
+	const d = (onDisk as SyncMeta).rev;
+	const o = (ours as SyncMeta).rev;
+	return o !== undefined && (d === undefined || o > d) ? { ...onDisk, rev: o } : onDisk;
 }
 
 /**
@@ -595,22 +604,8 @@ async function saveEntriesWith(
 	});
 }
 
-/** Inhaltsgleich, unabhängig von der Reihenfolge der Felder. */
-function sameEntry(a: Entry, b: Entry): boolean {
-	return stableStringify(a) === stableStringify(b);
-}
-
 /**
- * Dreiwege-Abgleich je Eintrag: `base` ist, was die App zuletzt gelesen oder
- * geschrieben hat, `ours` ihr jetziger Stand, `disk` die Platte.
- *
- * Der Abgleich schreibt direkt auf die Platte; bis die App neu lädt, ist ihre
- * Liste veraltet. Ohne diesen Abgleich galt ein dazwischen angekommener Eintrag
- * beim nächsten Speichern als gelöscht – und die Löschung ging an alle Geräte.
- * Regel: Was die App angefasst hat, gilt; alles andere bleibt, wie es auf der
- * Platte steht – auch ein Fehlen dort, also eine Löschung auf einem anderen
- * Gerät. Nur ohne `diskReliable` (Datei unlesbar oder beschädigt) bleibt ein
- * unveränderter Eintrag, denn dann ist die Liste der App die einzige Kopie.
+ * Dreiwege-Abgleich für Einträge - siehe mergeListOntoDisk.
  *
  * `closeIfOpen`: Einträge, die nur geschlossen werden, solange sie auf der
  * Platte noch offen sind. Hat inzwischen jemand den Timer gestoppt oder den
@@ -623,36 +618,25 @@ export function mergeOntoDisk(
 	diskReliable = true,
 	closeIfOpen: ReadonlySet<string> = new Set()
 ): Entry[] {
-	const baseById = new Map(base.map((e) => [e.id, e]));
-	const oursById = new Map(ours.map((e) => [e.id, e]));
+	if (!diskReliable || closeIfOpen.size === 0) {
+		return mergeListOntoDisk(base, ours, disk, diskReliable, ENTRY_FIELDS);
+	}
 	const diskById = new Map(disk.map((e) => [e.id, e]));
-	const out: Entry[] = [];
+	const baseIds = new Set(base.map((e) => e.id));
+	// Was die Platte schon entschieden hat, gilt als gelesen und unangetastet.
+	const settled = new Map<string, Entry | null>();
 	for (const e of ours) {
-		const known = baseById.get(e.id);
+		if (!closeIfOpen.has(e.id)) continue;
 		const onDisk = diskById.get(e.id);
-		const untouched = known !== undefined && sameEntry(known, e);
-		// Nur die Fassung gehoben (Echo des eigenen Uploads): der Inhalt der
-		// Platte gilt, die Fassung des Servers kommt dazu.
-		const onlyRev = known !== undefined && !untouched && sameEntry({ ...known, rev: e.rev }, e);
-		if (closeIfOpen.has(e.id) && diskReliable) {
-			if (onDisk && onDisk.endTs !== null) {
-				out.push(onDisk);
-				continue;
-			}
-			if (!onDisk && known) continue;
-		}
-		if (onlyRev && onDisk) out.push({ ...onDisk, rev: e.rev });
-		// Nur die angefassten Felder: eine Notiz, die inzwischen von einem anderen
-		// Gerät kam, überlebt das Umhängen der Aktivität hier.
-		else if (!untouched) out.push(known && onDisk ? overlayTouched(known, e, onDisk, ENTRY_FIELDS) : e);
-		else if (onDisk) out.push(onDisk);
-		else if (!diskReliable) out.push(e);
+		if (onDisk && onDisk.endTs !== null) settled.set(e.id, onDisk);
+		else if (!onDisk && baseIds.has(e.id)) settled.set(e.id, null);
 	}
-	for (const e of disk) {
-		// Nie gekannt = inzwischen angekommen. Gekannt und nicht mehr da = gelöscht.
-		if (!oursById.has(e.id) && !baseById.has(e.id)) out.push(e);
-	}
-	return out;
+	const mine = ours.flatMap((e) => {
+		const s = settled.get(e.id);
+		return s === undefined ? [e] : s === null ? [] : [s];
+	});
+	const known = base.map((e) => settled.get(e.id) ?? e);
+	return mergeListOntoDisk(known, mine, disk, diskReliable, ENTRY_FIELDS);
 }
 
 // ---- Monatsdateien nach einem Zonenwechsel ----

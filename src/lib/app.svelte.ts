@@ -1900,9 +1900,8 @@ class AppState {
 	async markReportSent(month: string): Promise<void> {
 		if (this.isReportSent(month)) return;
 		await this.updateSettings((s) => ({
-			reportSentMonths: s.reportSentMonths.includes(month)
-				? s.reportSentMonths
-				: [...s.reportSentMonths, month]
+			// Sortiert wie beim Zusammenführen - sonst wiche der Stand vom Server ab.
+			reportSentMonths: [...new Set([...s.reportSentMonths, month])].sort()
 		}));
 	}
 
@@ -1942,12 +1941,16 @@ class AppState {
 		}
 	}
 
+	/** Zählt die Aufrufe von updateSettings - nur der jüngste übernimmt den Stand der Platte. */
+	#settingsWrites = 0;
+
 	/**
 	 * Hängt der neue Wert am alten (ein Monat mehr, eine Zuordnung mehr), `patch`
 	 * als Funktion übergeben: sie rechnet dann auf dem Stand der Platte, und was
 	 * ein anderes Gerät inzwischen ergänzt hat, bleibt.
 	 */
 	async updateSettings(patch: SettingsPatch): Promise<void> {
+		const ticket = ++this.#settingsWrites;
 		const zoneBefore = appTimeZone();
 		const quick = typeof patch === "function" ? patch($state.snapshot(this.settings) as Settings) : patch;
 		this.settings = { ...this.settings, ...quick };
@@ -1955,7 +1958,12 @@ class AppState {
 		// noch gegen die alte Zone.
 		if (quick.timeZone !== undefined) setAppTimeZone(quick.timeZone);
 		const { settings, applied } = await patchSettings(patch, $state.snapshot(this.settings) as Settings);
-		this.settings = settings;
+		// Läuft schon ein jüngerer Aufruf, schreibt der den volleren Stand - dieser
+		// hier nähme dessen Änderung im Speicher sonst kurz zurück.
+		if (ticket === this.#settingsWrites) this.settings = settings;
+		// Eine Zone, die der Abgleich inzwischen abgelegt hat, kommt mit dem Stand
+		// der Platte herein - sie muss auch gelten, nicht nur dastehen.
+		if (settings.timeZone && settings.timeZone !== appTimeZone()) setAppTimeZone(settings.timeZone);
 		// Die geladenen Monate stammen aus der alten Einteilung.
 		if (appTimeZone() !== zoneBefore) await this.reload();
 		// Mit Werten: „E-Mail war leer“ ist die Art Frage, die hinterher niemand

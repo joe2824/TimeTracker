@@ -1540,6 +1540,18 @@ describe("Wechsel der Kontozeitzone", () => {
 		expect(app.running).toBeNull();
 	});
 
+	it("eine Zone, die der Abgleich auf die Platte gelegt hat, gilt nach der nächsten Einstellung auch", async () => {
+		reset({ "2026-07": [entry("grenze", P1, boundary, boundary + 1800_000)] });
+		app.settings = { ...defaultSettings, timeZone: HOME };
+		files.set("data/settings.json", JSON.stringify({ ...defaultSettings, timeZone: FAR }));
+
+		await app.updateSettings({ senderName: "Anna Meier" });
+
+		expect(app.settings.timeZone).toBe(FAR);
+		expect(appTimeZone()).toBe(FAR);
+		expect(app.monthEntries("2026-08").map((e) => e.id)).toEqual(["grenze"]);
+	});
+
 	it("repariert beim Laden Dateien, die in einer anderen Zone abgelegt wurden", async () => {
 		// Eine frühere Fassung hat nach dem Zonenwechsel nicht umsortiert.
 		reset({ "2026-08": [entry("grenze", P1, boundary, boundary + 1800_000)] });
@@ -1556,8 +1568,8 @@ describe("updateSettings gegen den Stand auf der Platte", () => {
 	it("schreibt nur das geänderte Feld - was der Abgleich inzwischen abgelegt hat, bleibt", async () => {
 		// Beim Start meldet die App „heute aktiv", während der erste Abgleich
 		// gerade die Einstellungen eines anderen Geräts auf die Platte legt.
-		// Der Speicher der App kennt sie erst nach reload() - bis dahin schrieb
-		// jede Einstellung den alten Gesamtstand über den frischen.
+		// Der Speicher der App kennt sie erst nach reload(); eine Einstellung bis
+		// dahin darf nicht den alten Gesamtstand über den frischen schreiben.
 		reset();
 		app.settings = { ...defaultSettings, timeZone: appTimeZone() };
 		const { remoteStore } = await import("./store");
@@ -1573,6 +1585,28 @@ describe("updateSettings gegen den Stand auf der Platte", () => {
 		expect(disk.bossEmail).toBe("anna.meier@firma.de");
 		expect(disk.usageLastDay).toBe("2026-10-05");
 		expect(app.settings.bossEmail).toBe("anna.meier@firma.de");
+	});
+
+	it("zwei Änderungen kurz hintereinander: die erste nimmt die zweite im Speicher nicht zurück", async () => {
+		reset();
+		app.settings = { ...defaultSettings, timeZone: appTimeZone() };
+
+		const first = app.updateSettings({ senderName: "Anna Meier" });
+		const second = app.updateSettings({ usageLastDay: "2026-10-05" });
+		await first;
+		expect(app.settings.usageLastDay).toBe("2026-10-05");
+		await second;
+		expect(app.settings).toMatchObject({ senderName: "Anna Meier", usageLastDay: "2026-10-05" });
+	});
+
+	it("vermerkt Monate sortiert - der Abgleich vergleicht sortiert und lüde sonst erneut hoch", async () => {
+		reset();
+		app.settings = { ...defaultSettings, timeZone: appTimeZone(), reportSentMonths: ["2026-09"] };
+		files.set("data/settings.json", JSON.stringify(app.settings));
+
+		await app.markReportSent("2026-08");
+
+		expect(JSON.parse(files.get("data/settings.json")!).reportSentMonths).toEqual(["2026-08", "2026-09"]);
 	});
 
 	it("ein Gesendet-Vermerk von hier lässt den des anderen Geräts stehen", async () => {
@@ -1591,8 +1625,8 @@ describe("updateSettings gegen den Stand auf der Platte", () => {
 describe("Aktivitäten gegen den Stand auf der Platte", () => {
 	it("eine Aktivität vom anderen Gerät übersteht eine Änderung, bevor die App neu liest", async () => {
 		// Der Abgleich legt die Liste direkt auf die Platte; die App kennt sie
-		// erst nach reload(). Schrieb sie bis dahin ihre alte Liste, galt die
-		// neue Aktivität als gelöscht - und die Löschung ging an alle Geräte.
+		// erst nach reload(). Ihre alte Liste darf die neue Aktivität nicht als
+		// gelöscht ausgeben - die Löschung ginge an alle Geräte.
 		const { startTracking, stopTracking, pendingChanges, resetOutboxForTests } = await import("./sync/outbox");
 		const { remoteStore } = await import("./store");
 		reset();

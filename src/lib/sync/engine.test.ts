@@ -750,9 +750,9 @@ describe("Einstellungen feldweise", () => {
 	}
 
 	it("eine Änderung an einem anderen Feld überschreibt die neuere Adresse nicht", async () => {
-		// Der Fall aus dem Betrieb: ein Gerät mit altem Stand meldet beim Start
-		// „heute aktiv" (usageLastDay) - und schob damit seinen ganzen alten
-		// Datensatz samt leerer Adresse über die neuere des anderen Geräts.
+		// Ein Gerät mit altem Stand meldet beim Start „heute aktiv" (usageLastDay):
+		// sein übriger, alter Datensatz samt leerer Adresse darf die neuere
+		// Adresse des anderen Geräts nicht verdrängen.
 		const [phone, desktop] = await twoDevicesInStep();
 
 		await afterwards();

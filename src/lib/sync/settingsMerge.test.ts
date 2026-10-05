@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { defaultSettings } from "../types";
-import { mergeSettings, stampFields, type StampedSettings } from "./settingsMerge";
+import { stampFields as stampWith } from "./fieldMerge";
+import { mergeSettings, SETTINGS_FIELDS, type StampedSettings } from "./settingsMerge";
+
+const stampFields = (before: StampedSettings | null, after: StampedSettings, now: number) =>
+	stampWith(before, after, now, SETTINGS_FIELDS);
 
 const T1 = 1_000;
 const T2 = 2_000;
@@ -92,5 +96,26 @@ describe("mergeSettings", () => {
 		const remote = settings({ updatedAt: T2, reportSentMonths: ["2026-09"], fieldUpdatedAt: { reportSentMonths: T2 } });
 
 		expect(mergeSettings(local, remote).reportSentMonths).toEqual(["2026-08", "2026-09"]);
+	});
+
+	it("vereinigt Stichwort-Zuordnungen und abgelehnte Zusammenführungen zweier Geräte", () => {
+		// Beide wachsen nur: was ein Gerät dazulernt, darf das andere nicht verdrängen.
+		const local = settings({
+			updatedAt: T1,
+			calendarKeywordMap: { standup: "a1", review: "a2" },
+			teamMergeDeclined: ["x"],
+			fieldUpdatedAt: { calendarKeywordMap: T1, teamMergeDeclined: T1 }
+		});
+		const remote = settings({
+			updatedAt: T2,
+			calendarKeywordMap: { review: "a3", planung: "a4" },
+			teamMergeDeclined: ["y"],
+			fieldUpdatedAt: { calendarKeywordMap: T2, teamMergeDeclined: T2 }
+		});
+
+		const merged = mergeSettings(local, remote);
+
+		expect(merged.calendarKeywordMap).toEqual({ standup: "a1", review: "a3", planung: "a4" });
+		expect(merged.teamMergeDeclined).toEqual(["x", "y"]);
 	});
 });
