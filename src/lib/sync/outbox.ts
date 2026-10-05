@@ -17,6 +17,8 @@ import {
 	settingsFileExists
 } from "../store";
 import { diffAndStamp } from "./stamp";
+import { stampFields, type StampedSettings } from "./settingsMerge";
+import { ACTIVITY_FIELDS, ENTRY_FIELDS } from "./fieldMerge";
 import { logWarn } from "../log";
 import { createSerialQueue } from "../utils";
 
@@ -287,7 +289,7 @@ export function stopTracking(): void {
 const hook: WriteHook = {
 	async entries(month, before, after) {
 		const now = Date.now();
-		const { changes, stamped } = diffAndStamp(before, after, deviceId, now);
+		const { changes, stamped } = diffAndStamp(before, after, deviceId, now, ENTRY_FIELDS);
 		await note([
 			...changes.changed.map((e: Entry) => ({ kind: "entry" as const, id: e.id, month, deleted: false, at: now })),
 			...changes.deleted.map((e: Entry) => ({
@@ -315,7 +317,8 @@ const hook: WriteHook = {
 			before.filter((a) => !isTeamOwned(a)),
 			after.filter((a) => !isTeamOwned(a)),
 			deviceId,
-			now
+			now,
+			ACTIVITY_FIELDS
 		);
 		await note([
 			...changes.changed.map((a: Activity) => ({ kind: "activity" as const, id: a.id, deleted: false, at: now })),
@@ -335,7 +338,8 @@ const hook: WriteHook = {
 		// Die Einstellungen sind EIN Datensatz, kein Bestand – deshalb über eine
 		// einelementige Liste mit fester Id statt über echte Identitäten.
 		const wrap = (s: Settings | null) => (s ? [{ ...s, id: SETTINGS_ID }] : []);
-		const { changes, stamped } = diffAndStamp(wrap(before), wrap(after), deviceId, now);
+		const fielded = stampFields(before as StampedSettings | null, after as StampedSettings, now);
+		const { changes, stamped } = diffAndStamp(wrap(before), wrap(fielded), deviceId, now);
 		await note(changes.changed.map(() => ({ kind: "settings" as const, id: SETTINGS_ID, deleted: false, at: now })));
 		// Die geliehene Id gehört nicht in die Datei zurück.
 		const { id: _id, ...rest } = stamped[0];

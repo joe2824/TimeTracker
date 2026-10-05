@@ -2,6 +2,7 @@
 import type { Entry } from "../types";
 import type { SyncMeta } from "../types";
 import { startOfNextDay } from "../time/time";
+import { lostLocalField, mergeFields, pickWinner, sameFields, type FieldRules } from "./fieldMerge";
 
 export interface MergeInput<T extends { id: string } & SyncMeta> {
 	local: T | undefined;
@@ -12,17 +13,7 @@ export interface MergeInput<T extends { id: string } & SyncMeta> {
 
 export type MergeChoice = "local" | "remote" | "equal";
 
-/** Wer gewinnt. */
-export function pickWinner<T extends SyncMeta>(local: T, remote: T): MergeChoice {
-	const l = local.updatedAt ?? 0;
-	const r = remote.updatedAt ?? 0;
-	if (l > r) return "local";
-	if (r > l) return "remote";
-	const ld = local.deviceId ?? "";
-	const rd = remote.deviceId ?? "";
-	if (ld === rd) return "equal";
-	return ld > rd ? "local" : "remote";
-}
+export { pickWinner };
 
 export interface MergeResult<T> {
 	/** Was danach lokal gelten soll. Null = löschen. */
@@ -31,12 +22,15 @@ export interface MergeResult<T> {
 	changed: boolean;
 	/** Ob dabei eine noch nicht hochgeladene lokale Änderung unterlegen ist. */
 	lostLocalEdit: boolean;
+	/** Ob das Ergebnis Felder trägt, die der Server noch nicht hat. */
+	needsPush?: boolean;
 }
 
 /** Einen Datensatz zusammenführen. */
 export function mergeRecord<T extends { id: string } & SyncMeta>(
 	input: MergeInput<T>,
-	isTombstone: (v: T) => boolean
+	isTombstone: (v: T) => boolean,
+	fields?: FieldRules
 ): MergeResult<T> {
 	const { local, remote, localPending } = input;
 
@@ -48,6 +42,10 @@ export function mergeRecord<T extends { id: string } & SyncMeta>(
 		if (isTombstone(remote)) return { value: null, changed: false, lostLocalEdit: false };
 		return { value: remote, changed: true, lostLocalEdit: false };
 	}
+
+	// Feldweise, solange beide Stände leben: Löschen gegen Ändern entscheidet
+	// weiter der Datensatz als Ganzes.
+	if (fields && !isTombstone(remote)) return mergeAlive(local, remote, localPending, fields);
 
 	// Nichts Eigenes offen: der Serverstand ist die Wahrheit, ohne Wettstreit.
 	if (!localPending) {
@@ -83,6 +81,28 @@ export function mergeRecord<T extends { id: string } & SyncMeta>(
 		changed: true,
 		// Genau hier verliert jemand etwas, das er selbst geändert hat.
 		lostLocalEdit: true
+	};
+}
+
+/**
+ * Zwei lebende Stände feldweise zusammenführen. Auch ohne eigene offene
+ * Änderung: ein jüngeres Feld von hier geht dann eben hinauf, statt still
+ * unter einem älteren Serverstand zu verschwinden.
+ */
+function mergeAlive<T extends { id: string } & SyncMeta>(
+	local: T,
+	remote: T,
+	localPending: boolean,
+	fields: FieldRules
+): MergeResult<T> {
+	const merged = mergeFields(local, remote, fields);
+	const needsPush = !sameFields(merged, remote);
+	if (sameFields(merged, local)) return { ...adoptRev(local, remote), needsPush };
+	return {
+		value: merged,
+		changed: true,
+		lostLocalEdit: localPending && lostLocalField(local, merged, fields),
+		needsPush
 	};
 }
 

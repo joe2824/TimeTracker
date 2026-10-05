@@ -1551,3 +1551,95 @@ describe("Wechsel der Kontozeitzone", () => {
 		expect(app.monthEntries("2026-07").map((e) => e.id)).toEqual(["grenze"]);
 	});
 });
+
+describe("updateSettings gegen den Stand auf der Platte", () => {
+	it("schreibt nur das geänderte Feld - was der Abgleich inzwischen abgelegt hat, bleibt", async () => {
+		// Beim Start meldet die App „heute aktiv", während der erste Abgleich
+		// gerade die Einstellungen eines anderen Geräts auf die Platte legt.
+		// Der Speicher der App kennt sie erst nach reload() - bis dahin schrieb
+		// jede Einstellung den alten Gesamtstand über den frischen.
+		reset();
+		app.settings = { ...defaultSettings, timeZone: appTimeZone() };
+		const { remoteStore } = await import("./store");
+		await remoteStore.saveSettings({
+			...defaultSettings,
+			timeZone: appTimeZone(),
+			bossEmail: "anna.meier@firma.de"
+		});
+
+		await app.updateSettings({ usageLastDay: "2026-10-05" });
+
+		const disk = JSON.parse(files.get("data/settings.json")!);
+		expect(disk.bossEmail).toBe("anna.meier@firma.de");
+		expect(disk.usageLastDay).toBe("2026-10-05");
+		expect(app.settings.bossEmail).toBe("anna.meier@firma.de");
+	});
+
+	it("ein Gesendet-Vermerk von hier lässt den des anderen Geräts stehen", async () => {
+		reset();
+		app.settings = { ...defaultSettings, timeZone: appTimeZone() };
+		const { remoteStore } = await import("./store");
+		await remoteStore.saveSettings({ ...defaultSettings, timeZone: appTimeZone(), reportSentMonths: ["2026-08"] });
+
+		await app.markReportSent("2026-09");
+
+		const disk = JSON.parse(files.get("data/settings.json")!);
+		expect(disk.reportSentMonths).toEqual(["2026-08", "2026-09"]);
+	});
+});
+
+describe("Aktivitäten gegen den Stand auf der Platte", () => {
+	it("eine Aktivität vom anderen Gerät übersteht eine Änderung, bevor die App neu liest", async () => {
+		// Der Abgleich legt die Liste direkt auf die Platte; die App kennt sie
+		// erst nach reload(). Schrieb sie bis dahin ihre alte Liste, galt die
+		// neue Aktivität als gelöscht - und die Löschung ging an alle Geräte.
+		const { startTracking, stopTracking, pendingChanges, resetOutboxForTests } = await import("./sync/outbox");
+		const { remoteStore } = await import("./store");
+		reset();
+		const stamped = ACTIVITIES.map((a, i) => ({ ...a, rev: 1, updatedAt: 1000 + i, deviceId: "rechner" }));
+		files.set("data/activities.json", JSON.stringify(stamped));
+		app.activities = structuredClone(stamped);
+
+		resetOutboxForTests();
+		await startTracking("geraet-test");
+		try {
+			const fromElsewhere = { id: "neu", name: "Vom Handy", sortOrder: 3, archived: false, isAbsence: false, rev: 1, updatedAt: 5000, deviceId: "handy" };
+			await remoteStore.saveActivities([...stamped, fromElsewhere]);
+
+			await app.toggleFavorite(P1);
+
+			const disk: Activity[] = JSON.parse(files.get("data/activities.json")!);
+			expect(disk.map((a) => a.id)).toContain("neu");
+			expect(disk.find((a) => a.id === P1)?.favorite).toBe(true);
+			expect(pendingChanges().filter((c) => c.deleted)).toEqual([]);
+		} finally {
+			stopTracking();
+			resetOutboxForTests();
+		}
+	});
+
+	it("eine Umbenennung vom anderen Gerät übersteht eine Änderung an einer anderen Zeile", async () => {
+		const { startTracking, stopTracking, resetOutboxForTests } = await import("./sync/outbox");
+		const { remoteStore } = await import("./store");
+		reset();
+		const stamped = ACTIVITIES.map((a, i) => ({ ...a, rev: 1, updatedAt: 1000 + i, deviceId: "rechner" }));
+		files.set("data/activities.json", JSON.stringify(stamped));
+		app.activities = structuredClone(stamped);
+
+		resetOutboxForTests();
+		await startTracking("geraet-test");
+		try {
+			await remoteStore.saveActivities(
+				stamped.map((a) => (a.id === P2 ? { ...a, name: "Projekt 2 neu", rev: 2, updatedAt: 5000 } : a))
+			);
+
+			await app.toggleFavorite(P1);
+
+			const disk: Activity[] = JSON.parse(files.get("data/activities.json")!);
+			expect(disk.find((a) => a.id === P2)?.name).toBe("Projekt 2 neu");
+		} finally {
+			stopTracking();
+			resetOutboxForTests();
+		}
+	});
+});

@@ -24,6 +24,8 @@ import {
 } from "./outbox";
 import { adoptRev, isAutoEnd, mergeRecord, realEndWinner, resolveOpenEntries, type MergeResult } from "./merge";
 import { contentOf } from "./stamp";
+import { ACTIVITY_FIELDS, ENTRY_FIELDS, stampFields } from "./fieldMerge";
+import { lostLocalField, mergeSettings, sameSettings, type StampedSettings } from "./settingsMerge";
 import { bucketFor, openRecord, sealRecord, type VaultKey } from "../crypto/vault";
 import { logError, logInfo, logWarn } from "../log";
 import { createSerialQueue } from "../utils";
@@ -80,8 +82,6 @@ export interface LocalStore {
 	saveActivities(list: Activity[]): Promise<void>;
 	settings(): Promise<Settings>;
 	saveSettings(s: Settings): Promise<void>;
-	/** Wie saveSettings, aber als eigene Änderung: gestempelt und zum Hochladen vorgemerkt. */
-	changeSettings(s: Settings): Promise<void>;
 	timeReport(month: string): Promise<StoredTimeReport | null>;
 	saveTimeReport(report: StoredTimeReport): Promise<void>;
 	deleteTimeReport(month: string): Promise<void>;
@@ -820,13 +820,16 @@ export class SyncEngine {
 				const remoteClosed = deleted || entry.endTs !== null;
 				if (!remoteClosed) legacyContinuation = undefined;
 				if (localPending && legacyContinuation) localPending = false;
+				// Eine alte Teilung an Mitternacht verliert gegen das echte Ende,
+				// gleich wie jung ihr Stempel ist - dort bleibt es beim Datensatz als Ganzes.
 				result = mergeRecord(
 					{
 						local: localEntry,
 						remote: withTombstone(r, entry),
 						localPending
 					},
-					carriesTombstone
+					carriesTombstone,
+					legacyContinuation ? undefined : ENTRY_FIELDS
 				);
 			}
 			if (result.lostLocalEdit) lost++;
@@ -854,16 +857,22 @@ export class SyncEngine {
 			) {
 				staleTimerSplits.push({ endedEntry: result.value, continuationEntry: legacyContinuation });
 			}
+			// Feldweise kann der eigene Beginn gewonnen haben - dann gehört der
+			// Eintrag in dessen Monat, nicht in den des Serverstands.
+			const finalMonth = result.value ? monthKey(result.value.startTs) : writeMonth;
+			if (result.needsPush && !localPending) {
+				noted.push({ kind: "entry", id: r.id, month: finalMonth, deleted: false, at: now });
+			}
 			if (!result.changed) continue;
 
-			if (oldMonth && oldMonth !== writeMonth) {
+			if (oldMonth && oldMonth !== finalMonth) {
 				(await monthOf(oldMonth)).delete(r.id);
 				touched.add(oldMonth);
 			}
-			const monthMap = await monthOf(writeMonth);
+			const monthMap = await monthOf(finalMonth);
 			if (result.value === null) monthMap.delete(r.id);
 			else monthMap.set(r.id, result.value);
-			touched.add(writeMonth);
+			touched.add(finalMonth);
 		}
 
 		if (touched.size === 0) {
@@ -960,9 +969,14 @@ export class SyncEngine {
 		for (const e of toClose) {
 			// Gestempelt wie eine eigene Änderung, weil es eine ist: die Regel gilt
 			// über alle Geräte, entschieden hat sie dieses.
-			const closed: Entry = { ...e, updatedAt: now, deviceId: this.#deviceId };
 			for (const [month, monthMap] of loaded) {
-				if (!monthMap.has(e.id)) continue;
+				const before = monthMap.get(e.id);
+				if (!before) continue;
+				const closed: Entry = {
+					...stampFields(before, e, now, ENTRY_FIELDS),
+					updatedAt: now,
+					deviceId: this.#deviceId
+				};
 				monthMap.set(e.id, closed);
 				closedHere.add(e.id);
 				touched.add(month);
@@ -983,16 +997,22 @@ export class SyncEngine {
 		const byId = new Map(local.map((a) => [a.id, a]));
 		let lost = 0;
 		let changed = false;
+		const noted: PendingChange[] = [];
 
 		for (const r of records) {
 			const content = await this.#open<Activity>(r);
 			if (content === undefined) continue;
 			const remote: Activity & { deletedAt?: number } = withTombstone(r, fromServer(r, content));
+			const localPending = open.has(`activity:${r.id}`);
 			const result = mergeRecord(
-				{ local: byId.get(r.id), remote, localPending: open.has(`activity:${r.id}`) },
-				carriesTombstone
+				{ local: byId.get(r.id), remote, localPending },
+				carriesTombstone,
+				ACTIVITY_FIELDS
 			);
 			if (result.lostLocalEdit) lost++;
+			if (result.needsPush && !localPending) {
+				noted.push({ kind: "activity", id: r.id, deleted: false, at: Date.now() });
+			}
 			if (!result.changed) continue;
 			changed = true;
 			if (result.value === null) byId.delete(r.id);
@@ -1002,42 +1022,28 @@ export class SyncEngine {
 		if (changed) {
 			await this.#store.saveActivities([...byId.values()].sort((a, b) => a.sortOrder - b.sortOrder));
 		}
+		await noteChanges(noted);
 		return lost;
 	}
 
 	async #applySettings(record: ServerRecord, open: Set<string>): Promise<number> {
-		const content = await this.#open<Settings & { id?: string }>(record);
+		const content = await this.#open<StampedSettings & { id?: string }>(record);
 		if (content === undefined) return 0;
-		const local = await this.#store.settings();
-		const result = mergeRecord(
-			{
-				local: { ...local, id: SETTINGS_ID },
-				remote: { ...fromServer(record, content), id: SETTINGS_ID },
-				localPending: open.has(`settings:${SETTINGS_ID}`)
-			},
-			() => false // Einstellungen werden nie gelöscht - es gibt immer welche.
-		);
-		// Gesendet-Vermerke gehen nie verloren, gleich wer gewinnt: der Datensatz
-		// wird als Ganzes entschieden, und ein offener Stand von hier (etwa das
-		// tägliche usageLastDay beim Start) verdrängte sonst still den Vermerk
-		// eines anderen Geräts.
-		const sent = [...new Set([...(local.reportSentMonths ?? []), ...(content.reportSentMonths ?? [])])].sort();
-		const settled = result.changed && result.value ? result.value : { ...local, id: SETTINGS_ID };
-		const missesSent = sent.length > (settled.reportSentMonths ?? []).length;
-		if (!result.changed || !result.value) {
-			if (missesSent) await this.#store.changeSettings({ ...local, reportSentMonths: sent });
-			return result.lostLocalEdit ? 1 : 0;
+		const { id: _id, ...rest } = fromServer(record, content);
+		const remote = rest as StampedSettings;
+		const local = (await this.#store.settings()) as StampedSettings;
+		const merged = mergeSettings(local, remote);
+		const pending = open.has(`settings:${SETTINGS_ID}`);
+		if (!sameSettings(merged, local) || merged.rev !== local.rev) await this.#store.saveSettings(merged);
+		if (sameSettings(merged, remote)) {
+			// Der Server hat schon alles: ein offener Stand von hier ist erledigt.
+			// Bliebe er stehen, zeigte die App dauerhaft "1 Änderung ausstehend".
+			if (pending) await clearChanges([{ kind: "settings", id: SETTINGS_ID }]);
+		} else if (!pending) {
+			// Hier steht ein jüngeres Feld, das der Server nicht hat - hinauf damit.
+			await noteChanges([{ kind: "settings", id: SETTINGS_ID, deleted: false, at: Date.now() }]);
 		}
-		const { id: _id, ...rest } = result.value;
-		await this.#store.saveSettings(rest as Settings);
-		// Der Server hat gewonnen: der lokal offene Stand ist jetzt Makulatur, nicht
-		// bloss veraltet. Ohne dieses Abhaken versucht #pushAll ihn beim naechsten
-		// Durchlauf trotzdem erneut hochzuladen - und weil lokal und Server danach
-		// identisch sind, bleibt "1 Aenderung ausstehend" dauerhaft stehen, obwohl es
-		// nichts mehr zu senden gibt.
-		if (result.lostLocalEdit) await clearChanges([{ kind: "settings", id: SETTINGS_ID }]);
-		if (missesSent) await this.#store.changeSettings({ ...(rest as Settings), reportSentMonths: sent });
-		return result.lostLocalEdit ? 1 : 0;
+		return pending && lostLocalField(local, merged) ? 1 : 0;
 	}
 
 	/**

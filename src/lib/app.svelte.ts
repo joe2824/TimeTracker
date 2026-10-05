@@ -40,15 +40,17 @@ import {
 	loadActivities,
 	loadEntries,
 	loadSettings,
-	loadTimeReport,
 	getLocalEncryptionKey,
 	preloadLocalEncryptionKey,
 	pruneEmptyMonthFiles,
 	removeOrphanedTempFiles,
+	resealDataFile,
+	entriesFileName,
+	timeReportFileName,
 	saveActivities,
 	saveEntries,
-	saveSettings,
-	saveTimeReport,
+	patchSettings,
+	type SettingsPatch,
 	settingsFileExists,
 	updateDevice
 } from "./store";
@@ -185,6 +187,7 @@ class AppState {
 				// Erster Start? (settings.json noch nicht vorhanden – vor dem ersten Speichern prüfen)
 				const firstRun = !(await this.#step("Einstellungen suchen", settingsFileExists));
 				this.activities = await this.#step("Aktivitäten laden", loadActivities);
+				this.#activitiesBase = structuredClone($state.snapshot(this.activities) as Activity[]);
 				this.settings = await this.#step("Einstellungen laden", loadSettings);
 				// VOR jeder Datumsrechnung: currentMonth, prevMonthKey und
 				// #findRunning hängen alle an der Zeitzone. Stünde sie erst danach,
@@ -296,10 +299,10 @@ class AppState {
 		const info = await loadDevice();
 		if (!info || info.localFilesEncrypted) return false;
 		try {
-			await saveActivities(this.activities);
-			await saveSettings(this.settings);
-			if (this.entriesByMonth[month]) await saveEntries(month, this.entriesByMonth[month]);
-			if (this.entriesByMonth[prev]) await saveEntries(prev, this.entriesByMonth[prev]);
+			await resealDataFile("activities.json");
+			await resealDataFile("settings.json");
+			await resealDataFile(entriesFileName(month));
+			await resealDataFile(entriesFileName(prev));
 			return true;
 		} catch (e) {
 			logWarn("Verschlüsselung des aktuellen Bestands fehlgeschlagen", e);
@@ -320,14 +323,9 @@ class AppState {
 	 */
 	async #encryptHistoricalLocalFiles(month: string, prev: string): Promise<void> {
 		const months = (await listEntryMonths()).filter((m) => m !== month && m !== prev);
-		await Promise.all(months.map(async (m) => saveEntries(m, await loadEntries(m))));
+		await Promise.all(months.map((m) => resealDataFile(entriesFileName(m))));
 		const reportMonths = await listTimeReportMonths();
-		await Promise.all(
-			reportMonths.map(async (m) => {
-				const report = await loadTimeReport(m);
-				if (report) await saveTimeReport(report);
-			})
-		);
+		await Promise.all(reportMonths.map((m) => resealDataFile(timeReportFileName(m))));
 		// Lesen und Schreiben in einem Zug: zwischen den awaits oben schreibt der
 		// Abgleich seinen Stand in dieselbe Datei.
 		await updateDevice((info) => info && { ...info, localFilesEncrypted: true });
@@ -356,6 +354,7 @@ class AppState {
 	 */
 	clearLocalData(): void {
 		this.activities = [];
+		this.#activitiesBase = [];
 		this.settings = { ...defaultSettings };
 		this.running = null;
 		this.entriesByMonth = {};
@@ -380,6 +379,7 @@ class AppState {
 
 	async #reloadNow(extraMonths: string[]): Promise<void> {
 		this.activities = await loadActivities();
+		this.#activitiesBase = structuredClone($state.snapshot(this.activities) as Activity[]);
 		this.settings = await loadSettings();
 		await this.#applyTimeZone();
 		// Nur die beiden aktuellen Monate und was ohnehin schon im Speicher steht.
@@ -635,12 +635,23 @@ class AppState {
 		return total;
 	}
 
+	/**
+	 * Was die App zuletzt von den Aktivitäten gelesen oder geschrieben hat - der
+	 * Ausgangspunkt für den Abgleich mit der Platte in persistActivities.
+	 */
+	#activitiesBase: Activity[] = [];
+
 	async persistActivities(): Promise<void> {
 		// Jeder Schreibvorgang läuft hier durch - Anlegen, Import, Umsortieren,
 		// Löschen. Die Regel steht deshalb an dieser einen Stelle statt an jeder
 		// davon.
 		this.#reindexBuiltinsLast();
-		await saveActivities($state.snapshot(this.activities) as Activity[]);
+		const written = await saveActivities(
+			$state.snapshot(this.activities) as Activity[],
+			this.#activitiesBase
+		);
+		this.activities = written;
+		this.#activitiesBase = structuredClone(written);
 		this.#bumpTray();
 		void notifyDataChanged();
 	}
@@ -847,14 +858,10 @@ class AppState {
 	 * Import lautlos, ohne dass jemand sähe, warum.
 	 */
 	async #remapKeywords(idMap: ReadonlyMap<string, string>): Promise<void> {
-		let changed = false;
-		const remapped: Record<string, string> = {};
-		for (const [kw, id] of Object.entries(this.settings.calendarKeywordMap)) {
-			const newId = idMap.get(id);
-			remapped[kw] = newId ?? id;
-			if (newId) changed = true;
-		}
-		if (changed) await this.updateSettings({ calendarKeywordMap: remapped });
+		const remap = (map: Record<string, string>) =>
+			Object.fromEntries(Object.entries(map).map(([kw, id]) => [kw, idMap.get(id) ?? id]));
+		const affected = Object.values(this.settings.calendarKeywordMap).some((id) => idMap.has(id));
+		if (affected) await this.updateSettings((s) => ({ calendarKeywordMap: remap(s.calendarKeywordMap) }));
 	}
 
 	/** Verschiebt `draggedId` vor/hinter `targetId` (Drag & Drop). */
@@ -1892,9 +1899,11 @@ class AppState {
 	/** Markiert einen Monat als erledigt (gesendet oder „nicht mehr erinnern“). */
 	async markReportSent(month: string): Promise<void> {
 		if (this.isReportSent(month)) return;
-		await this.updateSettings({
-			reportSentMonths: [...this.settings.reportSentMonths, month]
-		});
+		await this.updateSettings((s) => ({
+			reportSentMonths: s.reportSentMonths.includes(month)
+				? s.reportSentMonths
+				: [...s.reportSentMonths, month]
+		}));
 	}
 
 	/**
@@ -1917,8 +1926,11 @@ class AppState {
 			const fallback = systemTimeZone();
 			setAppTimeZone(fallback);
 			if (stored) logWarn(`Unbekannte Zeitzone „${stored}“, nutze ${fallback}`);
-			this.settings = { ...this.settings, timeZone: fallback };
-			await saveSettings($state.snapshot(this.settings) as Settings);
+			const { settings } = await patchSettings(
+				{ timeZone: fallback },
+				$state.snapshot(this.settings) as Settings
+			);
+			this.settings = settings;
 			logInfo("Zeitzone festgeschrieben", { zone: fallback });
 		}
 		// Vor dem Laden der Monate: die Dateien müssen zur Zone passen, sonst
@@ -1930,19 +1942,26 @@ class AppState {
 		}
 	}
 
-	async updateSettings(patch: Partial<Settings>): Promise<void> {
+	/**
+	 * Hängt der neue Wert am alten (ein Monat mehr, eine Zuordnung mehr), `patch`
+	 * als Funktion übergeben: sie rechnet dann auf dem Stand der Platte, und was
+	 * ein anderes Gerät inzwischen ergänzt hat, bleibt.
+	 */
+	async updateSettings(patch: SettingsPatch): Promise<void> {
 		const zoneBefore = appTimeZone();
-		this.settings = { ...this.settings, ...patch };
+		const quick = typeof patch === "function" ? patch($state.snapshot(this.settings) as Settings) : patch;
+		this.settings = { ...this.settings, ...quick };
 		// Sofort wirksam machen: alles Weitere in diesem Durchlauf rechnet sonst
 		// noch gegen die alte Zone.
-		if (patch.timeZone !== undefined) setAppTimeZone(patch.timeZone);
-		await saveSettings($state.snapshot(this.settings) as Settings);
+		if (quick.timeZone !== undefined) setAppTimeZone(quick.timeZone);
+		const { settings, applied } = await patchSettings(patch, $state.snapshot(this.settings) as Settings);
+		this.settings = settings;
 		// Die geladenen Monate stammen aus der alten Einteilung.
 		if (appTimeZone() !== zoneBefore) await this.reload();
 		// Mit Werten: „E-Mail war leer“ ist die Art Frage, die hinterher niemand
 		// mehr beantworten kann. Die Einstellungen sind harmlos – kein Passwort,
 		// keine Zeiten, nur die Konfiguration, die der Benutzer selbst sieht.
-		logDebug("Einstellungen gespeichert", patch);
+		logDebug("Einstellungen gespeichert", applied);
 		void notifyDataChanged();
 	}
 

@@ -1,6 +1,7 @@
 // Änderungen erkennen und mit Herkunftsspuren versehen.
 import type { SyncMeta } from "../types";
 import { stableStringify } from "../utils";
+import { stampFields, type FieldRules } from "./fieldMerge";
 
 /** Ein Datensatz, der eine Identität und Änderungsspuren hat. */
 export interface Identified extends SyncMeta {
@@ -18,7 +19,7 @@ export interface Changes<T extends Identified> {
 	deleted: T[];
 }
 
-/** Die Felder, die NICHT zum Inhalt gehören. */
+/** Die Felder, die NICHT zum Inhalt gehören - die Feldstempel schon: sie reisen verschlüsselt mit. */
 export const META_KEYS: readonly (keyof SyncMeta)[] = ["updatedAt", "rev", "deviceId"];
 
 /** Die Stempelfelder abstreifen - und sonst nichts anfassen. */
@@ -60,7 +61,8 @@ export function diffAndStamp<T extends Identified>(
 	before: T[],
 	after: T[],
 	deviceId: string,
-	now: number
+	now: number,
+	fields?: FieldRules
 ): { changes: Changes<T>; stamped: T[] } {
 	const byId = new Map(before.map((x) => [x.id, x]));
 	const changed: T[] = [];
@@ -76,7 +78,10 @@ export function diffAndStamp<T extends Identified>(
 		}
 		// Sonst: neu, inhaltlich verändert, oder noch nie gestempelt (Bestand aus
 		// einer Fassung ohne Serveranbindung). Alle drei müssen hochgeladen werden.
-		const next = { ...item, updatedAt: now, deviceId } as T;
+		// Ein neuer Datensatz braucht keine Feldstempel: ohne sie ist jedes Feld so
+		// alt wie er selbst.
+		const fielded = fields && old ? stampFields(old, item, now, fields) : item;
+		const next = { ...fielded, updatedAt: now, deviceId } as T;
 		// Den Serverstand des Vorgängers weiterreichen, damit der Abgleich weiss,
 		// worauf die Änderung aufsetzt.
 		if (old?.rev !== undefined && next.rev === undefined) next.rev = old.rev;

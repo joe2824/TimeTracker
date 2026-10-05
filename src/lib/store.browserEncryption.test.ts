@@ -18,6 +18,7 @@ const {
 	saveOutbox,
 	saveSettings,
 	saveTimeReport,
+	resealDataFile,
 	setLocalEncryptionKey
 } = await import("./store");
 
@@ -186,5 +187,27 @@ describe("lokale Verschlüsselung im Browser", () => {
 
 		setLocalEncryptionKey(key);
 		expect((await loadActivities())[0].name).toBe("Bleibt");
+	});
+
+	it("das Nachholen verschlüsselt den Bestand, ohne ihn zu ändern oder vorzumerken", async () => {
+		// Lesen und Schreiben in einem Zug: läge ein Abgleich dazwischen, schriebe
+		// ein getrenntes Lesen-dann-Speichern den älteren Stand zurück - und der
+		// Schreib-Haken meldete das als eigene Änderung an alle Geräte.
+		const { startTracking, stopTracking, pendingChanges, resetOutboxForTests } = await import("./sync/outbox");
+		const entry = { id: "e1", activityId: "a1", startTs: 1, endTs: 2, note: "Kundentermin", source: "manual", rev: 3 };
+		await storage.writeTextFile("data/entries-2026-08.json", JSON.stringify([entry]));
+		setLocalEncryptionKey(await freshKey());
+		resetOutboxForTests();
+		await startTracking("browser");
+		try {
+			await resealDataFile("entries-2026-08.json");
+
+			expect(await storage.readTextFile("data/entries-2026-08.json")).not.toContain("Kundentermin");
+			expect(await loadEntries("2026-08")).toEqual([entry]);
+			expect(pendingChanges()).toEqual([]);
+		} finally {
+			stopTracking();
+			resetOutboxForTests();
+		}
 	});
 });

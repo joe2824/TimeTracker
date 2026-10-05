@@ -57,8 +57,9 @@ export async function resolveMergeOffer(
 		merged++;
 	}
 	if (declined.length > 0) {
-		const known = app.settings.teamMergeDeclined ?? [];
-		await app.updateSettings({ teamMergeDeclined: [...new Set([...known, ...declined])] });
+		await app.updateSettings((s) => ({
+			teamMergeDeclined: [...new Set([...(s.teamMergeDeclined ?? []), ...declined])]
+		}));
 	}
 	return merged;
 }

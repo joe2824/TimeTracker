@@ -681,22 +681,22 @@ describe("Was der Mensch erfahren muss", () => {
 		const desktop = new FakeDevice("rechner");
 		await on(desktop, (engine) => engine.sync());
 
-		// Das Handy ändert und lädt hoch - und zwar nachweislich später, damit
-		// der Wettstreit nicht an einer Millisekunde hängt.
+		// Der Rechner ändert zuerst, lädt aber nicht hoch; das Handy ändert
+		// dasselbe Feld nachweislich später und lädt hoch.
+		await afterwards();
+		await on(desktop, async () => {
+			const theirs = (await store.loadEntries(MONTH))[0];
+			await store.saveEntries(MONTH, [{ ...theirs, note: "rechner" }]);
+		});
+		await afterwards();
 		await on(phone, async (engine) => {
 			const theirs = (await store.loadEntries(MONTH))[0];
 			await store.saveEntries(MONTH, [{ ...theirs, note: "handy zwei" }]);
 			return engine.sync();
 		});
-		const line = server.rows.get("e1")!;
-		server.rows.set("e1", { ...line, updatedAt: Date.now() + 60_000 });
 
-		// Der Rechner ändert auf seinem alten Stand und läuft in den Konflikt.
-		const result = await on(desktop, async (engine) => {
-			const theirs = (await store.loadEntries(MONTH))[0];
-			await store.saveEntries(MONTH, [{ ...theirs, note: "rechner" }]);
-			return engine.sync();
-		});
+		// Der Rechner läuft mit seinem älteren Stand in den Konflikt.
+		const result = await on(desktop, (engine) => engine.sync());
 
 		expect(result!.lostEdits).toBe(1);
 		expect((await entries(desktop))[0].note).toBe("handy zwei");
@@ -714,21 +714,148 @@ describe("Was der Mensch erfahren muss", () => {
 		const desktop = new FakeDevice("rechner");
 		await on(desktop, (engine) => engine.sync());
 
+		// Der Rechner ändert zuerst, lädt aber noch nicht hoch; das Handy ändert
+		// dasselbe Feld danach - die jüngere Änderung gewinnt.
+		await afterwards();
+		await on(desktop, () => store.saveSettings({ ...defaultSettings, bossEmail: "rechner@firma.de" }));
+		await afterwards();
 		await on(phone, async (engine) => {
 			await store.saveSettings({ ...defaultSettings, bossEmail: "spaeter@firma.de" });
 			return engine.sync();
 		});
-		const row = server.rows.get("settings")!;
-		server.rows.set("settings", { ...row, updatedAt: Date.now() + 60_000 });
 
-		const result = await on(desktop, async (engine) => {
-			await store.saveSettings({ ...defaultSettings, bossEmail: "rechner@firma.de" });
-			return engine.sync();
-		});
+		const result = await on(desktop, (engine) => engine.sync());
 
 		expect(result!.lostEdits).toBe(1);
 		expect((await on(desktop, () => store.loadSettings())).bossEmail).toBe("spaeter@firma.de");
 		expect(pendingChanges()).toEqual([]);
+	});
+});
+
+describe("Einstellungen feldweise", () => {
+	/** Die Einstellungen eines Geräts, wie sie gerade auf der Platte liegen. */
+	const settingsOf = (g: FakeDevice) => on(g, () => store.loadSettings());
+
+	/** Ein Feld ändern und gleich abgleichen - auf dem Stand, den das Gerät hat. */
+	const changeSetting = (g: FakeDevice, patch: Partial<typeof defaultSettings>) =>
+		changeAndSync(g, async () => store.saveSettings({ ...(await store.loadSettings()), ...patch }));
+
+	/** Zwei Geräte mit demselben Einstellungsstand. */
+	async function twoDevicesInStep(): Promise<[FakeDevice, FakeDevice]> {
+		const phone = new FakeDevice("handy");
+		await changeSetting(phone, { usageLastDay: "2026-10-01" });
+		const desktop = new FakeDevice("rechner");
+		await on(desktop, (engine) => engine.sync());
+		return [phone, desktop];
+	}
+
+	it("eine Änderung an einem anderen Feld überschreibt die neuere Adresse nicht", async () => {
+		// Der Fall aus dem Betrieb: ein Gerät mit altem Stand meldet beim Start
+		// „heute aktiv" (usageLastDay) - und schob damit seinen ganzen alten
+		// Datensatz samt leerer Adresse über die neuere des anderen Geräts.
+		const [phone, desktop] = await twoDevicesInStep();
+
+		await afterwards();
+		await changeSetting(phone, { bossEmail: "anna.meier@firma.de", senderName: "Anna Meier" });
+		await afterwards();
+		await changeSetting(desktop, { usageLastDay: "2026-10-05" });
+		await on(phone, (engine) => engine.sync());
+
+		for (const g of [phone, desktop]) {
+			const s = await settingsOf(g);
+			expect(s.bossEmail).toBe("anna.meier@firma.de");
+			expect(s.senderName).toBe("Anna Meier");
+			expect(s.usageLastDay).toBe("2026-10-05");
+		}
+	});
+
+	it("eine noch offene Adresse übersteht den jüngeren Stand des anderen Geräts", async () => {
+		// Gleicher Fall, nur hat der Rechner zuerst hochgeladen: das Handy hat
+		// seine Adresse noch offen und gerät in den Konflikt.
+		const [phone, desktop] = await twoDevicesInStep();
+
+		await afterwards();
+		await on(phone, () => store.saveSettings({ ...defaultSettings, usageLastDay: "2026-10-01", bossEmail: "anna.meier@firma.de" }));
+		await afterwards();
+		await changeSetting(desktop, { usageLastDay: "2026-10-05" });
+		await on(phone, (engine) => engine.sync());
+		await on(desktop, (engine) => engine.sync());
+
+		for (const g of [phone, desktop]) {
+			const s = await settingsOf(g);
+			expect(s.bossEmail).toBe("anna.meier@firma.de");
+			expect(s.usageLastDay).toBe("2026-10-05");
+		}
+	});
+
+	it("dasselbe Feld auf zwei Geräten: die jüngere Änderung gilt", async () => {
+		const [phone, desktop] = await twoDevicesInStep();
+
+		await afterwards();
+		await changeSetting(phone, { bossEmail: "alt@firma.de" });
+		await afterwards();
+		await changeSetting(desktop, { bossEmail: "neu@firma.de" });
+		await on(phone, (engine) => engine.sync());
+
+		expect((await settingsOf(phone)).bossEmail).toBe("neu@firma.de");
+		expect((await settingsOf(desktop)).bossEmail).toBe("neu@firma.de");
+	});
+});
+
+describe("Aktivitäten feldweise", () => {
+	const alpha = { id: "a1", name: "Alpha", sortOrder: 0, archived: false, isAbsence: false };
+	const beta = { id: "a2", name: "Beta", sortOrder: 1, archived: false, isAbsence: false };
+
+	it("Umsortieren auf altem Stand nimmt die neuere Umbenennung nicht zurück", async () => {
+		const phone = new FakeDevice("handy");
+		await changeAndSync(phone, () => store.saveActivities([alpha, beta]));
+		const desktop = new FakeDevice("rechner");
+		await on(desktop, (engine) => engine.sync());
+
+		await afterwards();
+		await changeAndSync(phone, async () => {
+			const list = await store.loadActivities();
+			await store.saveActivities(list.map((a) => (a.id === "a1" ? { ...a, name: "Alpha neu" } : a)));
+		});
+		await afterwards();
+		await changeAndSync(desktop, async () => {
+			const list = await store.loadActivities();
+			await store.saveActivities(list.map((a) => ({ ...a, sortOrder: 1 - a.sortOrder })));
+		});
+		await on(phone, (engine) => engine.sync());
+
+		for (const g of [phone, desktop]) {
+			const list = await on(g, () => store.loadActivities());
+			const a1 = list.find((a) => a.id === "a1")!;
+			expect(a1.name).toBe("Alpha neu");
+			expect(a1.sortOrder).toBe(1);
+		}
+	});
+});
+
+describe("Einträge feldweise", () => {
+	it("eine Änderung an der Aktivität auf altem Stand nimmt die neuere Notiz nicht zurück", async () => {
+		const phone = await phoneWith(entry("e1", { note: "alt" }));
+		const desktop = new FakeDevice("rechner");
+		await on(desktop, (engine) => engine.sync());
+
+		await afterwards();
+		await changeAndSync(phone, async () => {
+			const [e] = await store.loadEntries(MONTH);
+			await store.saveEntries(MONTH, [{ ...e, note: "neu vom Handy" }]);
+		});
+		await afterwards();
+		await changeAndSync(desktop, async () => {
+			const [e] = await store.loadEntries(MONTH);
+			await store.saveEntries(MONTH, [{ ...e, activityId: "akt-2" }]);
+		});
+		await on(phone, (engine) => engine.sync());
+
+		for (const g of [phone, desktop]) {
+			const [e] = await entries(g);
+			expect(e.note).toBe("neu vom Handy");
+			expect(e.activityId).toBe("akt-2");
+		}
 	});
 });
 

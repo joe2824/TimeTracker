@@ -11,6 +11,7 @@ import type { SyncPriority } from "./sync/engine";
 import { defaultSettings } from "./types";
 import { logError, logWarn } from "./log";
 import { stableStringify } from "./utils";
+import { ACTIVITY_FIELDS, ENTRY_FIELDS, overlayTouched, touchedAny, type FieldRules } from "./sync/fieldMerge";
 import {
 	fromBase64,
 	importVaultKey,
@@ -401,18 +402,92 @@ async function dataFiles(re: RegExp): Promise<[string, string][]> {
 export async function loadActivities(): Promise<Activity[]> {
 	return readJson<Activity[]>("activities.json", [], { encrypted: true });
 }
-export function saveActivities(activities: Activity[]): Promise<void> {
-	return saveActivitiesWith(writeHook, activities);
+/**
+ * Aktivitäten schreiben. Mit `base` - dem Stand, aus dem `activities`
+ * hervorging - wird gegen die Platte abgeglichen statt sie zu überschreiben
+ * (siehe mergeListOntoDisk). Gibt den geschriebenen Stand zurück.
+ */
+export function saveActivities(activities: Activity[], base?: Activity[]): Promise<Activity[]> {
+	return saveActivitiesWith(writeHook, activities, base);
 }
-async function saveActivitiesWith(hook: WriteHook | null, activities: Activity[]): Promise<void> {
-	if (!hook) return writeJson("activities.json", activities, { encrypted: true });
-	return queued("activities.json", async () => {
-		const before = await readJson<Activity[]>("activities.json", [], { encrypted: true });
-		await writeJsonNow("activities.json", await hook.activities(before, activities), {
-			encrypted: true
-		});
+async function saveActivitiesWith(
+	hook: WriteHook | null,
+	activities: Activity[],
+	base?: Activity[]
+): Promise<Activity[]> {
+	if (!hook && !base) {
+		await writeJson("activities.json", activities, { encrypted: true });
+		return activities;
+	}
+	let written = activities;
+	await queued("activities.json", async () => {
+		const read = await readJsonResult<Activity[]>("activities.json", { encrypted: true });
+		const before = read.status === "ok" ? read.value : [];
+		// Die Datei wird nie gelöscht: fehlt sie, gibt es nichts abzugleichen.
+		const next =
+			base && read.status !== "missing"
+				? mergeListOntoDisk(base, activities, before, read.status === "ok", ACTIVITY_FIELDS)
+				: activities;
+		written = hook ? await hook.activities(before, next) : next;
+		await writeJsonNow("activities.json", written, { encrypted: true });
+	});
+	return written;
+}
+
+/**
+ * Dreiwege-Abgleich je Datensatz und Feld: `base` ist, was die App zuletzt
+ * gelesen oder geschrieben hat, `ours` ihr jetziger Stand, `disk` die Platte.
+ *
+ * Der Abgleich schreibt direkt auf die Platte; bis die App neu liest, ist ihre
+ * Liste veraltet. Als Ganzes geschrieben, galt ein dazwischen angekommener
+ * Datensatz als gelöscht und eine Änderung von dort als zurückgenommen - und
+ * beides ging an alle Geräte. Regel: Was die App angefasst hat, gilt; alles
+ * andere bleibt, wie es auf der Platte steht. Nur ohne `diskReliable` bleibt ein
+ * unveränderter Datensatz, denn dann ist die Liste der App die einzige Kopie.
+ */
+export function mergeListOntoDisk<T extends { id: string }>(
+	base: T[],
+	ours: T[],
+	disk: T[],
+	diskReliable: boolean,
+	fields: FieldRules
+): T[] {
+	const baseById = new Map(base.map((x) => [x.id, x]));
+	const oursById = new Map(ours.map((x) => [x.id, x]));
+	const diskById = new Map(disk.map((x) => [x.id, x]));
+	const out: T[] = [];
+	for (const x of ours) {
+		const known = baseById.get(x.id);
+		const onDisk = diskById.get(x.id);
+		if (!known) out.push(x);
+		else if (!touchedAny(known, x, fields)) {
+			if (onDisk) out.push(onDisk);
+			else if (!diskReliable) out.push(x);
+		} else out.push(onDisk ? overlayTouched(known, x, onDisk, fields) : x);
+	}
+	for (const x of disk) {
+		// Nie gekannt = inzwischen angekommen. Gekannt und nicht mehr da = gelöscht.
+		if (!oursById.has(x.id) && !baseById.has(x.id)) out.push(x);
+	}
+	return out;
+}
+
+/**
+ * Eine Datei mit unverändertem Inhalt neu schreiben - für die nachgeholte
+ * Verschlüsselung. Lesen und Schreiben in einem Zug, und am Schreib-Haken
+ * vorbei: zwischen beidem darf kein Abgleich landen, und am Inhalt ändert sich
+ * nichts, was ein anderes Gerät erfahren müsste.
+ */
+export function resealDataFile(file: string): Promise<void> {
+	return queued(file, async () => {
+		const read = await readJsonResult<unknown>(file, { encrypted: true });
+		if (read.status === "ok") await writeJsonNow(file, read.value, { encrypted: true });
 	});
 }
+
+/** Die Dateinamen, unter denen Monate und Reports liegen - für resealDataFile. */
+export const entriesFileName = (month: string): string => entriesFile(month);
+export const timeReportFileName = (month: string): string => reportFile(month);
 
 // ---- Einstellungen ----
 /** Ob bereits eine settings.json existiert (false = erster Programmstart). */
@@ -434,6 +509,38 @@ async function saveSettingsWith(hook: WriteHook | null, settings: Settings): Pro
 			encrypted: true
 		});
 	});
+}
+
+/**
+ * Einzelne Einstellungen ändern - auf dem Stand, der gerade auf der Platte
+ * liegt. Die Kopie im Speicher kann veraltet sein: der Abgleich legt den Stand
+ * eines anderen Geräts ab, bevor die App neu liest, und das zweite Fenster
+ * schreibt nebenher. Als Ganzes geschrieben, ginge beides unter.
+ *
+ * Hängt der neue Wert am alten (ein Monat mehr, eine Zuordnung mehr), `patch`
+ * als Funktion übergeben. `fallback` gilt nur, wenn die Datei fehlt oder nicht
+ * lesbar ist. Gibt den geschriebenen Stand und die angewandte Änderung zurück.
+ */
+export type SettingsPatch = Partial<Settings> | ((current: Settings) => Partial<Settings>);
+
+export async function patchSettings(
+	patch: SettingsPatch,
+	fallback: Settings
+): Promise<{ settings: Settings; applied: Partial<Settings> }> {
+	let written: Settings = fallback;
+	let applied: Partial<Settings> = {};
+	await queued("settings.json", async () => {
+		const read = await readJsonResult<Settings>("settings.json", { encrypted: true });
+		const before = read.status === "ok" ? read.value : null;
+		const current = { ...defaultSettings, ...(before ?? fallback) };
+		// Als Funktion: aus dem Stand der Platte gerechnet, nicht aus dem im Speicher.
+		applied = typeof patch === "function" ? patch(current) : patch;
+		const next = { ...current, ...applied };
+		const hook = writeHook;
+		written = hook ? await hook.settings(before, next) : next;
+		await writeJsonNow("settings.json", written, { encrypted: true });
+	});
+	return { settings: written, applied };
 }
 
 // ---- Einträge (pro Monat) ----
@@ -535,7 +642,9 @@ export function mergeOntoDisk(
 			if (!onDisk && known) continue;
 		}
 		if (onlyRev && onDisk) out.push({ ...onDisk, rev: e.rev });
-		else if (!untouched) out.push(e);
+		// Nur die angefassten Felder: eine Notiz, die inzwischen von einem anderen
+		// Gerät kam, überlebt das Umhängen der Aktivität hier.
+		else if (!untouched) out.push(known && onDisk ? overlayTouched(known, e, onDisk, ENTRY_FIELDS) : e);
 		else if (onDisk) out.push(onDisk);
 		else if (!diskReliable) out.push(e);
 	}
@@ -787,10 +896,11 @@ export const remoteStore = {
 		closeIfOpen?: ReadonlySet<string>
 	) => saveEntriesWith(null, month, entries, base, closeIfOpen),
 	activities: loadActivities,
-	saveActivities: (list: Activity[]) => saveActivitiesWith(null, list),
+	saveActivities: async (list: Activity[]): Promise<void> => {
+		await saveActivitiesWith(null, list);
+	},
 	settings: loadSettings,
 	saveSettings: (s: Settings) => saveSettingsWith(null, s),
-	changeSettings: (s: Settings) => saveSettings(s),
 	timeReport: loadTimeReport,
 	saveTimeReport: (report: StoredTimeReport) => saveTimeReportWith(null, report),
 	deleteTimeReport: (month: string) => deleteTimeReportWith(null, month),

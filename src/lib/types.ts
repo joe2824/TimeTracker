@@ -6,6 +6,12 @@ export interface SyncMeta {
 	rev?: number;
 	/** Welches Gerät zuletzt geschrieben hat. */
 	deviceId?: string;
+	/**
+	 * Wann jedes Feld zuletzt geändert wurde - der Abgleich entscheidet danach
+	 * feldweise (sync/fieldMerge.ts). Anders als die übrigen Spuren reist es
+	 * verschlüsselt im Inhalt mit.
+	 */
+	fieldUpdatedAt?: Record<string, number>;
 }
 
 export interface Activity extends SyncMeta {

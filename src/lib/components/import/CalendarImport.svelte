@@ -133,7 +133,7 @@
 
 	async function doApply() {
 		let count = 0;
-		const newMap = { ...app.settings.calendarKeywordMap };
+		const learned: Record<string, string> = {};
 		for (let i = 0; i < events.length; i++) {
 			const activityId = mapping[i];
 			if (!activityId) continue;
@@ -163,9 +163,9 @@
 				const created = await app.addEntry(activityId, startTs, endTs, ev.subject, "calendar");
 				if (created) count++;
 			}
-			newMap[ev.subject.toLowerCase()] = activityId; // für nächstes Mal merken
+			learned[ev.subject.toLowerCase()] = activityId; // für nächstes Mal merken
 		}
-		await app.updateSettings({ calendarKeywordMap: newMap });
+		await app.updateSettings((s) => ({ calendarKeywordMap: { ...s.calendarKeywordMap, ...learned } }));
 		if (count > 0) toast.success(`${count} Kalendereintrag/-einträge übernommen.`);
 		else toast.info("Keine neuen Termine – alles bereits importiert oder ignoriert.");
 		events = [];
