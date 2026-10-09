@@ -536,9 +536,9 @@
 						<p class="text-muted-foreground text-xs">
 							Wer den Link annimmt, sieht alle Berichte des Teams und braucht dafür ein eigenes Konto.
 							{#if managedTeams.adminInvite?.expiresAt}
-								Der Link gilt bis {fmtDateHuman(managedTeams.adminInvite.expiresAt)}.
+								Der Link gilt für eine Person, bis {fmtDateHuman(managedTeams.adminInvite.expiresAt)}.
 							{:else}
-								Ein neuer Link gilt 30 Tage.
+								Ein neuer Link gilt für eine Person und 30 Tage.
 							{/if}
 						</p>
 					{/if}

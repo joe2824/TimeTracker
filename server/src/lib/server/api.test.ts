@@ -2222,9 +2222,16 @@ describe("Team", () => {
 		});
 
 		it("ein Verwalter gibt die Verwaltung selbst ab, sein Link gilt danach nicht mehr", async () => {
-			const team = await teamWithAdmin();
-			const invite = await apiFrom(annaToken, `/api/team/${team.id}/admin-invite`);
-			const { code } = (await invite.json()).invite as { code: string };
+			const team = await createTeamFor(annaToken);
+			const link = await apiFrom(annaToken, `/api/team/${team.id}/admin-invite`, { method: "POST" });
+			const { code } = (await link.json()) as { code: string };
+			const joined = await apiFrom(bodoToken, "/api/team/admin/join", {
+				method: "POST",
+				body: JSON.stringify({ code })
+			});
+			expect(joined.status).toBe(201);
+			// Der Link gilt für eine Person: mit dem Beitritt ist er verbraucht.
+			expect((await (await apiFrom(annaToken, `/api/team/${team.id}/admin-invite`)).json()).invite).toBeNull();
 
 			const leave = await apiFrom(bodoToken, `/api/team/${team.id}/admins/me`, { method: "DELETE" });
 			expect(leave.status).toBe(200);

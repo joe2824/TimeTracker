@@ -427,18 +427,25 @@ export function teamFromAdminInviteCode(db: DbLike, code: string): TeamRow | nul
 
 /**
  * Einen Verwalter-Link annehmen - braucht (anders als joinTeam) ein
- * angemeldetes Konto. Wer die Leitung selbst einliest, aendert nichts (schon
- * automatisch Zugang). Mehrfaches Annehmen ist folgenlos (Unique-Index).
+ * angemeldetes Konto. Der Link gilt für eine Person: wer damit neu Verwalter
+ * wird, verbraucht ihn. Leitung und bestehende Verwalter ändern nichts und
+ * verbrauchen ihn deshalb auch nicht.
  */
 export function joinTeamAsAdmin(db: Db, code: string, userId: string): TeamRow | null {
-	const team = teamFromAdminInviteCode(db, code);
-	if (!team) return null;
-	if (team.ownerUserId === userId) return team;
-	db.insert(teamAdmins)
-		.values({ teamId: team.id, userId, createdAt: Date.now() })
-		.onConflictDoNothing()
-		.run();
-	return team;
+	// In einem Zug, damit zwei gleichzeitig Annehmende nicht beide durchkommen.
+	return db.transaction((tx) => {
+		const team = teamFromAdminInviteCode(tx, code);
+		if (!team) return null;
+		if (team.ownerUserId === userId) return team;
+		const now = Date.now();
+		const added = tx
+			.insert(teamAdmins)
+			.values({ teamId: team.id, userId, createdAt: now })
+			.onConflictDoNothing()
+			.run();
+		if (added.changes > 0) revokeInvites(tx, ADMIN_INVITES, team.id, now);
+		return team;
+	});
 }
 
 export interface TeamActivityRow extends TeamActivity {

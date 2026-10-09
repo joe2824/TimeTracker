@@ -357,6 +357,29 @@ describe("Verwalter (rotateAdminInvite / joinTeamAsAdmin / requireTeamAccess)", 
 		expect(listTeamAdmins(db, team.id)[0]).not.toHaveProperty("email");
 	});
 
+	it("ein Verwalter-Link gilt nur fuer eine Person", () => {
+		const team = createTeam(db, ANNA, "Vertrieb");
+		createUser(db, "user-clara");
+		const invite = rotateAdminInvite(db, team.id);
+		joinTeamAsAdmin(db, invite.code, BODO);
+
+		expect(joinTeamAsAdmin(db, invite.code, "user-clara")).toBeNull();
+		expect(listTeamAdmins(db, team.id).map((a) => a.userId)).toEqual([BODO]);
+		expect(activeAdminInvite(db, team.id)).toBeNull();
+	});
+
+	it("weder die Leitung noch ein bestehender Verwalter verbrauchen den Link", () => {
+		// Sonst wäre der Link für die eingeladene Person weg, bevor sie ihn öffnet.
+		const team = createTeam(db, ANNA, "Vertrieb");
+		createUser(db, "user-clara");
+		joinTeamAsAdmin(db, rotateAdminInvite(db, team.id).code, BODO);
+		const forClara = rotateAdminInvite(db, team.id);
+
+		joinTeamAsAdmin(db, forClara.code, ANNA);
+		joinTeamAsAdmin(db, forClara.code, BODO);
+		expect(joinTeamAsAdmin(db, forClara.code, "user-clara")?.id).toBe(team.id);
+	});
+
 	it("removeTeamAdmin meldet zurueck, wenn es niemanden zum Entfernen gab", () => {
 		const team = createTeam(db, ANNA, "Vertrieb");
 		expect(removeTeamAdmin(db, team.id, BODO)).toBe(false);
