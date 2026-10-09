@@ -442,6 +442,31 @@ describe("Pomodoro", () => {
 		expect(messages.send).not.toHaveBeenCalled();
 	});
 
+	it("meldet nach dem Standby keine verpassten Wechsel", async () => {
+		// Der Stand vor dem Standby ist veraltet: der Timer kann laengst anderswo
+		// beendet sein, und eine Pause von gestern hilft niemandem.
+		timerRunningSince(5);
+		await tick();
+
+		app.now = Date.now() + 8 * 3600 * 1000;
+		await tick();
+
+		expect(messages.send).not.toHaveBeenCalled();
+	});
+
+	it("meldet nach dem Standby den naechsten Wechsel wieder", async () => {
+		timerRunningSince(5);
+		await tick();
+		app.now = Date.now() + 8 * 3600 * 1000 + 49 * 60 * 1000;
+		await tick();
+
+		app.now += 61 * 1000;
+		await tick();
+
+		expect(messages.send).toHaveBeenCalledTimes(1);
+		expect(messages.send.mock.calls[0][0].title).toContain("Pause");
+	});
+
 	it("schweigt, solange die Funktion aus ist", async () => {
 		app.settings.pomodoroEnabled = false;
 		timerRunningSince(49 * 60);

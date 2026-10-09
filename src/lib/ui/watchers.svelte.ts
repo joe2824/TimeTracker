@@ -28,6 +28,8 @@ let interval: ReturnType<typeof setInterval> | null = null;
 let autoStopNotified = false;
 /** Schlüssel der zuletzt benachrichtigten Pomodoro-Phase ("idx:f"|"idx:b"). */
 let lastPomoKey: string | null = null;
+/** Zyklus dieser Phase. */
+let lastPomoCycle = 0;
 /** Signatur der Pomodoro-Dauern; ändert sich -> Phasen-Key zurücksetzen. */
 let lastPomoSig = "";
 /** Prompt bereits gezeigt; bleibt true bis der Nutzer wieder aktiv ist (idle < Schwelle). */
@@ -221,8 +223,10 @@ async function tick() {
 	if (pomo) {
 		const key = `${pomo.cycleIndex}:${pomo.phase}`;
 		if (key !== lastPomoKey) {
-			// Erste Beobachtung nur merken (kein Hinweis beim Start des Timers).
-			if (lastPomoKey !== null) {
+			// Erste Beobachtung nur merken (kein Hinweis beim Start des Timers). Ein
+			// Sprung über mehr als einen Zyklus heisst Standby: der Stand davor ist
+			// veraltet, verpasste Wechsel werden nicht nachgemeldet.
+			if (lastPomoKey !== null && pomo.cycleIndex - lastPomoCycle <= 1) {
 				if (pomo.phase === "break") {
 					void notifyIfAllowed({
 						title: "TimeTracker – Zeit für eine Pause",
@@ -241,6 +245,7 @@ async function tick() {
 				}
 			}
 			lastPomoKey = key;
+			lastPomoCycle = pomo.cycleIndex;
 		}
 	} else {
 		lastPomoKey = null;
