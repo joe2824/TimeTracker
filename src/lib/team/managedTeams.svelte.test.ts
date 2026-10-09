@@ -30,7 +30,7 @@ const { managedTeams } = await import("./managedTeams.svelte");
 
 const TEAM_A = { id: "t1", name: "A", ownerUserId: "u1", createdAt: 1 };
 const TEAM_B = { id: "t2", name: "B", ownerUserId: "u1", createdAt: 1 };
-const ADMIN_ANNA = { userId: "a1", displayName: "Anna Meier", email: "anna@firma.de", createdAt: 1 };
+const ADMIN_ANNA = { userId: "a1", displayName: "Anna Meier", createdAt: 1 };
 
 beforeEach(() => {
 	accountMock.linked = true;

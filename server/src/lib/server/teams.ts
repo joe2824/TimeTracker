@@ -324,17 +324,18 @@ export function requireTeamAccess(db: Db, userId: string, teamId: string): TeamR
 export interface TeamAdminRow {
 	userId: string;
 	displayName: string;
-	email: string | null;
 	createdAt: number;
 }
 
-/** Die Verwalter eines Teams, neueste zuerst - die Leitung steht nicht mit drin. */
+/**
+ * Die Verwalter eines Teams, neueste zuerst - die Leitung steht nicht mit drin.
+ * Ohne E-Mail-Adressen: jeder Verwalter sieht die Liste.
+ */
 export function listTeamAdmins(db: Db, teamId: string): TeamAdminRow[] {
 	return db
 		.select({
 			userId: teamAdmins.userId,
 			displayName: users.displayName,
-			email: users.email,
 			createdAt: teamAdmins.createdAt
 		})
 		.from(teamAdmins)

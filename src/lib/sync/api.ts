@@ -97,7 +97,6 @@ export interface TeamInvite {
 export interface TeamAdminInfo {
 	userId: string;
 	displayName: string;
-	email: string | null;
 	createdAt: number;
 }
 

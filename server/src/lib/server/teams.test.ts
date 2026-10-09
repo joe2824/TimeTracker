@@ -1,7 +1,7 @@
 // Team, Einladungslink, Beitritt, Roster - ohne den Weg über eine Route.
 import { beforeEach, describe, expect, it } from "vitest";
 import { type Db } from "./db/index";
-import { ANNA, BODO, freshDb } from "./testing/fixtures";
+import { ANNA, BODO, createUser, freshDb } from "./testing/fixtures";
 import {
 	activeAdminInvite,
 	activeTeamInvite,
@@ -348,6 +348,13 @@ describe("Verwalter (rotateAdminInvite / joinTeamAsAdmin / requireTeamAccess)", 
 		// Sonst koennte BODO ueber denselben Code sofort wieder Verwalter werden.
 		expect(activeAdminInvite(db, team.id)).toBeNull();
 		expect(teamFromAdminInviteCode(db, invite.code)).toBeNull();
+	});
+
+	it("listTeamAdmins gibt keine E-Mail-Adressen heraus", () => {
+		// Jeder Verwalter sieht die Liste - die Adressen der anderen gehen ihn nichts an.
+		const team = createTeam(db, ANNA, "Vertrieb");
+		joinTeamAsAdmin(db, rotateAdminInvite(db, team.id).code, BODO);
+		expect(listTeamAdmins(db, team.id)[0]).not.toHaveProperty("email");
 	});
 
 	it("removeTeamAdmin meldet zurueck, wenn es niemanden zum Entfernen gab", () => {
