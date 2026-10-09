@@ -83,6 +83,26 @@ describe("mergeSettings", () => {
 		expect(merged.updatedAt).toBe(T2);
 	});
 
+	it("ein wochenalter Browser-Stand, der vor dem Abholen schreibt, leert keine Felder", () => {
+		// Der Browser öffnet mit einem Stand aus einer älteren Fassung, in dem
+		// Name und Adresse noch fehlen, und meldet sich als aktiv, bevor der
+		// Abgleich den Stand des Rechners geholt hat.
+		const stale = settings({ updatedAt: T1, bossEmail: "", senderName: "" });
+		const written = stampFields(stale, { ...stale, usageLastDay: "2026-10-08" }, NOW);
+		const fromDesktop = settings({
+			updatedAt: T2,
+			bossEmail: "anna.meier@firma.de",
+			senderName: "Anna Meier",
+			fieldUpdatedAt: { bossEmail: T2, senderName: T2 }
+		});
+
+		const merged = mergeSettings({ ...written, updatedAt: NOW }, fromDesktop);
+
+		expect(merged.bossEmail).toBe("anna.meier@firma.de");
+		expect(merged.senderName).toBe("Anna Meier");
+		expect(merged.usageLastDay).toBe("2026-10-08");
+	});
+
 	it("zwei Stände ohne Feldstempel entscheidet der Datensatz als Ganzes", () => {
 		const local = settings({ updatedAt: T1, bossEmail: "alt@firma.de" });
 		const remote = settings({ updatedAt: T2, bossEmail: "neu@firma.de" });
