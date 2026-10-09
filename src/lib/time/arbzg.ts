@@ -753,6 +753,20 @@ export function forecast(
 	};
 }
 
+/** Über acht Stunden nur bezogen auf die eigenen Arbeitstage, gesetzlich nicht. */
+function strictOnlyVerdict(average: number, reliefDate: string | null): Verdict {
+	const h = (v: number) => `${fmtHoursClock(v)} h`;
+	const relief = reliefDate
+		? ` Ohne weitere Stunden läge er ab ${fmtDateHuman(noonTs(reliefDate))} wieder unter ${h(NORM_DAILY)}.`
+		: "";
+	return {
+		level: "warn",
+		requiresAction: true,
+		headline: "Über 8 h je Arbeitstag",
+		detail: `Bezogen auf deine Arbeitstage liegt der Schnitt bei ${h(average)} – gesetzlich noch kein Verstoß.${relief}`
+	};
+}
+
 /** Aus der Rechnung ein Urteil machen. */
 function makeVerdict(f: {
 	until: string;
@@ -959,6 +973,17 @@ export function checkArbZg(entries: Entry[], opts: ArbZgOptions): ArbZgResult {
 		legal: forecast(facts, "legal", forecastOpts, pre),
 		strict: forecast(facts, "strict", forecastOpts, pre)
 	};
+
+	// Nur die Rechnung auf die eigenen Arbeitstage gerissen, gesetzlich (Mo–Sa) im
+	// Rahmen: das ist die Frühwarnung, kein Verstoss - gelb statt rot.
+	const limit = NORM_DAILY + AVG_TOLERANCE;
+	if (
+		windows.strict.average > limit &&
+		windows.legal.average <= limit &&
+		!forecasts.legal.verdict.requiresAction
+	) {
+		forecasts.strict.verdict = strictOnlyVerdict(windows.strict.average, forecasts.strict.reliefDate);
+	}
 
 	const counts: Record<ArbZgLevel, number> = { violation: 0, risk: 0, hint: 0 };
 	for (const f of findings) counts[f.level]++;

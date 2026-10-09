@@ -569,6 +569,14 @@ describe("dayFindings", () => {
 });
 
 describe("checkArbZg", () => {
+	it("bleibt rot, wenn auch der gesetzliche Schnitt gerissen ist", () => {
+		// 9,8 h an fünf Tagen sind auf Mo–Sa gerechnet 8,17 h.
+		const r = checkArbZg(series(HISTORY_FROM, UNTIL, 9.8), { ...base, deductBreaks: false, absenceIds: ABSENCE });
+		expect(r.windows.legal.average).toBeGreaterThan(NORM_DAILY + AVG_TOLERANCE);
+		expect(r.forecasts.strict.verdict.level).toBe("crit");
+		expect(r.forecasts.strict.verdict.headline).toBe("Schon über der 8-Stunden-Grenze");
+	});
+
 	it("meldet nur Befunde aus dem Monat des Stichtags", () => {
 		const entries = [...series(HISTORY_FROM, UNTIL, 7.5), day("2026-04-14", 11), day("2026-06-16", 11)];
 		const r = checkArbZg(entries, {
@@ -600,9 +608,13 @@ describe("checkArbZg", () => {
 			deductBreaks: false,
 			absenceIds: ABSENCE
 		});
-		// Streng gerissen (9 h), gesetzlich nicht (9 * 120/144 = 7,5).
+		// Streng gerissen (9 h), gesetzlich nicht (9 * 120/144 = 7,5): gelb statt
+		// rot - zu tun ist etwas, ein Verstoss ist es nicht.
 		expect(r.windows.strict.average).toBeCloseTo(9);
-		expect(r.forecasts.strict.verdict.level).toBe("crit");
+		expect(r.forecasts.strict.verdict.level).toBe("warn");
+		expect(r.forecasts.strict.verdict.requiresAction).toBe(true);
+		expect(r.forecasts.strict.verdict.headline).toBe("Über 8 h je Arbeitstag");
+		expect(r.forecasts.strict.verdict.detail).toContain("gesetzlich noch kein Verstoß");
 		expect(r.forecasts.legal.verdict.level).toBe("ok");
 		// Er gehört keinem Tag und darf deshalb in keiner Tageszeile stehen -
 		// sonst stünde er doppelt (je Lesart) am selben Datum und ergäbe einen

@@ -93,11 +93,9 @@
 	const legal = $derived(result.forecasts.legal);
 	const strictWindow = $derived(result.windows.strict);
 
-	// Rot bedeutet überall dasselbe: handeln. Ein Schnitt knapp über acht
-	// Stunden ist noch kein Notfall – solange der Umkehrpunkt in der Ferne liegt,
-	// lässt er sich durch Kürzertreten einholen, und dann darf die Zahl auch
-	// nicht rot leuchten.
-	const alarm = $derived(strict.verdict.requiresAction);
+	// Rot nur wie das Urteil: ein Schnitt, der allein auf die eigenen Arbeitstage
+	// gerechnet über acht Stunden liegt, ist gelb - dann darf die Zahl nicht rot leuchten.
+	const alarm = $derived(strict.verdict.requiresAction && strict.verdict.level === "crit");
 
 	// ---- Kurve ----
 	// Nur die STRENGE Linie ins Diagramm. Die gesetzliche liegt bei einer
