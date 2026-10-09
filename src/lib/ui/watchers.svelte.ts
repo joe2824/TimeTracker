@@ -34,6 +34,10 @@ let lastPomoSig = "";
 let idlePromptShown = false;
 /** Beginn des zuletzt gesehenen Laufs (für Flag-Reset bei Wechsel). */
 let lastRunStart: number | null = null;
+/** Der Abgleich vor der Auto-Stop-Warnung läuft gerade. */
+let longTimerSyncing = false;
+/** Für diesen Lauf ist der Abgleich vor der Warnung durch - geklappt oder nicht. */
+let longTimerSynced = false;
 /** Zuletzt gesetzter Tray-Tooltip (vermeidet IPC bei unveränderter Anzeige). */
 let lastTooltip = "";
 
@@ -124,7 +128,30 @@ function resetFlags() {
 	autoStopNotified = false;
 	lastPomoKey = null;
 	idlePromptShown = false;
+	longTimerSynced = false;
 	watchers.longTimerPrompt = null;
+}
+
+/**
+ * Ob der lokale Stand für die Auto-Stop-Warnung frisch genug ist. Nach Start
+ * oder Standby kennt das Gerät ein Stoppen im Browser noch nicht - ohne den
+ * Abgleich davor käme die Warnung für einen längst beendeten Timer.
+ */
+function longTimerStateFresh(runStart: number | null): boolean {
+	if (!account.ready) return false;
+	if (!account.linked || longTimerSynced) return true;
+	if (!longTimerSyncing) {
+		longTimerSyncing = true;
+		// Scheitert er, warnt der lokale Stand: besser als gar nicht.
+		void account
+			.syncNow()
+			.catch(() => {})
+			.finally(() => {
+				longTimerSyncing = false;
+				if (lastRunStart === runStart) longTimerSynced = true;
+			});
+	}
+	return false;
 }
 
 async function tick() {
@@ -158,7 +185,12 @@ async function tick() {
 	const elapsedSec = app.runSeconds;
 
 	// --- Auto-Stop-Warnung (Timer vergessen) ---
-	if (s.maxTimerHours > 0 && elapsedSec >= s.maxTimerHours * 3600 && !autoStopNotified) {
+	if (
+		s.maxTimerHours > 0 &&
+		elapsedSec >= s.maxTimerHours * 3600 &&
+		!autoStopNotified &&
+		longTimerStateFresh(runStart)
+	) {
 		autoStopNotified = true;
 		// In-App-Dialog mit Endzeit-Eingabe (falls App offen) …
 		watchers.longTimerPrompt = {

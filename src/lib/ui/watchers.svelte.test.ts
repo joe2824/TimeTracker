@@ -42,7 +42,10 @@ const accountMock = vi.hoisted(() => ({
 	get usagePingServer() {
 		return this.serverUrl;
 	},
-	sendUsagePing: vi.fn()
+	sendUsagePing: vi.fn(),
+	ready: true,
+	linked: false,
+	syncNow: vi.fn()
 }));
 vi.mock("../sync/account.svelte", () => ({ account: accountMock }));
 
@@ -111,6 +114,10 @@ beforeEach(async () => {
 	accountMock.sendUsagePing.mockReset();
 	accountMock.sendUsagePing.mockResolvedValue("sent");
 	accountMock.serverUrl = "https://tracker.example.de";
+	accountMock.ready = true;
+	accountMock.linked = false;
+	accountMock.syncNow.mockReset();
+	accountMock.syncNow.mockResolvedValue(undefined);
 
 	// Einen Takt ohne laufenden Timer: der setzt die modulinternen Merker zurück,
 	// die sonst aus dem vorigen Test stehen blieben (sie leben am Modul, nicht am
@@ -227,6 +234,69 @@ describe("Auto-Stop-Warnung", () => {
 		await tick();
 
 		expect(watchers.longTimerPrompt?.startTs).toBe(yesterday.startTs);
+	});
+
+	describe("mit Konto", () => {
+		beforeEach(() => {
+			accountMock.linked = true;
+			app.settings.maxTimerHours = 10;
+		});
+
+		it("gleicht vor der Warnung ab und wartet darauf", async () => {
+			let finish = () => {};
+			accountMock.syncNow.mockReturnValue(new Promise<void>((r) => (finish = r)));
+			timerRunningSince(10 * 3600 + 5);
+
+			await tick(3);
+			expect(accountMock.syncNow).toHaveBeenCalledTimes(1);
+			expect(watchers.longTimerPrompt).toBeNull();
+			expect(messages.send).not.toHaveBeenCalled();
+
+			finish();
+			await tick();
+			expect(watchers.longTimerPrompt).toMatchObject({ activityId: P1 });
+			expect(messages.send).toHaveBeenCalledTimes(1);
+		});
+
+		it("meldet nichts, wenn ein anderes Geraet den Timer schon beendet hat", async () => {
+			const e = timerRunningSince(10 * 3600 + 5);
+			// So kommt das Ende aus dem Browser an: der Abgleich schreibt es, reload() leert running.
+			accountMock.syncNow.mockImplementation(async () => {
+				e.endTs = Date.now() - 3600 * 1000;
+				app.running = null;
+			});
+
+			await tick(3);
+
+			expect(watchers.longTimerPrompt).toBeNull();
+			expect(messages.send).not.toHaveBeenCalled();
+		});
+
+		it("warnt trotzdem, wenn der Abgleich scheitert", async () => {
+			accountMock.syncNow.mockRejectedValue(new Error("offline"));
+			timerRunningSince(10 * 3600 + 5);
+
+			await tick(2);
+
+			expect(watchers.longTimerPrompt).toMatchObject({ activityId: P1 });
+			expect(messages.send).toHaveBeenCalledTimes(1);
+		});
+
+		it("wartet, bis das Konto geladen ist", async () => {
+			accountMock.ready = false;
+			accountMock.linked = false;
+			timerRunningSince(10 * 3600 + 5);
+
+			await tick(3);
+			expect(watchers.longTimerPrompt).toBeNull();
+			expect(messages.send).not.toHaveBeenCalled();
+
+			accountMock.ready = true;
+			accountMock.linked = true;
+			await tick(2);
+			expect(accountMock.syncNow).toHaveBeenCalledTimes(1);
+			expect(watchers.longTimerPrompt).toMatchObject({ activityId: P1 });
+		});
 	});
 });
 
