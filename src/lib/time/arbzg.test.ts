@@ -452,6 +452,40 @@ describe("dayFindings", () => {
 		expect(f.some((x) => x.rule === "restBreak" || x.rule === "break6h")).toBe(false);
 	});
 
+	it("verlangt bei genau sechs Stunden keine Pause", () => {
+		// § 4: Pflicht erst bei "mehr als sechs Stunden"; sechs am Stück sind erlaubt.
+		const f = find([entry("2026-06-10", "08:00", "14:00")], false);
+		expect(f.some((x) => x.rule === "restBreak" || x.rule === "break6h")).toBe(false);
+	});
+
+	it("laesst bei genau neun Stunden 30 Minuten genuegen", () => {
+		const f = find([entry("2026-06-10", "07:00", "12:00"), entry("2026-06-10", "12:30", "16:30")], false);
+		expect(f.some((x) => x.rule === "restBreak")).toBe(false);
+	});
+
+	it("zaehlt zwei Pausen zu je 15 Minuten als 30 Minuten", () => {
+		const f = find(
+			[entry("2026-06-10", "08:00", "11:00"), entry("2026-06-10", "11:15", "14:00"), entry("2026-06-10", "14:15", "16:00")],
+			false
+		);
+		expect(f.some((x) => x.rule === "restBreak" || x.rule === "break6h")).toBe(false);
+	});
+
+	it("zaehlt Unterbrechungen unter 15 Minuten nicht als Pause", () => {
+		// Drei Mal zehn Minuten sind nach § 4 Satz 2 keine Ruhepause.
+		const f = find(
+			[
+				entry("2026-06-10", "08:00", "10:00"),
+				entry("2026-06-10", "10:10", "12:00"),
+				entry("2026-06-10", "12:10", "14:00"),
+				entry("2026-06-10", "14:10", "15:30")
+			],
+			false
+		);
+		expect(f.find((x) => x.rule === "restBreak")?.value).toBe(0);
+		expect(f.some((x) => x.rule === "break6h")).toBe(true);
+	});
+
 	it("verlangt 45 Minuten jenseits von neun Stunden", () => {
 		const f = find([entry("2026-06-10", "07:00", "12:00"), entry("2026-06-10", "12:35", "17:00")], false);
 		expect(f.some((x) => x.rule === "restBreak")).toBe(true);
