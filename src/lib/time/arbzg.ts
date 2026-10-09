@@ -260,11 +260,16 @@ export function arbzgUntil(month: string, now: number): string {
 	return monthEnd > today ? today : monthEnd;
 }
 
-/** Die Monate, die für einen Stichtag geladen sein müssen. */
-export function arbzgMonths(until: string): string[] {
+/**
+ * Die Monate, die für einen Stichtag geladen sein müssen: zwölf bis zu ihm,
+ * dazu die der Prognose - dort steht schon eingetragener Urlaub.
+ */
+export function arbzgMonths(until: string, horizonWeeks = DEFAULT_HORIZON_WEEKS): string[] {
 	const month = until.slice(0, 7);
+	const last = stepDate(until, horizonWeeks * 7).slice(0, 7);
 	const out: string[] = [];
 	for (let i = 11; i >= 0; i--) out.push(shiftMonthKey(month, -i));
+	for (let m = shiftMonthKey(month, 1); m <= last; m = shiftMonthKey(m, 1)) out.push(m);
 	return out;
 }
 
@@ -397,16 +402,17 @@ function buildAxis(
 		const counts = date >= opts.dataFrom;
 
 		const f = facts.get(date);
+		// Abwesenheit zählt nur an ARBEITSTAGEN - auch künftige: an einem schon
+		// eingetragenen Urlaubstag wird weder gearbeitet noch Budget fällig.
+		const absence = !isPlanWorkday ? 0 : (f?.absenceFraction ?? 0);
 		hours.push(counts && !future ? (f?.hours ?? 0) : 0);
-		futureWorkday.push(future && isPlanWorkday ? 1 : 0);
+		futureWorkday.push(future && isPlanWorkday ? 1 - absence : 0);
 
 		if (!counts) {
 			legal.push(0);
 			strict.push(0);
 			continue;
 		}
-		// Abwesenheit zählt nur an ARBEITSTAGEN.
-		const absence = future || !isPlanWorkday ? 0 : (f?.absenceFraction ?? 0);
 		// Sonntag ist kein Werktag; gearbeitete Sonntagsstunden zählen trotzdem
 		// im Zähler – die vorsichtige Seite.
 		legal.push(Math.max(0, (weekday === 0 ? 0 : 1) - absence));

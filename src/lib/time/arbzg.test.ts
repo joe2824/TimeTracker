@@ -68,9 +68,14 @@ describe("arbzgMonths", () => {
 	it("deckt zwoelf Monate bis zum Stichtag ab", () => {
 		// 24 Wochen Fenster plus 24 Wochen Vorlauf für die Verlaufskurve.
 		const m = arbzgMonths("2026-06-30");
-		expect(m).toHaveLength(12);
 		expect(m[0]).toBe("2025-07");
 		expect(m[11]).toBe("2026-06");
+	});
+
+	it("laedt auch die Monate der Prognose - dort steht schon eingetragener Urlaub", () => {
+		// 26 Wochen nach dem 30.06. ist der 29.12.
+		const m = arbzgMonths("2026-06-30");
+		expect(m.slice(12)).toEqual(["2026-07", "2026-08", "2026-09", "2026-10", "2026-11", "2026-12"]);
 	});
 
 	it("rechnet ueber den Jahreswechsel", () => {
@@ -333,6 +338,34 @@ describe("forecast", () => {
 
 	it("fragt nicht nach Entlastung, wenn das Fenster traegt", () => {
 		expect(forecast(facts(7), "strict", { ...base, pace: 7 }).reliefDate).toBeNull();
+	});
+
+	describe("mit schon eingetragenem Urlaub", () => {
+		/** Die zwei Wochen nach dem Stichtag als Urlaub. */
+		const vacation = (): Entry[] => {
+			const out: Entry[] = [];
+			for (let d = stepDate(UNTIL, 1); d <= stepDate(UNTIL, 14); d = stepDate(d, 1)) {
+				if (MO_FR.includes(weekdayOfDate(d))) out.push(absence(d));
+			}
+			return out;
+		};
+		const withVacation = (hours: number) =>
+			dayFacts([...series(HISTORY_FROM, UNTIL, hours), ...vacation()], ABSENCE, { deductBreaks: false });
+
+		it("arbeitet an Urlaubstagen nicht im angenommenen Tempo", () => {
+			// Wie in der Vergangenheit: ein Urlaubstag bringt weder Stunden noch Budget.
+			const f = forecast(withVacation(7.5), "strict", { ...base, pace: 9.5 });
+			const endOfVacation = f.points.find((p) => p.date === stepDate(UNTIL, 14))!;
+			expect(endOfVacation.average).toBeCloseTo(7.5, 5);
+		});
+
+		it("zaehlt Urlaubstage nicht als Tage, an denen der Schnitt sinkt", () => {
+			// Ohne jede weitere Stunde sinkt der Schnitt nur an Arbeitstagen - der
+			// Urlaub schiebt die Entlastung also nach hinten.
+			const plain = forecast(facts(9.5), "strict", { ...base, pace: 9.5 }).reliefDate!;
+			const later = forecast(withVacation(9.5), "strict", { ...base, pace: 9.5 }).reliefDate!;
+			expect(later > plain).toBe(true);
+		});
 	});
 });
 
@@ -791,7 +824,7 @@ describe("Kalender-Randfaelle", () => {
 
 	it("deckt in arbzgMonths auch Schaltjahr und Jahreswechsel ab", () => {
 		const m = arbzgMonths("2024-02-29");
-		expect(m).toHaveLength(12);
+		expect(m.indexOf("2024-02")).toBe(11);
 		expect(m[0]).toBe("2023-03");
 		expect(m[11]).toBe("2024-02");
 	});
