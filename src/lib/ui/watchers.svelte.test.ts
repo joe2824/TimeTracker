@@ -350,6 +350,44 @@ describe("Leerlauf-Erkennung", () => {
 
 		expect(watchers.idlePrompt).toBeNull();
 	});
+
+	it("schliesst die Rueckfrage, wenn ein anderes Geraet den Timer beendet", async () => {
+		app.settings.idleThresholdMin = 10;
+		timerRunningSince(3600);
+		ipc.idleSeconds = 11 * 60;
+		await tick();
+		expect(watchers.idlePrompt).not.toBeNull();
+
+		app.running = null;
+		await tick();
+
+		expect(watchers.idlePrompt).toBeNull();
+	});
+
+	it("fragt nicht nach einem Lauf, der erst waehrend der Abwesenheit begann", async () => {
+		// Am Handy gestartet, waehrend am Rechner niemand sitzt: "Eintrag
+		// verwerfen" loeschte sonst den Timer des Handys.
+		app.settings.idleThresholdMin = 10;
+		timerRunningSince(3600);
+		ipc.idleSeconds = 30 * 60;
+		await tick();
+		expect(watchers.idlePrompt).not.toBeNull();
+
+		timerRunningSince(60, P2);
+		await tick();
+
+		expect(watchers.idlePrompt).toBeNull();
+	});
+
+	it("zaehlt bei einem neuen Lauf nur die Abwesenheit seit dessen Beginn", async () => {
+		app.settings.idleThresholdMin = 10;
+		timerRunningSince(15 * 60);
+		ipc.idleSeconds = 60 * 60;
+		await tick();
+
+		expect(watchers.idlePrompt?.idleSeconds).toBe(15 * 60 + 1);
+		expect(watchers.idlePrompt?.idleStart).toBe(app.runStartTs);
+	});
 });
 
 describe("Pomodoro", () => {

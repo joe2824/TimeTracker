@@ -167,7 +167,10 @@ async function tick() {
 		void invoke("set_tray_tooltip", { text: tooltip }).catch(() => {});
 	}
 
+	// Ein Lauf endet oder wechselt auch auf einem anderen Gerät: die Leerlauf-Frage
+	// gilt dann nicht mehr - "Eintrag verwerfen" träfe sonst den neuen Lauf.
 	if (!running) {
+		if (lastRunStart !== null) watchers.idlePrompt = null;
 		resetFlags();
 		lastRunStart = null;
 		return;
@@ -176,6 +179,7 @@ async function tick() {
 	// Aktivitätswechsel = neuer Lauf -> Erinnerungen wieder scharf stellen.
 	const runStart = app.runStartTs;
 	if (runStart !== lastRunStart) {
+		if (lastRunStart !== null) watchers.idlePrompt = null;
 		lastRunStart = runStart;
 		resetFlags();
 	}
@@ -245,7 +249,10 @@ async function tick() {
 	// --- Leerlauf-Erkennung ---
 	// Erst wieder fragen, wenn der Nutzer zwischendurch aktiv war (idle < Schwelle).
 	if (s.idleThresholdMin > 0 && !watchers.idlePrompt) {
-		const idle = await invoke<number>("idle_seconds").catch(() => 0);
+		// Nur die Abwesenheit innerhalb dieses Laufs: ein Lauf, den ein anderes
+		// Gerät währenddessen gestartet hat, war nicht "weg".
+		const idleTotal = await invoke<number>("idle_seconds").catch(() => 0);
+		const idle = runStart === null ? idleTotal : Math.min(idleTotal, Math.floor((Date.now() - runStart) / 1000));
 		const threshold = s.idleThresholdMin * 60;
 		if (idle < threshold) {
 			idlePromptShown = false;
