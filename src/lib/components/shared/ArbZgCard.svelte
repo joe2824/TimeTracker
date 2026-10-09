@@ -233,7 +233,7 @@
 					<div class="min-w-0 space-y-1">
 						<div class="flex flex-wrap items-baseline gap-x-2">
 							<span class="text-base font-medium">{strict.verdict.headline}</span>
-							<span class="text-muted-foreground text-xs">streng gerechnet</span>
+							<span class="text-muted-foreground text-xs">bezogen auf deine Arbeitstage</span>
 						</div>
 						<p class="text-sm">{strict.verdict.detail}</p>
 					</div>
@@ -301,9 +301,9 @@
 			<p class="text-muted-foreground text-xs">
 				{#if strict.verdict.requiresAction && legal.verdict.level === "ok"}
 					Warum trotzdem eine Warnung: nach dem Gesetz (Werktage Mo–Sa) läge der Schnitt bei
-					{fmtHoursClock(result.windows.legal.average)} h und wäre unkritisch. Gewarnt wird nach der
-					strengen Rechnung, die nur deine Arbeitstage als Werktage zählt – nur die warnt früh
-					genug, um noch etwas ändern zu können.
+					{fmtHoursClock(result.windows.legal.average)} h und wäre unkritisch. Gewarnt wird bezogen auf
+					deine Arbeitstage, weil nur diese Rechnung früh genug warnt, um noch etwas ändern zu
+					können.
 				{:else}
 					Gesetzlich (Mo–Sa): {fmtHoursClock(result.windows.legal.average)} h Schnitt, Puffer {fmtHoursClock(
 						result.windows.legal.bufferHours
@@ -481,7 +481,7 @@
 				Der automatische Pausenabzug ist aus: Pausen werden aus den Lücken zwischen den Einträgen
 				bewertet (§ 4).
 			{/if}
-			Die strenge Lesart zählt nur deine Arbeitstage als Werktage – das ist keine Gesetzeslage,
+			Die Rechnung bezogen auf deine Arbeitstage zählt nur diese als Werktage – das ist keine Gesetzeslage,
 			sondern der Frühwarnwert.
 		</p>
 	</Card.Content>
