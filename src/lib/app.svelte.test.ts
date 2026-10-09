@@ -421,7 +421,29 @@ describe("Zeitausgleich", () => {
 
 		const result = await app.addAbsenceRange("2026-07-17", "2026-07-17");
 
-		expect(result).toEqual({ added: 0, skipped: 1 });
+		expect(result).toEqual({ added: 0, skipped: 1, taken: 0 });
+		expect(error).not.toHaveBeenCalled();
+		error.mockRestore();
+	});
+
+	it("traegt eine Abwesenheit nicht doppelt ein", async () => {
+		reset();
+		await app.addEntry(ABS, at(17, 12), at(17, 12), "", "manual", 1);
+
+		expect(await app.addEntry(ABS, at(17, 12), at(17, 12), "", "manual", 1)).toBeNull();
+		expect(onDisk("2026-07")).toHaveLength(1);
+	});
+
+	it("überspringt im Zeitraum Tage, die schon Abwesenheit tragen, still", async () => {
+		reset();
+		await app.addEntry(ABS, at(14, 12), at(14, 12), "", "manual", 1);
+		const { toast } = await import("svelte-sonner");
+		const error = vi.spyOn(toast, "error");
+
+		const result = await app.addAbsenceRange("2026-07-13", "2026-07-15");
+
+		expect(result).toEqual({ added: 2, skipped: 0, taken: 1 });
+		expect(onDisk("2026-07")).toHaveLength(3);
 		expect(error).not.toHaveBeenCalled();
 		error.mockRestore();
 	});

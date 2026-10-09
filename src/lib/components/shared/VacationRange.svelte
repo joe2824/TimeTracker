@@ -20,13 +20,19 @@
 	let timeOff = $state(false);
 
 	async function add() {
-		const { added, skipped } = await app.addAbsenceRange(from, to, fraction, timeOff);
+		const { added, skipped, taken } = await app.addAbsenceRange(from, to, fraction, timeOff);
 		if (added > 0) {
-			const extra = skipped > 0 ? ` (${skipped} mit Projektzeit übersprungen)` : "";
+			const notes = [
+				skipped > 0 ? `${skipped} mit Projektzeit übersprungen` : "",
+				taken > 0 ? `${taken} schon eingetragen` : ""
+			].filter(Boolean);
+			const extra = notes.length > 0 ? ` (${notes.join(", ")})` : "";
 			const was = timeOff ? "Tag(e) Zeitausgleich" : "Abwesenheitstag(e)";
 			toast.success(`${added} ${was} eingetragen${extra}.`);
 			onsaved?.(from.slice(0, 7)); // auf den Abwesenheits-Monat springen
 			open = false;
+		} else if (taken > 0 && skipped === 0) {
+			toast.info("Diese Tage sind schon als Abwesenheit eingetragen.");
 		} else if (skipped > 0) {
 			toast.error(`${skipped} Tag(e) haben Projektzeiten – nur halber Urlaubstag möglich.`);
 		} else {

@@ -1,14 +1,16 @@
 import type { Entry } from "../types";
 import { fmtDate } from "./time";
 
-export type DayConflict = "full-day-absence" | "project-time" | null;
+export type DayConflict = "full-day-absence" | "project-time" | "absence-taken" | null;
 
 /**
  * Tagesregel: Eine Ganztags-Abwesenheit und Projektzeit schließen sich am selben
- * (lokalen) Tag aus; ein halber Urlaubstag darf neben Projektzeit liegen.
+ * (lokalen) Tag aus; ein halber Urlaubstag darf neben Projektzeit liegen. Mehr
+ * als einen Tag Abwesenheit hat kein Tag.
  *
  * @returns "full-day-absence" wenn ein Projekteintrag an einem Ganztags-Abwesenheitstag liegt,
  *          "project-time" wenn eine Ganztags-Abwesenheit an einem Tag mit Projektzeit liegt,
+ *          "absence-taken" wenn die Abwesenheit mit den vorhandenen über einen Tag käme,
  *          sonst null.
  */
 export function dayConflict(
@@ -33,6 +35,12 @@ export function dayConflict(
 	}
 	if (fullDayAbs && sameDay.some((e) => e.activityId !== absenceId)) {
 		return "project-time";
+	}
+	if (isAbs) {
+		const taken = sameDay
+			.filter((e) => e.activityId === absenceId)
+			.reduce((sum, e) => sum + (e.dayFraction ?? 1), 0);
+		if (taken + (candidate.dayFraction ?? 1) > 1 + 1e-9) return "absence-taken";
 	}
 	return null;
 }

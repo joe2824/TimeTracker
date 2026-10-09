@@ -1244,6 +1244,10 @@ class AppState {
 			);
 			return true;
 		}
+		if (conflict === "absence-taken") {
+			toast.error(`Am ${fmtDateHuman(candidate.startTs)} ist schon eine Abwesenheit eingetragen.`);
+			return true;
+		}
 
 		// Man kann nicht gleichzeitig an zwei Dingen arbeiten.
 		if (candidate.skipOverlap) return false;
@@ -1823,21 +1827,23 @@ class AppState {
 
 	/**
 	 * Legt Abwesenheits-Einträge für einen Datumsbereich an (inkl. beider Tage),
-	 * optional ohne Wochenenden. Gibt die Anzahl angelegter Tage zurück.
+	 * optional ohne Wochenenden. `skipped` zählt Tage mit Projektzeit, `taken`
+	 * Tage, die schon Abwesenheit tragen.
 	 */
 	async addAbsenceRange(
 		startDate: string,
 		endDate: string,
 		fraction = 1,
 		timeOff = false
-	): Promise<{ added: number; skipped: number }> {
+	): Promise<{ added: number; skipped: number; taken: number }> {
 		const abs = this.absenceActivity;
-		if (!abs) return { added: 0, skipped: 0 };
+		if (!abs) return { added: 0, skipped: 0, taken: 0 };
 		if (Number.isNaN(noonTs(startDate)) || Number.isNaN(noonTs(endDate)) || endDate < startDate) {
-			return { added: 0, skipped: 0 };
+			return { added: 0, skipped: 0, taken: 0 };
 		}
 		let added = 0;
 		let skipped = 0;
+		let taken = 0;
 		// Über Kalendertage statt über einen Date-Cursor: der hängt an der Zone
 		// des Geräts, und an einer Sommerzeit-Grenze trifft +24 h den falschen Tag.
 		for (let date = startDate; date <= endDate; date = stepDate(date, 1)) {
@@ -1846,6 +1852,12 @@ class AppState {
 			const noon = noonTs(date);
 			// hasProjectEntry sieht nur geladene Monate.
 			await this.ensureMonth(monthKey(noon));
+			// Schon eingetragen -> still überspringen, wie Tage mit Projektzeit (kein Toast je Tag).
+			const candidate = { activityId: abs.id, startTs: noon, dayFraction: fraction };
+			if (dayConflict(this.monthEntries(monthKey(noon)), candidate, abs.id) === "absence-taken") {
+				taken++;
+				continue;
+			}
 			// Ganztags-Konflikt mit Projektzeit -> Tag still überspringen (kein Doppel-Toast).
 			if (fraction >= 1 && this.hasProjectEntry(noon)) {
 				skipped++;
@@ -1855,7 +1867,7 @@ class AppState {
 			if (e) added++;
 			else skipped++;
 		}
-		return { added, skipped };
+		return { added, skipped, taken };
 	}
 
 	async #stopInternal(endTs = Date.now()): Promise<void> {

@@ -64,6 +64,29 @@ describe("dayConflict", () => {
 		).toBeNull();
 	});
 
+	it("blockt eine zweite Ganztags-Abwesenheit am selben Tag", () => {
+		const entries = [e("a", ABS, DAY, 1)];
+		expect(
+			dayConflict(entries, { activityId: ABS, startTs: DAY, dayFraction: 1 }, ABS)
+		).toBe("absence-taken");
+	});
+
+	it("blockt einen halben Tag neben einem ganzen und umgekehrt", () => {
+		expect(
+			dayConflict([e("a", ABS, DAY, 1)], { activityId: ABS, startTs: DAY, dayFraction: 0.5 }, ABS)
+		).toBe("absence-taken");
+		expect(
+			dayConflict([e("h", ABS, DAY, 0.5)], { activityId: ABS, startTs: DAY, dayFraction: 1 }, ABS)
+		).toBe("absence-taken");
+	});
+
+	it("erlaubt zwei halbe Tage, etwa Urlaub und Zeitausgleich", () => {
+		const entries = [e("h", ABS, DAY, 0.5)];
+		expect(
+			dayConflict(entries, { activityId: ABS, startTs: DAY, dayFraction: 0.5 }, ABS)
+		).toBeNull();
+	});
+
 	it("behandelt fehlendes dayFraction als ganzen Tag", () => {
 		const entries = [e("a", ABS, DAY)]; // kein dayFraction -> ganzer Tag
 		expect(dayConflict(entries, { activityId: "proj", startTs: DAY }, ABS)).toBe(
