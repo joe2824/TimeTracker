@@ -121,8 +121,16 @@ export interface DayFacts {
 	firstStart: number | null;
 	/** Spätestes Ende einer Projektzeit (Epoch-ms), null ohne Erfassung. */
 	lastEnd: number | null;
-	/** Tagesanteil gebuchter Abwesenheit, 0..1. */
+	/**
+	 * Tagesanteil gebuchter Abwesenheit, 0..1 - neutral im Schnitt: Urlaub,
+	 * Krankheit und Feiertage sind keine Ausgleichstage (BVerwG 8 C 13.17).
+	 */
 	absenceFraction: number;
+	/**
+	 * Tagesanteil Zeitausgleich, 0..1. Anders als Urlaub ein Ausgleichstag: frei
+	 * trotz Arbeitspflicht, zählt also mit null Stunden im Schnitt.
+	 */
+	timeOffFraction: number;
 	/** 0 = Sonntag .. 6 = Samstag */
 	weekday: number;
 	/**
@@ -309,6 +317,7 @@ export function dayFacts(
 				firstStart: null,
 				lastEnd: null,
 				absenceFraction: 0,
+				timeOffFraction: 0,
 				weekday: weekdayOfDate(date),
 				pauseMinutes: null,
 				longestStretch: null
@@ -325,7 +334,9 @@ export function dayFacts(
 		const f = facts(date);
 		if (absenceIds.has(e.activityId)) {
 			// Mehrere Halbtage am selben Tag ergeben höchstens einen ganzen.
-			f.absenceFraction = Math.min(1, f.absenceFraction + (e.dayFraction ?? 1));
+			const share = e.dayFraction ?? 1;
+			if (e.timeOff) f.timeOffFraction = Math.min(1 - f.absenceFraction, f.timeOffFraction + share);
+			else f.absenceFraction = Math.min(1 - f.timeOffFraction, f.absenceFraction + share);
 			continue;
 		}
 		// Abwesenheiten haben start == end == Tagesmitte und würden das
@@ -372,6 +383,8 @@ interface Axis {
 	budget: Record<AvgBasis, number[]>;
 	/** 1, wenn an diesem künftigen Tag nach Plan gearbeitet wird. */
 	futureWorkday: number[];
+	/** Budget für das Tempo: streng, ohne Zeitausgleich - ein freier Tag ist kein Arbeitstag. */
+	workBudget: number[];
 	/** Index des Stichtags. */
 	todayIndex: number;
 }
@@ -390,6 +403,7 @@ function buildAxis(
 	const legal: number[] = [];
 	const strict: number[] = [];
 	const futureWorkday: number[] = [];
+	const workBudget: number[] = [];
 
 	for (const date of dates) {
 		const noon = noonTs(date);
@@ -405,14 +419,17 @@ function buildAxis(
 		// Abwesenheit zählt nur an ARBEITSTAGEN - auch künftige: an einem schon
 		// eingetragenen Urlaubstag wird weder gearbeitet noch Budget fällig.
 		const absence = !isPlanWorkday ? 0 : (f?.absenceFraction ?? 0);
+		const timeOff = !isPlanWorkday ? 0 : (f?.timeOffFraction ?? 0);
 		hours.push(counts && !future ? (f?.hours ?? 0) : 0);
-		futureWorkday.push(future && isPlanWorkday ? 1 - absence : 0);
+		futureWorkday.push(future && isPlanWorkday ? Math.max(0, 1 - absence - timeOff) : 0);
 
 		if (!counts) {
 			legal.push(0);
 			strict.push(0);
+			workBudget.push(0);
 			continue;
 		}
+		workBudget.push(Math.max(0, (isPlanWorkday ? 1 : 0) - absence - timeOff));
 		// Sonntag ist kein Werktag; gearbeitete Sonntagsstunden zählen trotzdem
 		// im Zähler – die vorsichtige Seite.
 		legal.push(Math.max(0, (weekday === 0 ? 0 : 1) - absence));
@@ -424,6 +441,7 @@ function buildAxis(
 		hours,
 		budget: { legal, strict },
 		futureWorkday,
+		workBudget,
 		todayIndex: dates.indexOf(to)
 	};
 }
@@ -438,6 +456,8 @@ export interface Prepared {
 	budget: Record<AvgBasis, number[]>;
 	/** Präfixsummen der künftigen Arbeitstage. */
 	futureWorkday: number[];
+	/** Präfixsummen des Tempo-Budgets (siehe Axis.workBudget). */
+	workBudget: number[];
 }
 
 export function prepare(
@@ -456,7 +476,8 @@ export function prepare(
 		todayIndex: axis.todayIndex,
 		hours: prefix(axis.hours),
 		budget: { legal: prefix(axis.budget.legal), strict: prefix(axis.budget.strict) },
-		futureWorkday: prefix(axis.futureWorkday)
+		futureWorkday: prefix(axis.futureWorkday),
+		workBudget: prefix(axis.workBudget)
 	};
 }
 
@@ -522,7 +543,7 @@ export function currentPace(
 		const lo = pre.todayIndex - (days - 1);
 		return {
 			hours: range(pre.hours, lo, pre.todayIndex),
-			budget: range(pre.budget.strict, lo, pre.todayIndex)
+			budget: range(pre.workBudget, lo, pre.todayIndex)
 		};
 	};
 

@@ -12,7 +12,7 @@ import {
 	forecast,
 	NORM_DAILY
 } from "./arbzg";
-import { stepDate, toTs } from "./time";
+import { fmtDate, stepDate, toTs } from "./time";
 import { weekdayOfDate, zonedParts } from "./tz";
 import type { Entry } from "../types";
 
@@ -51,6 +51,11 @@ function absence(date: string, fraction = 1): Entry {
 	};
 }
 
+/** Zeitausgleich: ein freier Tag trotz Arbeitspflicht, um Überstunden abzubauen. */
+function timeOff(date: string, fraction = 1): Entry {
+	return { ...absence(date, fraction), timeOff: true };
+}
+
 /** An jedem Arbeitstag zwischen `from` und `to` je `hours` Stunden. */
 function series(from: string, to: string, hours: number, workdays = MO_FR): Entry[] {
 	const out: Entry[] = [];
@@ -61,6 +66,7 @@ function series(from: string, to: string, hours: number, workdays = MO_FR): Entr
 }
 
 const UNTIL = "2026-06-30";
+const fmtDay = (e: Entry) => fmtDate(e.startTs);
 const HISTORY_FROM = stepDate(UNTIL, -200);
 const base = { until: UNTIL, dataFrom: HISTORY_FROM, workdays: MO_FR };
 
@@ -177,6 +183,16 @@ describe("avgWindow", () => {
 		expect(w.budgetDays).toBeCloseTo(120 - 1.5);
 	});
 
+	it("zaehlt Zeitausgleich als Ausgleichstag - anders als Urlaub", () => {
+		// BVerwG 8 C 13.17: Ausgleichstage sind Tage, an denen trotz Arbeitspflicht
+		// nicht gearbeitet wird. Genau das ist Zeitausgleich; Urlaub ist es nicht.
+		const at = "2026-06-15";
+		const without = series(HISTORY_FROM, UNTIL, 7.5).filter((e) => fmtDay(e) !== at);
+		const w = avgWindow(dayFacts([...without, timeOff(at)], ABSENCE, { deductBreaks: false }), "strict", base);
+		expect(w.budgetDays).toBe(120);
+		expect(w.average).toBeCloseTo((119 * 7.5) / 120);
+	});
+
 	it("meldet eine zu kurze Datenbasis, statt sie mit Null-Tagen aufzufuellen", () => {
 		const from = stepDate(UNTIL, -55);
 		const w = avgWindow(
@@ -208,6 +224,13 @@ describe("currentPace", () => {
 	it("mittelt ueber die Arbeitstage des Bezugszeitraums", () => {
 		const facts = dayFacts(series(HISTORY_FROM, UNTIL, 9), ABSENCE, { deductBreaks: false });
 		expect(currentPace(facts, base)).toBeCloseTo(9);
+	});
+
+	it("laesst sich von Zeitausgleich nicht druecken", () => {
+		// Das Tempo fragt, wie lang ein Arbeitstag ist - ein freier Tag ist keiner.
+		const at = stepDate(UNTIL, -3);
+		const entries = series(HISTORY_FROM, UNTIL, 9).filter((e) => fmtDay(e) !== at);
+		expect(currentPace(dayFacts([...entries, timeOff(at)], ABSENCE, { deductBreaks: false }), base)).toBeCloseTo(9);
 	});
 
 	it("laesst sich von Urlaub nicht druecken", () => {
@@ -357,6 +380,18 @@ describe("forecast", () => {
 			const f = forecast(withVacation(7.5), "strict", { ...base, pace: 9.5 });
 			const endOfVacation = f.points.find((p) => p.date === stepDate(UNTIL, 14))!;
 			expect(endOfVacation.average).toBeCloseTo(7.5, 5);
+		});
+
+		it("arbeitet an kuenftigem Zeitausgleich nicht, zaehlt ihn aber als Ausgleichstag", () => {
+			const days: Entry[] = [];
+			for (let d = stepDate(UNTIL, 1); d <= stepDate(UNTIL, 14); d = stepDate(d, 1)) {
+				if (MO_FR.includes(weekdayOfDate(d))) days.push(timeOff(d));
+			}
+			const facts = dayFacts([...series(HISTORY_FROM, UNTIL, 7.5), ...days], ABSENCE, { deductBreaks: false });
+			const f = forecast(facts, "strict", { ...base, pace: 9.5 });
+			const end = f.points.find((p) => p.date === stepDate(UNTIL, 14))!;
+			// Zehn Arbeitstage ohne Stunden im Fenster; die zehn ältesten fallen heraus.
+			expect(end.average).toBeCloseTo((110 * 7.5) / 120, 5);
 		});
 
 		it("zaehlt Urlaubstage nicht als Tage, an denen der Schnitt sinkt", () => {
@@ -539,10 +574,17 @@ function naiveAverage(opts: {
 		const future = d > opts.until;
 		const isWorkdayDe = opts.basis === "legal" ? wd !== 0 : opts.workdays.includes(wd);
 		const isPlanWorkday = opts.workdays.includes(wd);
-		const absence = future ? 0 : (opts.facts.get(d)?.absenceFraction ?? 0);
+		// Abwesenheit nur an Arbeitstagen - auch künftige: eingetragener Urlaub.
+		const absence = isPlanWorkday ? (opts.facts.get(d)?.absenceFraction ?? 0) : 0;
+		// Zeitausgleich bleibt im Budget (Ausgleichstag), gearbeitet wird an ihm nicht.
+		const timeOffShare = isPlanWorkday ? (opts.facts.get(d)?.timeOffFraction ?? 0) : 0;
 		budget += Math.max(0, (isWorkdayDe ? 1 : 0) - absence);
 		const worksToday = isPlanWorkday && (opts.stopAfter === undefined || d <= opts.stopAfter);
-		hours += future ? (worksToday ? opts.pace : 0) : (opts.facts.get(d)?.hours ?? 0);
+		hours += future
+			? worksToday
+				? opts.pace * Math.max(0, 1 - absence - timeOffShare)
+				: 0
+			: (opts.facts.get(d)?.hours ?? 0);
 	}
 	return budget > 0 ? hours / budget : null;
 }
@@ -566,11 +608,22 @@ function scenario(seed: number, until = UNTIL): { entries: Entry[]; dataFrom: st
 		} else if (r < 0.12) {
 			entries.push(absence(d, 0.5));
 			entries.push(day(d, 3 + rand() * 2));
+		} else if (r < 0.14) {
+			// Zeitausgleich: im Schnitt wie ein leerer Werktag, fürs Tempo kein Arbeitstag.
+			entries.push(timeOff(d));
 		} else if (r < 0.16) {
 			// gar nichts erfasst – ein Werktag mit null Stunden
 		} else {
 			entries.push(day(d, 5 + rand() * 6));
 		}
+	}
+	// Schon eingetragener Urlaub im Prognosezeitraum.
+	for (let d = stepDate(until, 1); d <= stepDate(until, 182); d = stepDate(d, 1)) {
+		if (!MO_FR.includes(weekdayOf(d))) continue;
+		const r = rand();
+		if (r < 0.08) entries.push(absence(d));
+		else if (r < 0.1) entries.push(absence(d, 0.5));
+		else if (r < 0.12) entries.push(timeOff(d));
 	}
 	return { entries, dataFrom: from };
 }
