@@ -26,7 +26,7 @@ import {
 	shiftMonthKey,
 	stepDate
 } from "./time";
-import { weekdayOfDate } from "./tz";
+import { lastDayOfMonth, weekdayOfDate } from "./tz";
 
 /** Werktägliche Regelarbeitszeit (§ 3 Abs. 1 Satz 1). */
 export const NORM_DAILY = 8;
@@ -249,6 +249,16 @@ export interface ArbZgResult {
 }
 
 // ---------- Datenbeschaffung ----------
+
+/**
+ * Stichtag für einen Monat: sein letzter Tag, aber nie nach heute. `now` muss
+ * der tickende Wert sein - die Anwendung läuft über Mitternacht weiter.
+ */
+export function arbzgUntil(month: string, now: number): string {
+	const today = fmtDate(now);
+	const monthEnd = lastDayOfMonth(month);
+	return monthEnd > today ? today : monthEnd;
+}
 
 /** Die Monate, die für einen Stichtag geladen sein müssen. */
 export function arbzgMonths(until: string): string[] {

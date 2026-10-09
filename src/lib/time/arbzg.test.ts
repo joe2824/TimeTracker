@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	arbzgMonths,
+	arbzgUntil,
 	AVG_TOLERANCE,
 	avgWindow,
 	checkArbZg,
@@ -938,5 +939,22 @@ describe("boesartige Eintraege", () => {
 		expect(f.hours).toBe(0);
 		expect(f.firstStart).toBeNull();
 		expect(f.pauseMinutes).toBe(null);
+	});
+});
+
+describe("arbzgUntil", () => {
+	it("nimmt fuer den laufenden Monat den heutigen Tag – auch nach Mitternacht", () => {
+		// Die Anwendung laeuft ueber Nacht durch: der Stichtag muss mitwandern,
+		// sonst fehlen die Stunden von heute und das Urteil ist von gestern.
+		expect(arbzgUntil("2026-10", toTs("2026-10-08", "23:59"))).toBe("2026-10-08");
+		expect(arbzgUntil("2026-10", toTs("2026-10-09", "00:01"))).toBe("2026-10-09");
+	});
+
+	it("nimmt fuer einen vergangenen Monat dessen letzten Tag", () => {
+		expect(arbzgUntil("2026-09", toTs("2026-10-09", "10:00"))).toBe("2026-09-30");
+	});
+
+	it("geht fuer einen kuenftigen Monat nie ueber heute hinaus", () => {
+		expect(arbzgUntil("2026-12", toTs("2026-10-09", "10:00"))).toBe("2026-10-09");
 	});
 });

@@ -2,6 +2,7 @@
 	import { app } from "$lib/app.svelte";
 	import {
 		arbzgMonths,
+		arbzgUntil,
 		checkArbZg,
 		dataFromEntries,
 		DEFAULT_PACE_WEEKS,
@@ -23,7 +24,7 @@
 		quantize,
 		shiftMonthKey
 	} from "$lib/time/time";
-	import { appTimeZone, lastDayOfMonth, zonedParts } from "$lib/time/tz";
+	import { appTimeZone, zonedParts } from "$lib/time/tz";
 	import type { Entry } from "$lib/types";
 	import { Badge } from "$lib/components/ui/badge";
 	import { Button } from "$lib/components/ui/button";
@@ -48,12 +49,9 @@
 	/** Referenzzeitraum für das angenommene Tempo (siehe DEFAULT_PACE_WEEKS). */
 	let paceWeeks = $state(DEFAULT_PACE_WEEKS);
 
-	/** Stichtag: das Monatsende – aber nie in der Zukunft. */
-	const until = $derived.by(() => {
-		const today = fmtDate(Date.now());
-		const monthEnd = lastDayOfMonth(month);
-		return monthEnd > today ? today : monthEnd;
-	});
+	// Stichtag: Monatsende, nie nach heute. An `app.now`, nicht an Date.now(): die
+	// Anwendung läuft über Nacht, und der Stichtag muss mitwandern.
+	const until = $derived(arbzgUntil(month, app.now));
 
 	const monthsNeeded = $derived(arbzgMonths(until));
 
