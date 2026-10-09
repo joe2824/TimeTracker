@@ -12,7 +12,7 @@ import {
 	forecast,
 	NORM_DAILY
 } from "./arbzg";
-import { fmtDate, stepDate, toTs } from "./time";
+import { fmtDate, fmtDateHuman, noonTs, stepDate, toTs } from "./time";
 import { weekdayOfDate, zonedParts } from "./tz";
 import type { Entry } from "../types";
 
@@ -614,7 +614,10 @@ describe("checkArbZg", () => {
 		expect(r.forecasts.strict.verdict.level).toBe("warn");
 		expect(r.forecasts.strict.verdict.requiresAction).toBe(true);
 		expect(r.forecasts.strict.verdict.headline).toBe("Über 8 h je Arbeitstag");
-		expect(r.forecasts.strict.verdict.detail).toContain("gesetzlich noch kein Verstoß");
+		// Fakten statt Prosa: beide Schnitte und das Urteil des Gesetzes.
+		expect(r.forecasts.strict.verdict.detail).toBe(
+			`Deine Arbeitstage: 9:00 h · Gesetzlich (Mo–Sa): 7:30 h – kein Verstoß · unter 8:00 h frühestens ab ${fmtDateHuman(noonTs(r.forecasts.strict.reliefDate!))}`
+		);
 		expect(r.forecasts.legal.verdict.level).toBe("ok");
 		// Er gehört keinem Tag und darf deshalb in keiner Tageszeile stehen -
 		// sonst stünde er doppelt (je Lesart) am selben Datum und ergäbe einen

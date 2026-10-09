@@ -3,6 +3,7 @@
 	import {
 		arbzgMonths,
 		arbzgUntil,
+		AVG_TOLERANCE,
 		checkArbZg,
 		dataFromEntries,
 		DEFAULT_PACE_WEEKS,
@@ -90,8 +91,20 @@
 	);
 
 	const strict = $derived(result.forecasts.strict);
-	const legal = $derived(result.forecasts.legal);
 	const strictWindow = $derived(result.windows.strict);
+	const legalWindow = $derived(result.windows.legal);
+	const strictOver = $derived(strictWindow.average > NORM_DAILY + AVG_TOLERANCE);
+	const legalOver = $derived(legalWindow.average > NORM_DAILY + AVG_TOLERANCE);
+
+	/** "TT.MM.", mit Jahr nur, wenn es nicht das des Stichtags ist - "22.02." sähe sonst nach übermorgen aus. */
+	function shortDate(iso: string): string {
+		return fmtCalendarDate(
+			iso,
+			iso.slice(0, 4) === until.slice(0, 4)
+				? { day: "2-digit", month: "2-digit" }
+				: { day: "2-digit", month: "2-digit", year: "2-digit" }
+		);
+	}
 
 	// Rot nur wie das Urteil: ein Schnitt, der allein auf die eigenen Arbeitstage
 	// gerechnet über acht Stunden liegt, ist gelb - dann darf die Zahl nicht rot leuchten.
@@ -188,13 +201,13 @@
 	</Card.Header>
 	<Card.Content class="space-y-8">
 		{#if !ready}
-			<!-- Platzhalter im Zuschnitt des fertigen Inhalts: Urteil, vier
+			<!-- Platzhalter im Zuschnitt des fertigen Inhalts: Urteil, sechs
 			     Kennzahlen, Verlauf. So springt beim Erscheinen nichts. -->
 			<div class="space-y-3">
 				<Skeleton class="h-20 w-full" />
-				<div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-					{#each [0, 1, 2, 3, 4] as i (i)}
-						<Skeleton class="h-19 w-full {i === 4 ? 'col-span-2 sm:col-span-1' : ''}" />
+				<div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+					{#each [0, 1, 2, 3, 4, 5] as i (i)}
+						<Skeleton class="h-19 w-full" />
 					{/each}
 				</div>
 				<Skeleton class="h-3 w-3/4" />
@@ -229,88 +242,70 @@
 						<InfoIcon class="mt-0.5 size-5 shrink-0" />
 					{/if}
 					<div class="min-w-0 space-y-1">
-						<div class="flex flex-wrap items-baseline gap-x-2">
-							<span class="text-base font-medium">{strict.verdict.headline}</span>
-							<span class="text-muted-foreground text-xs">bezogen auf deine Arbeitstage</span>
-						</div>
+						<div class="text-base font-medium">{strict.verdict.headline}</div>
 						<p class="text-sm">{strict.verdict.detail}</p>
 					</div>
 				</div>
 			</div>
 
-			<!-- Fünf Kennzahlen als Kacheln: nebeneinander mit gap-8 war weder zu
-			     sehen, wo eine aufhört und die nächste anfängt, noch passte die
-			     Reihe unter 1000px. -->
-			<div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-				<StatTile label="Schnitt · 24 Wochen" hint="Grenze {fmtHoursClock(NORM_DAILY)} h" {alarm}>
+			<!-- Erst die Zahl, an der das Gesetz misst, dann die strengere je
+			     Arbeitstag. Rot nur, wo das Urteil rot ist. -->
+			<div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+				<StatTile label="Gesetzlich (Mo–Sa)" hint="Grenze {fmtHoursClock(NORM_DAILY)} h" alarm={legalOver}>
+					{fmtHoursClock(legalWindow.average)} h
+				</StatTile>
+				<StatTile label="Je Arbeitstag" hint="Grenze {fmtHoursClock(NORM_DAILY)} h" {alarm}>
 					{fmtHoursClock(strictWindow.average)} h
 				</StatTile>
-				<StatTile label="Puffer" hint="im 24-Wochen-Schnitt" {alarm}>
-					{strictWindow.bufferHours >= 0 ? "+" : "−"}{fmtHoursClock(
-						Math.abs(strictWindow.bufferHours)
-					)} h
+				<StatTile label="Puffer" hint="bis {fmtHoursClock(NORM_DAILY)} h je Arbeitstag" {alarm}>
+					{strictWindow.bufferHours >= 0 ? "+" : "−"}{fmtHoursClock(Math.abs(strictWindow.bufferHours))} h
 				</StatTile>
-				<StatTile label="Dein Tempo" hint="je Arbeitstag">
+				<StatTile label="Dein Tempo" hint="Schnitt der letzten {paceWeeks} Wochen">
 					{fmtHoursClock(result.pace)} h
 				</StatTile>
-				<StatTile
-					label="Umkehrpunkt"
-					hint={strict.easeOffDate || strict.tooLate ? "letzter Tag zum Drehen" : "nicht nötig"}
-					{alarm}
-				>
-					{#if strict.tooLate}
-						verstrichen
-					{:else if strict.easeOffDate}
-						<!-- Jahr nur, wenn es ein anderes ist: der Umkehrpunkt liegt oft
-						     Monate voraus und dann auch mal im nächsten Jahr, wo "22.02."
-						     nach übermorgen aussähe. -->
-						{fmtCalendarDate(
-							strict.easeOffDate,
-							strict.easeOffDate.slice(0, 4) === until.slice(0, 4)
-								? { day: "2-digit", month: "2-digit" }
-								: { day: "2-digit", month: "2-digit", year: "2-digit" }
-						)}
-					{:else}
-						—
-					{/if}
-				</StatTile>
-				<StatTile label="Höchstens" class="col-span-2 sm:col-span-1">
-					{strict.maxPace === null || strict.maxPace <= 0
-						? "—"
-						: `${fmtHoursClock(strict.maxPace)} h`}
+				{#if strictOver}
+					<!-- Schon darüber: kein Umkehrpunkt mehr, sondern der Tag, an dem es
+					     ohne weitere Stunden wieder passt. -->
+					<StatTile label="Unter 8 h" hint="frühestens, ohne weitere Stunden" {alarm}>
+						{strict.reliefDate ? shortDate(strict.reliefDate) : "—"}
+					</StatTile>
+				{:else}
+					<StatTile
+						label="Umkehrpunkt"
+						hint={strict.tooLate
+							? "auch ohne weitere Stunden über 8 h"
+							: strict.easeOffDate
+								? "letzter Tag zum Drehen"
+								: "nicht nötig"}
+						{alarm}
+					>
+						{strict.tooLate ? "verstrichen" : strict.easeOffDate ? shortDate(strict.easeOffDate) : "—"}
+					</StatTile>
+				{/if}
+				<StatTile label="Höchstens" {alarm}>
+					{strict.maxPace === null || strict.maxPace <= 0 ? "—" : `${fmtHoursClock(strict.maxPace)} h`}
 					{#snippet hintSlot()}
-						{#if strict.paceDelta !== null && strict.paceDelta < 0}
-							<div class="text-destructive text-xs">{fmtHoursClock(strict.paceDelta)} h je Tag</div>
-						{:else}
-							<div class="text-muted-foreground text-xs">je Arbeitstag</div>
-						{/if}
+						<div class="text-muted-foreground text-xs">
+							{#if strict.paceDelta !== null && strict.paceDelta < 0}
+								je Arbeitstag, {fmtHoursClock(strict.paceDelta)} h unter deinem Tempo
+							{:else}
+								je Arbeitstag für unter 8 h
+							{/if}
+						</div>
 					{/snippet}
 				</StatTile>
 			</div>
 
-			{#if month > app.currentMonth}
+			{#if month > app.currentMonth || !strictWindow.complete}
 				<p class="text-muted-foreground text-xs">
-					{monthLabel(month)} liegt in der Zukunft – Urteil und Prognose beziehen sich auf heute.
+					{#if month > app.currentMonth}
+						{monthLabel(month)} liegt in der Zukunft – alle Zahlen beziehen sich auf heute.
+					{/if}
+					{#if !strictWindow.complete}
+						Datenbasis: {strictWindow.weeksCovered} von 24 Wochen – vorläufig.
+					{/if}
 				</p>
 			{/if}
-
-			<!-- Eine Zeile für gesetzliche Lesart + Datenlage. Wird gewarnt, steht
-			     zuerst, worauf sich die Warnung stützt. -->
-			<p class="text-muted-foreground text-xs">
-				{#if strict.verdict.requiresAction && legal.verdict.level === "ok"}
-					Warum trotzdem eine Warnung: nach dem Gesetz (Werktage Mo–Sa) läge der Schnitt bei
-					{fmtHoursClock(result.windows.legal.average)} h und wäre unkritisch. Gewarnt wird bezogen auf
-					deine Arbeitstage, weil nur diese Rechnung früh genug warnt, um noch etwas ändern zu
-					können.
-				{:else}
-					Gesetzlich (Mo–Sa): {fmtHoursClock(result.windows.legal.average)} h Schnitt, Puffer {fmtHoursClock(
-						result.windows.legal.bufferHours
-					)} h – {legal.verdict.level === "ok" ? "unkritisch" : legal.verdict.headline.toLowerCase()}.
-				{/if}
-				{#if !strictWindow.complete}
-					· Datenbasis erst {strictWindow.weeksCovered} von 24 Wochen, daher vorläufig.
-				{/if}
-			</p>
 		</div>
 
 		<!-- Verlauf -->
