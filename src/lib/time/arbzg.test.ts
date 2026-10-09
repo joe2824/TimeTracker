@@ -488,6 +488,50 @@ describe("dayFindings", () => {
 		const f = find([day("2026-06-28", 4)]);
 		expect(f.find((x) => x.rule === "sunday")?.level).toBe("hint");
 	});
+
+	describe("ueber Mitternacht", () => {
+		/** Ein Stück bis Mitternacht, wie die Teilung des Timers es hinterlässt. */
+		const untilMidnight = (date: string, from: string): Entry => ({
+			...entry(date, from, "23:00"),
+			endTs: toTs(stepDate(date, 1), "00:00")
+		});
+
+		it("zaehlt den Teil nach Mitternacht zum Tag, an dem die Arbeit begann", () => {
+			// 14:00 bis 01:00 sind elf Stunden am Stück - der Werktag beginnt mit der
+			// Arbeit, nicht um Mitternacht.
+			const f = find([untilMidnight("2026-06-10", "14:00"), entry("2026-06-11", "00:00", "01:00")]);
+			const over = f.find((x) => x.rule === "over10");
+			expect(over?.date).toBe("2026-06-10");
+		});
+
+		it("misst die Ruhezeit ab dem echten Feierabend nach Mitternacht", () => {
+			const f = find([
+				untilMidnight("2026-06-10", "16:00"),
+				entry("2026-06-11", "00:00", "01:00"),
+				entry("2026-06-11", "08:00", "12:00")
+			]);
+			const rest = f.find((x) => x.rule === "restPeriod");
+			expect(rest?.level).toBe("violation");
+			expect(rest?.value).toBeCloseTo(7);
+		});
+
+		it("haelt eine Pause nach Mitternacht nicht fuer die Ruhezeit", () => {
+			const f = find([
+				untilMidnight("2026-06-10", "20:00"),
+				entry("2026-06-11", "00:00", "01:00"),
+				entry("2026-06-11", "01:30", "03:00")
+			]);
+			expect(f.some((x) => x.rule === "restPeriod")).toBe(false);
+		});
+
+		it("meldet Sonntagsarbeit auch, wenn sie am Samstag begann", () => {
+			// § 9: Sonntag ist von 0 bis 24 Uhr - hier zählt der Kalendertag.
+			const f = find([untilMidnight("2026-06-27", "20:00"), entry("2026-06-28", "00:00", "02:00")]);
+			const sunday = f.find((x) => x.rule === "sunday");
+			expect(sunday?.date).toBe("2026-06-28");
+			expect(sunday?.value).toBeCloseTo(2);
+		});
+	});
 });
 
 describe("checkArbZg", () => {

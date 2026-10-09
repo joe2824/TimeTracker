@@ -24,7 +24,8 @@ import {
 	openEntryUntil,
 	roundToMinute,
 	shiftMonthKey,
-	stepDate
+	stepDate,
+	toTs
 } from "./time";
 import { lastDayOfMonth, weekdayOfDate } from "./tz";
 
@@ -70,6 +71,11 @@ export const DEFAULT_HORIZON_WEEKS = 26;
 export const MIN_PAUSE_SEGMENT_MIN = 15;
 /** Länger darf nach § 4 Satz 3 nicht am Stück gearbeitet werden (Stunden). */
 export const MAX_STRETCH_HOURS = 6;
+/**
+ * Läuft die Arbeit über Mitternacht, gilt eine Unterbrechung bis zu dieser
+ * Länge (Stunden) noch als Pause desselben Arbeitstags, nicht als Feierabend.
+ */
+export const NIGHT_PAUSE_MAX_HOURS = 2;
 
 /**
  * Welche Tage als "Werktag" in den Nenner des Durchschnitts gehen.
@@ -115,8 +121,14 @@ export interface ArbZgFinding {
 export interface DayFacts {
 	/** "YYYY-MM-DD" */
 	date: string;
-	/** Arbeitszeit in Stunden – netto, wenn der Pausenabzug aktiv ist. */
+	/**
+	 * Arbeitszeit in Stunden – netto, wenn der Pausenabzug aktiv ist. Arbeit,
+	 * die über Mitternacht weiterläuft, zählt zu dem Tag, an dem sie begann:
+	 * der Werktag beginnt mit der Arbeit, nicht um 0 Uhr.
+	 */
 	hours: number;
+	/** Stunden, die auf diesen Kalendertag fallen – für § 9 (Sonntag von 0 bis 24 Uhr). */
+	calendarHours: number;
 	/** Frühester Beginn einer Projektzeit (Epoch-ms), null ohne Erfassung. */
 	firstStart: number | null;
 	/** Spätestes Ende einer Projektzeit (Epoch-ms), null ohne Erfassung. */
@@ -301,7 +313,10 @@ export function dayFacts(
 ): Map<string, DayFacts> {
 	const now = opts.now ?? Date.now();
 	const deductBreaks = opts.deductBreaks ?? false;
-	const hours = dayWorkHours(entries, absenceIds, now, deductBreaks);
+	const workday = workdayOf(entries, absenceIds, now);
+	const dayOf = (e: Entry) => workday.get(e) ?? fmtDate(e.startTs);
+	const hours = dayWorkHours(entries, absenceIds, now, deductBreaks, dayOf);
+	const calendarHours = dayWorkHours(entries, absenceIds, now, deductBreaks);
 
 	const out = new Map<string, DayFacts>();
 	const spans = new Map<string, { start: number; end: number }[]>();
@@ -314,6 +329,7 @@ export function dayFacts(
 				// Auf die Minute, wie angezeigt: der Timer speichert Sekunden, und
 				// 10:00:27 h hiessen sonst "> 10 h" neben einer Anzeige von 10:00 h.
 				hours: roundToMinute(hours.get(date) ?? 0),
+				calendarHours: roundToMinute(calendarHours.get(date) ?? 0),
 				firstStart: null,
 				lastEnd: null,
 				absenceFraction: 0,
@@ -328,9 +344,10 @@ export function dayFacts(
 	};
 
 	for (const [date] of hours) facts(date);
+	for (const [date] of calendarHours) facts(date);
 
 	for (const e of entries) {
-		const date = fmtDate(e.startTs);
+		const date = dayOf(e);
 		const f = facts(date);
 		if (absenceIds.has(e.activityId)) {
 			// Mehrere Halbtage am selben Tag ergeben höchstens einen ganzen.
@@ -366,6 +383,34 @@ export function dayFacts(
 		}
 	}
 
+	return out;
+}
+
+/**
+ * Der Arbeitstag jedes Eintrags. Die App teilt einen Lauf um Mitternacht; was
+ * danach ohne Feierabend weitergeht, gehört trotzdem zu dem Tag, an dem die
+ * Arbeit begann – sonst ergäben 14 bis 1 Uhr zehn und eine Stunde statt elf,
+ * und die Ruhezeit begänne um Mitternacht statt mit dem echten Feierabend.
+ */
+function workdayOf(entries: Entry[], absenceIds: Set<string>, now: number): Map<Entry, string> {
+	const work = entries
+		.filter((e) => !absenceIds.has(e.activityId))
+		.map((e) => ({ e, end: e.endTs ?? openEntryUntil(e, now) }))
+		.sort((a, b) => a.e.startTs - b.e.startTs);
+	const out = new Map<Entry, string>();
+	let block = null as { day: string; end: number } | null;
+	for (const { e, end } of work) {
+		const own = fmtDate(e.startTs);
+		const prev = block;
+		const carried =
+			prev !== null &&
+			prev.day < own &&
+			prev.end >= toTs(own, "00:00") &&
+			e.startTs - prev.end < NIGHT_PAUSE_MAX_HOURS * 3600000;
+		const day = carried && prev ? prev.day : own;
+		out.set(e, day);
+		block = prev !== null && prev.day === day ? { day, end: Math.max(prev.end, end) } : { day, end };
+	}
 	return out;
 }
 
@@ -834,11 +879,6 @@ export function dayFindings(
 					f.hours, NORM_DAILY);
 			}
 
-			if (f.weekday === 0) {
-				add("sunday", "hint", "Sonntag",
-					`${fmtHoursClock(f.hours)} h an einem Sonntag – Sonntagsarbeit ist nur in Ausnahmefällen zulässig.`,
-					f.hours);
-			}
 
 			if (!opts.deductBreaks) {
 				const pause = f.pauseMinutes ?? 0;
@@ -854,6 +894,12 @@ export function dayFindings(
 						f.longestStretch ?? 0, MAX_STRETCH_HOURS);
 				}
 			}
+		}
+
+		if (f.weekday === 0 && f.calendarHours > 0) {
+			add("sunday", "hint", "Sonntag",
+				`${fmtHoursClock(f.calendarHours)} h an einem Sonntag – Sonntagsarbeit ist nur in Ausnahmefällen zulässig.`,
+				f.calendarHours);
 		}
 
 		if (f.firstStart !== null && prevEnd !== null && f.firstStart > prevEnd) {

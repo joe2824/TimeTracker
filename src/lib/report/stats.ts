@@ -14,12 +14,14 @@ export function dayActivityHours(
 	entries: Entry[],
 	absenceIds: Set<string>,
 	now = Date.now(),
-	deductBreaks = false
+	deductBreaks = false,
+	/** Welchem Tag ein Eintrag zählt - der Arbeitszeit-Check ordnet Arbeit nach Mitternacht dem Vortag zu. */
+	dayOf: (e: Entry) => string = (e) => fmtDate(e.startTs)
 ): Map<string, Map<string, number>> {
 	const byDay = new Map<string, Map<string, number>>();
 	for (const e of entries) {
 		if (absenceIds.has(e.activityId)) continue;
-		const key = fmtDate(e.startTs);
+		const key = dayOf(e);
 		let perActivity = byDay.get(key);
 		if (!perActivity) {
 			perActivity = new Map();
@@ -56,9 +58,10 @@ export function dayWorkHours(
 	entries: Entry[],
 	absenceIds: Set<string>,
 	now = Date.now(),
-	deductBreaks = false
+	deductBreaks = false,
+	dayOf?: (e: Entry) => string
 ): Map<string, number> {
-	return sumPerDay(dayActivityHours(entries, absenceIds, now, deductBreaks));
+	return sumPerDay(dayActivityHours(entries, absenceIds, now, deductBreaks, dayOf));
 }
 
 /** Soll-Stunden eines Monats = Werktage * hoursPerDay. */
