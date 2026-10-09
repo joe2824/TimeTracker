@@ -66,11 +66,14 @@ export function scheduleReportReminder(): void {
 			scheduleReportReminder(); // war gekappt -> erneut planen
 			return;
 		}
-		await notifyIfAllowed({
-			title: "TimeTracker – Bericht senden",
-			body: "Monatsende: Stundenbericht an die Vorgesetzten schicken nicht vergessen.",
-			tag: "bericht"
-		});
+		// Schon verschickt, etwa im Browser: dann gibt es nichts zu erinnern.
+		if (!app.isReportSent(monthKey(targetMs))) {
+			await notifyIfAllowed({
+				title: "TimeTracker – Bericht senden",
+				body: "Monatsende: Stundenbericht an die Vorgesetzten schicken nicht vergessen.",
+				tag: "bericht"
+			});
+		}
 		scheduleReportReminder();
 	}, delay);
 }

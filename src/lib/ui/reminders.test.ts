@@ -1,7 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { reportReminderDate } from "../report/report";
 import { wallToTs, zonedParts } from "../time/tz";
-import { nextReminderDelay } from "./reminders";
+import { defaultSettings } from "../types";
+import { app } from "../app.svelte";
+import { nextReminderDelay, scheduleReportReminder } from "./reminders";
+
+const notifier = vi.hoisted(() => ({ send: vi.fn() }));
+vi.mock("./notifyIfAllowed", () => ({ notifyIfAllowed: notifier.send }));
 
 /** Referenzmonat: Juli 2026 – letzter Tag ist Fr, 31.07. */
 const JULY = new Date(wallToTs(2026, 7, 1, 0, 0, 0));
@@ -59,5 +64,43 @@ describe("nextReminderDelay", () => {
 
 	it("liefert ohne Uhrzeiten nichts", () => {
 		expect(nextReminderDelay([], NOW)).toBeNull();
+	});
+});
+
+describe("scheduleReportReminder", () => {
+	afterEach(() => {
+		app.settings = { ...defaultSettings };
+		scheduleReportReminder();
+		vi.useRealTimers();
+		notifier.send.mockReset();
+	});
+
+	/** Bis kurz nach der Erinnerung am Fr, 31.07. um 16:00. */
+	async function untilReminder() {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date(wallToTs(2026, 7, 1, 10, 0, 0)));
+		scheduleReportReminder();
+		await vi.advanceTimersByTimeAsync(wallToTs(2026, 7, 31, 16, 1, 0) - Date.now());
+	}
+
+	it("erinnert am letzten Werktag", async () => {
+		app.settings = { ...defaultSettings, reportReminderEnabled: true, reportReminderTime: "16:00", reportReminderLeadDays: 0 };
+		await untilReminder();
+
+		expect(notifier.send).toHaveBeenCalledTimes(1);
+	});
+
+	it("schweigt, wenn der Bericht fuer den Monat schon raus ist", async () => {
+		// Etwa im Browser verschickt: die Einstellungen sind laengst abgeglichen.
+		app.settings = {
+			...defaultSettings,
+			reportReminderEnabled: true,
+			reportReminderTime: "16:00",
+			reportReminderLeadDays: 0,
+			reportSentMonths: ["2026-07"]
+		};
+		await untilReminder();
+
+		expect(notifier.send).not.toHaveBeenCalled();
 	});
 });
