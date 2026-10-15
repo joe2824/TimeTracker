@@ -9,8 +9,13 @@ import {
 	currentPace,
 	dayFacts,
 	dayFindings,
+	DEFAULT_HORIZON_WEEKS,
 	forecast,
-	NORM_DAILY
+	legalSummary,
+	NORM_DAILY,
+	prepare,
+	weeklyActuals,
+	type WeekActual
 } from "./arbzg";
 import { fmtDate, fmtDateHuman, noonTs, stepDate, toTs } from "./time";
 import { weekdayOfDate, zonedParts } from "./tz";
@@ -246,6 +251,76 @@ describe("currentPace", () => {
 	});
 });
 
+describe("weeklyActuals", () => {
+	const facts = (entries: Entry[]) => dayFacts(entries, ABSENCE, { deductBreaks: false });
+	const inBlock = (d: string, w: WeekActual) => d >= w.from && d <= w.to;
+
+	it("teilt die letzten 168 Tage in 24 Bloecke, der letzte endet am Stichtag", () => {
+		const weeks = weeklyActuals(prepare(facts(series(HISTORY_FROM, UNTIL, 7.5)), base));
+		expect(weeks).toHaveLength(24);
+		expect(weeks[23].to).toBe(UNTIL);
+		expect(weeks[0].from).toBe(stepDate(UNTIL, -167));
+		for (let k = 0; k < weeks.length; k++) {
+			expect(weeks[k].from).toBe(stepDate(weeks[k].to, -6));
+			if (k > 0) expect(weeks[k].from).toBe(stepDate(weeks[k - 1].to, 1));
+		}
+	});
+
+	it("rechnet Stunden je Arbeitstag des Blocks", () => {
+		const weeks = weeklyActuals(prepare(facts(series(HISTORY_FROM, UNTIL, 7.5)), base));
+		for (const w of weeks) {
+			expect(w.workdays).toBe(5);
+			expect(w.hours).toBeCloseTo(37.5);
+			expect(w.hoursPerWorkday).toBeCloseTo(7.5);
+		}
+	});
+
+	it("liefert null vor der Datenbasis und mittelt angebrochene Bloecke nur ueber erfasste Tage", () => {
+		const shortFrom = stepDate(UNTIL, -53);
+		const pre = prepare(facts(series(shortFrom, UNTIL, 7.5)), { ...base, dataFrom: shortFrom });
+		const weeks = weeklyActuals(pre);
+		let straddling = 0;
+		for (const w of weeks) {
+			let covered = 0;
+			for (let d = w.from; d <= w.to; d = stepDate(d, 1)) {
+				if (d >= shortFrom && MO_FR.includes(weekdayOfDate(d))) covered++;
+			}
+			expect(w.workdays).toBe(covered);
+			if (w.to < shortFrom) {
+				expect(w.workdays).toBe(0);
+				expect(w.hoursPerWorkday).toBeNull();
+			} else {
+				expect(w.hoursPerWorkday).toBeCloseTo(7.5);
+			}
+			if (inBlock(shortFrom, w) && w.from < shortFrom) straddling = w.workdays;
+		}
+		// Der angebrochene Block ist wirklich angebrochen - sonst prüft der Test nichts.
+		expect(straddling).toBeGreaterThan(0);
+		expect(straddling).toBeLessThan(5);
+	});
+
+	it("zaehlt Zeitausgleich und Urlaub nicht als Arbeitstag", () => {
+		// Stichtag ist ein Dienstag: Montag davor Zeitausgleich, Dienstag Urlaub.
+		const monday = stepDate(UNTIL, -1);
+		const blockFrom = stepDate(UNTIL, -6);
+		const entries = series(HISTORY_FROM, UNTIL, 8).filter((e) => fmtDay(e) < blockFrom);
+		for (let d = blockFrom; d < monday; d = stepDate(d, 1)) {
+			if (MO_FR.includes(weekdayOfDate(d))) entries.push(day(d, 8));
+		}
+		entries.push(timeOff(monday), absence(UNTIL));
+		const last = weeklyActuals(prepare(facts(entries), base)).at(-1)!;
+		expect(last.workdays).toBe(3);
+		expect(last.hours).toBeCloseTo(24);
+		expect(last.hoursPerWorkday).toBeCloseTo(8);
+	});
+
+	it("wird von checkArbZg mitgeliefert", () => {
+		const r = checkArbZg(series(HISTORY_FROM, UNTIL, 7.5), { ...base, deductBreaks: false, absenceIds: ABSENCE });
+		expect(r.weeks).toHaveLength(24);
+		expect(r.weeks[23].to).toBe(UNTIL);
+	});
+});
+
 describe("forecast", () => {
 	const facts = (hours: number) =>
 		dayFacts(series(HISTORY_FROM, UNTIL, hours), ABSENCE, { deductBreaks: false });
@@ -327,26 +402,27 @@ describe("forecast", () => {
 		expect(fast < slow).toBe(true);
 	});
 
-	it("zeichnet die Vergangenheit nur so weit, wie ein volles Fenster reicht", () => {
-		// Mit 200 Tagen Daten traegt genau der Rest über 168 Tage hinaus einen
-		// vollständigen Rückblick – mehr darf die Kurve nicht behaupten.
-		const past = forecast(facts(7.5), "strict", { ...base, pace: 7.5 }).points.filter((p) => !p.projected);
-		expect(past.length).toBeGreaterThan(1);
-		expect(past[0].date >= stepDate(HISTORY_FROM, 167)).toBe(true);
+	it("beginnt am Stichtag – die Vergangenheit steht in den Wochenblöcken", () => {
+		const shortFrom = stepDate(UNTIL, -55);
+		const short = dayFacts(series(shortFrom, UNTIL, 7.5), ABSENCE, { deductBreaks: false });
+		const runs = [
+			forecast(facts(7.5), "strict", { ...base, pace: 7.5 }),
+			forecast(short, "strict", { ...base, dataFrom: shortFrom, pace: 7.5 })
+		];
+		for (const f of runs) {
+			expect(f.points[0].date).toBe(UNTIL);
+			expect(f.points[0].projected).toBe(false);
+			for (let i = 1; i < f.points.length; i++) {
+				expect(f.points[i].projected).toBe(true);
+				expect(f.points[i].date).toBe(stepDate(f.points[i - 1].date, 7));
+			}
+			expect(f.points.at(-1)!.date).toBe(stepDate(UNTIL, DEFAULT_HORIZON_WEEKS * 7));
+		}
 	});
 
-	it("faengt erst am Stichtag an, wenn kein volles Fenster in der Vergangenheit liegt", () => {
-		// Sonst stünde ein halb ausserhalb der Datenbasis liegendes Fenster als
-		// tiefer Punkt in der Kurve und sähe aus wie eine Entspannung, die es
-		// nie gab.
-		const from = stepDate(UNTIL, -55);
-		const f = forecast(
-			dayFacts(series(from, UNTIL, 7.5), ABSENCE, { deductBreaks: false }),
-			"strict",
-			{ ...base, dataFrom: from, pace: 7.5 }
-		);
-		expect(f.points.filter((p) => !p.projected)).toHaveLength(1);
-		expect(f.points[0].date).toBe(UNTIL);
+	it("zeigt am Stichtag denselben Schnitt wie avgWindow", () => {
+		const first = forecast(facts(7.5), "strict", { ...base, pace: 7.5 }).points[0].average;
+		expect(first).toBeCloseTo(avgWindow(facts(7.5), "strict", base).average, 6);
 	});
 
 	it("nennt das Entlastungsdatum, wenn die Grenze schon gerissen ist", () => {
@@ -361,6 +437,28 @@ describe("forecast", () => {
 
 	it("fragt nicht nach Entlastung, wenn das Fenster traegt", () => {
 		expect(forecast(facts(7), "strict", { ...base, pace: 7 }).reliefDate).toBeNull();
+	});
+
+	it("nennt das Dauer-Höchsttempo nur, wenn es unter acht Stunden liegt", () => {
+		// Acht schwere Wochen zuletzt: nur mit deutlich unter acht Stunden je
+		// Tag bleibt jedes der kommenden Fenster unter der Grenze.
+		const split = stepDate(UNTIL, -56);
+		const heavyLately = dayFacts(
+			[...series(HISTORY_FROM, split, 7.5), ...series(stepDate(split, 1), UNTIL, 9)],
+			ABSENCE,
+			{ deductBreaks: false }
+		);
+		const low = forecast(heavyLately, "strict", { ...base, pace: 9 });
+		expect(low.maxPace).toBeLessThan(NORM_DAILY - AVG_TOLERANCE);
+		expect(low.verdict.headline).toBe("Gegensteuern in 6 Tagen");
+		expect(low.verdict.detail).toMatch(/Dauerhaft höchstens \d+:\d\d h je Arbeitstag/);
+
+		// Liegt das Höchsttempo bei acht Stunden, nennt der Satz nur die Grenze
+		// selbst - dann bleibt er weg.
+		const atLimit = forecast(facts(7), "strict", { ...base, pace: 8.5 });
+		expect(atLimit.maxPace).toBeGreaterThanOrEqual(NORM_DAILY - AVG_TOLERANCE);
+		expect(atLimit.verdict.headline).toBe("Umkehrpunkt in etwa 17 Wochen");
+		expect(atLimit.verdict.detail).not.toContain("Dauerhaft");
 	});
 
 	describe("mit schon eingetragenem Urlaub", () => {
@@ -614,10 +712,13 @@ describe("checkArbZg", () => {
 		expect(r.forecasts.strict.verdict.level).toBe("warn");
 		expect(r.forecasts.strict.verdict.requiresAction).toBe(true);
 		expect(r.forecasts.strict.verdict.headline).toBe("Über 8 h je Arbeitstag");
-		// Fakten statt Prosa: beide Schnitte und das Urteil des Gesetzes.
+		// Fakten statt Prosa: der eigene Schnitt im Urteil, das Gesetz in seiner
+		// eigenen Zeile.
 		expect(r.forecasts.strict.verdict.detail).toBe(
-			`Deine Arbeitstage: 9:00 h · Gesetzlich (Mo–Sa): 7:30 h – kein Verstoß · unter 8:00 h frühestens ab ${fmtDateHuman(noonTs(r.forecasts.strict.reliefDate!))}`
+			`Deine Arbeitstage: 9:00 h – gesetzlich kein Verstoß · unter 8:00 h frühestens ab ${fmtDateHuman(noonTs(r.forecasts.strict.reliefDate!))}`
 		);
+		expect(r.legal.over).toBe(false);
+		expect(r.legal.text).toContain("im Rahmen");
 		expect(r.forecasts.legal.verdict.level).toBe("ok");
 		// Er gehört keinem Tag und darf deshalb in keiner Tageszeile stehen -
 		// sonst stünde er doppelt (je Lesart) am selben Datum und ergäbe einen
@@ -629,6 +730,46 @@ describe("checkArbZg", () => {
 			seen.add(f.rule);
 			perDay.set(f.date, seen);
 		}
+	});
+});
+
+describe("legalSummary", () => {
+	const check = (hours: number) =>
+		checkArbZg(series(HISTORY_FROM, UNTIL, hours), { ...base, deductBreaks: false, absenceIds: ABSENCE });
+	const legalFacts = () => dayFacts(series(HISTORY_FROM, UNTIL, 7.5), ABSENCE, { deductBreaks: false });
+
+	it("nennt die gesetzliche Lesart im Rahmen, wenn nur die Arbeitstags-Rechnung reißt", () => {
+		const r = check(9);
+		expect(r.windows.strict.average).toBeGreaterThan(NORM_DAILY + AVG_TOLERANCE);
+		expect(r.legal.over).toBe(false);
+		expect(r.legal.text).toBe("Gesetzlich (Mo–Sa): 7:30 h – im Rahmen.");
+	});
+
+	it("meldet gesetzlich über der Grenze", () => {
+		const r = check(9.8);
+		expect(r.legal.over).toBe(true);
+		expect(r.legal.text).toBe("Gesetzlich (Mo–Sa): 8:10 h – über der 8-Stunden-Grenze.");
+	});
+
+	it("warnt vor dem Tag, an dem auch die gesetzliche Lesart reißt", () => {
+		// 9,8 h an fünf Tagen sind auf Mo–Sa 8,17 h: reißt, sobald das Fenster
+		// nur noch aus solchen Tagen besteht.
+		const f = forecast(legalFacts(), "legal", { ...base, pace: 9.8 });
+		const s = legalSummary(avgWindow(legalFacts(), "legal", base), f);
+		expect(f.crossing).not.toBeNull();
+		expect(s.over).toBe(false);
+		expect(s.text).toBe(
+			`Gesetzlich (Mo–Sa): 6:15 h – im Rahmen; bei gleichem Tempo ab ${fmtDateHuman(noonTs(f.crossing!.date))} darüber.`
+		);
+	});
+
+	it("bleibt eine Beobachtung, wenn das Gesetz reißen würde, aber nichts zu tun ist", () => {
+		const f = forecast(legalFacts(), "legal", { ...base, pace: 9.7 });
+		expect(f.crossing).not.toBeNull();
+		expect(f.verdict.requiresAction).toBe(false);
+		const s = legalSummary(avgWindow(legalFacts(), "legal", base), f);
+		expect(s.over).toBe(false);
+		expect(s.text).toMatch(/ab .* darüber\.$/);
 	});
 });
 

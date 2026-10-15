@@ -191,7 +191,7 @@ export interface Forecast {
 	/** Angenommenes Tempo in Stunden je Arbeitstag. */
 	pace: number;
 	horizonWeeks: number;
-	/** Wochenweise abgetastet – für das Diagramm, nicht für die Entscheidungen. */
+	/** Ab dem Stichtag wochenweise abgetastet – für das Diagramm, nicht für die Entscheidungen. */
 	points: ForecastPoint[];
 	/** Erster Tag, an dem der Schnitt bei gleichbleibendem Tempo über 8 h liegt. */
 	crossing: { date: string; average: number } | null;
@@ -263,8 +263,12 @@ export interface ArbZgResult {
 	windows: { legal: AvgWindow; strict: AvgWindow };
 	/** Prognose, beide Lesarten. */
 	forecasts: { legal: Forecast; strict: Forecast };
+	/** Gesetzliche Lesart, immer aus windows.legal und forecasts.legal. */
+	legal: LegalSummary;
 	/** Tempo, auf dem die Prognose beruht (Stunden je Arbeitstag). */
 	pace: number;
+	/** Die letzten 24 Sieben-Tage-Blöcke, der letzte endet am Stichtag. */
+	weeks: WeekActual[];
 	counts: Record<ArbZgLevel, number>;
 }
 
@@ -510,10 +514,9 @@ export function prepare(
 	opts: { until: string; dataFrom: string; workdays: number[]; horizonWeeks?: number }
 ): Prepared {
 	const horizonWeeks = opts.horizonWeeks ?? DEFAULT_HORIZON_WEEKS;
-	// Doppelt so weit zurück wie das Fenster lang ist: ein Fenster, das VOR dem
-	// Stichtag endet, braucht seinerseits 168 Tage Vorlauf. Nur so lässt sich
-	// zeichnen, wo der Schnitt hergekommen ist.
-	const from = stepDate(opts.until, -(2 * AVG_WINDOW_DAYS - 1));
+	// Genau ein Fenster zurück, das am Stichtag endet – weiter liest nichts
+	// (auch die Wochenblöcke beginnen am selben Tag).
+	const from = stepDate(opts.until, -(AVG_WINDOW_DAYS - 1));
 	const horizonEnd = stepDate(opts.until, horizonWeeks * 7);
 	const axis = buildAxis(facts, from, opts.until, horizonEnd, opts);
 	return {
@@ -597,6 +600,40 @@ export function currentPace(
 	return m.budget > 0 ? m.hours / m.budget : 0;
 }
 
+/** Ein Sieben-Tage-Block der Vergangenheit; der letzte endet am Stichtag. */
+export interface WeekActual {
+	/** "YYYY-MM-DD", `to` minus sechs Tage. */
+	from: string;
+	/** "YYYY-MM-DD" */
+	to: string;
+	/** Arbeitstage im Block nach Tempo-Budget: ohne Abwesenheit, ohne Zeitausgleich. */
+	workdays: number;
+	/** Erfasste Stunden im Block. */
+	hours: number;
+	/** hours / workdays; null ohne Arbeitstag (vor der Datenbasis, Urlaubswoche). */
+	hoursPerWorkday: number | null;
+}
+
+/** Die letzten `weeks` Sieben-Tage-Blöcke bis zum Stichtag, älteste zuerst. */
+export function weeklyActuals(pre: Prepared, weeks = AVG_WINDOW_DAYS / 7): WeekActual[] {
+	const out: WeekActual[] = [];
+	for (let k = weeks - 1; k >= 0; k--) {
+		const hi = pre.todayIndex - k * 7;
+		const lo = hi - 6;
+		const hours = range(pre.hours, lo, hi);
+		// Derselbe Nenner wie "Dein Tempo": ein Zeitausgleichstag ist kein Arbeitstag.
+		const workdays = range(pre.workBudget, lo, hi);
+		out.push({
+			from: pre.dates[lo],
+			to: pre.dates[hi],
+			workdays,
+			hours,
+			hoursPerWorkday: workdays > 0 ? hours / workdays : null
+		});
+	}
+	return out;
+}
+
 // ---------- Prognose ----------
 
 /** Den Verlauf des Schnitts in die Zukunft simulieren. */
@@ -630,30 +667,15 @@ export function forecast(
 	let peak = { date: opts.until, average: at(axis.todayIndex, opts.pace) ?? 0 };
 	let maxPace: number | null = null;
 
-	// Gezeichnet wird nur rückläufig, soweit die Daten ein VOLLES Fenster
-	// hergeben. Ein Fenster, das zur Hälfte vor dem ersten erfassten Tag liegt,
-	// stünde sonst als tiefer Punkt in der Kurve und sähe aus wie eine
-	// Entspannung, die es nie gab.
-	const dataFromIndex = Math.max(0, axis.dates.indexOf(opts.dataFrom));
-	const firstFullWindow = Math.max(dataFromIndex, 0) + AVG_WINDOW_DAYS - 1;
-	const startIndex = Math.min(
-		axis.todayIndex,
-		Math.max(firstFullWindow, axis.todayIndex - AVG_WINDOW_DAYS)
-	);
-
-	for (let i = startIndex; i < axis.dates.length; i++) {
+	for (let i = axis.todayIndex; i < axis.dates.length; i++) {
 		const date = axis.dates[i];
 		const avg = at(i, opts.pace);
 		if (avg === null) continue;
 
 		const sampled = (i - axis.todayIndex) % 7 === 0;
-		if (sampled || i === startIndex || i === axis.dates.length - 1) {
+		if (sampled || i === axis.dates.length - 1) {
 			points.push({ date, average: avg, projected: i > axis.todayIndex });
 		}
-
-		// Entschieden wird ausschliesslich ab dem Stichtag – die Vergangenheit
-		// ist Kulisse, kein Befund.
-		if (i < axis.todayIndex) continue;
 
 		if (avg > peak.average) peak = { date, average: avg };
 		if (crossing === null && avg > NORM_DAILY + AVG_TOLERANCE && i > axis.todayIndex) {
@@ -753,17 +775,37 @@ export function forecast(
 	};
 }
 
+const clockText = (v: number) => `${fmtHoursClock(v)} h`;
+const dateText = (iso: string) => fmtDateHuman(noonTs(iso));
+
 /** Über acht Stunden nur bezogen auf die eigenen Arbeitstage, gesetzlich nicht. */
-function strictOnlyVerdict(average: number, legalAverage: number, reliefDate: string | null): Verdict {
-	const h = (v: number) => `${fmtHoursClock(v)} h`;
+function strictOnlyVerdict(average: number, reliefDate: string | null): Verdict {
 	// "frühestens": ohne weitere Stunden - wer weiterarbeitet, bleibt länger darüber.
-	const relief = reliefDate ? ` · unter ${h(NORM_DAILY)} frühestens ab ${fmtDateHuman(noonTs(reliefDate))}` : "";
+	const relief = reliefDate ? ` · unter ${clockText(NORM_DAILY)} frühestens ab ${dateText(reliefDate)}` : "";
 	return {
 		level: "warn",
 		requiresAction: true,
 		headline: "Über 8 h je Arbeitstag",
-		detail: `Deine Arbeitstage: ${h(average)} · Gesetzlich (Mo–Sa): ${h(legalAverage)} – kein Verstoß${relief}`
+		detail: `Deine Arbeitstage: ${clockText(average)} – gesetzlich kein Verstoß${relief}`
 	};
+}
+
+/** Die gesetzliche Lesart (Mo–Sa) in einem Satz. */
+export interface LegalSummary {
+	text: string;
+	/** Schnitt über der Grenze – dann ist das Urteil rot, egal was die Arbeitstags-Rechnung sagt. */
+	over: boolean;
+}
+
+export function legalSummary(window: AvgWindow, f: Forecast): LegalSummary {
+	const lead = `Gesetzlich (Mo–Sa): ${clockText(window.average)}`;
+	if (window.average > NORM_DAILY + AVG_TOLERANCE) {
+		return { over: true, text: `${lead} – über der 8-Stunden-Grenze.` };
+	}
+	if (f.crossing !== null) {
+		return { over: false, text: `${lead} – im Rahmen; bei gleichem Tempo ab ${dateText(f.crossing.date)} darüber.` };
+	}
+	return { over: false, text: `${lead} – im Rahmen.` };
 }
 
 /** Aus der Rechnung ein Urteil machen. */
@@ -779,10 +821,11 @@ function makeVerdict(f: {
 	paceDelta: number | null;
 	reliefDate: string | null;
 }): Verdict {
-	const de = (iso: string) => fmtDateHuman(noonTs(iso));
-	const h = (v: number) => `${fmtHoursClock(v)} h`;
+	// Liegt das Höchsttempo bei acht Stunden, nennt der Satz nur die Grenze selbst.
 	const ceiling =
-		f.maxPace !== null && f.maxPace > 0 ? ` Nötig wären höchstens ${h(f.maxPace)} je Arbeitstag.` : "";
+		f.maxPace !== null && f.maxPace > 0 && f.maxPace < NORM_DAILY - AVG_TOLERANCE
+			? ` Dauerhaft höchstens ${clockText(f.maxPace)} je Arbeitstag, sonst steigt der 24-Wochen-Schnitt über ${clockText(NORM_DAILY)}.`
+			: "";
 
 	// Schon drüber – das ist keine Prognose mehr, sondern der Stand.
 	if (f.currentAverage > NORM_DAILY + AVG_TOLERANCE) {
@@ -791,8 +834,8 @@ function makeVerdict(f: {
 			requiresAction: true,
 			headline: "Schon über der 8-Stunden-Grenze",
 			detail: f.reliefDate
-				? `Der Schnitt liegt bei ${h(f.currentAverage)}. Auch ohne jede weitere Stunde fällt er erst am ${de(f.reliefDate)} wieder unter ${h(NORM_DAILY)}.`
-				: `Der Schnitt liegt bei ${h(f.currentAverage)} und damit über den erlaubten ${h(NORM_DAILY)}.`
+				? `Der Schnitt liegt bei ${clockText(f.currentAverage)}. Auch ohne jede weitere Stunde fällt er erst am ${dateText(f.reliefDate)} wieder unter ${clockText(NORM_DAILY)}.`
+				: `Der Schnitt liegt bei ${clockText(f.currentAverage)} und damit über den erlaubten ${clockText(NORM_DAILY)}.`
 		};
 	}
 
@@ -803,8 +846,8 @@ function makeVerdict(f: {
 			requiresAction: true,
 			headline: "8-Stunden-Grenze nicht mehr zu halten",
 			detail: f.reliefDate
-				? `Selbst wenn du ab sofort gar nicht mehr arbeitest, geht der Schnitt über ${h(NORM_DAILY)}; entlastet ist das Fenster erst am ${de(f.reliefDate)}.`
-				: `Selbst ohne jede weitere Stunde geht der Schnitt über ${h(NORM_DAILY)}.`
+				? `Selbst wenn du ab sofort gar nicht mehr arbeitest, geht der Schnitt über ${clockText(NORM_DAILY)}; entlastet ist das Fenster erst am ${dateText(f.reliefDate)}.`
+				: `Selbst ohne jede weitere Stunde geht der Schnitt über ${clockText(NORM_DAILY)}.`
 		};
 	}
 
@@ -818,7 +861,7 @@ function makeVerdict(f: {
 				requiresAction: true,
 				headline: days <= 1 ? "Jetzt gegensteuern" : `Gegensteuern in ${days} Tagen`,
 				detail:
-					`Bis ${de(f.easeOffDate)} kannst du dein Tempo von ${h(f.pace)} noch drehen. Wer später anfängt, bekommt den Schnitt im Prognosezeitraum nicht mehr unter ${h(NORM_DAILY)}.` +
+					`Bis ${dateText(f.easeOffDate)} kannst du dein Tempo von ${clockText(f.pace)} noch drehen. Wer später anfängt, bekommt den Schnitt im Prognosezeitraum nicht mehr unter ${clockText(NORM_DAILY)}.` +
 					ceiling
 			};
 		}
@@ -829,7 +872,7 @@ function makeVerdict(f: {
 			level: "warn",
 			requiresAction: false,
 			headline: days <= 14 ? `Umkehrpunkt in ${days} Tagen` : `Umkehrpunkt in etwa ${weeks} Wochen`,
-			detail: `Mit ${h(f.pace)} je Arbeitstag kannst du bis ${de(f.easeOffDate)} so weitermachen; bis dahin ist es umkehrbar.${ceiling}`
+			detail: `Mit ${clockText(f.pace)} je Arbeitstag kannst du bis ${dateText(f.easeOffDate)} so weitermachen; bis dahin ist es umkehrbar.${ceiling}`
 		};
 	}
 
@@ -839,7 +882,7 @@ function makeVerdict(f: {
 			level: "warn",
 			requiresAction: false,
 			headline: "Dicht an der Grenze",
-			detail: `Höchststand ${h(f.peak.average)} am ${de(f.peak.date)} – so nah an ${h(NORM_DAILY)}, dass schon ein einzelner langer Tag den Ausschlag gibt.`
+			detail: `Höchststand ${clockText(f.peak.average)} am ${dateText(f.peak.date)} – so nah an ${clockText(NORM_DAILY)}, dass schon ein einzelner langer Tag den Ausschlag gibt.`
 		};
 	}
 
@@ -849,8 +892,8 @@ function makeVerdict(f: {
 		headline: "Im grünen Bereich",
 		detail:
 			f.paceDelta !== null && f.paceDelta > 0
-				? `Höchststand ${h(f.peak.average)} am ${de(f.peak.date)}. Luft bis zur Grenze: ${h(f.paceDelta)} je Arbeitstag.`
-				: `Höchststand ${h(f.peak.average)} am ${de(f.peak.date)}.`
+				? `Höchststand ${clockText(f.peak.average)} am ${dateText(f.peak.date)}. Luft bis zur Grenze: ${clockText(f.paceDelta)} je Arbeitstag.`
+				: `Höchststand ${clockText(f.peak.average)} am ${dateText(f.peak.date)}.`
 	};
 }
 
@@ -981,11 +1024,7 @@ export function checkArbZg(entries: Entry[], opts: ArbZgOptions): ArbZgResult {
 		windows.legal.average <= limit &&
 		!forecasts.legal.verdict.requiresAction
 	) {
-		forecasts.strict.verdict = strictOnlyVerdict(
-			windows.strict.average,
-			windows.legal.average,
-			forecasts.strict.reliefDate
-		);
+		forecasts.strict.verdict = strictOnlyVerdict(windows.strict.average, forecasts.strict.reliefDate);
 	}
 
 	const counts: Record<ArbZgLevel, number> = { violation: 0, risk: 0, hint: 0 };
@@ -996,7 +1035,9 @@ export function checkArbZg(entries: Entry[], opts: ArbZgOptions): ArbZgResult {
 		findings,
 		windows,
 		forecasts,
+		legal: legalSummary(windows.legal, forecasts.legal),
 		pace,
+		weeks: weeklyActuals(pre),
 		counts
 	};
 }

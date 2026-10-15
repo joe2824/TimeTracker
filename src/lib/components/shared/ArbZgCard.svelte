@@ -10,7 +10,7 @@
 		NORM_DAILY,
 		type ArbZgFinding,
 		type ArbZgLevel,
-		type Forecast
+		type WeekActual
 	} from "$lib/time/arbzg";
 	import { entriesFocus } from "$lib/ui/entriesFocus.svelte";
 	import {
@@ -23,7 +23,8 @@
 		monthLabel,
 		noonTs,
 		quantize,
-		shiftMonthKey
+		shiftMonthKey,
+		stepDate
 	} from "$lib/time/time";
 	import { appTimeZone, zonedParts } from "$lib/time/tz";
 	import type { Entry } from "$lib/types";
@@ -34,7 +35,7 @@
 	import * as Popover from "$lib/components/ui/popover";
 	import { Skeleton } from "$lib/components/ui/skeleton";
 	import StatTile from "$lib/components/shared/StatTile.svelte";
-	import { LineChart } from "layerchart";
+	import { LineChart, Rect, Spline } from "layerchart";
 	import { scaleTime } from "d3-scale";
 	import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
 	import InfoIcon from "@lucide/svelte/icons/info";
@@ -91,10 +92,10 @@
 	);
 
 	const strict = $derived(result.forecasts.strict);
+	const legal = $derived(result.legal);
 	const strictWindow = $derived(result.windows.strict);
 	const legalWindow = $derived(result.windows.legal);
 	const strictOver = $derived(strictWindow.average > NORM_DAILY + AVG_TOLERANCE);
-	const legalOver = $derived(legalWindow.average > NORM_DAILY + AVG_TOLERANCE);
 
 	/** "TT.MM.", mit Jahr nur, wenn es nicht das des Stichtags ist - "22.02." sähe sonst nach übermorgen aus. */
 	function shortDate(iso: string): string {
@@ -108,34 +109,92 @@
 
 	// Rot nur wie das Urteil: ein Schnitt, der allein auf die eigenen Arbeitstage
 	// gerechnet über acht Stunden liegt, ist gelb - dann darf die Zahl nicht rot leuchten.
-	const alarm = $derived(strict.verdict.requiresAction && strict.verdict.level === "crit");
+	// Die gesetzliche Grenze gerissen ist dagegen immer rot.
+	const alarm = $derived(
+		legal.over || (strict.verdict.requiresAction && strict.verdict.level === "crit")
+	);
 
-	// ---- Kurve ----
-	// Nur die STRENGE Linie ins Diagramm. Die gesetzliche liegt bei einer
+	// Hinweiszeile zur Kachel „Dauerhaft höchstens“: wie weit der zulässige
+	// Tagesschnitt vom eigenen Tempo entfernt ist.
+	const maxPaceHint = $derived.by(() => {
+		const maxPace = strict.maxPace;
+		const paceDelta = strict.paceDelta;
+		if (maxPace === null || maxPace <= 0 || paceDelta === null) {
+			return "je Arbeitstag, damit der Schnitt unter 8 h bleibt";
+		}
+		if (Math.abs(maxPace - NORM_DAILY) <= AVG_TOLERANCE) return "je Arbeitstag – die Grenze selbst";
+		if (maxPace > NORM_DAILY + AVG_TOLERANCE) {
+			return "je Arbeitstag – mehr als die Grenze, die letzten Wochen geben Luft";
+		}
+		return `je Arbeitstag, ${fmtHoursClock(Math.abs(paceDelta))} h ${paceDelta < 0 ? "unter" : "über"} deinem Tempo`;
+	});
+
+	// ---- Diagramm ----
+	// Nur die STRENGE Rechnung ins Diagramm. Die gesetzliche liegt bei einer
 	// Fünf-Tage-Woche rund zwei Stunden tiefer; zusammen in einem Achsenbereich
 	// wird aus dem Anlaufen an die Grenze ein flacher Strich, und genau das ist
 	// die Bewegung, um die es geht. Ihre Aussage steht als Zeile darüber.
-	const chartData = $derived(
-		strict.points.map((p) => ({
-			ts: new Date(noonTs(p.date)),
-			average: p.average,
-			limit: NORM_DAILY
-		}))
-	);
+
+	// `app.now` tickt im Sekundentakt; `$derived` reicht nur einen geänderten
+	// WERT weiter, deshalb baut sich das Diagramm nicht je Tick neu auf.
+	const isToday = $derived(until === fmtDate(app.now));
+	const untilLabel = $derived(isToday ? "heute" : shortDate(until));
+	const untilTs = $derived(new Date(noonTs(until)));
+	const weekdayLabel = $derived(fmtCalendarDate(until, { weekday: "long" }));
+
+	const DAY_MS = 86_400_000;
+	const startOf = (iso: string) => new Date(noonTs(iso) - DAY_MS / 2);
+	const endOf = (iso: string) => new Date(noonTs(iso) + DAY_MS / 2);
+	const centreOf = (w: WeekActual) => noonTs(stepDate(w.from, 3));
+	const hasValue = (w: WeekActual): w is WeekActual & { hoursPerWorkday: number } =>
+		w.hoursPerWorkday !== null;
 
 	// Ohne feste Domain nimmt das Diagramm die Null mit auf – die halbe Höhe
 	// wäre dann leer und die entscheidenden Zehntel um die 8 h unsichtbar.
-	const yDomain = $derived.by(() => {
-		const values = [NORM_DAILY, ...strict.points.map((p) => p.average)];
+	// Blöcke mit weniger als zwei Arbeitstagen würden die Achse stauchen.
+	const yDomain = $derived.by((): [number, number] => {
+		const values = [
+			NORM_DAILY,
+			...strict.points.map((p) => p.average),
+			...result.weeks.filter(hasValue).filter((w) => w.workdays >= 2).map((w) => w.hoursPerWorkday)
+		];
 		return [Math.min(...values) - 0.25, Math.max(...values) + 0.25];
+	});
+	const clampY = (v: number) => Math.min(yDomain[1], Math.max(yDomain[0], v));
+
+	const bars = $derived(
+		result.weeks.filter(hasValue).map((w) => ({
+			ts: new Date(centreOf(w)),
+			x0: startOf(w.from),
+			x1: endOf(w.to),
+			week: clampY(w.hoursPerWorkday),
+			limit: NORM_DAILY
+		}))
+	);
+	const barsOver = $derived(bars.filter((b) => b.week > NORM_DAILY));
+	const barsUnder = $derived(bars.filter((b) => b.week < NORM_DAILY));
+
+	const forecastRows = $derived(
+		strict.points.map((p) => ({ ts: new Date(noonTs(p.date)), average: p.average, limit: NORM_DAILY }))
+	);
+
+	type ChartRow = { ts: Date; week?: number; average?: number; limit: number };
+	// `limit` auf jeder Zeile, damit die 8-h-Linie über die ganze Breite läuft. Die
+	// Balkenobjekte selbst, nicht Kopien: die Rechtecke melden ihre Daten eigens an,
+	// und beim Hover gewinnt das zuletzt eingetragene Objekt desselben Zeitpunkts.
+	const chartData = $derived<ChartRow[]>([...bars, ...forecastRows]);
+
+	const blockByTs = $derived(new Map(result.weeks.map((w) => [centreOf(w), w])));
+
+	const xDomain = $derived.by((): [Date, Date] => {
+		const first = result.weeks.find((w) => w.workdays > 0)?.from ?? stepDate(until, -6);
+		return [startOf(first), forecastRows.at(-1)?.ts ?? endOf(until)];
 	});
 
 	/** Monatserste als Achsenmarken. */
 	const monthTicks = $derived.by(() => {
 		const out: Date[] = [];
-		if (chartData.length === 0) return out;
-		const first = chartData[0].ts;
-		const last = chartData[chartData.length - 1].ts;
+		const [first, last] = xDomain;
 		// Monatsschlüssel statt Date-Cursor: der Monatserste hängt sonst an der
 		// Zone des Geräts und die Marken sässen neben den Datenpunkten.
 		let key = monthKey(first.getTime());
@@ -154,8 +213,19 @@
 		});
 	};
 
+	/** Wochenblock als Zeitraum, Prognosepunkt als Datum. */
+	function tooltipLabel(value: unknown): string {
+		const ts = new Date(value as string | number | Date).getTime();
+		const w = blockByTs.get(ts);
+		if (!w) return fmtDateHuman(ts);
+		const day = (iso: string) => fmtCalendarDate(iso, { day: "numeric", month: "short" });
+		return `${day(w.from)} – ${day(w.to)}`;
+	}
+
+	const BLUE = { light: "#2a78d6", dark: "#6ea6ec" };
 	const chartConfig = {
-		average: { label: "Schnitt", theme: { light: "#2a78d6", dark: "#6ea6ec" } },
+		week: { label: "Je Arbeitstag", theme: BLUE },
+		average: { label: "24-Wochen-Schnitt", theme: BLUE },
 		limit: { label: "Grenze", theme: { light: "#dc2626", dark: "#f87171" } }
 	} satisfies Chart.ChartConfig;
 
@@ -204,7 +274,7 @@
 			<!-- Platzhalter im Zuschnitt des fertigen Inhalts: Urteil, sechs
 			     Kennzahlen, Verlauf. So springt beim Erscheinen nichts. -->
 			<div class="space-y-3">
-				<Skeleton class="h-20 w-full" />
+				<Skeleton class="h-24 w-full" />
 				<div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
 					{#each [0, 1, 2, 3, 4, 5] as i (i)}
 						<Skeleton class="h-19 w-full" />
@@ -214,27 +284,26 @@
 			</div>
 			<div class="space-y-2">
 				<Skeleton class="h-4 w-40" />
-				<Skeleton class="h-55 w-full" />
+				<Skeleton class="h-65 w-full" />
 			</div>
 		{:else}
 		<!-- Das Urteil zuerst: die Frage lautet "muss ich etwas tun?", und die
 		     muss vor jeder Zahl beantwortet sein. -->
 		<div class="space-y-3">
 			<div class="flex flex-wrap items-start justify-between gap-3">
-				<!-- Farbe bedeutet Handlungsbedarf, sonst nichts. „Dicht an der Grenze“
-				     ist eine Beobachtung, keine Aufforderung. Die Stufen sind bewusst
-				     zurückhaltend getönt: der Rahmen soll die Aussage stützen,
-				     nicht die Card übertönen. -->
+				<!-- Die gesetzliche Lesart steht zuerst, die Frühwarnung je Arbeitstag
+				     darunter. Farbe bedeutet Handlungsbedarf, sonst nichts – eine
+				     gerissene gesetzliche Grenze ist immer rot. -->
 				<div
 					class={[
 						"flex flex-1 items-start gap-3 rounded-md border px-4 py-3",
-						strict.verdict.requiresAction &&
-							(strict.verdict.level === "crit"
-								? "border-destructive/50 bg-destructive/6 text-destructive"
-								: "border-amber-500/55 bg-amber-500/7 text-amber-700 dark:text-amber-400")
+						alarm
+							? "border-destructive/50 bg-destructive/6 text-destructive"
+							: strict.verdict.requiresAction &&
+								"border-amber-500/55 bg-amber-500/7 text-amber-700 dark:text-amber-400"
 					]}
 				>
-					{#if strict.verdict.requiresAction}
+					{#if legal.over || strict.verdict.requiresAction}
 						<TriangleAlertIcon class="mt-0.5 size-5 shrink-0" />
 					{:else if strict.verdict.level === "ok"}
 						<CheckIcon class="mt-0.5 size-5 shrink-0" />
@@ -242,7 +311,8 @@
 						<InfoIcon class="mt-0.5 size-5 shrink-0" />
 					{/if}
 					<div class="min-w-0 space-y-1">
-						<div class="text-base font-medium">{strict.verdict.headline}</div>
+						<p class="text-sm font-medium">{legal.text}</p>
+						<div class="text-base font-medium">Je Arbeitstag gerechnet: {strict.verdict.headline}</div>
 						<p class="text-sm">{strict.verdict.detail}</p>
 					</div>
 				</div>
@@ -251,7 +321,7 @@
 			<!-- Erst die Zahl, an der das Gesetz misst, dann die strengere je
 			     Arbeitstag. Rot nur, wo das Urteil rot ist. -->
 			<div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-				<StatTile label="Gesetzlich (Mo–Sa)" hint="Grenze {fmtHoursClock(NORM_DAILY)} h" alarm={legalOver}>
+				<StatTile label="Gesetzlich (Mo–Sa)" hint="Grenze {fmtHoursClock(NORM_DAILY)} h" alarm={legal.over}>
 					{fmtHoursClock(legalWindow.average)} h
 				</StatTile>
 				<StatTile label="Je Arbeitstag" hint="Grenze {fmtHoursClock(NORM_DAILY)} h" {alarm}>
@@ -282,28 +352,17 @@
 						{strict.tooLate ? "verstrichen" : strict.easeOffDate ? shortDate(strict.easeOffDate) : "—"}
 					</StatTile>
 				{/if}
-				<StatTile label="Höchstens" {alarm}>
+				<StatTile label="Dauerhaft höchstens" {alarm}>
 					{strict.maxPace === null || strict.maxPace <= 0 ? "—" : `${fmtHoursClock(strict.maxPace)} h`}
 					{#snippet hintSlot()}
-						<div class="text-muted-foreground text-xs">
-							{#if strict.paceDelta !== null && strict.paceDelta < 0}
-								je Arbeitstag, {fmtHoursClock(strict.paceDelta)} h unter deinem Tempo
-							{:else}
-								je Arbeitstag für unter 8 h
-							{/if}
-						</div>
+						<div class="text-muted-foreground text-xs">{maxPaceHint}</div>
 					{/snippet}
 				</StatTile>
 			</div>
 
-			{#if month > app.currentMonth || !strictWindow.complete}
+			{#if month > app.currentMonth}
 				<p class="text-muted-foreground text-xs">
-					{#if month > app.currentMonth}
-						{monthLabel(month)} liegt in der Zukunft – alle Zahlen beziehen sich auf heute.
-					{/if}
-					{#if !strictWindow.complete}
-						Datenbasis: {strictWindow.weeksCovered} von 24 Wochen – vorläufig.
-					{/if}
+					{monthLabel(month)} liegt in der Zukunft – alle Zahlen beziehen sich auf heute.
 				</p>
 			{/if}
 		</div>
@@ -311,7 +370,14 @@
 		<!-- Verlauf -->
 		<div class="space-y-2">
 			<div class="flex flex-wrap items-center justify-between gap-3">
-				<h3 class="text-sm font-medium">Verlauf des Schnitts</h3>
+				<div class="flex flex-wrap items-baseline gap-x-2">
+					<h3 class="text-sm font-medium">Die letzten 24 Wochen – und die Prognose ab {untilLabel}</h3>
+					{#if !strictWindow.complete}
+						<span class="text-muted-foreground text-xs">
+							Datenbasis: {strictWindow.weeksCovered} von 24 Wochen – vorläufig.
+						</span>
+					{/if}
+				</div>
 				<!-- Der Schalter steuert die Prognose und gehört deshalb hierher,
 				     nicht neben das Urteil. -->
 				<div class="flex items-center gap-1 text-xs">
@@ -328,53 +394,95 @@
 					{/each}
 				</div>
 			</div>
-			<Chart.Container config={chartConfig} class="aspect-auto w-full" style="height: 220px">
-				<LineChart
-					data={chartData}
-					x="ts"
-					xScale={scaleTime()}
-					{yDomain}
-					series={[
-						{ key: "average", label: "Schnitt", color: "var(--color-average)" },
-						{
-							key: "limit",
-							label: "Grenze",
-							color: "var(--color-limit)",
-							// SVG-Schreibweise, nicht camelCase: Spline reicht die Props
-							// unverändert an das <path> durch.
-							props: { "stroke-dasharray": "4 4" }
-						}
-					]}
-					props={{
-						xAxis: { ticks: monthTicks, format: tickLabel, tickLabelProps: { class: "fill-muted-foreground" } },
-						yAxis: {
-							format: (v: number) => fmtHoursClock(v),
-							tickLabelProps: { class: "fill-muted-foreground" }
-						}
-					}}
-				>
-					{#snippet tooltip()}
-						<Chart.Tooltip
-							labelFormatter={(v) => fmtDateHuman(new Date(v as string | number | Date).getTime())}
-							formatter={tooltipRow}
-						/>
-					{/snippet}
-				</LineChart>
+			<Chart.Container config={chartConfig} class="aspect-auto w-full" style="height: 260px">
+				<!-- Ohne einen einzigen Eintrag bleibt die Fläche leer: ein Balken aus
+				     null Stunden sähe sonst wie eine dramatische Woche aus. -->
+				{#if forecastRows.length > 0 && strictWindow.actualHours > 0}
+					<LineChart
+						data={chartData}
+						x="ts"
+						xScale={scaleTime()}
+						{xDomain}
+						{yDomain}
+						series={[
+							{ key: "week", label: "Je Arbeitstag", color: "var(--color-week)" },
+							{
+								key: "average",
+								label: "24-Wochen-Schnitt",
+								color: "var(--color-average)",
+								// SVG-Schreibweise, nicht camelCase: Spline reicht die Props
+								// unverändert an das <path> durch.
+								props: { "stroke-dasharray": "4 4" }
+							},
+							{
+								key: "limit",
+								label: "Grenze",
+								color: "var(--color-limit)",
+								props: { "stroke-dasharray": "2 3", "stroke-width": 1 }
+							}
+						]}
+						annotations={[
+							{ type: "range", layer: "below", x: [untilTs, null], class: "fill-muted-foreground/8" },
+							{
+								type: "line",
+								x: untilTs,
+								label: isToday ? "Heute" : shortDate(until),
+								labelPlacement: "top-right",
+								props: {
+									line: { class: "stroke-muted-foreground" },
+									label: { class: "fill-muted-foreground text-[10px]" }
+								}
+							}
+						]}
+						props={{
+							xAxis: { ticks: monthTicks, format: tickLabel, tickLabelProps: { class: "fill-muted-foreground" } },
+							yAxis: {
+								format: (v: number) => fmtHoursClock(v),
+								tickLabelProps: { class: "fill-muted-foreground" }
+							}
+						}}
+					>
+						{#snippet marks()}
+							<Rect
+								data={barsOver}
+								x0="x0"
+								x1="x1"
+								y0={() => NORM_DAILY}
+								y1="week"
+								insets={{ x: 1 }}
+								class="fill-amber-500/65 dark:fill-amber-400/55"
+							/>
+							<Rect
+								data={barsUnder}
+								x0="x0"
+								x1="x1"
+								y0={() => NORM_DAILY}
+								y1="week"
+								insets={{ x: 1 }}
+								class="fill-muted-foreground/35"
+							/>
+							<Spline seriesKey="limit" />
+							<Spline seriesKey="average" data={forecastRows} />
+						{/snippet}
+						{#snippet tooltip()}
+							<Chart.Tooltip labelFormatter={tooltipLabel} formatter={tooltipRow} />
+						{/snippet}
+					</LineChart>
+				{/if}
 			</Chart.Container>
 			<p class="text-muted-foreground text-xs">
-				Ab heute fortgeschrieben mit {fmtHoursClock(result.pace)} h je Arbeitstag – dem Durchschnitt
-				der letzten {paceWeeks} Wochen.
-				<!-- Die Steigung ist die eigentliche Aussage der Kurve und erklärt
-				     sich nicht von selbst: sie ist kein Trend, sondern das Fenster,
-				     das sich mit Tagen des aktuellen Tempos füllt. -->
+				Jeder Balken steht für sieben Tage bis zum {weekdayLabel}: so viel hast du in dieser Zeit je
+				Arbeitstag gearbeitet – nach oben mehr als 8 h, nach unten weniger. Freie Tage zum
+				Zeitausgleich zählen dabei nicht als Arbeitstag. Ab {untilLabel} zeigt die gestrichelte
+				Linie, wohin der 24-Wochen-Schnitt läuft, wenn du mit {fmtHoursClock(result.pace)} h je
+				Arbeitstag weitermachst – dem Durchschnitt der letzten {paceWeeks} Wochen.
+				<!-- Der Anstieg ist Fensterrechnung, kein Trend – das sagt die Linie nicht von selbst. -->
 				{#if result.pace > strictWindow.average + 0.01}
-					Die Kurve steigt, weil das rollende Fenster Woche für Woche ältere, kürzere Tage gegen
-					Tage dieses Tempos tauscht – bleibt es dabei, endet der Schnitt bei {fmtHoursClock(
-						result.pace
-					)} h.
+					Sie steigt, weil die kurzen Balken links nach und nach aus den 24 Wochen herausfallen und
+					Tage mit {fmtHoursClock(result.pace)} h nachrücken – bleibt es dabei, endet der Schnitt bei
+					{fmtHoursClock(result.pace)} h.
 				{:else if result.pace < strictWindow.average - 0.01}
-					Die Kurve fällt, weil das rollende Fenster Woche für Woche ältere, längere Tage gegen
-					Tage dieses Tempos tauscht.
+					Sie fällt, weil die langen Balken links nach und nach aus den 24 Wochen herausfallen.
 				{/if}
 			</p>
 		</div>
