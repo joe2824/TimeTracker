@@ -20,7 +20,8 @@
     "build:web": "cross-env BUILD_TARGET=web vite build",
     "dev:web": "cross-env BUILD_TARGET=web vite dev",
     "pwa:bundle": "npm run build:web && node scripts/copy-pwa.mjs",
-    "server:check": "npm --workspace server run check"
+    "server:check": "npm --workspace server run check",
+    "dup": "jscpd ."
   },
   "license": "MIT",
   "dependencies": {
@@ -57,6 +58,7 @@
     "d3-scale": "^4.0.2",
     "fake-indexeddb": "^6.2.5",
     "happy-dom": "^20.11.6",
+    "jscpd": "^5.4.1",
     "layerchart": "^2.0.0-next.48",
     "mode-watcher": "^1.1.0",
     "svelte": "^5.0.0",

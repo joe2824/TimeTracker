@@ -1,0 +1,20 @@
+{
+  "pattern": "{src,server/src,shared,src-tauri/src}/**/*.{ts,js,svelte,rs}",
+  "ignore": [
+    "**/node_modules/**",
+    "**/components/ui/**",
+    "**/*.test.ts",
+    "**/*.d.ts",
+    "**/.svelte-kit/**",
+    "**/build/**",
+    "**/dist/**",
+    "**/target/**"
+  ],
+  "formatsExts": { "typescript": ["svelte"] },
+  "minLines": 8,
+  "minTokens": 60,
+  "mode": "mild",
+  "reporters": ["console"],
+  "gitignore": true,
+  "absolute": false
+}

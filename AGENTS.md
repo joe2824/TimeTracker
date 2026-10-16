@@ -68,6 +68,11 @@ Gleiche **Namen** findet das, gleiche **Logik** unter anderem Namen nicht — un
 das ist der häufigere Fall. Umgekehrt sind gleiche Namen oft harmlos (`sha256Hex`
 ist WebCrypto gegen Node-crypto). Ein Hinweis, kein Urteil.
 
+Gleiche Logik findet `npm run dup` (jscpd, Konfiguration in `.jscpd.json`):
+token-basiert, ab 8 Zeilen bzw. 60 Tokens, ohne `components/ui/` und Tests.
+Jeder Treffer braucht einen Blick — zwei Dialoge mit gleichem Gerüst sind keine
+Dublette, zwei Routen mit derselben Berechtigungsprüfung schon.
+
 ## Namenskonvention
 
 Funktionsnamen, Variablen, Felder, Typen, Dateinamen: **immer Englisch**.
