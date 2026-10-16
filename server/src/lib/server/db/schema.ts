@@ -221,18 +221,24 @@ export const teams = sqliteTable(
 	(t) => [index("teams_owner").on(t.ownerUserId)]
 );
 
+/**
+ * Spalten eines Einladungslinks. Eine Funktion, kein Objekt: Drizzle-Builder
+ * tragen Zustand und dürfen nicht in zwei Tabellen stecken.
+ */
+const inviteLinkColumns = () => ({
+	code: text("code").primaryKey(),
+	teamId: text("team_id")
+		.notNull()
+		.references(() => teams.id, { onDelete: "cascade" }),
+	createdAt: integer("created_at").notNull(),
+	expiresAt: integer("expires_at"),
+	revokedAt: integer("revoked_at")
+});
+
 /** Ein Einladungslink für ein Team - mehrfach nutzbar, anders als ein Konto-Invite. */
 export const teamInvites = sqliteTable(
 	"team_invites",
-	{
-		code: text("code").primaryKey(),
-		teamId: text("team_id")
-			.notNull()
-			.references(() => teams.id, { onDelete: "cascade" }),
-		createdAt: integer("created_at").notNull(),
-		expiresAt: integer("expires_at"),
-		revokedAt: integer("revoked_at")
-	},
+	inviteLinkColumns(),
 	(t) => [index("team_invites_team").on(t.teamId)]
 );
 
@@ -319,15 +325,7 @@ export const teamReports = sqliteTable(
  */
 export const teamAdminInvites = sqliteTable(
 	"team_admin_invites",
-	{
-		code: text("code").primaryKey(),
-		teamId: text("team_id")
-			.notNull()
-			.references(() => teams.id, { onDelete: "cascade" }),
-		createdAt: integer("created_at").notNull(),
-		expiresAt: integer("expires_at"),
-		revokedAt: integer("revoked_at")
-	},
+	inviteLinkColumns(),
 	(t) => [index("team_admin_invites_team").on(t.teamId)]
 );
 

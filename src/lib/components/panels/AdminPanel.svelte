@@ -337,6 +337,27 @@
 		return !i.usedAt && !i.revokedAt && (!i.expiresAt || i.expiresAt > Date.now());
 	}
 
+	// Vollständige Tailwind-Klassen, damit der Scanner sie findet.
+	const registrationBanner = $derived(
+		isRegistrationOpen
+			? {
+					box: "border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-200",
+					iconColor: "text-amber-600 dark:text-amber-400",
+					icon: GlobeIcon,
+					title: "Öffentliche Registrierung ist aktiv",
+					text: "Jede Person, die die Serveradresse kennt, kann sich direkt ohne Einladungscode registrieren.",
+					action: "Einladungscode erzwingen"
+				}
+			: {
+					box: "border-emerald-500/30 bg-emerald-500/10 text-emerald-900 dark:text-emerald-200",
+					iconColor: "text-emerald-600 dark:text-emerald-400",
+					icon: LockIcon,
+					title: "Registrierung nur mit Einladungscode",
+					text: "Geschlossener Server: Neue Konten können sich nur über gültige Einladungscodes registrieren.",
+					action: "Offene Registrierung erlauben"
+				}
+	);
+
 	const openInvites = $derived(invites.filter(isInviteOpen));
 	const usedInvites = $derived(invites.filter((i) => !isInviteOpen(i)));
 
@@ -615,49 +636,26 @@
 
 			<Card.Content class="space-y-4">
 				<!-- Haupt-Richtlinie: Offene Registrierung vs. Nur mit Einladung -->
-				{#if isRegistrationOpen}
-					<div class="border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-200 flex flex-col gap-3 rounded-lg border p-3.5 text-sm sm:flex-row sm:items-center sm:justify-between">
-						<div class="flex items-start gap-2.5">
-							<GlobeIcon class="text-amber-600 dark:text-amber-400 mt-0.5 size-5 shrink-0" />
-							<div>
-								<p class="font-medium">Öffentliche Registrierung ist aktiv</p>
-								<p class="text-xs opacity-90 leading-relaxed">
-									Jede Person, die die Serveradresse kennt, kann sich direkt ohne Einladungscode registrieren.
-								</p>
-							</div>
+				<div
+					class="{registrationBanner.box} flex flex-col gap-3 rounded-lg border p-3.5 text-sm sm:flex-row sm:items-center sm:justify-between"
+				>
+					<div class="flex items-start gap-2.5">
+						<registrationBanner.icon class="{registrationBanner.iconColor} mt-0.5 size-5 shrink-0" />
+						<div>
+							<p class="font-medium">{registrationBanner.title}</p>
+							<p class="text-xs opacity-90 leading-relaxed">{registrationBanner.text}</p>
 						</div>
-						<Button
-							variant="outline"
-							size="sm"
-							class="shrink-0 self-start sm:self-center"
-							onclick={handleToggleRegistration}
-							disabled={isRegistrationUpdating}
-						>
-							{isRegistrationUpdating ? "Wird umgestellt…" : "Einladungscode erzwingen"}
-						</Button>
 					</div>
-				{:else}
-					<div class="border-emerald-500/30 bg-emerald-500/10 text-emerald-900 dark:text-emerald-200 flex flex-col gap-3 rounded-lg border p-3.5 text-sm sm:flex-row sm:items-center sm:justify-between">
-						<div class="flex items-start gap-2.5">
-							<LockIcon class="text-emerald-600 dark:text-emerald-400 mt-0.5 size-5 shrink-0" />
-							<div>
-								<p class="font-medium">Registrierung nur mit Einladungscode</p>
-								<p class="text-xs opacity-90 leading-relaxed">
-									Geschlossener Server: Neue Konten können sich nur über gültige Einladungscodes registrieren.
-								</p>
-							</div>
-						</div>
-						<Button
-							variant="outline"
-							size="sm"
-							class="shrink-0 self-start sm:self-center"
-							onclick={handleToggleRegistration}
-							disabled={isRegistrationUpdating}
-						>
-							{isRegistrationUpdating ? "Wird umgestellt…" : "Offene Registrierung erlauben"}
-						</Button>
-					</div>
-				{/if}
+					<Button
+						variant="outline"
+						size="sm"
+						class="shrink-0 self-start sm:self-center"
+						onclick={handleToggleRegistration}
+						disabled={isRegistrationUpdating}
+					>
+						{isRegistrationUpdating ? "Wird umgestellt…" : registrationBanner.action}
+					</Button>
+				</div>
 
 				{#if !isRegistrationOpen && isEnvConfigured}
 					{#if isEnvActive}

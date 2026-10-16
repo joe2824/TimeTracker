@@ -27,7 +27,7 @@
 	import ClipboardPasteIcon from "@lucide/svelte/icons/clipboard-paste";
 	import PlusIcon from "@lucide/svelte/icons/plus";
 	import SmartphoneIcon from "@lucide/svelte/icons/smartphone";
-	import { Skeleton } from "$lib/components/ui/skeleton";
+	import ListSkeleton from "$lib/components/shared/ListSkeleton.svelte";
 
 	let serverUrl = $state(initialServerUrl(account.serverUrl));
 
@@ -295,23 +295,7 @@
 		{#if account.linked}
 
 			{#if !isDevicesLoaded}
-				<div class="space-y-2 pt-1">
-					<Skeleton class="h-3 w-36" />
-					<div class="divide-y rounded-lg border bg-card">
-						{#each Array(2) as _}
-							<div class="flex items-center justify-between p-3">
-								<div class="flex items-center gap-3 min-w-0">
-									<Skeleton class="size-8 rounded-md shrink-0" />
-									<div class="space-y-1.5 min-w-0">
-										<Skeleton class="h-4 w-32" />
-										<Skeleton class="h-3 w-24" />
-									</div>
-								</div>
-								<Skeleton class="h-8 w-16 rounded-md shrink-0" />
-							</div>
-						{/each}
-					</div>
-				</div>
+				<ListSkeleton class="pt-1" />
 			{:else if devices.length > 0}
 				<div class="space-y-2 pt-1">
 					<Label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">

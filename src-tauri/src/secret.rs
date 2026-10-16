@@ -52,46 +52,47 @@ mod imp {
         }
     }
 
-    pub fn protect(plain: &[u8]) -> Option<Vec<u8>> {
-        let inp = input(plain);
+    /// Beide DPAPI-Aufrufe teilen Ein-/Ausgabepuffer und Fehlerauswertung;
+    /// nur die Funktion und ihr zweites Argument unterscheiden sich.
+    fn call(
+        bytes: &[u8],
+        f: impl FnOnce(&CRYPT_INTEGER_BLOB, &mut CRYPT_INTEGER_BLOB) -> i32,
+    ) -> Option<Vec<u8>> {
+        let inp = input(bytes);
         let mut out = Blob::empty();
-        let ok = unsafe {
-            CryptProtectData(
-                &inp,
-                std::ptr::null(),
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                0,
-                &mut out.0,
-            )
-        };
-        if ok == 0 {
+        if f(&inp, &mut out.0) == 0 {
             None
         } else {
             Some(out.to_vec())
         }
     }
 
+    pub fn protect(plain: &[u8]) -> Option<Vec<u8>> {
+        call(plain, |inp, out| unsafe {
+            CryptProtectData(
+                inp,
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                0,
+                out,
+            )
+        })
+    }
+
     pub fn unprotect(sealed: &[u8]) -> Option<Vec<u8>> {
-        let inp = input(sealed);
-        let mut out = Blob::empty();
-        let ok = unsafe {
+        call(sealed, |inp, out| unsafe {
             CryptUnprotectData(
-                &inp,
+                inp,
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
                 0,
-                &mut out.0,
+                out,
             )
-        };
-        if ok == 0 {
-            None
-        } else {
-            Some(out.to_vec())
-        }
+        })
     }
 }
 

@@ -704,30 +704,10 @@
 						{/if}
 						{#if isBuiltinActivity(a)}
 							<Badge variant="secondary">fix</Badge>
-						{:else if a.teamOwned && isManagedTeamRow(a.id)}
-							<Button
-								variant="ghost"
-								size="icon-sm"
-								title="Eigene Aktivität hier zusammenführen – z.B. wenn sie dasselbe war, bevor das Team sie vorgab"
-								aria-label={`Eigene Aktivität in „${a.name}“ zusammenführen`}
-								onclick={() => askMergeInto(a)}
-							>
-								<GitMergeIcon class="size-4" />
-							</Button>
-							<Button
-								variant="ghost"
-								size="icon-sm"
-								disabled={teamActionBusy}
-								title="Aus der Team-Liste entfernen – verschwindet auf allen Geräten des Teams"
-								aria-label={`„${a.name}“ aus der Team-Liste entfernen`}
-								onclick={() => (teamDeleteTarget = { id: teamRowId(a.id), name: a.name })}
-							>
-								<Trash2Icon class="text-destructive size-4" />
-							</Button>
 						{:else if a.teamOwned}
-							<!-- Ändern/Löschen nur im Aktivitäten-Tab der Leitung - eine lokale
-							     Löschung käme beim nächsten Abgleich ohnehin zurück. Die eigene,
-							     nun überflüssige Aktivität lässt sich aber hier hinein zusammenführen. -->
+							<!-- Die eigene, nun überflüssige Aktivität lässt sich hier hinein
+							     zusammenführen. Ändern/Löschen gibt es nur für die Leitung - eine
+							     lokale Löschung käme beim nächsten Abgleich ohnehin zurück. -->
 							<Button
 								variant="ghost"
 								size="icon-sm"
@@ -737,6 +717,18 @@
 							>
 								<GitMergeIcon class="size-4" />
 							</Button>
+							{#if isManagedTeamRow(a.id)}
+								<Button
+									variant="ghost"
+									size="icon-sm"
+									disabled={teamActionBusy}
+									title="Aus der Team-Liste entfernen – verschwindet auf allen Geräten des Teams"
+									aria-label={`„${a.name}“ aus der Team-Liste entfernen`}
+									onclick={() => (teamDeleteTarget = { id: teamRowId(a.id), name: a.name })}
+								>
+									<Trash2Icon class="text-destructive size-4" />
+								</Button>
+							{/if}
 						{:else}
 							<Button
 								variant="ghost"
